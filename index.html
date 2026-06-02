@@ -13,7 +13,8 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=cloud2" />
+  <link rel="stylesheet" href="styles.css?v=clip1" />
+  <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
 
@@ -155,12 +156,27 @@
       </div>
     </header>
 
-    <main class="app-main">
+    <div class="coach-layout">
+      <nav class="coach-nav" id="coach-nav" aria-label="Coach navigation">
+        <button class="coach-nav-item active" data-coach-nav="athletes" type="button">
+          <span class="coach-nav-icon">🐉</span>
+          <span class="coach-nav-label">Athletes</span>
+        </button>
+        <button class="coach-nav-item" data-coach-nav="library" type="button">
+          <span class="coach-nav-icon">📚</span>
+          <span class="coach-nav-label">Workout Library</span>
+        </button>
+      </nav>
+
+      <main class="app-main coach-main">
 
       <!-- Dashboard -->
       <div id="view-dashboard" class="view">
         <div class="view-head">
-          <h2>Athletes</h2>
+          <div>
+            <h2>Athletes</h2>
+            <p class="muted view-sub">Manage your athletes and programs.</p>
+          </div>
           <button class="btn btn-primary" id="btn-add-client">+ Add athlete</button>
         </div>
         <div id="client-grid" class="client-grid"></div>
@@ -168,6 +184,24 @@
           <div class="empty-emoji">🐉</div>
           <h3>No athletes yet</h3>
           <p>Add your first athlete to start building their program.</p>
+        </div>
+      </div>
+
+      <!-- Workout Library -->
+      <div id="view-workout-library" class="view hidden">
+        <div class="view-head">
+          <div>
+            <h2>Workout Library</h2>
+            <p class="muted view-sub">Reusable workout templates — load any one onto a program day in a single click.</p>
+          </div>
+          <button class="btn btn-primary" id="btn-new-template">+ New template</button>
+        </div>
+        <div id="template-grid" class="template-grid"></div>
+        <div id="template-empty" class="empty-state hidden">
+          <div class="empty-emoji">📚</div>
+          <h3>No templates yet</h3>
+          <p>Create reusable workouts like "Back Day", "Push Day", or "Conditioning" — then drop them onto any athlete's program day.</p>
+          <button class="btn btn-primary" id="btn-new-template-empty">+ Create your first template</button>
         </div>
       </div>
 
@@ -328,7 +362,8 @@
         </div>
       </div>
 
-    </main>
+      </main>
+    </div>
   </section>
 
   <!-- ============ ATHLETE PORTAL ============ -->
@@ -350,15 +385,15 @@
 
     <main class="app-main">
       <div class="tabs">
-        <button class="tab active" data-ctab="calendar">Calendar</button>
-        <button class="tab" data-ctab="workouts">Workouts</button>
+        <button class="tab active" data-ctab="workouts">Workouts</button>
         <button class="tab" data-ctab="diet">Nutrition</button>
         <button class="tab" data-ctab="prs">PRs</button>
         <button class="tab" data-ctab="progress">My Progress</button>
+        <button class="tab" data-ctab="calendar">Calendar</button>
       </div>
 
       <!-- Calendar (athlete) -->
-      <div class="tab-panel active" data-ctab-panel="calendar">
+      <div class="tab-panel" data-ctab-panel="calendar">
         <div class="program-head">
           <h3>My Calendar</h3>
           <p class="muted" id="client-trainer-credit"></p>
@@ -381,12 +416,38 @@
         <div id="ccal-grid" class="cal-grid"></div>
       </div>
 
-      <!-- Workouts -->
-      <div class="tab-panel" data-ctab-panel="workouts">
-        <div class="program-head">
-          <h3>Training Plan</h3>
+      <!-- Workouts (default landing — clipboard picker + detail) -->
+      <div class="tab-panel active" data-ctab-panel="workouts">
+        <!-- Picker: shown by default; tapping a day card swaps it for the detail view. -->
+        <div id="workout-picker" class="workout-picker">
+          <div class="clipboard">
+            <div class="clipboard-clip" aria-hidden="true"></div>
+            <div class="clipboard-paper">
+              <div class="clipboard-head">
+                <div>
+                  <h3>Pick today's workout</h3>
+                  <p class="muted" id="client-trainer-credit"></p>
+                </div>
+                <div class="clipboard-streak" title="Total exercises logged">
+                  <span class="streak-count" id="streak-count">0</span>
+                  <span class="streak-label">logged</span>
+                </div>
+              </div>
+              <div class="week-chips" id="workout-week-chips" role="tablist"></div>
+              <div class="workout-grid" id="workout-day-grid"></div>
+            </div>
+          </div>
+          <details class="all-weeks-fallback">
+            <summary>See all weeks</summary>
+            <div id="client-weeks-container" class="weeks-container"></div>
+          </details>
         </div>
-        <div id="client-weeks-container" class="weeks-container"></div>
+        <!-- Detail: shown when a day is selected -->
+        <div id="workout-detail" class="workout-detail hidden">
+          <button class="btn btn-ghost btn-sm back-link" id="btn-back-to-picker">← Clipboard</button>
+          <div id="workout-detail-head" class="workout-detail-head"></div>
+          <div id="workout-detail-list" class="workout-detail-list"></div>
+        </div>
       </div>
 
       <!-- Diet -->

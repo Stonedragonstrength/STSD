@@ -167,6 +167,10 @@
 
   // ensure existing clients have new fields
   let _trainerDataDirty = false;
+  // Initialize the reusable workout-template library (local-only, no cloud sync in v1).
+  if (!Array.isArray(state.trainerData.workoutTemplates)) {
+    state.trainerData.workoutTemplates = [];
+  }
   state.trainerData.clients.forEach((c) => {
     if (!c.schedule) c.schedule = {};
     if (!c.coachPRs) c.coachPRs = [];
@@ -441,10 +445,27 @@
   function showErr(el, msg) { el.textContent = msg; el.classList.remove("hidden"); }
 
   // -------- Dashboard --------
+  // ------------ Coach view router ------------
+  function switchCoachView(name) {
+    // Routes between #view-dashboard / #view-workout-library / #view-client.
+    // Side-nav active state syncs to the chosen top-level view.
+    const map = {
+      athletes: "#view-dashboard",
+      library:  "#view-workout-library",
+      client:   "#view-client",
+    };
+    Object.values(map).forEach((sel) => { const el = $(sel); if (el) hide(el); });
+    show($(map[name] || map.athletes));
+    // Side-nav highlight: client view stays under "athletes"
+    const navKey = name === "client" ? "athletes" : name;
+    document.querySelectorAll('#coach-nav [data-coach-nav]').forEach((b) => {
+      b.classList.toggle("active", b.dataset.coachNav === navKey);
+    });
+  }
+
   function renderDashboard() {
     state.currentClientId = null;
-    show($("#view-dashboard"));
-    hide($("#view-client"));
+    switchCoachView("athletes");
     const grid = $("#client-grid");
     const empty = $("#client-empty");
     grid.innerHTML = "";
@@ -531,8 +552,7 @@
     if (!c.schedule) c.schedule = {};
     if (!c.coachPRs) c.coachPRs = [];
     state.currentClientId = id;
-    hide($("#view-dashboard"));
-    show($("#view-client"));
+    switchCoachView("client");
     $("#client-name-display").textContent = c.name;
     $("#client-meta-display").textContent = clientMetaText(c);
     setTab("profile");
@@ -614,6 +634,213 @@
       });
     }
   }
+  // ============ Workout Templates (library) ============
+  function makeWorkoutTemplate(name, exercises) {
+    return {
+      id: uid(),
+      name: name || "New Workout",
+      focus: "",
+      notes: "",
+      exercises: Array.isArray(exercises) && exercises.length
+        ? exercises.map((e) => ({ ...makeExercise(), ...e, id: uid() }))
+        : [makeExercise()],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+  }
+
+  function renderWorkoutLibrary() {
+    const grid = $("#template-grid");
+    const empty = $("#template-empty");
+    grid.innerHTML = "";
+    const templates = state.trainerData.workoutTemplates || [];
+    if (!templates.length) { show(empty); return; }
+    hide(empty);
+    const sorted = [...templates].sort((a, b) => a.name.localeCompare(b.name));
+    sorted.forEach((t, idx) => {
+      const card = document.createElement("div");
+      card.className = "template-card";
+      card.style.animationDelay = `${idx * 50}ms`;
+      const exCount = t.exercises?.length || 0;
+      const icon = workoutIconFor(t.name);
+      card.innerHTML = `
+        <div class="template-card-head">
+          <div class="template-card-icon">${icon}</div>
+          <div style="flex:1; min-width: 0;">
+            <h3>${escapeHtml(t.name)}</h3>
+            ${t.focus ? `<p class="template-focus">${escapeHtml(t.focus)}</p>` : ""}
+          </div>
+        </div>
+        <div class="template-pills">
+          <span class="meta-pill">${exCount} exercise${exCount === 1 ? "" : "s"}</span>
+          ${t.notes ? `<span class="meta-pill">📝 notes</span>` : ""}
+        </div>
+        <div class="template-actions">
+          <button class="btn btn-ghost btn-sm" data-tpl-edit>Edit</button>
+          <button class="btn btn-danger btn-sm" data-tpl-delete>Delete</button>
+        </div>
+      `;
+      card.querySelector("[data-tpl-edit]").addEventListener("click", (e) => {
+        e.stopPropagation();
+        openTemplateEditor(t);
+      });
+      card.querySelector("[data-tpl-delete]").addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!window.confirm(`Delete template "${t.name}"?`)) return;
+        state.trainerData.workoutTemplates =
+          state.trainerData.workoutTemplates.filter((x) => x.id !== t.id);
+        saveTrainer();
+        renderWorkoutLibrary();
+        toast("Template deleted");
+      });
+      card.addEventListener("click", () => openTemplateEditor(t));
+      grid.appendChild(card);
+    });
+  }
+
+  function openTemplateEditor(template) {
+    // Edit a deep copy so Cancel discards changes.
+    const editing = !!template;
+    const draft = template
+      ? JSON.parse(JSON.stringify(template))
+      : makeWorkoutTemplate("");
+    if (!editing) draft.name = "";
+
+    openModal({
+      title: editing ? "Edit template" : "New workout template",
+      body: `
+        <div class="template-editor-section">
+          <label>Name<input type="text" id="tpl-name" placeholder="e.g. Back Day" autofocus /></label>
+          <label>Focus / theme<input type="text" id="tpl-focus" placeholder="e.g. Lats + mid back" /></label>
+          <label>Notes<textarea id="tpl-notes" rows="2" placeholder="e.g. Always start with a 5 min row warm-up"></textarea></label>
+        </div>
+        <div class="template-editor-section">
+          <h4>Exercises</h4>
+          <div class="template-exercises" id="tpl-ex-list"></div>
+          <button class="add-inline-btn" id="tpl-add-ex" type="button" style="margin-top:0.7em">+ Add exercise</button>
+        </div>
+        <p id="tpl-error" class="error hidden"></p>
+      `,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: editing ? "Save changes" : "Create template", className: "btn btn-primary",
+          onClick: () => {
+            const name = $("#tpl-name").value.trim();
+            const err = $("#tpl-error");
+            if (!name) return showErr(err, "Give the template a name.");
+            draft.name = name;
+            draft.focus = $("#tpl-focus").value.trim();
+            draft.notes = $("#tpl-notes").value.trim();
+            draft.updatedAt = Date.now();
+            // Strip empty exercises (no name AND no notes) so coach can add and skip placeholders.
+            draft.exercises = draft.exercises.filter((ex) =>
+              (ex.name || "").trim() || (ex.notes || "").trim()
+            );
+            if (!draft.exercises.length) return showErr(err, "Add at least one exercise.");
+            if (editing) {
+              state.trainerData.workoutTemplates = state.trainerData.workoutTemplates.map((t) =>
+                t.id === draft.id ? draft : t
+              );
+            } else {
+              state.trainerData.workoutTemplates.push(draft);
+            }
+            saveTrainer();
+            closeModal();
+            renderWorkoutLibrary();
+            toast(editing ? "Template updated" : "Template created 📚");
+          },
+        },
+      ],
+    });
+
+    // Populate fields after modal mounts.
+    $("#tpl-name").value = draft.name;
+    $("#tpl-focus").value = draft.focus || "";
+    $("#tpl-notes").value = draft.notes || "";
+
+    function paintExercises() {
+      const wrap = $("#tpl-ex-list");
+      wrap.innerHTML = "";
+      draft.exercises.forEach((ex, idx) => {
+        const row = document.createElement("div");
+        row.className = "template-ex-row";
+        row.innerHTML = `
+          <div class="row-name"><input type="text" placeholder="Exercise name (e.g. Lat Pulldown)" value="${escapeHtml(ex.name || "")}" /></div>
+          <div class="row-grid">
+            <input type="number" min="0" placeholder="Sets" value="${escapeHtml(ex.sets || "")}" />
+            <input type="number" min="0" placeholder="Reps" value="${escapeHtml(ex.currentReps || "")}" />
+            <input type="text" placeholder="Notes / cue" value="${escapeHtml(ex.notes || "")}" />
+            <button class="row-delete" type="button" title="Remove exercise">✕</button>
+          </div>
+        `;
+        const [nameI, setsI, repsI, notesI] = row.querySelectorAll("input");
+        nameI.addEventListener("input", () => { draft.exercises[idx].name = nameI.value; });
+        setsI.addEventListener("input", () => { draft.exercises[idx].sets = setsI.value; });
+        repsI.addEventListener("input", () => { draft.exercises[idx].currentReps = repsI.value; });
+        notesI.addEventListener("input", () => { draft.exercises[idx].notes = notesI.value; });
+        row.querySelector(".row-delete").addEventListener("click", () => {
+          draft.exercises.splice(idx, 1);
+          paintExercises();
+        });
+        wrap.appendChild(row);
+      });
+    }
+    paintExercises();
+    $("#tpl-add-ex").addEventListener("click", () => {
+      draft.exercises.push(makeExercise());
+      paintExercises();
+    });
+  }
+
+  function openLoadTemplateModal(week, day) {
+    const templates = state.trainerData.workoutTemplates || [];
+    if (!templates.length) {
+      toast("No templates yet — create one in Workout Library");
+      return;
+    }
+    const list = templates
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((t) => {
+        const icon = workoutIconFor(t.name);
+        return `
+          <button class="video-pick-btn" data-tpl="${t.id}" type="button">
+            <span class="video-pick-icon">${icon}</span>
+            <strong>${escapeHtml(t.name)}</strong>
+            ${t.focus ? `<span class="muted" style="margin-left:0.4em">— ${escapeHtml(t.focus)}</span>` : ""}
+            <span class="meta-pill" style="margin-left:auto">${t.exercises.length} ex</span>
+          </button>`;
+      })
+      .join("");
+    openModal({
+      title: `Load template into "${day.name}"`,
+      body: `
+        <p class="muted" style="margin-top:-0.4em">This replaces the day's exercises with the template. Day name and focus also update.</p>
+        <div class="video-pick-list">${list}</div>
+      `,
+      actions: [{ label: "Cancel", className: "btn btn-ghost", onClick: closeModal }],
+    });
+    document.querySelectorAll(".video-pick-btn[data-tpl]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const t = templates.find((x) => x.id === b.dataset.tpl);
+        if (!t) return;
+        // Replace day contents — keep day id (so logs survive), refresh exercises with new ids
+        day.name = t.name;
+        if (t.focus && !week.focus) week.focus = t.focus;
+        day.exercises = t.exercises.map((e) => ({ ...makeExercise(), ...e, id: uid() }));
+        saveTrainer();
+        closeModal();
+        renderWeeks();
+        // Cloud sync the updated athlete
+        const c = currentClient();
+        if (window.Cloud?.enabled && c && state.trainerData.coachId) {
+          window.Cloud.upsertAthlete(c, state.trainerData.coachId);
+        }
+        toast(`Loaded "${t.name}"`);
+      });
+    });
+  }
+
   function deleteClientPrompt() {
     const c = currentClient(); if (!c) return;
     if (!window.confirm(`Delete ${c.name}? Removes the athlete and their entire program from this device and the cloud.`)) return;
@@ -704,6 +931,21 @@
       week.days = week.days.filter((d) => d.id !== day.id);
       saveTrainer(); renderWeeks();
     });
+    // Day toolbar: load template + save as template (quick reuse of an existing day)
+    const tools = document.createElement("div");
+    tools.className = "day-tools";
+    tools.innerHTML = `
+      <button class="btn-load-template" data-action="load-tpl" type="button">📚 Load template</button>
+      <button class="btn-load-template" data-action="save-tpl" type="button" style="background: var(--accent-soft); color: var(--accent); border-color: rgba(16,185,129,0.35)">💾 Save as template</button>
+    `;
+    tools.querySelector('[data-action="load-tpl"]').addEventListener("click", () => openLoadTemplateModal(week, day));
+    tools.querySelector('[data-action="save-tpl"]').addEventListener("click", () => {
+      const tpl = makeWorkoutTemplate(day.name || "Workout", day.exercises);
+      tpl.focus = week.focus || "";
+      state.trainerData.workoutTemplates.push(tpl);
+      saveTrainer();
+      toast(`Saved "${tpl.name}" to library 📚`);
+    });
     const list = document.createElement("div");
     list.className = "exercises-list";
     day.exercises.forEach((ex) => list.appendChild(renderExerciseCard(day, ex)));
@@ -715,7 +957,10 @@
       day.exercises.push(makeExercise());
       saveTrainer(); renderWeeks();
     });
-    card.appendChild(head); card.appendChild(list); card.appendChild(addBtn);
+    card.appendChild(head);
+    card.appendChild(tools);
+    card.appendChild(list);
+    card.appendChild(addBtn);
     return card;
   }
   function renderExerciseCard(day, ex) {
@@ -1744,7 +1989,7 @@
     const code = prog.client.inviteCode;
     $("#client-portal-name").innerHTML = `${escapeHtml(prog.client.name)}${code ? ` <span class="athlete-invite-chip"><span class="label">Code</span>${escapeHtml(code)}</span>` : ""}`;
     $("#client-trainer-credit").textContent = prog.trainerName ? `Programmed by ${prog.trainerName}` : "";
-    setClientTab("calendar");
+    setClientTab("workouts");
     const now = new Date();
     state.athleteCal = { year: now.getFullYear(), month: now.getMonth() };
     renderAthleteCalendar();
@@ -1816,20 +2061,197 @@
   }
 
   // -------- Athlete workouts --------
+  // Athlete-side workout view state (which week chip + day card is active).
+  state.workoutView = state.workoutView || { mode: "picker", weekId: null, dayId: null };
+
   function renderClientWorkouts() {
-    const container = $("#client-weeks-container");
-    container.innerHTML = "";
     const prog = state.clientData.program;
+    const picker = $("#workout-picker");
+    const detail = $("#workout-detail");
+    const fallback = $("#client-weeks-container");
+    if (fallback) fallback.innerHTML = "";
+
     if (!prog?.client?.weeks?.length) {
-      container.innerHTML = `<div class="empty-state"><div class="empty-emoji">📋</div><h3>No weeks yet</h3><p>Your coach hasn't added any weeks to your program yet.</p></div>`;
+      picker.querySelector(".workout-grid").innerHTML = "";
+      picker.querySelector(".week-chips").innerHTML = "";
+      const empty = `<div class="empty-state"><div class="empty-emoji">📋</div><h3>No weeks yet</h3><p>Your coach hasn't added any weeks to your program yet.</p></div>`;
+      picker.querySelector(".workout-grid").innerHTML = empty;
+      hide(detail); show(picker);
       return;
     }
+
     const jumpTo = state.__jumpTo;
     state.__jumpTo = null;
+
+    // If a jump-to was set (from calendar click), prefer it.
+    if (jumpTo?.weekId && jumpTo?.dayId) {
+      state.workoutView = { mode: "detail", weekId: jumpTo.weekId, dayId: jumpTo.dayId };
+    } else if (!state.workoutView.weekId) {
+      state.workoutView.weekId = prog.client.weeks[0].id;
+    } else if (!prog.client.weeks.some((w) => w.id === state.workoutView.weekId)) {
+      // Stored week no longer exists (program edited) — fall back to first.
+      state.workoutView.weekId = prog.client.weeks[0].id;
+    }
+
+    // Always populate the "See all weeks" fallback so legacy detail-in-list still works.
     prog.client.weeks.forEach((week, wIdx) => {
-      const expand = jumpTo ? jumpTo.weekId === week.id : wIdx === 0;
-      container.appendChild(renderClientWeek(week, wIdx, expand, jumpTo));
+      const expand = wIdx === 0;
+      fallback.appendChild(renderClientWeek(week, wIdx, expand, null));
     });
+
+    renderWorkoutPickerUI();
+
+    if (state.workoutView.mode === "detail" && state.workoutView.dayId) {
+      renderWorkoutDetailUI();
+    } else {
+      hide($("#workout-detail"));
+      show($("#workout-picker"));
+    }
+  }
+
+  function renderWorkoutPickerUI() {
+    const prog = state.clientData.program;
+    if (!prog?.client?.weeks?.length) return;
+    const chips = $("#workout-week-chips");
+    const grid = $("#workout-day-grid");
+
+    // Streak / total logged count (across all exercises)
+    const totalLogged = Object.values(state.clientData.progress?.exerciseLogs || {})
+      .reduce((n, arr) => n + (Array.isArray(arr) ? arr.length : 0), 0);
+    const streakEl = $("#streak-count");
+    if (streakEl) streakEl.textContent = totalLogged;
+
+    // Week chips
+    chips.innerHTML = "";
+    prog.client.weeks.forEach((week) => {
+      const chip = document.createElement("button");
+      chip.className = "week-chip";
+      if (week.id === state.workoutView.weekId) chip.classList.add("active");
+      if (week.phaseLabel) chip.classList.add("has-phase");
+      chip.innerHTML = `
+        ${week.phaseLabel ? `<span class="chip-phase">${escapeHtml(week.phaseLabel)}</span>` : ""}
+        <span class="chip-label">${escapeHtml(week.label)}</span>
+      `;
+      chip.addEventListener("click", () => {
+        state.workoutView.weekId = week.id;
+        renderWorkoutPickerUI();
+      });
+      chips.appendChild(chip);
+    });
+
+    // Day cards for the active week
+    const week = prog.client.weeks.find((w) => w.id === state.workoutView.weekId);
+    grid.innerHTML = "";
+    if (!week || !week.days.length) {
+      grid.innerHTML = `<div class="empty-state"><div class="empty-emoji">🛏️</div><h3>Rest week</h3><p>No workouts in this week.</p></div>`;
+      return;
+    }
+    week.days.forEach((day, idx) => {
+      const card = document.createElement("button");
+      card.className = "workout-card";
+      const totalEx = day.exercises.length;
+      const doneEx = day.exercises.filter((ex) => hasAnyLog(ex)).length;
+      const checked = isDayChecked(day.id);
+      const allLogged = doneEx >= totalEx && totalEx > 0;
+      if (checked || allLogged) card.classList.add("is-done");
+      else if (doneEx > 0) card.classList.add("is-partial");
+      card.style.animationDelay = `${idx * 60}ms`;
+      const icon = workoutIconFor(day.name);
+      card.innerHTML = `
+        <div class="workout-card-icon">${icon}</div>
+        <div class="workout-card-body">
+          <h4 class="workout-card-title">${escapeHtml(day.name)}</h4>
+          <div class="workout-card-meta">
+            <span class="meta-pill">${totalEx} exercise${totalEx === 1 ? "" : "s"}</span>
+            ${checked
+              ? `<span class="meta-pill meta-done">Done ✓</span>`
+              : doneEx > 0
+                ? `<span class="meta-pill meta-progress">${doneEx} / ${totalEx} logged</span>`
+                : `<span class="meta-pill meta-todo">Tap to start</span>`}
+          </div>
+        </div>
+        <div class="workout-card-chevron">›</div>
+      `;
+      card.addEventListener("click", () => {
+        state.workoutView = { mode: "detail", weekId: week.id, dayId: day.id };
+        renderWorkoutDetailUI();
+      });
+      grid.appendChild(card);
+    });
+  }
+
+  // Pick a fun emoji based on day name keywords. Pure UI flavor.
+  function workoutIconFor(name) {
+    const n = String(name || "").toLowerCase();
+    if (/(squat|lower|leg|quad|hamstring)/.test(n)) return "🦵";
+    if (/(deadlift|pull|back|row|lat)/.test(n)) return "🪝";
+    if (/(push|chest|bench|press|shoulder|delt|tricep)/.test(n)) return "💪";
+    if (/(bicep|arm|curl)/.test(n)) return "💪";
+    if (/(core|abs|trunk)/.test(n)) return "🌀";
+    if (/(cardio|condition|run|sprint|hiit)/.test(n)) return "🏃";
+    if (/(rest|recovery|mobility|stretch)/.test(n)) return "🧘";
+    return "🐉";
+  }
+
+  function renderWorkoutDetailUI() {
+    const prog = state.clientData.program;
+    const week = prog?.client?.weeks?.find((w) => w.id === state.workoutView.weekId);
+    const day = week?.days?.find((d) => d.id === state.workoutView.dayId);
+    if (!week || !day) {
+      // Day was removed; bail back to picker.
+      state.workoutView = { mode: "picker", weekId: week?.id || null, dayId: null };
+      hide($("#workout-detail")); show($("#workout-picker"));
+      return;
+    }
+
+    const head = $("#workout-detail-head");
+    const totalEx = day.exercises.length;
+    const doneEx = day.exercises.filter((ex) => hasAnyLog(ex)).length;
+    const checked = isDayChecked(day.id);
+    head.innerHTML = `
+      <div class="detail-head-top">
+        ${week.phaseLabel ? `<span class="phase-badge">${escapeHtml(week.phaseLabel)}</span>` : ""}
+        <span class="muted">${escapeHtml(week.label)}${week.focus ? " · " + escapeHtml(week.focus) : ""}</span>
+      </div>
+      <div class="detail-head-main">
+        <button class="day-check-toggle ${checked ? "checked" : ""}" id="detail-toggle" aria-label="Mark whole day complete">${checked ? "✓" : ""}</button>
+        <h2>${escapeHtml(day.name)}</h2>
+      </div>
+      <div class="detail-head-stats">
+        <span class="meta-pill">${totalEx} exercise${totalEx === 1 ? "" : "s"}</span>
+        ${doneEx > 0 ? `<span class="meta-pill meta-progress">${doneEx} / ${totalEx} logged</span>` : ""}
+        ${checked ? `<span class="meta-pill meta-done">Day done ✓</span>` : ""}
+      </div>
+    `;
+    head.querySelector("#detail-toggle").addEventListener("click", () => {
+      toggleDayComplete(day.id);
+      toast(checked ? "Unchecked" : "Day complete ✓");
+      renderWorkoutDetailUI();
+    });
+
+    const list = $("#workout-detail-list");
+    list.innerHTML = "";
+    day.exercises.forEach((ex, idx) => {
+      const card = renderClientExercise(week, day, ex, null);
+      card.style.animationDelay = `${idx * 70}ms`;
+      card.classList.add("anim-in");
+      list.appendChild(card);
+    });
+
+    hide($("#workout-picker"));
+    show($("#workout-detail"));
+    // Keep the picker grid count fresh in case user comes back.
+    renderWorkoutPickerUI();
+    // Scroll detail into view smoothly.
+    setTimeout(() => $("#workout-detail")?.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
+  }
+
+  function backToWorkoutPicker() {
+    state.workoutView.mode = "picker";
+    state.workoutView.dayId = null;
+    renderWorkoutPickerUI();
+    hide($("#workout-detail"));
+    show($("#workout-picker"));
   }
   function renderClientWeek(week, wIdx, expand, jumpTo) {
     const card = document.createElement("div");
@@ -2227,6 +2649,21 @@
     $("#btn-logout").addEventListener("click", signOutTrainer);
     $("#btn-add-client").addEventListener("click", addClientPrompt);
     $("#btn-back").addEventListener("click", renderDashboard);
+    // Coach side-nav: switch top-level view
+    document.querySelectorAll('#coach-nav [data-coach-nav]').forEach((b) => {
+      b.addEventListener("click", () => {
+        const target = b.dataset.coachNav;
+        if (target === "library") {
+          state.currentClientId = null;
+          switchCoachView("library");
+          renderWorkoutLibrary();
+        } else {
+          renderDashboard();
+        }
+      });
+    });
+    $("#btn-new-template")?.addEventListener("click", () => openTemplateEditor(null));
+    $("#btn-new-template-empty")?.addEventListener("click", () => openTemplateEditor(null));
     $("#btn-edit-client").addEventListener("click", editClient);
     $("#btn-delete-client").addEventListener("click", deleteClientPrompt);
     $("#btn-add-week").addEventListener("click", addWeek);
@@ -2262,6 +2699,7 @@
     $$(".tab[data-ctab]").forEach((t) => t.addEventListener("click", () => setClientTab(t.dataset.ctab)));
 
     $("#btn-client-logout").addEventListener("click", exitClient);
+    $("#btn-back-to-picker")?.addEventListener("click", backToWorkoutPicker);
     $("#btn-client-reload").addEventListener("click", reloadClientCode);
     $("#btn-client-send").addEventListener("click", sendProgress);
     $("#btn-log-bw").addEventListener("click", logBodyweight);
