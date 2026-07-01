@@ -6,14 +6,10 @@
   const KEY_TRAINER = "trainerpro_data_v1";
   const KEY_CLIENT  = "trainerpro_client_v1";
   const KEY_SESSION = "trainerpro_session_v1";
-  const KEY_COACH_GATE = "trainerpro_coach_gate_v1";
 
-  // Coach-access shared code. Client-side only — gate against casual visitors,
-  // not a real security boundary (anyone reading the JS can find it).
-  const COACH_GATE_CODE = "SD253";
-  function isCoachGateUnlocked() { return sessionStorage.getItem(KEY_COACH_GATE) === "1"; }
-  function lockCoachGate() { sessionStorage.removeItem(KEY_COACH_GATE); }
-  function unlockCoachGate() { sessionStorage.setItem(KEY_COACH_GATE, "1"); }
+  // Auth state flags
+  let _signOutOnLeave = false;  // set when "Remember me" is unchecked
+  let _forgotFromPanel = "#login-signin";  // tracks which signin panel opened forgot-password
 
   const DEFAULT_TRAINER = { trainer: null, clients: [] };
   const DEFAULT_CLIENT = { program: null, progress: null };
@@ -48,11 +44,6 @@
     }
   }
 
-  function hashPin(pin) {
-    let h = 0; const s = "tp:" + pin;
-    for (let i = 0; i < s.length; i++) { h = (h << 5) - h + s.charCodeAt(i); h |= 0; }
-    return String(h);
-  }
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
   function makeInviteCode() {
@@ -91,16 +82,29 @@
     return JSON.parse(json);
   }
 
+  // -------- Program editor state --------
+  // When set, renderWeeks/addWeek operate on this template instead of the current client.
+  let _programEditorId = null;
+  let _coachActiveWeekIdx = 0;
+  let _prEditIds = new Set();
+  let _prNewLifts = [];
+  let _prDragSrcId = null;
+  function currentProgramTemplate() {
+    return (state.trainerData.programTemplates || []).find((p) => p.id === _programEditorId) || null;
+  }
+
   // -------- Data factories --------
+  const DEFAULT_PR_LIFTS = ["Barbell Squat", "Deadlift", "Bench Press", "Overhead BB Press", "Strict Curl"];
   function makeClient(name) {
     return {
       id: uid(), name: name || "New Athlete",
       age: "", heightIn: "", weightLb: "",
       goals: "", notes: "",
-      weeks: [],
+      weeks: Array.from({ length: 6 }, (_, i) => { const w = makeWeek(i); w.days = [makeDay(1)]; return w; }),
       schedule: {},
-      coachPRs: [],
+      coachPRs: DEFAULT_PR_LIFTS.map((n) => ({ id: uid(), name: n, pr1: "", pr2: "", pr3: "" })),
       sessionBank: { packages: [], redemptions: [] },
+      archivedPrograms: [],
       inviteCode: makeInviteCode(),
       importedProgress: null,
       createdAt: Date.now(),
@@ -137,7 +141,7 @@
       label: label || `Week ${index + 1}`,
       focus: focus || "",
       phaseLabel: phaseLabel || "",
-      days: [makeDay(1), makeDay(2), makeDay(3)],
+      days: [],
       diet: {
         notes: "",
         calories: "",
@@ -163,7 +167,7 @@
     delete week.diet.days;
   }
   function makeDay(n, name) {
-    return { id: uid(), name: name || `Day ${n}`, exercises: [makeExercise()] };
+    return { id: uid(), name: name || `Day ${n}`, exercises: [] };
   }
   function makeExercise(seed) {
     return {
@@ -176,7 +180,140 @@
       goalReps: "",
       notes: seed?.notes || "",
       videoUrl: seed?.videoUrl || "",
+      modifiers: seed?.modifiers || [],
     };
+  }
+
+  const EXERCISE_MODIFIERS = [
+    { group: "Unilateral", tags: ["1A", "1L", "Alt"] },
+    { group: "Equipment",  tags: ["BB", "DB", "KB", "EZ Bar", "Cable", "Rope", "Band", "Machine"] },
+    { group: "Position",   tags: ["Incline", "Decline", "Elevated", "Seated", "Standing", "Raised"] },
+    { group: "Style",      tags: ["Pause", "Tempo", "Explosive", "Isometric"] },
+  ];
+
+  const TAG_COLORS = {
+    "1A":        { color: "#f87171", bg: "rgba(248,113,113,0.18)" },
+    "1L":        { color: "#fb923c", bg: "rgba(251,146,60,0.18)"  },
+    "Alt":       { color: "#f43f5e", bg: "rgba(244,63,94,0.18)"   },
+    "BB":        { color: "#818cf8", bg: "rgba(129,140,248,0.18)" },
+    "DB":        { color: "#60a5fa", bg: "rgba(96,165,250,0.18)"  },
+    "KB":        { color: "#a78bfa", bg: "rgba(167,139,250,0.18)" },
+    "EZ Bar":    { color: "#c084fc", bg: "rgba(192,132,252,0.18)" },
+    "Cable":     { color: "#2dd4bf", bg: "rgba(45,212,191,0.18)"  },
+    "Rope":      { color: "#38bdf8", bg: "rgba(56,189,248,0.18)"  },
+    "Band":      { color: "#4ade80", bg: "rgba(74,222,128,0.18)"  },
+    "Machine":   { color: "#facc15", bg: "rgba(250,204,21,0.18)"  },
+    "Incline":   { color: "#fbbf24", bg: "rgba(251,191,36,0.18)"  },
+    "Decline":   { color: "#f97316", bg: "rgba(249,115,22,0.18)"  },
+    "Elevated":  { color: "#22d3ee", bg: "rgba(34,211,238,0.18)"  },
+    "Seated":    { color: "#a3e635", bg: "rgba(163,230,53,0.18)"  },
+    "Standing":  { color: "#e879f9", bg: "rgba(232,121,249,0.18)" },
+    "Raised":    { color: "#f472b6", bg: "rgba(244,114,182,0.18)" },
+    "Pause":     { color: "#34d399", bg: "rgba(52,211,153,0.18)"  },
+    "Tempo":     { color: "#6366f1", bg: "rgba(99,102,241,0.18)"  },
+    "Explosive": { color: "#fb7185", bg: "rgba(251,113,133,0.18)" },
+    "Isometric": { color: "#94a3b8", bg: "rgba(148,163,184,0.18)" },
+  };
+  function tagColor(tag) { return TAG_COLORS[tag] || { color: "#94a3b8", bg: "rgba(148,163,184,0.18)" }; }
+
+  function groupForTag(tag) {
+    return EXERCISE_MODIFIERS.find((g) => g.tags.includes(tag)) || null;
+  }
+
+  function renderModChips(container, ex, position) {
+    // position: "before" = Unilateral+Equipment+Position  "after" = Style
+    container.innerHTML = "";
+    const groups = position === "before"
+      ? EXERCISE_MODIFIERS.filter((g) => g.group !== "Style")
+      : EXERCISE_MODIFIERS.filter((g) => g.group === "Style");
+    (ex.modifiers || []).forEach((tag) => {
+      const g = groupForTag(tag);
+      if (!g || !groups.includes(g)) return;
+      const { color, bg } = tagColor(tag);
+      const chip = document.createElement("span");
+      chip.className = "mod-chip";
+      chip.textContent = tag;
+      chip.style.setProperty("--mc", color);
+      chip.style.setProperty("--mb", bg);
+      chip.title = `${g.group} — click to remove`;
+      chip.addEventListener("click", () => {
+        ex.modifiers = (ex.modifiers || []).filter((m) => m !== tag);
+        saveTrainer();
+        renderModChips(container, ex, position);
+      });
+      container.appendChild(chip);
+    });
+  }
+
+  function openModPicker(ex, anchorBtn, chipsBefore, chipsAfter) {
+    document.querySelector(".mod-picker-pop")?.remove();
+    const pop = document.createElement("div");
+    pop.className = "mod-picker-pop";
+
+    EXERCISE_MODIFIERS.forEach(({ group, tags }) => {
+      const grp = document.createElement("div");
+      grp.className = "mod-picker-grp";
+      const lbl = document.createElement("div");
+      lbl.className = "mod-picker-lbl";
+      lbl.textContent = group;
+      grp.appendChild(lbl);
+      const row = document.createElement("div");
+      row.className = "mod-picker-row";
+      tags.forEach((tag) => {
+        const { color, bg } = tagColor(tag);
+        const btn = document.createElement("button");
+        btn.className = "mod-picker-btn" + ((ex.modifiers || []).includes(tag) ? " on" : "");
+        btn.textContent = tag;
+        if ((ex.modifiers || []).includes(tag)) { btn.style.setProperty("--mc", color); btn.style.setProperty("--mb", bg); }
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (!ex.modifiers) ex.modifiers = [];
+          if (ex.modifiers.includes(tag)) {
+            // deselect
+            ex.modifiers = ex.modifiers.filter((m) => m !== tag);
+            btn.classList.remove("on");
+            btn.style.removeProperty("--mc"); btn.style.removeProperty("--mb");
+          } else {
+            // deselect any other tag in this group first
+            tags.forEach((t) => {
+              if (t !== tag && ex.modifiers.includes(t)) {
+                ex.modifiers = ex.modifiers.filter((m) => m !== t);
+                const sibling = row.querySelector(`[data-tag="${t}"]`);
+                if (sibling) { sibling.classList.remove("on"); sibling.style.removeProperty("--mc"); sibling.style.removeProperty("--mb"); }
+              }
+            });
+            ex.modifiers.push(tag);
+            btn.classList.add("on");
+            btn.style.setProperty("--mc", color); btn.style.setProperty("--mb", bg);
+          }
+          saveTrainer();
+          renderModChips(chipsBefore, ex, "before");
+          renderModChips(chipsAfter, ex, "after");
+        });
+        btn.dataset.tag = tag;
+        row.appendChild(btn);
+      });
+      grp.appendChild(row);
+      pop.appendChild(grp);
+    });
+
+    document.body.appendChild(pop);
+    const rect = anchorBtn.getBoundingClientRect();
+    const pw = 260;
+    const ph = pop.getBoundingClientRect().height;
+    let left = rect.left;
+    if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+    const spaceBelow = window.innerHeight - rect.bottom - 8;
+    const top = spaceBelow >= ph ? rect.bottom + 6 : Math.max(8, rect.top - ph - 6);
+    pop.style.position = "fixed";
+    pop.style.top  = top + "px";
+    pop.style.left = Math.max(8, left) + "px";
+
+    setTimeout(() => {
+      document.addEventListener("click", function close(e) {
+        if (!pop.contains(e.target)) { pop.remove(); document.removeEventListener("click", close); }
+      });
+    }, 30);
   }
 
   function getYouTubeId(url) {
@@ -205,9 +342,13 @@
   if (!Array.isArray(state.trainerData.workoutTemplates)) {
     state.trainerData.workoutTemplates = [];
   }
+  if (!Array.isArray(state.trainerData.programTemplates)) {
+    state.trainerData.programTemplates = [];
+  }
   state.trainerData.clients.forEach((c) => {
     if (!c.schedule) c.schedule = {};
     if (!c.coachPRs) c.coachPRs = [];
+    if (!Array.isArray(c.archivedPrograms)) c.archivedPrograms = [];
     ensureSessionBank(c);
     if (!c.inviteCode) { c.inviteCode = makeInviteCode(); _trainerDataDirty = true; }
   });
@@ -228,7 +369,7 @@
     !localStorage.getItem(KEY_CLOUD_BACKFILLED)
   ) {
     (async () => {
-      await window.Cloud.upsertCoach(state.trainerData.coachId, state.trainerData.trainer.name);
+      await window.Cloud.upsertCoach(state.trainerData.coachId, state.trainerData.trainer.name, state.trainerData.trainer.email || "", state.trainerData.coachAuthId || null);
       for (const c of state.trainerData.clients) {
         await window.Cloud.upsertAthlete(c, state.trainerData.coachId);
       }
@@ -280,41 +421,39 @@
     show($("#screen-login"));
     hide($("#screen-app"));
     hide($("#screen-client"));
-    ["#login-role", "#login-setup", "#login-signin", "#login-client-import", "#login-athlete-setup", "#login-athlete-signin", "#login-coach-gate"]
-      .forEach((s) => hide($(s)));
-    show($(panel));
+    ["#login-role", "#login-setup", "#login-signin", "#login-client-import",
+     "#login-athlete-setup", "#login-athlete-signin",
+     "#login-forgot-password", "#login-reset-password"]
+      .forEach((s) => { const el = $(s); if (el) hide(el); });
+    const target = $(panel);
+    if (target) show(target);
+  }
+
+  function showCoachSignin() {
+    showLoginScreen("#login-signin");
+    const trainer = state.trainerData.trainer;
+    if (trainer?.name) {
+      $("#login-hello").textContent = `Welcome back, ${trainer.name}`;
+      $("#login-hello-sub").textContent = "Sign in with your email and password.";
+    } else {
+      $("#login-hello").textContent = "Coach sign in";
+      $("#login-hello-sub").textContent = "Sign in with your email and password.";
+    }
+    if (trainer?.email) { $("#login-email").value = trainer.email; }
+    else { $("#login-email").value = ""; }
+    $("#login-pw").value = "";
+    $("#login-error").classList.add("hidden");
+    setTimeout(() => (trainer?.email ? $("#login-pw") : $("#login-email")).focus(), 50);
   }
 
   function pickRole(role) {
     if (role === "trainer") {
-      // Gate any path to coach UI behind the shared access code.
-      if (!isCoachGateUnlocked()) {
-        showLoginScreen("#login-coach-gate");
-        $("#coach-gate-input").value = "";
-        $("#coach-gate-error").classList.add("hidden");
-        setTimeout(() => $("#coach-gate-input").focus(), 50);
-        return;
-      }
-      if (state.trainerData.trainer) {
-        showLoginScreen("#login-signin");
-        $("#login-hello").textContent = `Sign in as ${state.trainerData.trainer.name}.`;
-        setTimeout(() => $("#login-pin").focus(), 50);
-      } else {
-        showLoginScreen("#login-setup");
-        setTimeout(() => $("#setup-name").focus(), 50);
-      }
+      // Always show sign-in first — new coaches click "Create account" from there
+      showCoachSignin();
     } else {
-      // Athlete role: branch on whether a local profile exists
-      const profile = state.clientData.profile;
-      const program = state.clientData.program;
-      if (profile && program) {
-        showAthleteSignin();
-      } else if (program && !profile) {
-        // Migration: program loaded from older version without a profile yet
-        showAthleteSetup();
-      } else {
-        showAthleteImport();
-      }
+      // Athlete sign in — always the email+password form. New athletes use the
+      // separate "Athlete sign up" button, which goes to the invite-code flow.
+      showAthleteSignin();
     }
   }
 
@@ -337,121 +476,361 @@
     const program = state.clientData.program;
     const prefillName = state.clientData.profile?.name || program?.client?.name || "";
     $("#athlete-setup-name").value = prefillName;
+    $("#athlete-setup-email").value = state.clientData.profile?.email || "";
     $("#athlete-setup-pw").value = "";
     $("#athlete-setup-pw-confirm").value = "";
     $("#athlete-setup-error").classList.add("hidden");
-    setTimeout(() => $("#athlete-setup-pw").focus(), 50);
+    setTimeout(() => {
+      (prefillName ? $("#athlete-setup-email") : $("#athlete-setup-name")).focus();
+    }, 50);
   }
 
   function showAthleteSignin() {
     showLoginScreen("#login-athlete-signin");
     const profile = state.clientData.profile;
-    const heading = $("#athlete-signin-heading");
-    const sub = $("#athlete-signin-sub");
     if (profile?.name) {
       const firstName = profile.name.trim().split(/\s+/)[0];
-      heading.textContent = `Welcome back, ${firstName}`;
-      sub.textContent = "Enter your password to continue training.";
+      $("#athlete-signin-heading").textContent = `Welcome back, ${firstName}`;
     } else {
-      heading.textContent = "Welcome back";
-      sub.textContent = "Enter your password to continue training.";
+      $("#athlete-signin-heading").textContent = "Welcome back";
     }
+    const emailField = $("#athlete-signin-email");
+    emailField.value = profile?.email || "";
     $("#athlete-signin-pw").value = "";
     $("#athlete-signin-error").classList.add("hidden");
-    setTimeout(() => $("#athlete-signin-pw").focus(), 50);
+    setTimeout(() => (profile?.email ? $("#athlete-signin-pw") : emailField).focus(), 50);
   }
 
-  function setupAthleteProfile() {
+  async function setupAthleteProfile() {
     const name = $("#athlete-setup-name").value.trim();
+    const email = $("#athlete-setup-email").value.trim();
     const pw = $("#athlete-setup-pw").value;
     const conf = $("#athlete-setup-pw-confirm").value;
     const err = $("#athlete-setup-error");
     if (!name) return showErr(err, "Please enter your name.");
+    if (!email) return showErr(err, "Please enter your email.");
     if (pw.length < 4) return showErr(err, "Password must be at least 4 characters.");
     if (pw !== conf) return showErr(err, "Passwords don't match.");
-    state.clientData.profile = {
-      name,
-      pwHash: hashPin(pw),
-      createdAt: Date.now(),
-    };
-    saveClient();
-    const athleteId = state.clientData.program?.clientId;
-    if (window.Cloud?.enabled && athleteId) {
-      window.Cloud.upsertAthleteProfile(athleteId, state.clientData.profile);
+    if (!window.Cloud?.enabled) return showErr(err, "Cloud not available. Check your connection.");
+
+    const btn = $("#btn-athlete-setup");
+    btn.disabled = true; btn.textContent = "Saving…";
+    try {
+      let user;
+      try {
+        user = await window.Cloud.signUp(email, pw);
+      } catch (signUpErr) {
+        if (signUpErr.message === "EMAIL_CONFIRMATION_REQUIRED") {
+          showErr(err, "Almost there! Check your email for a confirmation link, then come back and sign in.");
+          btn.disabled = false; btn.textContent = "Save profile & continue";
+          return;
+        }
+        if (signUpErr.message?.toLowerCase().includes("already")) {
+          // Likely an orphaned auth account from a previously deleted athlete —
+          // deleting an athlete removes their app data but not their Supabase
+          // Auth login. Try signing into that existing account with the
+          // password just entered and re-link it to this new athlete instead
+          // of dead-ending here.
+          try {
+            user = await window.Cloud.signIn(email, pw);
+          } catch (signInErr) {
+            showErr(err, "An account with this email already exists, but that password doesn't match. Go back and use \"Forgot password?\" on the sign-in screen to reset it, then try again.");
+            btn.disabled = false; btn.textContent = "Save profile & continue";
+            return;
+          }
+        } else {
+          throw signUpErr;
+        }
+      }
+      const athleteId = state.clientData.program?.clientId;
+      if (athleteId) await window.Cloud.linkAthleteToAuth(athleteId, user.id, email);
+      state.clientData.profile = { name, email, createdAt: Date.now() };
+      saveClient();
+      if (athleteId) window.Cloud.upsertAthleteProfile(athleteId, { name, email });
+      setRememberMe(true); // default remember for new profile
+      err.classList.add("hidden");
+      playLoginFlash();
+      enterClientPortal();
+      toast(`Profile saved — welcome, ${name.split(/\s+/)[0]}!`);
+    } catch (e) {
+      showErr(err, e.message || "Failed to create account.");
+    } finally {
+      btn.disabled = false; btn.textContent = "Save profile & continue";
     }
-    err.classList.add("hidden");
-    playLoginFlash();
-    enterClientPortal();
-    toast(`Profile saved — welcome, ${name.split(/\s+/)[0]}`);
   }
 
-  function athleteSignIn() {
+  async function signInAthlete() {
+    const email = $("#athlete-signin-email").value.trim();
     const pw = $("#athlete-signin-pw").value;
     const err = $("#athlete-signin-error");
-    const profile = state.clientData.profile;
-    if (!profile) return showAthleteImport();
-    if (hashPin(pw) !== profile.pwHash) {
-      return showErr(err, "Incorrect password.");
+    const remember = $("#athlete-remember-me").checked;
+    if (!email) return showErr(err, "Please enter your email.");
+    if (!pw) return showErr(err, "Please enter your password.");
+    if (!window.Cloud?.enabled) return showErr(err, "Cloud not available. Check your connection.");
+
+    const btn = $("#btn-athlete-signin");
+    btn.disabled = true; btn.textContent = "Signing in…";
+    try {
+      const user = await window.Cloud.signIn(email, pw);
+      setRememberMe(remember);
+
+      // Always refresh from the cloud so any workouts the coach just assigned
+      // show up immediately, even on a device that already has this athlete's
+      // program cached locally.
+      let result = null;
+      try {
+        result = await window.Cloud.getAthleteByAuthUserId(user.id);
+      } catch (e) {
+        console.warn("[Cloud] refresh on sign-in failed, using cached program", e);
+      }
+
+      if (result?.athlete) {
+        const { athlete, progress } = result;
+        state.clientData.program = buildProgramFromAthlete(athlete);
+        if (progress) state.clientData.progress = progress;
+        if (!state.clientData.progress) state.clientData.progress = emptyProgress();
+        ensureProgressShape(state.clientData.progress);
+        state.clientData.profile = { name: athlete.name, email, createdAt: Date.now() };
+        saveClient();
+        err.classList.add("hidden");
+        playLoginFlash();
+        enterClientPortal();
+        return;
+      }
+
+      // No fresh cloud record (offline, or lookup failed) — fall back to the
+      // cached local program if this device already has one for this account.
+      if (state.clientData.program && state.clientData.profile?.email === email) {
+        err.classList.add("hidden");
+        playLoginFlash();
+        enterClientPortal();
+        return;
+      }
+
+      await window.Cloud.signOut();
+      showErr(err, "No athlete account found for this email. Ask your coach for an invite code.");
+    } catch (e) {
+      showErr(err, e.message || "Sign in failed.");
+    } finally {
+      btn.disabled = false; btn.textContent = "Sign in";
     }
-    err.classList.add("hidden");
-    playLoginFlash();
-    enterClientPortal();
+  }
+
+  function buildProgramFromAthlete(athlete) {
+    return {
+      kind: "tp-program", v: 2,
+      clientId: athlete.id,
+      trainerName: "",
+      sharedAt: Date.now(),
+      client: {
+        id: athlete.id,
+        name: athlete.name,
+        age: athlete.age,
+        heightIn: athlete.heightIn,
+        weightLb: athlete.weightLb,
+        goals: athlete.goals,
+        weeks: athlete.weeks || [],
+        schedule: athlete.schedule || {},
+        coachPRs: athlete.coachPRs || [],
+        inviteCode: athlete.inviteCode,
+        sessionBank: athlete.sessionBank || { packages: [], redemptions: [] },
+      },
+    };
   }
 
   function forgetAthleteProfile() {
-    if (!window.confirm("Forget this athlete account on this device? You'll need a new invite code from your coach to sign back in. Your logs on this device will be cleared.")) return;
+    if (!window.confirm("Forget this account on this device? Sign in with email + password on any device to restore your program.")) return;
     state.clientData = structuredClone(DEFAULT_CLIENT);
     saveClient();
     sessionStorage.removeItem(KEY_SESSION);
+    _signOutOnLeave = false;
+    if (window.Cloud?.enabled) window.Cloud.signOut();
     showAthleteImport();
     toast("Account forgotten");
   }
 
   function useNewInviteCode() {
-    // Keep the profile, but allow re-importing with a new invite/access code.
     showAthleteImport();
   }
 
-  // -------- Coach access gate --------
-  function submitCoachGate() {
-    const entered = ($("#coach-gate-input").value || "").trim();
-    const err = $("#coach-gate-error");
-    if (entered.toUpperCase() !== COACH_GATE_CODE) {
-      return showErr(err, "Incorrect access code.");
+  // -------- Forgot / reset password --------
+  function showForgotPassword(fromPanel) {
+    _forgotFromPanel = fromPanel;
+    const sourceEmail = fromPanel === "#login-signin"
+      ? $("#login-email")?.value
+      : $("#athlete-signin-email")?.value;
+    showLoginScreen("#login-forgot-password");
+    $("#forgot-pw-email").value = sourceEmail || "";
+    $("#forgot-pw-error").classList.add("hidden");
+    setTimeout(() => $("#forgot-pw-email").focus(), 50);
+  }
+
+  async function sendPasswordReset() {
+    const email = $("#forgot-pw-email").value.trim();
+    const err = $("#forgot-pw-error");
+    if (!email) return showErr(err, "Please enter your email.");
+    if (!window.Cloud?.enabled) return showErr(err, "Cloud not available. Check your connection.");
+    const btn = $("#btn-send-reset");
+    btn.disabled = true; btn.textContent = "Sending…";
+    try {
+      await window.Cloud.resetPassword(email);
+      err.classList.add("hidden");
+      toast("Reset link sent! Check your email.", 4000);
+      showLoginScreen(_forgotFromPanel);
+    } catch (e) {
+      showErr(err, e.message || "Failed to send reset email.");
+    } finally {
+      btn.disabled = false; btn.textContent = "Send reset link";
     }
-    err.classList.add("hidden");
-    unlockCoachGate();
-    pickRole("trainer"); // re-routes to setup or signin now that the gate is unlocked
+  }
+
+  async function submitPasswordReset() {
+    const pw = $("#reset-pw-new").value;
+    const conf = $("#reset-pw-confirm").value;
+    const err = $("#reset-pw-error");
+    if (pw.length < 4) return showErr(err, "Password must be at least 4 characters.");
+    if (pw !== conf) return showErr(err, "Passwords don't match.");
+    if (!window.Cloud?.enabled) return showErr(err, "Cloud not available. Check your connection.");
+    const btn = $("#btn-reset-pw");
+    btn.disabled = true; btn.textContent = "Updating…";
+    try {
+      await window.Cloud.updatePassword(pw);
+      err.classList.add("hidden");
+      toast("Password updated! Please sign in.", 3000);
+      history.replaceState(null, "", window.location.pathname);
+      await window.Cloud.signOut();
+      showLoginScreen("#login-role");
+    } catch (e) {
+      showErr(err, e.message || "Failed to update password.");
+    } finally {
+      btn.disabled = false; btn.textContent = "Update password";
+    }
   }
 
   // -------- Coach auth --------
-  function setupAccount() {
+  async function setupCoachAccount() {
     const name = $("#setup-name").value.trim();
-    const pin = $("#setup-pin").value;
-    const confirmPin = $("#setup-pin-confirm").value;
+    const email = $("#setup-email").value.trim();
+    const pw = $("#setup-pw").value;
+    const conf = $("#setup-pw-confirm").value;
     const err = $("#setup-error");
     if (!name) return showErr(err, "Please enter your name.");
-    if (pin.length < 4) return showErr(err, "PIN must be at least 4 characters.");
-    if (pin !== confirmPin) return showErr(err, "PINs don't match.");
-    state.trainerData.trainer = { name, pinHash: hashPin(pin) };
-    if (!state.trainerData.coachId) state.trainerData.coachId = uid();
-    saveTrainer();
-    if (window.Cloud?.enabled) {
-      window.Cloud.upsertCoach(state.trainerData.coachId, name, hashPin(pin));
+    if (!email) return showErr(err, "Please enter your email.");
+    if (pw.length < 4) return showErr(err, "Password must be at least 4 characters.");
+    if (pw !== conf) return showErr(err, "Passwords don't match.");
+    if (!window.Cloud?.enabled) return showErr(err, "Cloud not available. Check your connection.");
+
+    const btn = $("#btn-setup");
+    btn.disabled = true; btn.textContent = "Creating account…";
+    try {
+      let user;
+      try {
+        user = await window.Cloud.signUp(email, pw);
+      } catch (signUpErr) {
+        if (signUpErr.message === "EMAIL_CONFIRMATION_REQUIRED") {
+          showErr(err, "Almost there! Check your email for a confirmation link, then come back and sign in.");
+          btn.disabled = false; btn.textContent = "Create account";
+          return;
+        }
+        if (signUpErr.message?.toLowerCase().includes("already registered") || signUpErr.message?.toLowerCase().includes("already")) {
+          showErr(err, "An account with this email already exists — sign in instead.");
+          btn.disabled = false; btn.textContent = "Create account";
+          return;
+        }
+        throw signUpErr;
+      }
+
+      const isMigration = !!state.trainerData.trainer;
+      state.trainerData.trainer = { name, email };
+      if (!state.trainerData.coachId) state.trainerData.coachId = uid();
+      state.trainerData.coachAuthId = user.id;
+      saveTrainer();
+      await window.Cloud.upsertCoach(state.trainerData.coachId, name, email, user.id);
+      if (isMigration) {
+        for (const c of state.trainerData.clients) {
+          await window.Cloud.upsertAthlete(c, state.trainerData.coachId);
+        }
+      }
+      setRememberMe(true); // default remember for new account
+      err.classList.add("hidden");
+      playLoginFlash();
+      signIntoTrainer();
+      toast(isMigration ? "Account upgraded — welcome!" : `Welcome, ${name.split(/\s+/)[0]}!`);
+    } catch (e) {
+      showErr(err, e.message || "Failed to create account.");
+    } finally {
+      btn.disabled = false; btn.textContent = "Create account";
     }
-    err.classList.add("hidden");
-    playLoginFlash();
-    signIntoTrainer();
   }
-  function signIn() {
-    const pin = $("#login-pin").value;
+
+  async function signInCoach() {
+    const email = $("#login-email").value.trim();
+    const pw = $("#login-pw").value;
     const err = $("#login-error");
-    if (!state.trainerData.trainer) return;
-    if (hashPin(pin) !== state.trainerData.trainer.pinHash) return showErr(err, "Incorrect PIN.");
-    err.classList.add("hidden");
-    playLoginFlash();
-    signIntoTrainer();
+    const remember = $("#coach-remember-me").checked;
+    if (!email) return showErr(err, "Please enter your email.");
+    if (!pw) return showErr(err, "Please enter your password.");
+    if (!window.Cloud?.enabled) return showErr(err, "Cloud not available. Check your connection.");
+
+    const btn = $("#btn-signin");
+    btn.disabled = true; btn.textContent = "Signing in…";
+    try {
+      const user = await window.Cloud.signIn(email, pw);
+      setRememberMe(remember);
+
+      // Fast path: local data exists on this device
+      if (state.trainerData.trainer) {
+        if (!state.trainerData.coachAuthId) {
+          state.trainerData.coachAuthId = user.id;
+          if (!state.trainerData.trainer.email) state.trainerData.trainer.email = email;
+          saveTrainer();
+          window.Cloud.upsertCoach(state.trainerData.coachId, state.trainerData.trainer.name, email, user.id);
+        }
+        err.classList.add("hidden");
+        playLoginFlash();
+        signIntoTrainer();
+        return;
+      }
+
+      // New device: fetch from cloud
+      const coachData = await window.Cloud.getCoachByAuthUserId(user.id);
+      if (coachData) {
+        populateCoachFromCloud(coachData.coach, coachData.athletes);
+        err.classList.add("hidden");
+        playLoginFlash();
+        signIntoTrainer();
+        return;
+      }
+
+      await window.Cloud.signOut();
+      showErr(err, "No coach account found for this email. Create a new account.");
+      setTimeout(() => showLoginScreen("#login-setup"), 1800);
+    } catch (e) {
+      showErr(err, e.message || "Sign in failed.");
+    } finally {
+      btn.disabled = false; btn.textContent = "Sign in";
+    }
   }
+
+  function populateCoachFromCloud(coach, athletes) {
+    state.trainerData.trainer = { name: coach.display_name || "", email: coach.email || "" };
+    state.trainerData.coachId = coach.id;
+    state.trainerData.coachAuthId = coach.auth_user_id;
+    state.trainerData.clients = (athletes || []).map((a) => {
+      if (!a.schedule) a.schedule = {};
+      if (!a.coachPRs) a.coachPRs = [];
+      ensureSessionBank(a);
+      if (!a.inviteCode) a.inviteCode = makeInviteCode();
+      return a;
+    });
+    saveTrainer();
+    localStorage.setItem(KEY_CLOUD_BACKFILLED, String(Date.now()));
+  }
+
+  function setRememberMe(remember) {
+    _signOutOnLeave = !remember;
+  }
+
   function signIntoTrainer() {
     state.mode = "trainer";
     sessionStorage.setItem(KEY_SESSION, "trainer");
@@ -461,49 +840,98 @@
     $("#header-trainer-name").textContent = state.trainerData.trainer.name;
     renderDashboard();
   }
+
   function signOutTrainer() {
     state.mode = null;
     sessionStorage.removeItem(KEY_SESSION);
     state.currentClientId = null;
-    $("#login-pin").value = "";
-    pickRole("trainer");
+    _signOutOnLeave = false;
+    if (window.Cloud?.enabled) window.Cloud.signOut();
+    showLoginScreen("#login-role");
   }
+
   function resetTrainerAccount() {
     if (!window.confirm("Delete coach account AND all athlete data on this device?")) return;
     state.trainerData = structuredClone(DEFAULT_TRAINER);
     saveTrainer();
     sessionStorage.removeItem(KEY_SESSION);
-    lockCoachGate(); // next coach setup must re-enter the access code
-    $("#setup-name").value = ""; $("#setup-pin").value = ""; $("#setup-pin-confirm").value = "";
+    _signOutOnLeave = false;
+    if (window.Cloud?.enabled) window.Cloud.signOut();
     showLoginScreen("#login-role");
   }
+
   function showErr(el, msg) { el.textContent = msg; el.classList.remove("hidden"); }
 
   // -------- Dashboard --------
   // ------------ Coach view router ------------
   function switchCoachView(name) {
-    // Routes between #view-dashboard / #view-workout-library / #view-client.
-    // Side-nav active state syncs to the chosen top-level view.
     const map = {
-      athletes: "#view-dashboard",
-      library:  "#view-workout-library",
-      client:   "#view-client",
+      athletes:        "#view-dashboard",
+      overview:        "#view-overview",
+      programs:        "#view-programs",
+      "program-editor": "#view-program-editor",
+      library:         "#view-workout-library",
+      client:          "#view-client",
     };
     Object.values(map).forEach((sel) => { const el = $(sel); if (el) hide(el); });
     show($(map[name] || map.athletes));
-    // Side-nav highlight: client view stays under "athletes"
-    const navKey = name === "client" ? "athletes" : name;
+    const navKey = { client: "athletes", "program-editor": "programs" }[name] || name;
     document.querySelectorAll('#coach-nav [data-coach-nav]').forEach((b) => {
       b.classList.toggle("active", b.dataset.coachNav === navKey);
     });
+    if (name === "program-editor") { showLibSidebar(); } else if (name !== "client") { hideLibSidebar(); }
+  }
+
+  const AVATAR_COLORS = ["#06b6d4","#10b981","#8b5cf6","#f59e0b","#ef4444","#ec4899","#3b82f6","#f97316"];
+  function avatarColor(name) {
+    const code = (name || "?").toUpperCase().charCodeAt(0);
+    return AVATAR_COLORS[code % AVATAR_COLORS.length];
+  }
+  function clientInitials(name) {
+    return (name || "?").split(" ").map(p => p[0] || "").join("").slice(0, 2).toUpperCase();
+  }
+  function nameInitials(name) {
+    const parts = (name || "?").trim().split(/\s+/);
+    return (parts[0][0] + (parts[1]?.[0] || "")).toUpperCase();
+  }
+
+  function updateHeaderBreadcrumb(client) {
+    const bc = $("#header-breadcrumb");
+    const brand = $("#header-brand");
+    if (client) {
+      show(bc);
+      hide(brand);
+      $("#breadcrumb-athlete-name").textContent = client.name;
+    } else {
+      hide(bc);
+      show(brand);
+    }
   }
 
   function renderDashboard() {
     state.currentClientId = null;
     switchCoachView("athletes");
+    updateHeaderBreadcrumb(null);
+
     const grid = $("#client-grid");
     const empty = $("#client-empty");
     grid.innerHTML = "";
+
+    // Stats strip
+    let strip = $("#dash-stats-strip");
+    if (!strip) {
+      strip = document.createElement("div");
+      strip.id = "dash-stats-strip";
+      strip.className = "dash-stats-strip";
+      grid.parentElement.insertBefore(strip, grid);
+    }
+    const totalWeeks = state.trainerData.clients.reduce((n, c) => n + c.weeks.length, 0);
+    const totalEx = state.trainerData.clients.reduce((n, c) =>
+      n + c.weeks.reduce((m, w) => m + w.days.reduce((k, d) => k + d.exercises.length, 0), 0), 0);
+    strip.innerHTML = `
+      <div class="dash-stat-item"><div class="num">${state.trainerData.clients.length}</div><div class="lbl">Athletes</div></div>
+      <div class="dash-stat-item"><div class="num">${totalWeeks}</div><div class="lbl">Program Weeks</div></div>
+      <div class="dash-stat-item"><div class="num">${totalEx}</div><div class="lbl">Exercises</div></div>`;
 
     if (state.trainerData.clients.length === 0) { show(empty); return; }
     hide(empty);
@@ -522,31 +950,358 @@
         Object.keys(c.importedProgress.dayCompletions || {}).length > 0 ||
         Object.keys(c.importedProgress.exerciseLogs || {}).length > 0
       );
-      const progressBlock = totalDays === 0
-        ? `<div class="week-progress-mini no-data">No program yet</div>`
-        : !hasSyncedData
-          ? `<div class="week-progress-mini no-data">Awaiting first sync</div>`
-          : `
-            <div class="week-progress-mini${isComplete ? " complete" : ""}">
-              <div class="progress-label">
-                <span>${completedDays} / ${totalDays} days complete</span>
-                <span class="pct">${pct}%</span>
-              </div>
-              <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
-            </div>`;
+
       const card = document.createElement("div");
       card.className = "client-card";
-      card.innerHTML = `
-        <h3>${escapeHtml(c.name)}</h3>
-        <div class="meta">${c.age ? escapeHtml(c.age) + " yrs" : "Age not set"}${c.weightLb ? " · " + escapeHtml(c.weightLb) + " lb" : ""}</div>
-        <div class="stats">
-          <div class="stat"><strong>${weekCount}</strong>${weekCount === 1 ? "week" : "weeks"}</div>
-          <div class="stat"><strong>${exerciseCount}</strong>${exerciseCount === 1 ? "exercise" : "exercises"}</div>
-        </div>
-        ${progressBlock}`;
-      card.addEventListener("click", () => openClient(c.id));
+
+      // Top: avatar + name + meta
+      const top = document.createElement("div");
+      top.className = "client-card-top";
+      const avatar = document.createElement("div");
+      avatar.className = "client-avatar";
+      avatar.style.background = avatarColor(c.name);
+      avatar.textContent = nameInitials(c.name);
+      const info = document.createElement("div");
+      info.className = "client-card-info";
+      const nameEl = document.createElement("h3");
+      nameEl.textContent = c.name;
+      const metaEl = document.createElement("div");
+      metaEl.className = "meta";
+      const metaParts = [];
+      if (c.age) metaParts.push(c.age + " yrs");
+      if (c.weightLb) metaParts.push(c.weightLb + " lb");
+      metaEl.textContent = metaParts.join(" · ") || "Profile incomplete";
+      info.appendChild(nameEl);
+      info.appendChild(metaEl);
+      top.appendChild(avatar);
+      top.appendChild(info);
+
+      // Stats row
+      const statsRow = document.createElement("div");
+      statsRow.className = "stats";
+      statsRow.innerHTML = `
+        <div class="stat"><strong>${weekCount}</strong>${weekCount === 1 ? "wk" : "wks"}</div>
+        <div class="stat"><strong>${exerciseCount}</strong>${exerciseCount === 1 ? "exercise" : "exercises"}</div>`;
+
+      // Progress
+      const prog = document.createElement("div");
+      if (totalDays === 0) {
+        prog.className = "week-progress-mini no-data";
+        prog.textContent = "No program yet";
+      } else if (!hasSyncedData) {
+        prog.className = "week-progress-mini no-data";
+        prog.textContent = "Awaiting first sync";
+      } else {
+        prog.className = `week-progress-mini${isComplete ? " complete" : ""}`;
+        prog.innerHTML = `
+          <div class="progress-label">
+            <span>${completedDays} / ${totalDays} days</span>
+            <span class="pct">${pct}%</span>
+          </div>
+          <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>`;
+      }
+
+      // Quick actions
+      const actions = document.createElement("div");
+      actions.className = "card-quick-actions";
+
+      const openBtn = document.createElement("button");
+      openBtn.className = "btn btn-primary btn-sm";
+      openBtn.textContent = "Program";
+      openBtn.addEventListener("click", (e) => { e.stopPropagation(); openClient(c.id); setTab("program"); });
+
+      const shareBtn = document.createElement("button");
+      shareBtn.className = "btn btn-ghost btn-sm";
+      shareBtn.textContent = "Share";
+      shareBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openClient(c.id);
+        shareClient();
+      });
+
+      const inviteBtn = document.createElement("button");
+      inviteBtn.className = "btn btn-ghost btn-sm";
+      inviteBtn.textContent = "🔑 Code";
+      inviteBtn.title = c.inviteCode || "";
+      inviteBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (c.inviteCode) {
+          navigator.clipboard?.writeText(c.inviteCode)
+            .then(() => toast(`Invite code copied: ${c.inviteCode}`))
+            .catch(() => toast(`Invite code: ${c.inviteCode}`, 4000));
+        } else {
+          toast("No invite code — open athlete to generate one.");
+        }
+      });
+
+      actions.appendChild(openBtn);
+      actions.appendChild(shareBtn);
+      actions.appendChild(inviteBtn);
+
+      card.appendChild(top);
+      card.appendChild(statsRow);
+      card.appendChild(prog);
+      card.appendChild(actions);
+      card.addEventListener("click", () => { openClient(c.id); setTab("profile"); });
       grid.appendChild(card);
     }
+  }
+
+  // -------- Program Templates --------
+  function ensureProgramTemplates() {
+    if (!Array.isArray(state.trainerData.programTemplates)) {
+      state.trainerData.programTemplates = [];
+    }
+  }
+
+  function renderProgramsList() {
+    ensureProgramTemplates();
+    _programEditorId = null;
+    switchCoachView("programs");
+    updateHeaderBreadcrumb(null);
+    const grid = $("#program-template-grid");
+    const empty = $("#program-template-empty");
+    grid.innerHTML = "";
+    const templates = state.trainerData.programTemplates;
+    if (!templates.length) { show(empty); hide(grid); return; }
+    hide(empty); show(grid);
+    templates.forEach((tpl) => {
+      const weekCount = tpl.weeks.length;
+      const exCount = tpl.weeks.reduce((n, w) => n + w.days.reduce((m, d) => m + d.exercises.length, 0), 0);
+      const card = document.createElement("div");
+      card.className = "program-tpl-card";
+      const nameEl = document.createElement("h3");
+      nameEl.textContent = tpl.name || "Untitled Program";
+      const desc = document.createElement("p");
+      desc.className = "desc";
+      desc.textContent = tpl.description || "";
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent = `${weekCount} week${weekCount !== 1 ? "s" : ""} · ${exCount} exercise${exCount !== 1 ? "s" : ""}`;
+      const actions = document.createElement("div");
+      actions.className = "program-tpl-actions";
+      const editBtn = document.createElement("button");
+      editBtn.className = "btn btn-primary btn-sm";
+      editBtn.textContent = "Edit";
+      editBtn.addEventListener("click", () => openProgramEditor(tpl.id));
+      const assignBtn = document.createElement("button");
+      assignBtn.className = "btn btn-ghost btn-sm";
+      assignBtn.textContent = "Assign to athlete";
+      assignBtn.addEventListener("click", () => assignProgramPrompt(tpl.id));
+      const deleteBtn = document.createElement("button");
+      deleteBtn.className = "btn btn-ghost btn-sm";
+      deleteBtn.style.color = "var(--danger)";
+      deleteBtn.textContent = "Delete";
+      deleteBtn.addEventListener("click", () => {
+        if (!window.confirm(`Delete "${tpl.name || "this program"}"?`)) return;
+        state.trainerData.programTemplates = state.trainerData.programTemplates.filter((p) => p.id !== tpl.id);
+        saveTrainer(); renderProgramsList();
+      });
+      actions.appendChild(editBtn);
+      actions.appendChild(assignBtn);
+      actions.appendChild(deleteBtn);
+      card.appendChild(nameEl);
+      if (tpl.description) card.appendChild(desc);
+      card.appendChild(meta);
+      card.appendChild(actions);
+      grid.appendChild(card);
+    });
+  }
+
+  function openProgramEditor(id) {
+    ensureProgramTemplates();
+    _programEditorId = id;
+    _coachActiveWeekIdx = 0;
+    const tpl = currentProgramTemplate(); if (!tpl) return;
+    switchCoachView("program-editor");
+    updateHeaderBreadcrumb({ name: tpl.name || "Program" });
+    $("#program-editor-name").value = tpl.name || "";
+    $("#program-editor-desc").value = tpl.description || "";
+    renderWeeks();
+  }
+
+  function newProgram() {
+    ensureProgramTemplates();
+    const tpl = { id: uid(), name: "", description: "", weeks: [], createdAt: Date.now() };
+    state.trainerData.programTemplates.push(tpl);
+    saveTrainer();
+    openProgramEditor(tpl.id);
+    setTimeout(() => $("#program-editor-name").focus(), 80);
+  }
+
+  function assignProgramPrompt(tplId) {
+    const tpl = (state.trainerData.programTemplates || []).find((p) => p.id === tplId);
+    if (!tpl) return;
+    const clients = state.trainerData.clients;
+    if (!clients.length) { toast("No athletes yet — add one first."); return; }
+
+    let selectedId = null;
+
+    const cardsHtml = clients.map((c) => {
+      const weekCount = c.weeks?.length || 0;
+      return `<div class="assign-athlete-card" data-cid="${escapeHtml(c.id)}">
+        <div class="assign-athlete-name">${escapeHtml(c.name)}</div>
+        <div class="assign-athlete-meta">${weekCount ? weekCount + " week" + (weekCount !== 1 ? "s" : "") + " currently" : "No program yet"}</div>
+      </div>`;
+    }).join("");
+
+    openModal({
+      title: `Assign "${tpl.name || "Program"}"`,
+      body: `<p class="muted" style="margin-bottom:0.75em">Pick an athlete to receive this program.</p>
+             <div class="assign-athlete-grid">${cardsHtml}</div>`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Assign →", className: "btn btn-primary", onClick: () => {
+          if (!selectedId) { toast("Select an athlete first"); return; }
+          const client = clients.find((c) => c.id === selectedId);
+          if (!client) return;
+
+          const doAssign = (archiveFirst) => {
+            if (archiveFirst) {
+              if (!Array.isArray(client.archivedPrograms)) client.archivedPrograms = [];
+              const d = new Date();
+              client.archivedPrograms.unshift({
+                id: uid(),
+                label: "Archived — " + d.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+                archivedAt: d.toISOString(),
+                weeks: JSON.parse(JSON.stringify(client.weeks)),
+                schedule: JSON.parse(JSON.stringify(client.schedule || {})),
+              });
+            }
+            client.weeks = JSON.parse(JSON.stringify(tpl.weeks)).map((w) => ({
+              ...w, id: uid(),
+              days: w.days.map((d) => ({
+                ...d, id: uid(),
+                exercises: d.exercises.map((e) => ({ ...e, id: uid() })),
+              })),
+            }));
+            saveTrainer();
+            closeModal();
+            toast(archiveFirst
+              ? `Archived old program & assigned "${tpl.name || "Program"}" to ${client.name} ✓`
+              : `"${tpl.name || "Program"}" assigned to ${client.name} ✓`);
+            openClient(client.id);
+            setTab("program");
+          };
+
+          if (client.weeks.length > 0) {
+            const wk = client.weeks.length;
+            openModal({
+              title: `Replace ${client.name}'s program?`,
+              body: `<p style="margin-bottom:0.5em">${client.name} already has a ${wk}-week program.</p>
+                     <p class="muted">Archive it before replacing so you can view it later?</p>`,
+              actions: [
+                { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+                { label: "Replace only", className: "btn btn-ghost", onClick: () => doAssign(false) },
+                { label: "Archive & replace", className: "btn btn-primary", onClick: () => doAssign(true) },
+              ],
+            });
+          } else {
+            doAssign(false);
+          }
+        }},
+      ],
+    });
+
+    $("#modal-body").querySelectorAll(".assign-athlete-card").forEach((card) => {
+      card.addEventListener("click", () => {
+        $("#modal-body").querySelectorAll(".assign-athlete-card").forEach((el) => el.classList.remove("selected"));
+        card.classList.add("selected");
+        selectedId = card.dataset.cid;
+      });
+    });
+  }
+
+  function openLoadProgramModal() {
+    const c = currentClient(); if (!c) return;
+    const programs = state.trainerData.programTemplates || [];
+
+    if (!programs.length) {
+      openModal({
+        title: "Load Program",
+        body: `<div class="empty-state" style="padding:2em 1em">
+          <div class="empty-emoji">📂</div>
+          <h3>No programs yet</h3>
+          <p>Go to <strong>Programs</strong> in the sidebar to create one first.</p>
+        </div>`,
+        actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
+      });
+      return;
+    }
+
+    const cardsHtml = programs.map((p) => {
+      const weekCount = p.weeks.length;
+      const dayCount  = p.weeks.reduce((n, w) => n + w.days.length, 0);
+      const exCount   = p.weeks.reduce((n, w) => n + w.days.reduce((m, d) => m + d.exercises.length, 0), 0);
+      const phases    = [...new Set(p.weeks.map((w) => w.phaseLabel).filter(Boolean))];
+      const phaseHtml = phases.map((ph) => `<span class="meta-pill">${escapeHtml(ph)}</span>`).join("");
+      return `<div class="load-prog-card" data-pid="${escapeHtml(p.id)}">
+        <div class="load-prog-name">${escapeHtml(p.name || "Untitled Program")}</div>
+        ${p.description ? `<div class="load-prog-desc">${escapeHtml(p.description)}</div>` : ""}
+        <div class="load-prog-pills">
+          <span class="meta-pill">${weekCount} week${weekCount !== 1 ? "s" : ""}</span>
+          <span class="meta-pill">${dayCount} day${dayCount !== 1 ? "s" : ""}</span>
+          <span class="meta-pill">${exCount} exercise${exCount !== 1 ? "s" : ""}</span>
+          ${phaseHtml}
+        </div>
+      </div>`;
+    }).join("");
+
+    openModal({
+      title: "Load Program",
+      body: `<p class="muted" style="margin-bottom:0.8em">Choose a program to load into <strong>${escapeHtml(c.name)}</strong>'s training plan.</p>
+             <div class="load-prog-grid">${cardsHtml}</div>`,
+      actions: [{ label: "Cancel", className: "btn btn-ghost", onClick: closeModal }],
+    });
+
+    $("#modal-body").querySelectorAll(".load-prog-card").forEach((card) => {
+      const pid = card.dataset.pid;
+      const p = programs.find((x) => x.id === pid);
+      if (!p) return;
+      card.addEventListener("click", () => {
+        const doLoad = (archiveFirst) => {
+          if (archiveFirst) {
+            if (!Array.isArray(c.archivedPrograms)) c.archivedPrograms = [];
+            const d = new Date();
+            c.archivedPrograms.unshift({
+              id: uid(),
+              label: "Archived — " + d.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+              archivedAt: d.toISOString(),
+              weeks: JSON.parse(JSON.stringify(c.weeks)),
+              schedule: JSON.parse(JSON.stringify(c.schedule || {})),
+            });
+          }
+          c.weeks = JSON.parse(JSON.stringify(p.weeks)).map((w) => ({
+            ...w, id: uid(),
+            days: w.days.map((d) => ({
+              ...d, id: uid(),
+              exercises: d.exercises.map((e) => ({ ...e, id: uid() })),
+            })),
+          }));
+          saveTrainer();
+          closeModal();
+          renderWeeks(); renderDiet(); renderCoachCalendar();
+          toast(archiveFirst
+            ? `Archived old program & loaded "${p.name || "Program"}" ✓`
+            : `"${p.name || "Program"}" loaded ✓`);
+        };
+
+        if (c.weeks.length > 0) {
+          openModal({
+            title: `Replace ${c.name}'s program?`,
+            body: `<p style="margin-bottom:0.5em">${c.name} already has a ${c.weeks.length}-week program.</p>
+                   <p class="muted">Archive it before replacing so you can view it later?</p>`,
+            actions: [
+              { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+              { label: "Replace only", className: "btn btn-ghost", onClick: () => doLoad(false) },
+              { label: "Archive & replace", className: "btn btn-primary", onClick: () => doLoad(true) },
+            ],
+          });
+        } else {
+          doLoad(false);
+        }
+      });
+    });
   }
 
   function addClientPrompt() {
@@ -584,11 +1339,15 @@
   function openClient(id) {
     const c = state.trainerData.clients.find((x) => x.id === id);
     if (!c) return renderDashboard();
+    _coachActiveWeekIdx = 0;
+    _prEditIds = new Set();
+    _prNewLifts = [];
     if (!c.schedule) c.schedule = {};
     if (!c.coachPRs) c.coachPRs = [];
     ensureSessionBank(c);
     state.currentClientId = id;
     switchCoachView("client");
+    updateHeaderBreadcrumb(c);
     $("#client-name-display").textContent = c.name;
     $("#client-meta-display").textContent = clientMetaText(c);
     setTab("profile");
@@ -627,6 +1386,13 @@
     state.currentTab = name;
     $$(".tab[data-tab]").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
     $$(".tab-panel[data-tab-panel]").forEach((p) => p.classList.toggle("active", p.dataset.tabPanel === name));
+    if (name === "program") { showLibSidebar(); } else { hideLibSidebar(); }
+    if (name === "archive") {
+      const c = currentClient();
+      renderArchiveSection(c);
+      const empty = $("#archive-empty");
+      if (empty) empty.classList.toggle("hidden", !!(c?.archivedPrograms?.length));
+    }
   }
 
   // -------- Profile --------
@@ -680,7 +1446,7 @@
       notes: "",
       exercises: Array.isArray(exercises) && exercises.length
         ? exercises.map((e) => ({ ...makeExercise(), ...e, id: uid() }))
-        : [makeExercise()],
+        : [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -794,6 +1560,60 @@
   }
 
   function renderWorkoutLibrary() {
+    // --- Full Programs section ---
+    const progGrid = $("#library-program-grid");
+    const progEmpty = $("#library-programs-empty");
+    if (progGrid) {
+      progGrid.innerHTML = "";
+      const programs = (state.trainerData.programTemplates || []).filter((p) => p.savedToLibrary);
+      if (!programs.length) {
+        progGrid.style.display = "none";
+        if (progEmpty) progEmpty.style.display = "";
+      } else {
+        progGrid.style.display = "";
+        if (progEmpty) progEmpty.style.display = "none";
+        programs.forEach((p) => {
+          const weekCount = p.weeks.length;
+          const exCount = p.weeks.reduce((n, w) => n + w.days.reduce((m, d) => m + d.exercises.length, 0), 0);
+          const card = document.createElement("div");
+          card.className = "template-card prog-library-card";
+          card.innerHTML = `
+            <div class="template-card-head">
+              <div class="template-card-icon">📋</div>
+              <div style="flex:1;min-width:0">
+                <h3>${escapeHtml(p.name || "Untitled Program")}</h3>
+                ${p.description ? `<p class="template-focus">${escapeHtml(p.description)}</p>` : ""}
+              </div>
+            </div>
+            <div class="template-pills">
+              <span class="meta-pill">${weekCount} week${weekCount !== 1 ? "s" : ""}</span>
+              <span class="meta-pill">${exCount} exercise${exCount !== 1 ? "s" : ""}</span>
+            </div>
+            <div class="template-actions">
+              <button class="btn btn-ghost btn-sm" data-prog-edit>Edit</button>
+              <button class="btn btn-primary btn-sm" data-prog-assign>Assign to athlete →</button>
+              <button class="btn btn-danger btn-sm" data-prog-remove>Remove</button>
+            </div>`;
+          card.querySelector("[data-prog-edit]").addEventListener("click", (e) => {
+            e.stopPropagation(); openProgramEditor(p.id);
+          });
+          card.querySelector("[data-prog-assign]").addEventListener("click", (e) => {
+            e.stopPropagation(); assignProgramPrompt(p.id);
+          });
+          card.querySelector("[data-prog-remove]").addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (!window.confirm(`Remove "${p.name || "this program"}" from the library?`)) return;
+            p.savedToLibrary = false;
+            saveTrainer(); renderWorkoutLibrary();
+            toast("Removed from library");
+          });
+          card.addEventListener("click", () => openProgramEditor(p.id));
+          progGrid.appendChild(card);
+        });
+      }
+    }
+
+    // --- Day Templates section ---
     const grid = $("#template-grid");
     const empty = $("#template-empty");
     grid.innerHTML = "";
@@ -997,199 +1817,920 @@
     toast("Athlete deleted");
   }
 
+  // -------- Exercise Library --------
+  const EXERCISE_LIBRARY = [
+    { cat: "Chest",      ex: ["Bench Press","Fly","Push-Up","Dips","Pec Deck","Pullover"] },
+    { cat: "Back",       ex: ["Pull-Up","Row","Pendlay Row","Lat Pulldown","T-Bar Row","Chest-Supported Row","Straight-Arm Pulldown"] },
+    { cat: "Quads",      ex: ["Back Squat","Front Squat","Leg Press","Hack Squat","Trap Bar Deadlift","Bulgarian Split Squat","Walking Lunge","Leg Extension","Step-Up","Goblet Squat","Box Squat"] },
+    { cat: "Hamstrings", ex: ["Deadlift","Romanian Deadlift","Stiff-Leg Deadlift","Lying Leg Curl","Leg Curl","Nordic Curl","Good Morning","Glute-Ham Raise"] },
+    { cat: "Glutes",     ex: ["Hip Thrust","Glute Bridge","Kickback","Sumo Deadlift","Abductor","Lateral Walk","Donkey Kick","Pull-Through"] },
+    { cat: "Adductors",  ex: ["Hip Adduction","Copenhagen Plank","Lateral Lunge","Cossack Squat","Sumo Squat","Side-Lying Adduction"] },
+    { cat: "Shoulders",  ex: ["Overhead Press","Lateral Raise","Front Raise","Rear Delt Fly","Arnold Press","Upright Row","Face Pull","Shrug","Cable Crossover"] },
+    { cat: "Biceps",     ex: ["Curl","Hammer Curl","Preacher Curl","Concentration Curl","EZ-Bar Curl","Spider Curl"] },
+    { cat: "Triceps",    ex: ["Tricep Pushdown","Skull Crusher","Close-Grip Bench Press","Overhead Tricep Extension","Tricep Dips","Diamond Push-Up","Kickback"] },
+    { cat: "Core",       ex: ["Plank","Side Plank","Crunch","Russian Twist","Leg Raise","Hanging Leg Raise","Ab Wheel Rollout","Dead Bug","Pallof Press","Dragon Flag"] },
+    { cat: "Calves",     ex: ["Calf Raise","Donkey Calf Raise","Leg Press Calf Raise"] },
+    { cat: "Carries",    ex: ["Farmer's Carry","Suitcase Carry","Overhead Carry","Rack Carry","Zercher Carry","Trap Bar Carry","Bear Hug Carry","Bottoms-Up Carry","Waiter Walk"] },
+    { cat: "Cardio",     ex: ["Treadmill Run","Stationary Bike","Rowing","Jump Rope","Sled Push","Battle Ropes","Farmer's Walk","Assault Bike","Stair Climber"] },
+  ];
+
+  function openExLibrary() {
+    show($("#ex-library-overlay"));
+    renderExLibrary($("#ex-library-search").value || "");
+    setTimeout(() => $("#ex-library-search").focus(), 100);
+  }
+  function closeExLibrary() { hide($("#ex-library-overlay")); }
+  function renderExLibrary(filter) {
+    const q = filter.toLowerCase().trim();
+    const body = $("#ex-library-body");
+    let html = "";
+    for (const { cat, ex } of EXERCISE_LIBRARY) {
+      const items = q ? ex.filter((e) => e.toLowerCase().includes(q)) : ex;
+      if (!items.length) continue;
+      html += `<div class="ex-cat-header">${escapeHtml(cat)}</div>`;
+      html += items.map((name) =>
+        `<div class="ex-lib-item" draggable="true" data-exname="${escapeHtml(name)}">${escapeHtml(name)}</div>`
+      ).join("");
+    }
+    body.innerHTML = html || '<div class="ex-lib-empty">No exercises found.</div>';
+    body.querySelectorAll(".ex-lib-item").forEach((item) => {
+      item.addEventListener("dragstart", (e) => {
+        e.dataTransfer.setData("text/ex-name", item.dataset.exname);
+        e.dataTransfer.effectAllowed = "copy";
+      });
+    });
+  }
+
+  // -------- Persistent Library Sidebar --------
+  function renderSidebarLibrary(filter) {
+    const q = (filter || "").toLowerCase().trim();
+    const body = $("#ex-lib-sb-body");
+    if (!body) return;
+    body.innerHTML = "";
+    for (const { cat, ex } of EXERCISE_LIBRARY) {
+      const items = q ? ex.filter((e) => e.toLowerCase().includes(q)) : ex;
+      if (!items.length) continue;
+      const catEl = document.createElement("div");
+      catEl.className = "ex-lib-sb-cat";
+      catEl.textContent = cat;
+      body.appendChild(catEl);
+      items.forEach((name) => {
+        const item = document.createElement("div");
+        item.className = "ex-lib-sb-item";
+        item.textContent = name;
+        item.draggable = true;
+        item.dataset.exname = name;
+        item.addEventListener("dragstart", (e) => {
+          item.classList.add("dragging-active");
+          e.dataTransfer.setData("text/ex-name", name);
+          e.dataTransfer.effectAllowed = "copy";
+        });
+        item.addEventListener("dragend", () => item.classList.remove("dragging-active"));
+        body.appendChild(item);
+      });
+    }
+    if (!body.children.length) {
+      body.innerHTML = '<div style="padding:1rem;color:var(--muted);font-size:0.82rem">No exercises found.</div>';
+    }
+  }
+
+  function showLibSidebar() {
+    const layout = document.querySelector(".coach-layout");
+    if (layout) layout.classList.add("show-lib-sidebar");
+    renderSidebarLibrary($("#ex-lib-sb-search")?.value || "");
+  }
+  function hideLibSidebar() {
+    const layout = document.querySelector(".coach-layout");
+    if (layout) layout.classList.remove("show-lib-sidebar");
+  }
+
+  // -------- Drum Picker (kept for fallback) --------
+  const REPS_VALUES   = [...Array.from({ length: 30 }, (_, i) => String(i + 1)), "AMAP"];
+  const WEIGHT_VALUES = Array.from({ length: 161 }, (_, i) => i === 0 ? "BW" : String(i * 5));
+  const SETS_VALUES   = ["1","2","3","4","5","6"];
+  const WEIGHT_RANGES = [
+    { label: "BW",      values: ["BW"] },
+    { label: "5–100",   values: Array.from({length:20}, (_,i) => String((i+1)*5)) },
+    { label: "105–200", values: Array.from({length:20}, (_,i) => String(105+i*5)) },
+    { label: "205–300", values: Array.from({length:20}, (_,i) => String(205+i*5)) },
+    { label: "305–400", values: Array.from({length:20}, (_,i) => String(305+i*5)) },
+    { label: "405+",    values: Array.from({length:80}, (_,i) => String(405+i*5)) },
+  ];
+
+  function _positionPop(pop, anchor) {
+    const r = anchor.getBoundingClientRect();
+    const pr = pop.getBoundingClientRect();
+    let left = r.left;
+    left = Math.max(8, Math.min(left, window.innerWidth - pr.width - 8));
+    let top = r.bottom + 6;
+    if (top + pr.height > window.innerHeight - 8) top = r.top - pr.height - 6;
+    if (top < 8) top = 8;
+    pop.style.left = left + "px";
+    pop.style.top  = top  + "px";
+    pop.style.visibility = "visible";
+  }
+
+  function _attachOutsideClose(pop, anchorEl) {
+    const handler = (e) => {
+      if (!pop.contains(e.target) && e.target !== anchorEl) {
+        pop.remove();
+        document.removeEventListener("mousedown", handler, true);
+      }
+    };
+    document.addEventListener("mousedown", handler, true);
+  }
+
+  function openGridPicker(label, values, currentVal, cb, anchorEl, cols) {
+    document.querySelector(".grid-picker-pop")?.remove();
+    const pop = document.createElement("div");
+    pop.className = "grid-picker-pop";
+    pop.style.cssText = "position:fixed;z-index:9999;visibility:hidden";
+
+    if (label) {
+      const head = document.createElement("div");
+      head.className = "grid-picker-head";
+      head.textContent = label;
+      pop.appendChild(head);
+    }
+
+    const numCols = cols || values.length; // for small sets: all in one row
+    const grid = document.createElement("div");
+    grid.className = "grid-picker-grid";
+    grid.style.gridTemplateColumns = `repeat(${numCols}, 1fr)`;
+
+    values.forEach(v => {
+      const btn = document.createElement("button");
+      btn.className = "grid-picker-cell" + (String(v) === String(currentVal) ? " active" : "");
+      btn.textContent = String(v);
+      btn.type = "button";
+      btn.addEventListener("click", () => { pop.remove(); cb(String(v)); });
+      grid.appendChild(btn);
+    });
+    pop.appendChild(grid);
+
+    document.body.appendChild(pop);
+    requestAnimationFrame(() => _positionPop(pop, anchorEl));
+    _attachOutsideClose(pop, anchorEl);
+  }
+
+  function openWeightPicker(currentVal, cb, anchorEl) {
+    document.querySelector(".grid-picker-pop")?.remove();
+    const pop = document.createElement("div");
+    pop.className = "grid-picker-pop grid-picker-pop-weight";
+    pop.style.cssText = "position:fixed;z-index:9999;visibility:hidden";
+
+    const tabs = document.createElement("div");
+    tabs.className = "grid-picker-tabs";
+    const grid = document.createElement("div");
+    grid.className = "grid-picker-grid";
+    grid.style.gridTemplateColumns = "repeat(5, 1fr)";
+
+    let activeRange = 0;
+    if (currentVal && currentVal !== "BW") {
+      const n = parseInt(currentVal, 10);
+      if (n > 400) activeRange = 5;
+      else if (n > 300) activeRange = 4;
+      else if (n > 200) activeRange = 3;
+      else if (n > 100) activeRange = 2;
+      else activeRange = 1;
+    }
+
+    function showRange(idx) {
+      activeRange = idx;
+      tabs.querySelectorAll(".grid-picker-tab").forEach((t, i) => t.classList.toggle("active", i === idx));
+      grid.innerHTML = "";
+      const { values } = WEIGHT_RANGES[idx];
+      values.forEach(v => {
+        const btn = document.createElement("button");
+        btn.className = "grid-picker-cell" + (String(v) === String(currentVal) ? " active" : "");
+        btn.textContent = v === "BW" ? "BW" : v + " lb";
+        btn.type = "button";
+        btn.addEventListener("click", () => { pop.remove(); cb(String(v)); });
+        grid.appendChild(btn);
+      });
+      requestAnimationFrame(() => _positionPop(pop, anchorEl));
+    }
+
+    WEIGHT_RANGES.forEach((r, i) => {
+      const tab = document.createElement("button");
+      tab.className = "grid-picker-tab";
+      tab.textContent = r.label;
+      tab.type = "button";
+      tab.addEventListener("click", () => showRange(i));
+      tabs.appendChild(tab);
+    });
+
+    pop.appendChild(tabs);
+    pop.appendChild(grid);
+    document.body.appendChild(pop);
+    showRange(activeRange);
+    _attachOutsideClose(pop, anchorEl);
+  }
+
+  let _drumVals = [];
+  let _drumCb   = null;
+
+  function openDrumPicker(label, values, currentVal, cb) {
+    _drumVals = values;
+    _drumCb   = cb;
+    $("#drum-label").textContent = label;
+    const scroll = $("#drum-scroll");
+    scroll.innerHTML =
+      '<div class="drum-spacer"></div>' +
+      values.map((v) => `<div class="drum-item">${escapeHtml(String(v))}</div>`).join("") +
+      '<div class="drum-spacer"></div>';
+    show($("#drum-modal"));
+    const idx = values.indexOf(String(currentVal));
+    const scrollTo = (idx >= 0 ? idx : 0) * 48;
+    requestAnimationFrame(() => { scroll.scrollTop = scrollTo; });
+  }
+  function confirmDrum() {
+    const scroll = $("#drum-scroll");
+    const idx = Math.round(scroll.scrollTop / 48);
+    const val = _drumVals[Math.max(0, Math.min(idx, _drumVals.length - 1))];
+    hide($("#drum-modal"));
+    if (_drumCb) { _drumCb(val); _drumCb = null; }
+  }
+  function cancelDrum() { hide($("#drum-modal")); _drumCb = null; }
+
+  function pickerBtnEl(value, emptyLabel, openFn) {
+    const btn = document.createElement("button");
+    btn.className = "picker-btn" + (value ? "" : " empty");
+    btn.textContent = value || emptyLabel;
+    btn.addEventListener("click", openFn);
+    return btn;
+  }
+
   // -------- Weeks/program --------
   function renderWeeks() {
+    if (_programEditorId) {
+      const tpl = currentProgramTemplate(); if (!tpl) return;
+      const container = $("#program-editor-weeks");
+      const empty = $("#program-editor-empty");
+      container.innerHTML = "";
+      if (!tpl.weeks.length) { show(empty); return; }
+      hide(empty);
+      _coachActiveWeekIdx = Math.min(_coachActiveWeekIdx, tpl.weeks.length - 1);
+      renderCoachWeekTabs(tpl.weeks, container);
+      return;
+    }
     const c = currentClient(); if (!c) return;
     const container = $("#weeks-container");
     const empty = $("#weeks-empty");
     container.innerHTML = "";
     if (c.weeks.length === 0) { show(empty); return; }
     hide(empty);
-    c.weeks.forEach((week, wIdx) => container.appendChild(renderWeekCard(week, wIdx)));
+    _coachActiveWeekIdx = Math.min(_coachActiveWeekIdx, c.weeks.length - 1);
+    renderCoachWeekTabs(c.weeks, container);
+    renderArchiveSection(c);
   }
+
+  function renderCoachWeekTabs(weeks, container, showAdd = true) {
+    // ── Tab strip ──
+    const strip = document.createElement("div");
+    strip.className = "coach-week-tab-strip";
+
+    weeks.forEach((week, wIdx) => {
+      const tab = document.createElement("button");
+      tab.className = "coach-week-tab" + (wIdx === _coachActiveWeekIdx ? " active" : "");
+      const lbl = document.createElement("span");
+      lbl.className = "coach-week-tab-lbl";
+      lbl.textContent = week.phaseLabel ? `${week.phaseLabel} ${week.label}` : week.label;
+      const del = document.createElement("button");
+      del.className = "coach-week-tab-del";
+      del.textContent = "×";
+      del.title = `Delete ${week.label}`;
+      if (wIdx === 0) del.style.display = "none";
+      del.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!window.confirm(`Delete ${week.label}?`)) return;
+        if (_programEditorId) {
+          const tpl = currentProgramTemplate(); if (!tpl) return;
+          tpl.weeks.splice(wIdx, 1);
+          tpl.weeks.forEach((w, i) => { if (/^Week \d+$/.test(w.label)) w.label = `Week ${i + 1}`; });
+        } else {
+          const c = currentClient(); if (!c) return;
+          c.weeks.splice(wIdx, 1);
+          c.weeks.forEach((w, i) => { if (/^Week \d+$/.test(w.label)) w.label = `Week ${i + 1}`; });
+        }
+        if (_coachActiveWeekIdx >= weeks.length - 1) _coachActiveWeekIdx = Math.max(0, weeks.length - 2);
+        saveTrainer();
+        renderWeeks();
+        if (!_programEditorId) { renderDiet(); renderCoachCalendar(); }
+      });
+      tab.appendChild(lbl);
+      tab.appendChild(del);
+      tab.addEventListener("click", () => {
+        _coachActiveWeekIdx = wIdx;
+        renderWeeks();
+      });
+      strip.appendChild(tab);
+    });
+
+    if (showAdd && weeks.length < 12) {
+      const addBtn = document.createElement("button");
+      addBtn.className = "coach-week-tab coach-week-tab-add";
+      addBtn.textContent = "+";
+      addBtn.title = "Add week";
+      addBtn.addEventListener("click", () => {
+        _coachActiveWeekIdx = weeks.length;
+        addWeek();
+      });
+      strip.appendChild(addBtn);
+    }
+
+    container.appendChild(strip);
+
+    // ── Active week body ──
+    const week = weeks[_coachActiveWeekIdx];
+    if (!week) return;
+    const body = document.createElement("div");
+    body.className = "coach-week-body";
+
+    // Day tabs (identical logic from old renderWeekCard)
+    if (week._activeDayIdx === undefined || week._activeDayIdx >= week.days.length) week._activeDayIdx = 0;
+    const tabStrip  = document.createElement("div");
+    tabStrip.className = "day-tab-strip";
+    const dayContent = document.createElement("div");
+    dayContent.className = "day-content-area";
+
+    function renderDayTabs() {
+      tabStrip.innerHTML = "";
+      week.days.forEach((day, dIdx) => {
+        const tab = document.createElement("button");
+        tab.className = "day-tab" + (dIdx === week._activeDayIdx ? " active" : "");
+        tab.textContent = day.name || `Day ${dIdx + 1}`;
+        tab.addEventListener("click", () => { week._activeDayIdx = dIdx; renderDayTabs(); renderActiveDayContent(); });
+        tabStrip.appendChild(tab);
+      });
+      const addDayBtn = document.createElement("button");
+      addDayBtn.className = "day-tab day-tab-add";
+      addDayBtn.textContent = "+ Day";
+      addDayBtn.addEventListener("click", () => {
+        week.days.push(makeDay(week.days.length + 1));
+        week._activeDayIdx = week.days.length - 1;
+        saveTrainer(); renderDayTabs(); renderActiveDayContent();
+      });
+      tabStrip.appendChild(addDayBtn);
+    }
+
+    function renderActiveDayContent() {
+      dayContent.innerHTML = "";
+      if (!week.days.length) {
+        const p = document.createElement("p");
+        p.className = "muted"; p.style.padding = "1rem 0";
+        p.textContent = "No training days yet — click + Day to add one.";
+        dayContent.appendChild(p); return;
+      }
+      const dayIdx = Math.min(week._activeDayIdx, week.days.length - 1);
+      const rerender = () => { renderDayTabs(); renderActiveDayContent(); };
+      dayContent.appendChild(renderDayContent(week, week.days[dayIdx], rerender));
+    }
+
+    renderDayTabs(); renderActiveDayContent();
+    body.appendChild(tabStrip);
+    body.appendChild(dayContent);
+    container.appendChild(body);
+  }
+
+  function archiveCurrentProgram() {
+    const c = currentClient(); if (!c) return;
+    if (!c.weeks || !c.weeks.length) { toast("No program to archive"); return; }
+    if (!window.confirm(`Archive the current program for ${c.name}?\n\nThis saves a read-only snapshot you can review later. The current program stays editable.`)) return;
+    if (!Array.isArray(c.archivedPrograms)) c.archivedPrograms = [];
+    const d = new Date();
+    const label = d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    c.archivedPrograms.unshift({
+      id: uid(),
+      label: "Archived — " + label,
+      archivedAt: d.toISOString(),
+      weeks: JSON.parse(JSON.stringify(c.weeks)),
+      schedule: JSON.parse(JSON.stringify(c.schedule || {})),
+    });
+    saveTrainer();
+    toast("Program archived ✓");
+    renderArchiveSection(c);
+  }
+
+  function renderArchiveSection(c) {
+    const container = $("#archive-container");
+    if (!container) return;
+    if (!c || !Array.isArray(c.archivedPrograms) || !c.archivedPrograms.length) {
+      container.innerHTML = "";
+      return;
+    }
+    container.innerHTML = "";
+    const section = document.createElement("details");
+    section.className = "archive-section";
+    section.open = false;
+    const summary = document.createElement("summary");
+    summary.className = "archive-summary";
+    summary.textContent = `📁 Program Archive (${c.archivedPrograms.length})`;
+    section.appendChild(summary);
+
+    c.archivedPrograms.forEach((prog, pIdx) => {
+      const card = document.createElement("div");
+      card.className = "archive-prog-card";
+      const d = prog.archivedAt ? new Date(prog.archivedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "";
+      const exTotal = prog.weeks.reduce((n, w) => n + w.days.reduce((m, d) => m + d.exercises.length, 0), 0);
+      const head = document.createElement("div");
+      head.className = "archive-prog-head";
+      head.innerHTML = `
+        <div class="archive-prog-info">
+          <span class="archive-prog-label">${escapeHtml(prog.label)}</span>
+          <span class="archive-prog-meta">${prog.weeks.length} week${prog.weeks.length === 1 ? "" : "s"} · ${exTotal} exercise${exTotal === 1 ? "" : "s"}${d ? " · saved " + escapeHtml(d) : ""}</span>
+        </div>
+        <div class="archive-prog-actions">
+          <button class="btn btn-ghost btn-xs" data-action="toggle">Expand</button>
+          <button class="btn btn-danger btn-xs" data-action="delete">Delete</button>
+        </div>`;
+
+      const body = document.createElement("div");
+      body.className = "archive-prog-body hidden";
+      prog.weeks.forEach((week) => body.appendChild(renderArchiveWeek(week)));
+
+      head.querySelector('[data-action="toggle"]').addEventListener("click", () => {
+        const open = body.classList.toggle("hidden");
+        head.querySelector('[data-action="toggle"]').textContent = open ? "Expand" : "Collapse";
+      });
+      head.querySelector('[data-action="delete"]').addEventListener("click", () => {
+        if (!window.confirm(`Delete "${prog.label}"? This cannot be undone.`)) return;
+        c.archivedPrograms.splice(pIdx, 1);
+        saveTrainer();
+        renderArchiveSection(c);
+      });
+
+      card.appendChild(head);
+      card.appendChild(body);
+      section.appendChild(card);
+    });
+
+    container.appendChild(section);
+  }
+
+  function renderArchiveWeek(week) {
+    const card = document.createElement("div");
+    card.className = "archive-week-card";
+    const exTotal = week.days.reduce((n, d) => n + d.exercises.length, 0);
+    const head = document.createElement("div");
+    head.className = "archive-week-head";
+    head.innerHTML = `
+      <span class="archive-week-label">${week.phaseLabel ? `<span class="phase-badge">${escapeHtml(week.phaseLabel)}</span> ` : ""}${escapeHtml(week.label)}${week.focus ? " — " + escapeHtml(week.focus) : ""}</span>
+      <span class="archive-week-meta">${week.days.length} day${week.days.length === 1 ? "" : "s"} · ${exTotal} exercise${exTotal === 1 ? "" : "s"}</span>`;
+    card.appendChild(head);
+    week.days.forEach((day) => {
+      const dayEl = document.createElement("div");
+      dayEl.className = "archive-day";
+      const dayHead = document.createElement("div");
+      dayHead.className = "archive-day-name";
+      dayHead.textContent = day.name || "Day";
+      dayEl.appendChild(dayHead);
+      day.exercises.forEach((ex) => {
+        if (!ex.modifiers) ex.modifiers = [];
+        const row = document.createElement("div");
+        row.className = "archive-ex-row";
+        const chips = ex.modifiers.map((tag) => {
+          const g = groupForTag(tag);
+          if (!g) return "";
+          const { color, bg } = tagColor(tag);
+          return `<span class="mod-chip" style="--mc:${color};--mb:${bg}">${escapeHtml(tag)}</span>`;
+        }).join("");
+        const rxParts = [];
+        if (ex.sets) rxParts.push(ex.sets + " sets");
+        if (ex.currentWeight) rxParts.push(ex.currentWeight === "BW" ? "BW" : ex.currentWeight + " lb");
+        if (ex.currentReps) rxParts.push("× " + ex.currentReps);
+        row.innerHTML = `<span class="archive-ex-chips">${chips}</span><span class="archive-ex-name">${escapeHtml(ex.name || "(unnamed)")}</span><span class="archive-ex-rx">${escapeHtml(rxParts.join(" · ") || "")}</span>`;
+        dayEl.appendChild(row);
+      });
+      card.appendChild(dayEl);
+    });
+    return card;
+  }
+
   function renderWeekCard(week, wIdx) {
     const card = document.createElement("div");
     card.className = "week-card";
     if (week.phaseLabel) card.classList.add("phase-card");
     if (wIdx === 0) card.classList.add("open");
+
     const exerciseTotal = week.days.reduce((n, d) => n + d.exercises.length, 0);
+
+    // --- Compact header ---
     const head = document.createElement("div");
     head.className = "week-head";
     head.innerHTML = `
-      <div>
-        <h4>${week.phaseLabel ? `<span class="phase-badge">${escapeHtml(week.phaseLabel)}</span>` : ""}${escapeHtml(week.label)}</h4>
-        <div class="week-info">${week.days.length} day${week.days.length === 1 ? "" : "s"} · ${exerciseTotal} exercise${exerciseTotal === 1 ? "" : "s"}${week.focus ? " · " + escapeHtml(week.focus) : ""}</div>
+      <div class="week-head-left">
+        <span class="week-toggle-icon">▸</span>
+        <div>
+          <h4>${week.phaseLabel ? `<span class="phase-badge">${escapeHtml(week.phaseLabel)}</span>` : ""}${escapeHtml(week.label)}</h4>
+          <div class="week-info">${week.days.length} day${week.days.length === 1 ? "" : "s"} · ${exerciseTotal} exercise${exerciseTotal === 1 ? "" : "s"}${week.focus ? " · " + escapeHtml(week.focus) : ""}</div>
+        </div>
       </div>
       <div class="week-head-right">
-        <button class="btn-delete-mini" data-action="delete-week">Delete</button>
-        <span class="week-toggle">▾</span>
+        <button class="btn-icon-mini" data-action="delete-week" title="Delete week">✕</button>
       </div>`;
+
     head.addEventListener("click", (e) => {
-      if (e.target.closest('[data-action="delete-week"]')) return;
+      if (e.target.closest("[data-action]")) return;
       card.classList.toggle("open");
     });
     head.querySelector('[data-action="delete-week"]').addEventListener("click", (e) => {
       e.stopPropagation();
       if (!window.confirm(`Delete ${week.label}?`)) return;
-      const c = currentClient();
-      c.weeks = c.weeks.filter((w) => w.id !== week.id);
-      c.weeks.forEach((w, i) => { if (/^Week \d+$/.test(w.label)) w.label = `Week ${i + 1}`; });
+      if (_programEditorId) {
+        const tpl = currentProgramTemplate(); if (!tpl) return;
+        tpl.weeks = tpl.weeks.filter((w) => w.id !== week.id);
+        tpl.weeks.forEach((w, i) => { if (/^Week \d+$/.test(w.label)) w.label = `Week ${i + 1}`; });
+      } else {
+        const c = currentClient(); if (!c) return;
+        c.weeks = c.weeks.filter((w) => w.id !== week.id);
+        c.weeks.forEach((w, i) => { if (/^Week \d+$/.test(w.label)) w.label = `Week ${i + 1}`; });
+      }
       saveTrainer();
-      renderWeeks(); renderDiet(); renderCoachCalendar();
+      renderWeeks(); if (!_programEditorId) { renderDiet(); renderCoachCalendar(); }
     });
 
+    // --- Body ---
     const body = document.createElement("div");
     body.className = "week-body";
-    body.innerHTML = `
-      <label class="week-focus-input">Week focus / theme
-        <input type="text" placeholder="e.g. Hypertrophy block – upper body emphasis" />
-      </label>
-      <div class="days-container"></div>
-      <button class="add-inline-btn" data-action="add-day">+ Add training day</button>`;
-    const focusInput = body.querySelector("input");
-    focusInput.value = week.focus;
-    focusInput.addEventListener("input", () => { week.focus = focusInput.value; saveTrainer(); });
 
-    const daysContainer = body.querySelector(".days-container");
-    week.days.forEach((day) => daysContainer.appendChild(renderDayCard(week, day)));
-    body.querySelector('[data-action="add-day"]').addEventListener("click", () => {
-      week.days.push(makeDay(week.days.length + 1));
-      saveTrainer(); renderWeeks();
-    });
-    card.appendChild(head); card.appendChild(body);
-    return card;
-  }
-  function renderDayCard(week, day) {
-    const card = document.createElement("div");
-    card.className = "day-card";
-    const head = document.createElement("div");
-    head.className = "day-head";
-    head.innerHTML = `
-      <div class="day-head-left"><input type="text" class="day-name-input" /></div>
-      <div class="day-head-right"><button class="btn-delete-mini" data-action="delete-day">Delete day</button></div>`;
-    const nameInput = head.querySelector(".day-name-input");
-    nameInput.value = day.name;
-    nameInput.addEventListener("input", () => { day.name = nameInput.value; saveTrainer(); });
-    head.querySelector('[data-action="delete-day"]').addEventListener("click", () => {
-      if (!window.confirm(`Delete ${day.name}?`)) return;
-      week.days = week.days.filter((d) => d.id !== day.id);
-      saveTrainer(); renderWeeks();
-    });
-    // Day toolbar: load template + save as template (quick reuse of an existing day)
-    const tools = document.createElement("div");
-    tools.className = "day-tools";
-    tools.innerHTML = `
-      <button class="btn-load-template" data-action="load-tpl" type="button">📚 Load template</button>
-      <button class="btn-load-template" data-action="save-tpl" type="button" style="background: var(--accent-soft); color: var(--accent); border-color: rgba(16,185,129,0.35)">💾 Save as template</button>
-    `;
-    tools.querySelector('[data-action="load-tpl"]').addEventListener("click", () => openLoadTemplateModal(week, day));
-    tools.querySelector('[data-action="save-tpl"]').addEventListener("click", () => {
-      const tpl = makeWorkoutTemplate(day.name || "Workout", day.exercises);
-      tpl.focus = week.focus || "";
-      state.trainerData.workoutTemplates.push(tpl);
-      saveTrainer();
-      toast(`Saved "${tpl.name}" to library 📚`);
-    });
-    const list = document.createElement("div");
-    list.className = "exercises-list";
-    day.exercises.forEach((ex) => list.appendChild(renderExerciseCard(day, ex)));
-    const addBtn = document.createElement("button");
-    addBtn.className = "add-inline-btn";
-    addBtn.style.marginTop = "0.6em";
-    addBtn.textContent = "+ Add exercise";
-    addBtn.addEventListener("click", () => {
-      day.exercises.push(makeExercise());
-      saveTrainer(); renderWeeks();
-    });
-    card.appendChild(head);
-    card.appendChild(tools);
-    card.appendChild(list);
-    card.appendChild(addBtn);
-    return card;
-  }
-  function renderExerciseCard(day, ex) {
-    const card = document.createElement("div");
-    card.className = "exercise-card";
-    card.innerHTML = `
-      <div class="exercise-head">
-        <input type="text" class="exercise-name-input" placeholder="Exercise name (e.g. Back Squat)" />
-        <button class="btn-delete-mini" data-action="delete-ex">Delete</button>
-      </div>
-      <div class="exercise-stats-row">
-        <fieldset class="stat-block">
-          <legend>Sets</legend>
-          <div class="stat-inputs"><input type="number" min="0" placeholder="0" data-field="sets" /></div>
-        </fieldset>
-        <fieldset class="stat-block">
-          <legend>Current top set</legend>
-          <div class="stat-inputs">
-            <input type="number" min="0" step="0.5" placeholder="lb" data-field="currentWeight" />
-            <span class="x">×</span>
-            <input type="number" min="0" placeholder="reps" data-field="currentReps" />
-          </div>
-        </fieldset>
-        <fieldset class="stat-block">
-          <legend>Goal</legend>
-          <div class="stat-inputs">
-            <input type="number" min="0" step="0.5" placeholder="lb" data-field="goalWeight" />
-            <span class="x">×</span>
-            <input type="number" min="0" placeholder="reps" data-field="goalReps" />
-          </div>
-        </fieldset>
-      </div>
-      <div class="exercise-notes">
-        <label>Detailed instructions (technique, tempo, rest, cues, progression)
-          <textarea placeholder="e.g. 3-1-1 tempo, 2 min rest, RPE 8 on top set, +5 lb when all reps clean"></textarea>
-        </label>
-      </div>
-      <div class="exercise-video">
-        <label>▶ Demo video (YouTube link)
-          <input type="text" class="video-url-input" placeholder="https://youtu.be/... or https://youtube.com/watch?v=..." />
-        </label>
-        <div class="video-status"></div>
-      </div>`;
-    const nameInput = card.querySelector(".exercise-name-input");
-    nameInput.value = ex.name;
-    nameInput.addEventListener("input", () => { ex.name = nameInput.value; saveTrainer(); });
-    card.querySelectorAll("input[data-field]").forEach((inp) => {
-      inp.value = ex[inp.dataset.field];
-      inp.addEventListener("input", () => { ex[inp.dataset.field] = inp.value; saveTrainer(); });
-    });
-    const notes = card.querySelector("textarea");
-    notes.value = ex.notes;
-    notes.addEventListener("input", () => { ex.notes = notes.value; saveTrainer(); });
-    const videoInput = card.querySelector(".video-url-input");
-    const videoStatus = card.querySelector(".video-status");
-    function updateVideoStatus() {
-      const id = getYouTubeId(ex.videoUrl);
-      if (id) {
-        videoStatus.innerHTML = `<a href="https://youtu.be/${id}" target="_blank" rel="noopener" class="btn btn-sm btn-ghost video-preview-btn">▶ Preview demo</a>`;
-      } else if (ex.videoUrl) {
-        videoStatus.innerHTML = `<span class="video-warn">⚠ Couldn't parse YouTube ID — athlete will see a plain link</span>`;
-      } else {
-        videoStatus.innerHTML = "";
-      }
+    // Track active day index (transient — resets on full renderWeeks)
+    if (week._activeDayIdx === undefined || week._activeDayIdx >= week.days.length) {
+      week._activeDayIdx = 0;
     }
-    videoInput.value = ex.videoUrl || "";
-    updateVideoStatus();
-    videoInput.addEventListener("input", () => {
-      ex.videoUrl = videoInput.value;
-      saveTrainer();
-      updateVideoStatus();
-    });
-    card.querySelector('[data-action="delete-ex"]').addEventListener("click", () => {
-      if (!window.confirm("Delete this exercise?")) return;
-      day.exercises = day.exercises.filter((e) => e.id !== ex.id);
-      saveTrainer(); renderWeeks();
-    });
+
+    const tabStrip  = document.createElement("div");
+    tabStrip.className = "day-tab-strip";
+    const dayContent = document.createElement("div");
+    dayContent.className = "day-content-area";
+
+    function renderDayTabs() {
+      tabStrip.innerHTML = "";
+      week.days.forEach((day, dIdx) => {
+        const tab = document.createElement("button");
+        tab.className = "day-tab" + (dIdx === week._activeDayIdx ? " active" : "");
+        tab.textContent = day.name || `Day ${dIdx + 1}`;
+        tab.addEventListener("click", () => {
+          week._activeDayIdx = dIdx;
+          renderDayTabs();
+          renderActiveDayContent();
+        });
+        tabStrip.appendChild(tab);
+      });
+      const addDayBtn = document.createElement("button");
+      addDayBtn.className = "day-tab day-tab-add";
+      addDayBtn.textContent = "+ Day";
+      addDayBtn.addEventListener("click", () => {
+        week.days.push(makeDay(week.days.length + 1));
+        week._activeDayIdx = week.days.length - 1;
+        saveTrainer(); renderDayTabs(); renderActiveDayContent();
+      });
+      tabStrip.appendChild(addDayBtn);
+    }
+
+    function renderActiveDayContent() {
+      dayContent.innerHTML = "";
+      if (!week.days.length) {
+        const p = document.createElement("p");
+        p.className = "muted"; p.style.padding = "1rem 0";
+        p.textContent = "No training days yet — click + Day to add one.";
+        dayContent.appendChild(p);
+        return;
+      }
+      const dayIdx = Math.min(week._activeDayIdx, week.days.length - 1);
+      const rerender = () => { renderDayTabs(); renderActiveDayContent(); };
+      dayContent.appendChild(renderDayContent(week, week.days[dayIdx], rerender));
+    }
+
+    renderDayTabs();
+    renderActiveDayContent();
+
+    body.appendChild(tabStrip);
+    body.appendChild(dayContent);
+    card.appendChild(head);
+    card.appendChild(body);
     return card;
+  }
+
+  function renderDayContent(week, day, rerenderFn) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "day-content";
+
+    // Action bar: name + tool buttons
+    const actionBar = document.createElement("div");
+    actionBar.className = "day-action-bar";
+
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.className = "day-name-compact";
+    nameInput.placeholder = "Day name…";
+    nameInput.value = day.name || "";
+    nameInput.addEventListener("input", () => { day.name = nameInput.value; saveTrainer(); });
+    nameInput.addEventListener("change", () => rerenderFn());
+
+    const spacer = document.createElement("div");
+    spacer.style.flex = "1";
+
+    // Library button: only shown on mobile (sidebar is hidden there); on desktop the sidebar is always visible
+    const libBtn = document.createElement("button");
+    libBtn.className = "btn btn-ghost btn-xs ex-lib-mobile-btn";
+    libBtn.title = "Exercise library";
+    libBtn.textContent = "📖 Library";
+    libBtn.addEventListener("click", openExLibrary);
+
+    const delDayBtn = document.createElement("button");
+    delDayBtn.className = "btn btn-ghost btn-xs";
+    delDayBtn.style.color = "var(--danger)";
+    delDayBtn.title = "Delete this day";
+    delDayBtn.textContent = "✕ Day";
+    delDayBtn.addEventListener("click", () => {
+      if (!window.confirm(`Delete "${day.name || "this day"}"?`)) return;
+      week.days = week.days.filter((d) => d.id !== day.id);
+      if (week._activeDayIdx >= week.days.length) week._activeDayIdx = Math.max(0, week.days.length - 1);
+      saveTrainer(); rerenderFn();
+    });
+
+    actionBar.appendChild(nameInput);
+    actionBar.appendChild(spacer);
+    actionBar.appendChild(libBtn);
+    actionBar.appendChild(delDayBtn);
+
+    // Table header
+    const tableHead = document.createElement("div");
+    tableHead.className = "ex-table-head";
+    tableHead.innerHTML = `
+      <span class="ex-th-handle"></span>
+      <span class="ex-th-name">Exercise</span>
+      <span class="ex-th-sets">Sets</span>
+      <span class="ex-th-cur">Current</span>
+      <span class="ex-th-goal">Goal</span>
+      <span class="ex-th-act"></span>`;
+
+    // Exercise list (drop zone)
+    const list = document.createElement("div");
+    list.className = "ex-compact-list";
+
+    day.exercises.forEach((ex) => list.appendChild(renderExerciseRow(day, ex, rerenderFn)));
+
+    // Always show a drop zone — big when empty, slim hint when exercises exist
+    const dropHint = document.createElement("div");
+    dropHint.className = day.exercises.length === 0 ? "ex-list-empty-drop" : "ex-list-drop-hint";
+    dropHint.textContent = day.exercises.length === 0 ? "Drag exercises from the library →" : "drag to add more";
+    dropHint.setAttribute("aria-hidden", "true");
+    list.appendChild(dropHint);
+
+    list.addEventListener("dragover", (e) => {
+      if (!e.dataTransfer.types.includes("text/ex-name")) return;
+      e.preventDefault(); list.classList.add("drag-over");
+    });
+    list.addEventListener("dragleave", (e) => {
+      if (!list.contains(e.relatedTarget)) list.classList.remove("drag-over");
+    });
+    list.addEventListener("drop", (e) => {
+      e.preventDefault(); list.classList.remove("drag-over");
+      const name = e.dataTransfer.getData("text/ex-name");
+      if (!name) return;
+      day.exercises.push(makeExercise({ name }));
+      saveTrainer(); rerenderFn();
+    });
+
+    wrapper.appendChild(actionBar);
+    wrapper.appendChild(tableHead);
+    wrapper.appendChild(list);
+    return wrapper;
+  }
+
+  function renderExerciseRow(day, ex, rerenderFn) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "ex-row-wrapper";
+    wrapper.dataset.exid = ex.id;
+
+    const row = document.createElement("div");
+    row.className = "ex-row";
+
+    if (!ex.modifiers) ex.modifiers = []; // backfill old data
+
+    // Drag handle
+    const handle = document.createElement("span");
+    handle.className = "ex-drag-handle";
+    handle.textContent = "⠿";
+    handle.title = "Drag to reorder";
+
+    // Modifier chips BEFORE name (Unilateral, Equipment, Position)
+    const chipsBefore = document.createElement("div");
+    chipsBefore.className = "mod-chips-before";
+    renderModChips(chipsBefore, ex, "before");
+
+    // Name
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.className = "ex-name-compact";
+    nameInput.placeholder = "Exercise name…";
+    nameInput.value = ex.name || "";
+    nameInput.addEventListener("input", () => { ex.name = nameInput.value; saveTrainer(); });
+
+    // Modifier chips AFTER name (Style)
+    const chipsAfter = document.createElement("div");
+    chipsAfter.className = "mod-chips-after";
+    renderModChips(chipsAfter, ex, "after");
+
+    // Modifier picker button
+    const modBtn = document.createElement("button");
+    modBtn.className = "mod-add-btn";
+    modBtn.title = "Add/remove modifiers (1A, DB, Pause…)";
+    modBtn.textContent = "tag";
+    modBtn.addEventListener("click", (e) => { e.stopPropagation(); openModPicker(ex, modBtn, chipsBefore, chipsAfter); });
+
+    function wtLabel(v) { return v ? (v === "BW" ? "BW" : v + " lb") : null; }
+
+    // Sets
+    const setsBtn = document.createElement("button");
+    setsBtn.className = "picker-btn picker-btn-sm" + (ex.sets ? "" : " empty");
+    setsBtn.textContent = ex.sets || "—";
+    setsBtn.title = "Sets";
+    setsBtn.addEventListener("click", (e) => { e.stopPropagation(); openGridPicker("Sets", SETS_VALUES, ex.sets || "3", (val) => {
+      ex.sets = val; saveTrainer(); setsBtn.textContent = val; setsBtn.classList.remove("empty");
+    }, setsBtn); });
+
+    const at = document.createElement("span");
+    at.className = "ex-row-sep"; at.textContent = "@";
+
+    // Prescribed weight (lower)
+    const cwBtn = document.createElement("button");
+    cwBtn.className = "picker-btn picker-btn-sm" + (ex.currentWeight ? "" : " empty");
+    cwBtn.textContent = wtLabel(ex.currentWeight) || "Wt";
+    cwBtn.title = "Prescribed weight (lower)";
+    cwBtn.addEventListener("click", (e) => { e.stopPropagation(); openWeightPicker(ex.currentWeight || "BW", (val) => {
+      ex.currentWeight = val; saveTrainer(); cwBtn.textContent = wtLabel(val) || "Wt"; cwBtn.classList.toggle("empty", !val);
+    }, cwBtn); });
+
+    const dash = document.createElement("span");
+    dash.className = "ex-row-sep"; dash.textContent = "–";
+
+    // Prescribed weight (upper / range)
+    const gwBtn = document.createElement("button");
+    gwBtn.className = "picker-btn picker-btn-sm" + (ex.goalWeight ? "" : " empty");
+    gwBtn.textContent = wtLabel(ex.goalWeight) || "Wt";
+    gwBtn.title = "Prescribed weight (upper)";
+    gwBtn.addEventListener("click", (e) => { e.stopPropagation(); openWeightPicker(ex.goalWeight || ex.currentWeight || "BW", (val) => {
+      ex.goalWeight = val; saveTrainer(); gwBtn.textContent = wtLabel(val) || "Wt"; gwBtn.classList.toggle("empty", !val);
+    }, gwBtn); });
+
+    const x1 = document.createElement("span");
+    x1.className = "ex-row-sep"; x1.textContent = "×";
+
+    // Prescribed reps
+    const crBtn = document.createElement("button");
+    crBtn.className = "picker-btn picker-btn-sm" + (ex.currentReps ? "" : " empty");
+    crBtn.textContent = ex.currentReps || "—";
+    crBtn.title = "Prescribed reps";
+    crBtn.addEventListener("click", (e) => { e.stopPropagation(); openGridPicker("Reps", REPS_VALUES, ex.currentReps || "8", (val) => {
+      ex.currentReps = val; saveTrainer(); crBtn.textContent = val; crBtn.classList.toggle("empty", !val);
+    }, crBtn, 6); });
+
+    // Expand (notes + video)
+    const expandBtn = document.createElement("button");
+    expandBtn.className = "btn-icon-mini ex-expand-btn";
+    expandBtn.title = "Notes & video"; expandBtn.textContent = "⋮";
+
+    // Save / Edit lock buttons
+    const saveBtn = document.createElement("button");
+    saveBtn.className = "btn-icon-mini ex-save-btn";
+    saveBtn.title = "Lock exercise";
+    saveBtn.textContent = "✓";
+
+    const editBtn = document.createElement("button");
+    editBtn.className = "btn-icon-mini ex-edit-btn";
+    editBtn.title = "Edit exercise";
+    editBtn.textContent = "✎";
+
+    function applyLock(locked) {
+      wrapper.classList.toggle("ex-locked", locked);
+      nameInput.disabled = locked;
+      modBtn.disabled = locked;
+      setsBtn.disabled = locked;
+      cwBtn.disabled = locked;
+      gwBtn.disabled = locked;
+      crBtn.disabled = locked;
+      handle.style.opacity = locked ? "0.3" : "";
+      handle.style.pointerEvents = locked ? "none" : "";
+      chipsBefore.style.pointerEvents = locked ? "none" : "";
+      chipsAfter.style.pointerEvents = locked ? "none" : "";
+      saveBtn.classList.toggle("hidden", locked);
+      editBtn.classList.toggle("hidden", !locked);
+    }
+
+    saveBtn.addEventListener("click", () => { ex.locked = true;  saveTrainer(); applyLock(true); });
+    editBtn.addEventListener("click", () => { ex.locked = false; saveTrainer(); applyLock(false); });
+    applyLock(!!ex.locked);
+
+    // Delete
+    const delBtn = document.createElement("button");
+    delBtn.className = "btn-icon-mini ex-del-btn";
+    delBtn.title = "Delete exercise"; delBtn.textContent = "✕";
+    delBtn.addEventListener("click", () => {
+      day.exercises = day.exercises.filter((e) => e.id !== ex.id);
+      saveTrainer(); rerenderFn();
+    });
+
+    row.appendChild(handle);
+    row.appendChild(chipsBefore);
+    row.appendChild(nameInput);
+    row.appendChild(chipsAfter);
+    row.appendChild(modBtn);
+    row.appendChild(setsBtn); row.appendChild(at);
+    row.appendChild(cwBtn); row.appendChild(dash); row.appendChild(gwBtn); row.appendChild(x1); row.appendChild(crBtn);
+    row.appendChild(expandBtn); row.appendChild(saveBtn); row.appendChild(editBtn); row.appendChild(delBtn);
+
+    // Detail panel (notes + video), hidden by default
+    const detail = document.createElement("div");
+    detail.className = "ex-detail-panel hidden";
+
+    const notesTA = document.createElement("textarea");
+    notesTA.className = "ex-notes-compact";
+    notesTA.placeholder = "Notes, tempo, cues, progression…";
+    notesTA.rows = 2;
+    notesTA.value = ex.notes || "";
+    notesTA.addEventListener("input", () => { ex.notes = notesTA.value; saveTrainer(); });
+
+    const videoInput = document.createElement("input");
+    videoInput.type = "text";
+    videoInput.className = "ex-video-compact";
+    videoInput.placeholder = "YouTube link (optional)…";
+    videoInput.value = ex.videoUrl || "";
+    videoInput.addEventListener("input", () => { ex.videoUrl = videoInput.value; saveTrainer(); });
+
+    detail.appendChild(notesTA);
+    detail.appendChild(videoInput);
+
+    if (ex.notes || ex.videoUrl) {
+      detail.classList.remove("hidden");
+      expandBtn.classList.add("active");
+    }
+
+    expandBtn.addEventListener("click", () => {
+      const nowHidden = detail.classList.toggle("hidden");
+      expandBtn.classList.toggle("active", !nowHidden);
+      if (!nowHidden) notesTA.focus();
+    });
+
+    // Drag to reorder within day
+    handle.addEventListener("mousedown", () => wrapper.setAttribute("draggable", "true"));
+    handle.addEventListener("touchstart", () => wrapper.setAttribute("draggable", "true"), { passive: true });
+    wrapper.addEventListener("dragend", () => {
+      wrapper.removeAttribute("draggable");
+      wrapper.classList.remove("dragging", "drag-above", "drag-below");
+    });
+    wrapper.addEventListener("dragstart", (e) => {
+      if (!wrapper.getAttribute("draggable")) { e.preventDefault(); return; }
+      wrapper.classList.add("dragging");
+      e.dataTransfer.setData("text/ex-reorder", JSON.stringify({ exId: ex.id, dayId: day.id }));
+      e.dataTransfer.effectAllowed = "move";
+    });
+    wrapper.addEventListener("dragover", (e) => {
+      if (!e.dataTransfer.types.includes("text/ex-reorder")) return;
+      e.preventDefault();
+      const rect = wrapper.getBoundingClientRect();
+      wrapper.classList.remove("drag-above", "drag-below");
+      wrapper.classList.add(e.clientY < rect.top + rect.height / 2 ? "drag-above" : "drag-below");
+    });
+    wrapper.addEventListener("dragleave", () => wrapper.classList.remove("drag-above", "drag-below"));
+    wrapper.addEventListener("drop", (e) => {
+      e.preventDefault(); wrapper.classList.remove("drag-above", "drag-below");
+      try {
+        const { exId, dayId } = JSON.parse(e.dataTransfer.getData("text/ex-reorder"));
+        if (dayId !== day.id || exId === ex.id) return;
+        const rect = wrapper.getBoundingClientRect();
+        const insertAfter = e.clientY >= rect.top + rect.height / 2;
+        const fromIdx = day.exercises.findIndex((e) => e.id === exId);
+        const toIdx   = day.exercises.findIndex((e) => e.id === ex.id);
+        if (fromIdx === -1 || toIdx === -1) return;
+        const [moved] = day.exercises.splice(fromIdx, 1);
+        const newTo = day.exercises.findIndex((e) => e.id === ex.id);
+        day.exercises.splice(insertAfter ? newTo + 1 : newTo, 0, moved);
+        saveTrainer(); rerenderFn();
+      } catch { /* ignore bad data */ }
+    });
+
+    wrapper.appendChild(row);
+    wrapper.appendChild(detail);
+    return wrapper;
   }
   function addWeek() {
+    if (_programEditorId) {
+      const tpl = currentProgramTemplate(); if (!tpl) return;
+      if (tpl.weeks.length >= 12) { toast("12-week maximum reached"); return; }
+      _coachActiveWeekIdx = tpl.weeks.length;
+      tpl.weeks.push(makeWeek(tpl.weeks.length));
+      saveTrainer(); renderWeeks();
+      return;
+    }
     const c = currentClient(); if (!c) return;
+    if (c.weeks.length >= 12) { toast("12-week maximum reached"); return; }
+    _coachActiveWeekIdx = c.weeks.length;
     c.weeks.push(makeWeek(c.weeks.length));
     saveTrainer();
     renderWeeks(); renderDiet(); renderCoachCalendar();
-    toast("Week added");
   }
 
   // -------- 12-week template (generic phased periodization) --------
@@ -1468,6 +3009,102 @@
   const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
   const DOW_LABELS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
+  // -------- Dashboard overview calendar --------
+  function renderDashboardCalendar() {
+    if (!state.dashCal) { const n = new Date(); state.dashCal = { year: n.getFullYear(), month: n.getMonth() }; }
+    const { year, month } = state.dashCal;
+    $("#dash-cal-title").textContent = `${MONTH_NAMES[month]} ${year}`;
+    const grid = $("#dash-cal-grid");
+    grid.innerHTML = "";
+    DOW_LABELS.forEach(d => {
+      const el = document.createElement("div");
+      el.className = "cal-dow";
+      el.textContent = d;
+      grid.appendChild(el);
+    });
+    const cells = buildMonthGrid(year, month);
+    const today = todayISO();
+    const clients = state.trainerData.clients || [];
+    cells.forEach(d => {
+      const iso = dateISO(d);
+      const inMonth = d.getMonth() === month;
+      const cell = document.createElement("div");
+      cell.className = "dash-cal-day";
+      if (!inMonth) { cell.classList.add("outside"); cell.innerHTML = `<div class="dash-cal-date">${d.getDate()}</div>`; grid.appendChild(cell); return; }
+      if (iso === today) cell.classList.add("today");
+      const entries = [];
+      clients.forEach(c => {
+        const entry = c.importedProgress?.selfSchedule?.[iso];
+        if (!entry) return;
+        if (entry.rest) { entries.push({ client: c, rest: true, dc: null }); return; }
+        if (!entry.weekId) return;
+        const dIdx = getDayIdx(c, entry.weekId, entry.dayId);
+        const dc = getDayColor(dIdx);
+        const wd = findWeekDay(c, entry.weekId, entry.dayId);
+        entries.push({ client: c, dayName: wd?.day.name || "Workout", dc, weekId: entry.weekId, dayId: entry.dayId });
+      });
+      const MAX_SHOW = 4;
+      const shown = entries.slice(0, MAX_SHOW);
+      const overflow = entries.length - MAX_SHOW;
+      let html = `<div class="dash-cal-date">${d.getDate()}</div>`;
+      shown.forEach(e => {
+        if (e.rest) {
+          html += `<div class="dash-cal-pill dash-cal-pill-rest"><span class="dash-cal-initials">${escapeHtml(clientInitials(e.client.name))}</span><span class="dash-cal-day-name">Rest</span></div>`;
+        } else {
+          html += `<div class="dash-cal-pill" style="--day-color:${e.dc.color};--day-color-soft:${e.dc.soft}"><span class="dash-cal-initials">${escapeHtml(clientInitials(e.client.name))}</span><span class="dash-cal-day-name">${escapeHtml(e.dayName)}</span></div>`;
+        }
+      });
+      if (overflow > 0) html += `<div class="dash-cal-more">+${overflow} more</div>`;
+      cell.innerHTML = html;
+      const workoutEntries = entries.filter(e => !e.rest);
+      if (workoutEntries.length) {
+        cell.classList.add("has-log");
+        cell.addEventListener("click", () => openDashboardDayModal(iso));
+      }
+      grid.appendChild(cell);
+    });
+  }
+
+  function openDashboardDayModal(iso) {
+    const clients = state.trainerData.clients || [];
+    let body = "";
+    clients.forEach(c => {
+      const entry = c.importedProgress?.selfSchedule?.[iso];
+      if (!entry || !entry.weekId) return;
+      const wd = findWeekDay(c, entry.weekId, entry.dayId);
+      if (!wd) return;
+      const { week, day } = wd;
+      const dIdx = getDayIdx(c, entry.weekId, entry.dayId);
+      const dc = getDayColor(dIdx);
+      const logs = c.importedProgress?.exerciseLogs || {};
+      body += `<div class="dash-breakdown-client">
+        <div class="dash-breakdown-header">
+          <span class="dash-breakdown-dot" style="background:${dc.color}"></span>
+          <strong>${escapeHtml(c.name)}</strong>
+          <span class="muted" style="font-size:0.82rem;margin-left:auto">${escapeHtml(week.label)} · ${escapeHtml(day.name)}</span>
+        </div>`;
+      day.exercises.forEach(ex => {
+        const logEntry = (logs[ex.id] || []).find(l => l.date === iso);
+        body += `<div class="breakdown-ex"><div class="breakdown-ex-name">${escapeHtml(ex.name)}</div><div class="breakdown-sets">`;
+        if (logEntry?.sets?.length) {
+          logEntry.sets.forEach((s, i) => {
+            if (s.weight || s.reps) body += `<span class="breakdown-set-pill">S${i+1} ${s.weight ? escapeHtml(String(s.weight)) + " lb" : "—"} × ${s.reps || "—"}</span>`;
+          });
+        } else if (logEntry?.weight || logEntry?.reps) {
+          body += `<span class="breakdown-set-pill">${logEntry.weight ? escapeHtml(String(logEntry.weight)) + " lb" : "—"} × ${logEntry.reps || "—"}</span>`;
+        } else {
+          body += `<span style="font-size:0.8rem;color:var(--muted)">Not logged</span>`;
+        }
+        body += `</div></div>`;
+      });
+      const dayNote = c.importedProgress?.dayNotes?.[day.id];
+      if (dayNote) body += `<div class="breakdown-note"><span class="breakdown-note-label">Session note</span><p>${escapeHtml(dayNote)}</p></div>`;
+      body += `</div>`;
+    });
+    if (!body) body = `<p class="muted">No workouts logged for this date.</p>`;
+    openModal({ title: `Workouts — ${iso}`, body, actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }] });
+  }
+
   // -------- Coach calendar --------
   function renderCoachCalendar() {
     const c = currentClient(); if (!c) return;
@@ -1483,6 +3120,7 @@
     });
     const cells = buildMonthGrid(year, month);
     const today = todayISO();
+    const selfSched = c.importedProgress?.selfSchedule || {};
     cells.forEach((d) => {
       const iso = dateISO(d);
       const inMonth = d.getMonth() === month;
@@ -1490,23 +3128,66 @@
       cell.className = "cal-day";
       if (!inMonth) cell.classList.add("outside");
       if (iso === today) cell.classList.add("today");
-      const status = dayStatusForCoach(c, iso);
-      if (status) cell.classList.add(status);
-      const sched = c.schedule[iso];
-      cell.innerHTML = `
-        <div class="cal-date-num">${d.getDate()}</div>
-        ${sched ? `<div class="cal-day-label">${escapeHtml(dayLabel(c, sched))}</div>` : ""}
-        ${status === "done" ? `<div class="cal-day-status">✓ Done</div>` : ""}
-        ${status === "partial" ? `<div class="cal-day-status">◐ In progress</div>` : ""}
-        ${status === "missed" ? `<div class="cal-day-status">✗ Missed</div>` : ""}
-        ${status === "rest" ? `<div class="cal-day-status">Rest</div>` : ""}
-      `;
-      if (inMonth && sched && !sched.rest) {
-        const videos = getDayVideos(c, sched);
-        if (videos.length) attachDayVideoButton(cell, videos, dayLabel(c, sched));
+      const entry = selfSched[iso];
+      let pillHtml = "";
+      if (entry && entry.weekId) {
+        const dIdx = getDayIdx(c, entry.weekId, entry.dayId);
+        const dc = getDayColor(dIdx);
+        const wd = findWeekDay(c, entry.weekId, entry.dayId);
+        const name = wd?.day.name || "Workout";
+        pillHtml = `<div class="cal-day-pill" style="--day-color:${dc.color};--day-color-soft:${dc.soft}">${escapeHtml(name)}</div>`;
+        cell.classList.add("has-log");
+      } else if (entry?.rest) {
+        pillHtml = `<div class="cal-day-pill cal-day-pill-rest">Rest</div>`;
+        cell.classList.add("has-log");
       }
-      if (inMonth) cell.addEventListener("click", () => openScheduleModal(iso));
+      cell.innerHTML = `<div class="cal-date-num">${d.getDate()}</div>${pillHtml}`;
+      if (inMonth && entry && !entry.rest) {
+        cell.addEventListener("click", () => openCoachDayBreakdown(iso, c));
+      }
       grid.appendChild(cell);
+    });
+  }
+
+  function openCoachDayBreakdown(iso, c) {
+    const entry = c.importedProgress?.selfSchedule?.[iso]; if (!entry || !entry.weekId) return;
+    const wd = findWeekDay(c, entry.weekId, entry.dayId);
+    if (!wd) {
+      openModal({ title: iso, body: `<p class="muted">Day not found in current program.</p>`, actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }] });
+      return;
+    }
+    const { week, day } = wd;
+    const dIdx = getDayIdx(c, entry.weekId, entry.dayId);
+    const dc = getDayColor(dIdx);
+    const logs = c.importedProgress?.exerciseLogs || {};
+    let bodyHtml = `<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem">
+      <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${dc.color};flex-shrink:0"></span>
+      <span class="muted" style="font-size:0.85rem">${escapeHtml(week.label)}</span>
+    </div>`;
+    if (!day.exercises.length) {
+      bodyHtml += `<p class="muted">No exercises in this day.</p>`;
+    } else {
+      day.exercises.forEach(ex => {
+        const logEntry = (logs[ex.id] || []).find(l => l.date === iso);
+        bodyHtml += `<div class="breakdown-ex"><div class="breakdown-ex-name">${escapeHtml(ex.name)}</div><div class="breakdown-sets">`;
+        if (logEntry?.sets?.length) {
+          logEntry.sets.forEach((s, i) => {
+            if (s.weight || s.reps) bodyHtml += `<span class="breakdown-set-pill">S${i+1} ${s.weight ? escapeHtml(String(s.weight)) + " lb" : "—"} × ${s.reps || "—"}</span>`;
+          });
+        } else if (logEntry?.weight || logEntry?.reps) {
+          bodyHtml += `<span class="breakdown-set-pill">${logEntry.weight ? escapeHtml(String(logEntry.weight)) + " lb" : "—"} × ${logEntry.reps || "—"}</span>`;
+        } else {
+          bodyHtml += `<span style="font-size:0.8rem;color:var(--muted)">Not logged</span>`;
+        }
+        bodyHtml += `</div></div>`;
+      });
+    }
+    const dayNote = c.importedProgress?.dayNotes?.[day.id];
+    if (dayNote) bodyHtml += `<div class="breakdown-note"><span class="breakdown-note-label">Session note</span><p>${escapeHtml(dayNote)}</p></div>`;
+    openModal({
+      title: `${escapeHtml(day.name)} — ${iso}`,
+      body: bodyHtml,
+      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
     });
   }
 
@@ -1641,6 +3322,25 @@
         ${escapeHtml(p.feedback)}`;
       container.appendChild(fb);
     }
+    if (p.dayNotes && Object.keys(p.dayNotes).some((k) => p.dayNotes[k]?.trim())) {
+      const notesCard = document.createElement("div");
+      notesCard.className = "log-week-card";
+      notesCard.innerHTML = `<h4>Session notes from ${escapeHtml(c.name)}</h4>`;
+      let anyNote = false;
+      c.weeks.forEach((w) => {
+        w.days.forEach((d) => {
+          const note = (p.dayNotes[d.id] || "").trim();
+          if (!note) return;
+          anyNote = true;
+          const row = document.createElement("div");
+          row.className = "day-note-coach-row";
+          row.innerHTML = `<div class="day-note-coach-day">${escapeHtml(w.label)} · ${escapeHtml(d.name)}</div>
+            <div class="day-note-coach-text">${escapeHtml(note)}</div>`;
+          notesCard.appendChild(row);
+        });
+      });
+      if (anyNote) container.appendChild(notesCard);
+    }
     if (p.bodyweightLog?.length) {
       const bwCard = document.createElement("div");
       bwCard.className = "log-week-card";
@@ -1720,48 +3420,240 @@
       ${best && best.weight ? `<span class="pr-best"><span class="pr-best-label">PR</span>${escapeHtml(best.weight)} lb × ${escapeHtml(best.reps || "?")}</span>` : ""}
     `;
     card.appendChild(head);
-    sorted.forEach((p, idx) => {
-      const row = document.createElement("div");
-      row.className = "pr-row" + (idx === 0 && best.weight ? " is-best" : "");
-      row.innerHTML = `
-        <div><span class="pr-weight">${escapeHtml(p.weight || "—")} lb</span> <span class="pr-reps">× ${escapeHtml(p.reps || "—")} reps</span></div>
-        <div class="pr-date">${escapeHtml(p.date || "")}</div>
-        <span class="pr-author ${p._author || "coach"}">${(p._author || "coach")}</span>
-        <button class="pr-delete" data-id="${p.id}" data-author="${p._author || ""}" title="Delete">×</button>
-        ${p.notes ? `<div class="pr-notes">${escapeHtml(p.notes)}</div>` : ""}
-      `;
-      card.appendChild(row);
-    });
+    const realEntries = sorted.filter((p) => p.weight || p.reps);
+    if (!realEntries.length) {
+      const hint = document.createElement("div");
+      hint.className = "pr-row pr-placeholder-hint";
+      hint.textContent = "No PR logged yet";
+      card.appendChild(hint);
+    } else {
+      realEntries.forEach((p, idx) => {
+        const row = document.createElement("div");
+        row.className = "pr-row" + (idx === 0 ? " is-best" : "");
+        row.innerHTML = `
+          <div><span class="pr-weight">${escapeHtml(p.weight || "—")} lb</span> <span class="pr-reps">× ${escapeHtml(p.reps || "—")} reps</span></div>
+          <div class="pr-date">${escapeHtml(p.date || "")}</div>
+          <span class="pr-author ${p._author || "coach"}">${(p._author || "coach")}</span>
+          <button class="pr-delete" data-id="${p.id}" data-author="${p._author || ""}" title="Delete">×</button>
+          ${p.notes ? `<div class="pr-notes">${escapeHtml(p.notes)}</div>` : ""}
+        `;
+        card.appendChild(row);
+      });
+    }
     return card;
   }
 
   function renderCoachPRs() {
     const c = currentClient(); if (!c) return;
     const container = $("#coach-pr-container");
-    const empty = $("#coach-pr-empty");
+    const emptyEl = $("#coach-pr-empty");
     container.innerHTML = "";
     if (!c.coachPRs) c.coachPRs = [];
-    ensureSessionBank(c);
-    const coachOwn = c.coachPRs.map((p) => ({ ...p, _author: "coach" }));
-    const athleteImported = (c.importedProgress?.personalRecords || []).map((p) => ({ ...p, _author: "athlete" }));
-    const all = coachOwn.concat(athleteImported);
-    if (!all.length) { show(empty); return; }
-    hide(empty);
-    groupPRs(all).forEach((group) => container.appendChild(renderPRGroup(group)));
-    container.querySelectorAll(".pr-delete").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const id = btn.dataset.id;
-        const author = btn.dataset.author;
-        if (author === "athlete") {
-          toast("Athlete-logged PRs can't be deleted by coach");
-          return;
+
+    // One coach entry per lift name (first match wins)
+    const nameMap = new Map();
+    c.coachPRs.forEach(p => {
+      if (!p.name) return;
+      const key = p.name.trim().toLowerCase();
+      if (!nameMap.has(key)) nameMap.set(key, p);
+    });
+
+    // Best imported athlete PR per name
+    const athleteBestMap = new Map();
+    (c.importedProgress?.personalRecords || []).forEach(p => {
+      if (!p.name) return;
+      const key = p.name.trim().toLowerCase();
+      const cur = athleteBestMap.get(key);
+      if (!cur || Number(p.weight) > Number(cur.weight)) athleteBestMap.set(key, p);
+    });
+
+    const hasAnything = nameMap.size > 0 || _prNewLifts.length > 0 || athleteBestMap.size > 0;
+    if (!hasAnything) { show(emptyEl); return; }
+    hide(emptyEl);
+
+    // Coach-managed cards (editable)
+    nameMap.forEach((entry, key) => {
+      const inEdit = _prEditIds.has(entry.id) || !(entry.pr1 || entry.pr2 || entry.pr3);
+      container.appendChild(buildCoachPRCard(c, entry, inEdit, false, athleteBestMap.get(key)));
+    });
+
+    // Read-only athlete-only lifts (no coach entry for this name)
+    athleteBestMap.forEach((p, key) => {
+      if (nameMap.has(key)) return;
+      const card = document.createElement("div");
+      card.className = "pr-edit-card pr-athlete-only";
+      card.innerHTML = `
+        <div class="pr-view-header">
+          <h4 class="pr-exercise-name">${escapeHtml(p.name)}</h4>
+          <span class="pr-author athlete">athlete</span>
+        </div>
+        <div class="pr-view-value">
+          <span class="pr-weight">${escapeHtml(p.weight || "—")} lb</span>
+          <span class="pr-reps">× ${escapeHtml(p.reps || "—")} reps</span>
+          ${p.date ? `<span class="pr-date">${escapeHtml(p.date)}</span>` : ""}
+        </div>`;
+      container.appendChild(card);
+    });
+
+    // Unsaved new lift cards
+    _prNewLifts.forEach(nl => {
+      container.appendChild(buildCoachPRCard(c, { id: nl.tempId, name: "", weight: "", reps: "", date: "" }, true, true, null));
+    });
+
+    // + Add lift button
+    const addBtn = document.createElement("button");
+    addBtn.className = "btn btn-ghost pr-add-lift-btn";
+    addBtn.textContent = "+ Add lift";
+    addBtn.addEventListener("click", addPRLift);
+    container.appendChild(addBtn);
+  }
+
+  function addPRLift() {
+    _prNewLifts.push({ tempId: uid() });
+    renderCoachPRs();
+    setTimeout(() => {
+      const cards = $$("#coach-pr-container .pr-edit-card");
+      if (cards.length) cards[cards.length - 1].scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 50);
+  }
+
+  function buildCoachPRCard(c, entry, inEdit, isNew, athletePR) {
+    const card = document.createElement("div");
+    card.className = "pr-edit-card" + (inEdit ? " is-editing" : "");
+
+    if (inEdit) {
+      card.innerHTML = `
+        ${isNew
+          ? `<div class="pr-edit-name-row"><input class="pr-name-input" placeholder="Exercise name…" value="${escapeHtml(entry.name || "")}"></div>`
+          : `<div class="pr-edit-name">${escapeHtml(entry.name)}</div>`}
+        <div class="pr-edit-fields">
+          <div class="pr-field-group">
+            <label class="pr-field-label">1 Rep PR (lb)</label>
+            <input class="pr-1rm-input" type="number" min="0" step="any" placeholder="e.g. 315">
+          </div>
+          <div class="pr-field-group">
+            <label class="pr-field-label">2 Rep PR (lb)</label>
+            <input class="pr-2rm-input" type="number" min="0" step="any" placeholder="e.g. 295">
+          </div>
+          <div class="pr-field-group">
+            <label class="pr-field-label">3 Rep PR (lb)</label>
+            <input class="pr-3rm-input" type="number" min="0" step="any" placeholder="e.g. 275">
+          </div>
+        </div>
+        <div class="pr-edit-actions">
+          <button class="pr-cancel-btn btn btn-ghost btn-sm">Cancel</button>
+          <button class="pr-save-btn btn btn-primary btn-sm">Save PR</button>
+        </div>`;
+
+      if (!isNew) {
+        card.querySelector(".pr-1rm-input").value = entry.pr1 || "";
+        card.querySelector(".pr-2rm-input").value = entry.pr2 || "";
+        card.querySelector(".pr-3rm-input").value = entry.pr3 || "";
+      }
+
+      card.querySelector(".pr-save-btn").addEventListener("click", () => {
+        const newName = isNew ? (card.querySelector(".pr-name-input")?.value.trim() || "") : entry.name;
+        const pr1 = card.querySelector(".pr-1rm-input").value.trim();
+        const pr2 = card.querySelector(".pr-2rm-input").value.trim();
+        const pr3 = card.querySelector(".pr-3rm-input").value.trim();
+        if (!newName) { toast("Enter a lift name"); return; }
+        if (!pr1 && !pr2 && !pr3) { toast("Enter at least one PR"); return; }
+        if (isNew) {
+          c.coachPRs.push({ id: uid(), name: newName, pr1, pr2, pr3 });
+          _prNewLifts = _prNewLifts.filter(nl => nl.tempId !== entry.id);
+        } else {
+          const real = c.coachPRs.find(p => p.id === entry.id);
+          if (real) { real.pr1 = pr1; real.pr2 = pr2; real.pr3 = pr3; real.date = todayISO(); }
+          _prEditIds.delete(entry.id);
         }
-        if (!window.confirm("Delete this PR entry?")) return;
-        c.coachPRs = c.coachPRs.filter((p) => p.id !== id);
         saveTrainer();
         renderCoachPRs();
       });
-    });
+
+      card.querySelector(".pr-cancel-btn").addEventListener("click", () => {
+        if (isNew) {
+          _prNewLifts = _prNewLifts.filter(nl => nl.tempId !== entry.id);
+        } else {
+          _prEditIds.delete(entry.id);
+        }
+        renderCoachPRs();
+      });
+    } else {
+      const rmPill = (label, val) => val
+        ? `<span class="pr-rm-pill"><span class="pr-rm-label">${label}</span>${escapeHtml(val)} lb</span>`
+        : `<span class="pr-rm-pill pr-rm-empty"><span class="pr-rm-label">${label}</span>—</span>`;
+      card.innerHTML = `
+        <div class="pr-view-header">
+          <h4 class="pr-exercise-name">${escapeHtml(entry.name)}</h4>
+          <div class="pr-view-btns">
+            <button class="pr-edit-btn btn btn-ghost btn-sm">Edit</button>
+            <button class="pr-delete-btn" title="Delete">×</button>
+          </div>
+        </div>
+        <div class="pr-rm-row">
+          ${rmPill("1RM", entry.pr1)}
+          ${rmPill("2RM", entry.pr2)}
+          ${rmPill("3RM", entry.pr3)}
+        </div>
+        ${athletePR ? `
+          <div class="pr-athlete-row">
+            <span class="pr-author athlete">athlete</span>
+            <span>${escapeHtml(athletePR.weight || "—")} lb × ${escapeHtml(athletePR.reps || "—")} reps</span>
+          </div>` : ""}`;
+
+      card.querySelector(".pr-edit-btn").addEventListener("click", () => {
+        _prEditIds.add(entry.id);
+        renderCoachPRs();
+      });
+      card.querySelector(".pr-delete-btn").addEventListener("click", () => {
+        if (!window.confirm(`Delete "${entry.name}" PR?`)) return;
+        c.coachPRs = c.coachPRs.filter(p => p.id !== entry.id);
+        saveTrainer();
+        renderCoachPRs();
+      });
+    }
+
+    // Drag-and-drop reordering (existing entries only)
+    if (!isNew) {
+      card.setAttribute("draggable", "true");
+
+      const handle = document.createElement("div");
+      handle.className = "pr-drag-handle";
+      handle.title = "Drag to reorder";
+      card.insertBefore(handle, card.firstChild);
+
+      card.addEventListener("dragstart", (e) => {
+        _prDragSrcId = entry.id;
+        e.dataTransfer.effectAllowed = "move";
+        setTimeout(() => card.classList.add("pr-dragging"), 0);
+      });
+      card.addEventListener("dragend", () => {
+        card.classList.remove("pr-dragging");
+        $$("#coach-pr-container .pr-drag-over").forEach(el => el.classList.remove("pr-drag-over"));
+      });
+      card.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        if (_prDragSrcId && _prDragSrcId !== entry.id) card.classList.add("pr-drag-over");
+      });
+      card.addEventListener("dragleave", (e) => {
+        if (!card.contains(e.relatedTarget)) card.classList.remove("pr-drag-over");
+      });
+      card.addEventListener("drop", (e) => {
+        e.preventDefault();
+        card.classList.remove("pr-drag-over");
+        if (!_prDragSrcId || _prDragSrcId === entry.id) return;
+        const srcIdx = c.coachPRs.findIndex(p => p.id === _prDragSrcId);
+        const tgtIdx = c.coachPRs.findIndex(p => p.id === entry.id);
+        if (srcIdx === -1 || tgtIdx === -1) return;
+        const [moved] = c.coachPRs.splice(srcIdx, 1);
+        c.coachPRs.splice(tgtIdx, 0, moved);
+        _prDragSrcId = null;
+        saveTrainer();
+        renderCoachPRs();
+      });
+    }
+
+    return card;
   }
 
   function renderAthletePRs() {
@@ -1770,26 +3662,43 @@
     container.innerHTML = "";
     const prog = state.clientData.program; if (!prog) return;
     const athleteOwn = (state.clientData.progress.personalRecords || []).map((p) => ({ ...p, _author: "athlete" }));
-    const coachShared = (prog.client.coachPRs || []).map((p) => ({ ...p, _author: "coach" }));
-    const all = athleteOwn.concat(coachShared);
-    if (!all.length) { show(empty); return; }
+    const coachPRs = (prog.client.coachPRs || []).filter(p => p.name && (p.pr1 || p.pr2 || p.pr3));
+    if (!athleteOwn.length && !coachPRs.length) { show(empty); return; }
     hide(empty);
-    groupPRs(all).forEach((group) => container.appendChild(renderPRGroup(group)));
-    container.querySelectorAll(".pr-delete").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const id = btn.dataset.id;
-        const author = btn.dataset.author;
-        if (author === "coach") {
-          toast("Coach-shared PRs can't be deleted here");
-          return;
-        }
-        if (!window.confirm("Delete this PR entry?")) return;
-        state.clientData.progress.personalRecords =
-          state.clientData.progress.personalRecords.filter((p) => p.id !== id);
-        saveClient();
-        renderAthletePRs();
-      });
+
+    // Coach-set 1RM/2RM/3RM cards (read-only)
+    const rmPill = (label, val) => val
+      ? `<span class="pr-rm-pill"><span class="pr-rm-label">${label}</span>${escapeHtml(val)} lb</span>`
+      : `<span class="pr-rm-pill pr-rm-empty"><span class="pr-rm-label">${label}</span>—</span>`;
+    coachPRs.forEach(entry => {
+      const card = document.createElement("div");
+      card.className = "pr-edit-card pr-athlete-only";
+      card.innerHTML = `
+        <div class="pr-view-header">
+          <h4 class="pr-exercise-name">${escapeHtml(entry.name)}</h4>
+          <span class="pr-author coach">coach</span>
+        </div>
+        <div class="pr-rm-row">
+          ${rmPill("1RM", entry.pr1)}
+          ${rmPill("2RM", entry.pr2)}
+          ${rmPill("3RM", entry.pr3)}
+        </div>`;
+      container.appendChild(card);
     });
+
+    // Athlete's own PRs (weight × reps format)
+    if (athleteOwn.length) {
+      groupPRs(athleteOwn).forEach((group) => container.appendChild(renderPRGroup(group)));
+      container.querySelectorAll(".pr-delete").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (!window.confirm("Delete this PR entry?")) return;
+          state.clientData.progress.personalRecords =
+            state.clientData.progress.personalRecords.filter((p) => p.id !== btn.dataset.id);
+          saveClient();
+          renderAthletePRs();
+        });
+      });
+    }
   }
 
   function suggestExerciseNames(side) {
@@ -1993,6 +3902,24 @@
     });
   }
 
+  // -------- Day color system --------
+  const DAY_COLORS = [
+    { color: "#06b6d4", soft: "rgba(6,182,212,0.15)"   }, // teal
+    { color: "#f97316", soft: "rgba(249,115,22,0.15)"   }, // orange
+    { color: "#a855f7", soft: "rgba(168,85,247,0.15)"   }, // purple
+    { color: "#ec4899", soft: "rgba(236,72,153,0.15)"   }, // rose
+    { color: "#22c55e", soft: "rgba(34,197,94,0.15)"    }, // green
+    { color: "#eab308", soft: "rgba(234,179,8,0.15)"    }, // yellow
+    { color: "#6366f1", soft: "rgba(99,102,241,0.15)"   }, // indigo
+  ];
+  function getDayColor(idx) { return DAY_COLORS[idx % DAY_COLORS.length]; }
+  function getDayIdx(client, weekId, dayId) {
+    const week = (client.weeks || []).find(w => w.id === weekId);
+    if (!week) return 0;
+    const i = week.days.findIndex(d => d.id === dayId);
+    return i >= 0 ? i : 0;
+  }
+
   // -------- Session bank (coach side) --------
   const PACKAGE_SIZES = [4, 8, 16];
 
@@ -2118,40 +4045,31 @@
 
   function openAddPackageModal() {
     const c = currentClient(); if (!c) return;
-    const sizeOpts = PACKAGE_SIZES.map((s) =>
-      `<button class="pkg-size-btn" type="button" data-size="${s}">
-        <span class="pkg-size-num">${s}</span>
-        <span class="pkg-size-lbl">sessions</span>
-      </button>`
-    ).join("");
     openModal({
       title: "Add training package",
       body: `
         <p class="muted" style="margin-top:-0.4em">Confirm payment with the athlete first (Venmo, cash, Stripe link, etc.), then add the package here.</p>
-        <div class="pkg-size-grid">${sizeOpts}</div>
+        <label>Number of sessions
+          <input type="number" id="pkg-size-input" min="1" max="50" placeholder="e.g. 10" style="font-size:1.5rem;text-align:center;" autofocus />
+        </label>
         <label>Note (optional)
           <input type="text" id="pkg-note" placeholder="e.g. Venmo $200 · ref #1234" />
-        </label>
-        <p id="pkg-error" class="error hidden"></p>`,
-      actions: [{ label: "Cancel", className: "btn btn-ghost", onClick: closeModal }],
-    });
-    let selectedSize = null;
-    $("#modal-body").querySelectorAll(".pkg-size-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        selectedSize = Number(btn.dataset.size);
-        $("#modal-body").querySelectorAll(".pkg-size-btn").forEach((b) => b.classList.toggle("selected", b === btn));
-        const note = $("#pkg-note").value.trim();
-        const pkg = {
-          id: uid(), size: selectedSize, status: "paid",
-          addedAt: Date.now(), paidAt: Date.now(), note,
-        };
-        ensureSessionBank(c);
-        c.sessionBank.packages.push(pkg);
-        saveTrainer();
-        renderCoachSessions();
-        closeModal();
-        toast(`Added ${selectedSize}-session package ✓`);
-      });
+        </label>`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Add package", className: "btn btn-primary", onClick: () => {
+          const size = parseInt($("#pkg-size-input").value, 10);
+          if (!size || size < 1 || size > 50) { toast("Enter a number between 1 and 50"); return; }
+          const note = $("#pkg-note").value.trim();
+          const pkg = { id: uid(), size, status: "paid", addedAt: Date.now(), paidAt: Date.now(), note };
+          ensureSessionBank(c);
+          c.sessionBank.packages.push(pkg);
+          saveTrainer();
+          renderCoachSessions();
+          closeModal();
+          toast(`Added ${size}-session package ✓`);
+        }},
+      ],
     });
   }
 
@@ -2187,7 +4105,7 @@
   function approvePackageRequest(reqId, size) {
     const c = currentClient(); if (!c) return;
     ensureSessionBank(c);
-    if (!PACKAGE_SIZES.includes(size)) size = 4;
+    size = Math.min(50, Math.max(1, Number(size) || 1));
     c.sessionBank.packages.push({
       id: uid(), size, status: "paid",
       addedAt: Date.now(), paidAt: Date.now(),
@@ -2226,6 +4144,7 @@
         goals: c.goals, weeks: c.weeks, schedule: c.schedule || {},
         coachPRs: c.coachPRs || [],
         sessionBank: c.sessionBank || { packages: [], redemptions: [] },
+        archivedPrograms: c.archivedPrograms || [],
         inviteCode: c.inviteCode || "",
       },
     };
@@ -2428,7 +4347,7 @@
       err.classList.remove("hidden");
     }
   }
-  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [] }; }
+  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {} }; }
   function ensureProgressShape(p) {
     if (!p.exerciseLogs) p.exerciseLogs = {};
     if (!p.bodyweightLog) p.bodyweightLog = [];
@@ -2436,6 +4355,7 @@
     if (!p.dayCompletions) p.dayCompletions = {};
     if (!p.personalRecords) p.personalRecords = [];
     if (!p.packageRequests) p.packageRequests = [];
+    if (!p.dayNotes) p.dayNotes = {};
     return p;
   }
   function isDayChecked(dayId) {
@@ -2481,7 +4401,9 @@
   function exitClient() {
     state.mode = null;
     sessionStorage.removeItem(KEY_SESSION);
-    pickRole("client");
+    _signOutOnLeave = false;
+    if (window.Cloud?.enabled) window.Cloud.signOut();
+    showLoginScreen("#login-role");
   }
   function setClientTab(name) {
     $$(".tab[data-ctab]").forEach((t) => t.classList.toggle("active", t.dataset.ctab === name));
@@ -2503,6 +4425,7 @@
     });
     const cells = buildMonthGrid(year, month);
     const today = todayISO();
+    const selfSched = state.clientData.progress.selfSchedule || {};
     cells.forEach((d) => {
       const iso = dateISO(d);
       const inMonth = d.getMonth() === month;
@@ -2510,24 +4433,65 @@
       cell.className = "cal-day";
       if (!inMonth) cell.classList.add("outside");
       if (iso === today) cell.classList.add("today");
-      const status = dayStatusForAthlete(prog, state.clientData.progress, iso);
-      if (status) cell.classList.add(status);
-      const sched = prog.client.schedule?.[iso];
-      cell.innerHTML = `
-        <div class="cal-date-num">${d.getDate()}</div>
-        ${sched ? `<div class="cal-day-label">${escapeHtml(dayLabel(prog.client, sched))}</div>` : ""}
-        ${status === "done" ? `<div class="cal-day-status">✓ Done</div>` : ""}
-        ${status === "partial" ? `<div class="cal-day-status">◐ In progress</div>` : ""}
-        ${status === "missed" ? `<div class="cal-day-status">✗ Missed</div>` : ""}
-        ${status === "rest" ? `<div class="cal-day-status">Rest</div>` : ""}
-        ${status === "scheduled" ? `<div class="cal-day-status">Up next</div>` : ""}
-      `;
-      if (inMonth && sched && !sched.rest) {
-        const videos = getDayVideos(prog.client, sched);
-        if (videos.length) attachDayVideoButton(cell, videos, dayLabel(prog.client, sched));
-        cell.addEventListener("click", () => jumpToWorkout(sched, iso));
+      const entry = selfSched[iso];
+      let pillHtml = "";
+      if (entry && entry.weekId) {
+        const dIdx = getDayIdx(prog.client, entry.weekId, entry.dayId);
+        const dc = getDayColor(dIdx);
+        const wd = findWeekDay(prog.client, entry.weekId, entry.dayId);
+        const name = wd?.day.name || "Workout";
+        pillHtml = `<div class="cal-day-pill" style="--day-color:${dc.color};--day-color-soft:${dc.soft}">${escapeHtml(name)}</div>`;
+        cell.classList.add("has-log");
+      } else if (entry?.rest) {
+        pillHtml = `<div class="cal-day-pill cal-day-pill-rest">Rest</div>`;
+        cell.classList.add("has-log");
       }
+      cell.innerHTML = `<div class="cal-date-num">${d.getDate()}</div>${pillHtml}`;
+      if (inMonth) cell.addEventListener("click", () => openAthleteLogDayModal(iso));
       grid.appendChild(cell);
+    });
+  }
+
+  function openAthleteLogDayModal(iso) {
+    const prog = state.clientData.program; if (!prog) return;
+    const selfSched = state.clientData.progress.selfSchedule || {};
+    const existing = selfSched[iso];
+    const client = prog.client;
+    let optsHtml = `<div class="day-log-grid">`;
+    client.weeks.forEach((week) => {
+      week.days.forEach((day, dIdx) => {
+        const dc = getDayColor(dIdx);
+        const sel = (existing?.weekId === week.id && existing?.dayId === day.id) ? " selected" : "";
+        optsHtml += `<button class="day-log-opt${sel}" data-week="${escapeHtml(week.id)}" data-day="${escapeHtml(day.id)}"
+          style="--day-color:${dc.color};--day-color-soft:${dc.soft}" type="button">
+          <span class="day-log-dot"></span>
+          <span class="day-log-name">${escapeHtml(day.name)}</span>
+          <span class="day-log-week">${escapeHtml(week.label)}</span>
+        </button>`;
+      });
+    });
+    const restSel = existing?.rest ? " selected" : "";
+    optsHtml += `<button class="day-log-opt day-log-rest${restSel}" data-rest="1" type="button">
+      <span class="day-log-dot" style="background:var(--muted)"></span>
+      <span class="day-log-name">Rest day</span>
+    </button></div>`;
+    const actions = [{ label: "Cancel", className: "btn btn-ghost", onClick: closeModal }];
+    if (existing) actions.push({ label: "Clear", className: "btn btn-ghost", onClick: () => {
+      if (!state.clientData.progress.selfSchedule) state.clientData.progress.selfSchedule = {};
+      delete state.clientData.progress.selfSchedule[iso];
+      saveClient(); renderAthleteCalendar(); closeModal();
+    }});
+    openModal({ title: `Log for ${iso}`, body: optsHtml, actions });
+    $("#modal-body").querySelectorAll(".day-log-opt").forEach(btn => {
+      btn.addEventListener("click", () => {
+        if (!state.clientData.progress.selfSchedule) state.clientData.progress.selfSchedule = {};
+        if (btn.dataset.rest) {
+          state.clientData.progress.selfSchedule[iso] = { rest: true, loggedAt: Date.now() };
+        } else {
+          state.clientData.progress.selfSchedule[iso] = { weekId: btn.dataset.week, dayId: btn.dataset.day, loggedAt: Date.now() };
+        }
+        saveClient(); renderAthleteCalendar(); closeModal(); toast("Logged ✓");
+      });
     });
   }
   function jumpToWorkout(sched, iso) {
@@ -2580,6 +4544,7 @@
     });
 
     renderWorkoutPickerUI();
+    renderClientArchive(prog.client);
 
     if (state.workoutView.mode === "detail" && state.workoutView.dayId) {
       renderWorkoutDetailUI();
@@ -2587,6 +4552,45 @@
       hide($("#workout-detail"));
       show($("#workout-picker"));
     }
+  }
+
+  function renderClientArchive(client) {
+    const container = $("#client-archive-container");
+    if (!container) return;
+    const archives = client?.archivedPrograms;
+    if (!archives || !archives.length) { container.innerHTML = ""; return; }
+    container.innerHTML = "";
+    const section = document.createElement("details");
+    section.className = "archive-section";
+    const summary = document.createElement("summary");
+    summary.className = "archive-summary";
+    summary.textContent = `📁 Past Programs (${archives.length})`;
+    section.appendChild(summary);
+    archives.forEach((prog) => {
+      const card = document.createElement("div");
+      card.className = "archive-prog-card";
+      const d = prog.archivedAt ? new Date(prog.archivedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "";
+      const exTotal = prog.weeks.reduce((n, w) => n + w.days.reduce((m, dd) => m + dd.exercises.length, 0), 0);
+      const head = document.createElement("div");
+      head.className = "archive-prog-head";
+      head.innerHTML = `
+        <div class="archive-prog-info">
+          <span class="archive-prog-label">${escapeHtml(prog.label)}</span>
+          <span class="archive-prog-meta">${prog.weeks.length} week${prog.weeks.length === 1 ? "" : "s"} · ${exTotal} exercise${exTotal === 1 ? "" : "s"}${d ? " · saved " + escapeHtml(d) : ""}</span>
+        </div>
+        <button class="btn btn-ghost btn-xs" data-action="toggle">Expand</button>`;
+      const body = document.createElement("div");
+      body.className = "archive-prog-body hidden";
+      prog.weeks.forEach((week) => body.appendChild(renderArchiveWeek(week)));
+      head.querySelector('[data-action="toggle"]').addEventListener("click", () => {
+        const open = body.classList.toggle("hidden");
+        head.querySelector('[data-action="toggle"]').textContent = open ? "Expand" : "Collapse";
+      });
+      card.appendChild(head);
+      card.appendChild(body);
+      section.appendChild(card);
+    });
+    container.appendChild(section);
   }
 
   // Clipboard only surfaces the first N weeks; deeper weeks live under "See all weeks".
@@ -2638,6 +4642,9 @@
     week.days.forEach((day, idx) => {
       const card = document.createElement("button");
       card.className = "workout-card";
+      const dc = getDayColor(idx);
+      card.style.setProperty("--day-color", dc.color);
+      card.style.setProperty("--day-color-soft", dc.soft);
       const totalEx = day.exercises.length;
       const doneEx = day.exercises.filter((ex) => hasAnyLog(ex)).length;
       const checked = isDayChecked(day.id);
@@ -2682,6 +4689,51 @@
     return "🐉";
   }
 
+  function renderDayNoteBlock(dayId) {
+    const notes = state.clientData.progress.dayNotes || {};
+    const existing = notes[dayId] || "";
+
+    const block = document.createElement("div");
+    block.className = "day-note-block";
+
+    const toggle = document.createElement("button");
+    toggle.className = "day-note-toggle" + (existing ? " has-note" : "");
+    toggle.innerHTML = `<span class="day-note-icon">✏️</span> <span class="day-note-label">${existing ? "Session note" : "Add a note for your coach"}</span><span class="day-note-chevron">${existing ? "›" : "+"}</span>`;
+
+    const area = document.createElement("div");
+    area.className = "day-note-area hidden";
+
+    const ta = document.createElement("textarea");
+    ta.className = "day-note-ta";
+    ta.placeholder = "How did the session feel? Any aches, PRs, adjustments you made…";
+    ta.rows = 4;
+    ta.value = existing;
+    ta.addEventListener("input", () => {
+      if (!state.clientData.progress.dayNotes) state.clientData.progress.dayNotes = {};
+      state.clientData.progress.dayNotes[dayId] = ta.value;
+      saveClient();
+      toggle.classList.toggle("has-note", !!ta.value.trim());
+      toggle.querySelector(".day-note-label").textContent = ta.value.trim() ? "Session note" : "Add a note for your coach";
+    });
+
+    area.appendChild(ta);
+    block.appendChild(toggle);
+    block.appendChild(area);
+
+    let open = !!existing;
+    area.classList.toggle("hidden", !open);
+    toggle.querySelector(".day-note-chevron").textContent = open ? "›" : "+";
+
+    toggle.addEventListener("click", () => {
+      open = !open;
+      area.classList.toggle("hidden", !open);
+      toggle.querySelector(".day-note-chevron").textContent = open ? "›" : "+";
+      if (open) setTimeout(() => ta.focus(), 50);
+    });
+
+    return block;
+  }
+
   function renderWorkoutDetailUI() {
     const prog = state.clientData.program;
     const week = prog?.client?.weeks?.find((w) => w.id === state.workoutView.weekId);
@@ -2720,12 +4772,12 @@
 
     const list = $("#workout-detail-list");
     list.innerHTML = "";
-    day.exercises.forEach((ex, idx) => {
-      const card = renderClientExercise(week, day, ex, null);
-      card.style.animationDelay = `${idx * 70}ms`;
-      card.classList.add("anim-in");
-      list.appendChild(card);
-    });
+    if (!day.exercises.length) {
+      list.innerHTML = `<div class="empty-state"><div class="empty-emoji">💤</div><p>No exercises for this day.</p></div>`;
+    } else {
+      day.exercises.forEach((ex) => list.appendChild(renderClientExercise(week, day, ex, null)));
+    }
+    list.appendChild(renderDayNoteBlock(day.id));
 
     hide($("#workout-picker"));
     show($("#workout-detail"));
@@ -2801,105 +4853,225 @@
       toggleDayComplete(day.id);
       toast(checked ? "Unchecked" : "Day complete ✓");
     });
-    day.exercises.forEach((ex) => card.appendChild(renderClientExercise(week, day, ex, jumpTo)));
+    const exList = document.createElement("div");
+    exList.className = "cex-list";
+    day.exercises.forEach((ex) => exList.appendChild(renderClientExercise(week, day, ex, jumpTo)));
+    card.appendChild(exList);
     return card;
   }
   function renderClientExercise(week, day, ex, jumpTo) {
-    const card = document.createElement("div");
-    card.className = "client-exercise-card";
-    card.dataset.week = week.id;
-    card.dataset.day = day.id;
+    if (!ex.modifiers) ex.modifiers = [];
     const logs = state.clientData.progress?.exerciseLogs?.[ex.id] || [];
     const isDone = logs.length > 0;
-    if (isDone) card.classList.add("done");
-    const prescription = [];
-    if (ex.sets) prescription.push(`<span class="px">Sets <strong>${escapeHtml(ex.sets)}</strong></span>`);
-    if (ex.currentReps && !ex.currentWeight) {
-      prescription.push(`<span class="px">Target reps: <strong>${escapeHtml(ex.currentReps)}</strong></span>`);
-    } else if (ex.currentWeight || ex.currentReps) {
-      prescription.push(`<span class="px">Current top: <strong>${escapeHtml(ex.currentWeight || "?")}×${escapeHtml(ex.currentReps || "?")}</strong></span>`);
+    const lastLog = logs.length ? [...logs].sort((a, b) => b.date.localeCompare(a.date))[0] : null;
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "cex-wrapper" + (isDone ? " logged" : "");
+    wrapper.dataset.week = week.id;
+    wrapper.dataset.day = day.id;
+
+    // ── Compact row ──
+    const row = document.createElement("div");
+    row.className = "cex-row";
+
+    const doneCircle = document.createElement("div");
+    doneCircle.className = "cex-circle" + (isDone ? " done" : "");
+    doneCircle.textContent = isDone ? "✓" : "";
+
+    const nameBlock = document.createElement("div");
+    nameBlock.className = "cex-name-block";
+
+    const nameEl = document.createElement("span");
+    nameEl.className = "cex-name";
+    nameEl.textContent = ex.name || "(unnamed)";
+    nameBlock.appendChild(nameEl);
+
+    if (ex.modifiers.length) {
+      const chips = document.createElement("div");
+      chips.className = "cex-chips";
+      ex.modifiers.forEach((tag) => {
+        const g = groupForTag(tag);
+        if (!g) return;
+        const { color, bg } = tagColor(tag);
+        const c = document.createElement("span");
+        c.className = "mod-chip";
+        c.style.setProperty("--mc", color);
+        c.style.setProperty("--mb", bg);
+        c.textContent = tag;
+        chips.appendChild(c);
+      });
+      nameBlock.appendChild(chips);
     }
-    if (ex.goalWeight || ex.goalReps) {
-      prescription.push(`<span class="px">Goal: <strong>${escapeHtml(ex.goalWeight || "?")}×${escapeHtml(ex.goalReps || "?")}</strong></span>`);
+
+    const rxEl = document.createElement("div");
+    rxEl.className = "cex-rx";
+    const rxParts = [];
+    if (ex.sets) rxParts.push(ex.sets + " sets");
+    if (ex.currentWeight) {
+      const lo = ex.currentWeight === "BW" ? "BW" : ex.currentWeight + " lb";
+      const hi = ex.goalWeight && ex.goalWeight !== ex.currentWeight
+        ? (ex.goalWeight === "BW" ? "BW" : ex.goalWeight + " lb")
+        : null;
+      rxParts.push(hi ? lo + "–" + hi : lo);
     }
-    const presetDate = jumpTo?.dayId === day.id ? jumpTo.date : todayISO();
+    if (ex.currentReps) rxParts.push("× " + ex.currentReps);
+    rxEl.textContent = rxParts.join(" · ") || "—";
+
+    if (lastLog) {
+      const ll = document.createElement("div");
+      ll.className = "cex-last-log";
+      if (lastLog.sets?.length) {
+        const s = lastLog.sets[0];
+        ll.textContent = `Last: ${s.weight ? s.weight + " lb" : "BW"} × ${s.reps || "?"} (${lastLog.sets.length} set${lastLog.sets.length === 1 ? "" : "s"})`;
+      } else {
+        ll.textContent = `Last: ${lastLog.weight ? lastLog.weight + " lb" : "BW"} × ${lastLog.reps || "?"}`;
+      }
+      rxEl.appendChild(ll);
+    }
+
+    row.appendChild(doneCircle);
+    row.appendChild(nameBlock);
+    row.appendChild(rxEl);
+
+    // ── Panel (always open) ──
+    const panel = document.createElement("div");
+    panel.className = "cex-panel";
+
+    if (ex.notes) {
+      const notesEl = document.createElement("div");
+      notesEl.className = "cex-coach-note";
+      notesEl.textContent = ex.notes;
+      panel.appendChild(notesEl);
+    }
+
     const ytId = getYouTubeId(ex.videoUrl);
-    const videoBtn = ytId
-      ? `<button class="btn btn-sm video-btn" data-action="watch-demo" data-yt="${escapeHtml(ytId)}" data-name="${escapeHtml(ex.name || "Exercise")}">▶ Watch demo</button>`
-      : (ex.videoUrl ? `<a href="${escapeHtml(ex.videoUrl)}" target="_blank" rel="noopener" class="btn btn-sm video-btn">▶ Open demo link</a>` : "");
-    card.innerHTML = `
-      <h5>${escapeHtml(ex.name || "(unnamed exercise)")}${isDone ? ' <span class="done-check">✓</span>' : ""}</h5>
-      <div class="prescription">${prescription.join("") || '<span class="muted">No prescription yet.</span>'}</div>
-      ${videoBtn ? `<div class="client-video-row">${videoBtn}</div>` : ""}
-      ${ex.notes ? `<div class="client-instructions">${escapeHtml(ex.notes)}</div>` : ""}
-      <div class="client-log-form">
-        <div class="client-log-form-title">Log this session</div>
-        <div class="client-log-row">
-          <label>Date<input type="date" data-field="date" /></label>
-          <label>Weight (lb)<input type="number" step="0.5" min="0" placeholder="lb" data-field="weight" /></label>
-          <label>Reps<input type="number" min="0" placeholder="reps" data-field="reps" /></label>
-        </div>
-        <div class="client-log-row">
-          <label>Sets done<input type="number" min="0" placeholder="sets" data-field="sets" /></label>
-          <label style="grid-column: 2 / span 2;">Notes
-            <input type="text" placeholder="How it felt, anything to note…" data-field="notes" />
-          </label>
-        </div>
-        <div class="client-log-actions">
-          <button class="btn btn-sm btn-primary" data-action="log">Save log</button>
-        </div>
-      </div>
-      ${logs.length ? `<details class="client-log-history">
-        <summary>Previous logs (${logs.length})</summary>
-        <div class="client-log-history-list"></div>
-      </details>` : ""}`;
-    card.querySelector('[data-field="date"]').value = presetDate;
+    if (ytId || ex.videoUrl) {
+      const vBtn = document.createElement("button");
+      vBtn.className = "btn btn-sm btn-ghost";
+      vBtn.textContent = "▶ Watch demo";
+      vBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (ytId) openVideoModal(ytId, ex.name || "Exercise");
+        else window.open(ex.videoUrl, "_blank", "noopener");
+      });
+      panel.appendChild(vBtn);
+    }
+
+    // Log form
+    const logDate = jumpTo?.dayId === day.id ? jumpTo.date : todayISO();
+    const logForm = document.createElement("div");
+    logForm.className = "cex-log-form";
+
+    const numSets = parseInt(ex.sets) || 0;
+    const wtPh = ex.currentWeight && ex.currentWeight !== "BW" ? ex.currentWeight : "";
+    const repPh = ex.currentReps || "";
+
+    // Header row
+    const setTable = document.createElement("div");
+    setTable.className = "cex-set-table";
+
+    if (!numSets) {
+      setTable.innerHTML = `<p class="cex-no-sets">Sets not prescribed yet — your coach will fill this in.</p>`;
+      logForm.appendChild(setTable);
+    } else {
+    const setInputs = [];
+    for (let s = 0; s < numSets; s++) {
+      const col = document.createElement("div");
+      col.className = "cex-set-col";
+
+      const lbl = document.createElement("span");
+      lbl.className = "cex-set-lbl";
+      lbl.textContent = `S${s + 1}`;
+
+      const wt = Object.assign(document.createElement("input"), { type: "number", step: "0.5", min: "0", placeholder: wtPh || "lb" });
+      const rp = Object.assign(document.createElement("input"), { type: "number", min: "0", placeholder: repPh || "reps" });
+      [wt, rp].forEach((i) => { i.className = "cex-input"; i.addEventListener("click", (e) => e.stopPropagation()); });
+
+      col.appendChild(lbl);
+      col.appendChild(wt);
+      col.appendChild(rp);
+      setTable.appendChild(col);
+      setInputs.push({ wt, rp });
+    }
+
+    // Pre-fill today's existing log so edits persist
+    const todayLog = logs.find(l => l.date === logDate);
+    if (todayLog?.sets?.length) {
+      todayLog.sets.forEach((s, i) => {
+        if (setInputs[i]) { setInputs[i].wt.value = s.weight || ""; setInputs[i].rp.value = s.reps || ""; }
+      });
+    }
+
+    // Auto-save: debounced 800ms after last keystroke, upserts today's entry
+    let _ast = null;
+    const autoSave = () => {
+      clearTimeout(_ast);
+      _ast = setTimeout(() => {
+        const sets = setInputs.map(({ wt, rp }) => ({ weight: wt.value, reps: rp.value }))
+                              .filter(s => s.weight || s.reps);
+        if (!sets.length) {
+          if (state.clientData.progress.exerciseLogs[ex.id]) {
+            state.clientData.progress.exerciseLogs[ex.id] =
+              state.clientData.progress.exerciseLogs[ex.id].filter(l => l.date !== logDate);
+          }
+          saveClient();
+          doneCircle.classList.remove("done"); doneCircle.textContent = "";
+          wrapper.classList.remove("logged");
+          renderAthleteCalendar();
+          return;
+        }
+        if (!state.clientData.progress.exerciseLogs[ex.id])
+          state.clientData.progress.exerciseLogs[ex.id] = [];
+        const exLogs = state.clientData.progress.exerciseLogs[ex.id];
+        const idx = exLogs.findIndex(l => l.date === logDate);
+        const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets };
+        if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
+        saveClient();
+        doneCircle.classList.add("done"); doneCircle.textContent = "✓";
+        wrapper.classList.add("logged");
+        renderAthleteCalendar();
+      }, 800);
+    };
+    setInputs.forEach(({ wt, rp }) => {
+      wt.addEventListener("input", autoSave);
+      rp.addEventListener("input", autoSave);
+    });
+
+    logForm.appendChild(setTable);
+    } // end else (numSets > 0)
+    panel.appendChild(logForm);
+
+    // Previous logs (last 3)
     if (logs.length) {
-      const histList = card.querySelector(".client-log-history-list");
-      [...logs].sort((a, b) => b.date.localeCompare(a.date)).forEach((l) => {
-        const row = document.createElement("div");
-        row.className = "client-log-history-item";
-        row.innerHTML = `
-          <span class="date">${escapeHtml(l.date)}</span>
-          <span>${escapeHtml(l.weight || "—")} lb × ${escapeHtml(l.reps || "—")} × ${escapeHtml(l.sets || "—")} sets${l.notes ? " · " + escapeHtml(l.notes) : ""}</span>
-          <button class="delete-bw" data-log-id="${l.id}" title="Delete">×</button>`;
-        row.querySelector(".delete-bw").addEventListener("click", () => {
+      const hist = document.createElement("div");
+      hist.className = "cex-hist";
+      [...logs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3).forEach((l) => {
+        const item = document.createElement("div");
+        item.className = "cex-hist-item";
+        const setStr = l.sets?.length
+          ? l.sets.map((s, i) => `<span class="cex-hist-set"><em>S${i+1}</em> ${escapeHtml(s.weight || "BW")} × ${escapeHtml(s.reps || "?")}</span>`).join("")
+          : `<span class="cex-hist-set">${escapeHtml(l.weight || "BW")} lb × ${escapeHtml(l.reps || "?")} reps</span>`;
+        item.innerHTML = `<span class="cex-hist-date">${escapeHtml(l.date)}</span>
+          <span class="cex-hist-sets">${setStr}</span>
+          <button class="cex-del-log" data-lid="${escapeHtml(l.id)}" title="Delete">×</button>`;
+        item.querySelector(".cex-del-log").addEventListener("click", (e) => {
+          e.stopPropagation();
           if (!window.confirm("Delete this log entry?")) return;
           state.clientData.progress.exerciseLogs[ex.id] =
             state.clientData.progress.exerciseLogs[ex.id].filter((x) => x.id !== l.id);
           saveClient();
-          renderClientWorkouts();
+          if (state.workoutView?.mode === "detail") renderWorkoutDetailUI();
+          else renderClientWorkouts();
           renderAthleteCalendar();
         });
-        histList.appendChild(row);
+        hist.appendChild(item);
       });
+      panel.appendChild(hist);
     }
-    card.querySelector('[data-action="log"]').addEventListener("click", () => {
-      const date = card.querySelector('[data-field="date"]').value || todayISO();
-      const entry = {
-        id: uid(), date,
-        weight: card.querySelector('[data-field="weight"]').value,
-        reps: card.querySelector('[data-field="reps"]').value,
-        sets: card.querySelector('[data-field="sets"]').value,
-        notes: card.querySelector('[data-field="notes"]').value,
-      };
-      if (!entry.weight && !entry.reps && !entry.sets && !entry.notes) {
-        toast("Enter at least one value"); return;
-      }
-      if (!state.clientData.progress.exerciseLogs[ex.id]) state.clientData.progress.exerciseLogs[ex.id] = [];
-      state.clientData.progress.exerciseLogs[ex.id].push(entry);
-      saveClient();
-      toast("Logged ✓");
-      renderClientWorkouts();
-      renderAthleteCalendar();
-    });
-    const watchBtn = card.querySelector('[data-action="watch-demo"]');
-    if (watchBtn) {
-      watchBtn.addEventListener("click", () => {
-        openVideoModal(watchBtn.dataset.yt, watchBtn.dataset.name);
-      });
-    }
-    return card;
+
+    wrapper.appendChild(row);
+    wrapper.appendChild(panel);
+    return wrapper;
   }
 
   function getDayVideos(client, sched) {
@@ -3058,6 +5230,7 @@
         dayCompletions: state.clientData.progress.dayCompletions || {},
         personalRecords: state.clientData.progress.personalRecords || [],
         packageRequests: state.clientData.progress.packageRequests || [],
+        dayNotes: state.clientData.progress.dayNotes || {},
       },
     };
     const code = encodeData(payload);
@@ -3102,20 +5275,54 @@
   function editClient() { setTab("profile"); $("#prof-name").focus(); }
 
   // -------- Init --------
-  function init() {
+  async function init() {
+    // Auth state change listener — catches PASSWORD_RECOVERY from email reset links
+    if (window.Cloud?.enabled) {
+      window.Cloud.onAuthStateChange((event) => {
+        if (event === "PASSWORD_RECOVERY") {
+          showLoginScreen("#login-reset-password");
+          $("#reset-pw-new").value = "";
+          $("#reset-pw-confirm").value = "";
+          $("#reset-pw-error").classList.add("hidden");
+          history.replaceState(null, "", window.location.pathname);
+        }
+      });
+    }
+
     $$("#login-role [data-role], .role-btn[data-role]").forEach((b) => b.addEventListener("click", () => pickRole(b.dataset.role)));
     $$(".back-to-role").forEach((b) => b.addEventListener("click", () => showLoginScreen("#login-role")));
+    $("#btn-athlete-signup").addEventListener("click", showAthleteImport);
 
-    $("#btn-setup").addEventListener("click", setupAccount);
-    $("#btn-signin").addEventListener("click", signIn);
+    // Coach sign-in
+    $("#btn-signin").addEventListener("click", signInCoach);
+    $("#login-pw").addEventListener("keydown", (e) => { if (e.key === "Enter") signInCoach(); });
+    // Coach setup
+    $("#btn-setup").addEventListener("click", setupCoachAccount);
+    $("#setup-pw-confirm").addEventListener("keydown", (e) => { if (e.key === "Enter") setupCoachAccount(); });
+    // Coach panel nav
+    $("#btn-coach-to-setup")?.addEventListener("click", () => {
+      showLoginScreen("#login-setup");
+      const trainer = state.trainerData.trainer;
+      if (trainer) {
+        show($("#login-migrate-notice"));
+        $("#setup-name").value = trainer.name || "";
+        $("#setup-email").value = trainer.email || "";
+      } else {
+        hide($("#login-migrate-notice"));
+        $("#setup-name").value = "";
+        $("#setup-email").value = "";
+      }
+      $("#setup-pw").value = "";
+      $("#setup-pw-confirm").value = "";
+      $("#setup-error").classList.add("hidden");
+      setTimeout(() => ($("#setup-email").value ? $("#setup-pw") : $("#setup-name")).focus(), 50);
+    });
+    $("#btn-setup-to-signin")?.addEventListener("click", showCoachSignin);
+    // Coach forgot password / reset
+    $("#btn-coach-forgot-pw")?.addEventListener("click", () => showForgotPassword("#login-signin"));
     $("#btn-reset").addEventListener("click", resetTrainerAccount);
-    $("#login-pin").addEventListener("keydown", (e) => { if (e.key === "Enter") signIn(); });
-    $("#setup-pin-confirm").addEventListener("keydown", (e) => { if (e.key === "Enter") setupAccount(); });
 
-    // Coach access gate
-    $("#btn-coach-gate").addEventListener("click", submitCoachGate);
-    $("#coach-gate-input").addEventListener("keydown", (e) => { if (e.key === "Enter") submitCoachGate(); });
-
+    // Invite code (athlete first time)
     $("#btn-import-code").addEventListener("click", importClientCode);
     $("#btn-invite-login").addEventListener("click", loginWithInviteCode);
     $("#btn-client-resume").addEventListener("click", resumeClient);
@@ -3126,33 +5333,87 @@
       if (e.key === "Enter") loginWithInviteCode();
     });
 
-    // Athlete profile setup / sign-in
+    // Athlete setup
     $("#btn-athlete-setup").addEventListener("click", setupAthleteProfile);
     $("#athlete-setup-pw-confirm").addEventListener("keydown", (e) => {
       if (e.key === "Enter") setupAthleteProfile();
     });
-    $("#btn-athlete-signin").addEventListener("click", athleteSignIn);
+    // Athlete sign-in
+    $("#btn-athlete-signin").addEventListener("click", signInAthlete);
     $("#athlete-signin-pw").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") athleteSignIn();
+      if (e.key === "Enter") signInAthlete();
     });
     $("#btn-athlete-use-new-code").addEventListener("click", useNewInviteCode);
     $("#btn-athlete-forget").addEventListener("click", forgetAthleteProfile);
+    $("#btn-athlete-forgot-pw")?.addEventListener("click", () => showForgotPassword("#login-athlete-signin"));
+
+    // Forgot / reset password
+    $("#btn-send-reset").addEventListener("click", sendPasswordReset);
+    $("#forgot-pw-email").addEventListener("keydown", (e) => { if (e.key === "Enter") sendPasswordReset(); });
+    $("#btn-back-from-forgot").addEventListener("click", () => showLoginScreen(_forgotFromPanel));
+    $("#btn-reset-pw").addEventListener("click", submitPasswordReset);
+    $("#reset-pw-confirm").addEventListener("keydown", (e) => { if (e.key === "Enter") submitPasswordReset(); });
+
+    // Sign out on page hide when "Remember me" is unchecked
+    window.addEventListener("pagehide", () => {
+      if (_signOutOnLeave && window.Cloud?.enabled) window.Cloud.signOut();
+    });
 
     $("#btn-logout").addEventListener("click", signOutTrainer);
     $("#btn-add-client").addEventListener("click", addClientPrompt);
     $("#btn-back").addEventListener("click", renderDashboard);
-    // Coach side-nav: switch top-level view
+    $("#btn-header-back").addEventListener("click", renderDashboard);
+    // Coach side-nav
     document.querySelectorAll('#coach-nav [data-coach-nav]').forEach((b) => {
       b.addEventListener("click", () => {
         const target = b.dataset.coachNav;
         if (target === "library") {
+          _programEditorId = null;
           state.currentClientId = null;
           switchCoachView("library");
           renderWorkoutLibrary();
+        } else if (target === "programs") {
+          _programEditorId = null;
+          state.currentClientId = null;
+          renderProgramsList();
+        } else if (target === "overview") {
+          _programEditorId = null;
+          state.currentClientId = null;
+          if (!state.dashCal) { const n = new Date(); state.dashCal = { year: n.getFullYear(), month: n.getMonth() }; }
+          switchCoachView("overview");
+          hideLibSidebar();
+          renderDashboardCalendar();
         } else {
+          _programEditorId = null;
           renderDashboard();
         }
       });
+    });
+
+    // Program creator
+    $("#btn-new-program")?.addEventListener("click", newProgram);
+    $("#btn-new-program-empty")?.addEventListener("click", newProgram);
+    $("#btn-back-to-programs")?.addEventListener("click", () => { _programEditorId = null; renderProgramsList(); });
+    $("#btn-editor-add-week")?.addEventListener("click", addWeek);
+    $("#btn-editor-add-week-empty")?.addEventListener("click", addWeek);
+    $("#btn-assign-program")?.addEventListener("click", () => { if (_programEditorId) assignProgramPrompt(_programEditorId); });
+    $("#btn-save-program-to-library")?.addEventListener("click", () => {
+      const tpl = currentProgramTemplate(); if (!tpl) return;
+      if (!tpl.name?.trim()) { toast("Give the program a name first."); $("#program-editor-name").focus(); return; }
+      tpl.savedToLibrary = true;
+      saveTrainer();
+      toast(`"${tpl.name}" saved to Library ✓`);
+    });
+    $("#program-editor-name")?.addEventListener("input", (e) => {
+      const tpl = currentProgramTemplate(); if (!tpl) return;
+      tpl.name = e.target.value;
+      saveTrainer();
+      updateHeaderBreadcrumb({ name: tpl.name || "Program" });
+    });
+    $("#program-editor-desc")?.addEventListener("input", (e) => {
+      const tpl = currentProgramTemplate(); if (!tpl) return;
+      tpl.description = e.target.value;
+      saveTrainer();
     });
     $("#btn-new-template")?.addEventListener("click", () => openTemplateEditor(null));
     $("#btn-new-template-empty")?.addEventListener("click", () => openTemplateEditor(null));
@@ -3160,14 +5421,22 @@
     $("#btn-browse-recommended-empty")?.addEventListener("click", openRecommendedTemplatesModal);
     $("#btn-edit-client").addEventListener("click", editClient);
     $("#btn-delete-client").addEventListener("click", deleteClientPrompt);
-    $("#btn-add-week").addEventListener("click", addWeek);
-    $("#btn-add-week-empty").addEventListener("click", addWeek);
-    $("#btn-load-template").addEventListener("click", loadTemplate);
-    $("#btn-load-template-empty").addEventListener("click", loadTemplate);
+    $("#btn-load-program").addEventListener("click", openLoadProgramModal);
+    $("#btn-load-program-empty").addEventListener("click", openLoadProgramModal);
+    $("#btn-archive-program").addEventListener("click", archiveCurrentProgram);
+
+    // Exercise library
+    $("#btn-close-library").addEventListener("click", closeExLibrary);
+    $("#ex-library-backdrop").addEventListener("click", closeExLibrary);
+    $("#ex-library-search").addEventListener("input", (e) => renderExLibrary(e.target.value));
+    $("#ex-lib-sb-search")?.addEventListener("input", (e) => renderSidebarLibrary(e.target.value));
+
+    // Drum picker
+    $("#btn-drum-confirm").addEventListener("click", confirmDrum);
+    $("#btn-drum-cancel").addEventListener("click", cancelDrum);
+    $("#btn-drum-cancel-2").addEventListener("click", cancelDrum);
+    $("#drum-modal").addEventListener("click", (e) => { if (e.target === e.currentTarget) cancelDrum(); });
     $("#btn-share-client").addEventListener("click", shareClient);
-    $("#btn-import-progress").addEventListener("click", importProgressPrompt);
-    $("#btn-import-progress-empty").addEventListener("click", importProgressPrompt);
-    $("#btn-coach-add-pr").addEventListener("click", () => openAddPRModal("coach"));
     $("#btn-athlete-add-pr").addEventListener("click", () => openAddPRModal("athlete"));
     $("#btn-add-package")?.addEventListener("click", openAddPackageModal);
     $("#btn-redeem-session")?.addEventListener("click", openRedeemSessionModal);
@@ -3191,6 +5460,23 @@
       state.athleteCal = { year: now.getFullYear(), month: now.getMonth() };
       renderAthleteCalendar();
     });
+    // Dashboard overview calendar
+    $("#dash-cal-prev").addEventListener("click", () => {
+      if (!state.dashCal) { const n = new Date(); state.dashCal = { year: n.getFullYear(), month: n.getMonth() }; }
+      let { year, month } = state.dashCal;
+      month--; if (month < 0) { month = 11; year--; }
+      state.dashCal = { year, month }; renderDashboardCalendar();
+    });
+    $("#dash-cal-next").addEventListener("click", () => {
+      if (!state.dashCal) { const n = new Date(); state.dashCal = { year: n.getFullYear(), month: n.getMonth() }; }
+      let { year, month } = state.dashCal;
+      month++; if (month > 11) { month = 0; year++; }
+      state.dashCal = { year, month }; renderDashboardCalendar();
+    });
+    $("#dash-cal-today").addEventListener("click", () => {
+      const n = new Date(); state.dashCal = { year: n.getFullYear(), month: n.getMonth() };
+      renderDashboardCalendar();
+    });
 
     $$(".tab[data-tab]").forEach((t) => t.addEventListener("click", () => setTab(t.dataset.tab)));
     $$(".tab[data-ctab]").forEach((t) => t.addEventListener("click", () => setClientTab(t.dataset.ctab)));
@@ -3211,10 +5497,58 @@
 
     bindProfileInputs();
 
-    const sess = sessionStorage.getItem(KEY_SESSION);
-    if (sess === "trainer" && state.trainerData.trainer) signIntoTrainer();
-    else if (sess === "client" && state.clientData.program) enterClientPortal();
-    else showLoginScreen("#login-role");
+    // Boot: check for password-recovery URL hash, then Supabase session, then show login
+    if (window.Cloud?.enabled) {
+      try {
+        const session = await window.Cloud.getSession();
+        if (session) {
+          const userId = session.user.id;
+          // Fast path: valid local data + session → auto-login
+          if (state.trainerData.trainer && state.trainerData.coachAuthId === userId) {
+            signIntoTrainer(); return;
+          }
+          if (state.clientData.program && state.clientData.profile?.email === session.user.email) {
+            // Refresh the coach-assigned program from the cloud so newly
+            // assigned workouts show up on reopen; degrade to the cached
+            // program silently if offline.
+            try {
+              const fresh = await window.Cloud.getAthleteByAuthUserId(userId);
+              if (fresh?.athlete) {
+                state.clientData.program = buildProgramFromAthlete(fresh.athlete);
+                if (fresh.progress) state.clientData.progress = fresh.progress;
+                ensureProgressShape(state.clientData.progress);
+                saveClient();
+              }
+            } catch (e) { console.warn("[Boot] Athlete refresh failed, using cached program", e); }
+            enterClientPortal(); return;
+          }
+          // Slow path: unknown device, fetch role from cloud
+          const coachData = await window.Cloud.getCoachByAuthUserId(userId);
+          if (coachData) {
+            populateCoachFromCloud(coachData.coach, coachData.athletes);
+            signIntoTrainer(); return;
+          }
+          const athleteResult = await window.Cloud.getAthleteByAuthUserId(userId);
+          if (athleteResult?.athlete) {
+            const { athlete, progress } = athleteResult;
+            state.clientData.program = buildProgramFromAthlete(athlete);
+            state.clientData.progress = progress || emptyProgress();
+            ensureProgressShape(state.clientData.progress);
+            state.clientData.profile = { name: athlete.name, email: session.user.email, createdAt: Date.now() };
+            saveClient();
+            enterClientPortal(); return;
+          }
+        }
+      } catch (e) {
+        console.warn("[Boot] Session check failed", e);
+      }
+    } else {
+      // Offline fallback: restore from sessionStorage
+      const sess = sessionStorage.getItem(KEY_SESSION);
+      if (sess === "trainer" && state.trainerData.trainer) { signIntoTrainer(); return; }
+      if (sess === "client" && state.clientData.program) { enterClientPortal(); return; }
+    }
+    showLoginScreen("#login-role");
   }
 
   function stepCoachMonth(delta) {

@@ -3,7 +3,7 @@
  * Additive: localStorage stays the source of truth on each device.
  * Coach edits → debounced push of that athlete row.
  * Athlete logs progress → debounced push of progress row.
- * Athlete signs in cross-device → invite-code lookup hits the cloud.
+ * Athlete signs in cross-device → email+password auth via Supabase.
  * Coach opens an athlete → pulls latest progress on demand.
  *
  * All failures degrade silently (warn-and-continue). Offline still works.
@@ -23,8 +23,45 @@
     return;
   }
   const sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
-    auth: { persistSession: false },
+    auth: { persistSession: true },
   });
+
+  // -------- Auth --------
+  async function signUp(email, password) {
+    const { data, error } = await sb.auth.signUp({ email, password });
+    if (error) throw new Error(error.message);
+    // Email confirmation is still enabled in Supabase dashboard
+    if (data.user && !data.session) {
+      throw new Error("EMAIL_CONFIRMATION_REQUIRED");
+    }
+    if (!data.user) throw new Error("Sign-up failed — try again or sign in if you already have an account.");
+    return data.user;
+  }
+  async function signIn(email, password) {
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(error.message);
+    return data.user;
+  }
+  async function signOut() {
+    try { await sb.auth.signOut(); } catch (e) { console.warn("[Cloud] signOut", e); }
+  }
+  async function resetPassword(email) {
+    const { error } = await sb.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname,
+    });
+    if (error) throw new Error(error.message);
+  }
+  async function updatePassword(newPassword) {
+    const { error } = await sb.auth.updateUser({ password: newPassword });
+    if (error) throw new Error(error.message);
+  }
+  async function getSession() {
+    const { data } = await sb.auth.getSession();
+    return data?.session || null;
+  }
+  function onAuthStateChange(cb) {
+    return sb.auth.onAuthStateChange(cb);
+  }
 
   // -------- Row <-> in-memory shape conversion --------
   function athleteToRow(c, coachId) {
@@ -32,7 +69,7 @@
     return {
       id: c.id,
       coach_id: coachId,
-      name: c.name || "",
+      display_name: c.name || "",
       invite_code: c.inviteCode,
       age: c.age || null,
       height_in: c.heightIn || null,
@@ -42,6 +79,7 @@
       weeks: c.weeks || [],
       schedule: c.schedule || {},
       coach_prs: c.coachPRs || [],
+      session_bank: c.sessionBank || { packages: [], redemptions: [] },
       updated_at: new Date().toISOString(),
     };
   }
@@ -49,7 +87,7 @@
     if (!r) return null;
     return {
       id: r.id,
-      name: r.name,
+      name: r.display_name,
       inviteCode: r.invite_code,
       age: r.age || "",
       heightIn: r.height_in || "",
@@ -59,6 +97,9 @@
       weeks: r.weeks || [],
       schedule: r.schedule || {},
       coachPRs: r.coach_prs || [],
+      sessionBank: r.session_bank || { packages: [], redemptions: [] },
+      importedProgress: null,
+      createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
       _coachId: r.coach_id || null,
     };
   }
@@ -85,21 +126,38 @@
     };
   }
 
-  async function upsertCoach(coachId, name) {
+  // -------- Coach methods --------
+  async function upsertCoach(coachId, name, email, authUserId) {
     if (!coachId) return false;
     try {
-      // Don't sync pin_hash — it's local-device-only. Cloud row exists for FK + display.
-      const { error } = await sb
-        .from("coaches")
-        .upsert({ id: coachId, name: name || "", pin_hash: "" });
+      const row = { id: coachId, display_name: name || "", pin_hash: "" };
+      if (email) row.email = email;
+      if (authUserId) row.auth_user_id = authUserId;
+      const { error } = await sb.from("coaches").upsert(row);
       if (error) console.warn("[Cloud] upsertCoach error", error.message);
       return !error;
     } catch (e) { console.warn("[Cloud] upsertCoach", e); return false; }
   }
 
+  async function getCoachByAuthUserId(userId) {
+    if (!userId) return null;
+    try {
+      const { data: coach, error } = await sb.from("coaches")
+        .select("*")
+        .eq("auth_user_id", userId)
+        .maybeSingle();
+      if (error || !coach) return null;
+      const { data: athletes } = await sb.from("athletes")
+        .select("*")
+        .eq("coach_id", coach.id);
+      return { coach, athletes: (athletes || []).map(rowToAthlete) };
+    } catch (e) { console.warn("[Cloud] getCoachByAuthUserId", e); return null; }
+  }
+
+  // -------- Athlete methods --------
   async function upsertAthlete(athlete, coachId) {
     const row = athleteToRow(athlete, coachId);
-    if (!row) return false; // missing id/inviteCode/coachId — skip
+    if (!row) return false;
     try {
       const { error } = await sb.from("athletes").upsert(row);
       if (error) console.warn("[Cloud] upsertAthlete error", error.message);
@@ -110,7 +168,6 @@
   async function deleteAthlete(athleteId) {
     if (!athleteId) return false;
     try {
-      // FK cascade cleans up athlete_profiles + progress automatically.
       const { error } = await sb.from("athletes").delete().eq("id", athleteId);
       if (error) console.warn("[Cloud] deleteAthlete error", error.message);
       return !error;
@@ -137,6 +194,40 @@
     } catch (e) { return null; }
   }
 
+  async function getAthleteByAuthUserId(userId) {
+    if (!userId) return null;
+    try {
+      const { data: athlete, error } = await sb.from("athletes")
+        .select("*")
+        .eq("auth_user_id", userId)
+        .maybeSingle();
+      if (error || !athlete) return null;
+      const { data: progress } = await sb.from("progress")
+        .select("*")
+        .eq("athlete_id", athlete.id)
+        .maybeSingle();
+      return { athlete: rowToAthlete(athlete), progress: progress ? rowToProgress(progress) : null };
+    } catch (e) { console.warn("[Cloud] getAthleteByAuthUserId", e); return null; }
+  }
+
+  async function linkAthleteToAuth(athleteId, authUserId, email) {
+    if (!athleteId || !authUserId) return false;
+    try {
+      const { error: ae } = await sb.from("athletes")
+        .update({ auth_user_id: authUserId })
+        .eq("id", athleteId);
+      if (ae) console.warn("[Cloud] linkAthleteToAuth athletes", ae.message);
+      await sb.from("athlete_profiles").upsert({
+        athlete_id: athleteId,
+        display_name: "",
+        pw_hash: "",
+        email: email || "",
+      });
+      return !ae;
+    } catch (e) { console.warn("[Cloud] linkAthleteToAuth", e); return false; }
+  }
+
+  // -------- Progress methods --------
   async function upsertProgress(athleteId, progress) {
     if (!athleteId) return false;
     try {
@@ -162,18 +253,18 @@
   async function upsertAthleteProfile(athleteId, profile) {
     if (!athleteId || !profile) return false;
     try {
-      // Don't sync pw_hash — local-device-only.
       const { error } = await sb.from("athlete_profiles").upsert({
         athlete_id: athleteId,
         display_name: profile.name || "",
         pw_hash: "",
+        email: profile.email || "",
       });
       if (error) console.warn("[Cloud] upsertAthleteProfile", error.message);
       return !error;
     } catch (e) { console.warn(e); return false; }
   }
 
-  // Debounce helper used by callers
+  // -------- Debounce helper --------
   const _debounceTimers = new Map();
   function debounce(key, fn, ms = 1500) {
     const prev = _debounceTimers.get(key);
@@ -187,14 +278,29 @@
   window.Cloud = {
     enabled: true,
     sb,
+    // Auth
+    signUp,
+    signIn,
+    signOut,
+    resetPassword,
+    updatePassword,
+    getSession,
+    onAuthStateChange,
+    // Coach
     upsertCoach,
+    getCoachByAuthUserId,
+    // Athlete
     upsertAthlete,
     deleteAthlete,
     getAthleteByInviteCode,
     getAthleteById,
+    getAthleteByAuthUserId,
+    linkAthleteToAuth,
+    // Progress
     upsertProgress,
     getProgress,
     upsertAthleteProfile,
+    // Utils
     debounce,
   };
   console.log("[Cloud] ready");
