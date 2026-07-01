@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=rxline1" />
+  <link rel="stylesheet" href="styles.css?v=sharedpr1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -519,8 +519,6 @@
         </div>
       </div>
       <div class="header-right">
-        <button class="btn btn-primary btn-sm" id="btn-client-send"><span class="desktop-only">Send progress</span><span class="mobile-only">Send</span></button>
-        <button class="btn btn-ghost btn-sm" id="btn-client-reload"><span class="desktop-only">Reload code</span><span class="mobile-only">Reload</span></button>
         <button class="btn btn-ghost btn-sm" id="btn-client-logout">Exit</button>
       </div>
     </header>
@@ -606,7 +604,7 @@
         <div id="athlete-pr-empty" class="empty-state hidden">
           <div class="empty-emoji">🏆</div>
           <h3>No PRs yet</h3>
-          <p>Smash a lift, then log it here. Send progress to share with your coach.</p>
+          <p>Smash a lift, then log it here — your coach will see it automatically.</p>
         </div>
       </div>
 
@@ -641,7 +639,7 @@
         <div class="card">
           <h3>Notes for my coach</h3>
           <textarea id="client-feedback" rows="4" placeholder="How are things going? Any aches, schedule conflicts, food cravings…"></textarea>
-          <p class="muted">Saved on this device. Tap <strong>Send progress</strong> in the header to share with your coach.</p>
+          <p class="muted">Synced automatically — your coach will see it.</p>
         </div>
       </div>
     </main>
@@ -697,9 +695,9 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js?v=setlog2"></script>
-  <script src="cloud.js?v=setlog2"></script>
-  <script src="app.js?v=rxline1"></script>
+  <script src="config.js?v=setlog3"></script>
+  <script src="cloud.js?v=setlog3"></script>
+  <script src="app.js?v=sharedpr1"></script>
 </body>
 </html>
 

@@ -194,6 +194,17 @@
     } catch (e) { return null; }
   }
 
+  // Athlete-side write: PRs are a shared list, so the athlete can push their
+  // own edits back to the same athletes row the coach reads/writes.
+  async function updateAthleteCoachPRs(athleteId, coachPRs) {
+    if (!athleteId) return false;
+    try {
+      const { error } = await sb.from("athletes").update({ coach_prs: coachPRs || [] }).eq("id", athleteId);
+      if (error) console.warn("[Cloud] updateAthleteCoachPRs error", error.message);
+      return !error;
+    } catch (e) { console.warn("[Cloud] updateAthleteCoachPRs", e); return false; }
+  }
+
   async function getAthleteByAuthUserId(userId) {
     if (!userId) return null;
     try {
@@ -296,6 +307,7 @@
     getAthleteById,
     getAthleteByAuthUserId,
     linkAthleteToAuth,
+    updateAthleteCoachPRs,
     // Progress
     upsertProgress,
     getProgress,

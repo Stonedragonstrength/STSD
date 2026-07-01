@@ -3734,17 +3734,18 @@ input:focus, textarea:focus, select:focus {
 
 .cex-row {
   display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  padding: 0.5rem 0.85rem;
-  min-height: 46px;
-  justify-content: center;
-}
-
-.cex-top {
-  display: flex;
   align-items: center;
   gap: 0.5rem;
+  padding: 0.5rem 0.85rem;
+  min-height: 46px;
+}
+
+.cex-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
 }
 
 .cex-circle {
@@ -3785,7 +3786,6 @@ input:focus, textarea:focus, select:focus {
 .cex-wrapper.logged > .cex-row .cex-name { color: var(--text-soft); }
 
 .cex-rx {
-  margin-left: 34px;
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
@@ -3871,6 +3871,22 @@ input:focus, textarea:focus, select:focus {
   margin: 0;
   padding: 0.3rem 0;
 }
+.cex-lock-row {
+  display: flex;
+  margin-top: 0.5rem;
+}
+.cex-lock-btn { padding: 0.4em 0.9em; }
+.cex-edit-btn {
+  background: none;
+  border: none;
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.3em 0.2em;
+  font-family: inherit;
+}
+.cex-edit-btn:hover { color: var(--primary); }
 @media (max-width: 600px) {
   /* Shrink set columns so 5-6 sets fit on one row instead of wrapping
      and growing the card's height. */
@@ -3918,6 +3934,12 @@ input:focus, textarea:focus, select:focus {
   outline: none;
   border-color: var(--primary);
 }
+.cex-set-col .cex-input[readonly] {
+  background: var(--surface-2);
+  color: var(--text-soft);
+  cursor: default;
+}
+.cex-set-col .cex-input[readonly]:focus { box-shadow: none; border-color: var(--border); }
 /* Placeholder = coach-prescribed target to attempt today — must read clearly at a glance. */
 .cex-input::placeholder {
   color: var(--primary-bright);
@@ -4500,6 +4522,21 @@ input:focus, textarea:focus, select:focus {
   flex-shrink: 0;
 }
 .day-name-edit-btn:hover { color: var(--primary); background: var(--surface-2); }
+.day-icon-btn {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.3em 0.45em;
+  flex-shrink: 0;
+  transition: border-color 0.12s, background 0.12s;
+}
+.day-icon-btn:hover { border-color: var(--primary); background: var(--surface-3); }
+.grid-picker-pop-icon { min-width: 300px; max-width: 320px; }
+.icon-picker-grid { grid-template-columns: repeat(6, 1fr); max-height: 240px; }
+.icon-picker-cell { font-size: 1.3rem; padding: 0.4em 0.15em; }
 .btn.btn-xs {
   font-size: 0.72rem;
   padding: 0.28em 0.6em;

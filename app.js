@@ -1396,13 +1396,19 @@
   }
   async function pullProgressFromCloud(c) {
     if (!window.Cloud?.enabled) return;
-    const cloudProgress = await window.Cloud.getProgress(c.id);
-    if (!cloudProgress) return;
-    c.importedProgress = { ...cloudProgress, syncedAt: Date.now() };
+    const [cloudProgress, cloudAthlete] = await Promise.all([
+      window.Cloud.getProgress(c.id),
+      window.Cloud.getAthleteById(c.id),
+    ]);
+    let changed = false;
+    if (cloudProgress) { c.importedProgress = { ...cloudProgress, syncedAt: Date.now() }; changed = true; }
+    if (cloudAthlete?.coachPRs) { c.coachPRs = cloudAthlete.coachPRs; changed = true; }
+    if (!changed) return;
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
     if (state.currentClientId === c.id) {
       renderClientLogs();
       renderCoachCalendar();
+      renderCoachPRs();
     }
   }
   function clientMetaText(c) {
@@ -2032,6 +2038,87 @@
     _attachOutsideClose(pop, anchorEl);
   }
 
+  const DAY_ICON_CATEGORIES = [
+    { label: "Dragons", icons: [
+      "🐉","🐲","🦖","🦕","🔥","⚡","🌋","💥","⭐","🌟","✨","🛡️","⚔️","🗡️","🏹",
+      "🔮","💎","👑","🦄","🐍","🦂","🕷️","🦇","👹","👺","💀","☠️","🧙","🧙‍♂️","🧝",
+    ] },
+    { label: "Gym", icons: [
+      "🏋️","🏋️‍♂️","🏋️‍♀️","💪","🦾","🤸","🤸‍♂️","🤸‍♀️","🤺","🥋","🥊","🤼","🤼‍♂️","🤼‍♀️","🧗",
+      "🧗‍♂️","🧗‍♀️","🤾","🤾‍♂️","🤾‍♀️","🏃","🏃‍♂️","🏃‍♀️","🚴","🚴‍♂️","🚴‍♀️","🚵","🚵‍♂️","🚵‍♀️","🧘",
+      "🧘‍♂️","🧘‍♀️","🤹","🤹‍♂️","🤹‍♀️","⛹️","⛹️‍♂️","⛹️‍♀️","🦵","🦶",
+    ] },
+    { label: "Cardio", icons: [
+      "🏊","🏊‍♂️","🏊‍♀️","🤽","🤽‍♂️","🤽‍♀️","🏄","🏄‍♂️","🏄‍♀️","🚣","🚣‍♂️","🚣‍♀️","⛷️","🏂","🛷",
+      "🥌","⛸️","🛹","🛼","🤿","🎿","🏇","🐎","🏆","🥇","🥈","🥉","🏅","🎖️","🎗️",
+      "⏱️","⏲️","🎯","🏁","🚩","🏳️","🥅","🔔","📣","🎽",
+    ] },
+    { label: "Sport", icons: [
+      "⚽","🏀","🏈","⚾","🥎","🎾","🏐","🏉","🥏","🎳","🏏","🏑","🏒","🥍","🏓",
+      "🏸","🪀","🪁","🎱","🥊","🥋","🏹","🎣","🛶","⛳","🏌️","🏌️‍♂️","🏌️‍♀️","🎿","🪃",
+    ] },
+    { label: "Food", icons: [
+      "🍎","🍏","🍌","🍊","🍋","🍇","🍓","🫐","🍍","🥝","🥑","🥦","🥕","🌽","🥔",
+      "🍠","🥜","🌰","🍞","🥖","🥨","🧀","🥚","🍳","🥓","🥩","🍗","🍖","🌭","🍔",
+      "🍟","🍕","🥪","🌮","🌯","🥗","🍝","🍜","🍲","🍛","🍣","🍱","🥘","🍤","🍙",
+      "🍚","🍥","🥟","🍢","🍡","🍦","🍩","🍪","🎂","🍰","🧁","🍫","🍬","🍭","🍯",
+    ] },
+    { label: "Fuel", icons: [
+      "🥛","🧃","🧋","☕","🍵","🥤","🧊","🥥","💧","🍺","🛌","😴","🧖","🧖‍♂️","🧖‍♀️",
+      "🩹","💊","🧴","🛁","🚿",
+    ] },
+    { label: "Vibes", icons: [
+      "👊","🤜","🤛","✊","🙌","👏","💯","💥","🎉","🎊","🥳","😤","😅","💦","🌊",
+      "🌪️","☀️","🌙","🧠","🫀",
+    ] },
+  ];
+
+  function openIconPicker(currentVal, cb, anchorEl) {
+    document.querySelector(".grid-picker-pop")?.remove();
+    const pop = document.createElement("div");
+    pop.className = "grid-picker-pop grid-picker-pop-icon";
+    pop.style.cssText = "position:fixed;z-index:9999;visibility:hidden";
+
+    const tabs = document.createElement("div");
+    tabs.className = "grid-picker-tabs";
+    const grid = document.createElement("div");
+    grid.className = "grid-picker-grid icon-picker-grid";
+    grid.style.gridTemplateColumns = "repeat(6, 1fr)";
+
+    let activeCat = DAY_ICON_CATEGORIES.findIndex((c) => c.icons.includes(currentVal));
+    if (activeCat < 0) activeCat = 0;
+
+    function showCat(idx) {
+      activeCat = idx;
+      tabs.querySelectorAll(".grid-picker-tab").forEach((t, i) => t.classList.toggle("active", i === idx));
+      grid.innerHTML = "";
+      DAY_ICON_CATEGORIES[idx].icons.forEach((ic) => {
+        const btn = document.createElement("button");
+        btn.className = "grid-picker-cell icon-picker-cell" + (ic === currentVal ? " active" : "");
+        btn.textContent = ic;
+        btn.type = "button";
+        btn.addEventListener("click", () => { pop.remove(); cb(ic); });
+        grid.appendChild(btn);
+      });
+      requestAnimationFrame(() => _positionPop(pop, anchorEl));
+    }
+
+    DAY_ICON_CATEGORIES.forEach((c, i) => {
+      const tab = document.createElement("button");
+      tab.className = "grid-picker-tab";
+      tab.textContent = c.label;
+      tab.type = "button";
+      tab.addEventListener("click", () => showCat(i));
+      tabs.appendChild(tab);
+    });
+
+    pop.appendChild(tabs);
+    pop.appendChild(grid);
+    document.body.appendChild(pop);
+    showCat(activeCat);
+    _attachOutsideClose(pop, anchorEl);
+  }
+
   function openWeightPicker(currentVal, cb, anchorEl) {
     document.querySelector(".grid-picker-pop")?.remove();
     const pop = document.createElement("div");
@@ -2483,6 +2570,20 @@
     const actionBar = document.createElement("div");
     actionBar.className = "day-action-bar";
 
+    const iconBtn = document.createElement("button");
+    iconBtn.type = "button";
+    iconBtn.className = "day-icon-btn";
+    iconBtn.title = "Choose an icon for this day";
+    iconBtn.textContent = day.icon || "🐉";
+    iconBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openIconPicker(day.icon || "🐉", (icon) => {
+        day.icon = icon;
+        iconBtn.textContent = icon;
+        saveTrainer();
+      }, iconBtn);
+    });
+
     const nameWrap = document.createElement("div");
     nameWrap.className = "day-name-wrap";
 
@@ -2510,6 +2611,8 @@
 
     nameWrap.appendChild(nameInput);
     nameWrap.appendChild(editNameBtn);
+
+    actionBar.appendChild(iconBtn);
 
     const spacer = document.createElement("div");
     spacer.style.flex = "1";
@@ -3745,27 +3848,42 @@
     container.innerHTML = "";
     const prog = state.clientData.program; if (!prog) return;
     const athleteOwn = (state.clientData.progress.personalRecords || []).map((p) => ({ ...p, _author: "athlete" }));
-    const coachPRs = (prog.client.coachPRs || []).filter(p => p.name && (p.pr1 || p.pr2 || p.pr3));
+    const coachPRs = (prog.client.coachPRs || []).filter(p => p.name);
     if (!athleteOwn.length && !coachPRs.length) { show(empty); return; }
     hide(empty);
 
-    // Coach-set 1RM/2RM/3RM cards (read-only)
-    const rmPill = (label, val) => val
-      ? `<span class="pr-rm-pill"><span class="pr-rm-label">${label}</span>${escapeHtml(val)} lb</span>`
-      : `<span class="pr-rm-pill pr-rm-empty"><span class="pr-rm-label">${label}</span>—</span>`;
+    // Shared 1RM/2RM/3RM cards — same list the coach sees; either side can fill them in.
+    const pushCoachPRs = () => {
+      saveClient();
+      if (window.Cloud?.enabled && prog.clientId) {
+        window.Cloud.debounce(`coachprs:${prog.clientId}`,
+          () => window.Cloud.updateAthleteCoachPRs(prog.clientId, prog.client.coachPRs), 1200);
+      }
+    };
     coachPRs.forEach(entry => {
       const card = document.createElement("div");
-      card.className = "pr-edit-card pr-athlete-only";
+      card.className = "pr-edit-card pr-shared-card";
       card.innerHTML = `
         <div class="pr-view-header">
           <h4 class="pr-exercise-name">${escapeHtml(entry.name)}</h4>
-          <span class="pr-author coach">coach</span>
         </div>
-        <div class="pr-rm-row">
-          ${rmPill("1RM", entry.pr1)}
-          ${rmPill("2RM", entry.pr2)}
-          ${rmPill("3RM", entry.pr3)}
+        <div class="pr-edit-fields">
+          <div class="pr-field-group">
+            <label class="pr-field-label">1 Rep PR (lb)</label>
+            <input class="pr-1rm-input" type="number" min="0" step="any" placeholder="e.g. 315" value="${escapeHtml(entry.pr1 || "")}">
+          </div>
+          <div class="pr-field-group">
+            <label class="pr-field-label">2 Rep PR (lb)</label>
+            <input class="pr-2rm-input" type="number" min="0" step="any" placeholder="e.g. 295" value="${escapeHtml(entry.pr2 || "")}">
+          </div>
+          <div class="pr-field-group">
+            <label class="pr-field-label">3 Rep PR (lb)</label>
+            <input class="pr-3rm-input" type="number" min="0" step="any" placeholder="e.g. 275" value="${escapeHtml(entry.pr3 || "")}">
+          </div>
         </div>`;
+      card.querySelector(".pr-1rm-input").addEventListener("input", (e) => { entry.pr1 = e.target.value; pushCoachPRs(); });
+      card.querySelector(".pr-2rm-input").addEventListener("input", (e) => { entry.pr2 = e.target.value; pushCoachPRs(); });
+      card.querySelector(".pr-3rm-input").addEventListener("input", (e) => { entry.pr3 = e.target.value; pushCoachPRs(); });
       container.appendChild(card);
     });
 
@@ -4735,7 +4853,7 @@
       if (checked || allLogged) card.classList.add("is-done");
       else if (doneEx > 0) card.classList.add("is-partial");
       card.style.animationDelay = `${idx * 60}ms`;
-      const icon = workoutIconFor(day.name);
+      const icon = day.icon || workoutIconFor(day.name);
       card.innerHTML = `
         <div class="workout-card-icon">${icon}</div>
         <div class="workout-card-body">
@@ -4908,17 +5026,22 @@
     card.appendChild(head); card.appendChild(body);
     return card;
   }
+  function isLogEntryLocked(l, ex, numSets) {
+    if (!l) return false;
+    if (l.locked === true) return true;
+    if (l.locked === false) return false;
+    // Legacy entries saved before the lock-in feature existed have no
+    // `locked` flag — fall back to the full-completion check so past
+    // workouts don't retroactively uncheck.
+    if (!l.sets || l.sets.length < numSets) return false;
+    return l.sets.every((s) => s.reps && (s.weight || ex.currentWeight === "BW"));
+  }
   function hasAnyLog(ex) {
     const logs = state.clientData.progress?.exerciseLogs?.[ex.id];
     if (!logs || !logs.length) return false;
     const numSets = parseInt(ex.sets) || 0;
     if (!numSets) return logs.length > 0;
-    // Only counts as done once every prescribed set has both weight and reps
-    // logged (weight may be skipped for bodyweight moves).
-    return logs.some((l) => {
-      if (!l.sets || l.sets.length < numSets) return false;
-      return l.sets.every((s) => s.reps && (s.weight || ex.currentWeight === "BW"));
-    });
+    return logs.some((l) => isLogEntryLocked(l, ex, numSets));
   }
   function renderClientDay(week, day, jumpTo) {
     const card = document.createElement("div");
@@ -4975,12 +5098,12 @@
     const row = document.createElement("div");
     row.className = "cex-row";
 
-    const top = document.createElement("div");
-    top.className = "cex-top";
-
     const doneCircle = document.createElement("div");
     doneCircle.className = "cex-circle" + (isDone ? " done" : "");
     doneCircle.textContent = isDone ? "✓" : "";
+
+    const content = document.createElement("div");
+    content.className = "cex-content";
 
     const nameBlock = document.createElement("div");
     nameBlock.className = "cex-name-block";
@@ -4990,8 +5113,7 @@
     nameEl.textContent = exerciseDisplayLabel(ex);
     nameBlock.appendChild(nameEl);
 
-    top.appendChild(doneCircle);
-    top.appendChild(nameBlock);
+    content.appendChild(nameBlock);
 
     const rxEl = document.createElement("div");
     rxEl.className = "cex-rx";
@@ -5022,8 +5144,9 @@
       rxEl.appendChild(ll);
     }
 
-    row.appendChild(top);
-    row.appendChild(rxEl);
+    content.appendChild(rxEl);
+    row.appendChild(doneCircle);
+    row.appendChild(content);
 
     // ── Panel (always open) ──
     const panel = document.createElement("div");
@@ -5066,6 +5189,9 @@
       setTable.innerHTML = `<p class="cex-no-sets">Sets not prescribed yet — your coach will fill this in.</p>`;
       logForm.appendChild(setTable);
     } else {
+    const todayLog = logs.find(l => l.date === logDate);
+    let isLocked = isLogEntryLocked(todayLog, ex, numSets);
+
     const setInputs = [];
     for (let s = 0; s < numSets; s++) {
       const col = document.createElement("div");
@@ -5075,8 +5201,8 @@
       lbl.className = "cex-set-lbl";
       lbl.textContent = `S${s + 1}`;
 
-      const wt = Object.assign(document.createElement("input"), { type: "number", step: "0.5", min: "0", placeholder: wtPh || "lb" });
-      const rp = Object.assign(document.createElement("input"), { type: "number", min: "0", placeholder: repPh || "reps" });
+      const wt = Object.assign(document.createElement("input"), { type: "number", step: "0.5", min: "0", placeholder: wtPh || "lb", readOnly: isLocked });
+      const rp = Object.assign(document.createElement("input"), { type: "number", min: "0", placeholder: repPh || "reps", readOnly: isLocked });
       [wt, rp].forEach((i) => { i.className = "cex-input"; i.addEventListener("click", (e) => e.stopPropagation()); });
 
       col.appendChild(lbl);
@@ -5087,14 +5213,14 @@
     }
 
     // Pre-fill today's existing log so edits persist
-    const todayLog = logs.find(l => l.date === logDate);
     if (todayLog?.sets?.length) {
       todayLog.sets.forEach((s, i) => {
         if (setInputs[i]) { setInputs[i].wt.value = s.weight || ""; setInputs[i].rp.value = s.reps || ""; }
       });
     }
 
-    // Auto-save: debounced 800ms after last keystroke, upserts today's entry
+    // Auto-save: debounced 800ms after last keystroke, saves a draft entry.
+    // Drafts never lock in the green checkmark — only the Lock button does.
     let _ast = null;
     const autoSave = () => {
       clearTimeout(_ast);
@@ -5107,8 +5233,6 @@
               state.clientData.progress.exerciseLogs[ex.id].filter(l => l.date !== logDate);
           }
           saveClient();
-          doneCircle.classList.remove("done"); doneCircle.textContent = "";
-          wrapper.classList.remove("logged");
           renderAthleteCalendar();
           return;
         }
@@ -5116,11 +5240,9 @@
           state.clientData.progress.exerciseLogs[ex.id] = [];
         const exLogs = state.clientData.progress.exerciseLogs[ex.id];
         const idx = exLogs.findIndex(l => l.date === logDate);
-        const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets };
+        const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets, locked: false };
         if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
         saveClient();
-        doneCircle.classList.add("done"); doneCircle.textContent = "✓";
-        wrapper.classList.add("logged");
         renderAthleteCalendar();
       }, 800);
     };
@@ -5129,7 +5251,69 @@
       rp.addEventListener("input", autoSave);
     });
 
+    // Lock / Edit toggle — the checkmark only fills in once the athlete
+    // explicitly locks a fully-filled-in set of sets.
+    const lockRow = document.createElement("div");
+    lockRow.className = "cex-lock-row";
+
+    const lockBtn = document.createElement("button");
+    lockBtn.type = "button";
+    lockBtn.className = "btn btn-primary btn-sm cex-lock-btn";
+    lockBtn.textContent = "🔒 Lock in";
+
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "cex-edit-btn";
+    editBtn.textContent = "✎ Edit";
+
+    const setFieldsReadonly = (readonly) => {
+      setInputs.forEach(({ wt, rp }) => { wt.readOnly = readonly; rp.readOnly = readonly; });
+    };
+    const refreshLockUI = () => {
+      hide(isLocked ? lockBtn : editBtn);
+      show(isLocked ? editBtn : lockBtn);
+      setFieldsReadonly(isLocked);
+    };
+
+    lockBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const sets = setInputs.map(({ wt, rp }) => ({ weight: wt.value, reps: rp.value }));
+      const complete = sets.every((s) => s.reps && (s.weight || ex.currentWeight === "BW"));
+      if (!complete) { toast("Fill in all sets before locking in."); return; }
+      clearTimeout(_ast);
+      if (!state.clientData.progress.exerciseLogs[ex.id])
+        state.clientData.progress.exerciseLogs[ex.id] = [];
+      const exLogs = state.clientData.progress.exerciseLogs[ex.id];
+      const idx = exLogs.findIndex(l => l.date === logDate);
+      const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets, locked: true };
+      if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
+      saveClient();
+      isLocked = true;
+      refreshLockUI();
+      doneCircle.classList.add("done"); doneCircle.textContent = "✓";
+      wrapper.classList.add("logged");
+      renderAthleteCalendar();
+    });
+
+    editBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const exLogs = state.clientData.progress.exerciseLogs[ex.id];
+      const entry = exLogs?.find(l => l.date === logDate);
+      if (entry) entry.locked = false;
+      saveClient();
+      isLocked = false;
+      refreshLockUI();
+      doneCircle.classList.remove("done"); doneCircle.textContent = "";
+      wrapper.classList.remove("logged");
+      renderAthleteCalendar();
+    });
+
+    lockRow.appendChild(lockBtn);
+    lockRow.appendChild(editBtn);
+    refreshLockUI();
+
     logForm.appendChild(setTable);
+    logForm.appendChild(lockRow);
     } // end else (numSets > 0)
     panel.appendChild(logForm);
 
@@ -5308,45 +5492,6 @@
     renderBwHistory();
     toast("Weight logged ✓");
   }
-  function sendProgress() {
-    const prog = state.clientData.program;
-    const payload = {
-      kind: "tp-progress", v: 2,
-      clientId: prog.clientId,
-      clientName: prog.client.name,
-      sentAt: Date.now(),
-      progress: {
-        exerciseLogs: state.clientData.progress.exerciseLogs || {},
-        bodyweightLog: state.clientData.progress.bodyweightLog || [],
-        feedback: state.clientData.progress.feedback || "",
-        dayCompletions: state.clientData.progress.dayCompletions || {},
-        personalRecords: state.clientData.progress.personalRecords || [],
-        packageRequests: state.clientData.progress.packageRequests || [],
-        dayNotes: state.clientData.progress.dayNotes || {},
-      },
-    };
-    const code = encodeData(payload);
-    openModal({
-      title: "Send progress to your coach",
-      body: `
-        <p>Copy this code and send it to your coach (text, email, anywhere).</p>
-        <textarea class="code-textarea" id="send-code-output" readonly>${escapeHtml(code)}</textarea>
-        <div class="code-actions">
-          <button class="btn btn-primary" id="btn-copy-send">Copy code</button>
-        </div>`,
-      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
-    });
-    $("#btn-copy-send").addEventListener("click", async () => {
-      try { await navigator.clipboard.writeText(code); toast("Code copied"); }
-      catch { $("#send-code-output").select(); document.execCommand("copy"); toast("Code copied"); }
-    });
-  }
-  function reloadClientCode() {
-    if (!window.confirm("Load a new access code? Your existing logs will be preserved if it's the same athlete.")) return;
-    showLoginScreen("#login-client-import");
-    setTimeout(() => $("#client-code").focus(), 50);
-  }
-
   // -------- Modal --------
   function openModal({ title, body, actions = [] }) {
     $("#modal-title").textContent = title;
@@ -5572,8 +5717,6 @@
 
     $("#btn-client-logout").addEventListener("click", exitClient);
     $("#btn-back-to-picker")?.addEventListener("click", backToWorkoutPicker);
-    $("#btn-client-reload").addEventListener("click", reloadClientCode);
-    $("#btn-client-send").addEventListener("click", sendProgress);
     $("#btn-log-bw").addEventListener("click", logBodyweight);
     $("#client-feedback").addEventListener("input", () => {
       state.clientData.progress.feedback = $("#client-feedback").value;
