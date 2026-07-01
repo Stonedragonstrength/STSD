@@ -490,6 +490,58 @@ input[type="date"] { color-scheme: dark; }
 }
 .saved-flag.show { opacity: 1; }
 
+/* ============ Profile card ============ */
+.profile-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.9em;
+}
+.profile-card-head h3 { margin: 0; }
+.profile-card-actions { display: flex; align-items: center; gap: 0.7em; }
+.profile-card input[readonly],
+.profile-card textarea[readonly] {
+  background: var(--surface);
+  color: var(--text-soft);
+  cursor: default;
+}
+.profile-card input[readonly]:focus,
+.profile-card textarea[readonly]:focus {
+  box-shadow: none;
+  border-color: var(--border);
+}
+.profile-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 0.7fr 1fr 1fr;
+  gap: 0 1em;
+}
+@media (max-width: 700px) {
+  .profile-grid { grid-template-columns: 1fr 1fr; }
+}
+.height-input-group {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+}
+.height-input-group input { width: auto; flex: 1; min-width: 0; }
+.height-unit {
+  color: var(--text-soft);
+  font-size: 0.85rem;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.profile-notes-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 1em;
+}
+.profile-notes-grid textarea { min-height: 56px; }
+@media (max-width: 700px) {
+  .profile-notes-grid { grid-template-columns: 1fr; }
+}
+
 /* ============ Empty states ============ */
 .empty-state {
   background: var(--surface);
@@ -3718,29 +3770,21 @@ input:focus, textarea:focus, select:focus {
   gap: 5px;
   flex-wrap: wrap;
 }
-.cex-chips {
-  display: flex;
-  gap: 3px;
-  flex-wrap: wrap;
-  flex-shrink: 0;
-}
 .cex-name {
   font-size: 0.9rem;
   font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   color: var(--text);
 }
 .cex-wrapper.logged > .cex-row .cex-name { color: var(--text-soft); }
 
 .cex-rx {
-  font-size: 0.72rem;
-  color: var(--text-soft);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text);
   text-align: right;
   flex-shrink: 0;
   max-width: 120px;
-  line-height: 1.35;
+  line-height: 1.4;
 }
 .cex-last-log {
   font-size: 0.67rem;
@@ -3793,11 +3837,11 @@ input:focus, textarea:focus, select:focus {
 .cex-set-col {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  width: 60px;
+  gap: 0.25rem;
+  width: 68px;
 }
 .cex-set-lbl {
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -3810,6 +3854,14 @@ input:focus, textarea:focus, select:focus {
   font-style: italic;
   margin: 0;
   padding: 0.3rem 0;
+}
+@media (max-width: 600px) {
+  /* Shrink set columns so 5-6 sets fit on one row instead of wrapping
+     and growing the card's height. */
+  .cex-set-table { gap: 0.3rem 0.3rem; flex-wrap: nowrap; overflow-x: auto; }
+  .cex-set-col { width: 48px; flex-shrink: 0; }
+  .cex-set-lbl { font-size: 0.66rem; }
+  .cex-set-col .cex-input { font-size: 0.85rem; padding: 0.4em 0.1em; }
 }
 .cex-log-bottom {
   display: flex;
@@ -3832,14 +3884,15 @@ input:focus, textarea:focus, select:focus {
   letter-spacing: 0.07em;
   color: var(--muted);
 }
-.cex-input {
+.cex-set-col .cex-input {
   width: 100%;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text);
-  font-size: 0.82rem;
-  padding: 0.38em 0.4em;
+  font-size: 1rem;
+  font-weight: 700;
+  padding: 0.5em 0.4em;
   box-sizing: border-box;
   -webkit-appearance: none;
   appearance: none;
@@ -3848,6 +3901,12 @@ input:focus, textarea:focus, select:focus {
 .cex-input:focus {
   outline: none;
   border-color: var(--primary);
+}
+/* Placeholder = coach-prescribed target to attempt today — must read clearly at a glance. */
+.cex-input::placeholder {
+  color: var(--primary-bright);
+  font-weight: 700;
+  opacity: 1;
 }
 
 
@@ -4412,6 +4471,20 @@ input:focus, textarea:focus, select:focus {
   min-width: 80px;
 }
 .day-name-compact::placeholder { color: var(--muted); font-weight: 400; }
+.day-name-compact[readonly] { cursor: default; }
+.day-name-wrap { display: flex; align-items: center; gap: 0.35em; }
+.day-name-edit-btn {
+  background: none;
+  border: none;
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0.2em 0.35em;
+  border-radius: 4px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.day-name-edit-btn:hover { color: var(--primary); background: var(--surface-2); }
 .btn.btn-xs {
   font-size: 0.72rem;
   padding: 0.28em 0.6em;

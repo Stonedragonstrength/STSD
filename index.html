@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=relink1" />
+  <link rel="stylesheet" href="styles.css?v=legib4" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -323,7 +323,6 @@
           </div>
           <div class="client-head-actions">
             <button class="btn btn-primary" id="btn-share-client"><span class="desktop-only">Share with athlete</span><span class="mobile-only">Share</span></button>
-            <button class="btn btn-ghost" id="btn-edit-client"><span class="desktop-only">Edit profile</span><span class="mobile-only">Edit</span></button>
             <button class="btn btn-danger" id="btn-delete-client">Delete</button>
           </div>
         </div>
@@ -341,30 +340,41 @@
 
         <!-- Profile -->
         <div class="tab-panel active" data-tab-panel="profile">
-          <div class="card">
-            <h3>Profile</h3>
-            <div class="grid-2">
-              <label>Name
+          <div class="card profile-card">
+            <div class="profile-card-head">
+              <h3>Profile</h3>
+              <div class="profile-card-actions">
+                <span class="saved-flag" id="prof-saved">Saved ✓</span>
+                <button class="btn btn-ghost btn-sm" id="btn-profile-edit">✎ Edit</button>
+                <button class="btn btn-primary btn-sm hidden" id="btn-profile-save">Save</button>
+              </div>
+            </div>
+            <div class="profile-grid">
+              <label class="profile-field-name">Name
                 <input type="text" id="prof-name" />
               </label>
               <label>Age
                 <input type="number" id="prof-age" min="0" />
               </label>
-              <label>Height (in)
-                <input type="number" id="prof-height" min="0" />
+              <label class="profile-field-height">Height
+                <div class="height-input-group">
+                  <input type="number" id="prof-height-ft" min="0" placeholder="ft" />
+                  <span class="height-unit">ft</span>
+                  <input type="number" id="prof-height-in" min="0" max="11" placeholder="in" />
+                  <span class="height-unit">in</span>
+                </div>
               </label>
               <label>Body weight (lb)
                 <input type="number" id="prof-weight" step="0.1" min="0" />
               </label>
             </div>
-            <label>Overall goals
-              <textarea id="prof-goals" rows="3" placeholder="e.g. Add 30 lb to squat, build lean mass, cut 10 lb"></textarea>
-            </label>
-            <label>Coach notes
-              <textarea id="prof-notes" rows="3" placeholder="Injury history, preferences, schedule constraints…"></textarea>
-            </label>
-            <div class="row-end">
-              <span class="saved-flag" id="prof-saved">Saved ✓</span>
+            <div class="profile-notes-grid">
+              <label>Overall goals
+                <textarea id="prof-goals" rows="2" placeholder="e.g. Add 30 lb to squat, build lean mass, cut 10 lb"></textarea>
+              </label>
+              <label>Coach notes
+                <textarea id="prof-notes" rows="2" placeholder="Injury history, preferences, schedule constraints…"></textarea>
+              </label>
             </div>
           </div>
           <div class="invite-code-bar">
@@ -689,7 +699,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog2"></script>
   <script src="cloud.js?v=setlog2"></script>
-  <script src="app.js?v=relink1"></script>
+  <script src="app.js?v=legib4"></script>
 </body>
 </html>
 

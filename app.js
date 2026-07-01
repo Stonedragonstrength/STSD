@@ -189,7 +189,10 @@
     { group: "Equipment",  tags: ["BB", "DB", "KB", "EZ Bar", "Cable", "Rope", "Band", "Machine"] },
     { group: "Position",   tags: ["Incline", "Decline", "Elevated", "Seated", "Standing", "Raised"] },
     { group: "Style",      tags: ["Pause", "Tempo", "Explosive", "Isometric"] },
+    { group: "Hold",       tags: ["1S", "2S", "3S", "4S", "5S"] },
   ];
+  // Hold (seconds) tags only apply alongside the Isometric tag.
+  const HOLD_TAGS = ["1S", "2S", "3S", "4S", "5S"];
 
   const TAG_COLORS = {
     "1A":        { color: "#f87171", bg: "rgba(248,113,113,0.18)" },
@@ -213,6 +216,11 @@
     "Tempo":     { color: "#6366f1", bg: "rgba(99,102,241,0.18)"  },
     "Explosive": { color: "#fb7185", bg: "rgba(251,113,133,0.18)" },
     "Isometric": { color: "#94a3b8", bg: "rgba(148,163,184,0.18)" },
+    "1S":        { color: "#38bdf8", bg: "rgba(56,189,248,0.18)"  },
+    "2S":        { color: "#38bdf8", bg: "rgba(56,189,248,0.18)"  },
+    "3S":        { color: "#38bdf8", bg: "rgba(56,189,248,0.18)"  },
+    "4S":        { color: "#38bdf8", bg: "rgba(56,189,248,0.18)"  },
+    "5S":        { color: "#38bdf8", bg: "rgba(56,189,248,0.18)"  },
   };
   function tagColor(tag) { return TAG_COLORS[tag] || { color: "#94a3b8", bg: "rgba(148,163,184,0.18)" }; }
 
@@ -221,11 +229,11 @@
   }
 
   function renderModChips(container, ex, position) {
-    // position: "before" = Unilateral+Equipment+Position  "after" = Style
+    // position: "before" = Unilateral+Equipment+Position  "after" = Style+Hold
     container.innerHTML = "";
     const groups = position === "before"
-      ? EXERCISE_MODIFIERS.filter((g) => g.group !== "Style")
-      : EXERCISE_MODIFIERS.filter((g) => g.group === "Style");
+      ? EXERCISE_MODIFIERS.filter((g) => g.group !== "Style" && g.group !== "Hold")
+      : EXERCISE_MODIFIERS.filter((g) => g.group === "Style" || g.group === "Hold");
     (ex.modifiers || []).forEach((tag) => {
       const g = groupForTag(tag);
       if (!g || !groups.includes(g)) return;
@@ -250,12 +258,25 @@
     const pop = document.createElement("div");
     pop.className = "mod-picker-pop";
 
+    const clearHoldTag = () => {
+      ex.modifiers = (ex.modifiers || []).filter((m) => !HOLD_TAGS.includes(m));
+      pop.querySelectorAll('[data-group="Hold"] .mod-picker-btn.on').forEach((b) => {
+        b.classList.remove("on");
+        b.style.removeProperty("--mc"); b.style.removeProperty("--mb");
+      });
+    };
+    const setHoldRowOpen = (open) => {
+      const holdGrp = pop.querySelector('[data-group="Hold"]');
+      if (holdGrp) holdGrp.classList.toggle("hidden", !open);
+    };
+
     EXERCISE_MODIFIERS.forEach(({ group, tags }) => {
       const grp = document.createElement("div");
       grp.className = "mod-picker-grp";
+      grp.dataset.group = group;
       const lbl = document.createElement("div");
       lbl.className = "mod-picker-lbl";
-      lbl.textContent = group;
+      lbl.textContent = group === "Hold" ? "Hold (seconds) — Isometric only" : group;
       grp.appendChild(lbl);
       const row = document.createElement("div");
       row.className = "mod-picker-row";
@@ -273,6 +294,7 @@
             ex.modifiers = ex.modifiers.filter((m) => m !== tag);
             btn.classList.remove("on");
             btn.style.removeProperty("--mc"); btn.style.removeProperty("--mb");
+            if (tag === "Isometric") clearHoldTag();
           } else {
             // deselect any other tag in this group first
             tags.forEach((t) => {
@@ -286,6 +308,14 @@
             btn.classList.add("on");
             btn.style.setProperty("--mc", color); btn.style.setProperty("--mb", bg);
           }
+          if (!ex.modifiers.includes("Isometric")) {
+            clearHoldTag();
+            setHoldRowOpen(false);
+          } else if (tag === "Isometric") {
+            setHoldRowOpen(true);
+          } else if (!HOLD_TAGS.includes(tag)) {
+            setHoldRowOpen(false);
+          }
           saveTrainer();
           renderModChips(chipsBefore, ex, "before");
           renderModChips(chipsAfter, ex, "after");
@@ -297,6 +327,7 @@
       pop.appendChild(grp);
     });
 
+    setHoldRowOpen(false);
     document.body.appendChild(pop);
     const rect = anchorBtn.getBoundingClientRect();
     const pw = 260;
@@ -1377,7 +1408,7 @@
   function clientMetaText(c) {
     const parts = [];
     if (c.age) parts.push(`${c.age} yrs`);
-    if (c.heightIn) parts.push(`${c.heightIn} in`);
+    if (c.heightIn) parts.push(formatHeight(c.heightIn));
     if (c.weightLb) parts.push(`${c.weightLb} lb`);
     return parts.join(" · ") || "Profile incomplete";
   }
@@ -1396,16 +1427,54 @@
   }
 
   // -------- Profile --------
+  function formatHeight(heightIn) {
+    const h = Number(heightIn);
+    if (!h) return "";
+    return `${Math.floor(h / 12)}'${Math.round(h % 12)}"`;
+  }
+  const PROFILE_FIELD_IDS = [
+    "#prof-name", "#prof-age", "#prof-height-ft", "#prof-height-in",
+    "#prof-weight", "#prof-goals", "#prof-notes",
+  ];
+  function setProfileLocked(locked) {
+    PROFILE_FIELD_IDS.forEach((sel) => {
+      const el = $(sel); if (!el) return;
+      if (locked) el.setAttribute("readonly", "readonly");
+      else el.removeAttribute("readonly");
+    });
+    $(".profile-card")?.classList.toggle("locked", locked);
+    hide(locked ? $("#btn-profile-save") : $("#btn-profile-edit"));
+    show(locked ? $("#btn-profile-edit") : $("#btn-profile-save"));
+  }
   function renderProfile() {
     const c = currentClient(); if (!c) return;
     $("#prof-name").value = c.name;
     $("#prof-age").value = c.age;
-    $("#prof-height").value = c.heightIn || "";
+    const h = Number(c.heightIn) || 0;
+    $("#prof-height-ft").value = h ? Math.floor(h / 12) : "";
+    $("#prof-height-in").value = h ? Math.round(h % 12) : "";
     $("#prof-weight").value = c.weightLb || "";
     $("#prof-goals").value = c.goals;
     $("#prof-notes").value = c.notes;
     if (!c.inviteCode) { c.inviteCode = makeInviteCode(); saveTrainer(); }
     $("#invite-code-display").textContent = c.inviteCode;
+    setProfileLocked(true);
+  }
+  function saveProfileFields() {
+    const c = currentClient(); if (!c) return;
+    c.name = $("#prof-name").value;
+    c.age = $("#prof-age").value;
+    c.weightLb = $("#prof-weight").value;
+    c.goals = $("#prof-goals").value;
+    c.notes = $("#prof-notes").value;
+    const ft = Number($("#prof-height-ft").value) || 0;
+    const inch = Number($("#prof-height-in").value) || 0;
+    c.heightIn = (ft * 12 + inch) || "";
+    saveTrainer();
+    $("#client-name-display").textContent = c.name || "(unnamed)";
+    $("#client-meta-display").textContent = clientMetaText(c);
+    flashSaved($("#prof-saved"));
+    setProfileLocked(true);
   }
   function regenerateInviteCode() {
     const c = currentClient(); if (!c) return;
@@ -1421,21 +1490,11 @@
     catch { toast("Couldn't copy — code: " + c.inviteCode, 4000); }
   }
   function bindProfileInputs() {
-    const map = {
-      "#prof-name": "name", "#prof-age": "age",
-      "#prof-height": "heightIn", "#prof-weight": "weightLb",
-      "#prof-goals": "goals", "#prof-notes": "notes",
-    };
-    for (const [sel, field] of Object.entries(map)) {
-      $(sel).addEventListener("input", () => {
-        const c = currentClient(); if (!c) return;
-        c[field] = $(sel).value;
-        saveTrainer();
-        if (field === "name") $("#client-name-display").textContent = c.name || "(unnamed)";
-        $("#client-meta-display").textContent = clientMetaText(c);
-        flashSaved($("#prof-saved"));
-      });
-    }
+    $("#btn-profile-edit").addEventListener("click", () => {
+      setProfileLocked(false);
+      $("#prof-name").focus();
+    });
+    $("#btn-profile-save").addEventListener("click", saveProfileFields);
   }
   // ============ Workout Templates (library) ============
   function makeWorkoutTemplate(name, exercises) {
@@ -2268,7 +2327,7 @@
     container.appendChild(section);
   }
 
-  function renderArchiveWeek(week) {
+  function renderArchiveWeek(week, showTagChips = true) {
     const card = document.createElement("div");
     card.className = "archive-week-card";
     const exTotal = week.days.reduce((n, d) => n + d.exercises.length, 0);
@@ -2289,17 +2348,21 @@
         if (!ex.modifiers) ex.modifiers = [];
         const row = document.createElement("div");
         row.className = "archive-ex-row";
-        const chips = ex.modifiers.map((tag) => {
-          const g = groupForTag(tag);
-          if (!g) return "";
-          const { color, bg } = tagColor(tag);
-          return `<span class="mod-chip" style="--mc:${color};--mb:${bg}">${escapeHtml(tag)}</span>`;
-        }).join("");
         const rxParts = [];
         if (ex.sets) rxParts.push(ex.sets + " sets");
         if (ex.currentWeight) rxParts.push(ex.currentWeight === "BW" ? "BW" : ex.currentWeight + " lb");
         if (ex.currentReps) rxParts.push("× " + ex.currentReps);
-        row.innerHTML = `<span class="archive-ex-chips">${chips}</span><span class="archive-ex-name">${escapeHtml(ex.name || "(unnamed)")}</span><span class="archive-ex-rx">${escapeHtml(rxParts.join(" · ") || "")}</span>`;
+        if (showTagChips) {
+          const chips = ex.modifiers.map((tag) => {
+            const g = groupForTag(tag);
+            if (!g) return "";
+            const { color, bg } = tagColor(tag);
+            return `<span class="mod-chip" style="--mc:${color};--mb:${bg}">${escapeHtml(tag)}</span>`;
+          }).join("");
+          row.innerHTML = `<span class="archive-ex-chips">${chips}</span><span class="archive-ex-name">${escapeHtml(ex.name || "(unnamed)")}</span><span class="archive-ex-rx">${escapeHtml(rxParts.join(" · ") || "")}</span>`;
+        } else {
+          row.innerHTML = `<span class="archive-ex-name">${escapeHtml(exerciseDisplayLabel(ex))}</span><span class="archive-ex-rx">${escapeHtml(rxParts.join(" · ") || "")}</span>`;
+        }
         dayEl.appendChild(row);
       });
       card.appendChild(dayEl);
@@ -2420,13 +2483,33 @@
     const actionBar = document.createElement("div");
     actionBar.className = "day-action-bar";
 
+    const nameWrap = document.createElement("div");
+    nameWrap.className = "day-name-wrap";
+
     const nameInput = document.createElement("input");
     nameInput.type = "text";
     nameInput.className = "day-name-compact";
     nameInput.placeholder = "Day name…";
     nameInput.value = day.name || "";
+    nameInput.readOnly = true;
     nameInput.addEventListener("input", () => { day.name = nameInput.value; saveTrainer(); });
     nameInput.addEventListener("change", () => rerenderFn());
+    nameInput.addEventListener("blur", () => { nameInput.readOnly = true; });
+    nameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") nameInput.blur(); });
+
+    const editNameBtn = document.createElement("button");
+    editNameBtn.type = "button";
+    editNameBtn.className = "day-name-edit-btn";
+    editNameBtn.title = "Edit day name";
+    editNameBtn.textContent = "✎";
+    editNameBtn.addEventListener("click", () => {
+      nameInput.readOnly = false;
+      nameInput.focus();
+      nameInput.select();
+    });
+
+    nameWrap.appendChild(nameInput);
+    nameWrap.appendChild(editNameBtn);
 
     const spacer = document.createElement("div");
     spacer.style.flex = "1";
@@ -2450,7 +2533,7 @@
       saveTrainer(); rerenderFn();
     });
 
-    actionBar.appendChild(nameInput);
+    actionBar.appendChild(nameWrap);
     actionBar.appendChild(spacer);
     actionBar.appendChild(libBtn);
     actionBar.appendChild(delDayBtn);
@@ -4581,7 +4664,7 @@
         <button class="btn btn-ghost btn-xs" data-action="toggle">Expand</button>`;
       const body = document.createElement("div");
       body.className = "archive-prog-body hidden";
-      prog.weeks.forEach((week) => body.appendChild(renderArchiveWeek(week)));
+      prog.weeks.forEach((week) => body.appendChild(renderArchiveWeek(week, false)));
       head.querySelector('[data-action="toggle"]').addEventListener("click", () => {
         const open = body.classList.toggle("hidden");
         head.querySelector('[data-action="toggle"]').textContent = open ? "Expand" : "Collapse";
@@ -4827,7 +4910,15 @@
   }
   function hasAnyLog(ex) {
     const logs = state.clientData.progress?.exerciseLogs?.[ex.id];
-    return logs && logs.length > 0;
+    if (!logs || !logs.length) return false;
+    const numSets = parseInt(ex.sets) || 0;
+    if (!numSets) return logs.length > 0;
+    // Only counts as done once every prescribed set has both weight and reps
+    // logged (weight may be skipped for bodyweight moves).
+    return logs.some((l) => {
+      if (!l.sets || l.sets.length < numSets) return false;
+      return l.sets.every((s) => s.reps && (s.weight || ex.currentWeight === "BW"));
+    });
   }
   function renderClientDay(week, day, jumpTo) {
     const card = document.createElement("div");
@@ -4859,10 +4950,20 @@
     card.appendChild(exList);
     return card;
   }
+  function exerciseDisplayLabel(ex) {
+    const before = [];
+    const after = [];
+    (ex.modifiers || []).forEach((tag) => {
+      const g = groupForTag(tag);
+      if (!g) return;
+      (g.group === "Style" || g.group === "Hold" ? after : before).push(tag);
+    });
+    return [...before, ex.name || "(unnamed)", ...after].join(" ");
+  }
   function renderClientExercise(week, day, ex, jumpTo) {
     if (!ex.modifiers) ex.modifiers = [];
     const logs = state.clientData.progress?.exerciseLogs?.[ex.id] || [];
-    const isDone = logs.length > 0;
+    const isDone = hasAnyLog(ex);
     const lastLog = logs.length ? [...logs].sort((a, b) => b.date.localeCompare(a.date))[0] : null;
 
     const wrapper = document.createElement("div");
@@ -4883,25 +4984,8 @@
 
     const nameEl = document.createElement("span");
     nameEl.className = "cex-name";
-    nameEl.textContent = ex.name || "(unnamed)";
+    nameEl.textContent = exerciseDisplayLabel(ex);
     nameBlock.appendChild(nameEl);
-
-    if (ex.modifiers.length) {
-      const chips = document.createElement("div");
-      chips.className = "cex-chips";
-      ex.modifiers.forEach((tag) => {
-        const g = groupForTag(tag);
-        if (!g) return;
-        const { color, bg } = tagColor(tag);
-        const c = document.createElement("span");
-        c.className = "mod-chip";
-        c.style.setProperty("--mc", color);
-        c.style.setProperty("--mb", bg);
-        c.textContent = tag;
-        chips.appendChild(c);
-      });
-      nameBlock.appendChild(chips);
-    }
 
     const rxEl = document.createElement("div");
     rxEl.className = "cex-rx";
@@ -5272,8 +5356,6 @@
   }
   function closeModal() { hide($("#modal")); }
 
-  function editClient() { setTab("profile"); $("#prof-name").focus(); }
-
   // -------- Init --------
   async function init() {
     // Auth state change listener — catches PASSWORD_RECOVERY from email reset links
@@ -5419,7 +5501,6 @@
     $("#btn-new-template-empty")?.addEventListener("click", () => openTemplateEditor(null));
     $("#btn-browse-recommended")?.addEventListener("click", openRecommendedTemplatesModal);
     $("#btn-browse-recommended-empty")?.addEventListener("click", openRecommendedTemplatesModal);
-    $("#btn-edit-client").addEventListener("click", editClient);
     $("#btn-delete-client").addEventListener("click", deleteClientPrompt);
     $("#btn-load-program").addEventListener("click", openLoadProgramModal);
     $("#btn-load-program-empty").addEventListener("click", openLoadProgramModal);
