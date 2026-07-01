@@ -4975,6 +4975,9 @@
     const row = document.createElement("div");
     row.className = "cex-row";
 
+    const top = document.createElement("div");
+    top.className = "cex-top";
+
     const doneCircle = document.createElement("div");
     doneCircle.className = "cex-circle" + (isDone ? " done" : "");
     doneCircle.textContent = isDone ? "✓" : "";
@@ -4986,6 +4989,9 @@
     nameEl.className = "cex-name";
     nameEl.textContent = exerciseDisplayLabel(ex);
     nameBlock.appendChild(nameEl);
+
+    top.appendChild(doneCircle);
+    top.appendChild(nameBlock);
 
     const rxEl = document.createElement("div");
     rxEl.className = "cex-rx";
@@ -4999,10 +5005,13 @@
       rxParts.push(hi ? lo + "–" + hi : lo);
     }
     if (ex.currentReps) rxParts.push("× " + ex.currentReps);
-    rxEl.textContent = rxParts.join(" · ") || "—";
+    const rxMain = document.createElement("span");
+    rxMain.className = "cex-rx-main";
+    rxMain.textContent = rxParts.join(" · ") || "—";
+    rxEl.appendChild(rxMain);
 
     if (lastLog) {
-      const ll = document.createElement("div");
+      const ll = document.createElement("span");
       ll.className = "cex-last-log";
       if (lastLog.sets?.length) {
         const s = lastLog.sets[0];
@@ -5013,8 +5022,7 @@
       rxEl.appendChild(ll);
     }
 
-    row.appendChild(doneCircle);
-    row.appendChild(nameBlock);
+    row.appendChild(top);
     row.appendChild(rxEl);
 
     // ── Panel (always open) ──

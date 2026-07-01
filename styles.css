@@ -3734,10 +3734,17 @@ input:focus, textarea:focus, select:focus {
 
 .cex-row {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 0.2rem;
   padding: 0.5rem 0.85rem;
   min-height: 46px;
+  justify-content: center;
+}
+
+.cex-top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .cex-circle {
@@ -3778,18 +3785,27 @@ input:focus, textarea:focus, select:focus {
 .cex-wrapper.logged > .cex-row .cex-name { color: var(--text-soft); }
 
 .cex-rx {
-  font-size: 0.82rem;
+  margin-left: 34px;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  overflow: hidden;
+}
+.cex-rx-main {
+  font-size: 0.8rem;
   font-weight: 700;
   color: var(--text);
-  text-align: right;
-  flex-shrink: 0;
-  max-width: 120px;
-  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .cex-last-log {
   font-size: 0.67rem;
   color: var(--muted);
-  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 1;
 }
 
 /* ── Panel ── */
@@ -4041,7 +4057,6 @@ input:focus, textarea:focus, select:focus {
   .detail-head-main h2 { font-size: 1.15rem; }
   .workout-detail-head { padding: 0.9rem 1rem; border-radius: 12px; }
   .cex-panel { padding: 0.65rem 0.85rem 0.85rem; }
-.cex-rx { max-width: 100px; }
 }
 
 /* ===== Coach week tabs ===== */
