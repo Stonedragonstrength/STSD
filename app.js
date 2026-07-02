@@ -32,6 +32,17 @@
         window.Cloud.upsertAthlete(c, state.trainerData.coachId)
       );
     }
+    // Cloud: debounced push of the coach's program/workout template library,
+    // so templates created on one device show up on every other device.
+    if (window.Cloud?.enabled && state.trainerData.coachId) {
+      window.Cloud.debounce(`coach-templates:${state.trainerData.coachId}`, () =>
+        window.Cloud.updateCoachTemplates(
+          state.trainerData.coachId,
+          state.trainerData.programTemplates,
+          state.trainerData.workoutTemplates
+        )
+      );
+    }
   }
   function saveClient() {
     localStorage.setItem(KEY_CLIENT, JSON.stringify(state.clientData));
@@ -809,7 +820,26 @@
       const user = await window.Cloud.signIn(email, pw);
       setRememberMe(remember);
 
-      // Fast path: local data exists on this device
+      // Always refresh from the cloud so programs/templates/athletes created
+      // on any other device show up here immediately, even on a device that
+      // already has a cached coach account.
+      let coachData = null;
+      try {
+        coachData = await window.Cloud.getCoachByAuthUserId(user.id);
+      } catch (e) {
+        console.warn("[Cloud] refresh on coach sign-in failed, using cached data", e);
+      }
+
+      if (coachData) {
+        populateCoachFromCloud(coachData.coach, coachData.athletes);
+        err.classList.add("hidden");
+        playLoginFlash();
+        signIntoTrainer();
+        return;
+      }
+
+      // No fresh cloud record (offline, or lookup failed) — fall back to the
+      // cached local account if this device already has one.
       if (state.trainerData.trainer) {
         if (!state.trainerData.coachAuthId) {
           state.trainerData.coachAuthId = user.id;
@@ -817,16 +847,6 @@
           saveTrainer();
           window.Cloud.upsertCoach(state.trainerData.coachId, state.trainerData.trainer.name, email, user.id);
         }
-        err.classList.add("hidden");
-        playLoginFlash();
-        signIntoTrainer();
-        return;
-      }
-
-      // New device: fetch from cloud
-      const coachData = await window.Cloud.getCoachByAuthUserId(user.id);
-      if (coachData) {
-        populateCoachFromCloud(coachData.coach, coachData.athletes);
         err.classList.add("hidden");
         playLoginFlash();
         signIntoTrainer();
@@ -847,6 +867,8 @@
     state.trainerData.trainer = { name: coach.display_name || "", email: coach.email || "" };
     state.trainerData.coachId = coach.id;
     state.trainerData.coachAuthId = coach.auth_user_id;
+    state.trainerData.programTemplates = coach.program_templates || [];
+    state.trainerData.workoutTemplates = coach.workout_templates || [];
     state.trainerData.clients = (athletes || []).map((a) => {
       if (!a.schedule) a.schedule = {};
       if (!a.coachPRs) a.coachPRs = [];
@@ -5828,8 +5850,15 @@
         const session = await window.Cloud.getSession();
         if (session) {
           const userId = session.user.id;
-          // Fast path: valid local data + session → auto-login
+          // Fast path: valid local data + session → auto-login, but still
+          // refresh templates/athletes from the cloud first so anything
+          // created on another device shows up here too; degrade to the
+          // cached data silently if offline.
           if (state.trainerData.trainer && state.trainerData.coachAuthId === userId) {
+            try {
+              const fresh = await window.Cloud.getCoachByAuthUserId(userId);
+              if (fresh) populateCoachFromCloud(fresh.coach, fresh.athletes);
+            } catch (e) { console.warn("[Boot] Coach refresh failed, using cached data", e); }
             signIntoTrainer(); return;
           }
           if (state.clientData.program && state.clientData.profile?.email === session.user.email) {

@@ -154,6 +154,20 @@
     } catch (e) { console.warn("[Cloud] getCoachByAuthUserId", e); return null; }
   }
 
+  // Coach's reusable program/workout template library — shared across every
+  // device the coach signs into, not just the one that created it.
+  async function updateCoachTemplates(coachId, programTemplates, workoutTemplates) {
+    if (!coachId) return false;
+    try {
+      const { error } = await sb.from("coaches").update({
+        program_templates: programTemplates || [],
+        workout_templates: workoutTemplates || [],
+      }).eq("id", coachId);
+      if (error) console.warn("[Cloud] updateCoachTemplates error", error.message);
+      return !error;
+    } catch (e) { console.warn("[Cloud] updateCoachTemplates", e); return false; }
+  }
+
   // -------- Athlete methods --------
   async function upsertAthlete(athlete, coachId) {
     const row = athleteToRow(athlete, coachId);
@@ -300,6 +314,7 @@
     // Coach
     upsertCoach,
     getCoachByAuthUserId,
+    updateCoachTemplates,
     // Athlete
     upsertAthlete,
     deleteAthlete,
