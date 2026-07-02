@@ -3711,6 +3711,18 @@ input:focus, textarea:focus, select:focus {
   font-size: 1.3rem;
   font-weight: 800;
 }
+.detail-head-main .detail-log-date {
+  width: auto;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.3em 0.5em;
+  margin-top: 0;
+  color-scheme: dark;
+}
 .detail-head-stats {
   display: flex;
   gap: 0.4em;

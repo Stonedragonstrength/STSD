@@ -4733,7 +4733,7 @@
 
   // -------- Athlete workouts --------
   // Athlete-side workout view state (which week chip + day card is active).
-  state.workoutView = state.workoutView || { mode: "picker", weekId: null, dayId: null };
+  state.workoutView = state.workoutView || { mode: "picker", weekId: null, dayId: null, date: todayISO() };
 
   function renderClientWorkouts() {
     const prog = state.clientData.program;
@@ -4756,7 +4756,7 @@
 
     // If a jump-to was set (from calendar click), prefer it.
     if (jumpTo?.weekId && jumpTo?.dayId) {
-      state.workoutView = { mode: "detail", weekId: jumpTo.weekId, dayId: jumpTo.dayId };
+      state.workoutView = { mode: "detail", weekId: jumpTo.weekId, dayId: jumpTo.dayId, date: jumpTo.date || todayISO() };
     } else if (!state.workoutView.weekId) {
       state.workoutView.weekId = prog.client.weeks[0].id;
     } else if (!prog.client.weeks.some((w) => w.id === state.workoutView.weekId)) {
@@ -4896,7 +4896,7 @@
         <div class="workout-card-chevron">›</div>
       `;
       card.addEventListener("click", () => {
-        state.workoutView = { mode: "detail", weekId: week.id, dayId: day.id };
+        state.workoutView = { mode: "detail", weekId: week.id, dayId: day.id, date: todayISO() };
         renderWorkoutDetailUI();
       });
       grid.appendChild(card);
@@ -4972,6 +4972,7 @@
       return;
     }
 
+    if (!state.workoutView.date) state.workoutView.date = todayISO();
     const head = $("#workout-detail-head");
     const totalEx = day.exercises.length;
     const doneEx = day.exercises.filter((ex) => hasAnyLog(ex)).length;
@@ -4984,6 +4985,7 @@
       <div class="detail-head-main">
         <button class="day-check-toggle ${checked ? "checked" : ""}" id="detail-toggle" aria-label="Mark whole day complete">${checked ? "✓" : ""}</button>
         <h2>${escapeHtml(day.name)}</h2>
+        <input type="date" class="detail-log-date" id="detail-log-date" value="${escapeHtml(state.workoutView.date)}" title="Date these logs are for" />
       </div>
       <div class="detail-head-stats">
         <span class="meta-pill">${totalEx} exercise${totalEx === 1 ? "" : "s"}</span>
@@ -4994,6 +4996,10 @@
     head.querySelector("#detail-toggle").addEventListener("click", () => {
       toggleDayComplete(day.id);
       toast(checked ? "Unchecked" : "Day complete ✓");
+      renderWorkoutDetailUI();
+    });
+    head.querySelector("#detail-log-date").addEventListener("change", (e) => {
+      state.workoutView.date = e.target.value || todayISO();
       renderWorkoutDetailUI();
     });
 
@@ -5199,7 +5205,9 @@
     }
 
     // Log form
-    const logDate = jumpTo?.dayId === day.id ? jumpTo.date : todayISO();
+    const logDate = state.workoutView?.dayId === day.id && state.workoutView?.date
+      ? state.workoutView.date
+      : (jumpTo?.dayId === day.id ? jumpTo.date : todayISO());
     const logForm = document.createElement("div");
     logForm.className = "cex-log-form";
 
@@ -5354,7 +5362,8 @@
         const setStr = l.sets?.length
           ? l.sets.map((s, i) => `<span class="cex-hist-set"><em>S${i+1}</em> ${escapeHtml(s.weight || "BW")} × ${escapeHtml(s.reps || "?")}</span>`).join("")
           : `<span class="cex-hist-set">${escapeHtml(l.weight || "BW")} lb × ${escapeHtml(l.reps || "?")} reps</span>`;
-        item.innerHTML = `<span class="cex-hist-date">${escapeHtml(l.date)}</span>
+        const dateHtml = l.date === logDate ? "" : `<span class="cex-hist-date">${escapeHtml(l.date)}</span>`;
+        item.innerHTML = `${dateHtml}
           <span class="cex-hist-sets">${setStr}</span>
           <button class="cex-del-log" data-lid="${escapeHtml(l.id)}" title="Delete">×</button>`;
         item.querySelector(".cex-del-log").addEventListener("click", (e) => {
