@@ -1234,7 +1234,7 @@ input[type="date"] { color-scheme: dark; }
   border: 1px solid var(--border);
   border-radius: var(--radius);
   margin-bottom: 0.8rem;
-  overflow: hidden;
+  overflow: visible;
 }
 .client-day-head {
   display: flex;
@@ -3906,6 +3906,12 @@ input:focus, textarea:focus, select:focus {
   .cex-set-col { width: 48px; flex-shrink: 0; }
   .cex-set-lbl { font-size: 0.66rem; }
   .cex-set-col .cex-input { font-size: 0.85rem; padding: 0.4em 0.1em; }
+  /* The "See all weeks" cards sit one level deeper (inside .week-body),
+     which eats extra horizontal space the workout-detail cards don't
+     lose — trim that padding and shrink columns a bit more so all 6
+     sets are visible without needing to scroll. */
+  .week-body { padding: 0.6rem; }
+  .client-day-card .cex-set-col { width: 42px; }
 }
 .cex-log-bottom {
   display: flex;
