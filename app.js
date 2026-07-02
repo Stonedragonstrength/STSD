@@ -4120,6 +4120,13 @@
     const i = week.days.findIndex(d => d.id === dayId);
     return i >= 0 ? i : 0;
   }
+  // Short "W1 D1" label for a program day — used on the athlete calendar so
+  // completed/planned pills read as a program position, not just a day name.
+  function weekDayLabel(client, weekId, dayId) {
+    const wIdx = (client.weeks || []).findIndex((w) => w.id === weekId);
+    const dIdx = getDayIdx(client, weekId, dayId);
+    return `W${wIdx >= 0 ? wIdx + 1 : "?"} D${dIdx + 1}`;
+  }
 
   // -------- Session bank (coach side) --------
   const PACKAGE_SIZES = [4, 8, 16];
@@ -4661,7 +4668,8 @@
       if (completed) {
         const dIdx = getDayIdx(prog.client, completed.week.id, completed.day.id);
         const dc = getDayColor(dIdx);
-        pillHtml = `<div class="cal-day-pill" style="--day-color:${dc.color};--day-color-soft:${dc.soft}">✓ ${escapeHtml(completed.day.name)}</div>`;
+        const label = weekDayLabel(prog.client, completed.week.id, completed.day.id);
+        pillHtml = `<div class="cal-day-pill" style="--day-color:${dc.color};--day-color-soft:${dc.soft}">✓ ${escapeHtml(label)}</div>`;
         cell.classList.add("done");
         if (isUpcoming) cell.classList.add("has-log");
       } else if (isUpcoming && entry && entry.weekId) {
@@ -4670,9 +4678,8 @@
         // plan is stale and just drops off the calendar.
         const dIdx = getDayIdx(prog.client, entry.weekId, entry.dayId);
         const dc = getDayColor(dIdx);
-        const wd = findWeekDay(prog.client, entry.weekId, entry.dayId);
-        const name = wd?.day.name || "Workout";
-        pillHtml = `<div class="cal-day-pill" style="--day-color:${dc.color};--day-color-soft:${dc.soft}">${escapeHtml(name)}</div>`;
+        const label = weekDayLabel(prog.client, entry.weekId, entry.dayId);
+        pillHtml = `<div class="cal-day-pill" style="--day-color:${dc.color};--day-color-soft:${dc.soft}">${escapeHtml(label)}</div>`;
         cell.classList.add("has-log");
       } else if (isUpcoming && entry?.rest) {
         pillHtml = `<div class="cal-day-pill cal-day-pill-rest">Rest</div>`;
