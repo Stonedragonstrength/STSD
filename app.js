@@ -5259,7 +5259,8 @@
     const lockBtn = document.createElement("button");
     lockBtn.type = "button";
     lockBtn.className = "btn btn-primary btn-sm cex-lock-btn";
-    lockBtn.textContent = "🔒 Lock in";
+    lockBtn.textContent = "🔒";
+    lockBtn.title = "Lock in";
 
     const editBtn = document.createElement("button");
     editBtn.type = "button";

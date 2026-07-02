@@ -3875,7 +3875,7 @@ input:focus, textarea:focus, select:focus {
   display: flex;
   margin-top: 0.5rem;
 }
-.cex-lock-btn { padding: 0.4em 0.9em; }
+.cex-lock-btn { padding: 0.4em 0.7em; font-size: 0.95rem; line-height: 1; }
 .cex-edit-btn {
   background: none;
   border: none;
