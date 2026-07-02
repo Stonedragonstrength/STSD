@@ -4691,40 +4691,75 @@
     const selfSched = state.clientData.progress.selfSchedule || {};
     const existing = selfSched[iso];
     const client = prog.client;
-    let optsHtml = `<div class="day-log-grid">`;
-    client.weeks.forEach((week) => {
-      week.days.forEach((day, dIdx) => {
-        const dc = getDayColor(dIdx);
-        const sel = (existing?.weekId === week.id && existing?.dayId === day.id) ? " selected" : "";
-        optsHtml += `<button class="day-log-opt${sel}" data-week="${escapeHtml(week.id)}" data-day="${escapeHtml(day.id)}"
-          style="--day-color:${dc.color};--day-color-soft:${dc.soft}" type="button">
-          <span class="day-log-dot"></span>
-          <span class="day-log-name">${escapeHtml(day.name)}</span>
-          <span class="day-log-week">${escapeHtml(week.label)}</span>
-        </button>`;
-      });
-    });
+    if (!client.weeks.length) {
+      openModal({ title: `Plan ${iso}`, body: `<p class="muted">No weeks in this program yet.</p>`, actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }] });
+      return;
+    }
+    let activeWeekId = existing?.weekId || client.weeks[0].id;
+
     const restSel = existing?.rest ? " selected" : "";
-    optsHtml += `<button class="day-log-opt day-log-rest${restSel}" data-rest="1" type="button">
-      <span class="day-log-dot" style="background:var(--muted)"></span>
+    const restHtml = `<button class="day-log-opt day-log-rest${restSel}" data-rest="1" type="button">
+      <span class="day-log-icon day-log-icon-rest">🛌</span>
       <span class="day-log-name">Rest day</span>
-    </button></div>`;
+    </button>`;
+    const weekChipsHtml = client.weeks.map((week) => `
+      <button class="week-chip day-log-week-chip${week.id === activeWeekId ? " active" : ""}${week.phaseLabel ? " has-phase" : ""}" data-week="${escapeHtml(week.id)}" type="button">
+        ${week.phaseLabel ? `<span class="chip-phase">${escapeHtml(week.phaseLabel)}</span>` : ""}
+        <span class="chip-label">${escapeHtml(week.label)}</span>
+      </button>
+    `).join("");
+    const bodyHtml = `
+      <div class="day-log-picker">
+        ${restHtml}
+        <div class="week-chips day-log-week-chips">${weekChipsHtml}</div>
+        <div class="day-log-day-grid" id="day-log-day-grid"></div>
+      </div>`;
+
     const actions = [{ label: "Cancel", className: "btn btn-ghost", onClick: closeModal }];
     if (existing) actions.push({ label: "Clear", className: "btn btn-ghost", onClick: () => {
       if (!state.clientData.progress.selfSchedule) state.clientData.progress.selfSchedule = {};
       delete state.clientData.progress.selfSchedule[iso];
       saveClient(); renderAthleteCalendar(); closeModal();
     }});
-    openModal({ title: `Log for ${iso}`, body: optsHtml, actions });
-    $("#modal-body").querySelectorAll(".day-log-opt").forEach(btn => {
-      btn.addEventListener("click", () => {
-        if (!state.clientData.progress.selfSchedule) state.clientData.progress.selfSchedule = {};
-        if (btn.dataset.rest) {
-          state.clientData.progress.selfSchedule[iso] = { rest: true, loggedAt: Date.now() };
-        } else {
+    openModal({ title: `Plan for ${iso}`, body: bodyHtml, actions });
+
+    function renderDayGrid() {
+      const week = client.weeks.find((w) => w.id === activeWeekId);
+      const gridEl = $("#day-log-day-grid");
+      if (!week || !week.days.length) {
+        gridEl.innerHTML = `<p class="muted" style="padding:0.4rem 0.1rem">No workout days in this week.</p>`;
+        return;
+      }
+      gridEl.innerHTML = week.days.map((day, dIdx) => {
+        const dc = getDayColor(dIdx);
+        const sel = (activeWeekId === existing?.weekId && day.id === existing?.dayId) ? " selected" : "";
+        const icon = day.icon || workoutIconFor(day.name);
+        return `<button class="day-log-opt${sel}" data-week="${escapeHtml(week.id)}" data-day="${escapeHtml(day.id)}"
+          style="--day-color:${dc.color};--day-color-soft:${dc.soft}" type="button">
+          <span class="day-log-icon">${icon}</span>
+          <span class="day-log-name">${escapeHtml(day.name)}</span>
+        </button>`;
+      }).join("");
+      gridEl.querySelectorAll(".day-log-opt").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (!state.clientData.progress.selfSchedule) state.clientData.progress.selfSchedule = {};
           state.clientData.progress.selfSchedule[iso] = { weekId: btn.dataset.week, dayId: btn.dataset.day, loggedAt: Date.now() };
-        }
-        saveClient(); renderAthleteCalendar(); closeModal(); toast("Logged ✓");
+          saveClient(); renderAthleteCalendar(); closeModal(); toast("Planned ✓");
+        });
+      });
+    }
+    renderDayGrid();
+
+    $("#modal-body .day-log-rest").addEventListener("click", () => {
+      if (!state.clientData.progress.selfSchedule) state.clientData.progress.selfSchedule = {};
+      state.clientData.progress.selfSchedule[iso] = { rest: true, loggedAt: Date.now() };
+      saveClient(); renderAthleteCalendar(); closeModal(); toast("Planned ✓");
+    });
+    $("#modal-body").querySelectorAll(".day-log-week-chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        activeWeekId = chip.dataset.week;
+        $("#modal-body").querySelectorAll(".day-log-week-chip").forEach((c) => c.classList.toggle("active", c.dataset.week === activeWeekId));
+        renderDayGrid();
       });
     });
   }

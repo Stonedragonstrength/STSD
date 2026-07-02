@@ -1600,23 +1600,43 @@ input[type="date"] { color-scheme: dark; }
 .cal-day.has-log { cursor: pointer; }
 .cal-day.has-log:hover { border-color: var(--day-color, var(--primary)); }
 
-/* Athlete day log modal */
-.day-log-grid { display: flex; flex-direction: column; gap: 0.4rem; max-height: 55vh; overflow-y: auto; padding-right: 2px; }
+/* Athlete day log / plan modal */
+.day-log-picker { display: flex; flex-direction: column; gap: 0.9rem; }
+.day-log-week-chips { margin-bottom: 0; }
+.day-log-day-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;
+  max-height: 45vh; overflow-y: auto; padding-right: 2px;
+}
+@media (max-width: 480px) {
+  .day-log-day-grid { grid-template-columns: 1fr; }
+}
 .day-log-opt {
-  display: flex; align-items: center; gap: 0.75rem;
-  padding: 0.65rem 0.9rem;
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.55rem 0.7rem;
   background: var(--surface-2); border: 1px solid var(--border);
+  border-left: 3px solid var(--day-color, var(--border));
   border-radius: var(--radius); cursor: pointer; text-align: left;
-  font-family: inherit; transition: border-color 0.15s, background 0.15s;
+  font-family: inherit; transition: border-color 0.15s, background 0.15s, transform 0.12s;
   width: 100%;
 }
 .day-log-opt:hover, .day-log-opt.selected {
   border-color: var(--day-color, var(--primary));
   background: var(--day-color-soft, var(--surface-3));
 }
-.day-log-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--day-color, var(--muted)); flex-shrink: 0; }
-.day-log-name { font-weight: 600; font-size: 0.9rem; color: var(--text); flex: 1; }
-.day-log-week { font-size: 0.75rem; color: var(--text-soft); white-space: nowrap; }
+.day-log-opt:active { transform: scale(0.97); }
+.day-log-icon {
+  font-size: 1.25rem; width: 36px; height: 36px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 10px;
+  background: var(--day-color-soft, var(--surface-3));
+  border: 1px solid var(--day-color, var(--border));
+}
+.day-log-icon-rest { background: var(--surface-3); border-color: var(--border); }
+.day-log-name {
+  font-weight: 600; font-size: 0.85rem; color: var(--text); flex: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.day-log-rest { margin-bottom: 0.1rem; }
 
 /* Dashboard overview calendar */
 .dash-cal-grid {
