@@ -4635,8 +4635,7 @@
     if (!state.clientData.progress) state.clientData.progress = emptyProgress();
     ensureProgressShape(state.clientData.progress);
     const prog = state.clientData.program;
-    const code = prog.client.inviteCode;
-    $("#client-portal-name").innerHTML = `${escapeHtml(prog.client.name)}${code ? ` <span class="athlete-invite-chip"><span class="label">Code</span>${escapeHtml(code)}</span>` : ""}`;
+    $("#client-portal-name").textContent = prog.client.name;
     setClientTab("workouts");
     const now = new Date();
     state.athleteCal = { year: now.getFullYear(), month: now.getMonth() };
