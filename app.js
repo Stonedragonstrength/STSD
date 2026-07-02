@@ -4961,17 +4961,7 @@
     return block;
   }
 
-  function renderWorkoutDetailUI() {
-    const prog = state.clientData.program;
-    const week = prog?.client?.weeks?.find((w) => w.id === state.workoutView.weekId);
-    const day = week?.days?.find((d) => d.id === state.workoutView.dayId);
-    if (!week || !day) {
-      // Day was removed; bail back to picker.
-      state.workoutView = { mode: "picker", weekId: week?.id || null, dayId: null };
-      hide($("#workout-detail")); show($("#workout-picker"));
-      return;
-    }
-
+  function renderWorkoutDetailHeader(week, day) {
     if (!state.workoutView.date) state.workoutView.date = todayISO();
     const head = $("#workout-detail-head");
     const totalEx = day.exercises.length;
@@ -5002,6 +4992,20 @@
       state.workoutView.date = e.target.value || todayISO();
       renderWorkoutDetailUI();
     });
+  }
+
+  function renderWorkoutDetailUI() {
+    const prog = state.clientData.program;
+    const week = prog?.client?.weeks?.find((w) => w.id === state.workoutView.weekId);
+    const day = week?.days?.find((d) => d.id === state.workoutView.dayId);
+    if (!week || !day) {
+      // Day was removed; bail back to picker.
+      state.workoutView = { mode: "picker", weekId: week?.id || null, dayId: null };
+      hide($("#workout-detail")); show($("#workout-picker"));
+      return;
+    }
+
+    renderWorkoutDetailHeader(week, day);
 
     const list = $("#workout-detail-list");
     list.innerHTML = "";
@@ -5328,6 +5332,9 @@
       doneCircle.classList.add("done"); doneCircle.textContent = "✓";
       wrapper.classList.add("logged");
       autoSyncDayCompletion(day);
+      if (state.workoutView?.mode === "detail" && state.workoutView.dayId === day.id) {
+        renderWorkoutDetailHeader(week, day);
+      }
     });
 
     editBtn.addEventListener("click", (e) => {
@@ -5341,6 +5348,9 @@
       doneCircle.classList.remove("done"); doneCircle.textContent = "";
       wrapper.classList.remove("logged");
       autoSyncDayCompletion(day);
+      if (state.workoutView?.mode === "detail" && state.workoutView.dayId === day.id) {
+        renderWorkoutDetailHeader(week, day);
+      }
     });
 
     lockRow.appendChild(lockBtn);
