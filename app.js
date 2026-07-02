@@ -4615,7 +4615,6 @@
     const prog = state.clientData.program;
     const code = prog.client.inviteCode;
     $("#client-portal-name").innerHTML = `${escapeHtml(prog.client.name)}${code ? ` <span class="athlete-invite-chip"><span class="label">Code</span>${escapeHtml(code)}</span>` : ""}`;
-    $("#client-trainer-credit").textContent = prog.trainerName ? `Programmed by ${prog.trainerName}` : "";
     setClientTab("workouts");
     const now = new Date();
     state.athleteCal = { year: now.getFullYear(), month: now.getMonth() };
