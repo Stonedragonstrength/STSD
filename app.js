@@ -4571,6 +4571,26 @@
     saveClient();
     renderClientWorkouts();
   }
+  // Auto-marks a day complete on the calendar once every exercise in it is
+  // locked in — the athlete shouldn't have to separately check it off.
+  function autoSyncDayCompletion(day) {
+    if (!day.exercises.length) return;
+    const allDone = day.exercises.every((ex) => hasAnyLog(ex));
+    if (allDone === isDayChecked(day.id)) return;
+    ensureProgressShape(state.clientData.progress);
+    state.clientData.progress.dayCompletions[day.id] = allDone ? [todayISO()] : [];
+    saveClient();
+    renderAthleteCalendar();
+  }
+  function findCompletedDayForDate(client, iso) {
+    const dc = state.clientData.progress?.dayCompletions || {};
+    for (const week of client.weeks) {
+      for (const day of week.days) {
+        if ((dc[day.id] || []).includes(iso)) return { week, day };
+      }
+    }
+    return null;
+  }
   function resumeClient() {
     if (!state.clientData.program) return;
     if (!state.clientData.progress) state.clientData.progress = emptyProgress();
@@ -4635,8 +4655,14 @@
       if (!inMonth) cell.classList.add("outside");
       if (iso === today) cell.classList.add("today");
       const entry = selfSched[iso];
+      const completed = findCompletedDayForDate(prog.client, iso);
       let pillHtml = "";
-      if (entry && entry.weekId) {
+      if (completed) {
+        const dIdx = getDayIdx(prog.client, completed.week.id, completed.day.id);
+        const dc = getDayColor(dIdx);
+        pillHtml = `<div class="cal-day-pill" style="--day-color:${dc.color};--day-color-soft:${dc.soft}">✓ ${escapeHtml(completed.day.name)}</div>`;
+        cell.classList.add("has-log", "done");
+      } else if (entry && entry.weekId) {
         const dIdx = getDayIdx(prog.client, entry.weekId, entry.dayId);
         const dc = getDayColor(dIdx);
         const wd = findWeekDay(prog.client, entry.weekId, entry.dayId);
@@ -5293,7 +5319,7 @@
       refreshLockUI();
       doneCircle.classList.add("done"); doneCircle.textContent = "✓";
       wrapper.classList.add("logged");
-      renderAthleteCalendar();
+      autoSyncDayCompletion(day);
     });
 
     editBtn.addEventListener("click", (e) => {
@@ -5306,7 +5332,7 @@
       refreshLockUI();
       doneCircle.classList.remove("done"); doneCircle.textContent = "";
       wrapper.classList.remove("logged");
-      renderAthleteCalendar();
+      autoSyncDayCompletion(day);
     });
 
     lockRow.appendChild(lockBtn);
@@ -5671,7 +5697,6 @@
     $("#btn-drum-cancel").addEventListener("click", cancelDrum);
     $("#btn-drum-cancel-2").addEventListener("click", cancelDrum);
     $("#drum-modal").addEventListener("click", (e) => { if (e.target === e.currentTarget) cancelDrum(); });
-    $("#btn-share-client").addEventListener("click", shareClient);
     $("#btn-athlete-add-pr").addEventListener("click", () => openAddPRModal("athlete"));
     $("#btn-add-package")?.addEventListener("click", openAddPackageModal);
     $("#btn-redeem-session")?.addEventListener("click", openRedeemSessionModal);
