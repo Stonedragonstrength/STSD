@@ -4654,6 +4654,7 @@
       cell.className = "cal-day";
       if (!inMonth) cell.classList.add("outside");
       if (iso === today) cell.classList.add("today");
+      const isUpcoming = iso >= today;
       const entry = selfSched[iso];
       const completed = findCompletedDayForDate(prog.client, iso);
       let pillHtml = "";
@@ -4661,20 +4662,26 @@
         const dIdx = getDayIdx(prog.client, completed.week.id, completed.day.id);
         const dc = getDayColor(dIdx);
         pillHtml = `<div class="cal-day-pill" style="--day-color:${dc.color};--day-color-soft:${dc.soft}">✓ ${escapeHtml(completed.day.name)}</div>`;
-        cell.classList.add("has-log", "done");
-      } else if (entry && entry.weekId) {
+        cell.classList.add("done");
+        if (isUpcoming) cell.classList.add("has-log");
+      } else if (isUpcoming && entry && entry.weekId) {
+        // Only show/allow planned days that haven't passed yet — once a
+        // planned date is in the past and never got auto-completed, the
+        // plan is stale and just drops off the calendar.
         const dIdx = getDayIdx(prog.client, entry.weekId, entry.dayId);
         const dc = getDayColor(dIdx);
         const wd = findWeekDay(prog.client, entry.weekId, entry.dayId);
         const name = wd?.day.name || "Workout";
         pillHtml = `<div class="cal-day-pill" style="--day-color:${dc.color};--day-color-soft:${dc.soft}">${escapeHtml(name)}</div>`;
         cell.classList.add("has-log");
-      } else if (entry?.rest) {
+      } else if (isUpcoming && entry?.rest) {
         pillHtml = `<div class="cal-day-pill cal-day-pill-rest">Rest</div>`;
         cell.classList.add("has-log");
       }
       cell.innerHTML = `<div class="cal-date-num">${d.getDate()}</div>${pillHtml}`;
-      if (inMonth) cell.addEventListener("click", () => openAthleteLogDayModal(iso));
+      // Athletes can only plan today/future days here — completion itself
+      // is auto-detected from locked-in exercise logs, not hand-picked.
+      if (inMonth && isUpcoming) cell.addEventListener("click", () => openAthleteLogDayModal(iso));
       grid.appendChild(cell);
     });
   }
