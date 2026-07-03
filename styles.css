@@ -1676,6 +1676,10 @@ input[type="date"] { color-scheme: dark; }
 .dash-cal-pill-rest {
   border-color: var(--border); background: var(--surface-3); color: var(--muted);
 }
+.dash-cal-pill-booked {
+  border-color: var(--primary); background: var(--primary-soft); color: var(--primary-bright);
+  justify-content: center; font-weight: 800;
+}
 .dash-cal-initials {
   font-size: 0.55rem; font-weight: 900; letter-spacing: 0.01em;
   background: var(--day-color, var(--muted));

@@ -289,6 +289,37 @@
     } catch (e) { console.warn(e); return false; }
   }
 
+  // -------- Setmore calendar sync --------
+  function rowToSetmoreEvent(r) {
+    return {
+      uid: r.external_uid,
+      clientName: r.client_name || r.title || "Untitled",
+      title: r.title || "",
+      startAt: r.start_at,
+      endAt: r.end_at,
+    };
+  }
+  async function getSetmoreEvents(coachId, startISO, endISO) {
+    if (!coachId) return [];
+    try {
+      let q = sb.from("setmore_events").select("*").eq("coach_id", coachId);
+      if (startISO) q = q.gte("start_at", startISO);
+      if (endISO) q = q.lte("start_at", endISO);
+      const { data, error } = await q.order("start_at", { ascending: true });
+      if (error) { console.warn("[Cloud] getSetmoreEvents", error.message); return []; }
+      return (data || []).map(rowToSetmoreEvent);
+    } catch (e) { console.warn("[Cloud] getSetmoreEvents", e); return []; }
+  }
+  // Manually trigger the sync Edge Function (the "Refresh now" button) —
+  // the same job pg_cron runs on a schedule.
+  async function refreshSetmoreSync() {
+    try {
+      const { error } = await sb.functions.invoke("sync-setmore", { body: {} });
+      if (error) { console.warn("[Cloud] refreshSetmoreSync", error.message); return false; }
+      return true;
+    } catch (e) { console.warn("[Cloud] refreshSetmoreSync", e); return false; }
+  }
+
   // -------- Debounce helper --------
   const _debounceTimers = new Map();
   function debounce(key, fn, ms = 1500) {
@@ -327,6 +358,9 @@
     upsertProgress,
     getProgress,
     upsertAthleteProfile,
+    // Setmore sync
+    getSetmoreEvents,
+    refreshSetmoreSync,
     // Utils
     debounce,
   };

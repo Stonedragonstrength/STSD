@@ -3264,9 +3264,52 @@
   const DOW_LABELS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
   // -------- Dashboard overview calendar --------
+  // Setmore-synced booking times for the currently visible month, grouped
+  // by local calendar date (see loadDashCalSetmoreEvents).
+  let _dashCalSetmoreEvents = [];
+  let _dashCalSetmoreFetchKey = null;
+
+  function dashCalSetmoreByDate() {
+    const map = {};
+    _dashCalSetmoreEvents.forEach((e) => {
+      const iso = dateISO(new Date(e.startAt));
+      (map[iso] = map[iso] || []).push(e);
+    });
+    return map;
+  }
+
+  async function loadDashCalSetmoreEvents(year, month) {
+    if (!window.Cloud?.enabled || !state.trainerData.coachId) return;
+    const rangeStart = new Date(year, month, 1 - 7);
+    const rangeEnd = new Date(year, month + 1, 7);
+    const events = await window.Cloud.getSetmoreEvents(
+      state.trainerData.coachId, rangeStart.toISOString(), rangeEnd.toISOString()
+    );
+    _dashCalSetmoreEvents = events;
+    // Only re-render if still on the same month (avoid clobbering a nav that happened mid-fetch)
+    if (state.dashCal && state.dashCal.year === year && state.dashCal.month === month) {
+      renderDashboardCalendar();
+    }
+  }
+
+  async function refreshDashCalSetmore() {
+    const btn = $("#dash-cal-refresh");
+    if (btn) { btn.disabled = true; btn.textContent = "Syncing…"; }
+    await window.Cloud?.refreshSetmoreSync?.();
+    _dashCalSetmoreFetchKey = null; // force the next render to re-fetch
+    if (state.dashCal) await loadDashCalSetmoreEvents(state.dashCal.year, state.dashCal.month);
+    if (btn) { btn.disabled = false; btn.textContent = "🔄 Refresh"; }
+    toast("Calendar synced");
+  }
+
   function renderDashboardCalendar() {
     if (!state.dashCal) { const n = new Date(); state.dashCal = { year: n.getFullYear(), month: n.getMonth() }; }
     const { year, month } = state.dashCal;
+    const fetchKey = `${year}-${month}`;
+    if (window.Cloud?.enabled && state.trainerData.coachId && _dashCalSetmoreFetchKey !== fetchKey) {
+      _dashCalSetmoreFetchKey = fetchKey;
+      loadDashCalSetmoreEvents(year, month);
+    }
     $("#dash-cal-title").textContent = `${MONTH_NAMES[month]} ${year}`;
     const grid = $("#dash-cal-grid");
     grid.innerHTML = "";
@@ -3279,6 +3322,7 @@
     const cells = buildMonthGrid(year, month);
     const today = todayISO();
     const clients = state.trainerData.clients || [];
+    const setmoreByDate = dashCalSetmoreByDate();
     cells.forEach(d => {
       const iso = dateISO(d);
       const inMonth = d.getMonth() === month;
@@ -3309,9 +3353,13 @@
         }
       });
       if (overflow > 0) html += `<div class="dash-cal-more">+${overflow} more</div>`;
+      const setmoreEvents = setmoreByDate[iso] || [];
+      if (setmoreEvents.length) {
+        html += `<div class="dash-cal-pill dash-cal-pill-booked">📅 ${setmoreEvents.length} booked</div>`;
+      }
       cell.innerHTML = html;
       const workoutEntries = entries.filter(e => !e.rest);
-      if (workoutEntries.length) {
+      if (workoutEntries.length || setmoreEvents.length) {
         cell.classList.add("has-log");
         cell.addEventListener("click", () => openDashboardDayModal(iso));
       }
@@ -3319,9 +3367,27 @@
     });
   }
 
+  function fmtSetmoreTime(iso) {
+    return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+
   function openDashboardDayModal(iso) {
     const clients = state.trainerData.clients || [];
     let body = "";
+    const dayEvents = (dashCalSetmoreByDate()[iso] || [])
+      .slice()
+      .sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
+    if (dayEvents.length) {
+      body += `<div class="dash-breakdown-client">
+        <div class="dash-breakdown-header"><strong>📅 Booked sessions</strong></div>`;
+      dayEvents.forEach(e => {
+        body += `<div class="breakdown-ex">
+          <div class="breakdown-ex-name">${escapeHtml(e.clientName)}</div>
+          <div class="breakdown-sets"><span class="breakdown-set-pill">${escapeHtml(fmtSetmoreTime(e.startAt))}</span></div>
+        </div>`;
+      });
+      body += `</div>`;
+    }
     clients.forEach(c => {
       const entry = c.importedProgress?.selfSchedule?.[iso];
       if (!entry || !entry.weekId) return;
@@ -3355,8 +3421,8 @@
       if (dayNote) body += `<div class="breakdown-note"><span class="breakdown-note-label">Session note</span><p>${escapeHtml(dayNote)}</p></div>`;
       body += `</div>`;
     });
-    if (!body) body = `<p class="muted">No workouts logged for this date.</p>`;
-    openModal({ title: `Workouts — ${iso}`, body, actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }] });
+    if (!body) body = `<p class="muted">Nothing scheduled or logged for this date.</p>`;
+    openModal({ title: iso, body, actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }] });
   }
 
   // -------- Coach calendar --------
@@ -5870,6 +5936,7 @@
       const n = new Date(); state.dashCal = { year: n.getFullYear(), month: n.getMonth() };
       renderDashboardCalendar();
     });
+    $("#dash-cal-refresh")?.addEventListener("click", refreshDashCalSetmore);
 
     $$(".tab[data-tab]").forEach((t) => t.addEventListener("click", () => setTab(t.dataset.tab)));
     $$(".tab[data-ctab]").forEach((t) => t.addEventListener("click", () => setClientTab(t.dataset.ctab)));
