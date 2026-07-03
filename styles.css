@@ -515,6 +515,7 @@ input[type="date"] { color-scheme: dark; }
   grid-template-columns: 1.4fr 0.7fr 1fr 1fr;
   gap: 0 1em;
 }
+.profile-grid > label { min-width: 0; } /* grid items don't shrink below content's intrinsic width by default — without this, the Name/Height inputs overflow their column and spill past the card edge on mobile's narrower 2-column layout */
 @media (max-width: 700px) {
   .profile-grid { grid-template-columns: 1fr 1fr; }
 }
@@ -537,6 +538,7 @@ input[type="date"] { color-scheme: dark; }
   grid-template-columns: 1fr 1fr;
   gap: 0 1em;
 }
+.profile-notes-grid > label { min-width: 0; }
 .profile-notes-grid textarea { min-height: 56px; }
 @media (max-width: 700px) {
   .profile-notes-grid { grid-template-columns: 1fr; }
