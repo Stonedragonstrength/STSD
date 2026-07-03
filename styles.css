@@ -4176,7 +4176,8 @@ input:focus, textarea:focus, select:focus {
 
 .coach-week-tab-lbl { pointer-events: none; }
 
-.coach-week-tab-del {
+.coach-week-tab-del,
+.coach-week-tab-dup {
   background: none;
   border: none;
   color: var(--muted);
@@ -4189,8 +4190,11 @@ input:focus, textarea:focus, select:focus {
   flex-shrink: 0;
 }
 .coach-week-tab:hover .coach-week-tab-del,
-.coach-week-tab.active .coach-week-tab-del { opacity: 1; }
+.coach-week-tab.active .coach-week-tab-del,
+.coach-week-tab:hover .coach-week-tab-dup,
+.coach-week-tab.active .coach-week-tab-dup { opacity: 1; }
 .coach-week-tab-del:hover { color: var(--danger) !important; }
+.coach-week-tab-dup:hover { color: var(--primary) !important; }
 
 .coach-week-tab-add {
   font-size: 1rem;

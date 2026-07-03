@@ -2281,6 +2281,34 @@
       const lbl = document.createElement("span");
       lbl.className = "coach-week-tab-lbl";
       lbl.textContent = week.phaseLabel ? `${week.phaseLabel} ${week.label}` : week.label;
+      const dup = document.createElement("button");
+      dup.className = "coach-week-tab-dup";
+      dup.textContent = "⧉";
+      dup.title = `Duplicate ${week.label}`;
+      dup.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const list = _programEditorId ? currentProgramTemplate()?.weeks : currentClient()?.weeks;
+        if (!list) return;
+        if (list.length >= 12) { toast("12-week maximum reached"); return; }
+        const originalLabel = week.label;
+        const clone = {
+          ...week,
+          id: uid(),
+          days: (week.days || []).map((day) => ({
+            ...day,
+            id: uid(),
+            exercises: (day.exercises || []).map((ex) => ({ ...ex, id: uid() })),
+          })),
+        };
+        list.splice(wIdx + 1, 0, clone);
+        list.forEach((w, i) => { if (/^Week \d+$/.test(w.label)) w.label = `Week ${i + 1}`; });
+        _coachActiveWeekIdx = wIdx + 1;
+        saveTrainer();
+        renderWeeks();
+        if (!_programEditorId) { renderDiet(); renderCoachCalendar(); }
+        toast(`Duplicated ${originalLabel}`);
+      });
+
       const del = document.createElement("button");
       del.className = "coach-week-tab-del";
       del.textContent = "×";
@@ -2304,6 +2332,7 @@
         if (!_programEditorId) { renderDiet(); renderCoachCalendar(); }
       });
       tab.appendChild(lbl);
+      tab.appendChild(dup);
       tab.appendChild(del);
       tab.addEventListener("click", () => {
         _coachActiveWeekIdx = wIdx;
