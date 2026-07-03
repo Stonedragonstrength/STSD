@@ -4816,6 +4816,14 @@ input:focus, textarea:focus, select:focus {
     flex-wrap: wrap;
     row-gap: 0.4em;
   }
+
+  /* These "drag exercises here" hints are dead weight on mobile — drag
+     doesn't work on touch, and the "📖 Library" button in the day action
+     bar above is the real way to add exercises there. */
+  .ex-list-empty-drop,
+  .ex-list-drop-hint {
+    display: none;
+  }
 }
 
 /* ===== Persistent Exercise Library Sidebar ===== */
