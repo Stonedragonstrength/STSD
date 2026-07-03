@@ -4435,6 +4435,33 @@ input:focus, textarea:focus, select:focus {
 .program-tpl-actions .btn { flex: 1; font-size: 0.78rem; padding: 0.45em 0.4em; }
 
 /* ===== Program Editor ===== */
+.program-editor-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5em 1em;
+  margin-bottom: 1.5rem;
+}
+.program-editor-head .back-link {
+  flex: 0 0 100%; /* own row, like the old standalone element above .view-head */
+  margin-bottom: 0; /* row gap replaces the old fixed margin-bottom */
+  order: 0;
+}
+.program-editor-fields {
+  flex: 1 1 auto;
+  min-width: 0;
+  order: 1;
+}
+#btn-assign-program { order: 2; flex-shrink: 0; }
+
+/* Mobile: back-link + assign button share the top row; name/description
+   move below as their own full-width row instead of sitting to the side. */
+@media (max-width: 600px) {
+  .program-editor-head .back-link { flex: 0 1 auto; }
+  #btn-assign-program { order: 1; margin-left: auto; }
+  .program-editor-fields { flex: 1 1 100%; order: 2; }
+}
+
 .program-editor-name-input {
   display: block;
   width: 100%;
