@@ -828,6 +828,7 @@ input[type="date"] { color-scheme: dark; }
   touch-action: none;
 }
 .ex-drag-handle:active { cursor: grabbing; }
+.ex-move-btn { display: none; } /* shown in place of the drag handle on mobile — see mobile ex-row rules */
 .exercise-card.dragging { opacity: 0.35; }
 .exercise-card.drag-above { border-top: 2px solid var(--primary) !important; }
 .exercise-card.drag-below { border-bottom: 2px solid var(--primary) !important; }
@@ -3123,6 +3124,7 @@ input:focus, textarea:focus, select:focus {
 .coach-main {
   flex: 1;
   min-width: 0;
+  width: 100%; /* mobile: .coach-layout is column-direction, so this is the cross-axis size — without it, wide descendants (e.g. unwrapped rows) stretch this wider than the viewport instead of being constrained and wrapping */
   padding: 1.2rem max(0.85rem, env(safe-area-inset-left)) 3rem max(0.85rem, env(safe-area-inset-right));
 }
 .view-sub {
@@ -4710,6 +4712,42 @@ input:focus, textarea:focus, select:focus {
   align-self: flex-start;
 }
 
+.ex-metrics-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Exercise rows on mobile: the fixed-width flex row (drag handle, name,
+   sets/weight/reps pickers, notes/edit/delete buttons) needs ~550-600px
+   and there's no horizontal scroll on the page — wrap it onto multiple
+   lines instead. Also swap the drag handle (native HTML5 drag doesn't
+   work on touch) for tap-based move-up/move-down buttons. */
+@media (max-width: 600px) {
+  .ex-table-head { display: none; } /* fixed-width grid header doesn't apply once rows wrap */
+  .ex-row {
+    flex-wrap: wrap;
+    padding: 0.4rem 0.6rem;
+  }
+  .ex-name-compact {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .mod-chips-before, .mod-chips-after { flex-wrap: wrap; }
+  .ex-drag-handle { display: none; }
+  .ex-move-btn { display: inline-flex; }
+  .ex-detail-panel { padding-left: 0.6rem; }
+
+  /* Day action bar (name, icon, Library button, delete-day) has the same
+     no-wrap problem — the "📖 Library" button (the only working way to add
+     an exercise on touch, since drag-and-drop doesn't work there) was
+     sitting off-screen to the right on real phone widths. */
+  .day-action-bar {
+    flex-wrap: wrap;
+    row-gap: 0.4em;
+  }
+}
+
 /* ===== Persistent Exercise Library Sidebar ===== */
 .ex-lib-sidebar {
   display: none; /* hidden by default; shown via .show-lib-sidebar on parent */
@@ -4728,21 +4766,13 @@ input:focus, textarea:focus, select:focus {
 /* Show sidebar when parent has the class */
 .coach-layout.show-lib-sidebar .ex-lib-sidebar { display: flex; }
 
-/* On mobile: sidebar drops below main in a column layout */
+/* On mobile: hide the sidebar entirely rather than stacking it below —
+   it's a drag-only source and drag-and-drop doesn't work on touch, so a
+   visible-but-non-functional sidebar just confuses things. Mobile adds
+   exercises via the per-day "📖 Library" button, which opens a tap-to-add
+   modal instead (see .ex-lib-mobile-btn below). */
 @media (max-width: 899px) {
-  .coach-layout.show-lib-sidebar {
-    flex-direction: column;
-  }
-  .coach-layout.show-lib-sidebar .ex-lib-sidebar {
-    display: flex;
-    width: 100%;
-    min-width: 0;
-    position: static;
-    height: 260px;
-    border-left: none;
-    border-top: 1px solid var(--border);
-    flex-shrink: 0;
-  }
+  .coach-layout.show-lib-sidebar .ex-lib-sidebar { display: none; }
 }
 
 .ex-lib-sb-head {

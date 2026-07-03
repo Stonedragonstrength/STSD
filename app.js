@@ -98,6 +98,7 @@
   let _programEditorId = null;
   let _coachActiveWeekIdx = 0;
   let _prEditIds = new Set();
+  let _exLibraryTarget = null; // { day, rerenderFn } — set by openExLibrary(), used for tap-to-add
   let _prNewLifts = [];
   let _prDragSrcId = null;
   function currentProgramTemplate() {
@@ -1175,7 +1176,11 @@
 
   function newProgram() {
     ensureProgramTemplates();
-    const tpl = { id: uid(), name: "", description: "", weeks: [], createdAt: Date.now() };
+    const tpl = {
+      id: uid(), name: "", description: "",
+      weeks: Array.from({ length: 6 }, (_, i) => { const w = makeWeek(i); w.days = [makeDay(1)]; return w; }),
+      createdAt: Date.now(),
+    };
     state.trainerData.programTemplates.push(tpl);
     saveTrainer();
     openProgramEditor(tpl.id);
@@ -1921,12 +1926,13 @@
     { cat: "Cardio",     ex: ["Treadmill Run","Stationary Bike","Rowing","Jump Rope","Sled Push","Battle Ropes","Farmer's Walk","Assault Bike","Stair Climber"] },
   ];
 
-  function openExLibrary() {
+  function openExLibrary(day, rerenderFn) {
+    _exLibraryTarget = day ? { day, rerenderFn } : null;
     show($("#ex-library-overlay"));
     renderExLibrary($("#ex-library-search").value || "");
     setTimeout(() => $("#ex-library-search").focus(), 100);
   }
-  function closeExLibrary() { hide($("#ex-library-overlay")); }
+  function closeExLibrary() { hide($("#ex-library-overlay")); _exLibraryTarget = null; }
   function renderExLibrary(filter) {
     const q = filter.toLowerCase().trim();
     const body = $("#ex-library-body");
@@ -1944,6 +1950,17 @@
       item.addEventListener("dragstart", (e) => {
         e.dataTransfer.setData("text/ex-name", item.dataset.exname);
         e.dataTransfer.effectAllowed = "copy";
+      });
+      // Tap-to-add — drag-and-drop doesn't work on touch devices, so this is
+      // the primary path on mobile (where the library opens as this modal
+      // instead of the persistent sidebar).
+      item.addEventListener("click", () => {
+        if (!_exLibraryTarget) return;
+        const { day, rerenderFn } = _exLibraryTarget;
+        day.exercises.push(makeExercise({ name: item.dataset.exname }));
+        saveTrainer();
+        toast(`Added ${item.dataset.exname}`);
+        rerenderFn();
       });
     });
   }
@@ -2644,7 +2661,7 @@
     libBtn.className = "btn btn-ghost btn-xs ex-lib-mobile-btn";
     libBtn.title = "Exercise library";
     libBtn.textContent = "📖 Library";
-    libBtn.addEventListener("click", openExLibrary);
+    libBtn.addEventListener("click", () => openExLibrary(day, rerenderFn));
 
     const delDayBtn = document.createElement("button");
     delDayBtn.className = "btn btn-ghost btn-xs";
@@ -2718,11 +2735,29 @@
 
     if (!ex.modifiers) ex.modifiers = []; // backfill old data
 
-    // Drag handle
+    // Drag handle (desktop — hidden on mobile where native HTML5 drag doesn't work)
     const handle = document.createElement("span");
     handle.className = "ex-drag-handle";
     handle.textContent = "⠿";
     handle.title = "Drag to reorder";
+
+    // Move up/down buttons (mobile — touch-friendly stand-in for drag-to-reorder)
+    function moveExercise(dir) {
+      const idx = day.exercises.findIndex((e) => e.id === ex.id);
+      const swapIdx = idx + dir;
+      if (idx === -1 || swapIdx < 0 || swapIdx >= day.exercises.length) return;
+      [day.exercises[idx], day.exercises[swapIdx]] = [day.exercises[swapIdx], day.exercises[idx]];
+      saveTrainer(); rerenderFn();
+    }
+    const moveUpBtn = document.createElement("button");
+    moveUpBtn.className = "btn-icon-mini ex-move-btn";
+    moveUpBtn.title = "Move up"; moveUpBtn.textContent = "▲";
+    moveUpBtn.addEventListener("click", () => moveExercise(-1));
+
+    const moveDownBtn = document.createElement("button");
+    moveDownBtn.className = "btn-icon-mini ex-move-btn";
+    moveDownBtn.title = "Move down"; moveDownBtn.textContent = "▼";
+    moveDownBtn.addEventListener("click", () => moveExercise(1));
 
     // Modifier chips BEFORE name (Unilateral, Equipment, Position)
     const chipsBefore = document.createElement("div");
@@ -2822,6 +2857,8 @@
       crBtn.disabled = locked;
       handle.style.opacity = locked ? "0.3" : "";
       handle.style.pointerEvents = locked ? "none" : "";
+      moveUpBtn.disabled = locked;
+      moveDownBtn.disabled = locked;
       chipsBefore.style.pointerEvents = locked ? "none" : "";
       chipsAfter.style.pointerEvents = locked ? "none" : "";
       saveBtn.classList.toggle("hidden", locked);
@@ -2841,13 +2878,22 @@
       saveTrainer(); rerenderFn();
     });
 
+    // Sets/weight/reps picker cluster — grouped so it wraps as one unit on
+    // mobile instead of splitting a separator (@, –, ×) from its button.
+    const metricsGroup = document.createElement("div");
+    metricsGroup.className = "ex-metrics-group";
+    metricsGroup.appendChild(setsBtn); metricsGroup.appendChild(at);
+    metricsGroup.appendChild(cwBtn); metricsGroup.appendChild(dash); metricsGroup.appendChild(gwBtn);
+    metricsGroup.appendChild(x1); metricsGroup.appendChild(crBtn);
+
     row.appendChild(handle);
+    row.appendChild(moveUpBtn);
+    row.appendChild(moveDownBtn);
     row.appendChild(chipsBefore);
     row.appendChild(nameInput);
     row.appendChild(chipsAfter);
     row.appendChild(modBtn);
-    row.appendChild(setsBtn); row.appendChild(at);
-    row.appendChild(cwBtn); row.appendChild(dash); row.appendChild(gwBtn); row.appendChild(x1); row.appendChild(crBtn);
+    row.appendChild(metricsGroup);
     row.appendChild(expandBtn); row.appendChild(saveBtn); row.appendChild(editBtn); row.appendChild(delBtn);
 
     // Detail panel (notes + video), hidden by default
@@ -5744,7 +5790,6 @@
     $("#btn-new-program")?.addEventListener("click", newProgram);
     $("#btn-new-program-empty")?.addEventListener("click", newProgram);
     $("#btn-back-to-programs")?.addEventListener("click", () => { _programEditorId = null; renderProgramsList(); });
-    $("#btn-editor-add-week")?.addEventListener("click", addWeek);
     $("#btn-editor-add-week-empty")?.addEventListener("click", addWeek);
     $("#btn-assign-program")?.addEventListener("click", () => { if (_programEditorId) assignProgramPrompt(_programEditorId); });
     $("#btn-save-program-to-library")?.addEventListener("click", () => {
