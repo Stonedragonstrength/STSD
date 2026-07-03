@@ -405,6 +405,7 @@ input[type="date"] { color-scheme: dark; }
 .client-card-info { min-width: 0; flex: 1; }
 .client-card-info h3 { margin: 0 0 0.15em; font-size: 1.05rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .client-card-info .meta { color: var(--text-soft); font-size: 0.82rem; }
+.client-card-mobile-progress { display: none; } /* shown in place of most of the card on mobile — see the mobile block below */
 .client-card .stats {
   display: flex;
   gap: 1.2em;
@@ -2552,13 +2553,33 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
   .btn-sm { min-height: 34px; padding: 0.4em 0.7em; font-size: 0.78rem; }
 
   /* Client grid: one column */
-  .client-grid { grid-template-columns: 1fr; gap: 0.7rem; }
+  .client-grid { grid-template-columns: 1fr; gap: 0.5rem; }
   .template-grid { grid-template-columns: 1fr; gap: 0.7rem; }
   .library-head-actions { width: 100%; }
   .library-head-actions .btn { flex: 1; }
   .coach-main { padding: 1rem 0.85rem 4rem; }
-  .client-card { padding: 1rem; }
   .client-card h3 { font-size: 1.05rem; }
+
+  /* Thin athlete-list cards: the stats strip, per-card week/exercise counts,
+     progress bar, and quick-action buttons all get dropped in favor of a
+     single compact line (current week/day) so ~5 athletes fit on screen
+     at once. Tapping anywhere on the card still opens their profile (see
+     the existing card click handler in app.js). */
+  .dash-stats-strip { display: none; }
+  .client-card { padding: 0.6em 0.85em; }
+  .client-card-top { margin-bottom: 0; gap: 0.6rem; }
+  .client-avatar { width: 34px; height: 34px; font-size: 0.8rem; }
+  .client-card-info h3 { font-size: 0.92rem; margin-bottom: 0.05em; }
+  .client-card-info .meta { display: none; }
+  .client-card-mobile-progress {
+    display: block;
+    color: var(--text-soft);
+    font-size: 0.76rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .client-card .stats,
+  .client-card .week-progress-mini,
+  .card-quick-actions { display: none; }
 
   /* Client head actions: wrap to 2 columns */
   .client-head { gap: 0.8em; }
@@ -4665,7 +4686,7 @@ input:focus, textarea:focus, select:focus {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 0 1rem;
+  padding: 0.5em 1rem;
   min-height: 44px;
   transition: background 0.12s;
 }
@@ -4764,7 +4785,7 @@ input:focus, textarea:focus, select:focus {
   .ex-table-head { display: none; } /* fixed-width grid header doesn't apply once rows wrap */
   .ex-row {
     flex-wrap: wrap;
-    padding: 0.4rem 0.6rem;
+    padding: 0.65rem 0.6rem;
   }
   .ex-name-compact {
     flex: 1 1 100%;

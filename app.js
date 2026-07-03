@@ -962,6 +962,26 @@
     }
   }
 
+  // How far into their program an athlete has gotten — the furthest day (in
+  // program order) with any logged completion. Used by the compact mobile
+  // athlete card.
+  function currentProgressLabel(c, totalDays, hasSyncedData, isComplete) {
+    if (totalDays === 0) return "No program yet";
+    if (!hasSyncedData) return "Not started yet";
+    if (isComplete) return "Program complete ✓";
+    const dc = c.importedProgress?.dayCompletions || {};
+    let last = null;
+    c.weeks.forEach((w) => {
+      w.days.forEach((d) => {
+        if ((dc[d.id] || []).length > 0) last = { week: w, day: d };
+      });
+    });
+    if (!last) return "Not started yet";
+    const wk = last.week.phaseLabel ? `${last.week.phaseLabel} ${last.week.label}` : last.week.label;
+    const dayName = last.day.name.split(" — ")[0] || last.day.name;
+    return `${wk} · ${dayName}`;
+  }
+
   function renderDashboard() {
     state.currentClientId = null;
     switchCoachView("athletes");
@@ -1029,6 +1049,13 @@
       info.appendChild(metaEl);
       top.appendChild(avatar);
       top.appendChild(info);
+
+      // Mobile-only compact line: current week/day they've completed up to.
+      // (Desktop keeps the fuller stats + progress-bar layout below.)
+      const mobileProgress = document.createElement("div");
+      mobileProgress.className = "client-card-mobile-progress";
+      mobileProgress.textContent = currentProgressLabel(c, totalDays, hasSyncedData, isComplete);
+      info.appendChild(mobileProgress);
 
       // Stats row
       const statsRow = document.createElement("div");
