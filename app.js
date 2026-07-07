@@ -586,7 +586,8 @@
         }
       }
       const athleteId = state.clientData.program?.clientId;
-      if (athleteId) await window.Cloud.linkAthleteToAuth(athleteId, user.id, email);
+      const inviteCode = state.clientData.program?.client?.inviteCode;
+      if (athleteId) await window.Cloud.linkAthleteToAuth(athleteId, user.id, email, inviteCode);
       state.clientData.profile = { name, email, createdAt: Date.now() };
       saveClient();
       if (athleteId) window.Cloud.upsertAthleteProfile(athleteId, { name, email });
@@ -4702,7 +4703,9 @@
     // Only pull from cloud if this is a fresh device for this athlete.
     // Same-device returns: trust the local progress (avoid clobbering newer local writes).
     if (!prev) {
-      const cloudProgress = await window.Cloud.getProgress(athlete.id);
+      // By invite code, not athlete id — this runs before the athlete has an
+      // auth session, and RLS blocks direct progress reads for anon.
+      const cloudProgress = await window.Cloud.getProgressByInviteCode(formatted);
       if (cloudProgress) {
         state.clientData.progress = cloudProgress;
         ensureProgressShape(state.clientData.progress);

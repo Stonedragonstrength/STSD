@@ -188,15 +188,24 @@
     } catch (e) { console.warn("[Cloud] deleteAthlete", e); return false; }
   }
 
+  // RLS keeps the athletes table private; this security-definer RPC is the
+  // one anon-reachable lookup, gated on knowing the exact invite code.
   async function getAthleteByInviteCode(code) {
     try {
-      const { data, error } = await sb
-        .from("athletes")
-        .select("*")
-        .eq("invite_code", code)
-        .maybeSingle();
+      const { data, error } = await sb.rpc("athlete_by_invite_code", { code });
       if (error) { console.warn("[Cloud] getAthleteByInviteCode", error.message); return null; }
-      return rowToAthlete(data);
+      return rowToAthlete(Array.isArray(data) ? data[0] : data);
+    } catch (e) { console.warn(e); return null; }
+  }
+
+  // Anon progress pull for first-device invite login (before the athlete has
+  // an auth session, so the RLS-protected progress table isn't readable yet).
+  async function getProgressByInviteCode(code) {
+    try {
+      const { data, error } = await sb.rpc("progress_by_invite_code", { code });
+      if (error) { console.warn("[Cloud] getProgressByInviteCode", error.message); return null; }
+      const row = Array.isArray(data) ? data[0] : data;
+      return row ? rowToProgress(row) : null;
     } catch (e) { console.warn(e); return null; }
   }
 
@@ -235,20 +244,24 @@
     } catch (e) { console.warn("[Cloud] getAthleteByAuthUserId", e); return null; }
   }
 
-  async function linkAthleteToAuth(athleteId, authUserId, email) {
-    if (!athleteId || !authUserId) return false;
+  // The freshly signed-up athlete doesn't own their row yet, so the claim
+  // goes through a security-definer RPC keyed on the invite code. The profile
+  // upsert must come after — owning the row is what RLS checks.
+  async function linkAthleteToAuth(athleteId, authUserId, email, inviteCode) {
+    if (!athleteId || !authUserId || !inviteCode) return false;
     try {
-      const { error: ae } = await sb.from("athletes")
-        .update({ auth_user_id: authUserId })
-        .eq("id", athleteId);
-      if (ae) console.warn("[Cloud] linkAthleteToAuth athletes", ae.message);
+      const { data: claimed, error: ce } = await sb.rpc("claim_athlete_by_invite_code", { code: inviteCode });
+      if (ce || !claimed) {
+        console.warn("[Cloud] linkAthleteToAuth claim failed", ce?.message || "no matching invite code");
+        return false;
+      }
       await sb.from("athlete_profiles").upsert({
         athlete_id: athleteId,
         display_name: "",
         pw_hash: "",
         email: email || "",
       });
-      return !ae;
+      return true;
     } catch (e) { console.warn("[Cloud] linkAthleteToAuth", e); return false; }
   }
 
@@ -350,6 +363,7 @@
     upsertAthlete,
     deleteAthlete,
     getAthleteByInviteCode,
+    getProgressByInviteCode,
     getAthleteById,
     getAthleteByAuthUserId,
     linkAthleteToAuth,

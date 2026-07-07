@@ -1,0 +1,3 @@
+# Local dev helpers — never commit (may reference real accounts)
+__preview-setup.html
+__*.html
