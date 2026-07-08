@@ -4552,15 +4552,14 @@
   // stonedragonstrengthtraining.com/memberships.html — update both together.
   const PACKAGE_OPTIONS = [
     { sessions: 4,  price: 400,  cadence: "1×/week" },
-    { sessions: 8,  price: 725,  cadence: "2×/week", popular: true },
+    { sessions: 8,  price: 725,  cadence: "2×/week" },
     { sessions: 12, price: 1020, cadence: "3×/week" },
     { sessions: 16, price: 1320, cadence: "4×/week" },
   ];
   const PACKAGE_SIZES = PACKAGE_OPTIONS.map((o) => o.sessions);
   function packageOptionButtonsHtml() {
     return PACKAGE_OPTIONS.map((o) => `
-      <button class="pkg-size-btn${o.popular ? " popular" : ""}" type="button" data-buy-size="${o.sessions}">
-        ${o.popular ? `<span class="pkg-popular-tag">Most popular</span>` : ""}
+      <button class="pkg-size-btn" type="button" data-buy-size="${o.sessions}">
         <span class="pkg-size-num">${o.sessions}</span>
         <span class="pkg-size-lbl">sessions · ${o.cadence}</span>
         <span class="pkg-size-price">$${o.price.toLocaleString()}</span>
