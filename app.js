@@ -3321,6 +3321,61 @@
     return bits.join(" · ") || "—";
   }
 
+  // Percentages a coach entered, or (for legacy gram-only plans) derived from
+  // grams + calories so the fields aren't blank when re-editing.
+  function planPercents(plan) {
+    if (plan?.proteinPct != null || plan?.carbsPct != null || plan?.fatPct != null) {
+      return { protein: plan.proteinPct ?? "", carbs: plan.carbsPct ?? "", fat: plan.fatPct ?? "" };
+    }
+    const cal = Number(plan?.calories) || 0;
+    const pct = (g, kcalPerG) => (cal > 0 && Number(g) > 0) ? Math.round(Number(g) * kcalPerG / cal * 100) : "";
+    return { protein: pct(plan?.protein, 4), carbs: pct(plan?.carbs, 4), fat: pct(plan?.fat, 9) };
+  }
+  // Grams implied by calories × each macro percentage — stored on the plan so
+  // the donut and athlete view (which read grams) need no changes.
+  function pctToGrams(caloriesStr, pcts) {
+    const cal = Number(caloriesStr) || 0;
+    const g = {};
+    MACROS.forEach((m) => {
+      const pct = Number(pcts[m.key]) || 0;
+      g[m.key] = (cal > 0 && pct > 0) ? Math.round(cal * pct / 100 / m.kcalPerG) : "";
+    });
+    return g;
+  }
+  // The "does it add up" calculator: pct → kcal → grams per macro, with a
+  // total row that flags when the split isn't 100%.
+  function macroCalcHtml(caloriesStr, pcts) {
+    const cal = Number(caloriesStr) || 0;
+    let sumPct = 0;
+    const rows = MACROS.map((m) => {
+      const pct = Number(pcts[m.key]) || 0;
+      sumPct += pct;
+      const kcal = Math.round(cal * pct / 100);
+      const grams = pct > 0 ? Math.round(kcal / m.kcalPerG) : 0;
+      return `<div class="macro-calc-row">
+        <span class="macro-dot" style="background:${m.color}"></span>
+        <span class="macro-calc-name">${m.label}</span>
+        <span class="macro-calc-pct">${pct}%</span>
+        <span class="macro-calc-kcal">${kcal.toLocaleString()} kcal</span>
+        <span class="macro-calc-g">${grams} g</span>
+      </div>`;
+    }).join("");
+    const diff = sumPct - 100;
+    const status = sumPct === 100
+      ? `<span class="macro-calc-ok">✓ adds up</span>`
+      : `<span class="macro-calc-warn">${diff > 0 ? `${diff}% over` : `${-diff}% left`}</span>`;
+    return `<div class="macro-calc">
+      ${rows}
+      <div class="macro-calc-row macro-calc-total">
+        <span class="macro-dot" style="background:transparent"></span>
+        <span class="macro-calc-name">Total</span>
+        <span class="macro-calc-pct">${sumPct}%</span>
+        <span class="macro-calc-kcal">${cal.toLocaleString()} kcal</span>
+        ${status}
+      </div>
+    </div>`;
+  }
+
   function renderDiet() {
     const c = currentClient(); if (!c) return;
     ensureNutrition(c);
@@ -3328,49 +3383,66 @@
     container.innerHTML = "";
     const cur = c.nutrition.current || {};
 
+    const initPct = planPercents(cur);
     const card = document.createElement("div");
     card.className = "card";
     card.innerHTML = `
       <h4 style="margin-top:0">Current plan${cur.effectiveFrom ? ` <span class="muted" style="font-weight:400;font-size:0.8rem">· since ${escapeHtml(cur.effectiveFrom)}</span>` : ""}</h4>
-      <div class="nutrition-form">
-        <label>Calories / day
-          <input type="number" min="0" id="nut-cal" placeholder="e.g. 2500" value="${escapeHtml(String(cur.calories ?? ""))}" />
+      <label>Calories / day
+        <input type="number" min="0" id="nut-cal" placeholder="e.g. 2500" value="${escapeHtml(String(cur.calories ?? ""))}" />
+      </label>
+      <div class="nutrition-form" style="margin-top:0.7em">
+        <label>Protein %
+          <input type="number" min="0" max="100" id="nut-protein-pct" placeholder="e.g. 30" value="${escapeHtml(String(initPct.protein ?? ""))}" />
         </label>
-        <label>Protein (g)
-          <input type="number" min="0" id="nut-protein" placeholder="e.g. 180" value="${escapeHtml(String(cur.protein ?? ""))}" />
+        <label>Carbs %
+          <input type="number" min="0" max="100" id="nut-carbs-pct" placeholder="e.g. 40" value="${escapeHtml(String(initPct.carbs ?? ""))}" />
         </label>
-        <label>Carbs (g) <span class="muted">optional</span>
-          <input type="number" min="0" id="nut-carbs" placeholder="e.g. 250" value="${escapeHtml(String(cur.carbs ?? ""))}" />
-        </label>
-        <label>Fat (g) <span class="muted">optional</span>
-          <input type="number" min="0" id="nut-fat" placeholder="e.g. 70" value="${escapeHtml(String(cur.fat ?? ""))}" />
+        <label>Fat %
+          <input type="number" min="0" max="100" id="nut-fat-pct" placeholder="e.g. 30" value="${escapeHtml(String(initPct.fat ?? ""))}" />
         </label>
       </div>
-      <label>Notes
+      <div id="nut-calc">${macroCalcHtml(cur.calories ?? "", initPct)}</div>
+      <label style="margin-top:0.7em">Notes
         <textarea id="nut-notes" rows="2" placeholder="Meal timing, supplements, hydration…">${escapeHtml(cur.notes || "")}</textarea>
       </label>
       <div id="nut-chart-preview">${macroDonutHtml(cur)}</div>
       <button class="btn btn-primary" id="btn-save-nutrition" style="margin-top:0.7em">Save plan</button>`;
     container.appendChild(card);
 
-    const readForm = () => ({
-      calories: $("#nut-cal").value.trim(),
-      protein: $("#nut-protein").value.trim(),
-      carbs: $("#nut-carbs").value.trim(),
-      fat: $("#nut-fat").value.trim(),
-      notes: $("#nut-notes").value.trim(),
+    const readPcts = () => ({
+      protein: $("#nut-protein-pct").value.trim(),
+      carbs: $("#nut-carbs-pct").value.trim(),
+      fat: $("#nut-fat-pct").value.trim(),
     });
-    ["nut-cal", "nut-protein", "nut-carbs", "nut-fat"].forEach((id) => {
-      $("#" + id).addEventListener("input", () => {
-        $("#nut-chart-preview").innerHTML = macroDonutHtml(readForm());
-      });
+    const refreshCalc = () => {
+      const cal = $("#nut-cal").value.trim();
+      const pcts = readPcts();
+      $("#nut-calc").innerHTML = macroCalcHtml(cal, pcts);
+      $("#nut-chart-preview").innerHTML = macroDonutHtml({ calories: cal, ...pctToGrams(cal, pcts) });
+    };
+    ["nut-cal", "nut-protein-pct", "nut-carbs-pct", "nut-fat-pct"].forEach((id) => {
+      $("#" + id).addEventListener("input", refreshCalc);
     });
     $("#btn-save-nutrition").addEventListener("click", () => {
-      const plan = { ...readForm(), effectiveFrom: todayISO() };
-      if (!plan.calories && !plan.protein) { toast("Enter at least calories or protein"); return; }
+      const calories = $("#nut-cal").value.trim();
+      const pcts = readPcts();
+      const grams = pctToGrams(calories, pcts);
+      const sumPct = MACROS.reduce((n, m) => n + (Number(pcts[m.key]) || 0), 0);
+      if (!calories) { toast("Enter a daily calorie target"); return; }
+      if (sumPct !== 100) {
+        if (!window.confirm(`Your macros add up to ${sumPct}%, not 100%. Save anyway?`)) return;
+      }
+      const plan = {
+        calories,
+        proteinPct: pcts.protein, carbsPct: pcts.carbs, fatPct: pcts.fat,
+        protein: grams.protein, carbs: grams.carbs, fat: grams.fat,
+        notes: $("#nut-notes").value.trim(),
+        effectiveFrom: todayISO(),
+      };
       const prev = c.nutrition.current;
-      const changed = !prev || ["calories", "protein", "carbs", "fat", "notes"].some(
-        (k) => String(prev[k] || "") !== String(plan[k] || ""));
+      const changed = !prev || ["calories", "proteinPct", "carbsPct", "fatPct", "notes"].some(
+        (k) => String(prev[k] ?? "") !== String(plan[k] ?? ""));
       if (!changed) { toast("No changes to save"); return; }
       // Same-day edits are corrections, not a new era — don't spam history.
       if (prev && prev.effectiveFrom !== plan.effectiveFrom && (prev.calories || prev.protein)) {

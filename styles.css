@@ -2674,6 +2674,37 @@ input[type="date"] { color-scheme: dark; }
 }
 .nutrition-history-row:last-child { border-bottom: none; }
 
+/* Percentage → kcal → grams calculator */
+.macro-calc {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5em 0.8em;
+  margin-top: 0.7em;
+  font-variant-numeric: tabular-nums;
+}
+.macro-calc-row {
+  display: grid;
+  grid-template-columns: 14px 1fr auto auto auto;
+  align-items: center;
+  gap: 0.7em;
+  padding: 0.28em 0;
+  font-size: 0.85rem;
+}
+.macro-calc-name { font-weight: 700; color: var(--text); }
+.macro-calc-pct { color: var(--text-soft); font-weight: 700; min-width: 3ch; text-align: right; }
+.macro-calc-kcal { color: var(--text-soft); min-width: 8ch; text-align: right; }
+.macro-calc-g { color: var(--primary-bright); font-weight: 700; min-width: 4ch; text-align: right; }
+.macro-calc-total {
+  border-top: 1px solid var(--border);
+  margin-top: 0.2em;
+  padding-top: 0.4em;
+  font-size: 0.9rem;
+}
+.macro-calc-total .macro-calc-name { font-weight: 800; }
+.macro-calc-ok { color: var(--accent); font-weight: 800; text-align: right; }
+.macro-calc-warn { color: var(--warn); font-weight: 800; text-align: right; }
+
 .macro-chart {
   display: flex;
   align-items: center;
