@@ -1174,12 +1174,13 @@
       editBtn.addEventListener("click", () => openProgramEditor(tpl.id));
       const assignBtn = document.createElement("button");
       assignBtn.className = "btn btn-ghost btn-sm";
-      assignBtn.textContent = "Assign to athlete";
+      assignBtn.textContent = "Assign";
+      assignBtn.title = "Assign to athlete";
       assignBtn.addEventListener("click", () => assignProgramPrompt(tpl.id));
       const deleteBtn = document.createElement("button");
-      deleteBtn.className = "btn btn-ghost btn-sm";
-      deleteBtn.style.color = "var(--danger)";
-      deleteBtn.textContent = "Delete";
+      deleteBtn.className = "btn-delete-mini";
+      deleteBtn.title = "Delete program";
+      deleteBtn.textContent = "×";
       deleteBtn.addEventListener("click", () => {
         if (!window.confirm(`Delete "${tpl.name || "this program"}"?`)) return;
         state.trainerData.programTemplates = state.trainerData.programTemplates.filter((p) => p.id !== tpl.id);
@@ -1188,9 +1189,12 @@
       actions.appendChild(editBtn);
       actions.appendChild(assignBtn);
       actions.appendChild(deleteBtn);
-      card.appendChild(nameEl);
-      if (tpl.description) card.appendChild(desc);
-      card.appendChild(meta);
+      const info = document.createElement("div");
+      info.className = "program-tpl-info";
+      info.appendChild(nameEl);
+      if (tpl.description) info.appendChild(desc);
+      info.appendChild(meta);
+      card.appendChild(info);
       card.appendChild(actions);
       grid.appendChild(card);
     });
