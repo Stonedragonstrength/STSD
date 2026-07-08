@@ -394,6 +394,22 @@
     if (!Array.isArray(c.archivedPrograms)) c.archivedPrograms = [];
     ensureSessionBank(c);
     if (!c.inviteCode) { c.inviteCode = makeInviteCode(); _trainerDataDirty = true; }
+    // Migrate weekly diet targets → one standing nutrition plan: seed from the
+    // last week that had targets filled in, so nobody starts blank.
+    if (!c.nutrition) {
+      const src = [...(c.weeks || [])].reverse().find((w) => w.diet && (w.diet.calories || w.diet.protein));
+      c.nutrition = {
+        current: src ? {
+          calories: String(src.diet.calories || ""),
+          protein: String(src.diet.protein || ""),
+          carbs: "", fat: "",
+          notes: src.diet.notes || "",
+          effectiveFrom: todayISO(),
+        } : null,
+        history: [],
+      };
+      _trainerDataDirty = true;
+    }
   });
   // Backfill a stable coachId — used as the cloud "coaches" row key.
   if (!state.trainerData.coachId && state.trainerData.trainer) {
@@ -686,6 +702,7 @@
         coachPRs: athlete.coachPRs || [],
         inviteCode: athlete.inviteCode,
         sessionBank: athlete.sessionBank || { packages: [], redemptions: [] },
+        nutrition: athlete.nutrition || { current: null, history: [] },
       },
     };
   }
@@ -3225,68 +3242,159 @@
   // -------- Diet --------
   const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+  // -------- Nutrition plan (standing per-athlete targets + history) --------
+  // Macro slice colors are CVD-validated against the app surface (dataviz
+  // six-checks) — don't swap them for the raw theme tokens.
+  const MACROS = [
+    { key: "protein", label: "Protein", kcalPerG: 4, color: "#0ea5c4" },
+    { key: "carbs",   label: "Carbs",   kcalPerG: 4, color: "#d97706" },
+    { key: "fat",     label: "Fat",     kcalPerG: 9, color: "#8b5cf6" },
+  ];
+
+  function ensureNutrition(c) {
+    if (!c) return;
+    if (!c.nutrition || typeof c.nutrition !== "object") c.nutrition = { current: null, history: [] };
+    if (!Array.isArray(c.nutrition.history)) c.nutrition.history = [];
+  }
+
+  function macroBreakdown(plan) {
+    const parts = MACROS
+      .map((m) => ({ ...m, grams: Math.max(0, Number(plan?.[m.key]) || 0) }))
+      .map((p) => ({ ...p, kcal: p.grams * p.kcalPerG }))
+      .filter((p) => p.grams > 0);
+    const totalKcal = parts.reduce((n, p) => n + p.kcal, 0);
+    return {
+      totalKcal,
+      parts: parts.map((p) => ({ ...p, pct: totalKcal ? Math.round((p.kcal * 100) / totalKcal) : 0 })),
+    };
+  }
+
+  function donutArcPath(cx, cy, rO, rI, a0, a1) {
+    const pt = (r, a) => `${(cx + r * Math.cos(a)).toFixed(2)} ${(cy + r * Math.sin(a)).toFixed(2)}`;
+    const large = a1 - a0 > Math.PI ? 1 : 0;
+    return `M ${pt(rO, a0)} A ${rO} ${rO} 0 ${large} 1 ${pt(rO, a1)} L ${pt(rI, a1)} A ${rI} ${rI} 0 ${large} 0 ${pt(rI, a0)} Z`;
+  }
+
+  // Donut of the macro calorie split; center carries the daily calorie target.
+  // Needs >= 2 macros to be a meaningful split — callers fall back to stat
+  // tiles otherwise.
+  function macroDonutHtml(plan) {
+    const { parts, totalKcal } = macroBreakdown(plan);
+    if (parts.length < 2) return "";
+    const calTarget = Number(plan?.calories) || 0;
+    const cx = 100, cy = 100, rO = 88, rI = 58;
+    const gap = 0.045; // ≈2px surface gap between slices at the outer radius
+    let a = -Math.PI / 2;
+    let paths = "";
+    parts.forEach((p) => {
+      const sweep = (p.kcal / totalKcal) * Math.PI * 2;
+      const a0 = a + gap / 2, a1 = a + sweep - gap / 2;
+      if (a1 > a0) {
+        paths += `<path d="${donutArcPath(cx, cy, rO, rI, a0, a1)}" fill="${p.color}"><title>${p.label} — ${p.grams} g · ${p.kcal.toLocaleString()} kcal · ${p.pct}%</title></path>`;
+      }
+      a += sweep;
+    });
+    const legend = parts.map((p) => `
+      <div class="macro-legend-row">
+        <span class="macro-dot" style="background:${p.color}"></span>
+        <span class="macro-name">${p.label}</span>
+        <span class="macro-detail">${p.grams} g · ${p.kcal.toLocaleString()} kcal · ${p.pct}%</span>
+      </div>`).join("");
+    const mismatch = calTarget && Math.abs(totalKcal - calTarget) > 50
+      ? `<p class="muted macro-mismatch">Macros add up to ${totalKcal.toLocaleString()} kcal — the calorie target says ${calTarget.toLocaleString()}.</p>`
+      : "";
+    return `
+      <div class="macro-chart">
+        <svg viewBox="0 0 200 200" class="macro-donut" role="img" aria-label="Daily macro split">
+          ${paths}
+          <text x="100" y="96" text-anchor="middle" class="macro-center-num">${(calTarget || totalKcal).toLocaleString()}</text>
+          <text x="100" y="115" text-anchor="middle" class="macro-center-lbl">kcal / day</text>
+        </svg>
+        <div class="macro-legend">${legend}</div>
+      </div>${mismatch}`;
+  }
+
+  function nutritionPlanSummary(p) {
+    const bits = [];
+    if (Number(p?.calories) > 0) bits.push(`${Number(p.calories).toLocaleString()} kcal`);
+    MACROS.forEach((m) => { if (Number(p?.[m.key]) > 0) bits.push(`${m.label[0]} ${p[m.key]}g`); });
+    return bits.join(" · ") || "—";
+  }
+
   function renderDiet() {
     const c = currentClient(); if (!c) return;
+    ensureNutrition(c);
     const container = $("#diet-container");
-    const empty = $("#diet-empty");
     container.innerHTML = "";
-    if (c.weeks.length === 0) { show(empty); return; }
-    hide(empty);
-    c.weeks.forEach((w) => ensureDietShape(w));
-    c.weeks.forEach((week, idx) => container.appendChild(renderDietWeekCard(week, idx)));
-  }
-  function renderDietWeekCard(week, wIdx) {
-    ensureDietShape(week);
+    const cur = c.nutrition.current || {};
+
     const card = document.createElement("div");
-    card.className = "week-card";
-    if (wIdx === 0) card.classList.add("open");
-    const head = document.createElement("div");
-    head.className = "week-head";
-    const summary = () => `${week.diet.calories || "—"} kcal · ${week.diet.protein ? week.diet.protein + "g" : "—g"} protein /day`;
-    head.innerHTML = `
-      <div>
-        <h4>${week.phaseLabel ? `<span class="phase-badge">${escapeHtml(week.phaseLabel)}</span>` : ""}${escapeHtml(week.label)} — nutrition</h4>
-        <div class="week-info">${summary()}</div>
-      </div>
-      <div class="week-head-right"><span class="week-toggle">▾</span></div>`;
-    head.addEventListener("click", () => card.classList.toggle("open"));
-    const body = document.createElement("div");
-    body.className = "diet-week-body";
-    body.innerHTML = `
-      <div class="diet-single">
-        <label>Daily calorie target
-          <input type="number" min="0" placeholder="e.g. 2500" data-field="calories" />
+    card.className = "card";
+    card.innerHTML = `
+      <h4 style="margin-top:0">Current plan${cur.effectiveFrom ? ` <span class="muted" style="font-weight:400;font-size:0.8rem">· since ${escapeHtml(cur.effectiveFrom)}</span>` : ""}</h4>
+      <div class="nutrition-form">
+        <label>Calories / day
+          <input type="number" min="0" id="nut-cal" placeholder="e.g. 2500" value="${escapeHtml(String(cur.calories ?? ""))}" />
         </label>
-        <label>Daily protein target (g)
-          <input type="number" min="0" placeholder="e.g. 180" data-field="protein" />
+        <label>Protein (g)
+          <input type="number" min="0" id="nut-protein" placeholder="e.g. 180" value="${escapeHtml(String(cur.protein ?? ""))}" />
+        </label>
+        <label>Carbs (g) <span class="muted">optional</span>
+          <input type="number" min="0" id="nut-carbs" placeholder="e.g. 250" value="${escapeHtml(String(cur.carbs ?? ""))}" />
+        </label>
+        <label>Fat (g) <span class="muted">optional</span>
+          <input type="number" min="0" id="nut-fat" placeholder="e.g. 70" value="${escapeHtml(String(cur.fat ?? ""))}" />
         </label>
       </div>
-      <div class="diet-notes">
-        <label>Nutrition notes for this week
-          <textarea placeholder="Meal timing, supplements, hydration…"></textarea>
-        </label>
-      </div>`;
-    const calInp = body.querySelector('[data-field="calories"]');
-    const protInp = body.querySelector('[data-field="protein"]');
-    calInp.value = week.diet.calories;
-    protInp.value = week.diet.protein;
-    const refreshSummary = () => { head.querySelector(".week-info").textContent = summary(); };
-    calInp.addEventListener("input", () => { week.diet.calories = calInp.value; saveTrainer(); refreshSummary(); });
-    protInp.addEventListener("input", () => { week.diet.protein = protInp.value; saveTrainer(); refreshSummary(); });
-    const notes = body.querySelector("textarea");
-    notes.value = week.diet.notes;
-    notes.addEventListener("input", () => { week.diet.notes = notes.value; saveTrainer(); });
-    card.appendChild(head); card.appendChild(body);
-    return card;
-  }
-  function computeWeekTotals(week) {
-    ensureDietShape(week);
-    const cal = Number(week.diet.calories);
-    const prot = Number(week.diet.protein);
-    return {
-      avgCalories: isNaN(cal) || cal <= 0 ? 0 : cal,
-      avgProtein: isNaN(prot) || prot <= 0 ? 0 : prot,
-    };
+      <label>Notes
+        <textarea id="nut-notes" rows="2" placeholder="Meal timing, supplements, hydration…">${escapeHtml(cur.notes || "")}</textarea>
+      </label>
+      <div id="nut-chart-preview">${macroDonutHtml(cur)}</div>
+      <button class="btn btn-primary" id="btn-save-nutrition" style="margin-top:0.7em">Save plan</button>`;
+    container.appendChild(card);
+
+    const readForm = () => ({
+      calories: $("#nut-cal").value.trim(),
+      protein: $("#nut-protein").value.trim(),
+      carbs: $("#nut-carbs").value.trim(),
+      fat: $("#nut-fat").value.trim(),
+      notes: $("#nut-notes").value.trim(),
+    });
+    ["nut-cal", "nut-protein", "nut-carbs", "nut-fat"].forEach((id) => {
+      $("#" + id).addEventListener("input", () => {
+        $("#nut-chart-preview").innerHTML = macroDonutHtml(readForm());
+      });
+    });
+    $("#btn-save-nutrition").addEventListener("click", () => {
+      const plan = { ...readForm(), effectiveFrom: todayISO() };
+      if (!plan.calories && !plan.protein) { toast("Enter at least calories or protein"); return; }
+      const prev = c.nutrition.current;
+      const changed = !prev || ["calories", "protein", "carbs", "fat", "notes"].some(
+        (k) => String(prev[k] || "") !== String(plan[k] || ""));
+      if (!changed) { toast("No changes to save"); return; }
+      // Same-day edits are corrections, not a new era — don't spam history.
+      if (prev && prev.effectiveFrom !== plan.effectiveFrom && (prev.calories || prev.protein)) {
+        c.nutrition.history.push({ ...prev, endedAt: todayISO() });
+      }
+      c.nutrition.current = plan;
+      saveTrainer();
+      renderDiet();
+      toast("Nutrition plan saved ✓");
+    });
+
+    if (c.nutrition.history.length) {
+      const hist = document.createElement("div");
+      hist.className = "card";
+      hist.innerHTML = `<h4 style="margin-top:0">History</h4>`;
+      [...c.nutrition.history].reverse().forEach((h) => {
+        hist.insertAdjacentHTML("beforeend", `
+          <div class="nutrition-history-row">
+            <strong>${escapeHtml(nutritionPlanSummary(h))}</strong>
+            <span class="muted">${escapeHtml(h.effectiveFrom || "")} → ${escapeHtml(h.endedAt || "")}</span>
+          </div>`);
+      });
+      container.appendChild(hist);
+    }
   }
 
   // -------- Calendar shared helpers --------
@@ -4974,6 +5082,7 @@
         goals: c.goals, weeks: c.weeks, schedule: c.schedule || {},
         coachPRs: c.coachPRs || [],
         sessionBank: c.sessionBank || { packages: [], redemptions: [] },
+        nutrition: c.nutrition || { current: null, history: [] },
         archivedPrograms: c.archivedPrograms || [],
         inviteCode: c.inviteCode || "",
       },
@@ -5089,6 +5198,7 @@
         goals: match.goals, weeks: match.weeks, schedule: match.schedule || {},
         coachPRs: match.coachPRs || [], inviteCode: match.inviteCode,
         sessionBank: match.sessionBank || { packages: [], redemptions: [] },
+        nutrition: match.nutrition || { current: null, history: [] },
       },
     };
     // Preserve progress if same client id has been loaded before
@@ -5125,6 +5235,7 @@
         goals: athlete.goals, weeks: athlete.weeks, schedule: athlete.schedule || {},
         coachPRs: athlete.coachPRs || [], inviteCode: athlete.inviteCode,
         sessionBank: athlete.sessionBank || { packages: [], redemptions: [] },
+        nutrition: athlete.nutrition || { current: null, history: [] },
       },
     };
     const prev = state.clientData.program?.clientId === program.clientId ? state.clientData.progress : null;
@@ -6252,52 +6363,50 @@
   function renderClientDiet() {
     const container = $("#client-diet-container");
     container.innerHTML = "";
-    const prog = state.clientData.program;
-    if (!prog?.client?.weeks?.length) {
+    const nut = state.clientData.program?.client?.nutrition;
+    const cur = nut?.current;
+    if (!cur || (!Number(cur.calories) && !Number(cur.protein))) {
       container.innerHTML = `<div class="empty-state"><div class="empty-emoji">🥩</div><h3>No nutrition plan yet</h3><p>Your coach hasn't set nutrition targets yet.</p></div>`;
       return;
     }
-    prog.client.weeks.forEach((week, idx) => {
-      ensureDietShape(week);
-      const card = document.createElement("div");
-      card.className = "week-card";
-      if (week.phaseLabel) card.classList.add("phase-card");
-      if (idx === 0) card.classList.add("open");
-      const cal = week.diet.calories || "—";
-      const prot = week.diet.protein ? week.diet.protein + "g" : "—";
-      const head = document.createElement("div");
-      head.className = "week-head";
-      head.innerHTML = `
-        <div>
-          <h4>${week.phaseLabel ? `<span class="phase-badge">${escapeHtml(week.phaseLabel)}</span>` : ""}${escapeHtml(week.label)}</h4>
-          <div class="week-info">${escapeHtml(cal)} kcal · ${escapeHtml(prot)} protein /day</div>
-        </div>
-        <div class="week-head-right"><span class="week-toggle">▾</span></div>`;
-      head.addEventListener("click", () => card.classList.toggle("open"));
-      const body = document.createElement("div");
-      body.className = "diet-week-body";
-      const targets = document.createElement("div");
-      targets.className = "client-diet-targets";
-      targets.innerHTML = `
+    const card = document.createElement("div");
+    card.className = "card";
+    const chart = macroDonutHtml(cur);
+    // With fewer than two macros there's no split to chart — plain stat tiles.
+    const tiles = chart ? "" : `
+      <div class="client-diet-targets">
         <div class="client-diet-target">
-          <div class="target-num">${escapeHtml(cal)}</div>
+          <div class="target-num">${escapeHtml(String(cur.calories || "—"))}</div>
           <div class="target-lbl">kcal / day</div>
         </div>
         <div class="client-diet-target">
-          <div class="target-num">${escapeHtml(prot)}</div>
+          <div class="target-num">${escapeHtml(cur.protein ? cur.protein + "g" : "—")}</div>
           <div class="target-lbl">protein / day</div>
-        </div>`;
-      body.appendChild(targets);
-      if (week.diet.notes) {
-        const notes = document.createElement("div");
-        notes.className = "client-instructions";
-        notes.style.marginTop = "0.8em";
-        notes.textContent = week.diet.notes;
-        body.appendChild(notes);
-      }
-      card.appendChild(head); card.appendChild(body);
-      container.appendChild(card);
-    });
+        </div>
+      </div>`;
+    card.innerHTML = `
+      <div class="nutrition-plan-head">
+        <h3 style="margin:0">Daily targets</h3>
+        ${cur.effectiveFrom ? `<span class="muted" style="font-size:0.8rem">since ${escapeHtml(cur.effectiveFrom)}</span>` : ""}
+      </div>
+      ${chart}${tiles}
+      ${cur.notes ? `<div class="client-instructions" style="margin-top:0.8em">${escapeHtml(cur.notes)}</div>` : ""}`;
+    container.appendChild(card);
+
+    const history = nut.history || [];
+    if (history.length) {
+      const hist = document.createElement("div");
+      hist.className = "card";
+      hist.innerHTML = `<h4 style="margin-top:0">Past targets</h4>`;
+      [...history].reverse().forEach((h) => {
+        hist.insertAdjacentHTML("beforeend", `
+          <div class="nutrition-history-row">
+            <strong>${escapeHtml(nutritionPlanSummary(h))}</strong>
+            <span class="muted">${escapeHtml(h.effectiveFrom || "")} → ${escapeHtml(h.endedAt || "")}</span>
+          </div>`);
+      });
+      container.appendChild(hist);
+    }
   }
 
   // -------- Athlete progress (bodyweight + feedback + send) --------

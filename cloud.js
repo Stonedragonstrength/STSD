@@ -81,6 +81,7 @@
       coach_prs: c.coachPRs || [],
       session_bank: c.sessionBank || { packages: [], redemptions: [] },
       setmore_aliases: c.setmoreAliases || [],
+      nutrition: c.nutrition || { current: null, history: [] },
       updated_at: new Date().toISOString(),
     };
   }
@@ -100,6 +101,7 @@
       coachPRs: r.coach_prs || [],
       sessionBank: r.session_bank || { packages: [], redemptions: [] },
       setmoreAliases: r.setmore_aliases || [],
+      nutrition: r.nutrition || { current: null, history: [] },
       importedProgress: null,
       createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
       _coachId: r.coach_id || null,

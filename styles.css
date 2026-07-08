@@ -2647,6 +2647,58 @@ input[type="date"] { color-scheme: dark; }
   color: var(--text-soft);
 }
 
+/* ============ Nutrition plan (standing targets + macro donut) ============ */
+.nutrition-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.7em 1em;
+  margin-bottom: 0.6em;
+}
+@media (max-width: 480px) { .nutrition-form { grid-template-columns: 1fr; } }
+.nutrition-form label span.muted { font-weight: 400; text-transform: none; letter-spacing: 0; }
+.nutrition-plan-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6em;
+  margin-bottom: 0.7em;
+}
+.nutrition-history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6em;
+  padding: 0.55rem 0.2rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+.nutrition-history-row:last-child { border-bottom: none; }
+
+.macro-chart {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  flex-wrap: wrap;
+  margin-top: 0.6em;
+}
+.macro-donut { width: 180px; height: 180px; flex-shrink: 0; }
+.macro-donut path { stroke: var(--surface); stroke-width: 1.5; }
+.macro-center-num { font-size: 30px; font-weight: 800; fill: var(--text); }
+.macro-center-lbl {
+  font-size: 11px; font-weight: 700; fill: var(--text-soft);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.macro-legend { flex: 1; min-width: 160px; display: flex; flex-direction: column; gap: 0.5em; }
+.macro-legend-row { display: flex; align-items: center; gap: 0.5em; font-size: 0.85rem; }
+.macro-dot { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+.macro-name { font-weight: 700; color: var(--text); }
+.macro-detail { color: var(--text-soft); font-size: 0.8rem; margin-left: auto; white-space: nowrap; }
+.macro-mismatch { font-size: 0.78rem; margin: 0.6em 0 0; color: var(--warn); }
+@media (max-width: 480px) {
+  .macro-chart { justify-content: center; }
+  .macro-detail { margin-left: 0.6em; }
+}
+
 /* ============ Mobile/desktop visibility utilities ============ */
 .mobile-only { display: none; }
 .desktop-only { display: inline; }
