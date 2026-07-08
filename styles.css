@@ -4867,6 +4867,9 @@ input:focus, textarea:focus, select:focus {
 .day-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
 .day-tab-add { color: var(--muted); font-weight: 400; font-size: 0.78rem; }
 .day-tab-add:hover { color: var(--primary); }
+.day-tab[draggable="true"] { cursor: grab; }
+.day-tab-dragging { opacity: 0.45; }
+.day-tab-dragover { border-bottom-color: var(--primary); background: var(--surface-2); }
 
 /* Day content area */
 .day-content-area { padding: 0; }
@@ -4883,29 +4886,21 @@ input:focus, textarea:focus, select:focus {
 .day-name-compact {
   background: transparent;
   border: none;
+  border-bottom: 1px dashed var(--border);
   color: var(--text);
   font-size: 0.9rem;
   font-weight: 700;
   font-family: inherit;
-  padding: 0;
+  padding: 0.1em 0.15em;
   outline: none;
   min-width: 80px;
+  cursor: text;
+  transition: border-color 0.15s;
 }
 .day-name-compact::placeholder { color: var(--muted); font-weight: 400; }
-.day-name-compact[readonly] { cursor: default; }
+.day-name-compact:hover { border-bottom-color: var(--text-soft); }
+.day-name-compact:focus { border-bottom-style: solid; border-bottom-color: var(--primary); }
 .day-name-wrap { display: flex; align-items: center; gap: 0.35em; }
-.day-name-edit-btn {
-  background: none;
-  border: none;
-  color: var(--text-soft);
-  font-size: 0.8rem;
-  cursor: pointer;
-  padding: 0.2em 0.35em;
-  border-radius: 4px;
-  line-height: 1;
-  flex-shrink: 0;
-}
-.day-name-edit-btn:hover { color: var(--primary); background: var(--surface-2); }
 .day-icon-btn {
   background: var(--surface-2);
   border: 1px solid var(--border);

@@ -112,7 +112,7 @@
       id: uid(), name: name || "New Athlete",
       age: "", heightIn: "", weightLb: "",
       goals: "", notes: "",
-      weeks: Array.from({ length: 6 }, (_, i) => { const w = makeWeek(i); w.days = [makeDay(1)]; return w; }),
+      weeks: [],
       schedule: {},
       coachPRs: DEFAULT_PR_LIFTS.map((n) => ({ id: uid(), name: n, pr1: "", pr2: "", pr3: "" })),
       sessionBank: { packages: [], redemptions: [] },
@@ -1266,7 +1266,7 @@
     ensureProgramTemplates();
     const tpl = {
       id: uid(), name: "", description: "",
-      weeks: Array.from({ length: 6 }, (_, i) => { const w = makeWeek(i); w.days = [makeDay(1)]; return w; }),
+      weeks: Array.from({ length: 1 }, (_, i) => { const w = makeWeek(i); w.days = [makeDay(1)]; return w; }),
       createdAt: Date.now(),
     };
     state.trainerData.programTemplates.push(tpl);
@@ -2452,6 +2452,7 @@
     const dayContent = document.createElement("div");
     dayContent.className = "day-content-area";
 
+    let dayDragFrom = null;
     function renderDayTabs() {
       tabStrip.innerHTML = "";
       week.days.forEach((day, dIdx) => {
@@ -2459,6 +2460,36 @@
         tab.className = "day-tab" + (dIdx === week._activeDayIdx ? " active" : "");
         tab.textContent = day.name || `Day ${dIdx + 1}`;
         tab.addEventListener("click", () => { week._activeDayIdx = dIdx; renderDayTabs(); renderActiveDayContent(); });
+        // Drag to reorder days within the week
+        tab.draggable = true;
+        tab.addEventListener("dragstart", (e) => {
+          dayDragFrom = dIdx;
+          tab.classList.add("day-tab-dragging");
+          e.dataTransfer.effectAllowed = "move";
+          try { e.dataTransfer.setData("text/plain", String(dIdx)); } catch (_) {}
+        });
+        tab.addEventListener("dragend", () => {
+          dayDragFrom = null;
+          tabStrip.querySelectorAll(".day-tab").forEach((t) => t.classList.remove("day-tab-dragover", "day-tab-dragging"));
+        });
+        tab.addEventListener("dragover", (e) => {
+          if (dayDragFrom === null || dayDragFrom === dIdx) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          tab.classList.add("day-tab-dragover");
+        });
+        tab.addEventListener("dragleave", () => tab.classList.remove("day-tab-dragover"));
+        tab.addEventListener("drop", (e) => {
+          e.preventDefault();
+          if (dayDragFrom === null || dayDragFrom === dIdx) return;
+          const activeId = week.days[week._activeDayIdx] && week.days[week._activeDayIdx].id;
+          const [moved] = week.days.splice(dayDragFrom, 1);
+          week.days.splice(dIdx, 0, moved);
+          const newActive = week.days.findIndex((d) => d.id === activeId);
+          week._activeDayIdx = newActive >= 0 ? newActive : dIdx;
+          dayDragFrom = null;
+          saveTrainer(); renderDayTabs(); renderActiveDayContent();
+        });
         tabStrip.appendChild(tab);
       });
       const addDayBtn = document.createElement("button");
@@ -2744,25 +2775,11 @@
     nameInput.className = "day-name-compact";
     nameInput.placeholder = "Day name…";
     nameInput.value = day.name || "";
-    nameInput.readOnly = true;
     nameInput.addEventListener("input", () => { day.name = nameInput.value; saveTrainer(); });
     nameInput.addEventListener("change", () => rerenderFn());
-    nameInput.addEventListener("blur", () => { nameInput.readOnly = true; });
     nameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") nameInput.blur(); });
 
-    const editNameBtn = document.createElement("button");
-    editNameBtn.type = "button";
-    editNameBtn.className = "day-name-edit-btn";
-    editNameBtn.title = "Edit day name";
-    editNameBtn.textContent = "✎";
-    editNameBtn.addEventListener("click", () => {
-      nameInput.readOnly = false;
-      nameInput.focus();
-      nameInput.select();
-    });
-
     nameWrap.appendChild(nameInput);
-    nameWrap.appendChild(editNameBtn);
 
     actionBar.appendChild(iconBtn);
 
