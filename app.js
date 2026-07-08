@@ -243,6 +243,22 @@
     return EXERCISE_MODIFIERS.find((g) => g.tags.includes(tag)) || null;
   }
 
+  // ── Finishers (burnout / dropset) ──
+  // Burnout = 1 slot, Dropset = 2 slots. Each slot is a "drop-to" percentage of
+  // the exercise's prescribed weight; the athlete logs the reps they hit.
+  const FINISHER_PCTS = ["25", "50", "75"];
+  function finisherDropWeight(prescribedWeight, pct) {
+    const base = parseFloat(prescribedWeight);
+    if (!isFinite(base)) return null; // BW or unset — no computed number
+    return Math.round((base * (parseInt(pct, 10) / 100)));
+  }
+  function finisherSummary(ex) {
+    const parts = [];
+    if (ex.burnout?.pct) parts.push(`🔥${ex.burnout.pct}%`);
+    if (ex.dropset?.pcts?.length) parts.push(`⬇${ex.dropset.pcts.join("→")}%`);
+    return parts.join("  ");
+  }
+
   // Modifier tags sorted by category order (then tag order within a category),
   // so chips + the exercise name read consistently regardless of click order.
   function orderedModifiers(ex) {
@@ -253,6 +269,73 @@
       const g = EXERCISE_MODIFIERS[ga];
       return g ? g.tags.indexOf(a) - g.tags.indexOf(b) : 0;
     });
+  }
+
+  function openFinisherPicker(ex, anchorBtn, onChange) {
+    document.querySelector(".finisher-pop")?.remove();
+    const pop = document.createElement("div");
+    pop.className = "grid-picker-pop finisher-pop";
+    pop.style.cssText = "position:fixed;z-index:9999;visibility:hidden";
+
+    const saveChange = () => { saveTrainer(); onChange(); render(); };
+
+    function pctRow(currentPct, onPick) {
+      const row = document.createElement("div");
+      row.className = "finisher-pct-row";
+      FINISHER_PCTS.forEach((p) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "finisher-pct-btn" + (currentPct === p ? " on" : "");
+        b.textContent = p + "%";
+        b.addEventListener("click", () => onPick(p));
+        row.appendChild(b);
+      });
+      return row;
+    }
+
+    function section(title, hint, enabled, onToggle, bodyBuilder) {
+      const sec = document.createElement("div");
+      sec.className = "finisher-sec";
+      const head = document.createElement("button");
+      head.type = "button";
+      head.className = "finisher-toggle" + (enabled ? " on" : "");
+      head.innerHTML = `<span class="finisher-toggle-lbl">${title}<small>${hint}</small></span><span class="finisher-switch">${enabled ? "ON" : "OFF"}</span>`;
+      head.addEventListener("click", onToggle);
+      sec.appendChild(head);
+      if (enabled) sec.appendChild(bodyBuilder());
+      return sec;
+    }
+
+    function render() {
+      pop.innerHTML = "";
+      pop.appendChild(section("🔥 Burnout", "1 set to failure", !!ex.burnout,
+        () => { ex.burnout = ex.burnout ? null : { pct: "50" }; saveChange(); },
+        () => {
+          const body = document.createElement("div");
+          body.className = "finisher-body";
+          body.appendChild(pctRow(ex.burnout.pct, (p) => { ex.burnout.pct = p; saveChange(); }));
+          return body;
+        }));
+      pop.appendChild(section("⬇ Dropset", "2 drops", !!ex.dropset,
+        () => { ex.dropset = ex.dropset ? null : { pcts: ["75", "50"] }; saveChange(); },
+        () => {
+          const body = document.createElement("div");
+          body.className = "finisher-body";
+          [0, 1].forEach((i) => {
+            const lbl = document.createElement("div");
+            lbl.className = "finisher-slot-lbl";
+            lbl.textContent = `Drop ${i + 1}`;
+            body.appendChild(lbl);
+            body.appendChild(pctRow(ex.dropset.pcts[i], (p) => { ex.dropset.pcts[i] = p; saveChange(); }));
+          });
+          return body;
+        }));
+      requestAnimationFrame(() => _positionPop(pop, anchorBtn));
+    }
+
+    document.body.appendChild(pop);
+    render();
+    _attachOutsideClose(pop, anchorBtn);
   }
 
   function renderModChips(container, ex, position) {
@@ -3075,6 +3158,18 @@
       ex.currentReps = val; saveTrainer(); crBtn.textContent = val; crBtn.classList.toggle("empty", !val);
     }, crBtn, 6); });
 
+    // Finisher (burnout / dropset) — sits at the end of the sets cluster.
+    const finisherBtn = document.createElement("button");
+    finisherBtn.className = "picker-btn picker-btn-sm ex-finisher-btn";
+    finisherBtn.title = "Burnout / Dropset finisher";
+    const refreshFinisherBtn = () => {
+      const sum = finisherSummary(ex);
+      finisherBtn.textContent = sum || "＋ Fin";
+      finisherBtn.classList.toggle("empty", !sum);
+    };
+    refreshFinisherBtn();
+    finisherBtn.addEventListener("click", (e) => { e.stopPropagation(); openFinisherPicker(ex, finisherBtn, refreshFinisherBtn); });
+
     // Expand (notes + video)
     const expandBtn = document.createElement("button");
     expandBtn.className = "btn-icon-mini ex-expand-btn";
@@ -3099,6 +3194,7 @@
       cwBtn.disabled = locked;
       gwBtn.disabled = locked;
       crBtn.disabled = locked;
+      finisherBtn.disabled = locked;
       handle.style.opacity = locked ? "0.3" : "";
       handle.style.pointerEvents = locked ? "none" : "";
       moveUpBtn.disabled = locked;
@@ -3129,6 +3225,7 @@
     metricsGroup.appendChild(setsBtn); metricsGroup.appendChild(at);
     metricsGroup.appendChild(cwBtn); metricsGroup.appendChild(dash); metricsGroup.appendChild(gwBtn);
     metricsGroup.appendChild(x1); metricsGroup.appendChild(crBtn);
+    metricsGroup.appendChild(finisherBtn);
 
     row.appendChild(handle);
     row.appendChild(moveUpBtn);
@@ -6363,6 +6460,51 @@
       });
     }
 
+    // Finisher slots (burnout / dropset). Weight is the drop-to % of the
+    // prescribed weight (computed, shown as a target); the athlete logs reps.
+    const finisherInputs = []; // { kind, dropIdx, pct, target, rp }
+    const finisherWrap = document.createElement("div");
+    finisherWrap.className = "cex-finisher-wrap";
+    const addFinisherSlot = (kind, dropIdx, label, pct) => {
+      const target = finisherDropWeight(ex.currentWeight, pct);
+      const wtTxt = target != null ? ` · ${target} lb` : (ex.currentWeight === "BW" ? " · BW" : "");
+      const fr = document.createElement("div");
+      fr.className = "cex-finisher-row";
+      const lbl = document.createElement("span");
+      lbl.className = "cex-finisher-lbl";
+      lbl.innerHTML = `${label} <span class="cex-finisher-pct">${pct}%${wtTxt}</span>`;
+      const rp = Object.assign(document.createElement("input"), { type: "number", min: "0", placeholder: "reps", readOnly: isLocked });
+      rp.className = "cex-input cex-finisher-input";
+      rp.addEventListener("click", (e) => e.stopPropagation());
+      fr.appendChild(lbl); fr.appendChild(rp);
+      finisherWrap.appendChild(fr);
+      finisherInputs.push({ kind, dropIdx, pct, target, rp });
+    };
+    if (ex.burnout?.pct) addFinisherSlot("burnout", null, "🔥 Burnout", ex.burnout.pct);
+    if (ex.dropset?.pcts?.length) ex.dropset.pcts.forEach((p, i) => addFinisherSlot("dropset", i, `⬇ Drop ${i + 1}`, p));
+
+    if (todayLog?.burnout) {
+      const b = finisherInputs.find((f) => f.kind === "burnout");
+      if (b) b.rp.value = todayLog.burnout.reps || "";
+    }
+    if (Array.isArray(todayLog?.dropset)) {
+      todayLog.dropset.forEach((d, i) => {
+        const f = finisherInputs.find((x) => x.kind === "dropset" && x.dropIdx === i);
+        if (f) f.rp.value = d.reps || "";
+      });
+    }
+
+    const collectFinishers = () => {
+      const out = {};
+      const b = finisherInputs.find((f) => f.kind === "burnout");
+      if (b) out.burnout = { pct: b.pct, weight: b.target, reps: b.rp.value };
+      const drops = finisherInputs.filter((f) => f.kind === "dropset");
+      if (drops.length) out.dropset = drops.map((d) => ({ pct: d.pct, weight: d.target, reps: d.rp.value }));
+      return out;
+    };
+    const finisherHasData = () => finisherInputs.some((f) => f.rp.value);
+    const finisherComplete = () => finisherInputs.every((f) => f.rp.value);
+
     // Auto-save: debounced 800ms after last keystroke, saves a draft entry.
     // Drafts never lock in the green checkmark — only the Lock button does.
     let _ast = null;
@@ -6371,7 +6513,7 @@
       _ast = setTimeout(() => {
         const sets = setInputs.map(({ wt, rp }) => ({ weight: wt.value, reps: rp.value }))
                               .filter(s => s.weight || s.reps);
-        if (!sets.length) {
+        if (!sets.length && !finisherHasData()) {
           if (state.clientData.progress.exerciseLogs[ex.id]) {
             state.clientData.progress.exerciseLogs[ex.id] =
               state.clientData.progress.exerciseLogs[ex.id].filter(l => l.date !== logDate);
@@ -6384,7 +6526,7 @@
           state.clientData.progress.exerciseLogs[ex.id] = [];
         const exLogs = state.clientData.progress.exerciseLogs[ex.id];
         const idx = exLogs.findIndex(l => l.date === logDate);
-        const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets, locked: false };
+        const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets, locked: false, ...collectFinishers() };
         if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
         saveClient();
         renderAthleteCalendar();
@@ -6394,6 +6536,7 @@
       wt.addEventListener("input", autoSave);
       rp.addEventListener("input", autoSave);
     });
+    finisherInputs.forEach(({ rp }) => rp.addEventListener("input", autoSave));
 
     // Lock / Edit toggle — the checkmark only fills in once the athlete
     // explicitly locks a fully-filled-in set of sets.
@@ -6413,6 +6556,7 @@
 
     const setFieldsReadonly = (readonly) => {
       setInputs.forEach(({ wt, rp }) => { wt.readOnly = readonly; rp.readOnly = readonly; });
+      finisherInputs.forEach(({ rp }) => { rp.readOnly = readonly; });
     };
     const refreshLockUI = () => {
       hide(isLocked ? lockBtn : editBtn);
@@ -6425,12 +6569,13 @@
       const sets = setInputs.map(({ wt, rp }) => ({ weight: wt.value, reps: rp.value }));
       const complete = sets.every((s) => s.reps && (s.weight || ex.currentWeight === "BW"));
       if (!complete) { toast("Fill in all sets before locking in."); return; }
+      if (!finisherComplete()) { toast("Fill in your burnout/dropset reps before locking in."); return; }
       clearTimeout(_ast);
       if (!state.clientData.progress.exerciseLogs[ex.id])
         state.clientData.progress.exerciseLogs[ex.id] = [];
       const exLogs = state.clientData.progress.exerciseLogs[ex.id];
       const idx = exLogs.findIndex(l => l.date === logDate);
-      const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets, locked: true };
+      const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets, locked: true, ...collectFinishers() };
       if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
       saveClient();
       isLocked = true;
@@ -6464,6 +6609,7 @@
     refreshLockUI();
 
     logForm.appendChild(setTable);
+    if (finisherInputs.length) logForm.appendChild(finisherWrap);
     logForm.appendChild(lockRow);
     } // end else (numSets > 0)
     panel.appendChild(logForm);

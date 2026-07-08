@@ -855,6 +855,58 @@ input[type="date"] { color-scheme: dark; }
 .picker-btn:active { background: var(--primary-soft); }
 .picker-btn.empty { color: var(--muted); }
 
+/* Finisher (burnout / dropset) — coach row button */
+.ex-finisher-btn { min-width: 0; font-size: 0.78rem; }
+.ex-finisher-btn:not(.empty) {
+  color: #fb923c;
+  border-color: rgba(251,146,60,0.55);
+  background: rgba(251,146,60,0.12);
+}
+.ex-finisher-btn.empty { color: var(--muted); border-style: dashed; }
+
+/* Finisher picker popup */
+.finisher-pop { min-width: 220px; max-width: 260px; padding: 0.5rem; }
+.finisher-sec { margin-bottom: 0.5rem; }
+.finisher-sec:last-child { margin-bottom: 0; }
+.finisher-toggle {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5em;
+  width: 100%; text-align: left;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 0.5em 0.7em; cursor: pointer;
+  color: var(--text); font-family: inherit; font-size: 0.86rem; font-weight: 700;
+}
+.finisher-toggle.on { border-color: rgba(251,146,60,0.6); }
+.finisher-toggle-lbl { display: flex; flex-direction: column; gap: 0.1em; }
+.finisher-toggle-lbl small { font-weight: 500; font-size: 0.68rem; color: var(--muted); }
+.finisher-switch {
+  font-size: 0.62rem; font-weight: 800; letter-spacing: 0.06em;
+  padding: 0.15em 0.5em; border-radius: 999px;
+  background: var(--surface-3); color: var(--muted);
+}
+.finisher-toggle.on .finisher-switch { background: rgba(251,146,60,0.2); color: #fb923c; }
+.finisher-body { padding: 0.5em 0.2em 0.2em; }
+.finisher-slot-lbl { font-size: 0.68rem; font-weight: 700; color: var(--text-soft); margin: 0.35em 0 0.2em; }
+.finisher-pct-row { display: flex; gap: 0.35em; }
+.finisher-pct-btn {
+  flex: 1; padding: 0.4em 0; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text-soft);
+  font-family: inherit; font-size: 0.8rem; font-weight: 700;
+}
+.finisher-pct-btn.on { background: rgba(251,146,60,0.16); border-color: #fb923c; color: #fb923c; }
+
+/* Finisher — athlete log rows */
+.cex-finisher-wrap { display: flex; flex-direction: column; gap: 0.4em; margin-top: 0.5em; }
+.cex-finisher-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.6em;
+  background: rgba(251,146,60,0.08);
+  border: 1px solid rgba(251,146,60,0.3);
+  border-radius: 8px; padding: 0.4em 0.6em;
+}
+.cex-finisher-lbl { font-size: 0.8rem; font-weight: 700; color: var(--text); }
+.cex-finisher-pct { font-weight: 500; color: #fb923c; }
+.cex-finisher-input { width: 64px; flex-shrink: 0; text-align: center; }
+
 /* ===== Drum Picker ===== */
 .drum-backdrop {
   position: fixed;
