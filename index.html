@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=pkgtrack1" />
+  <link rel="stylesheet" href="styles.css?v=cardio1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -544,7 +544,7 @@
         <button class="tab active" data-ctab="workouts">Workouts</button>
         <button class="tab" data-ctab="sessions">Sessions</button>
         <button class="tab" data-ctab="prs">PRs</button>
-        <button class="tab" data-ctab="progress">My Progress</button>
+        <button class="tab" data-ctab="cardio">Cardio</button>
         <button class="tab" data-ctab="calendar">Calendar</button>
         <button class="tab" data-ctab="diet">Nutrition</button>
       </div>
@@ -632,7 +632,13 @@
       </div>
 
       <!-- Progress -->
-      <div class="tab-panel" data-ctab-panel="progress">
+      <div class="tab-panel" data-ctab-panel="cardio">
+        <div class="program-head">
+          <h3>Cardio</h3>
+          <button class="btn btn-primary" id="btn-add-cardio">+ Log cardio</button>
+        </div>
+        <p class="muted" style="margin-bottom:1em">Track runs, rides, swims — anything that gets the heart rate up. Tap an entry to edit it.</p>
+        <div id="cardio-list-container"></div>
         <div class="card">
           <h3>Today's body weight</h3>
           <div class="bw-form">
@@ -709,8 +715,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
-  <script src="cloud.js?v=notify1"></script>
-  <script src="app.js?v=remember1"></script>
+  <script src="cloud.js?v=cardio1"></script>
+  <script src="app.js?v=cardio1"></script>
 </body>
 </html>
 

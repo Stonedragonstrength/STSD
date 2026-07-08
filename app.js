@@ -3862,10 +3862,34 @@
     const empty = $("#logs-empty");
     container.innerHTML = "";
     const p = c.importedProgress;
-    if (!p || (!p.bodyweightLog?.length && !Object.keys(p.exerciseLogs || {}).length && !p.feedback && !Object.keys(p.dayCompletions || {}).length)) {
+    if (!p || (!p.bodyweightLog?.length && !Object.keys(p.exerciseLogs || {}).length && !p.feedback && !Object.keys(p.dayCompletions || {}).length && !p.cardioLogs?.length)) {
       show(empty); return;
     }
     hide(empty);
+
+    // Cardio the athlete has logged
+    if (p.cardioLogs?.length) {
+      const cardioCard = document.createElement("div");
+      cardioCard.className = "log-week-card";
+      cardioCard.innerHTML = `<h4>Cardio</h4>`;
+      [...p.cardioLogs]
+        .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
+        .slice(0, 15)
+        .forEach((log) => {
+          const row = document.createElement("div");
+          row.className = "cardio-row cardio-row-readonly";
+          row.innerHTML = `
+            <span class="cardio-row-icon">${cardioIcon(log.type)}</span>
+            <div class="cardio-row-info">
+              <strong>${escapeHtml(log.type || "Cardio")}</strong>
+              <span class="muted">${escapeHtml(log.date || "")}</span>
+            </div>
+            <span class="cardio-min">${escapeHtml(String(log.minutes || 0))} min</span>
+            <span class="cardio-intensity cardio-intensity-${escapeHtml((log.intensity || "moderate").toLowerCase())}">${escapeHtml(log.intensity || "Moderate")}</span>`;
+          cardioCard.appendChild(row);
+        });
+      container.appendChild(cardioCard);
+    }
 
     // Day completion summary per week
     if (p.dayCompletions && Object.keys(p.dayCompletions).length) {
@@ -5164,7 +5188,114 @@
     if (!p.personalRecords) p.personalRecords = [];
     if (!p.packageRequests) p.packageRequests = [];
     if (!p.dayNotes) p.dayNotes = {};
+    if (!Array.isArray(p.cardioLogs)) p.cardioLogs = [];
     return p;
+  }
+
+  // -------- Cardio log (athlete side) --------
+  const CARDIO_TYPES = [
+    ["🏃", "Run"], ["🚶", "Walk"], ["🚴", "Bike"], ["🚣", "Row"],
+    ["🏊", "Swim"], ["🥾", "Hike"], ["🪜", "Stairs"], ["⚙️", "Elliptical"],
+    ["🪢", "Jump rope"], ["⚽", "Sport"], ["⚡", "HIIT"], ["🔥", "Other"],
+  ];
+  const CARDIO_INTENSITIES = ["Low", "Moderate", "High"];
+  const cardioIcon = (type) => (CARDIO_TYPES.find(([, n]) => n === type) || ["🔥"])[0];
+
+  function renderAthleteCardio() {
+    const container = $("#cardio-list-container");
+    if (!container) return;
+    container.innerHTML = "";
+    ensureProgressShape(state.clientData.progress);
+    const logs = [...state.clientData.progress.cardioLogs]
+      .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    const card = document.createElement("div");
+    card.className = "card";
+    if (!logs.length) {
+      card.innerHTML = `<p class="muted" style="margin:0.3em 0">Nothing logged yet. Tap <strong>+ Log cardio</strong> after your next session.</p>`;
+    } else {
+      logs.slice(0, 30).forEach((log) => {
+        const row = document.createElement("div");
+        row.className = "cardio-row";
+        row.innerHTML = `
+          <span class="cardio-row-icon">${cardioIcon(log.type)}</span>
+          <div class="cardio-row-info">
+            <strong>${escapeHtml(log.type || "Cardio")}</strong>
+            <span class="muted">${escapeHtml(log.date || "")}</span>
+          </div>
+          <span class="cardio-min">${escapeHtml(String(log.minutes || 0))} min</span>
+          <span class="cardio-intensity cardio-intensity-${escapeHtml((log.intensity || "moderate").toLowerCase())}">${escapeHtml(log.intensity || "Moderate")}</span>`;
+        row.addEventListener("click", () => openCardioModal(log.id));
+        card.appendChild(row);
+      });
+    }
+    container.appendChild(card);
+  }
+
+  function openCardioModal(editId) {
+    ensureProgressShape(state.clientData.progress);
+    const logs = state.clientData.progress.cardioLogs;
+    const existing = editId ? logs.find((l) => l.id === editId) : null;
+    let type = existing?.type || "";
+    let intensity = existing?.intensity || "Moderate";
+
+    const typeGrid = CARDIO_TYPES.map(([icon, name]) => `
+      <button class="cardio-type-btn${name === type ? " selected" : ""}" type="button" data-cardio-type="${escapeHtml(name)}">
+        <span class="cardio-type-icon">${icon}</span><span class="cardio-type-name">${escapeHtml(name)}</span>
+      </button>`).join("");
+    const intensityChips = CARDIO_INTENSITIES.map((i) => `
+      <button class="cardio-int-btn cardio-intensity-${i.toLowerCase()}${i === intensity ? " selected" : ""}" type="button" data-cardio-int="${i}">${i}</button>`).join("");
+
+    const actions = [{ label: "Cancel", className: "btn btn-ghost", onClick: closeModal }];
+    if (existing) {
+      actions.push({ label: "Delete", className: "btn btn-ghost", onClick: () => {
+        if (!window.confirm("Delete this cardio entry?")) return;
+        state.clientData.progress.cardioLogs = logs.filter((l) => l.id !== editId);
+        saveClient(); renderAthleteCardio(); closeModal(); toast("Deleted");
+      }});
+    }
+    actions.push({ label: existing ? "Save changes" : "Save", className: "btn btn-primary", onClick: () => {
+      const minutes = parseInt($("#cardio-minutes").value, 10);
+      const date = $("#cardio-date").value || todayISO();
+      const err = $("#cardio-error");
+      if (!type) { showErr(err, "Pick a cardio type."); return; }
+      if (!minutes || minutes < 1 || minutes > 600) { showErr(err, "Enter the minutes (1–600)."); return; }
+      if (existing) {
+        Object.assign(existing, { type, minutes, intensity, date });
+      } else {
+        logs.push({ id: uid(), type, minutes, intensity, date });
+      }
+      saveClient();
+      renderAthleteCardio();
+      closeModal();
+      toast(existing ? "Cardio updated ✓" : "Cardio logged ✓");
+    }});
+
+    openModal({
+      title: existing ? "Edit cardio" : "Log cardio",
+      body: `
+        <div class="cardio-type-grid">${typeGrid}</div>
+        <div class="cardio-int-row">${intensityChips}</div>
+        <label>Time (minutes)
+          <input type="number" id="cardio-minutes" min="1" max="600" placeholder="e.g. 30" value="${existing ? escapeHtml(String(existing.minutes)) : ""}" />
+        </label>
+        <label>Date
+          <input type="date" id="cardio-date" value="${escapeHtml(existing?.date || todayISO())}" />
+        </label>
+        <p id="cardio-error" class="error hidden"></p>`,
+      actions,
+    });
+    $$("[data-cardio-type]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        type = btn.dataset.cardioType;
+        $$("[data-cardio-type]").forEach((b) => b.classList.toggle("selected", b === btn));
+      });
+    });
+    $$("[data-cardio-int]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        intensity = btn.dataset.cardioInt;
+        $$("[data-cardio-int]").forEach((b) => b.classList.toggle("selected", b === btn));
+      });
+    });
   }
   function isDayChecked(dayId) {
     const dc = state.clientData?.progress?.dayCompletions;
@@ -5221,6 +5352,7 @@
     renderClientWorkouts();
     renderClientDiet();
     renderClientProgress();
+    renderAthleteCardio();
     renderAthletePRs();
     renderAthleteSessions();
   }
@@ -6446,6 +6578,7 @@
     $("#btn-client-logout").addEventListener("click", exitClient);
     $("#btn-back-to-picker")?.addEventListener("click", backToWorkoutPicker);
     $("#btn-log-bw").addEventListener("click", logBodyweight);
+    $("#btn-add-cardio")?.addEventListener("click", () => openCardioModal());
     $("#client-feedback").addEventListener("input", () => {
       state.clientData.progress.feedback = $("#client-feedback").value;
       saveClient();

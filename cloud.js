@@ -113,6 +113,7 @@
       day_completions: p.dayCompletions || {},
       personal_records: p.personalRecords || [],
       package_requests: p.packageRequests || [],
+      cardio_logs: p.cardioLogs || [],
       feedback: p.feedback || "",
       synced_at: new Date().toISOString(),
     };
@@ -125,6 +126,7 @@
       dayCompletions: r.day_completions || {},
       personalRecords: r.personal_records || [],
       packageRequests: r.package_requests || [],
+      cardioLogs: r.cardio_logs || [],
       feedback: r.feedback || "",
       syncedAt: r.synced_at,
     };
