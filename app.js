@@ -197,11 +197,12 @@
   }
 
   const EXERCISE_MODIFIERS = [
-    { group: "Unilateral", tags: ["1A", "1L", "Alt"] },
-    { group: "Equipment",  tags: ["BB", "DB", "KB", "EZ Bar", "Cable", "Rope", "Band", "Machine"] },
-    { group: "Position",   tags: ["Incline", "Decline", "Elevated", "Seated", "Standing", "Raised"] },
-    { group: "Style",      tags: ["Pause", "Tempo", "Explosive", "Isometric"] },
-    { group: "Hold",       tags: ["1S", "2S", "3S", "4S", "5S"] },
+    { group: "Unilateral",  tags: ["1A", "1L"] },
+    { group: "Alternation", tags: ["Alternating", "Non-Alternating"] },
+    { group: "Equipment",   tags: ["BB", "DB", "KB", "EZ Bar", "Cable", "Rope", "Band", "Machine"], multi: true },
+    { group: "Position",    tags: ["Incline", "Decline", "Elevated", "Seated", "Standing", "Raised"] },
+    { group: "Style",       tags: ["Pause", "Tempo", "Explosive", "Isometric"] },
+    { group: "Hold",        tags: ["1S", "2S", "3S", "4S", "5S"] },
   ];
   // Hold (seconds) tags only apply alongside the Isometric tag.
   const HOLD_TAGS = ["1S", "2S", "3S", "4S", "5S"];
@@ -209,7 +210,8 @@
   const TAG_COLORS = {
     "1A":        { color: "#f87171", bg: "rgba(248,113,113,0.18)" },
     "1L":        { color: "#fb923c", bg: "rgba(251,146,60,0.18)"  },
-    "Alt":       { color: "#f43f5e", bg: "rgba(244,63,94,0.18)"   },
+    "Alternating":     { color: "#ec4899", bg: "rgba(236,72,153,0.18)"  },
+    "Non-Alternating": { color: "#64748b", bg: "rgba(100,116,139,0.18)" },
     "BB":        { color: "#818cf8", bg: "rgba(129,140,248,0.18)" },
     "DB":        { color: "#60a5fa", bg: "rgba(96,165,250,0.18)"  },
     "KB":        { color: "#a78bfa", bg: "rgba(167,139,250,0.18)" },
@@ -240,13 +242,25 @@
     return EXERCISE_MODIFIERS.find((g) => g.tags.includes(tag)) || null;
   }
 
+  // Modifier tags sorted by category order (then tag order within a category),
+  // so chips + the exercise name read consistently regardless of click order.
+  function orderedModifiers(ex) {
+    return [...(ex.modifiers || [])].sort((a, b) => {
+      const ga = EXERCISE_MODIFIERS.findIndex((g) => g.tags.includes(a));
+      const gb = EXERCISE_MODIFIERS.findIndex((g) => g.tags.includes(b));
+      if (ga !== gb) return ga - gb;
+      const g = EXERCISE_MODIFIERS[ga];
+      return g ? g.tags.indexOf(a) - g.tags.indexOf(b) : 0;
+    });
+  }
+
   function renderModChips(container, ex, position) {
     // position: "before" = Unilateral+Equipment+Position  "after" = Style+Hold
     container.innerHTML = "";
     const groups = position === "before"
       ? EXERCISE_MODIFIERS.filter((g) => g.group !== "Style" && g.group !== "Hold")
       : EXERCISE_MODIFIERS.filter((g) => g.group === "Style" || g.group === "Hold");
-    (ex.modifiers || []).forEach((tag) => {
+    orderedModifiers(ex).forEach((tag) => {
       const g = groupForTag(tag);
       if (!g || !groups.includes(g)) return;
       const { color, bg } = tagColor(tag);
@@ -282,7 +296,7 @@
       if (holdGrp) holdGrp.classList.toggle("hidden", !open);
     };
 
-    EXERCISE_MODIFIERS.forEach(({ group, tags }) => {
+    EXERCISE_MODIFIERS.forEach(({ group, tags, multi }) => {
       const grp = document.createElement("div");
       grp.className = "mod-picker-grp";
       grp.dataset.group = group;
@@ -308,14 +322,17 @@
             btn.style.removeProperty("--mc"); btn.style.removeProperty("--mb");
             if (tag === "Isometric") clearHoldTag();
           } else {
-            // deselect any other tag in this group first
-            tags.forEach((t) => {
-              if (t !== tag && ex.modifiers.includes(t)) {
-                ex.modifiers = ex.modifiers.filter((m) => m !== t);
-                const sibling = row.querySelector(`[data-tag="${t}"]`);
-                if (sibling) { sibling.classList.remove("on"); sibling.style.removeProperty("--mc"); sibling.style.removeProperty("--mb"); }
-              }
-            });
+            // single-select groups: deselect any other tag in this group first.
+            // multi groups (e.g. Equipment) let tags stack — Cable + Rope, etc.
+            if (!multi) {
+              tags.forEach((t) => {
+                if (t !== tag && ex.modifiers.includes(t)) {
+                  ex.modifiers = ex.modifiers.filter((m) => m !== t);
+                  const sibling = row.querySelector(`[data-tag="${t}"]`);
+                  if (sibling) { sibling.classList.remove("on"); sibling.style.removeProperty("--mc"); sibling.style.removeProperty("--mb"); }
+                }
+              });
+            }
             ex.modifiers.push(tag);
             btn.classList.add("on");
             btn.style.setProperty("--mc", color); btn.style.setProperty("--mb", bg);
@@ -1190,6 +1207,90 @@
     if (!Array.isArray(state.trainerData.programTemplates)) {
       state.trainerData.programTemplates = [];
     }
+    // Backfill draft/ready status on programs saved before the split existed.
+    state.trainerData.programTemplates.forEach((p) => {
+      if (p.status !== "ready" && p.status !== "draft") p.status = "draft";
+    });
+  }
+
+  function setProgramStatus(tpl, status) {
+    tpl.status = status;
+    saveTrainer();
+    if (status === "ready") toast(`"${tpl.name || "Program"}" marked ready to assign ✓`);
+    else toast(`"${tpl.name || "Program"}" moved back to in progress`);
+  }
+
+  function makeProgramCard(tpl) {
+    const weekCount = tpl.weeks.length;
+    const exCount = tpl.weeks.reduce((n, w) => n + w.days.reduce((m, d) => m + d.exercises.length, 0), 0);
+    const ready = tpl.status === "ready";
+    const card = document.createElement("div");
+    card.className = "program-tpl-card" + (ready ? " is-ready" : "");
+
+    const nameEl = document.createElement("h3");
+    nameEl.textContent = tpl.name || "Untitled Program";
+    const desc = document.createElement("p");
+    desc.className = "desc";
+    desc.textContent = tpl.description || "";
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = `${weekCount} week${weekCount !== 1 ? "s" : ""} · ${exCount} exercise${exCount !== 1 ? "s" : ""}`;
+
+    const info = document.createElement("div");
+    info.className = "program-tpl-info";
+    info.appendChild(nameEl);
+    if (tpl.description) info.appendChild(desc);
+    info.appendChild(meta);
+
+    const actions = document.createElement("div");
+    actions.className = "program-tpl-actions";
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "btn-delete-mini";
+    deleteBtn.title = "Delete program";
+    deleteBtn.textContent = "×";
+    deleteBtn.addEventListener("click", () => {
+      if (!window.confirm(`Delete "${tpl.name || "this program"}"?`)) return;
+      state.trainerData.programTemplates = state.trainerData.programTemplates.filter((p) => p.id !== tpl.id);
+      saveTrainer(); renderProgramsList();
+    });
+
+    if (ready) {
+      // Ready to assign: lead with the assign action; keep edit + reopen handy.
+      const assignBtn = document.createElement("button");
+      assignBtn.className = "btn btn-primary btn-sm";
+      assignBtn.textContent = "Assign to athlete →";
+      assignBtn.addEventListener("click", () => assignProgramPrompt(tpl.id));
+      const editBtn = document.createElement("button");
+      editBtn.className = "btn btn-ghost btn-sm";
+      editBtn.textContent = "Edit";
+      editBtn.addEventListener("click", () => openProgramEditor(tpl.id));
+      const reopenBtn = document.createElement("button");
+      reopenBtn.className = "btn btn-ghost btn-sm";
+      reopenBtn.textContent = "Reopen";
+      reopenBtn.title = "Move back to in progress";
+      reopenBtn.addEventListener("click", () => { setProgramStatus(tpl, "draft"); renderProgramsList(); });
+      actions.appendChild(assignBtn);
+      actions.appendChild(editBtn);
+      actions.appendChild(reopenBtn);
+    } else {
+      // In progress: lead with edit; let it be marked complete.
+      const editBtn = document.createElement("button");
+      editBtn.className = "btn btn-primary btn-sm";
+      editBtn.textContent = "Edit";
+      editBtn.addEventListener("click", () => openProgramEditor(tpl.id));
+      const completeBtn = document.createElement("button");
+      completeBtn.className = "btn btn-ghost btn-sm";
+      completeBtn.textContent = "Mark complete ✓";
+      completeBtn.addEventListener("click", () => { setProgramStatus(tpl, "ready"); renderProgramsList(); });
+      actions.appendChild(editBtn);
+      actions.appendChild(completeBtn);
+    }
+    actions.appendChild(deleteBtn);
+
+    card.appendChild(info);
+    card.appendChild(actions);
+    return card;
   }
 
   function renderProgramsList() {
@@ -1203,51 +1304,33 @@
     const templates = state.trainerData.programTemplates;
     if (!templates.length) { show(empty); hide(grid); return; }
     hide(empty); show(grid);
-    templates.forEach((tpl) => {
-      const weekCount = tpl.weeks.length;
-      const exCount = tpl.weeks.reduce((n, w) => n + w.days.reduce((m, d) => m + d.exercises.length, 0), 0);
-      const card = document.createElement("div");
-      card.className = "program-tpl-card";
-      const nameEl = document.createElement("h3");
-      nameEl.textContent = tpl.name || "Untitled Program";
-      const desc = document.createElement("p");
-      desc.className = "desc";
-      desc.textContent = tpl.description || "";
-      const meta = document.createElement("div");
-      meta.className = "meta";
-      meta.textContent = `${weekCount} week${weekCount !== 1 ? "s" : ""} · ${exCount} exercise${exCount !== 1 ? "s" : ""}`;
-      const actions = document.createElement("div");
-      actions.className = "program-tpl-actions";
-      const editBtn = document.createElement("button");
-      editBtn.className = "btn btn-primary btn-sm";
-      editBtn.textContent = "Edit";
-      editBtn.addEventListener("click", () => openProgramEditor(tpl.id));
-      const assignBtn = document.createElement("button");
-      assignBtn.className = "btn btn-ghost btn-sm";
-      assignBtn.textContent = "Assign";
-      assignBtn.title = "Assign to athlete";
-      assignBtn.addEventListener("click", () => assignProgramPrompt(tpl.id));
-      const deleteBtn = document.createElement("button");
-      deleteBtn.className = "btn-delete-mini";
-      deleteBtn.title = "Delete program";
-      deleteBtn.textContent = "×";
-      deleteBtn.addEventListener("click", () => {
-        if (!window.confirm(`Delete "${tpl.name || "this program"}"?`)) return;
-        state.trainerData.programTemplates = state.trainerData.programTemplates.filter((p) => p.id !== tpl.id);
-        saveTrainer(); renderProgramsList();
-      });
-      actions.appendChild(editBtn);
-      actions.appendChild(assignBtn);
-      actions.appendChild(deleteBtn);
-      const info = document.createElement("div");
-      info.className = "program-tpl-info";
-      info.appendChild(nameEl);
-      if (tpl.description) info.appendChild(desc);
-      info.appendChild(meta);
-      card.appendChild(info);
-      card.appendChild(actions);
-      grid.appendChild(card);
-    });
+
+    const inProgress = templates.filter((t) => t.status !== "ready");
+    const ready = templates.filter((t) => t.status === "ready");
+
+    const section = (title, hint, list) => {
+      const sec = document.createElement("div");
+      sec.className = "program-section";
+      const head = document.createElement("div");
+      head.className = "program-section-head";
+      head.innerHTML = `<span class="program-section-title">${escapeHtml(title)}</span><span class="program-section-count">${list.length}</span>`;
+      sec.appendChild(head);
+      if (list.length) {
+        const inner = document.createElement("div");
+        inner.className = "program-template-grid-inner";
+        list.forEach((tpl) => inner.appendChild(makeProgramCard(tpl)));
+        sec.appendChild(inner);
+      } else {
+        const none = document.createElement("p");
+        none.className = "program-section-empty muted";
+        none.textContent = hint;
+        sec.appendChild(none);
+      }
+      return sec;
+    };
+
+    grid.appendChild(section("🟡 In progress", "Nothing in progress — new programs land here.", inProgress));
+    grid.appendChild(section("🟢 Ready to assign", "No finished programs yet. Mark one complete when it's ready.", ready));
   }
 
   function openProgramEditor(id) {
@@ -1259,13 +1342,23 @@
     updateHeaderBreadcrumb({ name: tpl.name || "Program" });
     $("#program-editor-name").value = tpl.name || "";
     $("#program-editor-desc").value = tpl.description || "";
+    updateProgramStatusBtn(tpl);
     renderWeeks();
+  }
+
+  function updateProgramStatusBtn(tpl) {
+    const btn = $("#btn-toggle-program-status");
+    if (!btn) return;
+    const ready = tpl.status === "ready";
+    btn.textContent = ready ? "✓ Ready · reopen" : "Mark complete ✓";
+    btn.classList.toggle("is-ready", ready);
+    btn.title = ready ? "This program is ready to assign — click to move back to in progress" : "Mark this program complete and ready to assign";
   }
 
   function newProgram() {
     ensureProgramTemplates();
     const tpl = {
-      id: uid(), name: "", description: "",
+      id: uid(), name: "", description: "", status: "draft",
       weeks: Array.from({ length: 1 }, (_, i) => { const w = makeWeek(i); w.days = [makeDay(1)]; return w; }),
       createdAt: Date.now(),
     };
@@ -2004,7 +2097,7 @@
     { cat: "Shoulders",  ex: ["Overhead Press","Lateral Raise","Front Raise","Rear Delt Fly","Arnold Press","Upright Row","Face Pull","Shrug","Cable Crossover"] },
     { cat: "Biceps",     ex: ["Curl","Hammer Curl","Preacher Curl","Concentration Curl","EZ-Bar Curl","Spider Curl"] },
     { cat: "Triceps",    ex: ["Tricep Pushdown","Skull Crusher","Close-Grip Bench Press","Overhead Tricep Extension","Tricep Dips","Diamond Push-Up","Kickback"] },
-    { cat: "Core",       ex: ["Plank","Side Plank","Crunch","Russian Twist","Leg Raise","Hanging Leg Raise","Ab Wheel Rollout","Dead Bug","Pallof Press","Dragon Flag"] },
+    { cat: "Core",       ex: ["Plank","Side Plank","Crunch","Russian Twist","Leg Raise","Hanging Leg Raise","Ab Wheel Rollout","Dead Bug","Pallof Press","Dragon Flag","Bear Crawl","Crab Crawl","Leopard Crawl","Lizard Crawl","Spiderman Crawl","Inchworm"] },
     { cat: "Calves",     ex: ["Calf Raise","Donkey Calf Raise","Leg Press Calf Raise"] },
     { cat: "Carries",    ex: ["Farmer's Carry","Suitcase Carry","Overhead Carry","Rack Carry","Zercher Carry","Trap Bar Carry","Bear Hug Carry","Bottoms-Up Carry","Waiter Walk"] },
     { cat: "Cardio",     ex: ["Treadmill Run","Stationary Bike","Rowing","Jump Rope","Sled Push","Battle Ropes","Farmer's Walk","Assault Bike","Stair Climber"] },
@@ -2161,10 +2254,30 @@
     _attachOutsideClose(pop, anchorEl);
   }
 
+  // Custom gym-equipment icons (monochrome SVG, inherit text color via
+  // currentColor). Stored in day.icon as "eq:<name>" tokens; rendered through
+  // dayIconHtml()/setDayIcon() so every icon slot handles them alongside emoji.
+  const DAY_ICON_SVGS = {
+    "eq:dumbbell": '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="1.8" y="8" width="2.3" height="8" rx="1"/><rect x="4.6" y="6.5" width="2.5" height="11" rx="1"/><rect x="16.9" y="6.5" width="2.5" height="11" rx="1"/><rect x="19.9" y="8" width="2.3" height="8" rx="1"/><rect x="7" y="10.8" width="10" height="2.4" rx="1.1"/></svg>',
+    "eq:barbell": '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="1.3" y="9.5" width="1.8" height="5" rx=".8"/><rect x="3.6" y="6.4" width="2.5" height="11.2" rx="1"/><rect x="6.6" y="8.6" width="1.7" height="6.8" rx=".8"/><rect x="15.7" y="8.6" width="1.7" height="6.8" rx=".8"/><rect x="17.9" y="6.4" width="2.5" height="11.2" rx="1"/><rect x="20.9" y="9.5" width="1.8" height="5" rx=".8"/><rect x="8" y="10.9" width="8" height="2.2" rx="1"/></svg>',
+    "eq:kettlebell": '<svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M12 2.4c-2.3 0-4.1 1.8-4.1 4.1 0 1.2.5 2.3 1.4 3.1A6.6 6.6 0 0 0 5.3 15 6.7 6.7 0 0 0 12 21.6 6.7 6.7 0 0 0 18.7 15a6.6 6.6 0 0 0-4-5.4c.9-.8 1.4-1.9 1.4-3.1 0-2.3-1.8-4.1-4.1-4.1Zm0 2.1c1.1 0 2 .9 2 2s-.9 2-2 2-2-.9-2-2 .9-2 2-2Z"/></svg>',
+    "eq:plate": '<svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 6.4a3.6 3.6 0 1 1 0 7.2 3.6 3.6 0 0 1 0-7.2Z"/></svg>',
+    "eq:bench": '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="2.6" y="8.8" width="18.8" height="3" rx="1.3"/><rect x="4.8" y="11.8" width="2.2" height="8.2" rx="1"/><rect x="17" y="11.8" width="2.2" height="8.2" rx="1"/></svg>',
+    "eq:rack": '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3.9" y="2.6" width="2.3" height="18.8" rx="1"/><rect x="17.8" y="2.6" width="2.3" height="18.8" rx="1"/><rect x="2.8" y="7.8" width="18.4" height="2.3" rx="1"/><rect x="2.2" y="6.8" width="2" height="4.2" rx=".9"/><rect x="19.8" y="6.8" width="2" height="4.2" rx=".9"/></svg>',
+    "eq:pullup": '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="2.4" y="3.8" width="19.2" height="2.4" rx="1.2"/><rect x="3.8" y="2.6" width="2.1" height="4.2" rx=".9"/><rect x="18.1" y="2.6" width="2.1" height="4.2" rx=".9"/><rect x="8.1" y="6" width="1.8" height="7.2" rx=".9"/><rect x="14.1" y="6" width="1.8" height="7.2" rx=".9"/><rect x="7.4" y="12.6" width="3.2" height="1.9" rx=".9"/><rect x="13.4" y="12.6" width="3.2" height="1.9" rx=".9"/></svg>',
+    "eq:medball": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18" stroke-width="1.4"/></svg>',
+  };
+  function isSvgIcon(v) { return typeof v === "string" && Object.prototype.hasOwnProperty.call(DAY_ICON_SVGS, v); }
+  function dayIconHtml(v) { return isSvgIcon(v) ? DAY_ICON_SVGS[v] : escapeHtml(v || ""); }
+  function setDayIcon(el, v) { if (isSvgIcon(v)) el.innerHTML = DAY_ICON_SVGS[v]; else el.textContent = v || ""; }
+
   const DAY_ICON_CATEGORIES = [
     { label: "Dragons", icons: [
       "🐉","🐲","🦖","🦕","🔥","⚡","🌋","💥","⭐","🌟","✨","🛡️","⚔️","🗡️","🏹",
       "🔮","💎","👑","🦄","🐍","🦂","🕷️","🦇","👹","👺","💀","☠️","🧙","🧙‍♂️","🧝",
+    ] },
+    { label: "Equipment", icons: [
+      "eq:barbell","eq:dumbbell","eq:kettlebell","eq:plate","eq:bench","eq:rack","eq:pullup","eq:medball",
     ] },
     { label: "Gym", icons: [
       "🏋️","🏋️‍♂️","🏋️‍♀️","💪","🦾","🤸","🤸‍♂️","🤸‍♀️","🤺","🥋","🥊","🤼","🤼‍♂️","🤼‍♀️","🧗",
@@ -2218,7 +2331,7 @@
       DAY_ICON_CATEGORIES[idx].icons.forEach((ic) => {
         const btn = document.createElement("button");
         btn.className = "grid-picker-cell icon-picker-cell" + (ic === currentVal ? " active" : "");
-        btn.textContent = ic;
+        setDayIcon(btn, ic);
         btn.type = "button";
         btn.addEventListener("click", () => { pop.remove(); cb(ic); });
         grid.appendChild(btn);
@@ -2623,7 +2736,7 @@
         if (ex.currentWeight) rxParts.push(ex.currentWeight === "BW" ? "BW" : ex.currentWeight + " lb");
         if (ex.currentReps) rxParts.push("× " + ex.currentReps);
         if (showTagChips) {
-          const chips = ex.modifiers.map((tag) => {
+          const chips = orderedModifiers(ex).map((tag) => {
             const g = groupForTag(tag);
             if (!g) return "";
             const { color, bg } = tagColor(tag);
@@ -2757,12 +2870,12 @@
     iconBtn.type = "button";
     iconBtn.className = "day-icon-btn";
     iconBtn.title = "Choose an icon for this day";
-    iconBtn.textContent = day.icon || "🐉";
+    setDayIcon(iconBtn, day.icon || "🐉");
     iconBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       openIconPicker(day.icon || "🐉", (icon) => {
         day.icon = icon;
-        iconBtn.textContent = icon;
+        setDayIcon(iconBtn, icon);
         saveTrainer();
       }, iconBtn);
     });
@@ -5686,7 +5799,7 @@
         const icon = day.icon || workoutIconFor(day.name);
         return `<button class="day-log-opt${sel}" data-week="${escapeHtml(week.id)}" data-day="${escapeHtml(day.id)}"
           style="--day-color:${dc.color};--day-color-soft:${dc.soft}" type="button">
-          <span class="day-log-icon">${icon}</span>
+          <span class="day-log-icon">${dayIconHtml(icon)}</span>
           <span class="day-log-name">${escapeHtml(day.name)}</span>
         </button>`;
       }).join("");
@@ -5873,7 +5986,7 @@
       card.style.animationDelay = `${idx * 60}ms`;
       const icon = day.icon || workoutIconFor(day.name);
       card.innerHTML = `
-        <div class="workout-card-icon">${icon}</div>
+        <div class="workout-card-icon">${dayIconHtml(icon)}</div>
         <div class="workout-card-body">
           <h4 class="workout-card-title">${escapeHtml(day.name)}</h4>
           <div class="workout-card-meta">
@@ -6104,7 +6217,7 @@
   function exerciseDisplayLabel(ex) {
     const before = [];
     const after = [];
-    (ex.modifiers || []).forEach((tag) => {
+    orderedModifiers(ex).forEach((tag) => {
       const g = groupForTag(tag);
       if (!g) return;
       (g.group === "Style" || g.group === "Hold" ? after : before).push(tag);
@@ -6674,6 +6787,11 @@
     $("#btn-back-to-programs")?.addEventListener("click", () => { _programEditorId = null; renderProgramsList(); });
     $("#btn-editor-add-week-empty")?.addEventListener("click", addWeek);
     $("#btn-assign-program")?.addEventListener("click", () => { if (_programEditorId) assignProgramPrompt(_programEditorId); });
+    $("#btn-toggle-program-status")?.addEventListener("click", () => {
+      const tpl = currentProgramTemplate(); if (!tpl) return;
+      setProgramStatus(tpl, tpl.status === "ready" ? "draft" : "ready");
+      updateProgramStatusBtn(tpl);
+    });
     $("#btn-save-program-to-library")?.addEventListener("click", () => {
       const tpl = currentProgramTemplate(); if (!tpl) return;
       if (!tpl.name?.trim()) { toast("Give the program a name first."); $("#program-editor-name").focus(); return; }
