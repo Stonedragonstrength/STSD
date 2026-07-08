@@ -4387,7 +4387,7 @@
       const reqCard = document.createElement("div");
       reqCard.className = "card";
       reqCard.innerHTML = `<h4 style="margin-top:0">Your pending requests</h4>
-        <p class="muted" style="font-size:0.85rem">Waiting for your coach to confirm payment. Tap <strong>Send progress</strong> in the header to deliver.</p>`;
+        <p class="muted" style="font-size:0.85rem">Your coach has been notified — they'll add the sessions once payment is settled.</p>`;
       pending.forEach((req) => {
         const row = document.createElement("div");
         row.className = "pending-request-row";
@@ -4436,7 +4436,11 @@
     });
     saveClient();
     renderAthleteSessions();
-    toast(`Requested ${size} sessions ($${opt.price.toLocaleString()}). Send progress to coach.`);
+    // Heads-up email to the coach (best-effort, requires RESEND_API_KEY secret)
+    if (window.Cloud?.enabled && state.clientData.program?.clientId) {
+      window.Cloud.notifyPackageRequest(state.clientData.program.clientId, size, opt.price);
+    }
+    toast(`Requested ${size} sessions ($${opt.price.toLocaleString()}).`);
   }
 
   function openAthleteRequestPackageModal() {
