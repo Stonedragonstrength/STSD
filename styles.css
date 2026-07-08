@@ -1627,6 +1627,46 @@ input[type="date"] { color-scheme: dark; }
 .redemption-note-list { margin: 0.6em 0 0; padding-left: 1.2em; }
 .redemption-note-list li { margin-bottom: 0.35em; font-size: 0.9rem; }
 
+/* Packages tracker (all athletes) */
+#packages-requests-container .card { margin-bottom: 1rem; }
+.pkg-track-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  padding: 0.65rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.pkg-track-row:hover { background: var(--surface-2); }
+.pkg-track-row:last-child { border-bottom: none; }
+.pkg-track-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
+.pkg-track-info .muted { font-size: 0.78rem; }
+.pkg-track-pending {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: var(--primary-bright);
+  background: var(--primary-soft);
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  padding: 0.2em 0.6em;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* Page transitions — content area only; header and side nav stay put.
+   display:none → visible restarts the animation, so this fires on every
+   view/tab switch without any JS. */
+.view { animation: view-in 0.22s ease-out; }
+.tab-panel.active { animation: view-in 0.22s ease-out; }
+@keyframes view-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .view, .tab-panel.active { animation: none; }
+}
+
 /* Booked-session rows in the dashboard day modal */
 .dash-booked-row .breakdown-sets { display: flex; align-items: center; gap: 0.5em; }
 .dash-booked-linked {
@@ -3225,6 +3265,20 @@ input:focus, textarea:focus, select:focus {
   transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s, box-shadow 0.2s;
 }
 .coach-nav-item:hover { color: var(--text); background: var(--surface-2); }
+.coach-nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5em;
+  height: 1.5em;
+  padding: 0 0.35em;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+}
 .coach-nav-item:active { transform: scale(0.97); }
 .coach-nav-item.active {
   background: linear-gradient(180deg, var(--primary-bright), var(--primary));

@@ -929,6 +929,7 @@
     const map = {
       athletes:        "#view-dashboard",
       overview:        "#view-overview",
+      packages:        "#view-packages",
       programs:        "#view-programs",
       "program-editor": "#view-program-editor",
       library:         "#view-workout-library",
@@ -989,10 +990,18 @@
     return `${wk} · ${dayName}`;
   }
 
+  let _packagesBadgeBootstrapped = false;
   function renderDashboard() {
     state.currentClientId = null;
     switchCoachView("athletes");
     updateHeaderBreadcrumb(null);
+    updatePackagesNavBadge();
+    // One background pull per session so the badge is fresh at login without
+    // waiting for the coach to open each athlete.
+    if (!_packagesBadgeBootstrapped && window.Cloud?.enabled) {
+      _packagesBadgeBootstrapped = true;
+      refreshAllAthletePackages();
+    }
 
     const grid = $("#client-grid");
     const empty = $("#client-empty");
@@ -4621,10 +4630,10 @@
       if (reqCard.querySelector(".pending-request-row")) {
         container.appendChild(reqCard);
         reqCard.querySelectorAll("[data-approve]").forEach((btn) => {
-          btn.addEventListener("click", () => approvePackageRequest(btn.dataset.approve, Number(btn.dataset.size), Number(btn.dataset.price) || 0));
+          btn.addEventListener("click", () => approvePackageRequest(c, btn.dataset.approve, Number(btn.dataset.size), Number(btn.dataset.price) || 0));
         });
         reqCard.querySelectorAll("[data-decline]").forEach((btn) => {
-          btn.addEventListener("click", () => declinePackageRequest(btn.dataset.decline));
+          btn.addEventListener("click", () => declinePackageRequest(c, btn.dataset.decline));
         });
       }
     }
@@ -4750,8 +4759,10 @@
     });
   }
 
-  function approvePackageRequest(reqId, size, price) {
-    const c = currentClient(); if (!c) return;
+  // c is passed explicitly — approvals can come from the athlete's Sessions
+  // tab or the all-athletes Packages tracker, where no client is "open".
+  function approvePackageRequest(c, reqId, size, price) {
+    if (!c) return;
     ensureSessionBank(c);
     size = Math.min(50, Math.max(1, Number(size) || 1));
     c.sessionBank.packages.push({
@@ -4760,13 +4771,12 @@
       requestId: reqId,
       note: `Approved from athlete request${price ? ` · $${price.toLocaleString()}` : ""}`,
     });
-    saveTrainer();
-    renderCoachSessions();
+    afterPackageRequestAction(c);
     toast(`Approved · ${size} sessions added`);
   }
 
-  function declinePackageRequest(reqId) {
-    const c = currentClient(); if (!c) return;
+  function declinePackageRequest(c, reqId) {
+    if (!c) return;
     ensureSessionBank(c);
     // Mark as cancelled by adding a placeholder so it doesn't reappear after re-import.
     c.sessionBank.packages.push({
@@ -4774,9 +4784,133 @@
       addedAt: Date.now(), requestId: reqId,
       note: "Athlete request declined",
     });
-    saveTrainer();
-    renderCoachSessions();
+    afterPackageRequestAction(c);
     toast("Request declined");
+  }
+
+  // Persist + push the athlete (they may not be the open client) and refresh
+  // whichever surfaces are showing package state.
+  function afterPackageRequestAction(c) {
+    localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+    if (window.Cloud?.enabled) {
+      window.Cloud.debounce(`athlete:${c.id}`, () =>
+        window.Cloud.upsertAthlete(c, state.trainerData.coachId)
+      );
+    }
+    if (state.currentClientId === c.id) renderCoachSessions();
+    if (!$("#view-packages").classList.contains("hidden")) renderPackagesView();
+    updatePackagesNavBadge();
+  }
+
+  // -------- Packages tracker (all athletes) --------
+  // A request is open until a package row references its id (approve = paid
+  // row, decline = cancelled placeholder).
+  function openRequestsFor(c) {
+    ensureSessionBank(c);
+    return (c.importedProgress?.packageRequests || [])
+      .filter((req) => !c.sessionBank.packages.some((p) => p.requestId === req.id));
+  }
+
+  function updatePackagesNavBadge() {
+    const badge = $("#packages-nav-badge");
+    if (!badge) return;
+    const count = (state.trainerData.clients || [])
+      .reduce((n, c) => n + openRequestsFor(c).length, 0);
+    badge.textContent = count > 9 ? "9+" : String(count);
+    badge.classList.toggle("hidden", count === 0);
+  }
+
+  // Pull fresh progress (which carries package requests) for every athlete,
+  // then re-render. Also runs once in the background at coach entry so the
+  // nav badge is current without visiting the page.
+  let _packagesRefreshing = false;
+  async function refreshAllAthletePackages() {
+    if (!window.Cloud?.enabled || _packagesRefreshing) return;
+    const clients = state.trainerData.clients || [];
+    if (!clients.length) return;
+    _packagesRefreshing = true;
+    const btn = $("#btn-packages-refresh");
+    if (btn) { btn.disabled = true; btn.textContent = "Syncing…"; }
+    try {
+      await Promise.all(clients.map(async (c) => {
+        const progress = await window.Cloud.getProgress(c.id);
+        if (progress) c.importedProgress = { ...progress, syncedAt: Date.now() };
+      }));
+      localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+    } catch (e) {
+      console.warn("[Packages] refresh failed", e);
+    } finally {
+      _packagesRefreshing = false;
+      if (btn) { btn.disabled = false; btn.textContent = "🔄 Refresh"; }
+    }
+    if (!$("#view-packages").classList.contains("hidden")) renderPackagesView();
+    updatePackagesNavBadge();
+  }
+
+  function renderPackagesView() {
+    const reqContainer = $("#packages-requests-container");
+    const athContainer = $("#packages-athletes-container");
+    if (!reqContainer || !athContainer) return;
+    reqContainer.innerHTML = "";
+    athContainer.innerHTML = "";
+    const clients = [...(state.trainerData.clients || [])]
+      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+
+    // --- Open purchase requests across all athletes ---
+    const open = [];
+    clients.forEach((c) => openRequestsFor(c).forEach((req) => open.push({ c, req })));
+    if (open.length) {
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML = `<h4 style="margin-top:0">Purchase requests</h4>
+        <p class="muted" style="font-size:0.85rem">Confirm payment outside the app (Venmo, cash, Stripe link), then approve.</p>`;
+      open.sort((a, b) => (b.req.requestedAt || 0) - (a.req.requestedAt || 0));
+      open.forEach(({ c, req }) => {
+        const row = document.createElement("div");
+        row.className = "pending-request-row";
+        row.innerHTML = `
+          <div>
+            <strong>${escapeHtml(c.name)}</strong> · ${escapeHtml(String(req.size))} sessions${req.price ? ` · $${escapeHtml(Number(req.price).toLocaleString())}` : ""}
+            <span class="muted"> · ${escapeHtml(req.requestedAt ? new Date(req.requestedAt).toLocaleDateString() : "")}</span>
+          </div>
+          <div class="pending-request-actions">
+            <button class="btn btn-ghost btn-sm" data-decline="${escapeHtml(req.id)}">Decline</button>
+            <button class="btn btn-primary btn-sm" data-approve="${escapeHtml(req.id)}">Approve &amp; mark paid</button>
+          </div>`;
+        row.querySelector("[data-approve]").addEventListener("click", () =>
+          approvePackageRequest(c, req.id, Number(req.size), Number(req.price) || 0));
+        row.querySelector("[data-decline]").addEventListener("click", () =>
+          declinePackageRequest(c, req.id));
+        card.appendChild(row);
+      });
+      reqContainer.appendChild(card);
+    }
+
+    // --- Per-athlete balances ---
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `<h4 style="margin-top:0">Athlete balances</h4>`;
+    if (!clients.length) {
+      card.insertAdjacentHTML("beforeend", `<p class="muted">No athletes yet.</p>`);
+    }
+    clients.forEach((c) => {
+      const sum = sessionBankSummary(c);
+      const lastRed = [...c.sessionBank.redemptions].sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0];
+      const pendingCount = openRequestsFor(c).length;
+      const row = document.createElement("div");
+      row.className = "pkg-track-row";
+      row.innerHTML = `
+        <div class="pkg-track-info">
+          <strong>${escapeHtml(c.name)}</strong>
+          <span class="muted">${sum.granted} purchased · ${sum.used} used${lastRed ? ` · last session ${escapeHtml(lastRed.date)}` : ""}</span>
+        </div>
+        ${pendingCount ? `<span class="pkg-track-pending">${pendingCount} request${pendingCount > 1 ? "s" : ""}</span>` : ""}
+        <span class="booked-balance-chip${sum.remaining <= 1 ? " low" : ""}">🎟 ${sum.remaining} left</span>
+        <span class="dash-booked-arrow">›</span>`;
+      row.addEventListener("click", () => { openClient(c.id); setTab("sessions"); });
+      card.appendChild(row);
+    });
+    athContainer.appendChild(card);
   }
 
   // -------- Share / import --------
@@ -6174,6 +6308,13 @@
           switchCoachView("overview");
           hideLibSidebar();
           renderDashboardCalendar();
+        } else if (target === "packages") {
+          _programEditorId = null;
+          state.currentClientId = null;
+          switchCoachView("packages");
+          hideLibSidebar();
+          renderPackagesView();
+          refreshAllAthletePackages();
         } else {
           _programEditorId = null;
           renderDashboard();
@@ -6229,6 +6370,7 @@
     $("#btn-add-package")?.addEventListener("click", openAddPackageModal);
     $("#btn-redeem-session")?.addEventListener("click", openRedeemSessionModal);
     $("#btn-athlete-request-package")?.addEventListener("click", openAthleteRequestPackageModal);
+    $("#btn-packages-refresh")?.addEventListener("click", refreshAllAthletePackages);
     $("#btn-export-sessions")?.addEventListener("click", () => {
       const c = currentClient(); if (c) exportSessionHistory(c);
     });
