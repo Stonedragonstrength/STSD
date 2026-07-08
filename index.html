@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=progrows1" />
+  <link rel="stylesheet" href="styles.css?v=cleanpicker1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -552,21 +552,16 @@
       <div class="tab-panel active" data-ctab-panel="workouts">
         <!-- Picker: shown by default; tapping a day card swaps it for the detail view. -->
         <div id="workout-picker" class="workout-picker">
-          <div class="clipboard">
-            <div class="clipboard-clip" aria-hidden="true"></div>
-            <div class="clipboard-paper">
-              <div class="clipboard-head">
-                <div>
-                  <h3>Pick today's workout</h3>
-                </div>
-                <div class="clipboard-streak" title="Total exercises logged">
-                  <span class="streak-count" id="streak-count">0</span>
-                  <span class="streak-label">logged</span>
-                </div>
+          <div class="picker-card">
+            <div class="picker-head">
+              <h3>Pick today's workout</h3>
+              <div class="picker-streak" title="Total exercises logged">
+                <span class="streak-count" id="streak-count">0</span>
+                <span class="streak-label">logged</span>
               </div>
-              <div class="week-chips" id="workout-week-chips" role="tablist"></div>
-              <div class="workout-grid" id="workout-day-grid"></div>
             </div>
+            <div class="week-chips" id="workout-week-chips" role="tablist"></div>
+            <div class="workout-grid" id="workout-day-grid"></div>
           </div>
           <details class="all-weeks-fallback">
             <summary>See all weeks</summary>
@@ -576,7 +571,7 @@
         </div>
         <!-- Detail: shown when a day is selected -->
         <div id="workout-detail" class="workout-detail hidden">
-          <button class="btn btn-ghost btn-sm back-link" id="btn-back-to-picker">← Clipboard</button>
+          <button class="btn btn-ghost btn-sm back-link" id="btn-back-to-picker">← Workouts</button>
           <div id="workout-detail-head" class="workout-detail-head"></div>
           <div id="workout-detail-list" class="workout-detail-list"></div>
         </div>
