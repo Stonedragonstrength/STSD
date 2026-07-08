@@ -1601,8 +1601,31 @@ input[type="date"] { color-scheme: dark; }
   background: var(--surface-3);
   color: var(--muted);
 }
+/* Session-token pill — a paid session was redeemed that day */
+.cal-day-pill-token {
+  border-color: rgba(245, 158, 11, 0.55);
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
+  margin-top: 2px;
+}
 .cal-day.has-log { cursor: pointer; }
 .cal-day.has-log:hover { border-color: var(--day-color, var(--primary)); }
+
+/* Token balance chip in the athlete calendar header */
+.cal-token-balance {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.1);
+  padding: 0.3em 0.75em;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* Redemption details modal */
+.redemption-note-list { margin: 0.6em 0 0; padding-left: 1.2em; }
+.redemption-note-list li { margin-bottom: 0.35em; font-size: 0.9rem; }
 
 /* Athlete day log / plan modal */
 .day-log-picker { display: flex; flex-direction: column; gap: 0.9rem; }

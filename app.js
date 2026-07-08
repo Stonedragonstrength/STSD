@@ -3320,6 +3320,35 @@
   const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
   const DOW_LABELS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
+  // Map "YYYY-MM-DD" → redemption entries so both calendars can pin a token
+  // pill on the days a paid session was used.
+  function redemptionsByDate(client) {
+    const map = {};
+    (client?.sessionBank?.redemptions || []).forEach((r) => {
+      if (!r?.date) return;
+      (map[r.date] = map[r.date] || []).push(r);
+    });
+    return map;
+  }
+  function tokenPillHtml(reds) {
+    const label = reds.length > 1 ? `🎟 ×${reds.length}` : "🎟 Session used";
+    const notes = reds.map((r) => r.note).filter(Boolean).join(" · ");
+    return `<div class="cal-day-pill cal-day-pill-token" title="${escapeHtml(notes)}">${label}</div>`;
+  }
+  function openRedemptionDetailsModal(iso, reds) {
+    const items = reds.map((r) =>
+      `<li>${r.note ? escapeHtml(r.note) : `<span class="muted">No note</span>`}</li>`).join("");
+    openModal({
+      title: `🎟 Session used — ${iso}`,
+      body: `
+        <p class="muted" style="margin-top:-0.4em">${reds.length > 1
+          ? `${reds.length} workout session tokens were`
+          : "A workout session token was"} redeemed on this day.</p>
+        <ul class="redemption-note-list">${items}</ul>`,
+      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
+    });
+  }
+
   // -------- Dashboard overview calendar --------
   // Setmore-synced booking times for the currently visible month, grouped
   // by local calendar date (see loadDashCalSetmoreEvents).
@@ -3498,6 +3527,7 @@
     const cells = buildMonthGrid(year, month);
     const today = todayISO();
     const selfSched = c.importedProgress?.selfSchedule || {};
+    const redsByDate = redemptionsByDate(c);
     cells.forEach((d) => {
       const iso = dateISO(d);
       const inMonth = d.getMonth() === month;
@@ -3518,9 +3548,14 @@
         pillHtml = `<div class="cal-day-pill cal-day-pill-rest">Rest</div>`;
         cell.classList.add("has-log");
       }
+      const reds = redsByDate[iso] || [];
+      if (reds.length) pillHtml += tokenPillHtml(reds);
       cell.innerHTML = `<div class="cal-date-num">${d.getDate()}</div>${pillHtml}`;
       if (inMonth && entry && !entry.rest) {
         cell.addEventListener("click", () => openCoachDayBreakdown(iso, c));
+      } else if (inMonth && reds.length) {
+        cell.classList.add("has-log");
+        cell.addEventListener("click", () => openRedemptionDetailsModal(iso, reds));
       }
       grid.appendChild(cell);
     });
@@ -4437,7 +4472,7 @@
       btn.addEventListener("click", () => {
         if (!window.confirm("Undo this redemption?")) return;
         c.sessionBank.redemptions = c.sessionBank.redemptions.filter((r) => r.id !== btn.dataset.del);
-        saveTrainer(); renderCoachSessions();
+        saveTrainer(); renderCoachSessions(); renderCoachCalendar();
       });
     });
   }
@@ -4493,6 +4528,7 @@
             c.sessionBank.redemptions.push({ id: uid(), date, note });
             saveTrainer();
             renderCoachSessions();
+            renderCoachCalendar();
             closeModal();
             toast("Session redeemed ✓");
           },
@@ -4845,6 +4881,7 @@
     const cells = buildMonthGrid(year, month);
     const today = todayISO();
     const selfSched = state.clientData.progress.selfSchedule || {};
+    const redsByDate = redemptionsByDate(prog.client);
     cells.forEach((d) => {
       const iso = dateISO(d);
       const inMonth = d.getMonth() === month;
@@ -4876,12 +4913,32 @@
         pillHtml = `<div class="cal-day-pill cal-day-pill-rest">Rest</div>`;
         cell.classList.add("has-log");
       }
+      const reds = redsByDate[iso] || [];
+      if (reds.length) pillHtml += tokenPillHtml(reds);
       cell.innerHTML = `<div class="cal-date-num">${d.getDate()}</div>${pillHtml}`;
       // Athletes can only plan today/future days here — completion itself
       // is auto-detected from locked-in exercise logs, not hand-picked.
-      if (inMonth && isUpcoming) cell.addEventListener("click", () => openAthleteLogDayModal(iso));
+      if (inMonth && isUpcoming) {
+        cell.addEventListener("click", () => openAthleteLogDayModal(iso));
+      } else if (inMonth && reds.length) {
+        // Past days aren't plannable, so a tap can surface the redemption
+        // details instead (title tooltips don't exist on mobile).
+        cell.classList.add("has-log");
+        cell.addEventListener("click", () => openRedemptionDetailsModal(iso, reds));
+      }
       grid.appendChild(cell);
     });
+    // Token balance chip — only shown once the athlete has a session bank.
+    const balEl = $("#ccal-token-balance");
+    if (balEl) {
+      const sum = sessionBankSummary(prog.client);
+      if (sum.granted > 0 || sum.used > 0) {
+        balEl.textContent = `🎟 ${sum.remaining} session${Math.abs(sum.remaining) === 1 ? "" : "s"} left`;
+        show(balEl);
+      } else {
+        hide(balEl);
+      }
+    }
   }
 
   function openAthleteLogDayModal(iso) {
