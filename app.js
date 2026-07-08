@@ -185,7 +185,7 @@
     return {
       id: uid(),
       name: seed?.name || "",
-      sets: seed?.sets || "",
+      sets: seed?.sets || "3",
       currentWeight: "",
       currentReps: seed?.reps || "",
       goalWeight: "",
