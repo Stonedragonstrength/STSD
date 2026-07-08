@@ -4669,10 +4669,6 @@
     });
     saveClient();
     renderAthleteSessions();
-    // Heads-up email to the coach (best-effort, requires RESEND_API_KEY secret)
-    if (window.Cloud?.enabled && state.clientData.program?.clientId) {
-      window.Cloud.notifyPackageRequest(state.clientData.program.clientId, size, opt.price);
-    }
     toast(`Requested ${size} sessions ($${opt.price.toLocaleString()}).`);
   }
 

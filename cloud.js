@@ -310,18 +310,6 @@
     } catch (e) { console.warn(e); return false; }
   }
 
-  // Fire-and-forget email to the coach when an athlete requests a package.
-  async function notifyPackageRequest(athleteId, size, price) {
-    if (!athleteId || !size) return false;
-    try {
-      const { error } = await sb.functions.invoke("notify-package-request", {
-        body: { athleteId, size, price },
-      });
-      if (error) { console.warn("[Cloud] notifyPackageRequest", error.message); return false; }
-      return true;
-    } catch (e) { console.warn("[Cloud] notifyPackageRequest", e); return false; }
-  }
-
   // -------- Setmore calendar sync --------
   function rowToSetmoreEvent(r) {
     return {
@@ -392,7 +380,6 @@
     upsertProgress,
     getProgress,
     upsertAthleteProfile,
-    notifyPackageRequest,
     // Setmore sync
     getSetmoreEvents,
     refreshSetmoreSync,
