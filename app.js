@@ -200,7 +200,7 @@
     { group: "Unilateral",  tags: ["1A", "1L"] },
     { group: "Alternation", tags: ["Alternating", "Non-Alternating"] },
     { group: "Equipment",   tags: ["BB", "DB", "KB", "EZ Bar", "Cable", "Rope", "Band", "Machine"], multi: true },
-    { group: "Position",    tags: ["Incline", "Decline", "Elevated", "Seated", "Standing", "Raised"] },
+    { group: "Position",    tags: ["Incline", "Decline", "Elevated", "Seated", "Standing", "Kneeling", "Raised"] },
     { group: "Style",       tags: ["Pause", "Tempo", "Explosive", "Isometric"] },
     { group: "Hold",        tags: ["1S", "2S", "3S", "4S", "5S"] },
   ];
@@ -225,6 +225,7 @@
     "Elevated":  { color: "#22d3ee", bg: "rgba(34,211,238,0.18)"  },
     "Seated":    { color: "#a3e635", bg: "rgba(163,230,53,0.18)"  },
     "Standing":  { color: "#e879f9", bg: "rgba(232,121,249,0.18)" },
+    "Kneeling":  { color: "#f43f5e", bg: "rgba(244,63,94,0.18)"   },
     "Raised":    { color: "#f472b6", bg: "rgba(244,114,182,0.18)" },
     "Pause":     { color: "#34d399", bg: "rgba(52,211,153,0.18)"  },
     "Tempo":     { color: "#6366f1", bg: "rgba(99,102,241,0.18)"  },
