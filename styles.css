@@ -1744,6 +1744,37 @@ input[type="date"] { color-scheme: dark; }
 .dash-cal-day-name { overflow: hidden; text-overflow: ellipsis; flex: 1; }
 .dash-cal-more { font-size: 0.6rem; color: var(--muted); padding: 0 0.2em; }
 
+/* Mobile: the whole month fits on screen — every cell an equal square with
+   just the date and a client/booking count badge (pills hide, badge shows) */
+.dash-cal-count { display: none; }
+@media (max-width: 600px) {
+  .dash-cal-day {
+    min-height: 0;
+    aspect-ratio: 1;
+    padding: 0.15em 0.1em;
+    gap: 2px;
+    align-items: center;
+    justify-content: flex-start;
+  }
+  .dash-cal-day .dash-cal-pill,
+  .dash-cal-day .dash-cal-more { display: none; }
+  .dash-cal-date { margin-bottom: 0; font-size: 0.7rem; }
+  .dash-cal-count {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.6em;
+    height: 1.6em;
+    padding: 0 0.3em;
+    border-radius: 999px;
+    background: var(--primary-soft);
+    border: 1px solid var(--primary);
+    color: var(--primary-bright);
+    font-size: 0.68rem;
+    font-weight: 800;
+  }
+}
+
 /* Dashboard breakdown modal — multiple clients */
 .dash-breakdown-client { padding: 0.75rem 0; border-bottom: 1px solid var(--border); }
 .dash-breakdown-client:last-child { border-bottom: none; }

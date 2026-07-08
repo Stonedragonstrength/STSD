@@ -3541,6 +3541,9 @@
       if (setmoreEvents.length) {
         html += `<div class="dash-cal-pill dash-cal-pill-booked">📅 ${setmoreEvents.length} booked</div>`;
       }
+      // Mobile shows a compact count badge instead of pills (CSS swaps them)
+      const dayCount = entries.filter(e => !e.rest).length + setmoreEvents.length;
+      if (dayCount) html += `<div class="dash-cal-count">${dayCount}</div>`;
       cell.innerHTML = html;
       const workoutEntries = entries.filter(e => !e.rest);
       if (workoutEntries.length || setmoreEvents.length) {
