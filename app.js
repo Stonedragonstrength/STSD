@@ -598,6 +598,7 @@
       saveClient();
       if (athleteId) window.Cloud.upsertAthleteProfile(athleteId, { name, email });
       setRememberMe(true); // default remember for new profile
+      rememberEmail("athlete", email, true);
       err.classList.add("hidden");
       playLoginFlash();
       enterClientPortal();
@@ -623,6 +624,7 @@
     try {
       const user = await window.Cloud.signIn(email, pw);
       setRememberMe(remember);
+      rememberEmail("athlete", email, remember);
 
       // Always refresh from the cloud so any workouts the coach just assigned
       // show up immediately, even on a device that already has this athlete's
@@ -802,6 +804,7 @@
         }
       }
       setRememberMe(true); // default remember for new account
+      rememberEmail("coach", email, true);
       err.classList.add("hidden");
       playLoginFlash();
       signIntoTrainer();
@@ -827,6 +830,7 @@
     try {
       const user = await window.Cloud.signIn(email, pw);
       setRememberMe(remember);
+      rememberEmail("coach", email, remember);
 
       // Always refresh from the cloud so programs/templates/athletes created
       // on any other device show up here immediately, even on a device that
@@ -890,6 +894,26 @@
 
   function setRememberMe(remember) {
     _signOutOnLeave = !remember;
+  }
+
+  // Remembered sign-in emails (never passwords — the browser/keychain owns
+  // those; the forms' autocomplete attributes let it offer to save them).
+  const KEY_REMEMBER_EMAIL = "trainerpro_remember_email_v1";
+  function loadRememberedEmails() {
+    try { return JSON.parse(localStorage.getItem(KEY_REMEMBER_EMAIL)) || {}; }
+    catch { return {}; }
+  }
+  function rememberEmail(role, email, remember) {
+    const m = loadRememberedEmails();
+    if (remember && email) m[role] = email; else delete m[role];
+    localStorage.setItem(KEY_REMEMBER_EMAIL, JSON.stringify(m));
+  }
+  function prefillRememberedEmails() {
+    const m = loadRememberedEmails();
+    const coachEl = $("#login-email");
+    const athleteEl = $("#athlete-signin-email");
+    if (m.coach && coachEl && !coachEl.value) coachEl.value = m.coach;
+    if (m.athlete && athleteEl && !athleteEl.value) athleteEl.value = m.athlete;
   }
 
   function signIntoTrainer() {
@@ -6371,6 +6395,7 @@
     $("#btn-redeem-session")?.addEventListener("click", openRedeemSessionModal);
     $("#btn-athlete-request-package")?.addEventListener("click", openAthleteRequestPackageModal);
     $("#btn-packages-refresh")?.addEventListener("click", refreshAllAthletePackages);
+    prefillRememberedEmails();
     $("#btn-export-sessions")?.addEventListener("click", () => {
       const c = currentClient(); if (c) exportSessionHistory(c);
     });
