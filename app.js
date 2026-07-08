@@ -1454,11 +1454,7 @@
     openModal({
       title: "Add new athlete",
       body: `
-        <label>Athlete name<input type="text" id="new-client-name" placeholder="e.g. Jamie Lee" autofocus /></label>
-        <div class="template-info" style="margin-top:0.6em">
-          <strong>Tip:</strong> after creating, you can load our science-based <strong>12-week template</strong>
-          (Foundation → Hypertrophy → Strength → Peak) from the Program tab, then tailor exercises and weights.
-        </div>`,
+        <label>Athlete name<input type="text" id="new-client-name" placeholder="e.g. Jamie Lee" autofocus /></label>`,
       actions: [
         { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
         { label: "Add athlete", className: "btn btn-primary", onClick: () => {
