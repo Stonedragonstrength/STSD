@@ -1627,6 +1627,34 @@ input[type="date"] { color-scheme: dark; }
 .redemption-note-list { margin: 0.6em 0 0; padding-left: 1.2em; }
 .redemption-note-list li { margin-bottom: 0.35em; font-size: 0.9rem; }
 
+/* Booked-session rows in the dashboard day modal */
+.dash-booked-row .breakdown-sets { display: flex; align-items: center; gap: 0.5em; }
+.dash-booked-linked {
+  cursor: pointer;
+  border-radius: var(--radius);
+  transition: background 0.12s;
+}
+.dash-booked-linked:hover { background: var(--surface-2); }
+.dash-booked-arrow { color: var(--muted); font-size: 1.1rem; line-height: 1; }
+.booked-balance-chip {
+  display: inline-block;
+  margin-left: 0.5em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.1);
+  padding: 0.15em 0.55em;
+  border-radius: 999px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.booked-balance-chip.low {
+  color: var(--danger);
+  border-color: rgba(239, 68, 68, 0.5);
+  background: var(--danger-soft);
+}
+
 /* Athlete day log / plan modal */
 .day-log-picker { display: flex; flex-direction: column; gap: 0.9rem; }
 .day-log-week-chips { margin-bottom: 0; }

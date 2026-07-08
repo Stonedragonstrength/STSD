@@ -400,6 +400,12 @@
     state.trainerData.coachId = uid();
     _trainerDataDirty = true;
   }
+  // Auto-redeem watermark: booked sessions ending before this moment are
+  // never auto-charged, so enabling the feature can't bill old history.
+  if (!state.trainerData.autoRedeemSince) {
+    state.trainerData.autoRedeemSince = Date.now();
+    _trainerDataDirty = true;
+  }
   if (_trainerDataDirty) saveTrainer();
 
   // One-time cloud backfill: if this device has local data that predates cloud sync,
@@ -3372,10 +3378,102 @@
       state.trainerData.coachId, rangeStart.toISOString(), rangeEnd.toISOString()
     );
     _dashCalSetmoreEvents = events;
+    autoRedeemFinishedBookings();
     // Only re-render if still on the same month (avoid clobbering a nav that happened mid-fetch)
     if (state.dashCal && state.dashCal.year === year && state.dashCal.month === month) {
       renderDashboardCalendar();
     }
+  }
+
+  // -------- Setmore booking ↔ athlete profile matching --------
+  function normSetmoreName(s) {
+    return String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+  }
+  // Match by athlete name or a saved alias (aliases are added via the
+  // "Link" action on unmatched bookings in the day modal).
+  function matchAthleteBySetmoreName(name) {
+    const n = normSetmoreName(name);
+    if (!n) return null;
+    return (state.trainerData.clients || []).find((c) =>
+      normSetmoreName(c.name) === n ||
+      (Array.isArray(c.setmoreAliases) && c.setmoreAliases.includes(n))
+    ) || null;
+  }
+
+  // Auto-spend a session token for each matched booking that has finished.
+  // Guards: never charges bookings that ended before the feature was enabled
+  // (autoRedeemSince watermark), one redemption per booking (setmoreUid),
+  // and skipped when the coach already logged a manual redemption for that
+  // athlete on that date.
+  function autoRedeemFinishedBookings() {
+    const since = state.trainerData.autoRedeemSince;
+    if (!since || !(state.trainerData.clients || []).length) return;
+    const now = Date.now();
+    const spent = [];
+    _dashCalSetmoreEvents.forEach((e) => {
+      if (!e.uid) return;
+      const end = new Date(e.endAt || e.startAt).getTime();
+      if (!(end > since && end <= now)) return;
+      const c = matchAthleteBySetmoreName(e.clientName);
+      if (!c) return;
+      ensureSessionBank(c);
+      const date = dateISO(new Date(e.startAt));
+      const reds = c.sessionBank.redemptions;
+      if (reds.some((r) => r.setmoreUid === e.uid)) return;
+      if (reds.some((r) => !r.setmoreUid && r.date === date)) return;
+      reds.push({
+        id: uid(), date,
+        note: `Booked session · ${fmtSetmoreTime(e.startAt)}`,
+        setmoreUid: e.uid,
+      });
+      spent.push(c);
+    });
+    if (!spent.length) return;
+    localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+    // Push each charged athlete (saveTrainer only pushes the open one)
+    if (window.Cloud?.enabled) {
+      spent.forEach((c) => window.Cloud.debounce(`athlete:${c.id}`, () =>
+        window.Cloud.upsertAthlete(c, state.trainerData.coachId)
+      ));
+    }
+    toast(`🎟 Session token spent — ${spent.map((c) => c.name).join(", ")}`);
+    if (state.currentClientId && spent.some((c) => c.id === state.currentClientId)) {
+      renderCoachSessions();
+      renderCoachCalendar();
+    }
+  }
+
+  function openLinkSetmoreNameModal(bookingName) {
+    const clients = state.trainerData.clients || [];
+    if (!clients.length) { toast("No athletes to link yet"); return; }
+    const rows = clients.map((c) => `
+      <button class="day-log-opt" type="button" data-link-athlete="${escapeHtml(c.id)}">
+        <span class="day-log-name">${escapeHtml(c.name)}</span>
+      </button>`).join("");
+    openModal({
+      title: `Link "${escapeHtml(bookingName)}"`,
+      body: `
+        <p class="muted" style="margin-top:-0.4em">Pick which athlete this Setmore booking name belongs to. Future bookings under this name will match automatically (and their finished sessions will use a token).</p>
+        <div class="day-log-picker">${rows}</div>`,
+      actions: [{ label: "Cancel", className: "btn btn-ghost", onClick: closeModal }],
+    });
+    $$("[data-link-athlete]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const c = clients.find((x) => x.id === btn.dataset.linkAthlete);
+        if (!c) return;
+        if (!Array.isArray(c.setmoreAliases)) c.setmoreAliases = [];
+        const n = normSetmoreName(bookingName);
+        if (!c.setmoreAliases.includes(n)) c.setmoreAliases.push(n);
+        saveTrainer();
+        if (window.Cloud?.enabled) window.Cloud.debounce(`athlete:${c.id}`, () =>
+          window.Cloud.upsertAthlete(c, state.trainerData.coachId)
+        );
+        closeModal();
+        toast(`Linked to ${c.name} ✓`);
+        autoRedeemFinishedBookings();
+        renderDashboardCalendar();
+      });
+    });
   }
 
   async function refreshDashCalSetmore() {
@@ -3466,11 +3564,25 @@
     if (dayEvents.length) {
       body += `<div class="dash-breakdown-client">
         <div class="dash-breakdown-header"><strong>📅 Booked sessions</strong></div>`;
-      dayEvents.forEach(e => {
-        body += `<div class="breakdown-ex">
-          <div class="breakdown-ex-name">${escapeHtml(e.clientName)}</div>
-          <div class="breakdown-sets"><span class="breakdown-set-pill">${escapeHtml(fmtSetmoreTime(e.startAt))}</span></div>
-        </div>`;
+      dayEvents.forEach((e, i) => {
+        const athlete = matchAthleteBySetmoreName(e.clientName);
+        const time = `<span class="breakdown-set-pill">${escapeHtml(fmtSetmoreTime(e.startAt))}</span>`;
+        if (athlete) {
+          const sum = sessionBankSummary(athlete);
+          body += `<div class="breakdown-ex dash-booked-row dash-booked-linked" data-open-athlete="${escapeHtml(athlete.id)}">
+            <div class="breakdown-ex-name">${escapeHtml(athlete.name)}
+              <span class="booked-balance-chip${sum.remaining <= 0 ? " low" : ""}">🎟 ${sum.remaining} left</span>
+            </div>
+            <div class="breakdown-sets">${time}<span class="dash-booked-arrow">›</span></div>
+          </div>`;
+        } else {
+          body += `<div class="breakdown-ex dash-booked-row">
+            <div class="breakdown-ex-name">${escapeHtml(e.clientName)}</div>
+            <div class="breakdown-sets">${time}
+              <button class="btn btn-ghost btn-sm" type="button" data-link-booking="${escapeHtml(String(i))}">Link…</button>
+            </div>
+          </div>`;
+        }
       });
       body += `</div>`;
     }
@@ -3509,6 +3621,21 @@
     });
     if (!body) body = `<p class="muted">Nothing scheduled or logged for this date.</p>`;
     openModal({ title: iso, body, actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }] });
+    // Matched booking → jump to that athlete's profile
+    $$("[data-open-athlete]").forEach((row) => {
+      row.addEventListener("click", () => {
+        closeModal();
+        openClient(row.dataset.openAthlete);
+      });
+    });
+    // Unmatched booking → save an alias on the right athlete
+    $$("[data-link-booking]").forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const e = dayEvents[Number(btn.dataset.linkBooking)];
+        if (e) openLinkSetmoreNameModal(e.clientName);
+      });
+    });
   }
 
   // -------- Coach calendar --------
