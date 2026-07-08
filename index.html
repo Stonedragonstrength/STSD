@@ -452,6 +452,7 @@
           <div class="program-head">
             <h3>Training Sessions</h3>
             <div class="library-head-actions">
+              <button class="btn btn-ghost" id="btn-export-sessions" title="Download payment &amp; use history (opens in Excel)">⬇ Export</button>
               <button class="btn btn-ghost" id="btn-redeem-session">− Redeem session</button>
               <button class="btn btn-primary" id="btn-add-package">+ Add package</button>
             </div>
@@ -608,7 +609,10 @@
       <div class="tab-panel" data-ctab-panel="sessions">
         <div class="program-head">
           <h3>My Sessions</h3>
-          <button class="btn btn-primary" id="btn-athlete-request-package">+ Buy package</button>
+          <div class="library-head-actions">
+            <button class="btn btn-ghost" id="btn-athlete-export-sessions" title="Download payment &amp; use history (opens in Excel)">⬇ Export</button>
+            <button class="btn btn-primary" id="btn-athlete-request-package">+ Buy package</button>
+          </div>
         </div>
         <p class="muted" style="margin-bottom:1em">Your training package balance. Buying a package sends a purchase request to your coach — settle payment with them outside the app, and they'll mark it paid to add the sessions.</p>
         <div id="athlete-session-container"></div>
@@ -693,7 +697,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
   <script src="cloud.js?v=rls1"></script>
-  <script src="app.js?v=tokencal1"></script>
+  <script src="app.js?v=sessexport1"></script>
 </body>
 </html>
 

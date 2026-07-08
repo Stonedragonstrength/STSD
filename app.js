@@ -4354,6 +4354,73 @@
     return `W${wIdx >= 0 ? wIdx + 1 : "?"} D${dIdx + 1}`;
   }
 
+  // -------- Session history export (CSV — opens directly in Excel) --------
+  function csvCell(v) {
+    const s = String(v == null ? "" : v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }
+  function downloadFile(filename, content, mime) {
+    const blob = new Blob([content], { type: mime || "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  // One chronological ledger: every package purchase (+N) and every session
+  // used (−1), with a running balance. Pending packages are listed but don't
+  // count toward the balance until marked paid.
+  function exportSessionHistory(client) {
+    ensureSessionBank(client);
+    const sum = sessionBankSummary(client);
+    const events = [];
+    client.sessionBank.packages.forEach((p) => {
+      const pending = p.status === "pending";
+      events.push({
+        date: dateISO(new Date(p.paidAt || p.addedAt || Date.now())),
+        type: pending ? "Package (pending payment)" : "Package purchased",
+        delta: Number(p.size) || 0,
+        note: p.note || "",
+        counted: !pending,
+        // Same-day tie-break: purchases land before redemptions so the
+        // running balance never dips artificially negative.
+        order: 0,
+      });
+    });
+    client.sessionBank.redemptions.forEach((r) => {
+      events.push({ date: r.date || "", type: "Session used", delta: -1, note: r.note || "", counted: true, order: 1 });
+    });
+    events.sort((a, b) => a.date.localeCompare(b.date) || a.order - b.order);
+    let balance = 0;
+    const rows = [
+      ["Session history for", client.name || ""],
+      ["Exported", todayISO()],
+      ["Sessions purchased", sum.granted],
+      ["Sessions used", sum.used],
+      ["Sessions remaining", sum.remaining],
+      [],
+      ["Date", "Type", "Sessions", "Note", "Balance"],
+    ];
+    events.forEach((ev) => {
+      if (ev.counted) balance += ev.delta;
+      rows.push([
+        ev.date,
+        ev.type,
+        ev.counted ? (ev.delta > 0 ? `+${ev.delta}` : ev.delta) : `(${ev.delta})`,
+        ev.note,
+        ev.counted ? balance : "",
+      ]);
+    });
+    // BOM so Excel reads the file as UTF-8 (notes can contain any characters)
+    const csv = "\uFEFF" + rows.map((r) => r.map(csvCell).join(",")).join("\r\n");
+    const safeName = (client.name || "athlete").trim().replace(/[^\w-]+/g, "_") || "athlete";
+    downloadFile(`${safeName}_sessions_${todayISO()}.csv`, csv, "text/csv;charset=utf-8");
+    toast("Session history downloaded ✓");
+  }
+
   // -------- Session bank (coach side) --------
   const PACKAGE_SIZES = [4, 8, 16];
 
@@ -6016,6 +6083,12 @@
     $("#btn-add-package")?.addEventListener("click", openAddPackageModal);
     $("#btn-redeem-session")?.addEventListener("click", openRedeemSessionModal);
     $("#btn-athlete-request-package")?.addEventListener("click", openAthleteRequestPackageModal);
+    $("#btn-export-sessions")?.addEventListener("click", () => {
+      const c = currentClient(); if (c) exportSessionHistory(c);
+    });
+    $("#btn-athlete-export-sessions")?.addEventListener("click", () => {
+      const client = state.clientData.program?.client; if (client) exportSessionHistory(client);
+    });
     $("#btn-regen-invite").addEventListener("click", regenerateInviteCode);
     $("#btn-copy-invite").addEventListener("click", copyInviteCode);
 
