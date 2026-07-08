@@ -4375,12 +4375,8 @@
     const buyCard = document.createElement("div");
     buyCard.className = "card";
     buyCard.innerHTML = `<h4 style="margin-top:0">Buy more sessions</h4>
-      <p class="muted" style="font-size:0.85rem">Pick a package — your coach gets a request and confirms after you settle payment with them outside the app.</p>
-      <div class="pkg-size-grid">
-        ${PACKAGE_SIZES.map((s) => `<button class="pkg-size-btn" type="button" data-buy-size="${s}">
-          <span class="pkg-size-num">${s}</span><span class="pkg-size-lbl">sessions</span>
-        </button>`).join("")}
-      </div>`;
+      <p class="muted" style="font-size:0.85rem">Pre-pay pricing (10% off) — your coach gets a request and confirms after you settle payment with them outside the app.</p>
+      <div class="pkg-size-grid">${packageOptionButtonsHtml()}</div>`;
     container.appendChild(buyCard);
     buyCard.querySelectorAll("[data-buy-size]").forEach((btn) => {
       btn.addEventListener("click", () => requestPackage(Number(btn.dataset.buySize)));
@@ -4396,7 +4392,7 @@
         const row = document.createElement("div");
         row.className = "pending-request-row";
         row.innerHTML = `
-          <div><strong>${escapeHtml(String(req.size))}-session package</strong>
+          <div><strong>${escapeHtml(String(req.size))} sessions${req.price ? ` · $${escapeHtml(Number(req.price).toLocaleString())}` : ""}</strong>
             <span class="muted"> · ${escapeHtml(req.requestedAt ? new Date(req.requestedAt).toLocaleDateString() : "")}</span></div>
           <button class="btn btn-ghost btn-sm" data-cancel-req="${escapeHtml(req.id)}">Cancel</button>`;
         reqCard.appendChild(row);
@@ -4432,27 +4428,23 @@
   }
 
   function requestPackage(size) {
-    if (!PACKAGE_SIZES.includes(size)) return;
+    const opt = PACKAGE_OPTIONS.find((o) => o.sessions === size);
+    if (!opt) return;
     if (!state.clientData.progress.packageRequests) state.clientData.progress.packageRequests = [];
     state.clientData.progress.packageRequests.push({
-      id: uid(), size, requestedAt: Date.now(),
+      id: uid(), size, price: opt.price, requestedAt: Date.now(),
     });
     saveClient();
     renderAthleteSessions();
-    toast(`Requested ${size}-session package. Send progress to coach.`);
+    toast(`Requested ${size} sessions ($${opt.price.toLocaleString()}). Send progress to coach.`);
   }
 
   function openAthleteRequestPackageModal() {
-    const sizeOpts = PACKAGE_SIZES.map((s) =>
-      `<button class="pkg-size-btn" type="button" data-buy-size="${s}">
-        <span class="pkg-size-num">${s}</span><span class="pkg-size-lbl">sessions</span>
-      </button>`
-    ).join("");
     openModal({
       title: "Buy more sessions",
       body: `
-        <p class="muted" style="margin-top:-0.4em">Pick a package size. Tapping a card sends a purchase request to your coach. The app doesn't process payment — pay your coach directly (Venmo, cash, etc.) and they'll mark it paid.</p>
-        <div class="pkg-size-grid">${sizeOpts}</div>`,
+        <p class="muted" style="margin-top:-0.4em">Pre-pay pricing (10% off). Tapping a card sends a purchase request to your coach. The app doesn't process payment — pay your coach directly (Venmo, cash, etc.) and they'll mark it paid.</p>
+        <div class="pkg-size-grid">${packageOptionButtonsHtml()}</div>`,
       actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
     });
     $("#modal-body").querySelectorAll("[data-buy-size]").forEach((btn) => {
@@ -4556,7 +4548,24 @@
   }
 
   // -------- Session bank (coach side) --------
-  const PACKAGE_SIZES = [4, 8, 16];
+  // Mirrors the pre-pay (10% off) private 1-on-1 pricing on
+  // stonedragonstrengthtraining.com/memberships.html — update both together.
+  const PACKAGE_OPTIONS = [
+    { sessions: 4,  price: 400,  cadence: "1×/week" },
+    { sessions: 8,  price: 725,  cadence: "2×/week", popular: true },
+    { sessions: 12, price: 1020, cadence: "3×/week" },
+    { sessions: 16, price: 1320, cadence: "4×/week" },
+  ];
+  const PACKAGE_SIZES = PACKAGE_OPTIONS.map((o) => o.sessions);
+  function packageOptionButtonsHtml() {
+    return PACKAGE_OPTIONS.map((o) => `
+      <button class="pkg-size-btn${o.popular ? " popular" : ""}" type="button" data-buy-size="${o.sessions}">
+        ${o.popular ? `<span class="pkg-popular-tag">Most popular</span>` : ""}
+        <span class="pkg-size-num">${o.sessions}</span>
+        <span class="pkg-size-lbl">sessions · ${o.cadence}</span>
+        <span class="pkg-size-price">$${o.price.toLocaleString()}</span>
+      </button>`).join("");
+  }
 
   function renderCoachSessions() {
     const c = currentClient(); if (!c) return;
@@ -4595,13 +4604,13 @@
         row.className = "pending-request-row";
         row.innerHTML = `
           <div>
-            <strong>${escapeHtml(String(req.size))}-session package</strong>
+            <strong>${escapeHtml(String(req.size))} sessions${req.price ? ` · $${escapeHtml(Number(req.price).toLocaleString())}` : ""}</strong>
             <span class="muted"> · requested ${escapeHtml(req.requestedAt ? new Date(req.requestedAt).toLocaleDateString() : "")}</span>
             ${req.note ? `<div class="muted" style="font-size:0.85rem">${escapeHtml(req.note)}</div>` : ""}
           </div>
           <div class="pending-request-actions">
             <button class="btn btn-ghost btn-sm" data-decline="${escapeHtml(req.id)}">Decline</button>
-            <button class="btn btn-primary btn-sm" data-approve="${escapeHtml(req.id)}" data-size="${escapeHtml(String(req.size))}">Approve &amp; mark paid</button>
+            <button class="btn btn-primary btn-sm" data-approve="${escapeHtml(req.id)}" data-size="${escapeHtml(String(req.size))}" data-price="${escapeHtml(String(req.price || ""))}">Approve &amp; mark paid</button>
           </div>`;
         reqCard.appendChild(row);
       });
@@ -4609,7 +4618,7 @@
       if (reqCard.querySelector(".pending-request-row")) {
         container.appendChild(reqCard);
         reqCard.querySelectorAll("[data-approve]").forEach((btn) => {
-          btn.addEventListener("click", () => approvePackageRequest(btn.dataset.approve, Number(btn.dataset.size)));
+          btn.addEventListener("click", () => approvePackageRequest(btn.dataset.approve, Number(btn.dataset.size), Number(btn.dataset.price) || 0));
         });
         reqCard.querySelectorAll("[data-decline]").forEach((btn) => {
           btn.addEventListener("click", () => declinePackageRequest(btn.dataset.decline));
@@ -4738,7 +4747,7 @@
     });
   }
 
-  function approvePackageRequest(reqId, size) {
+  function approvePackageRequest(reqId, size, price) {
     const c = currentClient(); if (!c) return;
     ensureSessionBank(c);
     size = Math.min(50, Math.max(1, Number(size) || 1));
@@ -4746,7 +4755,7 @@
       id: uid(), size, status: "paid",
       addedAt: Date.now(), paidAt: Date.now(),
       requestId: reqId,
-      note: "Approved from athlete request",
+      note: `Approved from athlete request${price ? ` · $${price.toLocaleString()}` : ""}`,
     });
     saveTrainer();
     renderCoachSessions();
