@@ -1498,7 +1498,14 @@
                 exercises: d.exercises.map((e) => ({ ...e, id: uid() })),
               })),
             }));
+            // Target this athlete for the cloud push. saveTrainer() only syncs
+            // state.currentClientId, which may be a different athlete (or none)
+            // when assigning from the Programs tab — so point it here first and
+            // push this athlete directly so their program actually reaches the
+            // cloud (and their device).
+            state.currentClientId = client.id;
             saveTrainer();
+            if (window.Cloud?.enabled) window.Cloud.upsertAthlete(client, state.trainerData.coachId);
             closeModal();
             toast(archiveFirst
               ? `Archived old program & assigned "${tpl.name || "Program"}" to ${client.name} ✓`
@@ -1602,6 +1609,7 @@
             })),
           }));
           saveTrainer();
+          if (window.Cloud?.enabled) window.Cloud.upsertAthlete(c, state.trainerData.coachId);
           closeModal();
           renderWeeks(); renderDiet(); renderCoachCalendar();
           toast(archiveFirst
