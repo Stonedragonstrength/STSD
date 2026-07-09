@@ -1178,16 +1178,22 @@ input[type="date"] { color-scheme: dark; }
 .role-btn strong { display: block; color: var(--text); font-size: 1rem; margin-bottom: 0.2em; font-weight: 700; }
 .role-btn small { color: var(--text-soft); font-size: 0.85rem; }
 
-.install-hint {
-  margin-top: 1.5rem;
-  padding: 0.8em 1em;
-  background: var(--primary-soft);
-  border-radius: var(--radius);
-  font-size: 0.85rem;
-  color: var(--text-soft);
-  text-align: center;
-  border: 1px solid rgba(6, 182, 212, 0.25);
+/* Add-to-Home-Screen button (login screen) + instruction steps (iOS modal) */
+.install-app-btn.btn-block {
+  margin-top: 0.9rem;
+  border: 1px solid rgba(6, 182, 212, 0.35);
+  color: var(--primary);
 }
+.install-app-btn.btn-block:hover { background: var(--primary-soft); }
+.install-steps {
+  margin: 0.6em 0 0.4em;
+  padding-left: 1.2em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55em;
+  line-height: 1.4;
+}
+.install-steps li { padding-left: 0.2em; }
 
 /* ============ Athlete-first login layout ============ */
 .login-welcome {

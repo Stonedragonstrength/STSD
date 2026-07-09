@@ -6941,6 +6941,73 @@
   }
   function closeModal() { hide($("#modal")); }
 
+  // -------- Install to Home Screen (PWA) --------
+  // Chrome/Android/desktop fire `beforeinstallprompt`, which we capture and
+  // replay from our own button. iOS Safari has no such API — installing there
+  // is a manual Share-sheet flow, so on iOS the button opens instructions.
+  // Buttons carry class `install-app-btn` (login screen + athlete portal) and
+  // stay hidden unless install is actually possible and not already installed.
+  let _deferredInstallPrompt = null;
+
+  function isStandalone() {
+    return window.matchMedia("(display-mode: standalone)").matches ||
+           window.navigator.standalone === true;
+  }
+  function isIOS() {
+    const ua = navigator.userAgent || "";
+    // iPadOS 13+ reports as "MacIntel" — distinguish it by touch support.
+    const iPadOS = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+    return /iPad|iPhone|iPod/.test(ua) || iPadOS;
+  }
+  function installPossible() {
+    return !!_deferredInstallPrompt || isIOS();
+  }
+  function refreshInstallUI() {
+    const shouldShow = !isStandalone() && installPossible();
+    document.querySelectorAll(".install-app-btn").forEach((el) => {
+      el.classList.toggle("hidden", !shouldShow);
+    });
+  }
+  async function promptInstall() {
+    if (_deferredInstallPrompt) {
+      _deferredInstallPrompt.prompt();
+      let outcome = "dismissed";
+      try { ({ outcome } = await _deferredInstallPrompt.userChoice); } catch (_) {}
+      _deferredInstallPrompt = null;
+      refreshInstallUI();
+      if (outcome === "accepted") toast("Installing Stone Dragon…");
+      return;
+    }
+    if (isIOS()) { showIOSInstallInstructions(); return; }
+    toast("Open your browser menu and choose Install / Add to Home Screen");
+  }
+  function showIOSInstallInstructions() {
+    openModal({
+      title: "Add to Home Screen",
+      body: `
+        <p class="muted" style="margin-top:-0.3em">Install Stone Dragon so it opens like an app — and works offline.</p>
+        <ol class="install-steps">
+          <li>Tap the <strong>Share</strong> button — the square with an arrow pointing up, at the bottom of Safari.</li>
+          <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
+          <li>Tap <strong>Add</strong> in the top-right corner.</li>
+        </ol>
+        <p class="muted">Then open Stone Dragon from your home screen, just like any other app.</p>
+      `,
+      actions: [{ label: "Got it", className: "btn btn-primary", onClick: closeModal }],
+    });
+  }
+  // Register these ASAP (module load), since beforeinstallprompt can fire early.
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault(); // suppress Chrome's mini-infobar; we present our own button
+    _deferredInstallPrompt = e;
+    refreshInstallUI();
+  });
+  window.addEventListener("appinstalled", () => {
+    _deferredInstallPrompt = null;
+    refreshInstallUI();
+    toast("Stone Dragon installed 🐉");
+  });
+
   // -------- Init --------
   async function init() {
     // Auth state change listener — catches PASSWORD_RECOVERY from email reset links
@@ -6970,6 +7037,9 @@
     attachPwReqs("setup-pw", "setup-pw-reqs");
     attachPwReqs("athlete-setup-pw", "athlete-setup-pw-reqs");
     attachPwReqs("reset-pw-new", "reset-pw-reqs");
+    // Add-to-Home-Screen buttons (login screen + athlete portal)
+    document.querySelectorAll(".install-app-btn").forEach((b) => b.addEventListener("click", promptInstall));
+    refreshInstallUI();
     // Coach panel nav
     $("#btn-coach-to-setup")?.addEventListener("click", () => {
       showLoginScreen("#login-setup");

@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=pwsecure" />
+  <link rel="stylesheet" href="styles.css?v=install1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -32,9 +32,7 @@
         <h2 class="login-welcome">Welcome</h2>
         <p class="muted login-welcome-sub">Sign in to your training program.</p>
         <button class="btn btn-primary btn-block btn-login-main" data-role="client">Athlete sign in</button>
-        <p class="install-hint">
-          📱 On mobile? Tap <em>Share → Add to Home Screen</em> to install Stone Dragon as an app.
-        </p>
+        <button class="btn btn-ghost btn-block install-app-btn hidden" type="button">📲 Add to Home Screen</button>
         <div class="login-footer-links">
           <button class="btn btn-ghost btn-block" id="btn-athlete-signup">Athlete sign up</button>
           <button class="btn-link login-coach-link" data-role="trainer">Coach sign in</button>
@@ -534,6 +532,7 @@
         </div>
       </div>
       <div class="header-right">
+        <button class="btn btn-ghost btn-sm install-app-btn hidden" type="button">📲 Install</button>
         <button class="btn btn-ghost btn-sm" id="btn-client-logout">Exit</button>
       </div>
     </header>
@@ -715,7 +714,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
   <script src="cloud.js?v=noemail1"></script>
-  <script src="app.js?v=pwsecure"></script>
+  <script src="app.js?v=install1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
