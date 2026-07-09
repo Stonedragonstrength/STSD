@@ -54,6 +54,36 @@ p { margin: 0 0 0.75em; line-height: 1.5; }
 .muted { color: var(--muted); font-size: 0.9rem; }
 .error { color: var(--danger); font-size: 0.9rem; margin-top: 0.5em; }
 
+/* Password requirement checklist (signup / reset) */
+.pw-req-list {
+  list-style: none;
+  margin: 0.1em 0 0.7em;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.15em 0.9em;
+}
+.pw-req {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  font-size: 0.76rem;
+  color: var(--muted);
+  transition: color 0.15s ease;
+}
+.pw-req-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1em;
+  font-weight: 700;
+}
+.pw-req.ok  { color: var(--success, #4ade80); }
+.pw-req.bad { color: var(--muted); }
+@media (max-width: 420px) {
+  .pw-req-list { grid-template-columns: 1fr; }
+}
+
 .hidden { display: none !important; }
 
 /* ============ Buttons ============ */
@@ -4945,6 +4975,8 @@ input:focus, textarea:focus, select:focus {
 .day-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
 .day-tab-add { color: var(--muted); font-weight: 400; font-size: 0.78rem; }
 .day-tab-add:hover { color: var(--primary); }
+.day-tab-import { color: var(--primary); }
+.day-tab-import:hover { color: var(--primary); background: var(--surface-2); }
 .day-tab[draggable="true"] { cursor: grab; }
 .day-tab-dragging { opacity: 0.45; }
 .day-tab-dragover { border-bottom-color: var(--primary); background: var(--surface-2); }

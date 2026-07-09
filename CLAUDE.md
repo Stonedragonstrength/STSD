@@ -48,10 +48,11 @@ progress → { exerciseLogs{}, bodyweightLog[], dayCompletions{}, personalRecord
 Supabase tables: `coaches`, `athletes`, `progress`, `athlete_profiles`. All cloud calls fail silently — offline always works. Debounce key pattern: `"athlete:<id>"` / `"progress:<id>"`.
 
 ## Auth
-- **Coach gate**: shared hardcoded code `SD253` stored in sessionStorage — casual deterrent only, not real security
-- **Coach login**: PIN hashed client-side with a simple djb2-style hash; hash stored in localStorage, never synced to cloud
-- **Athlete first login**: invite code (`XXXX-XXXX` format, omits 0/O/1/I) fetched from Supabase by `Cloud.getAthleteByInviteCode()`
-- **Athlete return login**: local password (same hash), stored in `state.clientData.profile`
+Both roles use **Supabase Auth (email + password)** — real accounts, not the old shared-code/PIN scheme. Wrappers live in `cloud.js`: `signUp` → `sb.auth.signUp`, `signIn` → `sb.auth.signInWithPassword`, plus `signOut`, `resetPassword` (`resetPasswordForEmail` + `updateUser`), and `getSession`/`onAuthStateChange`.
+- **Coach login**: email + password (`#login-email` / `#login-pw`) → `Cloud.signIn()`.
+- **Athlete first login**: invite code (`XXXX-XXXX` format, omits 0/O/1/I) fetched from Supabase by `Cloud.getAthleteByInviteCode()` to claim the account, then the athlete sets an email + password (`Cloud.signUp()`).
+- **Athlete return login**: email + password (`#athlete-signin-email` / `#athlete-signin-pw`) → `Cloud.signIn()`.
+- Session persists via Supabase; `KEY_SESSION` in sessionStorage flags coach-vs-athlete mode for offline restore. Remembered emails (never passwords) stored per role under `KEY_REMEMBER_EMAIL`.
 
 ## Key UI flows
 - **Coach adds athlete** → `makeClient()` → push to `state.trainerData.clients` → `saveTrainer()` → cloud upsert

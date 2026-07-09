@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=assignfix" />
+  <link rel="stylesheet" href="styles.css?v=pwsecure" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -84,11 +84,12 @@
           <label>Email
             <input type="email" id="setup-email" placeholder="your@email.com" autocomplete="email" />
           </label>
-          <label>Password (4+ characters)
-            <input type="password" id="setup-pw" placeholder="••••" autocomplete="new-password" />
+          <label>Password
+            <input type="password" id="setup-pw" placeholder="••••••••••" autocomplete="new-password" />
           </label>
+          <ul class="pw-req-list" id="setup-pw-reqs"></ul>
           <label>Confirm password
-            <input type="password" id="setup-pw-confirm" placeholder="••••" autocomplete="new-password" />
+            <input type="password" id="setup-pw-confirm" placeholder="••••••••••" autocomplete="new-password" />
           </label>
           <button class="btn btn-primary btn-block" type="submit" id="btn-setup">Create account</button>
         </form>
@@ -132,11 +133,12 @@
           <label>Email
             <input type="email" id="athlete-setup-email" placeholder="your@email.com" autocomplete="email" />
           </label>
-          <label>Password (4+ characters)
-            <input type="password" id="athlete-setup-pw" placeholder="••••" autocomplete="new-password" />
+          <label>Password
+            <input type="password" id="athlete-setup-pw" placeholder="••••••••••" autocomplete="new-password" />
           </label>
+          <ul class="pw-req-list" id="athlete-setup-pw-reqs"></ul>
           <label>Confirm password
-            <input type="password" id="athlete-setup-pw-confirm" placeholder="••••" autocomplete="new-password" />
+            <input type="password" id="athlete-setup-pw-confirm" placeholder="••••••••••" autocomplete="new-password" />
           </label>
           <button class="btn btn-primary btn-block" type="submit" id="btn-athlete-setup">Save profile &amp; continue</button>
         </form>
@@ -187,11 +189,12 @@
       <div id="login-reset-password" class="hidden">
         <h2>Set a new password</h2>
         <p class="muted">Choose a strong password for your account.</p>
-        <label>New password (4+ characters)
-          <input type="password" id="reset-pw-new" autocomplete="new-password" placeholder="••••" />
+        <label>New password
+          <input type="password" id="reset-pw-new" autocomplete="new-password" placeholder="••••••••••" />
         </label>
+        <ul class="pw-req-list" id="reset-pw-reqs"></ul>
         <label>Confirm password
-          <input type="password" id="reset-pw-confirm" autocomplete="new-password" placeholder="••••" />
+          <input type="password" id="reset-pw-confirm" autocomplete="new-password" placeholder="••••••••••" />
         </label>
         <button class="btn btn-primary btn-block" id="btn-reset-pw">Update password</button>
         <p id="reset-pw-error" class="error hidden"></p>
@@ -712,7 +715,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
   <script src="cloud.js?v=noemail1"></script>
-  <script src="app.js?v=bwempty"></script>
+  <script src="app.js?v=pwsecure"></script>
 </body>
 </html>
 

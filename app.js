@@ -675,7 +675,8 @@
     const err = $("#athlete-setup-error");
     if (!name) return showErr(err, "Please enter your name.");
     if (!email) return showErr(err, "Please enter your email.");
-    if (pw.length < 4) return showErr(err, "Password must be at least 4 characters.");
+    const pwCheck = validatePassword(pw);
+    if (!pwCheck.ok) return showErr(err, pwCheck.message);
     if (pw !== conf) return showErr(err, "Passwords don't match.");
     if (!window.Cloud?.enabled) return showErr(err, "Cloud not available. Check your connection.");
 
@@ -854,11 +855,70 @@
     }
   }
 
+  // -------- Password policy --------
+  // Strict: 10+ chars, mixed upper/lower/number, and not an obviously common
+  // password. NOTE: this is client-side UX only and can be bypassed by hitting
+  // the API directly — the authoritative rules (min length + breach/leaked-
+  // password rejection via HaveIBeenPwned) must be enabled in the Supabase
+  // dashboard under Auth → Policies. Bcrypt hashing is handled by Supabase.
+  const PASSWORD_MIN = 10;
+  // Short guard list to catch the most obvious weak passwords before a network
+  // round-trip. The real breach-corpus check is Supabase's leaked-password
+  // protection — this is a convenience, not the line of defense.
+  const COMMON_PASSWORDS = new Set([
+    "password", "password1", "password12", "password123", "passw0rd12",
+    "1234567890", "12345678910", "qwertyuiop", "qwerty12345", "1q2w3e4r5t",
+    "letmein1234", "welcome1234", "iloveyou123", "admin12345", "changeme123",
+    "trustno1234", "abcd123456", "football123", "monkey12345", "dragon12345",
+  ]);
+  function passwordChecks(pw) {
+    return {
+      length: pw.length >= PASSWORD_MIN,
+      lower:  /[a-z]/.test(pw),
+      upper:  /[A-Z]/.test(pw),
+      number: /[0-9]/.test(pw),
+      common: pw.length > 0 && !COMMON_PASSWORDS.has(pw.toLowerCase()),
+    };
+  }
+  function validatePassword(pw) {
+    const c = passwordChecks(pw);
+    if (!c.length) return { ok: false, message: `Password must be at least ${PASSWORD_MIN} characters.` };
+    if (!c.upper || !c.lower) return { ok: false, message: "Password needs both uppercase and lowercase letters." };
+    if (!c.number) return { ok: false, message: "Password needs at least one number." };
+    if (!c.common) return { ok: false, message: "That password is too common — choose something harder to guess." };
+    return { ok: true, message: "" };
+  }
+  // Live requirement checklist rendered under a password field.
+  function renderPwReqs(pw, listEl) {
+    if (!listEl) return;
+    const c = passwordChecks(pw);
+    const items = [
+      [c.length, `At least ${PASSWORD_MIN} characters`],
+      [c.upper && c.lower, "Upper & lowercase letters"],
+      [c.number, "At least one number"],
+      [c.common, "Not a common password"],
+    ];
+    listEl.innerHTML = items.map(([ok, label]) => {
+      const state = !pw ? "" : ok ? "ok" : "bad";
+      const mark = pw && ok ? "✓" : "•";
+      return `<li class="pw-req ${state}"><span class="pw-req-mark">${mark}</span>${escapeHtml(label)}</li>`;
+    }).join("");
+  }
+  function attachPwReqs(inputId, listId) {
+    const input = $("#" + inputId);
+    const list = $("#" + listId);
+    if (!input || !list) return;
+    const update = () => renderPwReqs(input.value, list);
+    input.addEventListener("input", update);
+    update();
+  }
+
   async function submitPasswordReset() {
     const pw = $("#reset-pw-new").value;
     const conf = $("#reset-pw-confirm").value;
     const err = $("#reset-pw-error");
-    if (pw.length < 4) return showErr(err, "Password must be at least 4 characters.");
+    const pwCheck = validatePassword(pw);
+    if (!pwCheck.ok) return showErr(err, pwCheck.message);
     if (pw !== conf) return showErr(err, "Passwords don't match.");
     if (!window.Cloud?.enabled) return showErr(err, "Cloud not available. Check your connection.");
     const btn = $("#btn-reset-pw");
@@ -886,7 +946,8 @@
     const err = $("#setup-error");
     if (!name) return showErr(err, "Please enter your name.");
     if (!email) return showErr(err, "Please enter your email.");
-    if (pw.length < 4) return showErr(err, "Password must be at least 4 characters.");
+    const pwCheck = validatePassword(pw);
+    if (!pwCheck.ok) return showErr(err, pwCheck.message);
     if (pw !== conf) return showErr(err, "Passwords don't match.");
     if (!window.Cloud?.enabled) return showErr(err, "Cloud not available. Check your connection.");
 
@@ -2166,6 +2227,58 @@
     });
   }
 
+  // Import a saved Day Template from the Workout Library into a week as a NEW
+  // day (as opposed to openLoadTemplateModal, which replaces an existing day).
+  function openImportDayModal(week, rerenderFn) {
+    const templates = state.trainerData.workoutTemplates || [];
+    if (!templates.length) {
+      toast("No day templates yet — build one in Workout Library");
+      return;
+    }
+    const list = templates
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((t) => {
+        const icon = workoutIconFor(t.name);
+        return `
+          <button class="video-pick-btn" data-tpl="${t.id}" type="button">
+            <span class="video-pick-icon">${icon}</span>
+            <strong>${escapeHtml(t.name)}</strong>
+            ${t.focus ? `<span class="muted" style="margin-left:0.4em">— ${escapeHtml(t.focus)}</span>` : ""}
+            <span class="meta-pill" style="margin-left:auto">${(t.exercises || []).length} ex</span>
+          </button>`;
+      })
+      .join("");
+    openModal({
+      title: `Import a day into ${escapeHtml(week.label)}`,
+      body: `
+        <p class="muted" style="margin-top:-0.4em">Adds the selected day from your library as a new day in this week. The original template is untouched.</p>
+        <div class="video-pick-list">${list}</div>
+      `,
+      actions: [{ label: "Cancel", className: "btn btn-ghost", onClick: closeModal }],
+    });
+    document.querySelectorAll(".video-pick-btn[data-tpl]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const t = templates.find((x) => x.id === b.dataset.tpl);
+        if (!t) return;
+        const day = makeDay(week.days.length + 1, t.name);
+        day.exercises = (t.exercises || []).map((e) => ({ ...makeExercise(), ...e, id: uid() }));
+        if (t.focus && !week.focus) week.focus = t.focus;
+        week.days.push(day);
+        week._activeDayIdx = week.days.length - 1;
+        saveTrainer();
+        closeModal();
+        rerenderFn();
+        // Cloud sync the updated athlete (skip in the program-template editor).
+        const c = currentClient();
+        if (window.Cloud?.enabled && c && !_programEditorId && state.trainerData.coachId) {
+          window.Cloud.upsertAthlete(c, state.trainerData.coachId);
+        }
+        toast(`Added "${t.name}"`);
+      });
+    });
+  }
+
   function deleteClientPrompt() {
     const c = currentClient(); if (!c) return;
     if (!window.confirm(`Delete ${c.name}? Removes the athlete and their entire program from this device and the cloud.`)) return;
@@ -2706,6 +2819,15 @@
         saveTrainer(); renderDayTabs(); renderActiveDayContent();
       });
       tabStrip.appendChild(addDayBtn);
+
+      const importDayBtn = document.createElement("button");
+      importDayBtn.className = "day-tab day-tab-add day-tab-import";
+      importDayBtn.textContent = "📥 Library";
+      importDayBtn.title = "Import a day from your Workout Library";
+      importDayBtn.addEventListener("click", () => {
+        openImportDayModal(week, () => { renderDayTabs(); renderActiveDayContent(); });
+      });
+      tabStrip.appendChild(importDayBtn);
     }
 
     function renderActiveDayContent() {
@@ -2713,7 +2835,7 @@
       if (!week.days.length) {
         const p = document.createElement("p");
         p.className = "muted"; p.style.padding = "1rem 0";
-        p.textContent = "No training days yet — click + Day to add one.";
+        p.textContent = "No training days yet — click + Day to add one, or 📥 Library to import a saved day.";
         dayContent.appendChild(p); return;
       }
       const dayIdx = Math.min(week._activeDayIdx, week.days.length - 1);
@@ -6844,6 +6966,10 @@
     // Coach setup
     $("#btn-setup").addEventListener("click", setupCoachAccount);
     $("#setup-pw-confirm").addEventListener("keydown", (e) => { if (e.key === "Enter") setupCoachAccount(); });
+    // Live password-requirement checklists
+    attachPwReqs("setup-pw", "setup-pw-reqs");
+    attachPwReqs("athlete-setup-pw", "athlete-setup-pw-reqs");
+    attachPwReqs("reset-pw-new", "reset-pw-reqs");
     // Coach panel nav
     $("#btn-coach-to-setup")?.addEventListener("click", () => {
       showLoginScreen("#login-setup");
