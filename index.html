@@ -597,6 +597,22 @@
           <h3>Daily Nutrition Targets</h3>
         </div>
         <div id="client-diet-container" class="weeks-container"></div>
+        <div class="card">
+          <h3>Today's body weight</h3>
+          <div class="bw-form">
+            <label>Date
+              <input type="date" id="bw-date" />
+            </label>
+            <label>Weight (lb)
+              <input type="number" id="bw-weight" step="0.1" placeholder="e.g. 178.5" />
+            </label>
+            <button class="btn btn-primary" id="btn-log-bw">Log weight</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Body weight history</h3>
+          <div id="bw-history"></div>
+        </div>
       </div>
 
       <!-- PRs (athlete) -->
@@ -635,22 +651,6 @@
         </div>
         <p class="muted" style="margin-bottom:1em">Track runs, rides, swims — anything that gets the heart rate up. Tap an entry to edit it.</p>
         <div id="cardio-list-container"></div>
-        <div class="card">
-          <h3>Today's body weight</h3>
-          <div class="bw-form">
-            <label>Date
-              <input type="date" id="bw-date" />
-            </label>
-            <label>Weight (lb)
-              <input type="number" id="bw-weight" step="0.1" placeholder="e.g. 178.5" />
-            </label>
-            <button class="btn btn-primary" id="btn-log-bw">Log weight</button>
-          </div>
-        </div>
-        <div class="card">
-          <h3>Body weight history</h3>
-          <div id="bw-history"></div>
-        </div>
         <div class="card">
           <h3>Notes for my coach</h3>
           <textarea id="client-feedback" rows="4" placeholder="How are things going? Any aches, schedule conflicts, food cravings…"></textarea>
