@@ -1943,24 +1943,123 @@
     ],
   };
 
+  // ---- Procedural day generator (powers "🎲 Surprise me") ----
+  // Builds brand-new day workouts from EXERCISE_LIBRARY (never the curated
+  // RECOMMENDED_TEMPLATES set), applying modifier tags via the same tag system
+  // used everywhere else — effectively unlimited, fully editable options.
+  const GEN_ARCHETYPES = [
+    { name: "Push",            cats: ["Chest","Shoulders","Triceps"] },
+    { name: "Pull",            cats: ["Back","Biceps"] },
+    { name: "Leg",             cats: ["Quads","Hamstrings","Glutes","Calves"] },
+    { name: "Upper Body",      cats: ["Chest","Back","Shoulders","Biceps","Triceps"] },
+    { name: "Lower Body",      cats: ["Quads","Hamstrings","Glutes","Calves"] },
+    { name: "Full Body",       cats: ["Quads","Chest","Back","Shoulders","Hamstrings"] },
+    { name: "Chest & Tricep",  cats: ["Chest","Triceps"] },
+    { name: "Back & Bicep",    cats: ["Back","Biceps"] },
+    { name: "Shoulder & Arm",  cats: ["Shoulders","Biceps","Triceps"] },
+    { name: "Posterior Chain", cats: ["Hamstrings","Glutes","Back"] },
+    { name: "Glute & Ham",     cats: ["Glutes","Hamstrings","Adductors"] },
+    { name: "Conditioning",    cats: ["Cardio","Carries","Core"], noCore: true },
+    { name: "Core & Carry",    cats: ["Core","Carries"], noCore: true },
+  ];
+  const GEN_STYLES = [
+    { name: "Strength",    primary: { sets: "5", reps: "5"  }, acc: { sets: "4", reps: "8"  }, core: { sets: "3", reps: "12" }, tag: "Pause" },
+    { name: "Power",       primary: { sets: "5", reps: "3"  }, acc: { sets: "4", reps: "6"  }, core: { sets: "3", reps: "12" }, tag: "Explosive" },
+    { name: "Hypertrophy", primary: { sets: "4", reps: "10" }, acc: { sets: "3", reps: "12" }, core: { sets: "3", reps: "15" }, tag: "Tempo" },
+    { name: "Pump",        primary: { sets: "4", reps: "12" }, acc: { sets: "3", reps: "15" }, core: { sets: "3", reps: "20" }, tag: null },
+    { name: "Endurance",   primary: { sets: "3", reps: "15" }, acc: { sets: "3", reps: "20" }, core: { sets: "3", reps: "25" }, tag: null },
+  ];
+  const GEN_FLAVORS = ["Iron","Apex","Prime","Savage","Peak","Forge","Titan","Blitz","Storm","Granite","Vault","Summit","Rogue","Atlas","Vertex"];
+  const GEN_COMPOUND_KW = /squat|deadlift|bench|press|\brow\b|pull-up|pull up|chin|hip thrust|lunge|clean|overhead|dip/i;
+
+  function _rand(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+  function _shuffle(arr) { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+  function _exercisesForCats(cats) {
+    const out = [];
+    cats.forEach((cat) => {
+      const entry = EXERCISE_LIBRARY.find((e) => e.cat === cat);
+      if (entry) entry.ex.forEach((name) => out.push({ name, cat }));
+    });
+    return out;
+  }
+  // Keyword-gated tag assignment so combos stay sensible (never "Incline Deadlift").
+  function _genTags(name, isPrimary, style) {
+    const mods = [];
+    const hasEquip = /barbell|dumbbell|\bdb\b|\bbb\b|cable|machine|kettlebell|\bkb\b|band|ez|smith|trap[- ]bar|hex|sled|assault|treadmill|\bbike\b|rowing|jump rope|battle/i.test(name);
+    const equipable = /(press|\brow\b|fly|curl|raise|extension|pushdown|pulldown|kickback|crossover|shrug|crunch|pull-through|adduction|abduction|pressdown|skull crusher|pec deck)/i.test(name);
+    if (equipable && !hasEquip && Math.random() < 0.5) mods.push(_rand(["DB","DB","Cable","Cable","Machine","KB","Band"]));
+    if (/(press|fly)/i.test(name) && Math.random() < 0.3) mods.push(_rand(["Incline","Decline"]));
+    else if (/(\brow\b|curl|raise|extension|pushdown)/i.test(name) && Math.random() < 0.25) mods.push(_rand(["Seated","Standing"]));
+    const uniOk = /(\brow\b|curl|press|extension|raise|lunge|kickback|pushdown|pulldown|split squat|step-up|carry|adduction|abduction)/i.test(name);
+    const unilateral = uniOk && Math.random() < 0.22;
+    if (unilateral) mods.push("1A");
+    if (isPrimary && style.tag && Math.random() < 0.6) mods.push(style.tag);
+    return { mods, unilateral };
+  }
+  function generateWorkoutDay() {
+    const arch = _rand(GEN_ARCHETYPES);
+    const style = _rand(GEN_STYLES);
+    const pool = _exercisesForCats(arch.cats);
+    if (!pool.length) return null;
+    const wantMain = 4 + Math.floor(Math.random() * 2); // 4-5 main lifts
+    const compounds = pool.filter((e) => GEN_COMPOUND_KW.test(e.name));
+    const shuffled = _shuffle(pool);
+    const chosen = [];
+    const used = new Set();
+    const primary = compounds.length ? _rand(compounds) : shuffled[0];
+    chosen.push(primary); used.add(primary.name);
+    for (const e of shuffled) {
+      if (chosen.length >= wantMain) break;
+      if (used.has(e.name)) continue;
+      chosen.push(e); used.add(e.name);
+    }
+    if (!arch.noCore) {
+      const coreEntry = EXERCISE_LIBRARY.find((e) => e.cat === "Core");
+      const coreOpts = (coreEntry?.ex || []).filter((n) => !used.has(n));
+      if (coreOpts.length) chosen.push({ name: _rand(coreOpts), cat: "Core" });
+    }
+    const exercises = chosen.map((e, i) => {
+      const isPrimary = i === 0;
+      const isCore = e.cat === "Core";
+      const scheme = isPrimary ? style.primary : (isCore ? style.core : style.acc);
+      const { mods, unilateral } = isCore ? { mods: [], unilateral: false } : _genTags(e.name, isPrimary, style);
+      const reps = unilateral ? scheme.reps + " each" : scheme.reps;
+      return { name: e.name, sets: scheme.sets, reps, modifiers: mods };
+    });
+    return {
+      name: `${_rand(GEN_FLAVORS)} ${arch.name}`,
+      focus: `${style.name} · ${arch.cats.map((c) => c.toLowerCase()).join(", ")}`,
+      exercises,
+    };
+  }
+
   function openRecommendedTemplatesModal() {
     const categories = Object.keys(RECOMMENDED_TEMPLATES);
     const SURPRISE = "__surprise__";
     let activeCat = SURPRISE; // open on the shuffle by default
     let surprisePicks = [];
 
-    // Flatten every workout for random sampling (keep cat+idx so + Add reuses
-    // the existing lookup path).
-    const allItems = [];
-    categories.forEach((c) => RECOMMENDED_TEMPLATES[c].forEach((t, i) => allItems.push({ cat: c, idx: i, t })));
-
+    // "Surprise me" generates brand-new days (never the curated set).
     const rollSurprise = () => {
-      const pool = [...allItems];
-      for (let i = pool.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [pool[i], pool[j]] = [pool[j], pool[i]];
+      surprisePicks = [];
+      const seen = new Set();
+      let guard = 0;
+      while (surprisePicks.length < 5 && guard++ < 60) {
+        const day = generateWorkoutDay();
+        if (!day || seen.has(day.name)) continue;
+        seen.add(day.name);
+        surprisePicks.push(day);
       }
-      surprisePicks = pool.slice(0, 5);
+    };
+
+    // Copy a day (curated or generated) into the Day Library.
+    const addToLibrary = (name, focus, exercises, btn) => {
+      const tpl = makeWorkoutTemplate(name, exercises);
+      tpl.focus = focus;
+      state.trainerData.workoutTemplates.push(tpl);
+      saveTrainer();
+      renderDayLibrary();
+      if (btn) { btn.textContent = "✓ Added"; btn.classList.add("added"); btn.disabled = true; }
     };
 
     const cardHtml = (t, cat, i) => {
@@ -1978,6 +2077,27 @@
         </div>`;
     };
 
+    // Card for a freshly generated day — shows modifier-tag chips inline.
+    const genCardHtml = (day, idx) => {
+      const exList = day.exercises.map((e) => {
+        const chips = (e.modifiers && e.modifiers.length)
+          ? " " + orderedModifiers(e).map((tag) => { const { color, bg } = tagColor(tag); return `<span class="mod-chip" style="--mc:${color};--mb:${bg}">${escapeHtml(tag)}</span>`; }).join("")
+          : "";
+        return `<span class="rec-ex-item"><strong>${escapeHtml(e.name)}</strong> ${escapeHtml(e.sets)}×${escapeHtml(e.reps)}${chips}</span>`;
+      }).join(" · ");
+      return `
+        <div class="rec-card">
+          <div class="rec-card-head">
+            <div>
+              <h5>${escapeHtml(day.name)} <span class="rec-gen-badge">generated</span></h5>
+              <div class="rec-meta">${escapeHtml(day.focus)} · ${day.exercises.length} exercise${day.exercises.length === 1 ? "" : "s"}</div>
+            </div>
+            <button class="rec-add" data-gen="${idx}">+ Add</button>
+          </div>
+          <div class="rec-ex-list">${exList}</div>
+        </div>`;
+    };
+
     const renderBody = () => {
       const chips = [
         `<button class="rec-cat-chip${activeCat === SURPRISE ? " active" : ""}" data-cat="${SURPRISE}">🎲 Surprise me</button>`,
@@ -1986,8 +2106,9 @@
       let cards, hint;
       if (activeCat === SURPRISE) {
         if (!surprisePicks.length) rollSurprise();
-        cards = surprisePicks.map((p) => cardHtml(p.t, p.cat, p.idx)).join("");
-        hint = `5 random picks from every category — tap <strong>+ Add</strong>, or <button class="rec-reroll" type="button">🎲 Reroll</button> for a new set.`;
+        cards = surprisePicks.map((d, i) => genCardHtml(d, i)).join("");
+        hint = `5 freshly generated workouts — tap <strong>+ Add</strong> on any, or <button class="rec-reroll" type="button">🎲 Reroll</button> for a whole new batch.
+          <div class="rec-surprise-actions"><button class="rec-add-all" type="button">➕ Add all 5 to library</button></div>`;
       } else {
         cards = RECOMMENDED_TEMPLATES[activeCat].map((t, i) => cardHtml(t, activeCat, i)).join("");
         hint = `Tap <strong>+ Add</strong> to copy a workout into your library — edit it from there anytime.`;
@@ -2016,24 +2137,35 @@
         $("#modal-body").innerHTML = renderBody();
         wireBody();
       });
-      $("#modal-body").querySelectorAll(".rec-add").forEach((btn) => {
+      // Curated cards (category view): look up by cat + idx.
+      $("#modal-body").querySelectorAll(".rec-add[data-cat]").forEach((btn) => {
         btn.addEventListener("click", () => {
-          const t = RECOMMENDED_TEMPLATES[btn.dataset.cat][Number(btn.dataset.idx)];
+          const t = RECOMMENDED_TEMPLATES[btn.dataset.cat]?.[Number(btn.dataset.idx)];
           if (!t) return;
-          const exercises = t.ex.map(([name, sets, reps]) => ({
-            name, sets, currentReps: reps,
-            notes: t.focus,
-          }));
-          const tpl = makeWorkoutTemplate(t.name, exercises);
-          tpl.focus = t.focus;
-          state.trainerData.workoutTemplates.push(tpl);
-          saveTrainer();
-          renderDayLibrary();
-          btn.textContent = "✓ Added";
-          btn.classList.add("added");
-          btn.disabled = true;
+          const exercises = t.ex.map(([name, sets, reps]) => ({ name, sets, currentReps: reps, notes: t.focus }));
+          addToLibrary(t.name, t.focus, exercises, btn);
           toast(`Added "${t.name}" to library 🏆`);
         });
+      });
+      // Generated cards (Surprise me): pull the day object from surprisePicks.
+      const genExercises = (day) => day.exercises.map((e) => ({
+        name: e.name, sets: e.sets, currentReps: e.reps, notes: day.focus, modifiers: [...(e.modifiers || [])],
+      }));
+      $("#modal-body").querySelectorAll(".rec-add[data-gen]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const day = surprisePicks[Number(btn.dataset.gen)];
+          if (!day) return;
+          addToLibrary(day.name, day.focus, genExercises(day), btn);
+          toast(`Added "${day.name}" to library 🏆`);
+        });
+      });
+      // "Add all 5" — copy the whole generated batch in one tap.
+      $("#modal-body").querySelector(".rec-add-all")?.addEventListener("click", (e) => {
+        surprisePicks.forEach((day) => addToLibrary(day.name, day.focus, genExercises(day), null));
+        $("#modal-body").querySelectorAll(".rec-add[data-gen]").forEach((b) => { b.textContent = "✓ Added"; b.classList.add("added"); b.disabled = true; });
+        e.currentTarget.textContent = "✓ Added all 5";
+        e.currentTarget.disabled = true;
+        toast(`Added ${surprisePicks.length} days to library 🏆`);
       });
     };
     wireBody();
