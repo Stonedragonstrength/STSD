@@ -1135,12 +1135,12 @@
       packages:        "#view-packages",
       programs:        "#view-programs",
       "program-editor": "#view-program-editor",
-      library:         "#view-workout-library",
+      "day-library":   "#view-day-library",
       client:          "#view-client",
     };
     Object.values(map).forEach((sel) => { const el = $(sel); if (el) hide(el); });
     show($(map[name] || map.athletes));
-    const navKey = { client: "athletes", "program-editor": "programs" }[name] || name;
+    const navKey = { client: "athletes", "program-editor": "programs", "day-library": "programs" }[name] || name;
     document.querySelectorAll('#coach-nav [data-coach-nav]').forEach((b) => {
       b.classList.toggle("active", b.dataset.coachNav === navKey);
     });
@@ -1970,7 +1970,7 @@
           tpl.focus = t.focus;
           state.trainerData.workoutTemplates.push(tpl);
           saveTrainer();
-          renderWorkoutLibrary();
+          renderDayLibrary();
           btn.textContent = "✓ Added";
           btn.classList.add("added");
           btn.disabled = true;
@@ -1981,72 +1981,23 @@
     wireBody();
   }
 
-  function renderWorkoutLibrary() {
-    // --- Full Programs section ---
-    const progGrid = $("#library-program-grid");
-    const progEmpty = $("#library-programs-empty");
-    if (progGrid) {
-      progGrid.innerHTML = "";
-      const programs = (state.trainerData.programTemplates || []).filter((p) => p.savedToLibrary);
-      if (!programs.length) {
-        progGrid.style.display = "none";
-        if (progEmpty) progEmpty.style.display = "";
-      } else {
-        progGrid.style.display = "";
-        if (progEmpty) progEmpty.style.display = "none";
-        programs.forEach((p) => {
-          const weekCount = p.weeks.length;
-          const exCount = p.weeks.reduce((n, w) => n + w.days.reduce((m, d) => m + d.exercises.length, 0), 0);
-          const card = document.createElement("div");
-          card.className = "template-card prog-library-card";
-          card.innerHTML = `
-            <div class="template-card-head">
-              <div class="template-card-icon">📋</div>
-              <div style="flex:1;min-width:0">
-                <h3>${escapeHtml(p.name || "Untitled Program")}</h3>
-                ${p.description ? `<p class="template-focus">${escapeHtml(p.description)}</p>` : ""}
-              </div>
-            </div>
-            <div class="template-pills">
-              <span class="meta-pill">${weekCount} week${weekCount !== 1 ? "s" : ""}</span>
-              <span class="meta-pill">${exCount} exercise${exCount !== 1 ? "s" : ""}</span>
-            </div>
-            <div class="template-actions">
-              <button class="btn btn-ghost btn-sm" data-prog-edit>Edit</button>
-              <button class="btn btn-primary btn-sm" data-prog-assign>Assign to athlete →</button>
-              <button class="btn btn-danger btn-sm" data-prog-remove>Remove</button>
-            </div>`;
-          card.querySelector("[data-prog-edit]").addEventListener("click", (e) => {
-            e.stopPropagation(); openProgramEditor(p.id);
-          });
-          card.querySelector("[data-prog-assign]").addEventListener("click", (e) => {
-            e.stopPropagation(); assignProgramPrompt(p.id);
-          });
-          card.querySelector("[data-prog-remove]").addEventListener("click", (e) => {
-            e.stopPropagation();
-            if (!window.confirm(`Remove "${p.name || "this program"}" from the library?`)) return;
-            p.savedToLibrary = false;
-            saveTrainer(); renderWorkoutLibrary();
-            toast("Removed from library");
-          });
-          card.addEventListener("click", () => openProgramEditor(p.id));
-          progGrid.appendChild(card);
-        });
-      }
-    }
-
-    // --- Day Templates section ---
-    const grid = $("#template-grid");
-    const empty = $("#template-empty");
+  // Day Library — reusable single-day templates (state.trainerData.workoutTemplates).
+  // Reached from the Programs page; days are built here and imported into weeks
+  // via the "📥 Library" button (openImportDayModal).
+  function renderDayLibrary() {
+    switchCoachView("day-library");
+    updateHeaderBreadcrumb(null);
+    const grid = $("#day-lib-grid");
+    const empty = $("#day-lib-empty");
+    if (!grid) return;
     grid.innerHTML = "";
-    const templates = state.trainerData.workoutTemplates || [];
-    if (!templates.length) { show(empty); return; }
-    hide(empty);
-    const sorted = [...templates].sort((a, b) => a.name.localeCompare(b.name));
-    sorted.forEach((t, idx) => {
+    const templates = [...(state.trainerData.workoutTemplates || [])].sort((a, b) => a.name.localeCompare(b.name));
+    if (!templates.length) { show(empty); hide(grid); return; }
+    hide(empty); show(grid);
+    templates.forEach((t, idx) => {
       const card = document.createElement("div");
       card.className = "template-card";
-      card.style.animationDelay = `${idx * 50}ms`;
+      card.style.animationDelay = `${idx * 40}ms`;
       const exCount = t.exercises?.length || 0;
       const icon = workoutIconFor(t.name);
       card.innerHTML = `
@@ -2072,12 +2023,12 @@
       });
       card.querySelector("[data-tpl-delete]").addEventListener("click", (e) => {
         e.stopPropagation();
-        if (!window.confirm(`Delete template "${t.name}"?`)) return;
+        if (!window.confirm(`Delete day template "${t.name}"?`)) return;
         state.trainerData.workoutTemplates =
           state.trainerData.workoutTemplates.filter((x) => x.id !== t.id);
         saveTrainer();
-        renderWorkoutLibrary();
-        toast("Template deleted");
+        renderDayLibrary();
+        toast("Day template deleted");
       });
       card.addEventListener("click", () => openTemplateEditor(t));
       grid.appendChild(card);
@@ -2132,7 +2083,7 @@
             }
             saveTrainer();
             closeModal();
-            renderWorkoutLibrary();
+            renderDayLibrary();
             toast(editing ? "Template updated" : "Template created 📚");
           },
         },
@@ -7111,8 +7062,7 @@
         if (target === "library") {
           _programEditorId = null;
           state.currentClientId = null;
-          switchCoachView("library");
-          renderWorkoutLibrary();
+          renderDayLibrary();
         } else if (target === "programs") {
           _programEditorId = null;
           state.currentClientId = null;
@@ -7143,6 +7093,13 @@
     $("#btn-new-program-empty")?.addEventListener("click", newProgram);
     $("#btn-back-to-programs")?.addEventListener("click", () => { _programEditorId = null; renderProgramsList(); });
     $("#btn-editor-add-week-empty")?.addEventListener("click", addWeek);
+    // Day Library (reachable from the Programs page)
+    $("#btn-programs-day-library")?.addEventListener("click", () => { _programEditorId = null; renderDayLibrary(); });
+    $("#btn-programs-new-day")?.addEventListener("click", () => { _programEditorId = null; openTemplateEditor(null); });
+    $("#btn-daylib-back")?.addEventListener("click", () => { _programEditorId = null; renderProgramsList(); });
+    $("#btn-daylib-new")?.addEventListener("click", () => openTemplateEditor(null));
+    $("#btn-daylib-new-empty")?.addEventListener("click", () => openTemplateEditor(null));
+    $("#btn-daylib-recommended")?.addEventListener("click", openRecommendedTemplatesModal);
     $("#btn-assign-program")?.addEventListener("click", () => { if (_programEditorId) assignProgramPrompt(_programEditorId); });
     $("#btn-toggle-program-status")?.addEventListener("click", () => {
       const tpl = currentProgramTemplate(); if (!tpl) return;
@@ -7167,9 +7124,6 @@
       tpl.description = e.target.value;
       saveTrainer();
     });
-    $("#btn-new-template")?.addEventListener("click", () => openTemplateEditor(null));
-    $("#btn-new-template-empty")?.addEventListener("click", () => openTemplateEditor(null));
-    $("#btn-browse-recommended")?.addEventListener("click", openRecommendedTemplatesModal);
     $("#btn-browse-recommended-empty")?.addEventListener("click", openRecommendedTemplatesModal);
     $("#btn-delete-client").addEventListener("click", deleteClientPrompt);
     $("#btn-load-program").addEventListener("click", openLoadProgramModal);

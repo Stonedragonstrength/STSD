@@ -298,7 +298,11 @@
             <h2>Programs</h2>
             <p class="muted view-sub">Build reusable multi-week programs and assign them to athletes.</p>
           </div>
-          <button class="btn btn-primary" id="btn-new-program">+ New program</button>
+          <div class="library-head-actions">
+            <button class="btn btn-ghost" id="btn-programs-new-day">+ New day</button>
+            <button class="btn btn-ghost" id="btn-programs-day-library">📚 Day Library</button>
+            <button class="btn btn-primary" id="btn-new-program">+ New program</button>
+          </div>
         </div>
         <div id="program-template-grid" class="program-template-grid"></div>
         <div id="program-template-empty" class="empty-state hidden">
@@ -326,6 +330,28 @@
           <h3>No weeks yet</h3>
           <p>Add your first week to start building this program.</p>
           <button class="btn btn-primary" style="margin-top:0.75em" id="btn-editor-add-week-empty">+ Add week</button>
+        </div>
+      </div>
+
+      <!-- Day Library: reusable single-day templates -->
+      <div id="view-day-library" class="view hidden">
+        <button class="btn-link back-link" id="btn-daylib-back">← Programs</button>
+        <div class="view-head">
+          <div>
+            <h2>Day Library</h2>
+            <p class="muted view-sub">Reusable single days — build them here, then import into any week with the 📥 Library button.</p>
+          </div>
+          <div class="library-head-actions">
+            <button class="btn btn-ghost" id="btn-daylib-recommended">✨ Recommended</button>
+            <button class="btn btn-primary" id="btn-daylib-new">+ New day</button>
+          </div>
+        </div>
+        <div id="day-lib-grid" class="template-grid"></div>
+        <div id="day-lib-empty" class="empty-state hidden">
+          <div class="empty-emoji">🗓️</div>
+          <h3>No day templates yet</h3>
+          <p>Create a reusable day — like "Heavy Push" or "Leg Day" — and drop it into any program.</p>
+          <button class="btn btn-primary" style="margin-top:0.75em" id="btn-daylib-new-empty">+ New day</button>
         </div>
       </div>
 
@@ -714,7 +740,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
   <script src="cloud.js?v=noemail1"></script>
-  <script src="app.js?v=install1"></script>
+  <script src="app.js?v=daylib1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
