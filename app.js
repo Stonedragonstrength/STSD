@@ -3699,6 +3699,24 @@
       });
       container.appendChild(hist);
     }
+
+    // Athlete's logged body weight (read-only) — lives with nutrition now.
+    const bwLog = c.importedProgress?.bodyweightLog || [];
+    if (bwLog.length) {
+      const bwCard = document.createElement("div");
+      bwCard.className = "card";
+      bwCard.style.marginTop = "1.75rem";
+      bwCard.innerHTML = `<h4 style="margin-top:0">Body weight</h4>`;
+      const list = document.createElement("div");
+      list.className = "log-table";
+      list.innerHTML = `<div class="lh">Date</div><div class="lh">Weight</div><div></div><div></div>`;
+      [...bwLog].sort((a, b) => b.date.localeCompare(a.date)).forEach((b) => {
+        list.insertAdjacentHTML("beforeend",
+          `<div class="date">${escapeHtml(b.date)}</div><div>${escapeHtml(b.weightLb)} lb</div><div></div><div></div>`);
+      });
+      bwCard.appendChild(list);
+      container.appendChild(bwCard);
+    }
   }
 
   // -------- Calendar shared helpers --------
@@ -4355,21 +4373,6 @@
         });
       });
       if (anyNote) container.appendChild(notesCard);
-    }
-    if (p.bodyweightLog?.length) {
-      const bwCard = document.createElement("div");
-      bwCard.className = "log-week-card";
-      bwCard.innerHTML = `<h4>Body weight</h4>`;
-      const sorted = [...p.bodyweightLog].sort((a, b) => b.date.localeCompare(a.date));
-      const list = document.createElement("div");
-      list.className = "log-table";
-      list.innerHTML = `<div class="lh">Date</div><div class="lh">Weight</div><div></div><div></div>`;
-      sorted.forEach((b) => {
-        list.insertAdjacentHTML("beforeend",
-          `<div class="date">${escapeHtml(b.date)}</div><div>${escapeHtml(b.weightLb)} lb</div><div></div><div></div>`);
-      });
-      bwCard.appendChild(list);
-      container.appendChild(bwCard);
     }
     if (p.exerciseLogs && Object.keys(p.exerciseLogs).length) {
       c.weeks.forEach((w) => {
