@@ -1,13 +1,13 @@
 /* ============ Stone Dragon Strength Training — styles ============ */
 :root {
-  --bg: #060c12;
-  --bg-2: #09111e;
-  --surface: #0e1625;
-  --surface-2: #15203a;
+  --bg: #03060c;
+  --bg-2: #060b14;
+  --surface: #0b111d;
+  --surface-2: #131c33;
   --surface-3: #1e2d4a;
   --surface-elevate: #2a3a5e;
-  --border: #2a3553;
-  --border-strong: #3a4870;
+  --border: #3a4a75;
+  --border-strong: #4d5f92;
   --text: #e2e8f0;
   --text-soft: #94a3b8;
   --muted: #64748b;
@@ -215,10 +215,10 @@ input[type="date"] { color-scheme: dark; }
   align-items: center;
   justify-content: center;
   background:
-    radial-gradient(circle at 25% 12%, rgba(34, 211, 238, 0.32) 0%, transparent 45%),
-    radial-gradient(circle at 78% 88%, rgba(6, 182, 212, 0.28) 0%, transparent 45%),
-    radial-gradient(ellipse at 50% 50%, rgba(20, 184, 199, 0.10) 0%, transparent 70%),
-    linear-gradient(135deg, #0a1019 0%, #131c2e 35%, #1a2440 70%, #243153 100%);
+    radial-gradient(circle at 25% 12%, rgba(34, 211, 238, 0.18) 0%, transparent 45%),
+    radial-gradient(circle at 78% 88%, rgba(6, 182, 212, 0.16) 0%, transparent 45%),
+    radial-gradient(ellipse at 50% 50%, rgba(20, 184, 199, 0.05) 0%, transparent 70%),
+    linear-gradient(135deg, #04070e 0%, #070d1a 40%, #0a1224 75%, #0d1830 100%);
   padding-top: max(1.5rem, env(safe-area-inset-top));
   padding-right: max(1.5rem, env(safe-area-inset-right));
   padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
