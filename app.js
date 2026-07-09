@@ -1886,6 +1886,12 @@
         ex: [["Push-up","4","AMRAP"],["Dip","4","8"],["Pike Push-up","3","10"],["Diamond Push-up","3","10"],["Plank","3","60s"]] },
       { name: "Shoulders + Triceps Pump", focus: "Delt/triceps detail work · core finisher",
         ex: [["Seated Dumbbell Press","4","8"],["Lateral Raise","4","15"],["Rear-Delt Fly","3","15"],["Skull Crusher","3","10"],["Triceps Pressdown","3","12"],["Hollow Hold","3","30s"]] },
+      { name: "Incline Power", focus: "Upper-chest strength emphasis · core finisher",
+        ex: [["Incline Barbell Press","5","5"],["Weighted Dip","4","6"],["Machine Chest Press","3","10"],["Cable Fly","3","15"],["Overhead Triceps Extension","3","12"],["Cable Crunch","3","15"]] },
+      { name: "Dumbbell Push Day", focus: "Joint-friendly dumbbell chest/shoulders · core finisher",
+        ex: [["Flat Dumbbell Press","4","10"],["Incline Dumbbell Press","4","10"],["Arnold Press","3","10"],["Lateral Raise","4","15"],["Dumbbell Skull Crusher","3","12"],["Plank","3","60s"]] },
+      { name: "Chest Hypertrophy", focus: "High-volume chest pump · core finisher",
+        ex: [["Barbell Bench Press","4","10"],["Incline Cable Fly","3","15"],["Pec Deck","3","15"],["Push-up","3","AMRAP"],["Triceps Pressdown","4","12"],["Hanging Leg Raise","3","12"]] },
     ],
     "Back / Pull": [
       { name: "Heavy Pull Day", focus: "Strength priority on back + biceps · core finisher",
@@ -1896,6 +1902,12 @@
         ex: [["Romanian Deadlift","4","8"],["Hip Thrust","4","10"],["Hyperextension","3","12"],["Leg Curl","3","12"],["Cable Pull-Through","3","12"],["Pallof Press","3","12 each"]] },
       { name: "Bicep + Back Detail", focus: "Pump-focused back & biceps · core finisher",
         ex: [["Lat Pulldown","4","12"],["Chest-Supported Row","4","10"],["Preacher Curl","3","10"],["Incline Dumbbell Curl","3","12"],["Reverse Crunch","3","15"]] },
+      { name: "Deadlift + Back", focus: "Heavy pull with rowing volume · core finisher",
+        ex: [["Deadlift","5","3"],["Pendlay Row","4","6"],["Wide-Grip Lat Pulldown","3","10"],["Face Pull","3","15"],["Barbell Curl","3","10"],["Hanging Leg Raise","3","12"]] },
+      { name: "Cable Pull Day", focus: "Constant-tension back & biceps · core finisher",
+        ex: [["Seated Cable Row","4","12"],["Cable Lat Pulldown","4","12"],["Straight-Arm Pulldown","3","15"],["Cable Curl","3","12"],["Cable Face Pull","3","15"],["Cable Crunch","3","15"]] },
+      { name: "Upper Back Detail", focus: "Traps, rear delts, thickness · core finisher",
+        ex: [["Chest-Supported Row","4","10"],["Reverse Pec Deck","4","15"],["Dumbbell Shrug","4","12"],["Hammer Curl","3","12"],["Ab Wheel Rollout","3","10"]] },
     ],
     "Legs": [
       { name: "Squat Focus", focus: "Quad-dominant strength session · core finisher",
@@ -1906,6 +1918,12 @@
         ex: [["Leg Press","5","12"],["Bulgarian Split Squat","4","10"],["Leg Extension","4","12"],["Leg Curl","4","12"],["Walking Lunge","3","12"],["Standing Calf Raise","5","15"],["Decline Sit-up","3","15"]] },
       { name: "Glute + Hamstring Day", focus: "Posterior leg emphasis · core finisher",
         ex: [["Hip Thrust","5","8"],["Romanian Deadlift","4","10"],["Glute Ham Raise","3","8"],["Cable Kickback","3","12 each"],["Seated Leg Curl","4","12"],["Hanging Leg Raise","3","12"]] },
+      { name: "Front Squat Focus", focus: "Quad + core-braced strength · core finisher",
+        ex: [["Front Squat","5","5"],["Back Squat","3","8"],["Leg Press","3","12"],["Leg Extension","3","15"],["Standing Calf Raise","4","15"],["Weighted Plank","3","45s"]] },
+      { name: "Unilateral Legs", focus: "Single-leg balance & symmetry · core finisher",
+        ex: [["Bulgarian Split Squat","4","10 each"],["Walking Lunge","3","12"],["Step-Up","3","10 each"],["Single-Leg Curl","3","12 each"],["Single-Leg Calf Raise","3","15 each"],["Side Plank","3","30s each"]] },
+      { name: "Quad Burnout", focus: "High-rep quad pump finisher · core finisher",
+        ex: [["Leg Press","5","15"],["Leg Extension","4","20"],["Goblet Squat","3","15"],["Walking Lunge","3","20"],["Standing Calf Raise","5","20"],["Decline Sit-up","3","15"]] },
     ],
     "Conditioning + Core": [
       { name: "EMOM Finisher", focus: "10-min metabolic finisher after main lift",
@@ -1916,32 +1934,66 @@
         ex: [["Assault Bike Sprint","5","30s"],["Kettlebell Swing","4","20"],["Row","5","250m"],["Hollow Hold","3","30s"]] },
       { name: "Core Focus", focus: "Dedicated 20-min core session",
         ex: [["Hanging Leg Raise","4","12"],["Cable Crunch","4","15"],["Ab Wheel Rollout","3","10"],["Pallof Press","3","12 each"],["Plank","3","60s"],["Side Plank","3","30s each"]] },
+      { name: "Kettlebell Complex", focus: "Full-body kettlebell conditioning",
+        ex: [["Kettlebell Swing","5","20"],["Goblet Squat","4","12"],["Kettlebell Clean & Press","4","8 each"],["Kettlebell Snatch","3","10 each"],["Farmer Carry","3","60 ft"]] },
+      { name: "Sprint Intervals", focus: "Anaerobic sprint conditioning",
+        ex: [["Assault Bike Sprint","8","20s"],["Sled Push","5","40 ft"],["Row Sprint","6","150m"],["Jump Rope","3","60s"],["Plank","3","45s"]] },
+      { name: "Ab Circuit", focus: "Bodyweight core circuit · no equipment",
+        ex: [["Crunch","4","20"],["Bicycle Crunch","4","20 each"],["Leg Raise","4","15"],["Russian Twist","3","20"],["Plank","3","60s"],["Mountain Climber","3","30s"]] },
     ],
   };
 
   function openRecommendedTemplatesModal() {
     const categories = Object.keys(RECOMMENDED_TEMPLATES);
-    let activeCat = categories[0];
-    const renderBody = () => {
-      const chips = categories.map((c) =>
-        `<button class="rec-cat-chip${c === activeCat ? " active" : ""}" data-cat="${escapeHtml(c)}">${escapeHtml(c)}</button>`
-      ).join("");
-      const cards = RECOMMENDED_TEMPLATES[activeCat].map((t, i) => {
-        const exList = t.ex.map((e) => `<strong>${escapeHtml(e[0])}</strong> ${escapeHtml(e[1])}×${escapeHtml(e[2])}`).join(" · ");
-        return `
-          <div class="rec-card">
-            <div class="rec-card-head">
-              <div>
-                <h5>${escapeHtml(t.name)}</h5>
-                <div class="rec-meta">${escapeHtml(t.focus)} · ${t.ex.length} exercise${t.ex.length === 1 ? "" : "s"}</div>
-              </div>
-              <button class="rec-add" data-cat="${escapeHtml(activeCat)}" data-idx="${i}">+ Add</button>
-            </div>
-            <div class="rec-ex-list">${exList}</div>
-          </div>`;
-      }).join("");
+    const SURPRISE = "__surprise__";
+    let activeCat = SURPRISE; // open on the shuffle by default
+    let surprisePicks = [];
+
+    // Flatten every workout for random sampling (keep cat+idx so + Add reuses
+    // the existing lookup path).
+    const allItems = [];
+    categories.forEach((c) => RECOMMENDED_TEMPLATES[c].forEach((t, i) => allItems.push({ cat: c, idx: i, t })));
+
+    const rollSurprise = () => {
+      const pool = [...allItems];
+      for (let i = pool.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+      }
+      surprisePicks = pool.slice(0, 5);
+    };
+
+    const cardHtml = (t, cat, i) => {
+      const exList = t.ex.map((e) => `<strong>${escapeHtml(e[0])}</strong> ${escapeHtml(e[1])}×${escapeHtml(e[2])}`).join(" · ");
       return `
-        <p class="muted" style="margin-top:-0.3em">Tap <strong>+ Add</strong> to copy a workout into your library — edit it from there anytime.</p>
+        <div class="rec-card">
+          <div class="rec-card-head">
+            <div>
+              <h5>${escapeHtml(t.name)}</h5>
+              <div class="rec-meta">${escapeHtml(t.focus)} · ${t.ex.length} exercise${t.ex.length === 1 ? "" : "s"}</div>
+            </div>
+            <button class="rec-add" data-cat="${escapeHtml(cat)}" data-idx="${i}">+ Add</button>
+          </div>
+          <div class="rec-ex-list">${exList}</div>
+        </div>`;
+    };
+
+    const renderBody = () => {
+      const chips = [
+        `<button class="rec-cat-chip${activeCat === SURPRISE ? " active" : ""}" data-cat="${SURPRISE}">🎲 Surprise me</button>`,
+        ...categories.map((c) => `<button class="rec-cat-chip${c === activeCat ? " active" : ""}" data-cat="${escapeHtml(c)}">${escapeHtml(c)}</button>`),
+      ].join("");
+      let cards, hint;
+      if (activeCat === SURPRISE) {
+        if (!surprisePicks.length) rollSurprise();
+        cards = surprisePicks.map((p) => cardHtml(p.t, p.cat, p.idx)).join("");
+        hint = `5 random picks from every category — tap <strong>+ Add</strong>, or <button class="rec-reroll" type="button">🎲 Reroll</button> for a new set.`;
+      } else {
+        cards = RECOMMENDED_TEMPLATES[activeCat].map((t, i) => cardHtml(t, activeCat, i)).join("");
+        hint = `Tap <strong>+ Add</strong> to copy a workout into your library — edit it from there anytime.`;
+      }
+      return `
+        <p class="muted" style="margin-top:-0.3em">${hint}</p>
         <div class="rec-cat-chips">${chips}</div>
         <div class="rec-list">${cards}</div>`;
     };
@@ -1954,9 +2006,15 @@
       $("#modal-body").querySelectorAll(".rec-cat-chip").forEach((chip) => {
         chip.addEventListener("click", () => {
           activeCat = chip.dataset.cat;
+          if (activeCat === SURPRISE) rollSurprise();
           $("#modal-body").innerHTML = renderBody();
           wireBody();
         });
+      });
+      $("#modal-body").querySelector(".rec-reroll")?.addEventListener("click", () => {
+        rollSurprise();
+        $("#modal-body").innerHTML = renderBody();
+        wireBody();
       });
       $("#modal-body").querySelectorAll(".rec-add").forEach((btn) => {
         btn.addEventListener("click", () => {

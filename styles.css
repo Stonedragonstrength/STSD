@@ -3606,6 +3606,21 @@ input:focus, textarea:focus, select:focus {
   color: #062131;
   border-color: var(--primary-hover);
 }
+.rec-reroll {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  margin-left: 0.15em;
+  padding: 0.1em 0.55em;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--primary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.rec-reroll:hover { border-color: var(--primary); background: var(--surface-3); }
 .rec-list { display: flex; flex-direction: column; gap: 0.6em; max-height: 60vh; overflow-y: auto; padding-right: 0.4em; }
 .rec-card {
   background: var(--surface-2);
