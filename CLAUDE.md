@@ -17,6 +17,7 @@ A coach-athlete strength training manager. Coaches design programs and track ath
 | `styles.css` | All styles — dark theme, CSS custom properties defined in `:root` |
 | `cloud.js` | Supabase sync layer — maps in-memory objects ↔ DB rows, debounced pushes |
 | `config.js` | Supabase URL + anon key (public by design) |
+| `sw.js` | Service worker — offline app-shell cache (network-first HTML, cache-first versioned assets) |
 
 ## Architecture patterns
 
@@ -68,7 +69,7 @@ python3 -m http.server 5190 --directory .
 No install, no build. Just open `index.html` or serve over HTTP.
 
 ## Conventions
-- Cache-busting via `?v=` query strings on script/style tags in `index.html` — bump manually on deploy
+- Cache-busting via `?v=` query strings on script/style tags in `index.html` — bump manually on deploy. This is also what ships new code to installed PWA users: `sw.js` caches assets cache-first keyed by full URL, so a new `?v=` = a fresh fetch. The HTML doc is network-first, so a fresh deploy is picked up on the next online open (no user prompt). Bump the `CACHE` name in `sw.js` if you change the worker itself.
 - `uid()` generates IDs: `Date.now().toString(36) + random`
 - `todayISO()` / `dateISO()` / `parseISO()` handle dates as `YYYY-MM-DD` strings
 - `escapeHtml()` is used whenever rendering user content into innerHTML
