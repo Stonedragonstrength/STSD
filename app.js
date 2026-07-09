@@ -3702,11 +3702,11 @@
 
     // Athlete's logged body weight (read-only) — lives with nutrition now.
     const bwLog = c.importedProgress?.bodyweightLog || [];
+    const bwCard = document.createElement("div");
+    bwCard.className = "card";
+    bwCard.style.marginTop = "1.75rem";
+    bwCard.innerHTML = `<h4 style="margin-top:0">Body weight</h4>`;
     if (bwLog.length) {
-      const bwCard = document.createElement("div");
-      bwCard.className = "card";
-      bwCard.style.marginTop = "1.75rem";
-      bwCard.innerHTML = `<h4 style="margin-top:0">Body weight</h4>`;
       const list = document.createElement("div");
       list.className = "log-table";
       list.innerHTML = `<div class="lh">Date</div><div class="lh">Weight</div><div></div><div></div>`;
@@ -3715,8 +3715,11 @@
           `<div class="date">${escapeHtml(b.date)}</div><div>${escapeHtml(b.weightLb)} lb</div><div></div><div></div>`);
       });
       bwCard.appendChild(list);
-      container.appendChild(bwCard);
+    } else {
+      bwCard.insertAdjacentHTML("beforeend",
+        `<p class="muted" style="margin:0.2em 0 0">No weight entries yet — ${escapeHtml(c.name)} hasn't logged any body weight.</p>`);
     }
+    container.appendChild(bwCard);
   }
 
   // -------- Calendar shared helpers --------
