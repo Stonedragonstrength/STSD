@@ -7206,6 +7206,7 @@
     editBtn.className = "cex-edit-btn";
     editBtn.textContent = "✎ Edit";
 
+    let quickBtn = null; // "Did as prescribed" one-tap logger (created below)
     const setFieldsReadonly = (readonly) => {
       setInputs.forEach(({ wt, rp }) => { wt.readOnly = readonly; rp.readOnly = readonly; });
       finisherInputs.forEach(({ rp }) => { rp.readOnly = readonly; });
@@ -7213,6 +7214,7 @@
     const refreshLockUI = () => {
       hide(isLocked ? lockBtn : editBtn);
       show(isLocked ? editBtn : lockBtn);
+      if (quickBtn) quickBtn.classList.toggle("hidden", isLocked);
       setFieldsReadonly(isLocked);
     };
 
@@ -7255,6 +7257,28 @@
         renderWorkoutDetailHeader(week, day);
       }
     });
+
+    // Quick-log: one tap fills every set with the prescribed weight × reps and
+    // locks in — for when the athlete hit the plan exactly. Only shown when it
+    // can fully complete the log (numeric prescribed reps, a prescribed weight
+    // or bodyweight, and no burnout/dropset reps to enter). The set fields stay
+    // fully editable for anyone who did something different — this is additive.
+    const repsNum = parseInt(ex.currentReps, 10);
+    const hasFinishers = !!(ex.burnout?.pct || ex.dropset?.pcts?.length);
+    const quickWt = ex.currentWeight && ex.currentWeight !== "BW" ? String(ex.currentWeight) : "";
+    if (Number.isFinite(repsNum) && !!ex.currentWeight && !hasFinishers) {
+      quickBtn = document.createElement("button");
+      quickBtn.type = "button";
+      quickBtn.className = "btn btn-sm cex-quick-btn";
+      quickBtn.textContent = "✓ Did as prescribed";
+      quickBtn.title = `Log all sets at ${quickWt ? quickWt + " lb" : "BW"} × ${repsNum}`;
+      quickBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        setInputs.forEach(({ wt, rp }) => { wt.value = quickWt; rp.value = String(repsNum); });
+        lockBtn.click(); // reuse the lock-in path (validate → save → checkmark)
+      });
+      lockRow.appendChild(quickBtn);
+    }
 
     lockRow.appendChild(lockBtn);
     lockRow.appendChild(editBtn);

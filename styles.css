@@ -4358,9 +4358,22 @@ input:focus, textarea:focus, select:focus {
 }
 .cex-lock-row {
   display: flex;
+  align-items: center;
+  gap: 0.5rem;
   margin-top: 0.5rem;
 }
 .cex-lock-btn { padding: 0.4em 0.7em; font-size: 0.95rem; line-height: 1; }
+/* One-tap "Did as prescribed" — accent-outlined so it reads as the fast path
+   without competing with the primary lock button. */
+.cex-quick-btn {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+  padding: 0.4em 0.8em;
+  line-height: 1;
+}
+.cex-quick-btn:hover { background: var(--accent); color: #04120c; }
 .cex-edit-btn {
   background: none;
   border: none;
