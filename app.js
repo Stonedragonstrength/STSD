@@ -5095,8 +5095,9 @@
   }
   async function refreshAthleteOpenSlots() {
     const client = state.clientData.program?.client;
-    if (client?.hideOpenSlots) { state.clientData.openSlots = []; updateOpenSlotBadge(); return; }
-    if (window.Cloud?.enabled) {
+    if (client?.hideOpenSlots) {
+      state.clientData.openSlots = [];
+    } else if (window.Cloud?.enabled) {
       const slots = await window.Cloud.getOpenSlotsForAthlete();
       if (Array.isArray(slots)) state.clientData.openSlots = slots;
     }
@@ -5251,6 +5252,29 @@
       });
     }
     container.appendChild(redCard);
+
+    // Open-slot alert preference — athlete can mute it themselves. Always
+    // shown (even when muted) so they can turn it back on.
+    const prefCard = document.createElement("div");
+    prefCard.className = "card open-slot-pref";
+    const prefRow = document.createElement("label");
+    prefRow.className = "open-slot-pref-row";
+    const toggle = document.createElement("input");
+    toggle.type = "checkbox";
+    toggle.checked = !prog.client.hideOpenSlots;
+    const txt = document.createElement("span");
+    txt.textContent = "🔔 Notify me about open slots";
+    toggle.addEventListener("change", () => {
+      prog.client.hideOpenSlots = !toggle.checked;
+      saveClient();
+      if (window.Cloud?.enabled) window.Cloud.updateAthleteHideOpenSlots(prog.client.id, prog.client.hideOpenSlots);
+      refreshAthleteOpenSlots();
+      toast(toggle.checked ? "Open-slot alerts on" : "Open-slot alerts off");
+    });
+    prefRow.appendChild(toggle);
+    prefRow.appendChild(txt);
+    prefCard.appendChild(prefRow);
+    container.appendChild(prefCard);
   }
 
   function requestPackage(size) {

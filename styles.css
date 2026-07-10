@@ -2723,6 +2723,11 @@ input[type="date"] { color-scheme: dark; }
   font-size: 0.88rem; color: var(--text-soft); cursor: pointer;
 }
 .open-slot-optout-item input { width: auto; margin: 0; }
+.open-slot-pref-row {
+  display: flex; align-items: center; gap: 0.6rem;
+  font-size: 0.92rem; font-weight: 600; color: var(--text); cursor: pointer; margin: 0;
+}
+.open-slot-pref-row input { width: auto; margin: 0; flex-shrink: 0; }
 
 /* Nav-tab badge (athlete Sessions open-slot count) */
 .tab-badge {

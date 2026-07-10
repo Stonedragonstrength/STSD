@@ -277,6 +277,16 @@
     } catch (e) { console.warn("[Cloud] updateAthleteCoachPRs", e); return false; }
   }
 
+  // Athlete-side write: toggle their own open-slot alert preference.
+  async function updateAthleteHideOpenSlots(athleteId, hide) {
+    if (!athleteId) return false;
+    try {
+      const { error } = await sb.from("athletes").update({ hide_open_slots: !!hide }).eq("id", athleteId);
+      if (error) console.warn("[Cloud] updateAthleteHideOpenSlots error", error.message);
+      return !error;
+    } catch (e) { console.warn("[Cloud] updateAthleteHideOpenSlots", e); return false; }
+  }
+
   async function getAthleteByAuthUserId(userId) {
     if (!userId) return null;
     try {
@@ -422,6 +432,7 @@
     getAthleteByAuthUserId,
     linkAthleteToAuth,
     updateAthleteCoachPRs,
+    updateAthleteHideOpenSlots,
     // Progress
     upsertProgress,
     getProgress,
