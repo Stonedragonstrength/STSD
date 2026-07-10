@@ -2022,6 +2022,22 @@
     if (styleTags.length && Math.random() < (isPrimary ? 0.6 : 0.28)) mods.push(_rand(styleTags));
     return { mods, unilateral };
   }
+  // Reps as time/distance where that reads better than a rep count.
+  const GEN_HOLD_KW  = /plank|hollow hold|dead bug|l-sit|wall sit|\bhold\b/i;
+  const GEN_CRAWL_KW = /crawl|inchworm/i;
+  const GEN_ISO_KW   = /curl|extension|raise|fly|pushdown|pressdown|kickback|pec deck|crossover|shrug|adduction|abduction/i;
+  function _repsFor(name, cat, scheme) {
+    if (cat === "Carries")           return _rand(["40 ft","50 ft","60 ft","30 m","40 m"]);
+    if (cat === "Cardio")            return _rand(["30s","45s","60s","3 min","5 min","200m","400m","500m","15 cal","20 cal","10","12","15"]);
+    if (GEN_HOLD_KW.test(name))      return _rand(["20s","30s","40s","45s","60s"]);
+    if (GEN_CRAWL_KW.test(name))     return _rand(["30s","40 ft","50 ft","20 yd"]);
+    return _pickRange(scheme.reps);  // numeric rep count
+  }
+  function _maybeFinisher(ex, name) {
+    if (!GEN_ISO_KW.test(name) || Math.random() >= 0.22) return;
+    if (Math.random() < 0.5) ex.burnout = { pct: _rand(FINISHER_PCTS) };
+    else ex.dropset = { pcts: _rand([["75","50"], ["75","50","25"], ["50","25"]]) };
+  }
   function generateWorkoutDay() {
     const arch = _rand(GEN_ARCHETYPES);
     const style = _rand(GEN_STYLES);
@@ -2049,9 +2065,11 @@
       const isCore = e.cat === "Core";
       const scheme = isPrimary ? style.primary : (isCore ? style.core : style.acc);
       const { mods, unilateral } = isCore ? { mods: [], unilateral: false } : _genTags(e.name, isPrimary, style);
-      let reps = _pickRange(scheme.reps);
-      if (unilateral) reps += " each";
-      return { name: e.name, sets: _pickRange(scheme.sets), reps, modifiers: mods };
+      let reps = _repsFor(e.name, e.cat, scheme);
+      if (unilateral && /^\d+$/.test(reps)) reps += " each"; // only on plain rep counts
+      const out = { name: e.name, sets: _pickRange(scheme.sets), reps, modifiers: mods };
+      if (!isPrimary && !isCore) _maybeFinisher(out, e.name); // occasional burnout/dropset
+      return out;
     });
     let name = `${_rand(GEN_FLAVORS)} ${arch.name}`;
     if (Math.random() < 0.4) name += ` ${_rand(GEN_SUFFIX)}`;
@@ -2112,7 +2130,8 @@
         const chips = (e.modifiers && e.modifiers.length)
           ? " " + orderedModifiers(e).map((tag) => { const { color, bg } = tagColor(tag); return `<span class="mod-chip" style="--mc:${color};--mb:${bg}">${escapeHtml(tag)}</span>`; }).join("")
           : "";
-        return `<span class="rec-ex-item"><strong>${escapeHtml(e.name)}</strong> ${escapeHtml(e.sets)}×${escapeHtml(e.reps)}${chips}</span>`;
+        const fin = finisherSummary(e);
+        return `<span class="rec-ex-item"><strong>${escapeHtml(e.name)}</strong> ${escapeHtml(e.sets)}×${escapeHtml(e.reps)}${fin ? ` <span class="rec-fin">${escapeHtml(fin)}</span>` : ""}${chips}</span>`;
       }).join(" · ");
       return `
         <div class="rec-card">
@@ -2179,6 +2198,8 @@
       // Generated cards (Surprise me): pull the day object from surprisePicks.
       const genExercises = (day) => day.exercises.map((e) => ({
         name: e.name, sets: e.sets, currentReps: e.reps, notes: day.focus, modifiers: [...(e.modifiers || [])],
+        ...(e.burnout ? { burnout: e.burnout } : {}),
+        ...(e.dropset ? { dropset: e.dropset } : {}),
       }));
       $("#modal-body").querySelectorAll(".rec-add[data-gen]").forEach((btn) => {
         btn.addEventListener("click", () => {

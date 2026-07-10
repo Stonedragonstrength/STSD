@@ -3685,6 +3685,7 @@ input:focus, textarea:focus, select:focus {
   vertical-align: middle;
 }
 .rec-ex-item { display: inline; white-space: normal; }
+.rec-fin { color: var(--warn); font-weight: 700; font-size: 0.78rem; }
 .rec-ex-item .mod-chip { font-size: 0.62rem; padding: 0.02em 0.4em; margin-left: 0.15em; }
 .rec-surprise-actions { margin-top: 0.6em; }
 .rec-add-all {
