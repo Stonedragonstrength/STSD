@@ -7091,6 +7091,12 @@
     const prescribedWt = ex.currentWeight && ex.currentWeight !== "BW" ? String(ex.currentWeight) : "";
     const canQuickSet = Number.isFinite(prescribedReps) && !!ex.currentWeight;
 
+    // Group weight-adjuster state (built after the loop). weightBase seeds empty
+    // fields; adjustMode gates the weight-field tap-to-select behavior below.
+    const weightBase = parseFloat(ex.currentWeight);
+    let adjustMode = false;
+    let adjustWrap = null;
+
     const setInputs = [];
     const setChecks = [];
     for (let s = 0; s < numSets; s++) {
@@ -7103,7 +7109,13 @@
 
       const wt = Object.assign(document.createElement("input"), { type: "number", step: "0.5", min: "0", placeholder: wtPh || "lb", readOnly: isLocked });
       const rp = Object.assign(document.createElement("input"), { type: "number", min: "0", placeholder: repPh || "reps", readOnly: isLocked });
-      [wt, rp].forEach((i) => { i.className = "cex-input"; i.addEventListener("click", (e) => e.stopPropagation()); });
+      wt.className = "cex-input"; rp.className = "cex-input";
+      rp.addEventListener("click", (e) => e.stopPropagation());
+      wt.addEventListener("click", (e) => {
+        e.stopPropagation();
+        // In adjust mode a tap toggles whether this set is included in the nudge.
+        if (adjustMode) wt.classList.toggle("adjust-sel");
+      });
 
       col.appendChild(lbl);
       col.appendChild(wt);
@@ -7250,6 +7262,7 @@
       hide(isLocked ? lockBtn : editBtn);
       show(isLocked ? editBtn : lockBtn);
       setFieldsReadonly(isLocked);
+      if (adjustWrap) adjustWrap.classList.toggle("hidden", isLocked);
     };
 
     lockBtn.addEventListener("click", (e) => {
@@ -7294,8 +7307,76 @@
 
     lockRow.appendChild(lockBtn);
     lockRow.appendChild(editBtn);
+
+    // ── Group weight adjuster ──
+    // For range work where sets climb across the exercise. Tap "Adjust weight"
+    // to arm; every weight field starts selected (tap one to exclude it), then
+    // nudge −5/+5 as many times as needed and Accept — or Cancel to revert.
+    // Empty fields seed from the prescribed weight so the first tap sets them.
+    if (Number.isFinite(weightBase)) {
+      let adjustSnapshot = null;
+      adjustWrap = document.createElement("div");
+      adjustWrap.className = "cex-adjust";
+
+      const adjustBtn = document.createElement("button");
+      adjustBtn.type = "button";
+      adjustBtn.className = "cex-adjust-btn";
+      adjustBtn.textContent = "⚖ Adjust weight";
+
+      const adjustBar = document.createElement("div");
+      adjustBar.className = "cex-adjust-bar hidden";
+
+      const nudge = (delta) => {
+        setInputs.forEach(({ wt, syncCheck }) => {
+          if (!wt.classList.contains("adjust-sel")) return;
+          const cur = wt.value !== "" ? parseFloat(wt.value) : weightBase;
+          if (!Number.isFinite(cur)) return;
+          const v = Math.max(0, cur + delta);
+          wt.value = String(v);
+          syncCheck && syncCheck();
+        });
+      };
+      const enterAdjust = () => {
+        adjustMode = true;
+        adjustSnapshot = setInputs.map(({ wt }) => wt.value);
+        setInputs.forEach(({ wt }) => { wt.readOnly = true; wt.classList.add("adjust-sel"); });
+        setChecks.forEach((c) => { c.disabled = true; });
+        hide(adjustBtn); show(adjustBar); hide(lockRow);
+      };
+      const exitAdjust = () => {
+        adjustMode = false;
+        setInputs.forEach(({ wt }) => { wt.readOnly = isLocked; wt.classList.remove("adjust-sel"); });
+        setChecks.forEach((c) => { c.disabled = isLocked; });
+        show(adjustBtn); hide(adjustBar); show(lockRow);
+      };
+      adjustBtn.addEventListener("click", (e) => { e.stopPropagation(); enterAdjust(); });
+
+      const mkStep = (delta, label) => {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "cex-adjust-step"; b.textContent = label;
+        b.title = `${delta > 0 ? "Add" : "Subtract"} ${Math.abs(delta)} lb to the selected sets`;
+        b.addEventListener("click", (e) => { e.stopPropagation(); nudge(delta); });
+        return b;
+      };
+      const acceptBtn = document.createElement("button");
+      acceptBtn.type = "button"; acceptBtn.className = "cex-adjust-accept"; acceptBtn.textContent = "✓ Accept";
+      acceptBtn.addEventListener("click", (e) => { e.stopPropagation(); exitAdjust(); autoSave(); });
+      const cancelBtn = document.createElement("button");
+      cancelBtn.type = "button"; cancelBtn.className = "cex-adjust-cancel"; cancelBtn.textContent = "✕";
+      cancelBtn.title = "Cancel";
+      cancelBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (adjustSnapshot) setInputs.forEach(({ wt, syncCheck }, i) => { wt.value = adjustSnapshot[i]; syncCheck && syncCheck(); });
+        exitAdjust();
+      });
+
+      adjustBar.append(mkStep(-5, "−5"), mkStep(5, "+5"), acceptBtn, cancelBtn);
+      adjustWrap.append(adjustBtn, adjustBar);
+    }
+
     refreshLockUI();
 
+    if (adjustWrap) logForm.appendChild(adjustWrap);
     logForm.appendChild(setTable);
     if (finisherInputs.length) logForm.appendChild(finisherWrap);
     logForm.appendChild(lockRow);
