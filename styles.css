@@ -2690,6 +2690,11 @@ input[type="date"] { color-scheme: dark; }
 .status-paid { background: var(--accent-soft); color: var(--accent); }
 .status-pending { background: rgba(245, 158, 11, 0.2); color: var(--warn); }
 .status-cancelled { background: var(--surface-3); color: var(--muted); }
+.status-gift { background: rgba(236, 72, 153, 0.18); color: #f472b6; }
+
+/* Athlete gift-sessions card — subtle accent so it reads as a nice surprise */
+.gift-card { border-color: rgba(236, 72, 153, 0.35); }
+.gift-card h4 { color: #f472b6; }
 
 /* Single-value diet (coach edit + athlete display) */
 .diet-single {

@@ -5110,6 +5110,25 @@
       </div>`;
     container.appendChild(balance);
 
+    // Gift sessions from the coach (already counted in the pool above; this
+    // card just shows where the free sessions came from).
+    const gifts = (prog.client.sessionBank.packages || []).filter((p) => p.gift && p.status === "paid");
+    if (gifts.length) {
+      const giftTotal = gifts.reduce((n, g) => n + (Number(g.size) || 0), 0);
+      const giftCard = document.createElement("div");
+      giftCard.className = "card gift-card";
+      giftCard.innerHTML = `<h4 style="margin-top:0">🎁 Gift sessions from your coach</h4>
+        <p class="muted" style="font-size:0.85rem">${giftTotal} free session${giftTotal === 1 ? "" : "s"} added to your balance.</p>`;
+      [...gifts].sort((a, b) => (b.paidAt || 0) - (a.paidAt || 0)).forEach((g) => {
+        const dateStr = g.paidAt ? new Date(g.paidAt).toLocaleDateString() : "";
+        const row = document.createElement("div");
+        row.className = "session-pkg-row";
+        row.innerHTML = `<div><strong>🎁 ${escapeHtml(String(g.size))} session${g.size == 1 ? "" : "s"}</strong>${dateStr ? ` · <span class="muted">${escapeHtml(dateStr)}</span>` : ""}${g.note ? `<div class="muted" style="font-size:0.85rem">${escapeHtml(g.note)}</div>` : ""}</div>`;
+        giftCard.appendChild(row);
+      });
+      container.appendChild(giftCard);
+    }
+
     // Quick-buy package picker
     const buyCard = document.createElement("div");
     buyCard.className = "card";
@@ -5376,14 +5395,20 @@
         const dateStr = pkg.paidAt ? new Date(pkg.paidAt).toLocaleDateString() : "—";
         const row = document.createElement("div");
         row.className = "session-pkg-row";
+        const label = pkg.gift
+          ? `🎁 ${escapeHtml(String(pkg.size))}-session gift`
+          : `${escapeHtml(String(pkg.size))}-session package`;
+        const pill = pkg.gift
+          ? `<span class="status-pill status-gift">gift</span>`
+          : `<span class="status-pill status-${escapeHtml(pkg.status || "paid")}">${escapeHtml(pkg.status || "paid")}</span>`;
         row.innerHTML = `
           <div>
-            <strong>${escapeHtml(String(pkg.size))}-session package</strong>
+            <strong>${label}</strong>
             <span class="muted"> · ${escapeHtml(dateStr)}</span>
             ${pkg.note ? `<div class="muted" style="font-size:0.85rem">${escapeHtml(pkg.note)}</div>` : ""}
           </div>
           <div class="session-pkg-row-right">
-            <span class="status-pill status-${escapeHtml(pkg.status || "paid")}">${escapeHtml(pkg.status || "paid")}</span>
+            ${pill}
             <button class="btn-delete-mini" data-del="${escapeHtml(pkg.id)}" title="Remove">×</button>
           </div>`;
         pkgCard.appendChild(row);
@@ -5450,6 +5475,38 @@
           renderCoachSessions();
           closeModal();
           toast(`Added ${size}-session package ✓`);
+        }},
+      ],
+    });
+  }
+
+  // Gift sessions: a package with status "paid" (so it counts in the available
+  // pool via sessionBankSummary) plus gift:true / price:0 so both sides can
+  // show it as a gift rather than a purchase.
+  function openGiftSessionModal() {
+    const c = currentClient(); if (!c) return;
+    openModal({
+      title: "🎁 Gift sessions",
+      body: `
+        <p class="muted" style="margin-top:-0.4em">Give free sessions to ${escapeHtml(c.name || "this athlete")}. They drop straight into the available pool and show as a gift on the athlete's side.</p>
+        <label>Number of sessions
+          <input type="number" id="gift-size-input" min="1" max="50" placeholder="e.g. 3" style="font-size:1.5rem;text-align:center;" autofocus />
+        </label>
+        <label>Message / note (optional)
+          <input type="text" id="gift-note" placeholder="e.g. On the house — great work this month!" />
+        </label>`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Gift sessions 🎁", className: "btn btn-primary", onClick: () => {
+          const size = parseInt($("#gift-size-input").value, 10);
+          if (!size || size < 1 || size > 50) { toast("Enter a number between 1 and 50"); return; }
+          const note = $("#gift-note").value.trim();
+          ensureSessionBank(c);
+          c.sessionBank.packages.push({ id: uid(), size, status: "paid", gift: true, price: 0, addedAt: Date.now(), paidAt: Date.now(), note });
+          saveTrainer();
+          renderCoachSessions();
+          closeModal();
+          toast(`Gifted ${size} session${size === 1 ? "" : "s"} 🎁`);
         }},
       ],
     });
@@ -7334,6 +7391,7 @@
     $("#drum-modal").addEventListener("click", (e) => { if (e.target === e.currentTarget) cancelDrum(); });
     $("#btn-athlete-add-pr").addEventListener("click", () => openAddPRModal("athlete"));
     $("#btn-add-package")?.addEventListener("click", openAddPackageModal);
+    $("#btn-gift-session")?.addEventListener("click", openGiftSessionModal);
     $("#btn-redeem-session")?.addEventListener("click", openRedeemSessionModal);
     $("#btn-athlete-request-package")?.addEventListener("click", openAthleteRequestPackageModal);
     $("#btn-packages-refresh")?.addEventListener("click", refreshAllAthletePackages);
