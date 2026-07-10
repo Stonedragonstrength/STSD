@@ -4556,129 +4556,35 @@
     weekSel?.addEventListener("change", rebuildDays);
   }
 
-  // -------- Client logs view --------
+  // -------- Coach Cardio view (athlete's logged cardio only) --------
   function renderClientLogs() {
     const c = currentClient(); if (!c) return;
     const container = $("#logs-container");
     const empty = $("#logs-empty");
     container.innerHTML = "";
     const p = c.importedProgress;
-    if (!p || (!p.bodyweightLog?.length && !Object.keys(p.exerciseLogs || {}).length && !p.feedback && !Object.keys(p.dayCompletions || {}).length && !p.cardioLogs?.length)) {
-      show(empty); return;
-    }
+    if (!p?.cardioLogs?.length) { show(empty); return; }
     hide(empty);
 
-    // Cardio the athlete has logged
-    if (p.cardioLogs?.length) {
-      const cardioCard = document.createElement("div");
-      cardioCard.className = "log-week-card";
-      cardioCard.innerHTML = `<h4>Cardio</h4>`;
-      [...p.cardioLogs]
-        .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
-        .slice(0, 15)
-        .forEach((log) => {
-          const row = document.createElement("div");
-          row.className = "cardio-row cardio-row-readonly";
-          row.innerHTML = `
-            <span class="cardio-row-icon">${cardioIcon(log.type)}</span>
-            <div class="cardio-row-info">
-              <strong>${escapeHtml(log.type || "Cardio")}</strong>
-              <span class="muted">${escapeHtml(log.date || "")}</span>
-            </div>
-            <span class="cardio-min">${escapeHtml(String(log.minutes || 0))} min</span>
-            <span class="cardio-intensity cardio-intensity-${escapeHtml((log.intensity || "moderate").toLowerCase())}">${escapeHtml(log.intensity || "Moderate")}</span>`;
-          cardioCard.appendChild(row);
-        });
-      container.appendChild(cardioCard);
-    }
-
-    // Day completion summary per week
-    if (p.dayCompletions && Object.keys(p.dayCompletions).length) {
-      const summary = document.createElement("div");
-      summary.className = "log-week-card";
-      summary.innerHTML = `<h4>Day completions</h4>`;
-      let anyRendered = false;
-      c.weeks.forEach((w) => {
-        const totalDays = w.days.length;
-        const completedDays = w.days.filter((d) => (p.dayCompletions[d.id] || []).length > 0).length;
-        if (completedDays === 0) return;
-        anyRendered = true;
-        const pct = totalDays ? Math.round((completedDays * 100) / totalDays) : 0;
+    const cardioCard = document.createElement("div");
+    cardioCard.className = "log-week-card";
+    cardioCard.innerHTML = `<h4>Cardio</h4>`;
+    [...p.cardioLogs]
+      .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
+      .forEach((log) => {
         const row = document.createElement("div");
-        row.className = "log-week-row";
+        row.className = "cardio-row cardio-row-readonly";
         row.innerHTML = `
-          <div class="log-week-row-label">
-            ${w.phaseLabel ? `<span class="phase-badge">${escapeHtml(w.phaseLabel)}</span>` : ""}
-            <strong>${escapeHtml(w.label)}</strong>
-            <span class="muted">— ${completedDays}/${totalDays} days</span>
+          <span class="cardio-row-icon">${cardioIcon(log.type)}</span>
+          <div class="cardio-row-info">
+            <strong>${escapeHtml(log.type || "Cardio")}</strong>
+            <span class="muted">${escapeHtml(log.date || "")}</span>
           </div>
-          <div class="week-progress-track" style="flex:1; max-width: 240px"><div class="week-progress-fill" style="width:${pct}%"></div></div>
-          <div class="week-progress-pct">${pct}%</div>`;
-        summary.appendChild(row);
+          <span class="cardio-min">${escapeHtml(String(log.minutes || 0))} min</span>
+          <span class="cardio-intensity cardio-intensity-${escapeHtml((log.intensity || "moderate").toLowerCase())}">${escapeHtml(log.intensity || "Moderate")}</span>`;
+        cardioCard.appendChild(row);
       });
-      if (anyRendered) container.appendChild(summary);
-    }
-    if (p.feedback) {
-      const fb = document.createElement("div");
-      fb.className = "client-feedback-block";
-      fb.innerHTML = `
-        <div class="feedback-label">Note from ${escapeHtml(c.name)}${p.syncedAt ? " · synced " + new Date(p.syncedAt).toLocaleString() : ""}</div>
-        ${escapeHtml(p.feedback)}`;
-      container.appendChild(fb);
-    }
-    if (p.dayNotes && Object.keys(p.dayNotes).some((k) => p.dayNotes[k]?.trim())) {
-      const notesCard = document.createElement("div");
-      notesCard.className = "log-week-card";
-      notesCard.innerHTML = `<h4>Session notes from ${escapeHtml(c.name)}</h4>`;
-      let anyNote = false;
-      c.weeks.forEach((w) => {
-        w.days.forEach((d) => {
-          const note = (p.dayNotes[d.id] || "").trim();
-          if (!note) return;
-          anyNote = true;
-          const row = document.createElement("div");
-          row.className = "day-note-coach-row";
-          row.innerHTML = `<div class="day-note-coach-day">${escapeHtml(w.label)} · ${escapeHtml(d.name)}</div>
-            <div class="day-note-coach-text">${escapeHtml(note)}</div>`;
-          notesCard.appendChild(row);
-        });
-      });
-      if (anyNote) container.appendChild(notesCard);
-    }
-    if (p.exerciseLogs && Object.keys(p.exerciseLogs).length) {
-      c.weeks.forEach((w) => {
-        const exsWithLogs = [];
-        w.days.forEach((d) => {
-          d.exercises.forEach((ex) => {
-            const logs = p.exerciseLogs[ex.id];
-            if (logs?.length) exsWithLogs.push({ day: d, ex, logs });
-          });
-        });
-        if (!exsWithLogs.length) return;
-        const wCard = document.createElement("div");
-        wCard.className = "log-week-card";
-        wCard.innerHTML = `<h4>${w.phaseLabel ? `<span class="phase-badge">${escapeHtml(w.phaseLabel)}</span>` : ""}${escapeHtml(w.label)}${w.focus ? " — " + escapeHtml(w.focus) : ""}</h4>`;
-        exsWithLogs.forEach(({ day, ex, logs }) => {
-          const sec = document.createElement("div");
-          sec.className = "log-exercise";
-          const rows = [...logs].sort((a, b) => b.date.localeCompare(a.date)).map((l) => `
-            <div class="date">${escapeHtml(l.date)}</div>
-            <div>${escapeHtml(l.weight || "—")}</div>
-            <div>${escapeHtml(l.reps || "—")}</div>
-            <div>${escapeHtml(l.sets || "—")}</div>
-            ${l.notes ? `<div style="grid-column: 1 / -1; color: var(--text-soft); font-size: 0.85rem; padding-bottom: 0.3em;">${escapeHtml(l.notes)}</div>` : ""}
-          `).join("");
-          sec.innerHTML = `
-            <h5>${escapeHtml(ex.name || "(unnamed)")} <span class="muted">— ${escapeHtml(day.name)}</span></h5>
-            <div class="log-table">
-              <div class="lh">Date</div><div class="lh">Weight</div><div class="lh">Reps</div><div class="lh">Sets</div>
-              ${rows}
-            </div>`;
-          wCard.appendChild(sec);
-        });
-        container.appendChild(wCard);
-      });
-    }
+    container.appendChild(cardioCard);
   }
 
   // -------- Personal Records --------
