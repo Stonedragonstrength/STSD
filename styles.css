@@ -5652,3 +5652,39 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   color: var(--primary);
   border-color: var(--primary);
 }
+
+/* -------- Coach "View as athlete" preview -------- */
+.preview-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75em;
+  flex-wrap: wrap;
+  padding: 0.6em 1em;
+  background: rgba(245, 158, 11, 0.14);
+  border-bottom: 1px solid var(--warn);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+.preview-banner-msg { color: var(--text-soft); }
+.preview-banner-msg strong { color: var(--warn); }
+.preview-banner .btn {
+  background: var(--warn);
+  border: none;
+  color: #1a1205;
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* Read-only feel: disable every data-entry control + the in-workout log
+   buttons, while leaving navigation (tabs, day cards, calendar) live. */
+body.preview-mode #screen-client input,
+body.preview-mode #screen-client textarea,
+body.preview-mode #screen-client select,
+body.preview-mode #screen-client .workout-detail-list button {
+  pointer-events: none;
+  opacity: 0.55;
+  cursor: default;
+  box-shadow: none;
+}
+/* Header Exit/Install would sign the coach out — hide during preview. */
+body.preview-mode #screen-client .header-right { display: none; }

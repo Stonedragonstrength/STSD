@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=superset1" />
+  <link rel="stylesheet" href="styles.css?v=preview1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -442,6 +442,7 @@
           <div class="program-head">
             <h3>Training Program</h3>
             <div class="program-actions">
+              <button class="btn btn-ghost" id="btn-preview-athlete">👁️ View as athlete</button>
               <button class="btn btn-ghost" id="btn-archive-program">📁 Archive</button>
               <button class="btn btn-primary" id="btn-load-program">📂 Load Program</button>
             </div>
@@ -572,6 +573,11 @@
         <button class="btn btn-ghost btn-sm" id="btn-client-logout">Exit</button>
       </div>
     </header>
+
+    <div id="preview-banner" class="preview-banner hidden">
+      <span class="preview-banner-msg">👁️ Coach preview — read-only view of <strong id="preview-athlete-name"></strong>'s program</span>
+      <button class="btn btn-sm" id="btn-exit-preview">← Back to coach view</button>
+    </div>
 
     <main class="app-main">
       <div class="tabs">
@@ -750,7 +756,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
   <script src="cloud.js?v=openslots3"></script>
-  <script src="app.js?v=superset1"></script>
+  <script src="app.js?v=preview1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

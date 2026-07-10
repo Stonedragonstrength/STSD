@@ -45,6 +45,8 @@
     }
   }
   function saveClient() {
+    // Coach "View as athlete" is a read-only preview — never persist or push.
+    if (state.previewMode) return;
     localStorage.setItem(KEY_CLIENT, JSON.stringify(state.clientData));
     // Cloud: debounced push of athlete progress.
     const athleteId = state.clientData.program?.clientId;
@@ -5117,7 +5119,7 @@
   }
   async function refreshAthleteOpenSlots() {
     const client = state.clientData.program?.client;
-    if (client?.hideOpenSlots) {
+    if (state.previewMode || client?.hideOpenSlots) {
       state.clientData.openSlots = [];
     } else if (window.Cloud?.enabled) {
       const slots = await window.Cloud.getOpenSlotsForAthlete();
@@ -6342,8 +6344,11 @@
     enterClientPortal();
   }
   function enterClientPortal() {
-    state.mode = "client";
-    sessionStorage.setItem(KEY_SESSION, "client");
+    // In preview we stay in coach mode so a reload restores the coach view.
+    if (!state.previewMode) {
+      state.mode = "client";
+      sessionStorage.setItem(KEY_SESSION, "client");
+    }
     hide($("#screen-login"));
     hide($("#screen-app"));
     show($("#screen-client"));
@@ -6369,6 +6374,39 @@
     _signOutOnLeave = false;
     if (window.Cloud?.enabled) window.Cloud.signOut();
     showLoginScreen("#login-role");
+  }
+
+  // -------- Coach "View as athlete" (read-only preview) --------
+  // Renders the athlete portal off a throwaway clientData built from the coach's
+  // athlete object + their last-synced progress. saveClient() is a no-op while
+  // state.previewMode is on, so nothing here persists or pushes to the cloud.
+  let _previewReturn = null;
+  function previewAsAthlete() {
+    const c = currentClient();
+    if (!c) return;
+    ensureSessionBank(c);
+    _previewReturn = { clientData: state.clientData, mode: state.mode, clientId: c.id };
+    state.previewMode = true;
+    document.body.classList.add("preview-mode");
+    // Clone so nothing done in the preview can mutate the coach's live data.
+    const program = structuredClone(buildProgramFromAthlete(c));
+    const progress = c.importedProgress ? structuredClone(c.importedProgress) : emptyProgress();
+    state.clientData = { program, progress };
+    enterClientPortal();
+    $("#preview-athlete-name").textContent = c.name;
+    show($("#preview-banner"));
+  }
+  function exitPreview() {
+    if (!state.previewMode) return;
+    const ret = _previewReturn; _previewReturn = null;
+    state.previewMode = false;
+    document.body.classList.remove("preview-mode");
+    hide($("#preview-banner"));
+    state.clientData = ret.clientData;
+    state.mode = ret.mode;
+    hide($("#screen-client"));
+    show($("#screen-app"));
+    openClient(ret.clientId);
   }
   function setClientTab(name) {
     $$(".tab[data-ctab]").forEach((t) => t.classList.toggle("active", t.dataset.ctab === name));
@@ -7644,6 +7682,8 @@
     });
     $("#btn-browse-recommended-empty")?.addEventListener("click", openRecommendedTemplatesModal);
     $("#btn-delete-client").addEventListener("click", deleteClientPrompt);
+    $("#btn-preview-athlete")?.addEventListener("click", previewAsAthlete);
+    $("#btn-exit-preview")?.addEventListener("click", exitPreview);
     $("#btn-load-program").addEventListener("click", openLoadProgramModal);
     $("#btn-load-program-empty").addEventListener("click", openLoadProgramModal);
     $("#btn-archive-program").addEventListener("click", archiveCurrentProgram);
