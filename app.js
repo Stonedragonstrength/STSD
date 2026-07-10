@@ -340,8 +340,10 @@
     _attachOutsideClose(pop, anchorBtn);
   }
 
-  function renderModChips(container, ex, position) {
+  function renderModChips(container, ex, position, openPicker) {
     // position: "before" = Unilateral+Equipment+Position  "after" = Style+Hold
+    // Chips are display-only — clicking one opens the tag picker (if provided)
+    // where it can be unclicked. Tags are never removed by tapping the chip.
     container.innerHTML = "";
     const groups = position === "before"
       ? EXERCISE_MODIFIERS.filter((g) => g.group !== "Style" && g.group !== "Hold")
@@ -355,12 +357,12 @@
       chip.textContent = tag;
       chip.style.setProperty("--mc", color);
       chip.style.setProperty("--mb", bg);
-      chip.title = `${g.group} — click to remove`;
-      chip.addEventListener("click", () => {
-        ex.modifiers = (ex.modifiers || []).filter((m) => m !== tag);
-        saveTrainer();
-        renderModChips(container, ex, position);
-      });
+      if (openPicker) {
+        chip.title = `${g.group} — open tags to edit`;
+        chip.addEventListener("click", (e) => { e.stopPropagation(); openPicker(); });
+      } else {
+        chip.title = g.group;
+      }
       container.appendChild(chip);
     });
   }
@@ -432,8 +434,9 @@
             setHoldRowOpen(false);
           }
           saveTrainer();
-          renderModChips(chipsBefore, ex, "before");
-          renderModChips(chipsAfter, ex, "after");
+          const reopen = () => openModPicker(ex, anchorBtn, chipsBefore, chipsAfter);
+          renderModChips(chipsBefore, ex, "before", reopen);
+          renderModChips(chipsAfter, ex, "after", reopen);
         });
         btn.dataset.tag = tag;
         row.appendChild(btn);
@@ -3466,10 +3469,14 @@
     moveDownBtn.title = "Move down"; moveDownBtn.textContent = "▼";
     moveDownBtn.addEventListener("click", () => moveExercise(1));
 
+    // Opens the tag picker; chips clicked below route here so tags can only be
+    // removed by unclicking them inside the popup (never by tapping the chip).
+    const openPicker = () => openModPicker(ex, modBtn, chipsBefore, chipsAfter);
+
     // Modifier chips BEFORE name (Unilateral, Equipment, Position)
     const chipsBefore = document.createElement("div");
     chipsBefore.className = "mod-chips-before";
-    renderModChips(chipsBefore, ex, "before");
+    renderModChips(chipsBefore, ex, "before", openPicker);
 
     // Name
     const nameInput = document.createElement("input");
@@ -3482,14 +3489,14 @@
     // Modifier chips AFTER name (Style)
     const chipsAfter = document.createElement("div");
     chipsAfter.className = "mod-chips-after";
-    renderModChips(chipsAfter, ex, "after");
+    renderModChips(chipsAfter, ex, "after", openPicker);
 
     // Modifier picker button
     const modBtn = document.createElement("button");
     modBtn.className = "mod-add-btn";
     modBtn.title = "Add/remove modifiers (1A, DB, Pause…)";
     modBtn.textContent = "tag";
-    modBtn.addEventListener("click", (e) => { e.stopPropagation(); openModPicker(ex, modBtn, chipsBefore, chipsAfter); });
+    modBtn.addEventListener("click", (e) => { e.stopPropagation(); openPicker(); });
 
     function wtLabel(v) { return v ? (v === "BW" ? "BW" : v + " lb") : null; }
 
