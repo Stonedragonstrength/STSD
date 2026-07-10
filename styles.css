@@ -476,7 +476,9 @@ input[type="date"] { color-scheme: dark; }
   margin-bottom: 1.5rem;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; /* hide the scrollbar; tabs still scroll on overflow */
 }
+.tabs::-webkit-scrollbar { display: none; }
 .tab {
   background: none;
   border: none;
@@ -5044,23 +5046,27 @@ input:focus, textarea:focus, select:focus {
   padding: 0.55rem 1rem;
   border-bottom: 1px solid var(--border);
 }
-.day-name-compact {
+/* `input.` prefix needed so this beats the base `input[type="text"]` rule
+   (same specificity, wins by source order) — otherwise the day name renders
+   as a chunky default box instead of this subtle inline field. */
+input.day-name-compact {
   background: transparent;
   border: none;
   border-bottom: 1px dashed var(--border);
+  border-radius: 0;
   color: var(--text);
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   font-weight: 700;
   font-family: inherit;
-  padding: 0.1em 0.15em;
+  padding: 0.15em 0.15em;
   outline: none;
   min-width: 80px;
   cursor: text;
   transition: border-color 0.15s;
 }
-.day-name-compact::placeholder { color: var(--muted); font-weight: 400; }
-.day-name-compact:hover { border-bottom-color: var(--text-soft); }
-.day-name-compact:focus { border-bottom-style: solid; border-bottom-color: var(--primary); }
+input.day-name-compact::placeholder { color: var(--muted); font-weight: 400; }
+input.day-name-compact:hover { border-bottom-color: var(--text-soft); }
+input.day-name-compact:focus { background: transparent; border-bottom: 1px solid var(--primary); box-shadow: none; }
 .day-name-wrap { display: flex; align-items: center; gap: 0.35em; }
 .day-icon-btn {
   background: var(--surface-2);
