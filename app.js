@@ -5144,6 +5144,7 @@
     badge.classList.toggle("hidden", !openCount);
   }
   async function claimAthleteSlot(id, btn) {
+    if (state.previewMode) return;
     if (btn) { btn.disabled = true; btn.textContent = "Claiming…"; }
     const res = await window.Cloud.claimOpenSlot(id);
     if (res?.ok) toast("Slot claimed! Your coach will confirm. 🎉");
@@ -5296,6 +5297,7 @@
     const txt = document.createElement("span");
     txt.textContent = "🔔 Notify me about open slots";
     toggle.addEventListener("change", () => {
+      if (state.previewMode) { toggle.checked = !prog.client.hideOpenSlots; return; }
       prog.client.hideOpenSlots = !toggle.checked;
       saveClient();
       if (window.Cloud?.enabled) window.Cloud.updateAthleteHideOpenSlots(prog.client.id, prog.client.hideOpenSlots);
@@ -6414,6 +6416,7 @@
     hide($("#screen-client"));
     show($("#screen-app"));
     openClient(ret.clientId);
+    setTab("program"); // land on the program so edits are one tap away
   }
   function setClientTab(name) {
     $$(".tab[data-ctab]").forEach((t) => t.classList.toggle("active", t.dataset.ctab === name));

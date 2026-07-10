@@ -5675,16 +5675,27 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   font-weight: 600;
   white-space: nowrap;
 }
-/* Read-only feel: disable every data-entry control + the in-workout log
-   buttons, while leaving navigation (tabs, day cards, calendar) live. */
+/* Read-only: block ALL interaction inside the portal body, then re-enable
+   ONLY navigation (tabs, week chips, day cards, back link, calendar nav).
+   Blocking at the container also defeats the <label>-wrapped toggle gotcha
+   (the label itself becomes inert), and covers every athlete-side action
+   button — sessions, PRs, cardio, nutrition — without an allow-list per tab.
+   The athlete can't type in reps/weight, log, claim slots, or toggle prefs. */
+body.preview-mode #screen-client .app-main { pointer-events: none; }
+body.preview-mode #screen-client .tab,
+body.preview-mode #screen-client .week-chip,
+body.preview-mode #screen-client .workout-card,
+body.preview-mode #screen-client .back-link,
+body.preview-mode #screen-client #ccal-prev,
+body.preview-mode #screen-client #ccal-next,
+body.preview-mode #screen-client #ccal-today {
+  pointer-events: auto;
+}
+/* Dim data-entry fields so they read as inactive. */
 body.preview-mode #screen-client input,
 body.preview-mode #screen-client textarea,
-body.preview-mode #screen-client select,
-body.preview-mode #screen-client .workout-detail-list button {
-  pointer-events: none;
+body.preview-mode #screen-client select {
   opacity: 0.55;
-  cursor: default;
-  box-shadow: none;
 }
 /* Header Exit/Install would sign the coach out — hide during preview. */
 body.preview-mode #screen-client .header-right { display: none; }
