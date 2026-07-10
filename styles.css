@@ -4363,17 +4363,28 @@ input:focus, textarea:focus, select:focus {
   margin-top: 0.5rem;
 }
 .cex-lock-btn { padding: 0.4em 0.7em; font-size: 0.95rem; line-height: 1; }
-/* One-tap "Did as prescribed" — accent-outlined so it reads as the fast path
-   without competing with the primary lock button. */
-.cex-quick-btn {
-  background: var(--accent-soft);
-  border: 1px solid var(--accent);
-  color: var(--accent);
-  font-weight: 600;
-  padding: 0.4em 0.8em;
+/* Per-set quick-fill checkmark under the weight/reps boxes — tap to log this
+   set as prescribed. Green when the set matches the prescription. */
+.cex-set-check {
+  width: 100%;
+  padding: 0.2em 0;
+  font-size: 0.8rem;
   line-height: 1;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-soft);
+  cursor: pointer;
+  font-family: inherit;
 }
-.cex-quick-btn:hover { background: var(--accent); color: #04120c; }
+.cex-set-check:hover { border-color: var(--accent); color: var(--accent); }
+.cex-set-check.done {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #04120c;
+  font-weight: 700;
+}
+.cex-set-check:disabled { opacity: 0.5; cursor: default; }
 .cex-edit-btn {
   background: none;
   border: none;
@@ -5695,6 +5706,15 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
    button — sessions, PRs, cardio, nutrition — without an allow-list per tab.
    The athlete can't type in reps/weight, log, claim slots, or toggle prefs. */
 body.preview-mode #screen-client .app-main { pointer-events: none; }
+/* Dim data-entry fields + every button so it's obvious nothing on the
+   athlete's side is live... */
+body.preview-mode #screen-client input,
+body.preview-mode #screen-client textarea,
+body.preview-mode #screen-client select,
+body.preview-mode #screen-client .app-main button {
+  opacity: 0.45;
+}
+/* ...then re-enable AND un-dim only the navigation controls. */
 body.preview-mode #screen-client .tab,
 body.preview-mode #screen-client .week-chip,
 body.preview-mode #screen-client .workout-card,
@@ -5703,12 +5723,7 @@ body.preview-mode #screen-client #ccal-prev,
 body.preview-mode #screen-client #ccal-next,
 body.preview-mode #screen-client #ccal-today {
   pointer-events: auto;
-}
-/* Dim data-entry fields so they read as inactive. */
-body.preview-mode #screen-client input,
-body.preview-mode #screen-client textarea,
-body.preview-mode #screen-client select {
-  opacity: 0.55;
+  opacity: 1;
 }
 /* Header Exit/Install would sign the coach out — hide during preview. */
 body.preview-mode #screen-client .header-right { display: none; }
