@@ -5107,7 +5107,7 @@
     const badge = $("#ctab-sessions-badge");
     if (!badge) return;
     const client = state.clientData.program?.client;
-    const openCount = client?.hideOpenSlots ? 0 : athleteOpenSlots().filter((s) => s.status === "open").length;
+    const openCount = client?.hideOpenSlots ? 0 : athleteOpenSlots().filter((s) => s.status === "open" && !slotBookingClosed(s)).length;
     badge.textContent = openCount ? String(openCount) : "";
     badge.classList.toggle("hidden", !openCount);
   }
@@ -5157,9 +5157,11 @@
         [...visible].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).forEach((s) => {
           const mine = s.status === "claimed" && s.claimedBy === myId;
           const taken = s.status === "claimed" && !mine;
+          const closed = slotBookingClosed(s);
           let action;
           if (mine) action = `<span class="status-pill status-claimed">you claimed · pending</span>`;
           else if (taken) action = `<span class="status-pill status-cancelled">taken</span>`;
+          else if (closed) action = `<span class="status-pill status-cancelled">booking closed</span>`;
           else action = `<button class="btn btn-primary btn-sm" data-claim="${escapeHtml(s.id)}">Claim it</button>`;
           const row = document.createElement("div");
           row.className = "open-slot-row";
@@ -5551,6 +5553,20 @@
     if (!Array.isArray(state.trainerData.openSlots)) state.trainerData.openSlots = [];
     return state.trainerData.openSlots;
   }
+  const OPEN_SLOT_CUTOFFS = [0, 4, 8, 12, 16]; // hours before start; 0 = no cutoff
+
+  // Booking is closed once we're within `cutoffHours` of the slot's start time.
+  function slotBookingClosed(s) {
+    if (!s.startAt || !s.cutoffHours) return false;
+    const start = new Date(s.startAt).getTime();
+    if (isNaN(start)) return false;
+    return Date.now() >= start - s.cutoffHours * 3600 * 1000;
+  }
+  function formatSlotLabel(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  }
 
   // Pull the authoritative list from cloud (which includes athlete claims)
   // before rendering, so the coach sees who claimed what.
@@ -5587,15 +5603,20 @@
       [...slots].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).forEach((s) => {
         const row = document.createElement("div");
         row.className = "open-slot-row";
+        const closedByCutoff = s.status === "open" && slotBookingClosed(s);
         const statusHtml = s.status === "claimed"
           ? `<span class="status-pill status-claimed">claimed${s.claimedByName ? ` · ${escapeHtml(s.claimedByName)}` : ""}</span>`
           : s.status === "closed"
           ? `<span class="status-pill status-cancelled">closed</span>`
+          : closedByCutoff
+          ? `<span class="status-pill status-cancelled">booking closed</span>`
           : `<span class="status-pill status-open">open</span>`;
+        const cutoffTxt = s.cutoffHours ? `🔒 closes ${s.cutoffHours}h before` : "";
         row.innerHTML = `
           <div class="open-slot-info">
             <strong>${escapeHtml(s.label || "Open slot")}</strong>
             ${s.note ? `<div class="muted" style="font-size:0.85rem">${escapeHtml(s.note)}</div>` : ""}
+            ${cutoffTxt ? `<div class="muted" style="font-size:0.78rem">${cutoffTxt}</div>` : ""}
           </div>
           <div class="open-slot-actions">
             ${statusHtml}
@@ -5647,19 +5668,33 @@
   }
 
   function openPostSlotModal() {
+    const cutoffOpts = OPEN_SLOT_CUTOFFS.map((h) =>
+      `<option value="${h}"${h === 8 ? " selected" : ""}>${h === 0 ? "No cutoff" : h + " hours before"}</option>`
+    ).join("");
     openModal({
       title: "📣 Post an open slot",
       body: `
         <p class="muted" style="margin-top:-0.4em">Athletes see this and can claim it first-come. You confirm and book it in Setmore.</p>
-        <label>Slot <input type="text" id="slot-label" placeholder="e.g. Tue Jul 14 · 5:00 PM" autofocus /></label>
+        <div class="grid-2">
+          <label>Date <input type="date" id="slot-date" value="${todayISO()}" /></label>
+          <label>Time <input type="time" id="slot-time" /></label>
+        </div>
+        <label>Close booking
+          <select id="slot-cutoff">${cutoffOpts}</select>
+        </label>
         <label>Note (optional) <input type="text" id="slot-note" placeholder="e.g. 45-min session, upper body" /></label>`,
       actions: [
         { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
         { label: "Post slot 📣", className: "btn btn-primary", onClick: () => {
-          const label = $("#slot-label").value.trim();
-          if (!label) { toast("Add a time/label for the slot"); return; }
+          const date = $("#slot-date").value;
+          const time = $("#slot-time").value;
+          if (!date || !time) { toast("Pick a date and time for the slot"); return; }
+          const startAt = new Date(`${date}T${time}`).toISOString();
+          if (isNaN(new Date(startAt).getTime())) { toast("That date/time didn't parse — try again"); return; }
+          const cutoffHours = parseInt($("#slot-cutoff").value, 10) || 0;
           const note = $("#slot-note").value.trim();
-          mutateOpenSlots((arr) => [{ id: uid(), label, note, status: "open", createdAt: Date.now() }, ...arr]);
+          const label = formatSlotLabel(startAt);
+          mutateOpenSlots((arr) => [{ id: uid(), label, note, startAt, cutoffHours, status: "open", createdAt: Date.now() }, ...arr]);
           closeModal();
           toast("Open slot posted 📣");
         }},
