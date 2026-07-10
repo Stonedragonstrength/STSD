@@ -1961,22 +1961,39 @@
     { name: "Chest & Tricep",  cats: ["Chest","Triceps"] },
     { name: "Back & Bicep",    cats: ["Back","Biceps"] },
     { name: "Shoulder & Arm",  cats: ["Shoulders","Biceps","Triceps"] },
+    { name: "Arms",            cats: ["Biceps","Triceps"] },
     { name: "Posterior Chain", cats: ["Hamstrings","Glutes","Back"] },
     { name: "Glute & Ham",     cats: ["Glutes","Hamstrings","Adductors"] },
+    { name: "Chest & Back",    cats: ["Chest","Back"] },
+    { name: "Quad & Calf",     cats: ["Quads","Calves"] },
+    { name: "Back & Shoulder", cats: ["Back","Shoulders"] },
+    { name: "Chest & Shoulder",cats: ["Chest","Shoulders"] },
+    { name: "Shoulder & Core", cats: ["Shoulders","Core"], noCore: true },
+    { name: "Athletic",        cats: ["Quads","Hamstrings","Cardio","Core"], noCore: true },
+    { name: "Full Body Power", cats: ["Quads","Back","Shoulders","Hamstrings","Core"], noCore: true },
     { name: "Conditioning",    cats: ["Cardio","Carries","Core"], noCore: true },
     { name: "Core & Carry",    cats: ["Core","Carries"], noCore: true },
+    { name: "Grip & Carry",    cats: ["Carries","Back","Core"], noCore: true },
   ];
+  // Sets/reps are [min,max] ranges — a random value is picked per exercise, so
+  // the same movement lands on different numbers each roll (big variety boost).
   const GEN_STYLES = [
-    { name: "Strength",    primary: { sets: "5", reps: "5"  }, acc: { sets: "4", reps: "8"  }, core: { sets: "3", reps: "12" }, tag: "Pause" },
-    { name: "Power",       primary: { sets: "5", reps: "3"  }, acc: { sets: "4", reps: "6"  }, core: { sets: "3", reps: "12" }, tag: "Explosive" },
-    { name: "Hypertrophy", primary: { sets: "4", reps: "10" }, acc: { sets: "3", reps: "12" }, core: { sets: "3", reps: "15" }, tag: "Tempo" },
-    { name: "Pump",        primary: { sets: "4", reps: "12" }, acc: { sets: "3", reps: "15" }, core: { sets: "3", reps: "20" }, tag: null },
-    { name: "Endurance",   primary: { sets: "3", reps: "15" }, acc: { sets: "3", reps: "20" }, core: { sets: "3", reps: "25" }, tag: null },
+    { name: "Strength",      primary: { sets: [4,6], reps: [3,6]   }, acc: { sets: [3,4], reps: [6,10]  }, core: { sets: [3,4], reps: [10,15] }, tags: ["Pause"] },
+    { name: "Power",         primary: { sets: [4,6], reps: [2,4]   }, acc: { sets: [3,5], reps: [4,6]   }, core: { sets: [3,3], reps: [10,15] }, tags: ["Explosive"] },
+    { name: "Hypertrophy",   primary: { sets: [3,5], reps: [8,12]  }, acc: { sets: [3,4], reps: [10,15] }, core: { sets: [3,4], reps: [12,20] }, tags: ["Tempo","Pause"] },
+    { name: "Pump",          primary: { sets: [3,4], reps: [12,15] }, acc: { sets: [3,4], reps: [15,20] }, core: { sets: [3,3], reps: [15,25] }, tags: [] },
+    { name: "Endurance",     primary: { sets: [2,3], reps: [15,20] }, acc: { sets: [2,3], reps: [18,25] }, core: { sets: [3,3], reps: [20,30] }, tags: [] },
+    { name: "Powerbuilding", primary: { sets: [4,5], reps: [5,8]   }, acc: { sets: [3,4], reps: [8,12]  }, core: { sets: [3,3], reps: [12,15] }, tags: ["Pause","Tempo"] },
+    { name: "Volume",        primary: { sets: [5,6], reps: [8,12]  }, acc: { sets: [4,5], reps: [10,15] }, core: { sets: [4,4], reps: [15,20] }, tags: ["Tempo"] },
+    { name: "Explosive",     primary: { sets: [5,6], reps: [3,5]   }, acc: { sets: [3,4], reps: [5,8]   }, core: { sets: [3,3], reps: [10,12] }, tags: ["Explosive"] },
+    { name: "Metcon",        primary: { sets: [3,5], reps: [10,15] }, acc: { sets: [3,4], reps: [12,20] }, core: { sets: [3,4], reps: [15,25] }, tags: [] },
   ];
-  const GEN_FLAVORS = ["Iron","Apex","Prime","Savage","Peak","Forge","Titan","Blitz","Storm","Granite","Vault","Summit","Rogue","Atlas","Vertex"];
-  const GEN_COMPOUND_KW = /squat|deadlift|bench|press|\brow\b|pull-up|pull up|chin|hip thrust|lunge|clean|overhead|dip/i;
+  const GEN_FLAVORS = ["Iron","Apex","Prime","Savage","Peak","Forge","Titan","Blitz","Storm","Granite","Vault","Summit","Rogue","Atlas","Vertex","Fury","Onyx","Rampart","Nova","Bedrock","Phantom","Kodiak","Havoc","Crux","Ember","Valor","Grit","Maverick","Tempest","Anvil"];
+  const GEN_SUFFIX  = ["Day","Session","Builder","Blitz","Burn","Grind","Blast","Surge","Protocol","Circuit"];
+  const GEN_COMPOUND_KW = /squat|deadlift|bench|press|\brow\b|pull-up|pull up|chin|hip thrust|lunge|clean|overhead|dip|thrust|swing|good morning|rack pull/i;
 
   function _rand(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+  function _pickRange(r) { return String(r[0] + Math.floor(Math.random() * (r[1] - r[0] + 1))); }
   function _shuffle(arr) { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
   function _exercisesForCats(cats) {
     const out = [];
@@ -1989,15 +2006,20 @@
   // Keyword-gated tag assignment so combos stay sensible (never "Incline Deadlift").
   function _genTags(name, isPrimary, style) {
     const mods = [];
-    const hasEquip = /barbell|dumbbell|\bdb\b|\bbb\b|cable|machine|kettlebell|\bkb\b|band|ez|smith|trap[- ]bar|hex|sled|assault|treadmill|\bbike\b|rowing|jump rope|battle/i.test(name);
-    const equipable = /(press|\brow\b|fly|curl|raise|extension|pushdown|pulldown|kickback|crossover|shrug|crunch|pull-through|adduction|abduction|pressdown|skull crusher|pec deck)/i.test(name);
-    if (equipable && !hasEquip && Math.random() < 0.5) mods.push(_rand(["DB","DB","Cable","Cable","Machine","KB","Band"]));
-    if (/(press|fly)/i.test(name) && Math.random() < 0.3) mods.push(_rand(["Incline","Decline"]));
-    else if (/(\brow\b|curl|raise|extension|pushdown)/i.test(name) && Math.random() < 0.25) mods.push(_rand(["Seated","Standing"]));
-    const uniOk = /(\brow\b|curl|press|extension|raise|lunge|kickback|pushdown|pulldown|split squat|step-up|carry|adduction|abduction)/i.test(name);
-    const unilateral = uniOk && Math.random() < 0.22;
-    if (unilateral) mods.push("1A");
-    if (isPrimary && style.tag && Math.random() < 0.6) mods.push(style.tag);
+    const hasEquip = /barbell|dumbbell|\bdb\b|\bbb\b|cable|machine|kettlebell|\bkb\b|band|ez|smith|trap[- ]bar|hex|sled|assault|treadmill|\bbike\b|rowing|jump rope|battle|ski erg/i.test(name);
+    const equipable = /(press|\brow\b|fly|curl|raise|extension|pushdown|pulldown|kickback|crossover|shrug|crunch|pull-through|adduction|abduction|pressdown|skull crusher|pec deck|thrust|bridge|swing|good morning)/i.test(name);
+    if (equipable && !hasEquip && Math.random() < 0.55) mods.push(_rand(["DB","DB","Cable","Cable","Machine","KB","Band","BB","EZ Bar","Rope"]));
+    // Position
+    if (/(press|fly)/i.test(name) && Math.random() < 0.35) mods.push(_rand(["Incline","Decline"]));
+    else if (/(\brow\b|curl|raise|extension|pushdown|pulldown)/i.test(name) && Math.random() < 0.3) mods.push(_rand(["Seated","Standing","Kneeling"]));
+    // Unilateral: single-leg for leg moves, single-arm for the rest.
+    const legUni = /(lunge|split squat|step-up|single-leg|calf raise)/i.test(name);
+    const armUni = /(\brow\b|curl|press|extension|pushdown|pulldown|raise|carry|fly|kickback)/i.test(name);
+    let unilateral = false;
+    if ((legUni || armUni) && Math.random() < 0.25) { mods.push(legUni ? "1L" : "1A"); unilateral = true; }
+    // Style intensity tag — usually on the primary, sometimes on accessories.
+    const styleTags = style.tags || [];
+    if (styleTags.length && Math.random() < (isPrimary ? 0.6 : 0.28)) mods.push(_rand(styleTags));
     return { mods, unilateral };
   }
   function generateWorkoutDay() {
@@ -2005,7 +2027,7 @@
     const style = _rand(GEN_STYLES);
     const pool = _exercisesForCats(arch.cats);
     if (!pool.length) return null;
-    const wantMain = 4 + Math.floor(Math.random() * 2); // 4-5 main lifts
+    const wantMain = 4 + Math.floor(Math.random() * 4); // 4-7 main lifts
     const compounds = pool.filter((e) => GEN_COMPOUND_KW.test(e.name));
     const shuffled = _shuffle(pool);
     const chosen = [];
@@ -2027,11 +2049,14 @@
       const isCore = e.cat === "Core";
       const scheme = isPrimary ? style.primary : (isCore ? style.core : style.acc);
       const { mods, unilateral } = isCore ? { mods: [], unilateral: false } : _genTags(e.name, isPrimary, style);
-      const reps = unilateral ? scheme.reps + " each" : scheme.reps;
-      return { name: e.name, sets: scheme.sets, reps, modifiers: mods };
+      let reps = _pickRange(scheme.reps);
+      if (unilateral) reps += " each";
+      return { name: e.name, sets: _pickRange(scheme.sets), reps, modifiers: mods };
     });
+    let name = `${_rand(GEN_FLAVORS)} ${arch.name}`;
+    if (Math.random() < 0.4) name += ` ${_rand(GEN_SUFFIX)}`;
     return {
-      name: `${_rand(GEN_FLAVORS)} ${arch.name}`,
+      name,
       focus: `${style.name} · ${arch.cats.map((c) => c.toLowerCase()).join(", ")}`,
       exercises,
     };
@@ -2438,19 +2463,19 @@
 
   // -------- Exercise Library --------
   const EXERCISE_LIBRARY = [
-    { cat: "Chest",      ex: ["Bench Press","Fly","Push-Up","Dips","Pec Deck","Pullover"] },
-    { cat: "Back",       ex: ["Pull-Up","Row","Pendlay Row","Lat Pulldown","T-Bar Row","Chest-Supported Row","Straight-Arm Pulldown"] },
-    { cat: "Quads",      ex: ["Back Squat","Front Squat","Leg Press","Hack Squat","Trap Bar Deadlift","Bulgarian Split Squat","Walking Lunge","Leg Extension","Step-Up","Goblet Squat","Box Squat"] },
-    { cat: "Hamstrings", ex: ["Deadlift","Romanian Deadlift","Stiff-Leg Deadlift","Lying Leg Curl","Leg Curl","Nordic Curl","Good Morning","Glute-Ham Raise"] },
-    { cat: "Glutes",     ex: ["Hip Thrust","Glute Bridge","Kickback","Sumo Deadlift","Abductor","Lateral Walk","Donkey Kick","Pull-Through"] },
-    { cat: "Adductors",  ex: ["Hip Adduction","Copenhagen Plank","Lateral Lunge","Cossack Squat","Sumo Squat","Side-Lying Adduction"] },
-    { cat: "Shoulders",  ex: ["Overhead Press","Overhead Raise","Lateral Raise","Front Raise","Rear Delt Fly","Arnold Press","Upright Row","Face Pull","Shrug","Cable Crossover"] },
-    { cat: "Biceps",     ex: ["Curl","Hammer Curl","Preacher Curl","Concentration Curl","EZ-Bar Curl","Spider Curl"] },
-    { cat: "Triceps",    ex: ["Tricep Pushdown","Skull Crusher","Close-Grip Bench Press","Overhead Tricep Extension","Tricep Dips","Diamond Push-Up","Kickback"] },
-    { cat: "Core",       ex: ["Plank","Side Plank","Crunch","Russian Twist","Leg Raise","Hanging Leg Raise","Ab Wheel Rollout","Dead Bug","Pallof Press","Dragon Flag","Bear Crawl","Crab Crawl","Leopard Crawl","Lizard Crawl","Spiderman Crawl","Inchworm"] },
-    { cat: "Calves",     ex: ["Calf Raise","Donkey Calf Raise","Leg Press Calf Raise"] },
-    { cat: "Carries",    ex: ["Farmer's Carry","Suitcase Carry","Overhead Carry","Rack Carry","Zercher Carry","Trap Bar Carry","Bear Hug Carry","Bottoms-Up Carry","Waiter Walk"] },
-    { cat: "Cardio",     ex: ["Treadmill Run","Stationary Bike","Rowing","Jump Rope","Sled Push","Battle Ropes","Farmer's Walk","Assault Bike","Stair Climber"] },
+    { cat: "Chest",      ex: ["Bench Press","Incline Bench Press","Decline Bench Press","Fly","Cable Fly","Push-Up","Dips","Pec Deck","Pullover","Machine Chest Press","Incline Dumbbell Press","Floor Press","Landmine Press","Svend Press"] },
+    { cat: "Back",       ex: ["Pull-Up","Chin-Up","Row","Pendlay Row","Lat Pulldown","T-Bar Row","Chest-Supported Row","Straight-Arm Pulldown","Seated Cable Row","Single-Arm Row","Meadows Row","Rack Pull","Inverted Row","Wide-Grip Pulldown"] },
+    { cat: "Quads",      ex: ["Back Squat","Front Squat","Leg Press","Hack Squat","Trap Bar Deadlift","Bulgarian Split Squat","Walking Lunge","Leg Extension","Step-Up","Goblet Squat","Box Squat","Reverse Lunge","Sissy Squat","Pause Squat","Pendulum Squat","Zercher Squat"] },
+    { cat: "Hamstrings", ex: ["Deadlift","Romanian Deadlift","Stiff-Leg Deadlift","Lying Leg Curl","Seated Leg Curl","Leg Curl","Nordic Curl","Good Morning","Glute-Ham Raise","Single-Leg RDL","Cable Pull-Through","Kettlebell Swing"] },
+    { cat: "Glutes",     ex: ["Hip Thrust","Glute Bridge","Kickback","Sumo Deadlift","Abductor","Lateral Walk","Donkey Kick","Pull-Through","Frog Pump","B-Stance Hip Thrust","Curtsy Lunge","Cable Kickback"] },
+    { cat: "Adductors",  ex: ["Hip Adduction","Copenhagen Plank","Lateral Lunge","Cossack Squat","Sumo Squat","Side-Lying Adduction","Adductor Machine"] },
+    { cat: "Shoulders",  ex: ["Overhead Press","Overhead Raise","Lateral Raise","Front Raise","Rear Delt Fly","Arnold Press","Upright Row","Face Pull","Shrug","Seated Dumbbell Press","Cable Lateral Raise","Reverse Pec Deck","Push Press","Z Press","Landmine Press"] },
+    { cat: "Biceps",     ex: ["Curl","Hammer Curl","Preacher Curl","Concentration Curl","EZ-Bar Curl","Spider Curl","Incline Curl","Cable Curl","Bayesian Curl","Reverse Curl","Zottman Curl","Drag Curl"] },
+    { cat: "Triceps",    ex: ["Tricep Pushdown","Skull Crusher","Close-Grip Bench Press","Overhead Tricep Extension","Tricep Dips","Diamond Push-Up","Kickback","Rope Pushdown","JM Press","Tate Press","Cable Overhead Extension"] },
+    { cat: "Core",       ex: ["Plank","Side Plank","Crunch","Cable Crunch","Bicycle Crunch","Russian Twist","Leg Raise","Hanging Leg Raise","Ab Wheel Rollout","Dead Bug","Pallof Press","Dragon Flag","Hollow Hold","V-Up","Toes-to-Bar","Reverse Crunch","Sit-Up","Windshield Wiper","Bear Crawl","Crab Crawl","Leopard Crawl","Lizard Crawl","Spiderman Crawl","Inchworm"] },
+    { cat: "Calves",     ex: ["Calf Raise","Donkey Calf Raise","Leg Press Calf Raise","Seated Calf Raise","Standing Calf Raise","Single-Leg Calf Raise","Tibialis Raise"] },
+    { cat: "Carries",    ex: ["Farmer's Carry","Suitcase Carry","Overhead Carry","Rack Carry","Zercher Carry","Trap Bar Carry","Bear Hug Carry","Bottoms-Up Carry","Waiter Walk","Sandbag Carry","Yoke Walk","Front Rack Carry"] },
+    { cat: "Cardio",     ex: ["Treadmill Run","Stationary Bike","Rowing","Jump Rope","Sled Push","Battle Ropes","Farmer's Walk","Assault Bike","Stair Climber","Sprint Intervals","Incline Walk","Ski Erg","Box Jump","Burpee","High Knees"] },
   ];
 
   function openExLibrary(day, rerenderFn) {
