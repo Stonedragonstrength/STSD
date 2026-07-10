@@ -2975,7 +2975,8 @@
       dayContent.innerHTML = "";
       if (!week.days.length) {
         const p = document.createElement("p");
-        p.className = "muted"; p.style.padding = "1rem 0";
+        p.className = "muted";
+        p.style.cssText = "text-align:center; padding:2.25rem 1.25rem;";
         p.textContent = "No training days yet — click + Day to add one, or 📥 Library to import a saved day.";
         dayContent.appendChild(p); return;
       }
