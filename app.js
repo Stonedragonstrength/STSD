@@ -486,6 +486,9 @@
   if (!Array.isArray(state.trainerData.workoutTemplates)) {
     state.trainerData.workoutTemplates = [];
   }
+  if (!Array.isArray(state.trainerData.openSlots)) {
+    state.trainerData.openSlots = [];
+  }
   if (!Array.isArray(state.trainerData.programTemplates)) {
     state.trainerData.programTemplates = [];
   }
@@ -1060,6 +1063,7 @@
     state.trainerData.coachAuthId = coach.auth_user_id;
     state.trainerData.programTemplates = coach.program_templates || [];
     state.trainerData.workoutTemplates = coach.workout_templates || [];
+    state.trainerData.openSlots = coach.open_slots || [];
     state.trainerData.clients = (athletes || []).map((a) => {
       if (!a.schedule) a.schedule = {};
       if (!a.coachPRs) a.coachPRs = [];
@@ -5085,6 +5089,37 @@
   }
 
   // -------- Session bank (athlete side) --------
+  // ---- Athlete: open slots posted by the coach ----
+  function athleteOpenSlots() {
+    return Array.isArray(state.clientData.openSlots) ? state.clientData.openSlots : [];
+  }
+  async function refreshAthleteOpenSlots() {
+    const client = state.clientData.program?.client;
+    if (client?.hideOpenSlots) { state.clientData.openSlots = []; updateOpenSlotBadge(); return; }
+    if (window.Cloud?.enabled) {
+      const slots = await window.Cloud.getOpenSlotsForAthlete();
+      if (Array.isArray(slots)) state.clientData.openSlots = slots;
+    }
+    updateOpenSlotBadge();
+    renderAthleteSessions();
+  }
+  function updateOpenSlotBadge() {
+    const badge = $("#ctab-sessions-badge");
+    if (!badge) return;
+    const client = state.clientData.program?.client;
+    const openCount = client?.hideOpenSlots ? 0 : athleteOpenSlots().filter((s) => s.status === "open").length;
+    badge.textContent = openCount ? String(openCount) : "";
+    badge.classList.toggle("hidden", !openCount);
+  }
+  async function claimAthleteSlot(id, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = "Claiming…"; }
+    const res = await window.Cloud.claimOpenSlot(id);
+    if (res?.ok) toast("Slot claimed! Your coach will confirm. 🎉");
+    else if (res?.reason === "taken") toast(`Just taken${res.claimedByName ? ` by ${res.claimedByName}` : ""}.`);
+    else toast("Couldn't claim — try again.");
+    await refreshAthleteOpenSlots();
+  }
+
   function renderAthleteSessions() {
     const container = $("#athlete-session-container"); if (!container) return;
     container.innerHTML = "";
@@ -5109,6 +5144,37 @@
         <div><span class="session-stat-num">${pending.length}</span><span class="session-stat-lbl">requested</span></div>
       </div>`;
     container.appendChild(balance);
+
+    // Open slots posted by the coach (skip entirely if this athlete is muted).
+    if (!prog.client.hideOpenSlots) {
+      const visible = athleteOpenSlots().filter((s) => s.status !== "closed");
+      if (visible.length) {
+        const myId = prog.client.id;
+        const osCard = document.createElement("div");
+        osCard.className = "card open-slots-athlete-card";
+        osCard.innerHTML = `<h4 style="margin-top:0">📣 Open slots</h4>
+          <p class="muted" style="font-size:0.85rem">Grab one first-come — your coach confirms and books it.</p>`;
+        [...visible].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).forEach((s) => {
+          const mine = s.status === "claimed" && s.claimedBy === myId;
+          const taken = s.status === "claimed" && !mine;
+          let action;
+          if (mine) action = `<span class="status-pill status-claimed">you claimed · pending</span>`;
+          else if (taken) action = `<span class="status-pill status-cancelled">taken</span>`;
+          else action = `<button class="btn btn-primary btn-sm" data-claim="${escapeHtml(s.id)}">Claim it</button>`;
+          const row = document.createElement("div");
+          row.className = "open-slot-row";
+          row.innerHTML = `
+            <div class="open-slot-info">
+              <strong>${escapeHtml(s.label || "Open slot")}</strong>
+              ${s.note ? `<div class="muted" style="font-size:0.85rem">${escapeHtml(s.note)}</div>` : ""}
+            </div>
+            <div class="open-slot-actions">${action}</div>`;
+          osCard.appendChild(row);
+        });
+        container.appendChild(osCard);
+        osCard.querySelectorAll("[data-claim]").forEach((b) => b.addEventListener("click", () => claimAthleteSlot(b.dataset.claim, b)));
+      }
+    }
 
     // Gift sessions from the coach (already counted in the pool above; this
     // card just shows where the free sessions came from).
@@ -5475,6 +5541,127 @@
           renderCoachSessions();
           closeModal();
           toast(`Added ${size}-session package ✓`);
+        }},
+      ],
+    });
+  }
+
+  // ---- Open Slots (coach broadcasts appointment openings; athletes claim) ----
+  function ensureOpenSlots() {
+    if (!Array.isArray(state.trainerData.openSlots)) state.trainerData.openSlots = [];
+    return state.trainerData.openSlots;
+  }
+
+  // Pull the authoritative list from cloud (which includes athlete claims)
+  // before rendering, so the coach sees who claimed what.
+  async function refreshCoachOpenSlots() {
+    const coachId = state.trainerData.coachId;
+    if (window.Cloud?.enabled && coachId) {
+      const fresh = await window.Cloud.getCoachOpenSlots(coachId);
+      if (Array.isArray(fresh)) { state.trainerData.openSlots = fresh; saveTrainer(); }
+    }
+    renderCoachOpenSlots();
+  }
+
+  // Apply a change on top of a fresh cloud copy so a coach edit never clobbers
+  // an athlete claim that landed since the last render.
+  async function mutateOpenSlots(fn) {
+    const coachId = state.trainerData.coachId;
+    if (window.Cloud?.enabled && coachId) {
+      const fresh = await window.Cloud.getCoachOpenSlots(coachId);
+      if (Array.isArray(fresh)) state.trainerData.openSlots = fresh;
+    }
+    state.trainerData.openSlots = fn(ensureOpenSlots());
+    saveTrainer();
+    renderCoachOpenSlots();
+    if (window.Cloud?.enabled && coachId) window.Cloud.updateCoachOpenSlots(coachId, state.trainerData.openSlots);
+  }
+
+  function renderCoachOpenSlots() {
+    const container = $("#open-slots-container"); if (!container) return;
+    container.innerHTML = "";
+    const slots = ensureOpenSlots();
+    if (!slots.length) {
+      container.insertAdjacentHTML("beforeend", `<p class="muted" style="font-size:0.85rem">No open slots posted. Tap <strong>+ Post open slot</strong> when you have an opening.</p>`);
+    } else {
+      [...slots].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).forEach((s) => {
+        const row = document.createElement("div");
+        row.className = "open-slot-row";
+        const statusHtml = s.status === "claimed"
+          ? `<span class="status-pill status-claimed">claimed${s.claimedByName ? ` · ${escapeHtml(s.claimedByName)}` : ""}</span>`
+          : s.status === "closed"
+          ? `<span class="status-pill status-cancelled">closed</span>`
+          : `<span class="status-pill status-open">open</span>`;
+        row.innerHTML = `
+          <div class="open-slot-info">
+            <strong>${escapeHtml(s.label || "Open slot")}</strong>
+            ${s.note ? `<div class="muted" style="font-size:0.85rem">${escapeHtml(s.note)}</div>` : ""}
+          </div>
+          <div class="open-slot-actions">
+            ${statusHtml}
+            ${s.status === "claimed" ? `<button class="btn btn-ghost btn-xs" data-reopen="${escapeHtml(s.id)}">Reopen</button>` : ""}
+            <button class="btn-delete-mini" data-del="${escapeHtml(s.id)}" title="Remove">×</button>
+          </div>`;
+        container.appendChild(row);
+      });
+      container.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => {
+        if (!window.confirm("Remove this open slot?")) return;
+        mutateOpenSlots((arr) => arr.filter((s) => s.id !== b.dataset.del));
+      }));
+      container.querySelectorAll("[data-reopen]").forEach((b) => b.addEventListener("click", () => {
+        mutateOpenSlots((arr) => arr.map((s) => s.id === b.dataset.reopen
+          ? { ...s, status: "open", claimedBy: null, claimedByName: null, claimedAt: null } : s));
+      }));
+    }
+    renderOpenSlotOptOut(container);
+  }
+
+  // Per-athlete opt-out so clients on a steady schedule can be muted.
+  function renderOpenSlotOptOut(container) {
+    const clients = state.trainerData.clients || [];
+    if (!clients.length) return;
+    const mutedCount = clients.filter((c) => c.hideOpenSlots).length;
+    const details = document.createElement("details");
+    details.className = "open-slot-optout";
+    details.innerHTML = `<summary>🔕 Alert settings${mutedCount ? ` · ${mutedCount} muted` : ""}</summary>`;
+    const list = document.createElement("div");
+    list.className = "open-slot-optout-list";
+    clients.slice().sort((a, b) => (a.name || "").localeCompare(b.name || "")).forEach((c) => {
+      const item = document.createElement("label");
+      item.className = "open-slot-optout-item";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !c.hideOpenSlots; // checked = receives alerts
+      cb.addEventListener("change", () => {
+        c.hideOpenSlots = !cb.checked;
+        saveTrainer();
+        if (window.Cloud?.enabled && state.trainerData.coachId) window.Cloud.upsertAthlete(c, state.trainerData.coachId);
+      });
+      const span = document.createElement("span");
+      span.textContent = c.name || "Athlete";
+      item.appendChild(cb); item.appendChild(span);
+      list.appendChild(item);
+    });
+    details.appendChild(list);
+    container.appendChild(details);
+  }
+
+  function openPostSlotModal() {
+    openModal({
+      title: "📣 Post an open slot",
+      body: `
+        <p class="muted" style="margin-top:-0.4em">Athletes see this and can claim it first-come. You confirm and book it in Setmore.</p>
+        <label>Slot <input type="text" id="slot-label" placeholder="e.g. Tue Jul 14 · 5:00 PM" autofocus /></label>
+        <label>Note (optional) <input type="text" id="slot-note" placeholder="e.g. 45-min session, upper body" /></label>`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Post slot 📣", className: "btn btn-primary", onClick: () => {
+          const label = $("#slot-label").value.trim();
+          if (!label) { toast("Add a time/label for the slot"); return; }
+          const note = $("#slot-note").value.trim();
+          mutateOpenSlots((arr) => [{ id: uid(), label, note, status: "open", createdAt: Date.now() }, ...arr]);
+          closeModal();
+          toast("Open slot posted 📣");
         }},
       ],
     });
@@ -6093,6 +6280,7 @@
     renderAthleteCardio();
     renderAthletePRs();
     renderAthleteSessions();
+    refreshAthleteOpenSlots();
   }
   function exitClient() {
     state.mode = null;
@@ -7322,6 +7510,7 @@
           switchCoachView("overview");
           hideLibSidebar();
           renderDashboardCalendar();
+          refreshCoachOpenSlots();
         } else if (target === "packages") {
           _programEditorId = null;
           state.currentClientId = null;
@@ -7392,6 +7581,7 @@
     $("#btn-athlete-add-pr").addEventListener("click", () => openAddPRModal("athlete"));
     $("#btn-add-package")?.addEventListener("click", openAddPackageModal);
     $("#btn-gift-session")?.addEventListener("click", openGiftSessionModal);
+    $("#btn-post-open-slot")?.addEventListener("click", openPostSlotModal);
     $("#btn-redeem-session")?.addEventListener("click", openRedeemSessionModal);
     $("#btn-athlete-request-package")?.addEventListener("click", openAthleteRequestPackageModal);
     $("#btn-packages-refresh")?.addEventListener("click", refreshAllAthletePackages);

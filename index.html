@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=gift1" />
+  <link rel="stylesheet" href="styles.css?v=openslots1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -276,6 +276,15 @@
           <button class="btn btn-ghost btn-sm" id="dash-cal-refresh" style="margin-left:auto">🔄 Refresh</button>
         </div>
         <div id="dash-cal-grid" class="cal-grid dash-cal-grid"></div>
+
+        <div class="card" style="margin-top:1.5rem">
+          <div class="program-head">
+            <h3 style="margin:0">📣 Open Slots</h3>
+            <button class="btn btn-primary btn-sm" id="btn-post-open-slot">+ Post open slot</button>
+          </div>
+          <p class="muted" style="font-size:0.85rem">Post an opening — athletes can claim it first-come from their side. You confirm and book it in Setmore.</p>
+          <div id="open-slots-container"></div>
+        </div>
       </div>
 
       <!-- Session packages tracker -->
@@ -567,7 +576,7 @@
     <main class="app-main">
       <div class="tabs">
         <button class="tab active" data-ctab="workouts">Workouts</button>
-        <button class="tab" data-ctab="sessions">Sessions</button>
+        <button class="tab" data-ctab="sessions">Sessions<span class="tab-badge hidden" id="ctab-sessions-badge"></span></button>
         <button class="tab" data-ctab="prs">PRs</button>
         <button class="tab" data-ctab="cardio">Cardio</button>
         <button class="tab" data-ctab="calendar">Calendar</button>
@@ -740,8 +749,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
-  <script src="cloud.js?v=noemail1"></script>
-  <script src="app.js?v=gift1"></script>
+  <script src="cloud.js?v=openslots1"></script>
+  <script src="app.js?v=openslots1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

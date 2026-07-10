@@ -2691,6 +2691,46 @@ input[type="date"] { color-scheme: dark; }
 .status-pending { background: rgba(245, 158, 11, 0.2); color: var(--warn); }
 .status-cancelled { background: var(--surface-3); color: var(--muted); }
 .status-gift { background: rgba(236, 72, 153, 0.18); color: #f472b6; }
+.status-open { background: var(--primary-soft); color: var(--primary-bright); }
+.status-claimed { background: rgba(245, 158, 11, 0.2); color: var(--warn); }
+
+/* Open slots (coach Overview + athlete Sessions) */
+.open-slot-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--border);
+}
+.open-slot-info { min-width: 0; }
+.open-slot-info strong { display: block; }
+.open-slot-actions { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+.open-slots-athlete-card { border-color: rgba(6, 182, 212, 0.35); }
+.open-slots-athlete-card h4 { color: var(--primary-bright); }
+.open-slot-optout { margin-top: 0.9rem; }
+.open-slot-optout > summary {
+  color: var(--muted); font-size: 0.82rem; cursor: pointer; list-style: none;
+  padding: 0.3rem 0;
+}
+.open-slot-optout > summary::-webkit-details-marker { display: none; }
+.open-slot-optout-list {
+  display: flex; flex-direction: column; gap: 0.15rem;
+  margin-top: 0.4rem; padding-left: 0.2rem;
+}
+.open-slot-optout-item {
+  display: flex; align-items: center; gap: 0.55rem;
+  font-size: 0.88rem; color: var(--text-soft); cursor: pointer;
+}
+.open-slot-optout-item input { width: auto; margin: 0; }
+
+/* Nav-tab badge (athlete Sessions open-slot count) */
+.tab-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 1.15em; height: 1.15em; padding: 0 0.35em; margin-left: 0.4em;
+  border-radius: 999px; background: var(--primary); color: #041318;
+  font-size: 0.62rem; font-weight: 800; vertical-align: middle;
+}
 
 /* Athlete gift-sessions card — subtle accent so it reads as a nice surprise */
 .gift-card { border-color: rgba(236, 72, 153, 0.35); }

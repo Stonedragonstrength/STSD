@@ -82,6 +82,7 @@
       session_bank: c.sessionBank || { packages: [], redemptions: [] },
       setmore_aliases: c.setmoreAliases || [],
       nutrition: c.nutrition || { current: null, history: [] },
+      hide_open_slots: !!c.hideOpenSlots,
       updated_at: new Date().toISOString(),
     };
   }
@@ -102,6 +103,7 @@
       sessionBank: r.session_bank || { packages: [], redemptions: [] },
       setmoreAliases: r.setmore_aliases || [],
       nutrition: r.nutrition || { current: null, history: [] },
+      hideOpenSlots: !!r.hide_open_slots,
       importedProgress: null,
       createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
       _coachId: r.coach_id || null,
@@ -174,6 +176,45 @@
       if (error) console.warn("[Cloud] updateCoachTemplates error", error.message);
       return !error;
     } catch (e) { console.warn("[Cloud] updateCoachTemplates", e); return false; }
+  }
+
+  // -------- Open slots (coach broadcasts appointment openings) --------
+  async function updateCoachOpenSlots(coachId, openSlots) {
+    if (!coachId) return false;
+    try {
+      const { error } = await sb.from("coaches").update({ open_slots: openSlots || [] }).eq("id", coachId);
+      if (error) console.warn("[Cloud] updateCoachOpenSlots error", error.message);
+      return !error;
+    } catch (e) { console.warn("[Cloud] updateCoachOpenSlots", e); return false; }
+  }
+
+  // Coach re-reads their own open_slots to pick up athlete claims.
+  async function getCoachOpenSlots(coachId) {
+    if (!coachId) return null;
+    try {
+      const { data, error } = await sb.from("coaches").select("open_slots").eq("id", coachId).maybeSingle();
+      if (error || !data) return null;
+      return Array.isArray(data.open_slots) ? data.open_slots : [];
+    } catch (e) { console.warn("[Cloud] getCoachOpenSlots", e); return null; }
+  }
+
+  // Athlete reads their coach's open slots (SECURITY DEFINER RPC — the athletes
+  // table RLS won't let them read the coach row directly).
+  async function getOpenSlotsForAthlete() {
+    try {
+      const { data, error } = await sb.rpc("open_slots_for_athlete");
+      if (error) { console.warn("[Cloud] getOpenSlotsForAthlete", error.message); return null; }
+      return Array.isArray(data) ? data : [];
+    } catch (e) { console.warn(e); return null; }
+  }
+
+  // Atomic first-come claim. Returns { ok, reason?, slot?, claimedByName? }.
+  async function claimOpenSlot(slotId) {
+    try {
+      const { data, error } = await sb.rpc("claim_open_slot", { slot_id: slotId });
+      if (error) { console.warn("[Cloud] claimOpenSlot", error.message); return { ok: false, reason: "error" }; }
+      return data || { ok: false, reason: "unknown" };
+    } catch (e) { console.warn(e); return { ok: false, reason: "error" }; }
   }
 
   // -------- Athlete methods --------
@@ -367,6 +408,11 @@
     upsertCoach,
     getCoachByAuthUserId,
     updateCoachTemplates,
+    // Open slots
+    updateCoachOpenSlots,
+    getCoachOpenSlots,
+    getOpenSlotsForAthlete,
+    claimOpenSlot,
     // Athlete
     upsertAthlete,
     deleteAthlete,
