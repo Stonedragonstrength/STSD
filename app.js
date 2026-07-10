@@ -2071,6 +2071,14 @@
       if (!isPrimary && !isCore) _maybeFinisher(out, e.name); // occasional burnout/dropset
       return out;
     });
+    // Occasionally superset two adjacent accessory lifts (not the primary or core).
+    const accEnd = exercises.length - 1 - (arch.noCore ? 0 : 1);
+    if (accEnd >= 2 && Math.random() < 0.33) {
+      const k = 1 + Math.floor(Math.random() * (accEnd - 1)); // pair k & k+1, both accessories
+      const id = uid();
+      exercises[k].supersetId = id;
+      exercises[k + 1].supersetId = id;
+    }
     let name = `${_rand(GEN_FLAVORS)} ${arch.name}`;
     if (Math.random() < 0.4) name += ` ${_rand(GEN_SUFFIX)}`;
     return {
@@ -2138,7 +2146,7 @@
           <div class="rec-card-head">
             <div>
               <h5>${escapeHtml(day.name)} <span class="rec-gen-badge">generated</span></h5>
-              <div class="rec-meta">${escapeHtml(day.focus)} · ${day.exercises.length} exercise${day.exercises.length === 1 ? "" : "s"}</div>
+              <div class="rec-meta">${escapeHtml(day.focus)} · ${day.exercises.length} exercise${day.exercises.length === 1 ? "" : "s"}${day.exercises.some((e) => e.supersetId) ? ` · <span class="rec-fin">🔗 superset</span>` : ""}</div>
             </div>
             <button class="rec-add" data-gen="${idx}">+ Add</button>
           </div>
@@ -2200,6 +2208,7 @@
         name: e.name, sets: e.sets, currentReps: e.reps, notes: day.focus, modifiers: [...(e.modifiers || [])],
         ...(e.burnout ? { burnout: e.burnout } : {}),
         ...(e.dropset ? { dropset: e.dropset } : {}),
+        ...(e.supersetId ? { supersetId: e.supersetId } : {}),
       }));
       $("#modal-body").querySelectorAll(".rec-add[data-gen]").forEach((btn) => {
         btn.addEventListener("click", () => {
@@ -3264,6 +3273,53 @@
     return card;
   }
 
+  // Supersets: consecutive exercises sharing a truthy supersetId are done
+  // back-to-back and render as one visual block. Rides the weeks jsonb — no
+  // schema change. Non-grouped exercises are singleton groups.
+  function groupSupersets(exercises) {
+    const groups = [];
+    (exercises || []).forEach((ex) => {
+      const last = groups[groups.length - 1];
+      if (ex.supersetId && last && last.id === ex.supersetId) last.items.push(ex);
+      else groups.push({ id: ex.supersetId || null, items: [ex] });
+    });
+    return groups;
+  }
+  // Link an exercise with the next one, or break its existing superset.
+  function toggleSuperset(day, ex) {
+    const g = groupSupersets(day.exercises).find((grp) => grp.items.includes(ex));
+    if (g && g.items.length > 1) {
+      g.items.forEach((e) => { delete e.supersetId; });        // break the group
+    } else {
+      const i = day.exercises.indexOf(ex);
+      const next = day.exercises[i + 1];
+      if (!next) return;                                        // nothing below to link with
+      const id = next.supersetId || ex.supersetId || uid();
+      ex.supersetId = id; next.supersetId = id;
+    }
+    saveTrainer();
+  }
+  // Append day.exercises to `list`, wrapping superset runs in a block. `makeRow`
+  // builds one exercise element; `athlete` picks the athlete-side hint text.
+  function appendExerciseGroups(list, day, makeRow, athlete) {
+    let letterIdx = 0;
+    groupSupersets(day.exercises).forEach((g) => {
+      if (g.items.length > 1) {
+        const letter = String.fromCharCode(65 + (letterIdx++ % 26));
+        const gEl = document.createElement("div");
+        gEl.className = "superset-group";
+        const head = document.createElement("div");
+        head.className = "superset-head";
+        head.innerHTML = `<span class="superset-badge">🔗 Superset ${letter}</span><span class="superset-hint muted">${athlete ? "do these back-to-back" : "done back-to-back"}</span>`;
+        gEl.appendChild(head);
+        g.items.forEach((ex) => gEl.appendChild(makeRow(ex)));
+        list.appendChild(gEl);
+      } else {
+        list.appendChild(makeRow(g.items[0]));
+      }
+    });
+  }
+
   function renderDayContent(week, day, rerenderFn) {
     const wrapper = document.createElement("div");
     wrapper.className = "day-content";
@@ -3344,7 +3400,7 @@
     const list = document.createElement("div");
     list.className = "ex-compact-list";
 
-    day.exercises.forEach((ex) => list.appendChild(renderExerciseRow(day, ex, rerenderFn)));
+    appendExerciseGroups(list, day, (ex) => renderExerciseRow(day, ex, rerenderFn), false);
 
     // Always show a drop zone — big when empty, slim hint when exercises exist
     const dropHint = document.createElement("div");
@@ -3531,6 +3587,20 @@
     editBtn.addEventListener("click", () => { ex.locked = false; saveTrainer(); applyLock(false); });
     applyLock(!!ex.locked);
 
+    // Superset link — pair this exercise with the one below (or break the group)
+    const ssBtn = document.createElement("button");
+    ssBtn.className = "btn-icon-mini ex-ss-btn";
+    ssBtn.textContent = "🔗";
+    (function refreshSs() {
+      const g = groupSupersets(day.exercises).find((grp) => grp.items.includes(ex));
+      const inSS = !!(g && g.items.length > 1);
+      const isLast = day.exercises.indexOf(ex) === day.exercises.length - 1;
+      ssBtn.classList.toggle("active", inSS);
+      ssBtn.title = inSS ? "Break superset" : "Superset with exercise below";
+      ssBtn.classList.toggle("hidden", !inSS && isLast); // nothing below to link with
+    })();
+    ssBtn.addEventListener("click", () => { toggleSuperset(day, ex); rerenderFn(); });
+
     // Delete
     const delBtn = document.createElement("button");
     delBtn.className = "btn-icon-mini ex-del-btn";
@@ -3557,7 +3627,7 @@
     row.appendChild(chipsAfter);
     row.appendChild(modBtn);
     row.appendChild(metricsGroup);
-    row.appendChild(expandBtn); row.appendChild(saveBtn); row.appendChild(editBtn); row.appendChild(delBtn);
+    row.appendChild(expandBtn); row.appendChild(saveBtn); row.appendChild(editBtn); row.appendChild(ssBtn); row.appendChild(delBtn);
 
     // Detail panel (notes + video), hidden by default
     const detail = document.createElement("div");
@@ -6749,7 +6819,7 @@
     if (!day.exercises.length) {
       list.innerHTML = `<div class="empty-state"><div class="empty-emoji">💤</div><p>No exercises for this day.</p></div>`;
     } else {
-      day.exercises.forEach((ex) => list.appendChild(renderClientExercise(week, day, ex, null)));
+      appendExerciseGroups(list, day, (ex) => renderClientExercise(week, day, ex, null), true);
     }
     list.appendChild(renderDayNoteBlock(day.id));
 
