@@ -6611,13 +6611,11 @@
 
     host.innerHTML = `
       <div class="overview-stat">
-        <div class="overview-stat-icon">🏋️</div>
         <div class="overview-stat-num">${totalDays ? daysLeft : "—"}</div>
         <div class="overview-stat-label">${daysLeft === 1 ? "training day left" : "training days left"}</div>
         <div class="overview-stat-sub">${totalDays ? `${escapeHtml(weekLabel)} · ${doneDays}/${totalDays} done` : "No program yet"}</div>
       </div>
       <div class="overview-stat${low ? " is-low" : ""}">
-        <div class="overview-stat-icon">🎟️</div>
         <div class="overview-stat-num">${remaining}</div>
         <div class="overview-stat-label">${remaining === 1 ? "session left" : "sessions left"}</div>
         ${low
