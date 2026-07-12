@@ -6853,7 +6853,12 @@
     if (jumpTo?.weekId && jumpTo?.dayId) {
       state.workoutView = { mode: "detail", weekId: jumpTo.weekId, dayId: jumpTo.dayId, date: jumpTo.date || todayISO() };
     } else if (!state.workoutView.weekId) {
-      state.workoutView.weekId = prog.client.weeks[0].id;
+      // Restore the last week the athlete was on (persisted across reopens),
+      // falling back to the first week if it's gone or was never set.
+      const saved = state.clientData.selectedWeekId;
+      state.workoutView.weekId = (saved && prog.client.weeks.some((w) => w.id === saved))
+        ? saved
+        : prog.client.weeks[0].id;
     } else if (!prog.client.weeks.some((w) => w.id === state.workoutView.weekId)) {
       // Stored week no longer exists (program edited) — fall back to first.
       state.workoutView.weekId = prog.client.weeks[0].id;
@@ -6943,6 +6948,9 @@
       `;
       chip.addEventListener("click", () => {
         state.workoutView.weekId = week.id;
+        // Remember the athlete's week so reopening the program returns here.
+        state.clientData.selectedWeekId = week.id;
+        saveClient();
         renderWorkoutPickerUI();
       });
       chips.appendChild(chip);
