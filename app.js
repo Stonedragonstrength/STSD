@@ -5497,6 +5497,8 @@
     // the athlete's own toggle is respected the rest of the time.
     const det = $("#athlete-session-details");
     if (det && (pending.length || (!prog.client.hideOpenSlots && athleteOpenSlots().some((s) => s.status !== "closed")))) det.open = true;
+
+    if (typeof renderAthleteOverview === "function") renderAthleteOverview(); // keep the Overview session count fresh
   }
 
   function requestPackage(size) {
@@ -6570,7 +6572,7 @@
       ? `<span class="profile-invite-label">🔑 Invite code</span><span class="profile-invite-code">${escapeHtml(prog.client.inviteCode)}</span>`
       : "";
     renderThemePicker($("#athlete-theme-picker"), "athlete");
-    setClientTab("workouts");
+    setClientTab("overview"); // land on the Overview home
     const now = new Date();
     state.athleteCal = { year: now.getFullYear(), month: now.getMonth() };
     renderAthleteCalendar();
@@ -6580,7 +6582,49 @@
     renderAthleteCardio();
     renderAthletePRs();
     renderAthleteSessions();
+    renderAthleteOverview();
     refreshAthleteOpenSlots();
+  }
+  // -------- Athlete Overview (home: weekly days-left + sessions + calendar) --------
+  function renderAthleteOverview() {
+    const host = $("#overview-stats");
+    if (!host) return;
+    const prog = state.clientData.program;
+    const c = prog?.client;
+    if (!c) { host.innerHTML = ""; return; }
+
+    // Weekly training days left — for the athlete's current week.
+    const weeks = c.weeks || [];
+    const activeWeekId = state.workoutView?.weekId || state.clientData.selectedWeekId || weeks[0]?.id;
+    const week = weeks.find((w) => w.id === activeWeekId) || weeks[0];
+    const days = week?.days || [];
+    const dc = state.clientData.progress?.dayCompletions || {};
+    const totalDays = days.length;
+    const doneDays = days.filter((d) => Array.isArray(dc[d.id]) && dc[d.id].length).length;
+    const daysLeft = Math.max(0, totalDays - doneDays);
+    const weekLabel = week?.label || "This week";
+
+    // Session balance + low-balance nudge.
+    const sum = sessionBankSummary(c);
+    const remaining = sum.remaining;
+    const low = remaining <= 2;
+
+    host.innerHTML = `
+      <div class="overview-stat">
+        <div class="overview-stat-icon">🏋️</div>
+        <div class="overview-stat-num">${totalDays ? daysLeft : "—"}</div>
+        <div class="overview-stat-label">${daysLeft === 1 ? "training day left" : "training days left"}</div>
+        <div class="overview-stat-sub">${totalDays ? `${escapeHtml(weekLabel)} · ${doneDays}/${totalDays} done` : "No program yet"}</div>
+      </div>
+      <div class="overview-stat${low ? " is-low" : ""}">
+        <div class="overview-stat-icon">🎟️</div>
+        <div class="overview-stat-num">${remaining}</div>
+        <div class="overview-stat-label">${remaining === 1 ? "session left" : "sessions left"}</div>
+        ${low
+          ? `<button class="overview-nudge" id="ov-buy-more" type="button">${remaining === 0 ? "Buy sessions" : "Running low — buy more"} →</button>`
+          : `<div class="overview-stat-sub">You're all set 💪</div>`}
+      </div>`;
+    $("#ov-buy-more")?.addEventListener("click", () => { setClientTab("sessions"); openAthleteRequestPackageModal(); });
   }
   // -------- Athlete self-service profile (name / age / height / weight / goals) --------
   function renderAthleteProfileFields() {
@@ -6742,6 +6786,7 @@
         hide(balEl);
       }
     }
+    if (typeof renderAthleteOverview === "function") renderAthleteOverview(); // weekly days-left tracks completions
   }
 
   function openAthleteLogDayModal(iso) {

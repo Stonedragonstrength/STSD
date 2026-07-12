@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=tabicons1" />
+  <link rel="stylesheet" href="styles.css?v=overview1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -609,14 +609,13 @@
 
     <main class="app-main">
       <div class="tabs">
-        <button class="tab active" data-ctab="workouts">
+        <button class="tab active" data-ctab="overview">
+          <span class="tab-icon">📊</span>
+          <span class="tab-label">Overview</span>
+        </button>
+        <button class="tab" data-ctab="workouts">
           <span class="tab-icon">🏋️</span>
           <span class="tab-label">Program</span>
-        </button>
-        <button class="tab" data-ctab="sessions">
-          <span class="tab-icon">🎟️</span>
-          <span class="tab-label">Sessions</span>
-          <span class="tab-badge hidden" id="ctab-sessions-badge"></span>
         </button>
         <button class="tab" data-ctab="prs">
           <span class="tab-icon">🏆</span>
@@ -626,10 +625,35 @@
           <span class="tab-icon">🥗</span>
           <span class="tab-label">Nutrition/<wbr>Cardio</span>
         </button>
+        <button class="tab" data-ctab="sessions">
+          <span class="tab-icon">🎟️</span>
+          <span class="tab-label">Sessions</span>
+          <span class="tab-badge hidden" id="ctab-sessions-badge"></span>
+        </button>
       </div>
 
-      <!-- Workouts (default landing — clipboard picker + detail) -->
-      <div class="tab-panel active" data-ctab-panel="workouts">
+      <!-- Overview (athlete home — stats + calendar) -->
+      <div class="tab-panel active" data-ctab-panel="overview">
+        <div class="program-head">
+          <h3>Overview</h3>
+        </div>
+        <div id="overview-stats" class="overview-stats"></div>
+        <div class="session-calendar">
+          <div class="calendar-head">
+            <div class="cal-nav">
+              <button class="btn btn-ghost btn-sm" id="ccal-prev">‹</button>
+              <h4 class="cal-title" id="ccal-title"></h4>
+              <button class="btn btn-ghost btn-sm" id="ccal-next">›</button>
+              <button class="btn btn-ghost btn-sm" id="ccal-today">Today</button>
+            </div>
+            <span id="ccal-token-balance" class="cal-token-balance hidden"></span>
+          </div>
+          <div id="ccal-grid" class="cal-grid"></div>
+        </div>
+      </div>
+
+      <!-- Workouts (clipboard picker + detail) -->
+      <div class="tab-panel" data-ctab-panel="workouts">
         <!-- Picker: shown by default; tapping a day card swaps it for the detail view. -->
         <div id="workout-picker" class="workout-picker">
           <div class="program-head">
@@ -721,18 +745,6 @@
           </div>
         </div>
         <div id="athlete-balance-host"></div>
-        <div class="session-calendar">
-          <div class="calendar-head">
-            <div class="cal-nav">
-              <button class="btn btn-ghost btn-sm" id="ccal-prev">‹</button>
-              <h4 class="cal-title" id="ccal-title"></h4>
-              <button class="btn btn-ghost btn-sm" id="ccal-next">›</button>
-              <button class="btn btn-ghost btn-sm" id="ccal-today">Today</button>
-            </div>
-            <span id="ccal-token-balance" class="cal-token-balance hidden"></span>
-          </div>
-          <div id="ccal-grid" class="cal-grid"></div>
-        </div>
         <details class="session-manage" id="athlete-session-details">
           <summary>Package balance &amp; history</summary>
           <p class="muted session-manage-note">Your training package balance. Buying a package sends a purchase request to your coach — settle payment with them outside the app, and they'll mark it paid to add the sessions.</p>
@@ -843,7 +855,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
   <script src="cloud.js?v=profile1"></script>
-  <script src="app.js?v=athnav1"></script>
+  <script src="app.js?v=overview1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

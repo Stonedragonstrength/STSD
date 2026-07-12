@@ -1922,6 +1922,48 @@ input[type="date"] { color-scheme: dark; }
 /* ---- Merged Sessions + Calendar tab ---- */
 .session-calendar { margin-top: 0.4rem; }
 .cal-caption { margin: 0; font-size: 0.8rem; }
+
+/* Athlete Overview stat cards */
+.overview-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.8rem;
+  margin-bottom: 1.5rem;
+}
+.overview-stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.1rem 1rem;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+}
+.overview-stat-icon { font-size: 1.5rem; line-height: 1; }
+.overview-stat-num {
+  font-size: 2.1rem;
+  font-weight: 900;
+  color: var(--primary-bright);
+  line-height: 1.05;
+  margin: 0.12em 0 0.04em;
+}
+.overview-stat.is-low .overview-stat-num { color: var(--warn); }
+.overview-stat-label { font-size: 0.85rem; color: var(--text-soft); font-weight: 600; }
+.overview-stat-sub { font-size: 0.72rem; color: var(--muted); margin-top: 0.35em; }
+.overview-nudge {
+  display: inline-block;
+  margin-top: 0.55em;
+  background: var(--warn);
+  color: #1a1205;
+  border: none;
+  border-radius: 999px;
+  padding: 0.4em 0.85em;
+  font-size: 0.72rem;
+  font-weight: 800;
+  font-family: inherit;
+  cursor: pointer;
+}
+.overview-nudge:hover { filter: brightness(1.08); }
+@media (max-width: 380px) { .overview-stat-num { font-size: 1.8rem; } }
 .session-manage {
   margin-top: 1.4rem;
   border: 1px solid var(--border);
