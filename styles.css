@@ -594,6 +594,22 @@ input[type="date"] { color-scheme: dark; }
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--primary-bright); border-bottom-color: var(--primary); }
 
+/* Athlete tabs: icon stacked over the label, like the coach nav. */
+#screen-client .tab {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 0.55em 0.8em;
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+#screen-client .tab-icon { font-size: 1.35em; line-height: 1; }
+#screen-client .tab-label { font-size: 0.72rem; white-space: normal; text-align: center; line-height: 1.15; }
+#screen-client .tab-badge { position: absolute; top: 3px; right: 5px; margin: 0; }
+
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 
@@ -3419,17 +3435,10 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
   #screen-client .tab {
     flex: 1 1 0;
     min-width: 0;
-    padding: 0.55em 0.2em;
-    font-size: 0.64rem;
-    letter-spacing: 0.02em;
-    white-space: normal;
-    overflow-wrap: break-word;
-    text-align: center;
-    line-height: 1.18;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    padding: 0.5em 0.15em;
   }
+  #screen-client .tab-icon { font-size: 1.4em; }
+  #screen-client .tab-label { font-size: 0.62rem; overflow-wrap: break-word; }
 
   /* Cards */
   .card { padding: 1rem; margin-bottom: 1rem; }

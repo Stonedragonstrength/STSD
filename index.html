@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=athnav2" />
+  <link rel="stylesheet" href="styles.css?v=tabicons1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -609,10 +609,23 @@
 
     <main class="app-main">
       <div class="tabs">
-        <button class="tab active" data-ctab="workouts">Program</button>
-        <button class="tab" data-ctab="sessions">Sessions<span class="tab-badge hidden" id="ctab-sessions-badge"></span></button>
-        <button class="tab" data-ctab="prs">PRs</button>
-        <button class="tab" data-ctab="diet">Nutrition/<wbr>Cardio</button>
+        <button class="tab active" data-ctab="workouts">
+          <span class="tab-icon">🏋️</span>
+          <span class="tab-label">Program</span>
+        </button>
+        <button class="tab" data-ctab="sessions">
+          <span class="tab-icon">🎟️</span>
+          <span class="tab-label">Sessions</span>
+          <span class="tab-badge hidden" id="ctab-sessions-badge"></span>
+        </button>
+        <button class="tab" data-ctab="prs">
+          <span class="tab-icon">🏆</span>
+          <span class="tab-label">PRs</span>
+        </button>
+        <button class="tab" data-ctab="diet">
+          <span class="tab-icon">🥗</span>
+          <span class="tab-label">Nutrition/<wbr>Cardio</span>
+        </button>
       </div>
 
       <!-- Workouts (default landing — clipboard picker + detail) -->
