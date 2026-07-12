@@ -2275,6 +2275,19 @@ input[type="date"] { color-scheme: dark; }
 }
 .dash-booked-linked:hover { background: var(--surface-2); }
 .dash-booked-arrow { color: var(--muted); font-size: 1.1rem; line-height: 1; }
+.btn-unlink-setmore {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-soft);
+  border-radius: 999px;
+  padding: 0.2em 0.7em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.btn-unlink-setmore:hover { color: #fca5a5; border-color: rgba(239, 68, 68, 0.5); background: var(--danger-soft); }
 .booked-balance-chip {
   display: inline-block;
   margin-left: 0.5em;

@@ -4628,7 +4628,10 @@
             <div class="breakdown-ex-name">${escapeHtml(athlete.name)}
               <span class="booked-balance-chip${sum.remaining <= 0 ? " low" : ""}">🎟 ${sum.remaining} left</span>
             </div>
-            <div class="breakdown-sets">${time}<span class="dash-booked-arrow">›</span></div>
+            <div class="breakdown-sets">${time}
+              <button class="btn-unlink-setmore" type="button" data-unlink-booking="${i}" title="Unlink this booking from ${escapeHtml(athlete.name)}">Unlink</button>
+              <span class="dash-booked-arrow">›</span>
+            </div>
           </div>`;
         } else {
           body += `<div class="breakdown-ex dash-booked-row">
@@ -4691,6 +4694,37 @@
         if (e) openLinkSetmoreNameModal(e.clientName);
       });
     });
+    // Matched-by-alias booking → unlink (remove the alias that caused the match)
+    $$("[data-unlink-booking]").forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const e = dayEvents[Number(btn.dataset.unlinkBooking)];
+        if (e) unlinkSetmoreBooking(e.clientName);
+      });
+    });
+  }
+
+  // Disconnect a Setmore booking name from an athlete by removing the alias
+  // that was linking them. If the booking matches the athlete's actual name
+  // (not an alias) there's nothing to remove — tell the coach.
+  function unlinkSetmoreBooking(bookingName) {
+    const c = matchAthleteBySetmoreName(bookingName);
+    if (!c) return;
+    const n = normSetmoreName(bookingName);
+    const viaAlias = Array.isArray(c.setmoreAliases) && c.setmoreAliases.includes(n);
+    if (!viaAlias) {
+      toast(`"${bookingName}" matches ${c.name}'s own name — rename the athlete or the Setmore booking to unlink.`);
+      return;
+    }
+    if (!window.confirm(`Unlink "${bookingName}" from ${c.name}? Future bookings under this name won't match ${c.name} (and won't auto-spend a session).`)) return;
+    c.setmoreAliases = c.setmoreAliases.filter((a) => a !== n);
+    saveTrainer();
+    if (window.Cloud?.enabled) window.Cloud.debounce(`athlete:${c.id}`, () =>
+      window.Cloud.upsertAthlete(c, state.trainerData.coachId)
+    );
+    toast(`Unlinked from ${c.name} ✓`);
+    closeModal();
+    renderDashboardCalendar();
   }
 
   // -------- Coach calendar --------
