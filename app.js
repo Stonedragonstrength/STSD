@@ -6533,7 +6533,9 @@
       state.mode = "client";
       sessionStorage.setItem(KEY_SESSION, "client");
     }
-    applyTheme(currentThemeForRole("athlete"));
+    // In coach preview keep the coach's theme (the athlete picker is disabled
+    // there anyway); a real athlete session uses the athlete's saved theme.
+    applyTheme(currentThemeForRole(state.previewMode ? "coach" : "athlete"));
     hide($("#screen-login"));
     hide($("#screen-app"));
     show($("#screen-client"));
@@ -6596,6 +6598,7 @@
     hide($("#preview-banner"));
     state.clientData = ret.clientData;
     state.mode = ret.mode;
+    applyTheme(currentThemeForRole("coach")); // restore coach theme after preview
     hide($("#screen-client"));
     show($("#screen-app"));
     openClient(ret.clientId);
