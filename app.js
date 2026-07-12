@@ -13,11 +13,13 @@
   const KEY_THEME = "trainerpro_theme_v1";
   const THEMES = [
     { id: "blue",   name: "Blue",   swatch: "#22d3ee" },
-    { id: "red",    name: "Red",    swatch: "#fb7185" },
-    { id: "green",  name: "Green",  swatch: "#4ade80" },
-    { id: "purple", name: "Purple", swatch: "#c084fc" },
+    { id: "teal",   name: "Teal",   swatch: "#2dd4bf" },
+    { id: "green",  name: "Green",  swatch: "#5eea8d" },
     { id: "yellow", name: "Yellow", swatch: "#fbbf24" },
+    { id: "orange", name: "Orange", swatch: "#fb923c" },
+    { id: "red",    name: "Red",    swatch: "#f87171" },
     { id: "pink",   name: "Pink",   swatch: "#f472b6" },
+    { id: "purple", name: "Purple", swatch: "#c084fc" },
     { id: "black",  name: "Black",  swatch: "#cbd5e1" },
   ];
   function getThemePrefs() {
@@ -7793,6 +7795,10 @@
 
   // -------- Init --------
   async function init() {
+    // Re-apply the saved color theme immediately (before the session resolves)
+    // so a reload keeps the chosen color with no default-blue flash.
+    applyTheme(currentThemeForRole(sessionStorage.getItem(KEY_SESSION) === "client" ? "athlete" : "coach"));
+
     // Auth state change listener — catches PASSWORD_RECOVERY from email reset links
     if (window.Cloud?.enabled) {
       window.Cloud.onAuthStateChange((event) => {

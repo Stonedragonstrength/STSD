@@ -36,16 +36,28 @@
    Each theme retints the dark base + accent. --accent stays green as the
    universal "done/success" signal. Blue (original) is the default :root. */
 :root[data-theme="red"] {
-  --bg: #0c0407; --bg-2: #150609; --surface: #1c0a0f; --surface-2: #2c1119; --surface-3: #3f1a26; --surface-elevate: #552330;
-  --border: #733040; --border-strong: #8f3e51;
-  --primary-rgb: 244, 63, 94; --primary-bright-rgb: 251, 113, 133;
-  --primary: #f43f5e; --primary-bright: #fb7185; --primary-hover: #e11d48;
+  --bg: #0c0405; --bg-2: #150607; --surface: #1c0a0b; --surface-2: #2c1214; --surface-3: #3f1c1e; --surface-elevate: #552628;
+  --border: #7a3535; --border-strong: #9e4444;
+  --primary-rgb: 239, 68, 68; --primary-bright-rgb: 248, 113, 113;
+  --primary: #ef4444; --primary-bright: #f87171; --primary-hover: #dc2626;
+}
+:root[data-theme="orange"] {
+  --bg: #0c0603; --bg-2: #150a04; --surface: #1c0f07; --surface-2: #2c1a0e; --surface-3: #3f2816; --surface-elevate: #55361e;
+  --border: #7a4a26; --border-strong: #965d31;
+  --primary-rgb: 249, 115, 22; --primary-bright-rgb: 251, 146, 60;
+  --primary: #f97316; --primary-bright: #fb923c; --primary-hover: #ea580c;
 }
 :root[data-theme="green"] {
-  --bg: #030c07; --bg-2: #06140f; --surface: #0a1b13; --surface-2: #112a1e; --surface-3: #1a3d2b; --surface-elevate: #235235;
-  --border: #2f6e47; --border-strong: #3d8a5a;
-  --primary-rgb: 34, 197, 94; --primary-bright-rgb: 74, 222, 128;
-  --primary: #22c55e; --primary-bright: #4ade80; --primary-hover: #16a34a;
+  --bg: #030c06; --bg-2: #06140d; --surface: #0a1b11; --surface-2: #112a1b; --surface-3: #1a3d27; --surface-elevate: #235231;
+  --border: #2f7043; --border-strong: #3d9057;
+  --primary-rgb: 37, 211, 102; --primary-bright-rgb: 94, 234, 141;
+  --primary: #25d366; --primary-bright: #5eea8d; --primary-hover: #1eb555;
+}
+:root[data-theme="teal"] {
+  --bg: #030c0b; --bg-2: #061412; --surface: #0a1b18; --surface-2: #112a26; --surface-3: #1a3d37; --surface-elevate: #235249;
+  --border: #2f6e63; --border-strong: #3d8a7c;
+  --primary-rgb: 20, 184, 166; --primary-bright-rgb: 45, 212, 191;
+  --primary: #14b8a6; --primary-bright: #2dd4bf; --primary-hover: #0d9488;
 }
 :root[data-theme="purple"] {
   --bg: #08040d; --bg-2: #0d0616; --surface: #140a20; --surface-2: #1f1132; --surface-3: #2e1a49; --surface-elevate: #3e2357;
@@ -3752,6 +3764,36 @@ input:focus, textarea:focus, select:focus {
   }
   .coach-nav-item.active { box-shadow: 0 10px 24px rgba(var(--primary-rgb), 0.35); }
   .coach-main { padding-left: 0.5rem; }
+}
+
+/* Phones: fit every nav choice on one row (no side-scroll) by stacking the
+   icon over a small label and letting each item flex-fill the width evenly. */
+@media (max-width: 640px) {
+  .coach-nav {
+    gap: 0.2em;
+    padding: 0.4rem max(0.35rem, env(safe-area-inset-left)) 0.4rem max(0.35rem, env(safe-area-inset-right));
+    overflow-x: hidden;
+  }
+  .coach-nav-item {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+    flex-direction: column;
+    gap: 3px;
+    padding: 0.45em 0.15em;
+    border-radius: 12px;
+    font-size: 0.6rem;
+  }
+  .coach-nav-icon { font-size: 1.3em; }
+  .coach-nav-label {
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1;
+  }
+  /* Badge floats in the corner so it doesn't widen the cell. */
+  .coach-nav-badge { position: absolute; top: 3px; right: calc(50% - 1.5em); min-width: 1.25em; height: 1.25em; }
 }
 
 /* ============================================================
