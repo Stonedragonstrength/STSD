@@ -6777,8 +6777,6 @@
     const prog = state.clientData.program;
     const picker = $("#workout-picker");
     const detail = $("#workout-detail");
-    const fallback = $("#client-weeks-container");
-    if (fallback) fallback.innerHTML = "";
 
     if (!prog?.client?.weeks?.length) {
       picker.querySelector(".workout-grid").innerHTML = "";
@@ -6801,12 +6799,6 @@
       // Stored week no longer exists (program edited) — fall back to first.
       state.workoutView.weekId = prog.client.weeks[0].id;
     }
-
-    // Always populate the "See all weeks" fallback so legacy detail-in-list still works.
-    prog.client.weeks.forEach((week, wIdx) => {
-      const expand = wIdx === 0;
-      fallback.appendChild(renderClientWeek(week, wIdx, expand, null));
-    });
 
     renderWorkoutPickerUI();
     renderClientArchive(prog.client);
