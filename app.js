@@ -6560,8 +6560,8 @@
     ensureProgressShape(state.clientData.progress);
     const prog = state.clientData.program;
     $("#client-portal-name").textContent = prog.client.name;
-    // Profile tab: name, invite code, theme picker
-    const pName = $("#profile-name"); if (pName) pName.textContent = prog.client.name || "My profile";
+    // Profile tab: editable details, invite code, theme picker
+    renderAthleteProfileFields();
     const pInvite = $("#profile-invite");
     if (pInvite) pInvite.innerHTML = prog.client.inviteCode
       ? `<span class="profile-invite-label">🔑 Invite code</span><span class="profile-invite-code">${escapeHtml(prog.client.inviteCode)}</span>`
@@ -6578,6 +6578,42 @@
     renderAthletePRs();
     renderAthleteSessions();
     refreshAthleteOpenSlots();
+  }
+  // -------- Athlete self-service profile (name / age / height / weight / goals) --------
+  function renderAthleteProfileFields() {
+    const c = state.clientData.program?.client; if (!c) return;
+    const set = (id, v) => { const el = $(id); if (el) el.value = v ?? ""; };
+    set("#ath-prof-name", c.name || "");
+    set("#ath-prof-age", c.age || "");
+    const h = Number(c.heightIn) || 0;
+    set("#ath-prof-height-ft", h ? Math.floor(h / 12) : "");
+    set("#ath-prof-height-in", h ? Math.round(h % 12) : "");
+    set("#ath-prof-weight", c.weightLb || "");
+    set("#ath-prof-goals", c.goals || "");
+  }
+  function saveAthleteProfile() {
+    if (state.previewMode) return; // coach preview is read-only
+    const c = state.clientData.program?.client; if (!c) return;
+    c.name = $("#ath-prof-name").value.trim();
+    c.age = $("#ath-prof-age").value;
+    c.weightLb = $("#ath-prof-weight").value;
+    c.goals = $("#ath-prof-goals").value;
+    const ft = Number($("#ath-prof-height-ft").value) || 0;
+    const inch = Number($("#ath-prof-height-in").value) || 0;
+    c.heightIn = (ft * 12 + inch) || "";
+    saveClient();
+    // Push vitals to the shared athletes row so the coach sees the same info.
+    const athleteId = state.clientData.program?.clientId;
+    if (window.Cloud?.enabled && athleteId) {
+      window.Cloud.debounce(`athleteProfile:${athleteId}`, () =>
+        window.Cloud.updateAthleteProfileFields(athleteId, {
+          name: c.name, age: c.age, heightIn: c.heightIn, weightLb: c.weightLb, goals: c.goals,
+        })
+      );
+    }
+    const hdr = $("#client-portal-name"); if (hdr) hdr.textContent = c.name || "";
+    const flag = $("#athlete-prof-saved");
+    if (flag) { flag.classList.add("show"); clearTimeout(flag._t); flag._t = setTimeout(() => flag.classList.remove("show"), 1600); }
   }
   function exitClient() {
     state.mode = null;
@@ -8344,6 +8380,8 @@
       e.target.value = ""; // allow re-selecting the same file
     });
     $("#btn-add-cardio")?.addEventListener("click", () => openCardioModal());
+    ["#ath-prof-name", "#ath-prof-age", "#ath-prof-height-ft", "#ath-prof-height-in", "#ath-prof-weight", "#ath-prof-goals"]
+      .forEach((sel) => $(sel)?.addEventListener("change", saveAthleteProfile));
     $("#client-feedback").addEventListener("input", () => {
       state.clientData.progress.feedback = $("#client-feedback").value;
       saveClient();

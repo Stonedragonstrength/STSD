@@ -287,6 +287,23 @@
     } catch (e) { console.warn("[Cloud] updateAthleteHideOpenSlots", e); return false; }
   }
 
+  // Athlete self-edits their own vitals (name / age / height / weight / goals)
+  // on the shared athletes row so the coach sees the same information.
+  async function updateAthleteProfileFields(athleteId, fields) {
+    if (!athleteId || !fields) return false;
+    try {
+      const row = { updated_at: new Date().toISOString() };
+      if ("name" in fields) row.display_name = fields.name || "";
+      if ("age" in fields) row.age = fields.age || null;
+      if ("heightIn" in fields) row.height_in = fields.heightIn || null;
+      if ("weightLb" in fields) row.weight_lb = fields.weightLb || null;
+      if ("goals" in fields) row.goals = fields.goals || null;
+      const { error } = await sb.from("athletes").update(row).eq("id", athleteId);
+      if (error) console.warn("[Cloud] updateAthleteProfileFields error", error.message);
+      return !error;
+    } catch (e) { console.warn("[Cloud] updateAthleteProfileFields", e); return false; }
+  }
+
   async function getAthleteByAuthUserId(userId) {
     if (!userId) return null;
     try {
@@ -433,6 +450,7 @@
     linkAthleteToAuth,
     updateAthleteCoachPRs,
     updateAthleteHideOpenSlots,
+    updateAthleteProfileFields,
     // Progress
     upsertProgress,
     getProgress,

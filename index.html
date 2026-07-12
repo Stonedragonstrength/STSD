@@ -735,8 +735,38 @@
         <div class="program-head">
           <h3>Profile</h3>
         </div>
+        <div class="card profile-card">
+          <div class="profile-card-head">
+            <h3 id="profile-name">My details</h3>
+            <span class="saved-flag" id="athlete-prof-saved">Saved ✓</span>
+          </div>
+          <p class="muted" style="margin:-0.3em 0 0.9em">Your coach can see this too — keep it up to date.</p>
+          <div class="profile-grid">
+            <label class="profile-field-name">Name
+              <input type="text" id="ath-prof-name" autocomplete="name" />
+            </label>
+            <label>Age
+              <input type="number" id="ath-prof-age" min="0" />
+            </label>
+            <label class="profile-field-height">Height
+              <div class="height-input-group">
+                <input type="number" id="ath-prof-height-ft" min="0" placeholder="ft" />
+                <span class="height-unit">ft</span>
+                <input type="number" id="ath-prof-height-in" min="0" max="11" placeholder="in" />
+                <span class="height-unit">in</span>
+              </div>
+            </label>
+            <label>Body weight (lb)
+              <input type="number" id="ath-prof-weight" step="0.1" min="0" />
+            </label>
+          </div>
+          <div class="profile-notes-grid">
+            <label>My goals
+              <textarea id="ath-prof-goals" rows="2" placeholder="e.g. Add 30 lb to squat, build lean mass, cut 10 lb"></textarea>
+            </label>
+          </div>
+        </div>
         <div class="card">
-          <h3 id="profile-name"></h3>
           <div class="profile-invite" id="profile-invite"></div>
         </div>
         <div class="card">
@@ -799,8 +829,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
-  <script src="cloud.js?v=openslots3"></script>
-  <script src="app.js?v=install1"></script>
+  <script src="cloud.js?v=profile1"></script>
+  <script src="app.js?v=profile1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
