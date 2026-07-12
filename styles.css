@@ -1641,6 +1641,91 @@ input[type="date"] { color-scheme: dark; }
 .bw-metric { display: flex; justify-content: space-between; gap: 0.5em; }
 .bw-metric span { color: var(--text-soft); }
 
+/* Body-composition trend charts (SVG small multiples, shared coach + athlete) */
+.bw-charts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6em;
+  margin: 0 0 0.7em;
+}
+.bw-charts-head h4 { margin: 0; font-size: 0.95rem; }
+.bw-range {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px;
+}
+.bw-range-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.74rem;
+  padding: 0.2em 0.6em;
+  border-radius: calc(var(--radius) - 3px);
+  cursor: pointer;
+}
+.bw-range-btn.on { background: var(--primary); color: #fff; }
+.bw-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.7em;
+  margin-bottom: 1.1rem;
+}
+.bw-chart-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.6em 0.7em 0.5em;
+}
+.bw-chart-top { display: flex; align-items: center; justify-content: space-between; gap: 0.4em; }
+.bw-chart-title { font-size: 0.78rem; color: var(--text-soft); }
+.bw-chart-delta { font-size: 0.72rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bw-chart-val { font-size: 1.15rem; font-weight: 700; line-height: 1.1; margin: 0.1em 0 0.35em; }
+.bw-chart-unit { font-size: 0.72rem; font-weight: 500; color: var(--muted); margin-left: 0.15em; }
+.bw-chart-plot { position: relative; width: 100%; height: 58px; color: var(--primary); touch-action: none; }
+.bw-chart-svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.bw-dot {
+  position: absolute;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 2px var(--surface-2);
+  pointer-events: none;
+}
+.bw-cross {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 1px;
+  background: currentColor;
+  opacity: 0.35;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.bw-chart-tip {
+  position: absolute;
+  top: -2px;
+  transform: translate(-50%, -100%);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 0.3em 0.5em;
+  font-size: 0.72rem;
+  color: var(--text);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.bw-chart-tip span { color: var(--muted); }
+
 /* Diet on client side */
 .client-diet-day {
   background: var(--surface-2);

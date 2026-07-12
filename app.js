@@ -4275,6 +4275,10 @@
     bwCard.style.marginTop = "1.75rem";
     bwCard.innerHTML = `<h4 style="margin-top:0">Body weight</h4>`;
     if (bwLog.length) {
+      const charts = document.createElement("div");
+      charts.id = "bw-charts-coach";
+      bwCard.appendChild(charts);
+      renderBwCharts(charts, bwLog);
       const list = document.createElement("div");
       list.className = "bw-list";
       [...bwLog].sort(bwSort).forEach((b) => {
@@ -7705,9 +7709,10 @@
     return el;
   }
   function renderBwHistory() {
+    const log = state.clientData.progress.bodyweightLog || [];
+    renderBwCharts($("#bw-charts"), log);
     const wrap = $("#bw-history");
     wrap.innerHTML = "";
-    const log = state.clientData.progress.bodyweightLog || [];
     if (!log.length) { wrap.innerHTML = `<p class="muted">No weight entries yet.</p>`; return; }
     [...log].sort(bwSort).forEach((b) => {
       wrap.appendChild(bwEntryEl(b, {
@@ -7834,6 +7839,133 @@
     reader.onerror = () => toast("Couldn't read that file.");
     reader.readAsText(file);
   }
+
+  // -------- Body-composition trend charts (hand-rolled SVG small multiples) --------
+  const round1 = (n) => Math.round(n * 10) / 10;
+  let bwChartRange = "all"; // "30" | "90" | "all" — shared across athlete + coach views
+  const BW_RANGES = [
+    { k: "30", label: "30d", days: 30 },
+    { k: "90", label: "90d", days: 90 },
+    { k: "all", label: "All", days: null },
+  ];
+  const BW_CHART_SPECS = [
+    { key: "weight", title: "Weight", unit: "lb", val: (e) => { const v = parseFloat(e.weightLb); return isFinite(v) ? v : null; } },
+    { key: "bodyfat", title: "Body Fat", unit: "%", val: (e) => bwMetricVal(e, /^body fat perc/i) },
+    { key: "muscle", title: "Muscle Mass", unit: "lb", val: (e) => { const v = bwMetricVal(e, /^muscle mass/i); return v != null ? v : bwMetricVal(e, /^skeletal muscle mass/i); } },
+  ];
+  function bwMetricVal(e, re) {
+    if (!Array.isArray(e.metrics)) return null;
+    const m = e.metrics.find((x) => re.test(x.label));
+    if (!m) return null;
+    const v = typeof m.value === "number" ? m.value : parseFloat(m.value);
+    return isFinite(v) ? v : null;
+  }
+  function bwEntryTime(e) {
+    const t = e.time && /^\d{2}:\d{2}/.test(e.time) ? e.time : "12:00:00";
+    const ms = new Date(`${e.date}T${t}`).getTime();
+    return isFinite(ms) ? ms : new Date(`${e.date}T12:00:00`).getTime();
+  }
+  // Render the small-multiple trend cards into `container` from a bodyweight log.
+  // Shared by the athlete's own view and the coach's read-only athlete view.
+  function renderBwCharts(container, log) {
+    if (!container) return;
+    container.innerHTML = "";
+    const all = [...(log || [])];
+    if (all.length < 2) return; // nothing to trend yet
+    const latestT = Math.max(...all.map(bwEntryTime));
+    const range = BW_RANGES.find((r) => r.k === bwChartRange) || BW_RANGES[2];
+    const cutoff = range.days == null ? -Infinity : latestT - range.days * 86400000;
+
+    const grid = document.createElement("div");
+    grid.className = "bw-charts-grid";
+    BW_CHART_SPECS.forEach((spec) => {
+      const pts = all
+        .map((e) => ({ t: bwEntryTime(e), v: spec.val(e), date: e.date, time: e.time }))
+        .filter((p) => p.v != null && p.t >= cutoff)
+        .sort((a, b) => a.t - b.t);
+      if (pts.length < 2) return; // need at least two readings to draw a trend
+      grid.appendChild(bwChartCard(spec, pts));
+    });
+    if (!grid.children.length) return; // e.g. range too tight — show nothing
+
+    const head = document.createElement("div");
+    head.className = "bw-charts-head";
+    head.innerHTML = `<h4>Body composition trends</h4>
+      <div class="bw-range" role="group" aria-label="Time range">${BW_RANGES.map((r) => `<button type="button" class="bw-range-btn${r.k === bwChartRange ? " on" : ""}" data-r="${r.k}">${r.label}</button>`).join("")}</div>`;
+    head.querySelectorAll(".bw-range-btn").forEach((b) => b.addEventListener("click", () => {
+      bwChartRange = b.dataset.r;
+      renderBwCharts(container, log);
+    }));
+    container.appendChild(head);
+    container.appendChild(grid);
+  }
+  function bwChartCard(spec, pts) {
+    const W = 320, H = 96, padL = 4, padR = 4, padT = 12, padB = 10;
+    const last = pts[pts.length - 1].v;
+    const delta = last - pts[0].v;
+    const tMin = pts[0].t, tMax = pts[pts.length - 1].t;
+    const vals = pts.map((p) => p.v);
+    let vMin = Math.min(...vals), vMax = Math.max(...vals);
+    if (vMin === vMax) { vMin -= 1; vMax += 1; }
+    const vpad = (vMax - vMin) * 0.12; vMin -= vpad; vMax += vpad;
+    const xOf = (t) => tMax === tMin ? W / 2 : padL + ((t - tMin) / (tMax - tMin)) * (W - padL - padR);
+    const yOf = (v) => padT + (1 - (v - vMin) / (vMax - vMin)) * (H - padT - padB);
+    const xy = pts.map((p) => ({ x: xOf(p.t), y: yOf(p.v), v: p.v, date: p.date, time: p.time }));
+    const line = xy.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+    const area = `${line} L${xy[xy.length - 1].x.toFixed(1)} ${H - padB} L${xy[0].x.toFixed(1)} ${H - padB} Z`;
+    const lastPt = xy[xy.length - 1];
+    const gid = "bwg-" + spec.key + "-" + Math.random().toString(36).slice(2, 7);
+    const arrow = Math.abs(delta) < 0.05 ? "▬" : (delta > 0 ? "▲" : "▼");
+
+    const card = document.createElement("div");
+    card.className = "bw-chart-card";
+    card.innerHTML = `
+      <div class="bw-chart-top">
+        <span class="bw-chart-title">${escapeHtml(spec.title)}</span>
+        <span class="bw-chart-delta" title="Change over range">${arrow} ${Math.abs(delta).toFixed(1)}</span>
+      </div>
+      <div class="bw-chart-val">${escapeHtml(String(round1(last)))}<span class="bw-chart-unit">${escapeHtml(spec.unit)}</span></div>
+      <div class="bw-chart-plot">
+        <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="bw-chart-svg" aria-hidden="true">
+          <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="currentColor" stop-opacity="0.22"/>
+            <stop offset="1" stop-color="currentColor" stop-opacity="0"/>
+          </linearGradient></defs>
+          <path d="${area}" fill="url(#${gid})" stroke="none"/>
+          <path d="${line}" fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>
+        </svg>
+        <div class="bw-cross" style="display:none"></div>
+        <div class="bw-dot bw-hover-dot" style="display:none"></div>
+        <div class="bw-dot bw-last-dot" style="left:${(lastPt.x / W * 100).toFixed(2)}%; top:${(lastPt.y / H * 100).toFixed(2)}%"></div>
+        <div class="bw-chart-tip" style="display:none"></div>
+      </div>`;
+
+    const plot = card.querySelector(".bw-chart-plot");
+    const cross = card.querySelector(".bw-cross");
+    const hdot = card.querySelector(".bw-hover-dot");
+    const tip = card.querySelector(".bw-chart-tip");
+    const data = xy.map((p) => ({ fx: p.x / W, fy: p.y / H, v: p.v, date: p.date, time: p.time }));
+    const showAt = (clientX) => {
+      const rect = plot.getBoundingClientRect();
+      if (!rect.width) return;
+      let f = (clientX - rect.left) / rect.width; f = Math.max(0, Math.min(1, f));
+      let best = data[0], bd = Infinity;
+      data.forEach((d) => { const dd = Math.abs(d.fx - f); if (dd < bd) { bd = dd; best = d; } });
+      const lx = (best.fx * 100).toFixed(2) + "%";
+      cross.style.display = ""; cross.style.left = lx;
+      hdot.style.display = ""; hdot.style.left = lx; hdot.style.top = (best.fy * 100).toFixed(2) + "%";
+      const when = best.time ? `${best.date} · ${String(best.time).slice(0, 5)}` : best.date;
+      tip.style.display = "";
+      tip.innerHTML = `<strong>${escapeHtml(String(round1(best.v)))} ${escapeHtml(spec.unit)}</strong><span>${escapeHtml(when)}</span>`;
+      tip.style.left = Math.max(4, Math.min(rect.width - 4, best.fx * rect.width)) + "px";
+    };
+    const hide = () => { cross.style.display = "none"; hdot.style.display = "none"; tip.style.display = "none"; };
+    plot.addEventListener("pointermove", (e) => showAt(e.clientX));
+    plot.addEventListener("pointerdown", (e) => showAt(e.clientX));
+    plot.addEventListener("pointerleave", hide);
+    return card;
+  }
+
   // -------- Modal --------
   function openModal({ title, body, actions = [] }) {
     $("#modal-title").textContent = title;
