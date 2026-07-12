@@ -87,14 +87,16 @@
    ink and slate accents (the light-mode counterpart to the "black" theme).
    Shadows are softened since heavy dark shadows look wrong on light. */
 :root[data-theme="white"] {
-  --bg: #eef1f6; --bg-2: #e6eaf1; --surface: #ffffff; --surface-2: #f3f5f9; --surface-3: #e7ebf2; --surface-elevate: #dde3ec;
-  --border: #d3dae6; --border-strong: #b7c0d0;
-  --text: #0f172a; --text-soft: #475569; --muted: #64748b;
-  --primary-rgb: 51, 65, 85; --primary-bright-rgb: 71, 85, 105;
-  --primary: #334155; --primary-bright: #475569; --primary-hover: #1e293b;
-  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08);
-  --shadow: 0 6px 20px rgba(15, 23, 42, 0.10);
-  --shadow-lg: 0 20px 50px rgba(15, 23, 42, 0.16);
+  --bg: #e7ebf2; --bg-2: #dfe4ee; --surface: #ffffff; --surface-2: #eef2f8; --surface-3: #e1e7f0; --surface-elevate: #d5dde9;
+  /* Darker outlines than a typical light theme so cards, inputs and chips
+     stay clearly separated on white (they were washing out on mobile). */
+  --border: #b4c0d2; --border-strong: #8a99b0;
+  --text: #0f172a; --text-soft: #41526a; --muted: #566579;
+  --primary-rgb: 30, 41, 59; --primary-bright-rgb: 51, 65, 85;
+  --primary: #1e293b; --primary-bright: #334155; --primary-hover: #0f172a;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.12);
+  --shadow: 0 6px 20px rgba(15, 23, 42, 0.15);
+  --shadow-lg: 0 20px 50px rgba(15, 23, 42, 0.22);
 }
 /* The brand wordmark uses a light gradient that vanishes on a light surface. */
 :root[data-theme="white"] .brand h1 {
