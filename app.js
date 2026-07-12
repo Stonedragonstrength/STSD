@@ -1545,8 +1545,8 @@
     desc.className = "desc";
     desc.textContent = tpl.description || "";
     const meta = document.createElement("div");
-    meta.className = "meta";
-    meta.textContent = `${weekCount} week${weekCount !== 1 ? "s" : ""} · ${exCount} exercise${exCount !== 1 ? "s" : ""}`;
+    meta.className = "program-tpl-meta";
+    meta.innerHTML = `<span class="tpl-chip">🗓️ ${weekCount} week${weekCount !== 1 ? "s" : ""}</span><span class="tpl-chip">🏋️ ${exCount} exercise${exCount !== 1 ? "s" : ""}</span>`;
 
     const info = document.createElement("div");
     info.className = "program-tpl-info";
@@ -1571,7 +1571,7 @@
       // Ready to assign: lead with the assign action; keep edit + reopen handy.
       const assignBtn = document.createElement("button");
       assignBtn.className = "btn btn-primary btn-sm";
-      assignBtn.textContent = "Assign to athlete →";
+      assignBtn.textContent = "Assign";
       assignBtn.addEventListener("click", () => assignProgramPrompt(tpl.id));
       const editBtn = document.createElement("button");
       editBtn.className = "btn btn-ghost btn-sm";
