@@ -7038,6 +7038,11 @@
     content.appendChild(rxEl);
     row.appendChild(doneCircle);
     row.appendChild(content);
+    // Lock/Edit control lives at the top-right of the title; the buttons are
+    // built later (only when the exercise has sets) and dropped in here.
+    const lockSlot = document.createElement("div");
+    lockSlot.className = "cex-lock-slot";
+    row.appendChild(lockSlot);
 
     // ── Panel (always open) ──
     const panel = document.createElement("div");
@@ -7094,29 +7099,34 @@
     // (±1). Empty fields seed from the prescription so the first tap lands on a
     // sensible number instead of 0. Collected so they disable when locked.
     const setSteppers = [];
-    const mkStepper = (input, step, seed) => {
-      const col = document.createElement("div");
-      col.className = "cex-step-col";
-      const bump = (dir) => {
-        if (input.readOnly) return;
-        let cur = input.value !== "" ? parseFloat(input.value) : seed;
-        if (!Number.isFinite(cur)) cur = 0;
-        let v = Math.max(0, cur + dir * step);
-        v = Math.round(v * 100) / 100; // trim float dust (e.g. 0.1 + 0.2)
-        input.value = String(v);
-        autoSave();
-      };
-      [["▲", 1], ["▼", -1]].forEach(([glyph, dir]) => {
+    // Build a field as ▲ (top) / input / ▼ (bottom). Steppers omitted when
+    // withSteppers is false (e.g. the weight box on bodyweight lifts).
+    const mkStepField = (input, step, seed, withSteppers) => {
+      const field = document.createElement("div");
+      field.className = "cex-set-field";
+      const mkBtn = (glyph, dir) => {
         const b = document.createElement("button");
         b.type = "button";
         b.className = "cex-step";
         b.textContent = glyph;
         b.title = `${dir > 0 ? "+" : "−"}${step}`;
-        b.addEventListener("click", (e) => { e.stopPropagation(); bump(dir); });
-        col.appendChild(b);
+        b.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (input.readOnly) return;
+          let cur = input.value !== "" ? parseFloat(input.value) : seed;
+          if (!Number.isFinite(cur)) cur = 0;
+          let v = Math.max(0, cur + dir * step);
+          v = Math.round(v * 100) / 100; // trim float dust (e.g. 0.1 + 0.2)
+          input.value = String(v);
+          autoSave();
+        });
         setSteppers.push(b);
-      });
-      return col;
+        return b;
+      };
+      if (withSteppers) field.appendChild(mkBtn("▲", 1));
+      field.appendChild(input);
+      if (withSteppers) field.appendChild(mkBtn("▼", -1));
+      return field;
     };
     for (let s = 0; s < numSets; s++) {
       const col = document.createElement("div");
@@ -7133,18 +7143,10 @@
       rp.addEventListener("click", (e) => e.stopPropagation());
 
       col.appendChild(lbl);
-      // Weight field + ±2.5 lb steppers (bodyweight lifts log reps only).
-      const wtField = document.createElement("div");
-      wtField.className = "cex-set-field";
-      wtField.appendChild(wt);
-      if (ex.currentWeight !== "BW") wtField.appendChild(mkStepper(wt, 2.5, weightBase));
-      col.appendChild(wtField);
-      // Reps field + ±1 steppers.
-      const rpField = document.createElement("div");
-      rpField.className = "cex-set-field";
-      rpField.appendChild(rp);
-      rpField.appendChild(mkStepper(rp, 1, prescribedReps));
-      col.appendChild(rpField);
+      // Weight field, ±2.5 lb (bodyweight lifts log reps only — no weight arrows).
+      col.appendChild(mkStepField(wt, 2.5, weightBase, ex.currentWeight !== "BW"));
+      // Reps field, ±1.
+      col.appendChild(mkStepField(rp, 1, prescribedReps, true));
 
       setTable.appendChild(col);
       setInputs.push({ wt, rp });
@@ -7235,11 +7237,8 @@
     });
     finisherInputs.forEach(({ rp }) => rp.addEventListener("input", autoSave));
 
-    // Lock / Edit toggle — the checkmark only fills in once the athlete
-    // explicitly locks a fully-filled-in set of sets.
-    const lockRow = document.createElement("div");
-    lockRow.className = "cex-lock-row";
-
+    // Lock / Edit toggle — lives in the title's lock slot (top-right). The
+    // green ✓ only fills in once the athlete explicitly locks completed sets.
     const lockBtn = document.createElement("button");
     lockBtn.type = "button";
     lockBtn.className = "btn btn-primary btn-sm cex-lock-btn";
@@ -7302,14 +7301,13 @@
       }
     });
 
-    lockRow.appendChild(lockBtn);
-    lockRow.appendChild(editBtn);
+    lockSlot.appendChild(lockBtn);
+    lockSlot.appendChild(editBtn);
 
     refreshLockUI();
 
     logForm.appendChild(setTable);
     if (finisherInputs.length) logForm.appendChild(finisherWrap);
-    logForm.appendChild(lockRow);
     } // end else (numSets > 0)
     panel.appendChild(logForm);
 

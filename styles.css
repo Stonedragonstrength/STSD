@@ -4341,24 +4341,11 @@ input:focus, textarea:focus, select:focus {
   gap: 0.5rem;
   width: 68px;
 }
-/* Weight or reps input with its own ▲ / ▼ spinner hugging the right edge. */
+/* Weight or reps input with a ▲ button above it and a ▼ button below it. */
 .cex-set-field {
   display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  gap: 3px;
-}
-.cex-set-field .cex-input {
-  flex: 1;
-  min-width: 0;
-  width: auto;
-}
-.cex-step-col {
-  display: flex;
   flex-direction: column;
-  gap: 2px;
-  width: 18px;
-  flex-shrink: 0;
+  gap: 3px;
 }
 .cex-set-lbl {
   font-size: 0.75rem;
@@ -4375,22 +4362,22 @@ input:focus, textarea:focus, select:focus {
   margin: 0;
   padding: 0.3rem 0;
 }
-.cex-lock-row {
+/* Lock / Edit control pinned to the top-right of the exercise title row. */
+.cex-lock-slot {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
 }
-.cex-lock-btn { padding: 0.4em 0.7em; font-size: 0.95rem; line-height: 1; }
-/* The individual ▲ / ▼ buttons of a per-field spinner (weight ±2.5 lb,
-   reps ±1). Each fills half the spinner's height, matching the input. */
+.cex-lock-btn { padding: 0.35em 0.6em; font-size: 0.9rem; line-height: 1; }
+/* The ▲ / ▼ buttons above and below each weight/reps box (weight ±2.5 lb,
+   reps ±1). Full width of the field, short height. */
 .cex-step {
-  flex: 1;
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0;
-  font-size: 0.58rem;
+  padding: 0.2em 0;
+  font-size: 0.6rem;
   line-height: 1;
   border: 1px solid var(--border);
   border-radius: 5px;
@@ -4422,10 +4409,9 @@ input:focus, textarea:focus, select:focus {
   .cex-set-col { width: 48px; flex-shrink: 0; }
   .cex-set-lbl { font-size: 0.66rem; }
   .cex-set-col .cex-input { font-size: 0.85rem; padding: 0.4em 0.1em; }
-  /* Slimmer spinner + tighter gap so the number stays readable in the
-     narrow set columns. */
+  /* Tighter vertical gaps so the taller stacked fields don't balloon the row. */
+  .cex-set-col { gap: 0.35rem; }
   .cex-set-field { gap: 2px; }
-  .cex-step-col { width: 15px; }
   /* The "See all weeks" cards sit one level deeper (inside .week-body),
      which eats extra horizontal space the workout-detail cards don't
      lose — trim that padding and shrink columns a bit more so all 6
