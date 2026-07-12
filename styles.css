@@ -11,11 +11,15 @@
   --text: #e2e8f0;
   --text-soft: #94a3b8;
   --muted: #64748b;
+  /* RGB channels drive every accent glow/border via rgba(var(--…-rgb), a).
+     A theme only needs to override these + the hex vars below (and surfaces). */
+  --primary-rgb: 6, 182, 212;
+  --primary-bright-rgb: 34, 211, 238;
   --primary: #06b6d4;
   --primary-bright: #22d3ee;
   --primary-hover: #0891b2;
-  --primary-soft: rgba(6, 182, 212, 0.15);
-  --primary-glow: rgba(6, 182, 212, 0.26);
+  --primary-soft: rgba(var(--primary-rgb), 0.15);
+  --primary-glow: rgba(var(--primary-rgb), 0.26);
   --accent: #10b981;
   --accent-soft: rgba(16, 185, 129, 0.15);
   --danger: #ef4444;
@@ -28,6 +32,46 @@
   --radius-lg: 16px;
 }
 
+/* ============ Color themes (full recolor) ============
+   Each theme retints the dark base + accent. --accent stays green as the
+   universal "done/success" signal. Blue (original) is the default :root. */
+:root[data-theme="red"] {
+  --bg: #0c0407; --bg-2: #150609; --surface: #1c0a0f; --surface-2: #2c1119; --surface-3: #3f1a26; --surface-elevate: #552330;
+  --border: #733040; --border-strong: #8f3e51;
+  --primary-rgb: 244, 63, 94; --primary-bright-rgb: 251, 113, 133;
+  --primary: #f43f5e; --primary-bright: #fb7185; --primary-hover: #e11d48;
+}
+:root[data-theme="green"] {
+  --bg: #030c07; --bg-2: #06140f; --surface: #0a1b13; --surface-2: #112a1e; --surface-3: #1a3d2b; --surface-elevate: #235235;
+  --border: #2f6e47; --border-strong: #3d8a5a;
+  --primary-rgb: 34, 197, 94; --primary-bright-rgb: 74, 222, 128;
+  --primary: #22c55e; --primary-bright: #4ade80; --primary-hover: #16a34a;
+}
+:root[data-theme="purple"] {
+  --bg: #08040d; --bg-2: #0d0616; --surface: #140a20; --surface-2: #1f1132; --surface-3: #2e1a49; --surface-elevate: #3e2357;
+  --border: #502f73; --border-strong: #643d8f;
+  --primary-rgb: 168, 85, 247; --primary-bright-rgb: 192, 132, 252;
+  --primary: #a855f7; --primary-bright: #c084fc; --primary-hover: #9333ea;
+}
+:root[data-theme="yellow"] {
+  --bg: #0c0a03; --bg-2: #141005; --surface: #1b160a; --surface-2: #2a2211; --surface-3: #3d331a; --surface-elevate: #524623;
+  --border: #6e5d2f; --border-strong: #8a763d;
+  --primary-rgb: 245, 158, 11; --primary-bright-rgb: 251, 191, 36;
+  --primary: #f59e0b; --primary-bright: #fbbf24; --primary-hover: #d97706;
+}
+:root[data-theme="black"] {
+  --bg: #050506; --bg-2: #0a0a0c; --surface: #101013; --surface-2: #1a1a20; --surface-3: #26262e; --surface-elevate: #33333d;
+  --border: #454550; --border-strong: #5a5a67;
+  --primary-rgb: 148, 163, 184; --primary-bright-rgb: 203, 213, 225;
+  --primary: #94a3b8; --primary-bright: #cbd5e1; --primary-hover: #64748b;
+}
+:root[data-theme="pink"] {
+  --bg: #0c040a; --bg-2: #150611; --surface: #1c0a16; --surface-2: #2c1123; --surface-3: #3f1a32; --surface-elevate: #552343;
+  --border: #732f5d; --border-strong: #8f3e74;
+  --primary-rgb: 236, 72, 153; --primary-bright-rgb: 244, 114, 182;
+  --primary: #ec4899; --primary-bright: #f472b6; --primary-hover: #db2777;
+}
+
 * { box-sizing: border-box; }
 
 html, body {
@@ -37,8 +81,8 @@ html, body {
   color: var(--text);
   background: var(--bg);
   background-image:
-    radial-gradient(circle at 20% 0%, rgba(6, 182, 212, 0.035) 0%, transparent 38%),
-    radial-gradient(circle at 80% 100%, rgba(34, 211, 238, 0.02) 0%, transparent 38%);
+    radial-gradient(circle at 20% 0%, rgba(var(--primary-rgb), 0.035) 0%, transparent 38%),
+    radial-gradient(circle at 80% 100%, rgba(var(--primary-bright-rgb), 0.02) 0%, transparent 38%);
   background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
@@ -215,7 +259,7 @@ input[type="date"] { color-scheme: dark; }
   align-items: center;
   justify-content: center;
   background:
-    radial-gradient(ellipse at 50% 18%, rgba(6, 182, 212, 0.05) 0%, transparent 58%),
+    radial-gradient(ellipse at 50% 18%, rgba(var(--primary-rgb), 0.05) 0%, transparent 58%),
     #010305;
   padding-top: max(1.5rem, env(safe-area-inset-top));
   padding-right: max(1.5rem, env(safe-area-inset-right));
@@ -233,7 +277,7 @@ input[type="date"] { color-scheme: dark; }
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  background: radial-gradient(circle, rgba(34, 211, 238, 0.06) 0%, rgba(6, 182, 212, 0.025) 35%, transparent 62%);
+  background: radial-gradient(circle, rgba(var(--primary-bright-rgb), 0.06) 0%, rgba(var(--primary-rgb), 0.025) 35%, transparent 62%);
   pointer-events: none;
   z-index: 0;
   animation: heroPulse 6s ease-in-out infinite;
@@ -268,7 +312,7 @@ input[type="date"] { color-scheme: dark; }
   background-clip: text;
   color: transparent;
   -webkit-text-fill-color: transparent;
-  text-shadow: 0 4px 18px rgba(34, 211, 238, 0.25);
+  text-shadow: 0 4px 18px rgba(var(--primary-bright-rgb), 0.25);
 }
 .brand .tagline {
   color: var(--primary-bright);
@@ -277,7 +321,7 @@ input[type="date"] { color-scheme: dark; }
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.28em;
-  text-shadow: 0 0 14px rgba(34, 211, 238, 0.45);
+  text-shadow: 0 0 14px rgba(var(--primary-bright-rgb), 0.45);
 }
 
 .brand-mark {
@@ -288,7 +332,7 @@ input[type="date"] { color-scheme: dark; }
   height: 240px;
   border-radius: 26px;
   background: transparent;
-  filter: drop-shadow(0 14px 40px rgba(34, 211, 238, 0.55));
+  filter: drop-shadow(0 14px 40px rgba(var(--primary-bright-rgb), 0.55));
 }
 .brand-mark img { width: 100%; height: 100%; display: block; object-fit: contain; }
 .brand-mark.sm { width: 40px; height: 40px; border-radius: 10px; filter: none; }
@@ -409,7 +453,7 @@ input[type="date"] { color-scheme: dark; }
 .client-card:hover {
   border-color: var(--primary);
   transform: translateY(-2px);
-  box-shadow: 0 8px 28px rgba(6, 182, 212, 0.14);
+  box-shadow: 0 8px 28px rgba(var(--primary-rgb), 0.14);
 }
 .client-card-top {
   display: flex;
@@ -983,6 +1027,48 @@ input[type="date"] { color-scheme: dark; }
 }
 .cex-warm-last { border-right: 1px solid var(--border); padding-right: 0.55rem; margin-right: 0.15rem; }
 
+/* ===== Theme picker (coach Appearance / athlete Profile) ===== */
+.theme-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 0.6rem;
+  max-width: 470px;
+}
+.theme-swatch {
+  display: flex; align-items: center; gap: 0.55em;
+  padding: 0.6em 0.7em;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: inherit; font-size: 0.85rem; font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.theme-swatch:hover { border-color: var(--border-strong); }
+.theme-swatch-dot {
+  width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0;
+  background: var(--sw);
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.28), 0 0 10px var(--sw);
+}
+.theme-swatch.on {
+  border-color: var(--sw);
+  box-shadow: 0 0 0 2px var(--sw), 0 6px 18px rgba(0,0,0,0.4);
+}
+.theme-swatch.on .theme-swatch-name { color: var(--sw); }
+
+/* Athlete profile — invite code chip */
+.profile-invite { display: flex; align-items: center; gap: 0.6em; margin-top: 0.3em; }
+.profile-invite-label { font-size: 0.8rem; color: var(--text-soft); font-weight: 600; }
+.profile-invite-code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 1rem; font-weight: 800; letter-spacing: 0.12em;
+  color: var(--primary-bright);
+  background: var(--primary-soft);
+  border: 1px solid rgba(var(--primary-rgb), 0.35);
+  border-radius: 8px; padding: 0.25em 0.7em;
+}
+
 /* ===== Drum Picker ===== */
 .drum-backdrop {
   position: fixed;
@@ -1227,7 +1313,7 @@ input[type="date"] { color-scheme: dark; }
 /* Add-to-Home-Screen button (login screen) + instruction steps (iOS modal) */
 .install-app-btn.btn-block {
   margin-top: 0.9rem;
-  border: 1px solid rgba(6, 182, 212, 0.35);
+  border: 1px solid rgba(var(--primary-rgb), 0.35);
   color: var(--primary);
 }
 .install-app-btn.btn-block:hover { background: var(--primary-soft); }
@@ -1565,7 +1651,7 @@ input[type="date"] { color-scheme: dark; }
 
 .client-feedback-block {
   background: var(--primary-soft);
-  border: 1px solid rgba(6, 182, 212, 0.3);
+  border: 1px solid rgba(var(--primary-rgb), 0.3);
   border-radius: var(--radius);
   padding: 0.9em 1em;
   margin-bottom: 1rem;
@@ -1782,7 +1868,7 @@ input[type="date"] { color-scheme: dark; }
   font-weight: 800;
   color: var(--primary-bright);
   background: var(--primary-soft);
-  border: 1px solid rgba(34, 211, 238, 0.35);
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.35);
   padding: 0.2em 0.6em;
   border-radius: 999px;
   white-space: nowrap;
@@ -2068,7 +2154,7 @@ input[type="date"] { color-scheme: dark; }
   border-radius: var(--radius);
   padding: 0.9em 1em;
   margin-bottom: 1em;
-  border: 1px solid rgba(6, 182, 212, 0.25);
+  border: 1px solid rgba(var(--primary-rgb), 0.25);
   font-size: 0.9rem;
   color: var(--text-soft);
 }
@@ -2612,7 +2698,7 @@ input[type="date"] { color-scheme: dark; }
   gap: 1.2rem;
   flex-wrap: wrap;
   background: linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%);
-  border: 1px solid rgba(34, 211, 238, 0.25);
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.25);
 }
 .session-balance {
   display: flex;
@@ -2752,7 +2838,7 @@ input[type="date"] { color-scheme: dark; }
 .open-slot-info { min-width: 0; }
 .open-slot-info strong { display: block; }
 .open-slot-actions { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
-.open-slots-athlete-card { border-color: rgba(6, 182, 212, 0.35); }
+.open-slots-athlete-card { border-color: rgba(var(--primary-rgb), 0.35); }
 .open-slots-athlete-card h4 { color: var(--primary-bright); }
 .open-slot-optout { margin-top: 0.9rem; }
 .open-slot-optout > summary {
@@ -3235,11 +3321,11 @@ body::before {
   35%  { transform: scale(1.18) rotate(4deg); opacity: 1; filter: brightness(1.7) drop-shadow(0 0 40px var(--primary-bright)); }
   60%  { transform: scale(0.94) rotate(-2deg); filter: brightness(1.3) drop-shadow(0 0 28px var(--primary)); }
   80%  { transform: scale(1.04) rotate(1deg); }
-  100% { transform: scale(1) rotate(0); filter: drop-shadow(0 8px 24px rgba(6, 182, 212, 0.45)); }
+  100% { transform: scale(1) rotate(0); filter: drop-shadow(0 8px 24px rgba(var(--primary-rgb), 0.45)); }
 }
 @keyframes logoBreathe {
-  0%, 100% { filter: drop-shadow(0 8px 24px rgba(6, 182, 212, 0.35)); transform: translateY(0) scale(1); }
-  50%      { filter: drop-shadow(0 14px 36px rgba(34, 211, 238, 0.7)); transform: translateY(-3px) scale(1.02); }
+  0%, 100% { filter: drop-shadow(0 8px 24px rgba(var(--primary-rgb), 0.35)); transform: translateY(0) scale(1); }
+  50%      { filter: drop-shadow(0 14px 36px rgba(var(--primary-bright-rgb), 0.7)); transform: translateY(-3px) scale(1.02); }
 }
 @keyframes ringPulse {
   0%   { transform: translate(-50%, -50%) scale(0.6); opacity: 0.9; }
@@ -3321,7 +3407,7 @@ body.login-success::after {
   position: fixed;
   inset: 0;
   background:
-    radial-gradient(circle at center, rgba(34, 211, 238, 0.55) 0%, rgba(6, 182, 212, 0.2) 25%, transparent 55%),
+    radial-gradient(circle at center, rgba(var(--primary-bright-rgb), 0.55) 0%, rgba(var(--primary-rgb), 0.2) 25%, transparent 55%),
     radial-gradient(circle at center, rgba(255, 255, 255, 0.25) 0%, transparent 12%);
   pointer-events: none;
   z-index: 9999;
@@ -3347,15 +3433,15 @@ body.login-success #screen-client {
 .btn:active { transform: scale(0.95); }
 
 .btn-primary {
-  box-shadow: 0 6px 20px rgba(6, 182, 212, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  box-shadow: 0 6px 20px rgba(var(--primary-rgb), 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 .btn-primary:hover {
-  box-shadow: 0 10px 32px rgba(6, 182, 212, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 0 0 3px var(--primary-soft);
+  box-shadow: 0 10px 32px rgba(var(--primary-rgb), 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 0 0 3px var(--primary-soft);
   transform: translateY(-1px);
 }
 .btn-primary:active {
   transform: scale(0.96) translateY(0);
-  box-shadow: 0 2px 8px rgba(6, 182, 212, 0.5), inset 0 2px 6px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 8px rgba(var(--primary-rgb), 0.5), inset 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 
 /* Sheen sweep on primary buttons */
@@ -3386,14 +3472,14 @@ body.login-success #screen-client {
   position: absolute;
   inset: 0;
   border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, transparent 30%, rgba(34, 211, 238, 0.12) 50%, transparent 70%);
+  background: linear-gradient(135deg, transparent 30%, rgba(var(--primary-bright-rgb), 0.12) 50%, transparent 70%);
   transform: translateX(-100%);
   transition: transform 0.7s cubic-bezier(0.22, 0.85, 0.34, 1);
   pointer-events: none;
 }
 .client-card:hover::after { transform: translateX(100%); }
 .client-card:hover {
-  box-shadow: 0 18px 42px rgba(6, 182, 212, 0.28), 0 0 0 1px rgba(34, 211, 238, 0.4);
+  box-shadow: 0 18px 42px rgba(var(--primary-rgb), 0.28), 0 0 0 1px rgba(var(--primary-bright-rgb), 0.4);
 }
 
 /* -------- Tabs: animated active underline -------- */
@@ -3424,7 +3510,7 @@ body.login-success #screen-client {
 
 /* -------- Inputs: glowing focus -------- */
 input:focus, textarea:focus, select:focus {
-  box-shadow: 0 0 0 3px var(--primary-soft), 0 0 18px rgba(34, 211, 238, 0.25);
+  box-shadow: 0 0 0 3px var(--primary-soft), 0 0 18px rgba(var(--primary-bright-rgb), 0.25);
 }
 
 /* -------- Day check satisfaction burst -------- */
@@ -3453,8 +3539,8 @@ input:focus, textarea:focus, select:focus {
 
 /* -------- Calendar cells: today breath, done pulse, tap pop -------- */
 @keyframes todayBreath {
-  0%, 100% { box-shadow: 0 0 0 2px var(--primary-soft), 0 0 16px rgba(34, 211, 238, 0.15); }
-  50%      { box-shadow: 0 0 0 3px var(--primary), 0 0 28px rgba(34, 211, 238, 0.45); }
+  0%, 100% { box-shadow: 0 0 0 2px var(--primary-soft), 0 0 16px rgba(var(--primary-bright-rgb), 0.15); }
+  50%      { box-shadow: 0 0 0 3px var(--primary), 0 0 28px rgba(var(--primary-bright-rgb), 0.45); }
 }
 .cal-day.today { animation: todayBreath 3s ease-in-out infinite; }
 
@@ -3471,7 +3557,7 @@ input:focus, textarea:focus, select:focus {
 /* Video badge on calendar gets a continuous tiny breathing glow */
 @keyframes videoBadgeGlow {
   0%, 100% { box-shadow: 0 1px 3px rgba(0,0,0,0.4), 0 0 0 transparent; }
-  50%      { box-shadow: 0 1px 3px rgba(0,0,0,0.4), 0 0 10px rgba(34, 211, 238, 0.75); }
+  50%      { box-shadow: 0 1px 3px rgba(0,0,0,0.4), 0 0 10px rgba(var(--primary-bright-rgb), 0.75); }
 }
 .cal-day-video { animation: videoBadgeGlow 2.5s ease-in-out infinite; }
 
@@ -3486,13 +3572,13 @@ input:focus, textarea:focus, select:focus {
 /* -------- PR best badge: subtle continuous glow -------- */
 @keyframes prGlow {
   0%, 100% { box-shadow: 0 0 10px var(--primary-glow); }
-  50%      { box-shadow: 0 0 24px rgba(34, 211, 238, 0.85); }
+  50%      { box-shadow: 0 0 24px rgba(var(--primary-bright-rgb), 0.85); }
 }
 .pr-best { animation: prGlow 3s ease-in-out infinite; }
 
 /* -------- Phase badge subtle shimmer -------- */
 .phase-badge {
-  background-image: linear-gradient(90deg, var(--primary-soft) 30%, rgba(34, 211, 238, 0.45) 50%, var(--primary-soft) 70%);
+  background-image: linear-gradient(90deg, var(--primary-soft) 30%, rgba(var(--primary-bright-rgb), 0.45) 50%, var(--primary-soft) 70%);
   background-size: 200% 100%;
   animation: shimmer 4s linear infinite;
 }
@@ -3504,7 +3590,7 @@ input:focus, textarea:focus, select:focus {
 }
 .role-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 14px 30px rgba(6, 182, 212, 0.22), 0 0 0 3px var(--primary-soft);
+  box-shadow: 0 14px 30px rgba(var(--primary-rgb), 0.22), 0 0 0 3px var(--primary-soft);
 }
 .role-btn:active { transform: translateY(0) scale(0.99); }
 .role-btn .role-emoji {
@@ -3624,7 +3710,7 @@ input:focus, textarea:focus, select:focus {
   background: linear-gradient(180deg, var(--primary-bright), var(--primary));
   color: #062131;
   border-color: var(--primary-hover);
-  box-shadow: 0 6px 16px rgba(6, 182, 212, 0.32);
+  box-shadow: 0 6px 16px rgba(var(--primary-rgb), 0.32);
 }
 .coach-nav-icon { font-size: 1.1em; }
 .coach-main {
@@ -3664,7 +3750,7 @@ input:focus, textarea:focus, select:focus {
     padding: 0.7em 0.9em;
     font-size: 0.95rem;
   }
-  .coach-nav-item.active { box-shadow: 0 10px 24px rgba(6, 182, 212, 0.35); }
+  .coach-nav-item.active { box-shadow: 0 10px 24px rgba(var(--primary-rgb), 0.35); }
   .coach-main { padding-left: 0.5rem; }
 }
 
@@ -3809,7 +3895,7 @@ input:focus, textarea:focus, select:focus {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(115deg, transparent 35%, rgba(34, 211, 238, 0.13) 50%, transparent 65%);
+  background: linear-gradient(115deg, transparent 35%, rgba(var(--primary-bright-rgb), 0.13) 50%, transparent 65%);
   transform: translateX(-110%);
   transition: transform 0.7s cubic-bezier(0.22, 0.85, 0.34, 1);
   pointer-events: none;
@@ -3817,7 +3903,7 @@ input:focus, textarea:focus, select:focus {
 .template-card:hover {
   border-color: var(--primary);
   transform: translateY(-3px);
-  box-shadow: 0 14px 28px rgba(6, 182, 212, 0.22), 0 0 0 1px rgba(34, 211, 238, 0.3);
+  box-shadow: 0 14px 28px rgba(var(--primary-rgb), 0.22), 0 0 0 1px rgba(var(--primary-bright-rgb), 0.3);
 }
 .template-card:hover::before { transform: translateX(120%); }
 .template-card-head {
@@ -3918,7 +4004,7 @@ input:focus, textarea:focus, select:focus {
 }
 .btn-load-template {
   background: var(--primary-soft);
-  border: 1px solid rgba(34, 211, 238, 0.35);
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.35);
   color: var(--primary-bright);
   padding: 0.35em 0.7em;
   border-radius: 999px;
@@ -3931,7 +4017,7 @@ input:focus, textarea:focus, select:focus {
   transition: background 0.15s, color 0.15s;
 }
 .btn-load-template:hover {
-  background: rgba(34, 211, 238, 0.2);
+  background: rgba(var(--primary-bright-rgb), 0.2);
   color: var(--primary-bright);
 }
 
@@ -3962,7 +4048,7 @@ input:focus, textarea:focus, select:focus {
   flex-direction: column;
   align-items: center;
   background: var(--primary-soft);
-  border: 1px solid rgba(34, 211, 238, 0.3);
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.3);
   border-radius: 12px;
   padding: 0.45em 0.9em;
   min-width: 72px;
@@ -4018,7 +4104,7 @@ input:focus, textarea:focus, select:focus {
   background: linear-gradient(180deg, var(--primary-bright), var(--primary));
   color: #062131;
   border-color: var(--primary-hover);
-  box-shadow: 0 6px 16px rgba(6, 182, 212, 0.4);
+  box-shadow: 0 6px 16px rgba(var(--primary-rgb), 0.4);
 }
 .week-chip .chip-phase {
   display: block;
@@ -4070,7 +4156,7 @@ input:focus, textarea:focus, select:focus {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(115deg, transparent 35%, rgba(34, 211, 238, 0.14) 50%, transparent 65%);
+  background: linear-gradient(115deg, transparent 35%, rgba(var(--primary-bright-rgb), 0.14) 50%, transparent 65%);
   transform: translateX(-110%);
   transition: transform 0.7s cubic-bezier(0.22, 0.85, 0.34, 1);
   pointer-events: none;
@@ -4078,12 +4164,12 @@ input:focus, textarea:focus, select:focus {
 .workout-card:hover {
   transform: translateY(-3px);
   border-color: var(--primary);
-  box-shadow: 0 16px 30px rgba(6, 182, 212, 0.22), 0 0 0 1px rgba(34, 211, 238, 0.35);
+  box-shadow: 0 16px 30px rgba(var(--primary-rgb), 0.22), 0 0 0 1px rgba(var(--primary-bright-rgb), 0.35);
 }
 .workout-card:hover::before { transform: translateX(120%); }
 .workout-card:active { transform: translateY(-1px) scale(0.98); }
 .workout-card.is-partial {
-  border-color: rgba(34, 211, 238, 0.4);
+  border-color: rgba(var(--primary-bright-rgb), 0.4);
 }
 .workout-card.is-partial::after {
   content: "";
@@ -4147,7 +4233,7 @@ input:focus, textarea:focus, select:focus {
   white-space: nowrap;
 }
 .meta-done   { background: var(--accent-soft); color: var(--accent); border-color: rgba(16, 185, 129, 0.4); }
-.meta-progress { background: var(--primary-soft); color: var(--primary-bright); border-color: rgba(34, 211, 238, 0.35); }
+.meta-progress { background: var(--primary-soft); color: var(--primary-bright); border-color: rgba(var(--primary-bright-rgb), 0.35); }
 .meta-todo   { background: rgba(245, 158, 11, 0.13); color: var(--warn); border-color: rgba(245, 158, 11, 0.3); }
 .workout-card-chevron {
   font-size: 1.6rem;
@@ -4973,7 +5059,7 @@ input:focus, textarea:focus, select:focus {
 }
 .program-tpl-card:hover {
   border-color: var(--primary);
-  box-shadow: 0 4px 16px rgba(6,182,212,0.13);
+  box-shadow: 0 4px 16px rgba(var(--primary-rgb),0.13);
 }
 .program-tpl-info {
   flex: 1;
@@ -5263,10 +5349,10 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   flex-direction: column;
   gap: 0.4rem;
   padding: 0.45rem 0.5rem 0.55rem;
-  border: 1px solid rgba(6, 182, 212, 0.3);
+  border: 1px solid rgba(var(--primary-rgb), 0.3);
   border-left: 3px solid var(--primary);
   border-radius: var(--radius);
-  background: rgba(6, 182, 212, 0.05);
+  background: rgba(var(--primary-rgb), 0.05);
 }
 .superset-head {
   display: flex;

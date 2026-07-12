@@ -7,6 +7,49 @@
   const KEY_CLIENT  = "trainerpro_client_v1";
   const KEY_SESSION = "trainerpro_session_v1";
 
+  // -------- Color themes (full recolor, per role) --------
+  // "blue" is the original (default :root, no data-theme attribute). Each role
+  // (coach / athlete) remembers its own pick under KEY_THEME.
+  const KEY_THEME = "trainerpro_theme_v1";
+  const THEMES = [
+    { id: "blue",   name: "Blue",   swatch: "#22d3ee" },
+    { id: "red",    name: "Red",    swatch: "#fb7185" },
+    { id: "green",  name: "Green",  swatch: "#4ade80" },
+    { id: "purple", name: "Purple", swatch: "#c084fc" },
+    { id: "yellow", name: "Yellow", swatch: "#fbbf24" },
+    { id: "pink",   name: "Pink",   swatch: "#f472b6" },
+    { id: "black",  name: "Black",  swatch: "#cbd5e1" },
+  ];
+  function getThemePrefs() {
+    try { return JSON.parse(localStorage.getItem(KEY_THEME)) || {}; } catch { return {}; }
+  }
+  function currentThemeForRole(role) { return getThemePrefs()[role] || "blue"; }
+  function applyTheme(id) {
+    if (!id || id === "blue") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", id);
+  }
+  function setThemeForRole(role, id) {
+    const prefs = getThemePrefs(); prefs[role] = id;
+    localStorage.setItem(KEY_THEME, JSON.stringify(prefs));
+    applyTheme(id);
+  }
+  // Swatch grid — pass "coach" or "athlete". Re-renders itself on pick.
+  function renderThemePicker(container, role) {
+    if (!container) return;
+    container.innerHTML = "";
+    const current = currentThemeForRole(role);
+    THEMES.forEach((t) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "theme-swatch" + (t.id === current ? " on" : "");
+      btn.style.setProperty("--sw", t.swatch);
+      btn.title = t.name;
+      btn.innerHTML = `<span class="theme-swatch-dot"></span><span class="theme-swatch-name">${t.name}</span>`;
+      btn.addEventListener("click", () => { setThemeForRole(role, t.id); renderThemePicker(container, role); });
+      container.appendChild(btn);
+    });
+  }
+
   // Auth state flags
   let _signOutOnLeave = false;  // set when "Remember me" is unchecked
   let _forgotFromPanel = "#login-signin";  // tracks which signin panel opened forgot-password
@@ -1217,6 +1260,7 @@
   function signIntoTrainer() {
     state.mode = "trainer";
     sessionStorage.setItem(KEY_SESSION, "trainer");
+    applyTheme(currentThemeForRole("coach"));
     hide($("#screen-login"));
     show($("#screen-app"));
     hide($("#screen-client"));
@@ -1252,6 +1296,7 @@
       athletes:        "#view-dashboard",
       overview:        "#view-overview",
       packages:        "#view-packages",
+      settings:        "#view-settings",
       programs:        "#view-programs",
       "program-editor": "#view-program-editor",
       "day-library":   "#view-day-library",
@@ -6483,6 +6528,7 @@
       state.mode = "client";
       sessionStorage.setItem(KEY_SESSION, "client");
     }
+    applyTheme(currentThemeForRole("athlete"));
     hide($("#screen-login"));
     hide($("#screen-app"));
     show($("#screen-client"));
@@ -6490,6 +6536,13 @@
     ensureProgressShape(state.clientData.progress);
     const prog = state.clientData.program;
     $("#client-portal-name").textContent = prog.client.name;
+    // Profile tab: name, invite code, theme picker
+    const pName = $("#profile-name"); if (pName) pName.textContent = prog.client.name || "My profile";
+    const pInvite = $("#profile-invite");
+    if (pInvite) pInvite.innerHTML = prog.client.inviteCode
+      ? `<span class="profile-invite-label">🔑 Invite code</span><span class="profile-invite-code">${escapeHtml(prog.client.inviteCode)}</span>`
+      : "";
+    renderThemePicker($("#athlete-theme-picker"), "athlete");
     setClientTab("workouts");
     const now = new Date();
     state.athleteCal = { year: now.getFullYear(), month: now.getMonth() };
@@ -7861,6 +7914,12 @@
           hideLibSidebar();
           renderPackagesView();
           refreshAllAthletePackages();
+        } else if (target === "settings") {
+          _programEditorId = null;
+          state.currentClientId = null;
+          switchCoachView("settings");
+          hideLibSidebar();
+          renderThemePicker($("#coach-theme-picker"), "coach");
         } else {
           _programEditorId = null;
           renderDashboard();

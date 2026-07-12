@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=warmups1" />
+  <link rel="stylesheet" href="styles.css?v=themes1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -238,6 +238,10 @@
           <span class="coach-nav-icon">🎟️</span>
           <span class="coach-nav-label">Packages</span>
           <span class="coach-nav-badge hidden" id="packages-nav-badge"></span>
+        </button>
+        <button class="coach-nav-item" data-coach-nav="settings" type="button">
+          <span class="coach-nav-icon">🎨</span>
+          <span class="coach-nav-label">Appearance</span>
         </button>
       </nav>
 
@@ -542,6 +546,17 @@
         </div>
       </div>
 
+      <!-- Appearance / color theme -->
+      <div id="view-settings" class="view hidden">
+        <div class="view-head">
+          <div>
+            <h2>Appearance</h2>
+            <p class="muted view-sub">Pick a color scheme for your coach view.</p>
+          </div>
+        </div>
+        <div class="theme-picker" id="coach-theme-picker"></div>
+      </div>
+
       </main>
 
       <!-- Persistent Exercise Library Sidebar (shown only in program-building views) -->
@@ -587,6 +602,7 @@
         <button class="tab" data-ctab="cardio">Cardio</button>
         <button class="tab" data-ctab="calendar">Calendar</button>
         <button class="tab" data-ctab="diet">Nutrition</button>
+        <button class="tab" data-ctab="profile">Profile</button>
       </div>
 
       <!-- Calendar (athlete) -->
@@ -701,6 +717,22 @@
           <p class="muted">Synced automatically — your coach will see it.</p>
         </div>
       </div>
+
+      <!-- Profile (athlete) -->
+      <div class="tab-panel" data-ctab-panel="profile">
+        <div class="program-head">
+          <h3>Profile</h3>
+        </div>
+        <div class="card">
+          <h3 id="profile-name"></h3>
+          <div class="profile-invite" id="profile-invite"></div>
+        </div>
+        <div class="card">
+          <h3>Appearance</h3>
+          <p class="muted" style="margin-bottom:0.8em">Pick a color scheme for your app.</p>
+          <div class="theme-picker" id="athlete-theme-picker"></div>
+        </div>
+      </div>
     </main>
   </section>
 
@@ -756,7 +788,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
   <script src="cloud.js?v=openslots3"></script>
-  <script src="app.js?v=warmups1"></script>
+  <script src="app.js?v=themes1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
