@@ -386,7 +386,6 @@
         <div class="tabs">
           <button class="tab active" data-tab="profile">Profile</button>
           <button class="tab" data-tab="program">Program</button>
-          <button class="tab" data-tab="calendar">Calendar</button>
           <button class="tab" data-tab="diet">Nutrition</button>
           <button class="tab" data-tab="prs">PRs</button>
           <button class="tab" data-tab="sessions">Sessions</button>
@@ -462,23 +461,6 @@
           </div>
         </div>
 
-        <!-- Calendar (coach) -->
-        <div class="tab-panel" data-tab-panel="calendar">
-          <div class="program-head">
-            <h3>Training Diary</h3>
-            <p class="muted">Color-coded workout log. Each day type has its own color — synced from athlete progress.</p>
-          </div>
-          <div class="calendar-head">
-            <div class="cal-nav">
-              <button class="btn btn-ghost btn-sm" id="cal-prev">‹</button>
-              <h4 class="cal-title" id="cal-title"></h4>
-              <button class="btn btn-ghost btn-sm" id="cal-next">›</button>
-              <button class="btn btn-ghost btn-sm" id="cal-today">Today</button>
-            </div>
-          </div>
-          <div id="cal-grid" class="cal-grid"></div>
-        </div>
-
         <!-- Diet -->
         <div class="tab-panel" data-tab-panel="diet">
           <div class="program-head">
@@ -502,19 +484,37 @@
           </div>
         </div>
 
-        <!-- Sessions (coach) -->
+        <!-- Sessions + Calendar (coach, merged) -->
         <div class="tab-panel" data-tab-panel="sessions">
           <div class="program-head">
-            <h3>Training Sessions</h3>
+            <h3>Sessions</h3>
             <div class="library-head-actions">
-              <button class="btn btn-ghost" id="btn-export-sessions" title="Download payment &amp; use history (opens in Excel)">⬇ Export</button>
               <button class="btn btn-ghost" id="btn-redeem-session">− Redeem session</button>
               <button class="btn btn-ghost" id="btn-gift-session" title="Give free sessions">🎁 Gift</button>
               <button class="btn btn-primary" id="btn-add-package">+ Add package</button>
             </div>
           </div>
-          <p class="muted" style="margin-bottom:1em">Track sessions your athlete has paid for. The app doesn't collect payment — confirm payment outside the app (Venmo, cash, Stripe link, etc.), then add the package here.</p>
-          <div id="session-bank-container"></div>
+          <div id="session-balance-host"></div>
+          <div class="session-calendar">
+            <div class="calendar-head">
+              <div class="cal-nav">
+                <button class="btn btn-ghost btn-sm" id="cal-prev">‹</button>
+                <h4 class="cal-title" id="cal-title"></h4>
+                <button class="btn btn-ghost btn-sm" id="cal-next">›</button>
+                <button class="btn btn-ghost btn-sm" id="cal-today">Today</button>
+              </div>
+              <p class="muted cal-caption">Booked sessions and your athlete's workout log.</p>
+            </div>
+            <div id="cal-grid" class="cal-grid"></div>
+          </div>
+          <details class="session-manage" id="coach-session-details">
+            <summary>Manage packages &amp; history</summary>
+            <p class="muted session-manage-note">Track sessions your athlete has paid for. The app doesn't collect payment — confirm payment outside the app (Venmo, cash, Stripe link, etc.), then add the package here.</p>
+            <div class="session-manage-actions">
+              <button class="btn btn-ghost btn-sm" id="btn-export-sessions" title="Download payment &amp; use history (opens in Excel)">⬇ Export</button>
+            </div>
+            <div id="session-bank-container"></div>
+          </details>
         </div>
 
         <!-- Cardio -->
@@ -600,26 +600,8 @@
         <button class="tab" data-ctab="sessions">Sessions<span class="tab-badge hidden" id="ctab-sessions-badge"></span></button>
         <button class="tab" data-ctab="prs">PRs</button>
         <button class="tab" data-ctab="cardio">Cardio</button>
-        <button class="tab" data-ctab="calendar">Calendar</button>
         <button class="tab" data-ctab="diet">Nutrition</button>
         <button class="tab" data-ctab="profile">Profile</button>
-      </div>
-
-      <!-- Calendar (athlete) -->
-      <div class="tab-panel" data-ctab-panel="calendar">
-        <div class="program-head">
-          <h3>My Calendar</h3>
-        </div>
-        <div class="calendar-head">
-          <div class="cal-nav">
-            <button class="btn btn-ghost btn-sm" id="ccal-prev">‹</button>
-            <h4 class="cal-title" id="ccal-title"></h4>
-            <button class="btn btn-ghost btn-sm" id="ccal-next">›</button>
-            <button class="btn btn-ghost btn-sm" id="ccal-today">Today</button>
-          </div>
-          <span id="ccal-token-balance" class="cal-token-balance hidden"></span>
-        </div>
-        <div id="ccal-grid" class="cal-grid"></div>
       </div>
 
       <!-- Workouts (default landing — clipboard picker + detail) -->
@@ -692,17 +674,35 @@
         </div>
       </div>
 
-      <!-- Sessions (athlete) -->
+      <!-- Sessions + Calendar (athlete, merged) -->
       <div class="tab-panel" data-ctab-panel="sessions">
         <div class="program-head">
-          <h3>My Sessions</h3>
+          <h3>Sessions</h3>
           <div class="library-head-actions">
-            <button class="btn btn-ghost" id="btn-athlete-export-sessions" title="Download payment &amp; use history (opens in Excel)">⬇ Export</button>
             <button class="btn btn-primary" id="btn-athlete-request-package">+ Buy package</button>
           </div>
         </div>
-        <p class="muted" style="margin-bottom:1em">Your training package balance. Buying a package sends a purchase request to your coach — settle payment with them outside the app, and they'll mark it paid to add the sessions.</p>
-        <div id="athlete-session-container"></div>
+        <div id="athlete-balance-host"></div>
+        <div class="session-calendar">
+          <div class="calendar-head">
+            <div class="cal-nav">
+              <button class="btn btn-ghost btn-sm" id="ccal-prev">‹</button>
+              <h4 class="cal-title" id="ccal-title"></h4>
+              <button class="btn btn-ghost btn-sm" id="ccal-next">›</button>
+              <button class="btn btn-ghost btn-sm" id="ccal-today">Today</button>
+            </div>
+            <span id="ccal-token-balance" class="cal-token-balance hidden"></span>
+          </div>
+          <div id="ccal-grid" class="cal-grid"></div>
+        </div>
+        <details class="session-manage" id="athlete-session-details">
+          <summary>Package balance &amp; history</summary>
+          <p class="muted session-manage-note">Your training package balance. Buying a package sends a purchase request to your coach — settle payment with them outside the app, and they'll mark it paid to add the sessions.</p>
+          <div class="session-manage-actions">
+            <button class="btn btn-ghost btn-sm" id="btn-athlete-export-sessions" title="Download payment &amp; use history (opens in Excel)">⬇ Export</button>
+          </div>
+          <div id="athlete-session-container"></div>
+        </details>
       </div>
 
       <!-- Progress -->

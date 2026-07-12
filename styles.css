@@ -1843,6 +1843,38 @@ input[type="date"] { color-scheme: dark; }
   min-width: 180px;
   text-align: center;
 }
+
+/* ---- Merged Sessions + Calendar tab ---- */
+.session-calendar { margin-top: 0.4rem; }
+.cal-caption { margin: 0; font-size: 0.8rem; }
+.session-manage {
+  margin-top: 1.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.session-manage > summary {
+  cursor: pointer;
+  padding: 0.75em 1em;
+  font-weight: 700;
+  font-size: 0.92rem;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+.session-manage > summary::-webkit-details-marker { display: none; }
+.session-manage > summary::before {
+  content: "▸";
+  color: var(--text-soft);
+  transition: transform 0.15s;
+}
+.session-manage[open] > summary::before { transform: rotate(90deg); }
+.session-manage > summary:hover { color: var(--primary-bright); }
+.session-manage-note { margin: 0 1em 0.6em; font-size: 0.83rem; }
+.session-manage-actions { padding: 0 1em 0.4em; display: flex; gap: 0.5em; flex-wrap: wrap; }
+.session-manage > #session-bank-container,
+.session-manage > #athlete-session-container { display: block; padding: 0 1em 1em; }
 .cal-legend {
   display: flex;
   gap: 0.8em;

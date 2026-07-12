@@ -5354,7 +5354,9 @@
         <div><span class="session-stat-num">${sum.used}</span><span class="session-stat-lbl">redeemed</span></div>
         <div><span class="session-stat-num">${pending.length}</span><span class="session-stat-lbl">requested</span></div>
       </div>`;
-    container.appendChild(balance);
+    // Balance card lives in the always-visible host above the calendar.
+    const balHost = $("#athlete-balance-host");
+    if (balHost) balHost.replaceChildren(balance); else container.appendChild(balance);
 
     // Open slots posted by the coach (skip entirely if this athlete is muted).
     if (!prog.client.hideOpenSlots) {
@@ -5486,6 +5488,12 @@
     prefRow.appendChild(txt);
     prefCard.appendChild(prefRow);
     container.appendChild(prefCard);
+
+    // Auto-expand the collapsible when there's something to act on: an open
+    // slot to claim or a pending purchase request. Never force it closed, so
+    // the athlete's own toggle is respected the rest of the time.
+    const det = $("#athlete-session-details");
+    if (det && (pending.length || (!prog.client.hideOpenSlots && athleteOpenSlots().some((s) => s.status !== "closed")))) det.open = true;
   }
 
   function requestPackage(size) {
@@ -5649,7 +5657,10 @@
         <div><span class="session-stat-num">${sum.used}</span><span class="session-stat-lbl">redeemed</span></div>
         <div><span class="session-stat-num">${sum.pendingCount}</span><span class="session-stat-lbl">pending</span></div>
       </div>`;
-    container.appendChild(balance);
+    // Balance card lives in the always-visible host above the calendar; the
+    // rest of the ledger renders into the collapsible container below.
+    const balHost = $("#session-balance-host");
+    if (balHost) balHost.replaceChildren(balance); else container.appendChild(balance);
 
     // Pending athlete requests (from imported progress)
     if (importedRequests.length) {
@@ -5677,6 +5688,8 @@
       // Only show card if there were unapproved requests rendered
       if (reqCard.querySelector(".pending-request-row")) {
         container.appendChild(reqCard);
+        // Surface pending requests by auto-expanding the collapsible.
+        const det = $("#coach-session-details"); if (det) det.open = true;
         reqCard.querySelectorAll("[data-approve]").forEach((btn) => {
           btn.addEventListener("click", () => approvePackageRequest(c, btn.dataset.approve, Number(btn.dataset.size), Number(btn.dataset.price) || 0));
         });
