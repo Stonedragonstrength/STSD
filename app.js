@@ -20,7 +20,8 @@
     { id: "red",    name: "Red",    swatch: "#f87171" },
     { id: "pink",   name: "Pink",   swatch: "#f472b6" },
     { id: "purple", name: "Purple", swatch: "#c084fc" },
-    { id: "black",  name: "Black",  swatch: "#cbd5e1" },
+    { id: "black",  name: "Black",  swatch: "#0b0b0d" },
+    { id: "white",  name: "White",  swatch: "#ffffff" },
   ];
   function getThemePrefs() {
     try { return JSON.parse(localStorage.getItem(KEY_THEME)) || {}; } catch { return {}; }
