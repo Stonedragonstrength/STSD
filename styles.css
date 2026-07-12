@@ -1407,6 +1407,34 @@ input[type="date"] { color-scheme: dark; }
   text-align: center;
 }
 .login-coach-link:hover { opacity: 1; }
+
+/* Persistent "Install the app" CTA at the bottom of the login card */
+.install-hint {
+  margin-top: 1.4rem;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+  text-align: left;
+  padding: 0.85em 1em;
+  background: var(--primary-soft);
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.35);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+.install-hint:hover {
+  border-color: var(--primary-bright);
+  box-shadow: 0 6px 18px rgba(var(--primary-rgb), 0.2);
+  transform: translateY(-1px);
+}
+.install-hint-icon { font-size: 1.5rem; flex-shrink: 0; line-height: 1; }
+.install-hint-text { display: flex; flex-direction: column; flex: 1; min-width: 0; line-height: 1.3; }
+.install-hint-text strong { font-size: 0.92rem; }
+.install-hint-sub { font-size: 0.76rem; color: var(--text-soft); }
+.install-hint-arrow { color: var(--primary-bright); font-weight: 800; flex-shrink: 0; font-size: 1.05rem; }
 .coach-access-link {
   background: none;
   border: none;

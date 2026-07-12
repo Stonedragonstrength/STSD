@@ -8016,8 +8016,11 @@
     const iPadOS = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
     return /iPad|iPhone|iPod/.test(ua) || iPadOS;
   }
+  function isAndroid() { return /Android/i.test(navigator.userAgent || ""); }
   function installPossible() {
-    return !!_deferredInstallPrompt || isIOS();
+    // Show the install CTA whenever a native prompt is queued OR we're on a
+    // phone (where we can at least walk the user through the manual steps).
+    return !!_deferredInstallPrompt || isIOS() || isAndroid();
   }
   function refreshInstallUI() {
     const shouldShow = !isStandalone() && installPossible();
@@ -8036,7 +8039,23 @@
       return;
     }
     if (isIOS()) { showIOSInstallInstructions(); return; }
+    if (isAndroid()) { showAndroidInstallInstructions(); return; }
     toast("Open your browser menu and choose Install / Add to Home Screen");
+  }
+  function showAndroidInstallInstructions() {
+    openModal({
+      title: "Install the app",
+      body: `
+        <p class="muted" style="margin-top:-0.3em">Install Stone Dragon so it opens like an app — and works offline.</p>
+        <ol class="install-steps">
+          <li>Tap the <strong>⋮ menu</strong> in the top-right of your browser.</li>
+          <li>Tap <strong>Install app</strong> (or <strong>Add to Home screen</strong>).</li>
+          <li>Confirm — Stone Dragon lands on your home screen.</li>
+        </ol>
+        <p class="muted">Then open it from your home screen, just like any other app.</p>
+      `,
+      actions: [{ label: "Got it", className: "btn btn-primary", onClick: closeModal }],
+    });
   }
   function showIOSInstallInstructions() {
     openModal({

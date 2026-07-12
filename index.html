@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=programs2" />
+  <link rel="stylesheet" href="styles.css?v=install1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -32,7 +32,6 @@
         <h2 class="login-welcome">Welcome</h2>
         <p class="muted login-welcome-sub">Sign in to your training program.</p>
         <button class="btn btn-primary btn-block btn-login-main" data-role="client">Athlete sign in</button>
-        <button class="btn btn-ghost btn-block install-app-btn hidden" type="button">📲 Add to Home Screen</button>
         <div class="login-footer-links">
           <button class="btn btn-ghost btn-block" id="btn-athlete-signup">Athlete sign up</button>
           <button class="btn-link login-coach-link" data-role="trainer">Coach sign in</button>
@@ -197,6 +196,17 @@
         <button class="btn btn-primary btn-block" id="btn-reset-pw">Update password</button>
         <p id="reset-pw-error" class="error hidden"></p>
       </div>
+
+      <!-- Persistent install CTA — shown on every login sub-panel (landing + sign-in),
+           hidden automatically when already installed or not installable. -->
+      <button class="install-hint install-app-btn hidden" type="button">
+        <span class="install-hint-icon">📲</span>
+        <span class="install-hint-text">
+          <strong>Install the app</strong>
+          <span class="install-hint-sub">Add Stone Dragon to your home screen</span>
+        </span>
+        <span class="install-hint-arrow">→</span>
+      </button>
     </div>
   </section>
 
@@ -790,7 +800,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
   <script src="cloud.js?v=openslots3"></script>
-  <script src="app.js?v=programs2"></script>
+  <script src="app.js?v=install1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
