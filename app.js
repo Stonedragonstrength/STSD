@@ -30,6 +30,16 @@
   function applyTheme(id) {
     if (!id || id === "blue") document.documentElement.removeAttribute("data-theme");
     else document.documentElement.setAttribute("data-theme", id);
+    syncStatusBarColor();
+  }
+  // Point the browser/PWA status bar (phone's top bar) at the active theme's
+  // background so it matches instead of staying the old cyan. The OS auto-picks
+  // white or dark clock/battery text based on how dark this color is.
+  function syncStatusBarColor() {
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) return;
+    const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+    if (bg) meta.setAttribute("content", bg);
   }
   function setThemeForRole(role, id) {
     const prefs = getThemePrefs(); prefs[role] = id;
