@@ -4393,7 +4393,9 @@
     return map;
   }
   function tokenPillHtml(reds) {
-    const label = reds.length > 1 ? `🎟 ×${reds.length}` : "🎟 Session used";
+    // Symbol only (session used) — the day cell stays compact; count shown
+    // when more than one. Full notes on tap via openRedemptionDetailsModal.
+    const label = reds.length > 1 ? `🎟×${reds.length}` : "🎟";
     const notes = reds.map((r) => r.note).filter(Boolean).join(" · ");
     return `<div class="cal-day-pill cal-day-pill-token" title="${escapeHtml(notes)}">${label}</div>`;
   }
@@ -6846,7 +6848,7 @@
       }
       const upc = isUpcoming ? (upcomingByDate[iso] || []) : [];
       if (upc.length) {
-        pillHtml += upc.map((b) => `<div class="cal-day-pill cal-booked-pill">📅 ${escapeHtml(b.time || "Session")}</div>`).join("");
+        pillHtml += upc.map((b) => `<div class="cal-day-pill cal-booked-pill">${escapeHtml(b.time || "Session")}</div>`).join("");
         cell.classList.add("has-log");
       }
       const reds = redsByDate[iso] || [];

@@ -3541,13 +3541,19 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
 
   /* Calendar — very compact */
   .calendar-head { gap: 0.4em; }
-  .cal-grid { padding: 0.3rem; gap: 2px; }
+  .cal-grid { padding: 0.3rem; gap: 3px; }
+  /* Even, uncramped grid: every day is the same square, content centered. */
   .cal-day {
-    min-height: 56px;
-    padding: 0.25em 0.32em;
+    aspect-ratio: 1;
+    min-height: 0;
+    padding: 0.25em 0.15em;
     font-size: 0.72rem;
+    overflow: hidden;
+    align-items: center;
   }
-  .cal-date-num { font-size: 0.78rem; margin-bottom: 0.1em; }
+  .cal-date-num { font-size: 0.74rem; margin-bottom: 0.1em; align-self: flex-start; }
+  .cal-day .cal-day-pill { font-size: 0.5rem; padding: 0.1em 0.32em; margin-top: 0.1em; align-self: center; text-align: center; }
+  .cal-day .cal-day-pill-token { font-size: 0.72rem; border: none; background: none; padding: 0; }
   .cal-day-label { font-size: 0.55rem; line-height: 1.15; }
   .cal-day-status { font-size: 0.55rem; }
   .cal-day-video {
