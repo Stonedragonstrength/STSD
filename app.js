@@ -1534,6 +1534,7 @@
 
   function makeProgramCard(tpl) {
     const weekCount = tpl.weeks.length;
+    const daysPerWeek = tpl.weeks.reduce((max, w) => Math.max(max, w.days.length), 0);
     const exCount = tpl.weeks.reduce((n, w) => n + w.days.reduce((m, d) => m + d.exercises.length, 0), 0);
     const ready = tpl.status === "ready";
     const card = document.createElement("div");
@@ -1546,7 +1547,7 @@
     desc.textContent = tpl.description || "";
     const meta = document.createElement("div");
     meta.className = "program-tpl-meta";
-    meta.innerHTML = `<span class="tpl-chip">🗓️ ${weekCount} week${weekCount !== 1 ? "s" : ""}</span><span class="tpl-chip">🏋️ ${exCount} exercise${exCount !== 1 ? "s" : ""}</span>`;
+    meta.innerHTML = `<span class="tpl-chip">🗓️ ${weekCount} week${weekCount !== 1 ? "s" : ""}</span><span class="tpl-chip">📆 ${daysPerWeek} day${daysPerWeek !== 1 ? "s" : ""}/week</span><span class="tpl-chip">🏋️ ${exCount} exercise${exCount !== 1 ? "s" : ""}</span>`;
 
     const info = document.createElement("div");
     info.className = "program-tpl-info";
