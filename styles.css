@@ -4212,47 +4212,24 @@ input:focus, textarea:focus, select:focus {
    ATHLETE WORKOUT PICKER + WORKOUT DETAIL
    ============================================================ */
 .workout-picker { position: relative; }
-.picker-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--primary);
-  border-radius: var(--radius-lg);
-  padding: 1.2rem 1.2rem 1.4rem;
-  box-shadow: var(--shadow-sm);
-  margin-bottom: 1.5rem;
-}
-.picker-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.8em;
-  margin-bottom: 1.1rem;
-  flex-wrap: wrap;
-}
-.picker-head h3 { margin: 0; font-size: 1.15rem; }
-.picker-streak {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  background: var(--primary-soft);
-  border: 1px solid rgba(var(--primary-bright-rgb), 0.3);
-  border-radius: 12px;
-  padding: 0.45em 0.9em;
-  min-width: 72px;
-}
-.picker-streak .streak-count {
-  font-size: 1.4rem;
-  font-weight: 900;
-  color: var(--primary-bright);
-  line-height: 1;
-}
-.picker-streak .streak-label {
-  font-size: 0.62rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+/* The workout picker now uses the standard .program-head layout (like the
+   Diet / PRs tabs) instead of a bespoke bordered card, so it reads as part
+   of the same page family. */
+.picker-heading h3 { margin: 0; }
+.picker-sub {
+  margin: 0.25em 0 0;
   color: var(--text-soft);
-  margin-top: 0.25em;
-  font-weight: 700;
+  font-size: 0.85rem;
+}
+.picker-logged {
+  color: var(--text-soft);
+  font-size: 0.85rem;
+  white-space: nowrap;
+  padding-top: 0.2em;
+}
+.picker-logged strong {
+  color: var(--primary-bright);
+  font-weight: 800;
 }
 
 /* ---- Week chip selector ---- */
@@ -4398,9 +4375,11 @@ input:focus, textarea:focus, select:focus {
   font-size: 0.95rem;
   font-weight: 800;
   letter-spacing: 0.01em;
-  white-space: nowrap;
+  /* Wrap to two lines instead of clipping ("Upper Body" was becoming "Upper …") */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 .workout-card-meta {
   display: flex;
@@ -4925,10 +4904,6 @@ input:focus, textarea:focus, select:focus {
     border-radius: var(--radius-lg);
     overflow: hidden;
   }
-  .picker-card { padding: 1rem 0.9rem 1.2rem; }
-  .picker-head h3 { font-size: 1.05rem; }
-  .picker-streak { padding: 0.4em 0.7em; min-width: 66px; }
-  .picker-streak .streak-count { font-size: 1.25rem; }
   .workout-card { padding: 0.75rem 0.85rem; gap: 0.7rem; }
   .workout-card-icon { width: 44px; height: 44px; font-size: 1.55rem; border-radius: 12px; }
   .workout-card-title { font-size: 0.9rem; }
