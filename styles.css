@@ -597,12 +597,14 @@ input[type="date"] { color-scheme: dark; }
 /* Athlete tabs styled exactly like the coach nav: rounded pill cells that
    fill the width evenly (no scroll), icon over label, with a filled active
    pill instead of an underline. */
+/* Pull the athlete tab bar up near the header — it had a lot of floating room. */
+#screen-client .app-main { padding-top: 0.7rem; }
 #screen-client .tabs {
   gap: 0.25em;
   overflow-x: hidden;
   border-bottom: none;
   margin-bottom: 1.1rem;
-  padding: 0.1rem 0;
+  padding: 0;
 }
 #screen-client .tab {
   position: relative;
@@ -1986,6 +1988,19 @@ input[type="date"] { color-scheme: dark; }
   cursor: pointer;
 }
 .overview-nudge:hover { filter: brightness(1.08); }
+/* Clickable "training days" card → jumps to the current workout */
+.overview-stat.is-clickable { cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s; }
+.overview-stat.is-clickable:hover {
+  border-color: var(--primary);
+  box-shadow: 0 8px 22px rgba(var(--primary-rgb), 0.18);
+  transform: translateY(-2px);
+}
+/* Softer "hint" nudge (primary tint) vs the amber buy nudge */
+.overview-nudge-go {
+  background: var(--primary-soft);
+  color: var(--primary-bright);
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.4);
+}
 @media (max-width: 380px) { .overview-stat-num { font-size: 1.8rem; } }
 .session-manage {
   margin-top: 1.4rem;

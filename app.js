@@ -6685,6 +6685,8 @@
     const doneDays = days.filter((d) => Array.isArray(dc[d.id]) && dc[d.id].length).length;
     const daysLeft = Math.max(0, totalDays - doneDays);
     const weekLabel = week?.label || "This week";
+    // The day to jump to = first not-yet-completed day this week (else the first).
+    const nextDay = days.find((d) => !(Array.isArray(dc[d.id]) && dc[d.id].length)) || days[0];
 
     // Session balance + low-balance nudge.
     const sum = sessionBankSummary(c);
@@ -6692,10 +6694,13 @@
     const low = remaining <= 2;
 
     host.innerHTML = `
-      <div class="overview-stat">
+      <div class="overview-stat${totalDays ? " is-clickable" : ""}" id="ov-workouts-stat">
         <div class="overview-stat-num">${totalDays ? daysLeft : "—"}</div>
         <div class="overview-stat-label">${daysLeft === 1 ? "training day left" : "training days left"}</div>
-        <div class="overview-stat-sub">${totalDays ? `${escapeHtml(weekLabel)} · ${doneDays}/${totalDays} done` : "No program yet"}</div>
+        ${totalDays
+          ? `<div class="overview-stat-sub">${escapeHtml(weekLabel)} · ${doneDays}/${totalDays} done</div>
+             <span class="overview-nudge overview-nudge-go">${daysLeft === 0 ? "Review workout" : "Go to today's workout"} →</span>`
+          : `<div class="overview-stat-sub">No program yet</div>`}
       </div>
       <div class="overview-stat${low ? " is-low" : ""}">
         <div class="overview-stat-num">${remaining}</div>
@@ -6704,6 +6709,11 @@
           ? `<button class="overview-nudge" id="ov-buy-more" type="button">${remaining === 0 ? "Buy sessions" : "Running low — buy more"} →</button>`
           : `<div class="overview-stat-sub">You're all set 💪</div>`}
       </div>`;
+    if (totalDays && week && nextDay) {
+      $("#ov-workouts-stat")?.addEventListener("click", () =>
+        jumpToWorkout({ weekId: week.id, dayId: nextDay.id }, todayISO())
+      );
+    }
     $("#ov-buy-more")?.addEventListener("click", () => { setClientTab("sessions"); openAthleteRequestPackageModal(); });
   }
   // -------- Athlete self-service profile (name / age / height / weight / goals) --------
