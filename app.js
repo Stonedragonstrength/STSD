@@ -6663,6 +6663,9 @@
   function setClientTab(name) {
     $$(".tab[data-ctab]").forEach((t) => t.classList.toggle("active", t.dataset.ctab === name));
     $$(".tab-panel[data-ctab-panel]").forEach((p) => p.classList.toggle("active", p.dataset.ctabPanel === name));
+    // Profile has no tab button — it's reached via the header name link.
+    const profLink = $("#btn-client-profile");
+    if (profLink) profLink.classList.toggle("active", name === "profile");
   }
 
   // -------- Athlete calendar --------
@@ -8382,6 +8385,7 @@
     $$(".tab[data-ctab]").forEach((t) => t.addEventListener("click", () => setClientTab(t.dataset.ctab)));
 
     $("#btn-client-logout").addEventListener("click", exitClient);
+    $("#btn-client-profile")?.addEventListener("click", () => setClientTab("profile"));
     $("#btn-back-to-picker")?.addEventListener("click", backToWorkoutPicker);
     $("#btn-log-bw").addEventListener("click", logBodyweight);
     $("#btn-import-scale")?.addEventListener("click", () => $("#scale-csv-input")?.click());

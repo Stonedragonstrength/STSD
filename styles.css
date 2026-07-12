@@ -398,6 +398,26 @@ input[type="date"] { color-scheme: dark; }
   text-transform: uppercase;
 }
 .header-sub { font-size: 0.8rem; color: var(--text-soft); }
+/* Athlete name in the top-left doubles as the Profile link (the Profile tab
+   was removed). The ⚙ caret signals it's tappable. */
+.header-name-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.header-name-caret { font-size: 0.72em; color: var(--muted); transition: color 0.15s; }
+.header-name-btn:hover .header-sub,
+.header-name-btn.active .header-sub { color: var(--primary-bright); }
+.header-name-btn:hover .header-name-caret,
+.header-name-btn.active .header-name-caret { color: var(--primary-bright); }
 .header-right { display: flex; gap: 0.4em; align-items: center; }
 
 /* Breadcrumb (shown when inside an athlete) */
@@ -3390,6 +3410,25 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
     padding: 0.75em 0.9em;
     font-size: 0.75rem;
     min-height: 44px;
+  }
+  /* Athlete tab bar (5 tabs) fills the width evenly with NO side-scroll,
+     like the coach nav. Scoped to #screen-client so the coach's wider
+     per-athlete tab set is untouched. The long "Nutrition/Cardio" wraps at
+     its <wbr> after the slash. */
+  #screen-client .tabs { overflow-x: hidden; }
+  #screen-client .tab {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0.55em 0.2em;
+    font-size: 0.64rem;
+    letter-spacing: 0.02em;
+    white-space: normal;
+    overflow-wrap: break-word;
+    text-align: center;
+    line-height: 1.18;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   /* Cards */

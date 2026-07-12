@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=white2" />
+  <link rel="stylesheet" href="styles.css?v=athnav1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -591,7 +591,10 @@
         <div class="brand-mark sm"><img src="logo.png" alt="" onerror="this.onerror=null; this.src='icon-192.svg';" /></div>
         <div>
           <div class="header-title">Stone Dragon</div>
-          <div class="header-sub" id="client-portal-name"></div>
+          <button class="header-name-btn" id="btn-client-profile" type="button" title="View & edit your profile">
+            <span class="header-sub" id="client-portal-name"></span>
+            <span class="header-name-caret">⚙</span>
+          </button>
         </div>
       </div>
       <div class="header-right">
@@ -606,12 +609,10 @@
 
     <main class="app-main">
       <div class="tabs">
-        <button class="tab active" data-ctab="workouts">Workouts</button>
+        <button class="tab active" data-ctab="workouts">Program</button>
         <button class="tab" data-ctab="sessions">Sessions<span class="tab-badge hidden" id="ctab-sessions-badge"></span></button>
         <button class="tab" data-ctab="prs">PRs</button>
-        <button class="tab" data-ctab="cardio">Cardio</button>
-        <button class="tab" data-ctab="diet">Nutrition</button>
-        <button class="tab" data-ctab="profile">Profile</button>
+        <button class="tab" data-ctab="diet">Nutrition/<wbr>Cardio</button>
       </div>
 
       <!-- Workouts (default landing — clipboard picker + detail) -->
@@ -620,7 +621,7 @@
         <div id="workout-picker" class="workout-picker">
           <div class="program-head">
             <div class="picker-heading">
-              <h3>My Workouts</h3>
+              <h3>Workout Program</h3>
               <p class="picker-sub">Tap a day to start logging your sets.</p>
             </div>
             <div class="picker-logged" title="Total exercises logged">
@@ -666,6 +667,20 @@
           <h3>Body weight</h3>
           <div id="bw-charts"></div>
           <div id="bw-history"></div>
+        </div>
+
+        <!-- Cardio (merged into Nutrition/Cardio) -->
+        <div class="program-head" style="margin-top:1.75rem">
+          <h3>Cardio</h3>
+          <button class="btn btn-primary" id="btn-add-cardio">+ Log cardio</button>
+        </div>
+        <p class="muted" style="margin-bottom:1em">Track runs, rides, swims — anything that gets the heart rate up. Tap an entry to edit it.</p>
+        <div id="cardio-list-container"></div>
+
+        <div class="card">
+          <h3>Notes for my coach</h3>
+          <textarea id="client-feedback" rows="4" placeholder="How are things going? Any aches, schedule conflicts, food cravings…"></textarea>
+          <p class="muted">Synced automatically — your coach will see it.</p>
         </div>
       </div>
 
@@ -713,21 +728,6 @@
           </div>
           <div id="athlete-session-container"></div>
         </details>
-      </div>
-
-      <!-- Progress -->
-      <div class="tab-panel" data-ctab-panel="cardio">
-        <div class="program-head">
-          <h3>Cardio</h3>
-          <button class="btn btn-primary" id="btn-add-cardio">+ Log cardio</button>
-        </div>
-        <p class="muted" style="margin-bottom:1em">Track runs, rides, swims — anything that gets the heart rate up. Tap an entry to edit it.</p>
-        <div id="cardio-list-container"></div>
-        <div class="card">
-          <h3>Notes for my coach</h3>
-          <textarea id="client-feedback" rows="4" placeholder="How are things going? Any aches, schedule conflicts, food cravings…"></textarea>
-          <p class="muted">Synced automatically — your coach will see it.</p>
-        </div>
       </div>
 
       <!-- Profile (athlete) -->
@@ -830,7 +830,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
   <script src="cloud.js?v=profile1"></script>
-  <script src="app.js?v=weekpersist1"></script>
+  <script src="app.js?v=athnav1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
