@@ -260,6 +260,15 @@
     if (ex.dropset?.pcts?.length) parts.push(`⬇${ex.dropset.pcts.join("→")}%`);
     return parts.join("  ");
   }
+  // ── Warm-up sets (optional, up to 2) ──
+  // Coach-prescribed explicit weight × reps, done before the working sets and
+  // shown as W1/W2 on the athlete card. Stored as ex.warmups = [{weight,reps}].
+  function warmupSummary(ex) {
+    if (!ex.warmups?.length) return "";
+    return "W " + ex.warmups
+      .map((w) => (w.weight ? (w.weight === "BW" ? "BW" : w.weight) : "?"))
+      .join("·");
+  }
 
   // Modifier tags sorted by category order (then tag order within a category),
   // so chips + the exercise name read consistently regardless of click order.
@@ -338,6 +347,107 @@
     document.body.appendChild(pop);
     render();
     _attachOutsideClose(pop, anchorBtn);
+  }
+
+  // Warm-up editor: 0/1/2 slots, each an explicit weight × reps picker. Its own
+  // popover class (not .grid-picker-pop) so the nested weight/reps pickers don't
+  // wipe it; the outside-close ignores clicks landing inside those pickers.
+  function openWarmupPicker(ex, anchorBtn, onChange) {
+    document.querySelector(".warmup-pop")?.remove();
+    const pop = document.createElement("div");
+    pop.className = "warmup-pop";
+    pop.style.cssText = "position:fixed;z-index:9999;visibility:hidden";
+
+    const save = () => { saveTrainer(); onChange(); };
+    const wtLabel = (v) => (v ? (v === "BW" ? "BW" : v + " lb") : "Wt");
+
+    function setCount(n) {
+      if (!ex.warmups) ex.warmups = [];
+      if (n === 0) ex.warmups = [];
+      else {
+        while (ex.warmups.length < n) ex.warmups.push({ weight: "", reps: "" });
+        ex.warmups.length = n;
+      }
+      save();
+      render();
+    }
+
+    function render() {
+      pop.innerHTML = "";
+      const count = ex.warmups?.length || 0;
+
+      const head = document.createElement("div");
+      head.className = "warmup-head";
+      head.textContent = "Warm-up sets";
+      pop.appendChild(head);
+
+      const seg = document.createElement("div");
+      seg.className = "warmup-seg";
+      [["None", 0], ["1", 1], ["2", 2]].forEach(([lbl, n]) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "warmup-seg-btn" + (count === n ? " on" : "");
+        b.textContent = lbl;
+        b.addEventListener("click", () => setCount(n));
+        seg.appendChild(b);
+      });
+      pop.appendChild(seg);
+
+      (ex.warmups || []).forEach((w, i) => {
+        const row = document.createElement("div");
+        row.className = "warmup-slot";
+
+        const lbl = document.createElement("span");
+        lbl.className = "warmup-slot-lbl";
+        lbl.textContent = `W${i + 1}`;
+        row.appendChild(lbl);
+
+        const wBtn = document.createElement("button");
+        wBtn.type = "button";
+        wBtn.className = "picker-btn picker-btn-sm" + (w.weight ? "" : " empty");
+        wBtn.textContent = wtLabel(w.weight);
+        wBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openWeightPicker(w.weight || "BW", (val) => {
+            w.weight = val; save();
+            wBtn.textContent = wtLabel(val); wBtn.classList.toggle("empty", !val);
+          }, wBtn);
+        });
+        row.appendChild(wBtn);
+
+        const x = document.createElement("span");
+        x.className = "warmup-x"; x.textContent = "×";
+        row.appendChild(x);
+
+        const rBtn = document.createElement("button");
+        rBtn.type = "button";
+        rBtn.className = "picker-btn picker-btn-sm" + (w.reps ? "" : " empty");
+        rBtn.textContent = w.reps || "Reps";
+        rBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openGridPicker("Reps", REPS_VALUES, w.reps || "8", (val) => {
+            w.reps = val; save();
+            rBtn.textContent = val; rBtn.classList.remove("empty");
+          }, rBtn, 6);
+        });
+        row.appendChild(rBtn);
+
+        pop.appendChild(row);
+      });
+
+      requestAnimationFrame(() => _positionPop(pop, anchorBtn));
+    }
+
+    document.body.appendChild(pop);
+    render();
+
+    const handler = (e) => {
+      if (pop.contains(e.target) || e.target === anchorBtn) return;
+      if (e.target.closest && e.target.closest(".grid-picker-pop")) return; // nested picker
+      pop.remove();
+      document.removeEventListener("mousedown", handler, true);
+    };
+    document.addEventListener("mousedown", handler, true);
   }
 
   function renderModChips(container, ex, position, openPicker) {
@@ -3545,6 +3655,19 @@
       ex.currentReps = val; saveTrainer(); crBtn.textContent = val; crBtn.classList.toggle("empty", !val);
     }, crBtn, 6); });
 
+    // Warm-up sets (optional, up to 2) — explicit lb × reps, done before the
+    // working sets. Mirrors the finisher button; sits at the front of the cluster.
+    const warmupBtn = document.createElement("button");
+    warmupBtn.className = "picker-btn picker-btn-sm ex-warmup-btn";
+    warmupBtn.title = "Warm-up sets (before working sets)";
+    const refreshWarmupBtn = () => {
+      const sum = warmupSummary(ex);
+      warmupBtn.textContent = sum || "＋ Warm";
+      warmupBtn.classList.toggle("empty", !sum);
+    };
+    refreshWarmupBtn();
+    warmupBtn.addEventListener("click", (e) => { e.stopPropagation(); openWarmupPicker(ex, warmupBtn, refreshWarmupBtn); });
+
     // Finisher (burnout / dropset) — sits at the end of the sets cluster.
     const finisherBtn = document.createElement("button");
     finisherBtn.className = "picker-btn picker-btn-sm ex-finisher-btn";
@@ -3581,6 +3704,7 @@
       cwBtn.disabled = locked;
       gwBtn.disabled = locked;
       crBtn.disabled = locked;
+      warmupBtn.disabled = locked;
       finisherBtn.disabled = locked;
       handle.style.opacity = locked ? "0.3" : "";
       handle.style.pointerEvents = locked ? "none" : "";
@@ -3623,6 +3747,7 @@
     // mobile instead of splitting a separator (@, –, ×) from its button.
     const metricsGroup = document.createElement("div");
     metricsGroup.className = "ex-metrics-group";
+    metricsGroup.appendChild(warmupBtn);
     metricsGroup.appendChild(setsBtn); metricsGroup.appendChild(at);
     metricsGroup.appendChild(cwBtn); metricsGroup.appendChild(dash); metricsGroup.appendChild(gwBtn);
     metricsGroup.appendChild(x1); metricsGroup.appendChild(crBtn);
@@ -7128,6 +7253,35 @@
       if (withSteppers) field.appendChild(mkBtn("▼", -1));
       return field;
     };
+
+    // Warm-up columns (optional, up to 2) render before the working sets, tinted
+    // and labeled W1/W2. Loggable but never required to lock the exercise.
+    const warmupInputs = []; // { wt, rp }
+    const warmups = (ex.warmups || []).slice(0, 2);
+    warmups.forEach((w, i) => {
+      const col = document.createElement("div");
+      col.className = "cex-set-col cex-warm-col" + (i === warmups.length - 1 ? " cex-warm-last" : "");
+
+      const lbl = document.createElement("span");
+      lbl.className = "cex-set-lbl";
+      lbl.textContent = `W${i + 1}`;
+
+      const wSeed = parseFloat(w.weight);
+      const rSeed = parseInt(w.reps, 10);
+      const wt = Object.assign(document.createElement("input"), { type: "number", step: "0.5", min: "0", placeholder: (w.weight && w.weight !== "BW") ? w.weight : "lb", readOnly: isLocked });
+      const rp = Object.assign(document.createElement("input"), { type: "number", min: "0", placeholder: w.reps || "reps", readOnly: isLocked });
+      wt.className = "cex-input"; rp.className = "cex-input";
+      wt.addEventListener("click", (e) => e.stopPropagation());
+      rp.addEventListener("click", (e) => e.stopPropagation());
+
+      col.appendChild(lbl);
+      col.appendChild(mkStepField(wt, 2.5, wSeed, w.weight !== "BW"));
+      col.appendChild(mkStepField(rp, 1, rSeed, true));
+
+      setTable.appendChild(col);
+      warmupInputs.push({ wt, rp });
+    });
+
     for (let s = 0; s < numSets; s++) {
       const col = document.createElement("div");
       col.className = "cex-set-col";
@@ -7156,6 +7310,11 @@
     if (todayLog?.sets?.length) {
       todayLog.sets.forEach((s, i) => {
         if (setInputs[i]) { setInputs[i].wt.value = s.weight || ""; setInputs[i].rp.value = s.reps || ""; }
+      });
+    }
+    if (todayLog?.warmups?.length) {
+      todayLog.warmups.forEach((w, i) => {
+        if (warmupInputs[i]) { warmupInputs[i].wt.value = w.weight || ""; warmupInputs[i].rp.value = w.reps || ""; }
       });
     }
 
@@ -7203,6 +7362,11 @@
     };
     const finisherHasData = () => finisherInputs.some((f) => f.rp.value);
     const finisherComplete = () => finisherInputs.every((f) => f.rp.value);
+    const warmupHasData = () => warmupInputs.some(({ wt, rp }) => wt.value || rp.value);
+    const collectWarmups = () => {
+      const arr = warmupInputs.map(({ wt, rp }) => ({ weight: wt.value, reps: rp.value }));
+      return arr.some((w) => w.weight || w.reps) ? { warmups: arr } : {};
+    };
 
     // Auto-save: debounced 800ms after last keystroke, saves a draft entry.
     // Drafts never lock in the green checkmark — only the Lock button does.
@@ -7212,7 +7376,7 @@
       _ast = setTimeout(() => {
         const sets = setInputs.map(({ wt, rp }) => ({ weight: wt.value, reps: rp.value }))
                               .filter(s => s.weight || s.reps);
-        if (!sets.length && !finisherHasData()) {
+        if (!sets.length && !finisherHasData() && !warmupHasData()) {
           if (state.clientData.progress.exerciseLogs[ex.id]) {
             state.clientData.progress.exerciseLogs[ex.id] =
               state.clientData.progress.exerciseLogs[ex.id].filter(l => l.date !== logDate);
@@ -7225,13 +7389,17 @@
           state.clientData.progress.exerciseLogs[ex.id] = [];
         const exLogs = state.clientData.progress.exerciseLogs[ex.id];
         const idx = exLogs.findIndex(l => l.date === logDate);
-        const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets, locked: false, ...collectFinishers() };
+        const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets, locked: false, ...collectWarmups(), ...collectFinishers() };
         if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
         saveClient();
         renderAthleteCalendar();
       }, 800);
     };
     setInputs.forEach(({ wt, rp }) => {
+      wt.addEventListener("input", autoSave);
+      rp.addEventListener("input", autoSave);
+    });
+    warmupInputs.forEach(({ wt, rp }) => {
       wt.addEventListener("input", autoSave);
       rp.addEventListener("input", autoSave);
     });
@@ -7252,6 +7420,7 @@
 
     const setFieldsReadonly = (readonly) => {
       setInputs.forEach(({ wt, rp }) => { wt.readOnly = readonly; rp.readOnly = readonly; });
+      warmupInputs.forEach(({ wt, rp }) => { wt.readOnly = readonly; rp.readOnly = readonly; });
       finisherInputs.forEach(({ rp }) => { rp.readOnly = readonly; });
       setSteppers.forEach((b) => { b.disabled = readonly; });
     };
@@ -7272,7 +7441,7 @@
         state.clientData.progress.exerciseLogs[ex.id] = [];
       const exLogs = state.clientData.progress.exerciseLogs[ex.id];
       const idx = exLogs.findIndex(l => l.date === logDate);
-      const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets, locked: true, ...collectFinishers() };
+      const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets, locked: true, ...collectWarmups(), ...collectFinishers() };
       if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
       saveClient();
       isLocked = true;

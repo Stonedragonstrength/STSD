@@ -937,6 +937,52 @@ input[type="date"] { color-scheme: dark; }
 .cex-finisher-pct { font-weight: 500; color: #fb923c; }
 .cex-finisher-input { width: 64px; flex-shrink: 0; text-align: center; }
 
+/* ===== Warm-up sets ===== */
+/* Coach row button (cyan accent, distinct from the orange finisher). */
+.ex-warmup-btn { min-width: 0; font-size: 0.78rem; }
+.ex-warmup-btn:not(.empty) {
+  color: #38bdf8;
+  border-color: rgba(56,189,248,0.55);
+  background: rgba(56,189,248,0.12);
+}
+.ex-warmup-btn.empty { color: var(--muted); border-style: dashed; }
+
+/* Warm-up picker popup — its own box (not a .grid-picker-pop, so the nested
+   weight/reps pickers don't wipe it). */
+.warmup-pop {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 32px rgba(0,0,0,0.45);
+  padding: 0.6rem;
+  min-width: 232px;
+  max-width: 280px;
+}
+.warmup-head {
+  font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--text-soft); font-weight: 700; margin-bottom: 0.45rem; padding: 0 0.1rem;
+}
+.warmup-seg { display: flex; gap: 0.35em; margin-bottom: 0.5rem; }
+.warmup-seg-btn {
+  flex: 1; padding: 0.45em 0; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text-soft);
+  font-family: inherit; font-size: 0.8rem; font-weight: 700;
+}
+.warmup-seg-btn.on { background: rgba(56,189,248,0.16); border-color: #38bdf8; color: #38bdf8; }
+.warmup-slot { display: flex; align-items: center; gap: 0.4em; padding: 0.3em 0; }
+.warmup-slot-lbl { font-size: 0.72rem; font-weight: 800; color: #38bdf8; min-width: 1.9em; }
+.warmup-x { color: var(--muted); font-weight: 700; }
+.warmup-slot .picker-btn { flex: 1; }
+
+/* Athlete card — warm-up columns rendered before the working sets. */
+.cex-warm-col .cex-set-lbl { color: #38bdf8; }
+.cex-warm-col .cex-input {
+  border-color: rgba(56,189,248,0.4);
+  background: rgba(56,189,248,0.06);
+}
+.cex-warm-last { border-right: 1px solid var(--border); padding-right: 0.55rem; margin-right: 0.15rem; }
+
 /* ===== Drum Picker ===== */
 .drum-backdrop {
   position: fixed;
