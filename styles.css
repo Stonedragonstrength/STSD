@@ -4587,7 +4587,7 @@ input:focus, textarea:focus, select:focus {
   /* Shrink set columns so 5-6 sets fit on one row instead of wrapping
      and growing the card's height. */
   .cex-set-table { gap: 0.3rem 0.3rem; flex-wrap: nowrap; overflow-x: auto; }
-  .cex-set-col { width: 48px; flex-shrink: 0; }
+  .cex-set-col { width: 40px; flex-shrink: 0; }
   .cex-set-lbl { font-size: 0.66rem; }
   .cex-set-col .cex-input { font-size: 0.85rem; padding: 0.3em 0.2em; }
   /* Tighter vertical gaps so the taller stacked fields don't balloon the row. */
@@ -4598,7 +4598,7 @@ input:focus, textarea:focus, select:focus {
      lose — trim that padding and shrink columns a bit more so all 6
      sets are visible without needing to scroll. */
   .week-body { padding: 0.6rem; }
-  .client-day-card .cex-set-col { width: 42px; }
+  .client-day-card .cex-set-col { width: 36px; }
 }
 .cex-log-bottom {
   display: flex;
