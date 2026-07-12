@@ -7095,8 +7095,8 @@
     // sensible number instead of 0. Collected so they disable when locked.
     const setSteppers = [];
     const mkStepper = (input, step, seed) => {
-      const row = document.createElement("div");
-      row.className = "cex-step-row";
+      const col = document.createElement("div");
+      col.className = "cex-step-col";
       const bump = (dir) => {
         if (input.readOnly) return;
         let cur = input.value !== "" ? parseFloat(input.value) : seed;
@@ -7106,17 +7106,17 @@
         input.value = String(v);
         autoSave();
       };
-      [["▼", -1], ["▲", 1]].forEach(([glyph, dir]) => {
+      [["▲", 1], ["▼", -1]].forEach(([glyph, dir]) => {
         const b = document.createElement("button");
         b.type = "button";
         b.className = "cex-step";
         b.textContent = glyph;
         b.title = `${dir > 0 ? "+" : "−"}${step}`;
         b.addEventListener("click", (e) => { e.stopPropagation(); bump(dir); });
-        row.appendChild(b);
+        col.appendChild(b);
         setSteppers.push(b);
       });
-      return row;
+      return col;
     };
     for (let s = 0; s < numSets; s++) {
       const col = document.createElement("div");
