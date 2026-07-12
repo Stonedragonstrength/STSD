@@ -5421,17 +5421,8 @@
       container.appendChild(giftCard);
     }
 
-    // Quick-buy package picker
-    const buyCard = document.createElement("div");
-    buyCard.className = "card";
-    buyCard.innerHTML = `<h4 style="margin-top:0">Buy more sessions</h4>
-      <p class="muted" style="font-size:0.85rem">Pre-pay pricing (10% off) — your coach gets a request and confirms after you settle payment with them outside the app.</p>
-      <div class="pkg-size-grid">${packageOptionButtonsHtml()}</div>
-      <p class="session-faq-link"><a href="https://www.stonedragonstrengthtraining.com/faqs" target="_blank" rel="noopener noreferrer">❓ How do sessions &amp; packages work?</a></p>`;
-    container.appendChild(buyCard);
-    buyCard.querySelectorAll("[data-buy-size]").forEach((btn) => {
-      btn.addEventListener("click", () => requestPackage(Number(btn.dataset.buySize)));
-    });
+    // (Buying is handled by the "+ Buy package" button at the top of the tab,
+    // which opens the buy modal — no separate quick-buy card needed here.)
 
     // Pending requests (athlete side)
     if (pending.length) {
