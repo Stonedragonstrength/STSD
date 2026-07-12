@@ -5530,6 +5530,8 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
     min-width: 0;
   }
   .mod-chips-before, .mod-chips-after { flex-wrap: wrap; }
+  /* Safety net: let the sets cluster wrap rather than run off a tiny screen. */
+  .ex-metrics-group { flex-wrap: wrap; }
   .ex-drag-handle { display: none; }
   .ex-move-btn { display: inline-flex; }
   .ex-detail-panel { padding-left: 0.6rem; }

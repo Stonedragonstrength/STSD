@@ -3792,13 +3792,14 @@
 
     // Sets/weight/reps picker cluster — grouped so it wraps as one unit on
     // mobile instead of splitting a separator (@, –, ×) from its button.
+    // Only the core sets/weight/reps cluster stays glued together (so a
+    // separator never splits from its button). Warm-up and finisher are
+    // independent row items that can wrap on their own on mobile.
     const metricsGroup = document.createElement("div");
     metricsGroup.className = "ex-metrics-group";
-    metricsGroup.appendChild(warmupBtn);
     metricsGroup.appendChild(setsBtn); metricsGroup.appendChild(at);
     metricsGroup.appendChild(cwBtn); metricsGroup.appendChild(dash); metricsGroup.appendChild(gwBtn);
     metricsGroup.appendChild(x1); metricsGroup.appendChild(crBtn);
-    metricsGroup.appendChild(finisherBtn);
 
     row.appendChild(handle);
     row.appendChild(moveUpBtn);
@@ -3807,7 +3808,9 @@
     row.appendChild(nameInput);
     row.appendChild(chipsAfter);
     row.appendChild(modBtn);
+    row.appendChild(warmupBtn);
     row.appendChild(metricsGroup);
+    row.appendChild(finisherBtn);
     row.appendChild(expandBtn); row.appendChild(saveBtn); row.appendChild(editBtn); row.appendChild(ssBtn); row.appendChild(delBtn);
 
     // Detail panel (notes + video), hidden by default
