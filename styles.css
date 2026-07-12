@@ -594,21 +594,44 @@ input[type="date"] { color-scheme: dark; }
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--primary-bright); border-bottom-color: var(--primary); }
 
-/* Athlete tabs: icon stacked over the label, like the coach nav — kept compact. */
+/* Athlete tabs styled exactly like the coach nav: rounded pill cells that
+   fill the width evenly (no scroll), icon over label, with a filled active
+   pill instead of an underline. */
+#screen-client .tabs {
+  gap: 0.25em;
+  overflow-x: hidden;
+  border-bottom: none;
+  margin-bottom: 1.1rem;
+  padding: 0.1rem 0;
+}
 #screen-client .tab {
   position: relative;
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1px;
-  padding: 0.32em 0.6em;
+  gap: 2px;
+  padding: 0.4em 0.15em;
+  border: 1px solid transparent;
+  border-radius: 12px;
   text-transform: none;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
+  color: var(--muted);
 }
-#screen-client .tab-icon { font-size: 1.05em; line-height: 1; }
-#screen-client .tab-label { font-size: 0.64rem; white-space: normal; text-align: center; line-height: 1.1; }
-#screen-client .tab-badge { position: absolute; top: 1px; right: 3px; margin: 0; }
+#screen-client .tab::after { display: none; } /* remove the underline indicator */
+#screen-client .tab:hover { background: var(--surface-2); color: var(--text); }
+#screen-client .tab-icon { font-size: 1.25em; line-height: 1; }
+#screen-client .tab-label { font-size: 0.6rem; white-space: normal; text-align: center; line-height: 1.1; overflow-wrap: break-word; }
+#screen-client .tab.active {
+  background: linear-gradient(180deg, var(--primary-bright), var(--primary));
+  color: #062131;
+  border-color: var(--primary-hover);
+  box-shadow: 0 6px 16px rgba(var(--primary-rgb), 0.3);
+}
+#screen-client .tab.active .tab-label { color: #062131; }
+#screen-client .tab-badge { position: absolute; top: 0; right: 2px; margin: 0; }
 
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
@@ -3492,14 +3515,8 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
      like the coach nav. Scoped to #screen-client so the coach's wider
      per-athlete tab set is untouched. The long "Nutrition/Cardio" wraps at
      its <wbr> after the slash. */
-  #screen-client .tabs { overflow-x: hidden; }
-  #screen-client .tab {
-    flex: 1 1 0;
-    min-width: 0;
-    padding: 0.32em 0.15em;
-  }
-  #screen-client .tab-icon { font-size: 1.1em; }
-  #screen-client .tab-label { font-size: 0.56rem; overflow-wrap: break-word; }
+  /* Athlete tabs use the same compact pill styling at every width (see the
+     base #screen-client .tab rules) — nothing extra needed on mobile. */
 
   /* Cards */
   .card { padding: 1rem; margin-bottom: 1rem; }
