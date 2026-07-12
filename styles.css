@@ -1692,6 +1692,15 @@ input[type="date"] { color-scheme: dark; }
 .bw-metric { display: flex; justify-content: space-between; gap: 0.5em; }
 .bw-metric span { color: var(--text-soft); }
 
+/* Link to the website FAQ from the buy-sessions card / modal */
+.session-faq-link { margin: 0.9em 0 0; font-size: 0.82rem; text-align: center; }
+.session-faq-link a {
+  color: var(--primary-bright);
+  text-decoration: none;
+  font-weight: 600;
+}
+.session-faq-link a:hover { text-decoration: underline; }
+
 /* Body-composition trend charts (SVG small multiples, shared coach + athlete) */
 .bw-charts-head {
   display: flex;

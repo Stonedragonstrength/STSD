@@ -5416,7 +5416,8 @@
     buyCard.className = "card";
     buyCard.innerHTML = `<h4 style="margin-top:0">Buy more sessions</h4>
       <p class="muted" style="font-size:0.85rem">Pre-pay pricing (10% off) — your coach gets a request and confirms after you settle payment with them outside the app.</p>
-      <div class="pkg-size-grid">${packageOptionButtonsHtml()}</div>`;
+      <div class="pkg-size-grid">${packageOptionButtonsHtml()}</div>
+      <p class="session-faq-link"><a href="https://www.stonedragonstrengthtraining.com/faqs" target="_blank" rel="noopener noreferrer">❓ How do sessions &amp; packages work?</a></p>`;
     container.appendChild(buyCard);
     buyCard.querySelectorAll("[data-buy-size]").forEach((btn) => {
       btn.addEventListener("click", () => requestPackage(Number(btn.dataset.buySize)));
@@ -5514,7 +5515,8 @@
       title: "Buy more sessions",
       body: `
         <p class="muted" style="margin-top:-0.4em">Pre-pay pricing (10% off). Tapping a card sends a purchase request to your coach. The app doesn't process payment — pay your coach directly (Venmo, cash, etc.) and they'll mark it paid.</p>
-        <div class="pkg-size-grid">${packageOptionButtonsHtml()}</div>`,
+        <div class="pkg-size-grid">${packageOptionButtonsHtml()}</div>
+        <p class="session-faq-link"><a href="https://www.stonedragonstrengthtraining.com/faqs" target="_blank" rel="noopener noreferrer">❓ How do sessions &amp; packages work?</a></p>`,
       actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
     });
     $("#modal-body").querySelectorAll("[data-buy-size]").forEach((btn) => {
