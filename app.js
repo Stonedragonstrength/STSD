@@ -185,6 +185,10 @@
     if (!c.sessionBank || typeof c.sessionBank !== "object") c.sessionBank = { packages: [], redemptions: [] };
     if (!Array.isArray(c.sessionBank.packages)) c.sessionBank.packages = [];
     if (!Array.isArray(c.sessionBank.redemptions)) c.sessionBank.redemptions = [];
+    // Upcoming Setmore bookings the coach has matched to this athlete — rides
+    // the existing session_bank jsonb so the athlete sees them on their calendar
+    // (no schema change). See syncUpcomingBookingsToAthletes().
+    if (!Array.isArray(c.sessionBank.upcomingBookings)) c.sessionBank.upcomingBookings = [];
   }
   function sessionBankSummary(c) {
     ensureSessionBank(c);
@@ -4431,6 +4435,7 @@
     );
     _dashCalSetmoreEvents = events;
     autoRedeemFinishedBookings();
+    syncUpcomingBookingsToAthletes();
     // Only re-render if still on the same month (avoid clobbering a nav that happened mid-fetch)
     if (state.dashCal && state.dashCal.year === year && state.dashCal.month === month) {
       renderDashboardCalendar();
@@ -4493,6 +4498,47 @@
       renderCoachSessions();
       renderCoachCalendar();
     }
+  }
+
+  // Store each athlete's upcoming (future) matched bookings on their record so
+  // they appear on the athlete's own calendar. Rides the session_bank jsonb
+  // (no schema change). Best-effort: reflects bookings in the loaded window,
+  // merged with previously-seen future bookings so navigating months doesn't
+  // drop them; past ones fall off.
+  function syncUpcomingBookingsToAthletes() {
+    const clients = state.trainerData.clients || [];
+    if (!clients.length) return;
+    const now = Date.now();
+    const today = todayISO();
+    const windowUids = new Set(_dashCalSetmoreEvents.map((e) => e.uid).filter(Boolean));
+    const byAthlete = {};
+    _dashCalSetmoreEvents.forEach((e) => {
+      if (!e.uid || !e.startAt) return;
+      if (new Date(e.startAt).getTime() <= now) return; // future only
+      const c = matchAthleteBySetmoreName(e.clientName);
+      if (!c) return;
+      (byAthlete[c.id] = byAthlete[c.id] || []).push({
+        uid: e.uid, date: dateISO(new Date(e.startAt)), time: fmtSetmoreTime(e.startAt), startAt: e.startAt,
+      });
+    });
+    let anyChanged = false;
+    clients.forEach((c) => {
+      ensureSessionBank(c);
+      // Keep still-future bookings from earlier windows (not re-fetched now),
+      // then add this window's matches.
+      const kept = c.sessionBank.upcomingBookings.filter((b) => b.date >= today && !windowUids.has(b.uid));
+      const merged = [...kept, ...(byAthlete[c.id] || [])]
+        .sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
+      const key = (arr) => arr.map((b) => b.uid + b.date).join(",");
+      if (key(merged) !== key(c.sessionBank.upcomingBookings)) {
+        c.sessionBank.upcomingBookings = merged;
+        anyChanged = true;
+        if (window.Cloud?.enabled) window.Cloud.debounce(`athlete:${c.id}`, () =>
+          window.Cloud.upsertAthlete(c, state.trainerData.coachId)
+        );
+      }
+    });
+    if (anyChanged) localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
   }
 
   function openLinkSetmoreNameModal(bookingName) {
@@ -6761,6 +6807,12 @@
     const today = todayISO();
     const selfSched = state.clientData.progress.selfSchedule || {};
     const redsByDate = redemptionsByDate(prog.client);
+    // Upcoming Setmore bookings the coach matched to this athlete (synced via
+    // sessionBank.upcomingBookings) → a "📅 time" pill on those future days.
+    const upcomingByDate = {};
+    (prog.client.sessionBank?.upcomingBookings || []).forEach((b) => {
+      if (b && b.date) (upcomingByDate[b.date] = upcomingByDate[b.date] || []).push(b);
+    });
     cells.forEach((d) => {
       const iso = dateISO(d);
       const inMonth = d.getMonth() === month;
@@ -6790,6 +6842,11 @@
         cell.classList.add("has-log");
       } else if (isUpcoming && entry?.rest) {
         pillHtml = `<div class="cal-day-pill cal-day-pill-rest">Rest</div>`;
+        cell.classList.add("has-log");
+      }
+      const upc = isUpcoming ? (upcomingByDate[iso] || []) : [];
+      if (upc.length) {
+        pillHtml += upc.map((b) => `<div class="cal-day-pill cal-booked-pill">📅 ${escapeHtml(b.time || "Session")}</div>`).join("");
         cell.classList.add("has-log");
       }
       const reds = redsByDate[iso] || [];

@@ -2127,6 +2127,12 @@ input[type="date"] { color-scheme: dark; }
   background: var(--surface-3);
   color: var(--muted);
 }
+/* Upcoming booked session (from the coach's Setmore calendar) */
+.cal-booked-pill {
+  border-color: rgba(var(--primary-bright-rgb), 0.5);
+  background: var(--primary-soft);
+  color: var(--primary-bright);
+}
 /* Session-token pill — a paid session was redeemed that day */
 .cal-day-pill-token {
   border-color: rgba(245, 158, 11, 0.55);
