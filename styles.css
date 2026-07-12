@@ -1037,7 +1037,9 @@ input[type="date"] { color-scheme: dark; }
   border-color: rgba(56,189,248,0.4);
   background: rgba(56,189,248,0.06);
 }
-.cex-warm-last { border-right: 1px solid var(--border); padding-right: 0.55rem; margin-right: 0.15rem; }
+/* Gap divider after the last warm-up — margin (not padding) so it doesn't
+   shrink the column under box-sizing: border-box. */
+.cex-warm-last { margin-right: 0.6rem; }
 
 /* ===== Theme picker (coach Appearance / athlete Profile) ===== */
 .theme-picker {
@@ -4513,7 +4515,7 @@ input:focus, textarea:focus, select:focus {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  width: 68px;
+  width: 60px;
 }
 /* Weight or reps input with a ▲ button above it and a ▼ button below it,
    spaced equally from the box. */
@@ -4587,7 +4589,7 @@ input:focus, textarea:focus, select:focus {
   .cex-set-table { gap: 0.3rem 0.3rem; flex-wrap: nowrap; overflow-x: auto; }
   .cex-set-col { width: 48px; flex-shrink: 0; }
   .cex-set-lbl { font-size: 0.66rem; }
-  .cex-set-col .cex-input { font-size: 0.85rem; padding: 0.3em 0.1em; }
+  .cex-set-col .cex-input { font-size: 0.85rem; padding: 0.3em 0.2em; }
   /* Tighter vertical gaps so the taller stacked fields don't balloon the row. */
   .cex-set-col { gap: 0.35rem; }
   .cex-set-field { gap: 2px; }
@@ -4627,7 +4629,7 @@ input:focus, textarea:focus, select:focus {
   color: var(--text);
   font-size: 1rem;
   font-weight: 700;
-  padding: 0.38em 0.4em;
+  padding: 0.38em 0.5em;
   box-sizing: border-box;
   -webkit-appearance: none;
   appearance: none;
