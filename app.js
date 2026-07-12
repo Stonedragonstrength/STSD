@@ -4276,11 +4276,9 @@
     bwCard.innerHTML = `<h4 style="margin-top:0">Body weight</h4>`;
     if (bwLog.length) {
       const list = document.createElement("div");
-      list.className = "log-table";
-      list.innerHTML = `<div class="lh">Date</div><div class="lh">Weight</div><div></div><div></div>`;
-      [...bwLog].sort((a, b) => b.date.localeCompare(a.date)).forEach((b) => {
-        list.insertAdjacentHTML("beforeend",
-          `<div class="date">${escapeHtml(b.date)}</div><div>${escapeHtml(b.weightLb)} lb</div><div></div><div></div>`);
+      list.className = "bw-list";
+      [...bwLog].sort(bwSort).forEach((b) => {
+        list.appendChild(bwEntryEl(b, { deletable: false }));
       });
       bwCard.appendChild(list);
     } else {
@@ -7676,25 +7674,52 @@
     $("#client-feedback").value = state.clientData.progress.feedback || "";
     renderBwHistory();
   }
+  // Newest-first: sort by date, then time-of-day when present.
+  function bwSort(a, b) {
+    return (b.date + (b.time || "")).localeCompare(a.date + (a.time || ""));
+  }
+  // Shared body-weight row used by both the athlete history and the coach's
+  // read-only view. Shows an expandable metrics grid when the entry carries
+  // extra scale readings (body fat, muscle mass, etc.) from a CSV import.
+  function bwEntryEl(b, { deletable = false, onDelete } = {}) {
+    const el = document.createElement("div");
+    el.className = "bw-entry-wrap";
+    const metrics = Array.isArray(b.metrics) ? b.metrics : [];
+    const when = b.time ? `${b.date} · ${String(b.time).slice(0, 5)}` : b.date;
+    const toggleLabel = (open) => `${open ? "▾" : "▸"} ${metrics.length} metric${metrics.length === 1 ? "" : "s"}`;
+    el.innerHTML = `
+      <div class="bw-entry">
+        <span><span class="date">${escapeHtml(when)}</span> — <strong>${escapeHtml(b.weightLb)} lb</strong>${metrics.length ? ` <button class="bw-toggle" type="button">${toggleLabel(false)}</button>` : ""}</span>
+        ${deletable ? `<button class="delete-bw" title="Delete">×</button>` : ""}
+      </div>
+      ${metrics.length ? `<div class="bw-metrics hidden">${metrics.map((m) => `<div class="bw-metric"><span>${escapeHtml(m.label)}</span><strong>${escapeHtml(String(m.value))}${m.unit ? " " + escapeHtml(m.unit) : ""}</strong></div>`).join("")}</div>` : ""}`;
+    const tog = el.querySelector(".bw-toggle");
+    if (tog) {
+      tog.addEventListener("click", () => {
+        const grid = el.querySelector(".bw-metrics");
+        const open = !grid.classList.toggle("hidden");
+        tog.textContent = toggleLabel(open);
+      });
+    }
+    if (deletable) el.querySelector(".delete-bw").addEventListener("click", () => onDelete && onDelete(b));
+    return el;
+  }
   function renderBwHistory() {
     const wrap = $("#bw-history");
     wrap.innerHTML = "";
     const log = state.clientData.progress.bodyweightLog || [];
     if (!log.length) { wrap.innerHTML = `<p class="muted">No weight entries yet.</p>`; return; }
-    [...log].sort((a, b) => b.date.localeCompare(a.date)).forEach((b) => {
-      const row = document.createElement("div");
-      row.className = "bw-entry";
-      row.innerHTML = `
-        <span><span class="date">${escapeHtml(b.date)}</span> — <strong>${escapeHtml(b.weightLb)} lb</strong></span>
-        <button class="delete-bw" data-id="${b.id}" title="Delete">×</button>`;
-      row.querySelector(".delete-bw").addEventListener("click", () => {
-        if (!window.confirm("Delete this entry?")) return;
-        state.clientData.progress.bodyweightLog =
-          state.clientData.progress.bodyweightLog.filter((x) => x.id !== b.id);
-        saveClient();
-        renderBwHistory();
-      });
-      wrap.appendChild(row);
+    [...log].sort(bwSort).forEach((b) => {
+      wrap.appendChild(bwEntryEl(b, {
+        deletable: true,
+        onDelete: (entry) => {
+          if (!window.confirm("Delete this entry?")) return;
+          state.clientData.progress.bodyweightLog =
+            state.clientData.progress.bodyweightLog.filter((x) => x.id !== entry.id);
+          saveClient();
+          renderBwHistory();
+        },
+      }));
     });
   }
   function logBodyweight() {
@@ -7706,6 +7731,108 @@
     $("#bw-weight").value = "";
     renderBwHistory();
     toast("Weight logged ✓");
+  }
+
+  // -------- Smart-scale (Renpho) CSV import --------
+  const KG_TO_LB = 2.20462;
+  // Split one CSV line, honoring simple double-quoted fields.
+  function csvSplitLine(line) {
+    const out = [];
+    let cur = "", q = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (q) {
+        if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else q = false; }
+        else cur += ch;
+      } else if (ch === '"') { q = true; }
+      else if (ch === ",") { out.push(cur); cur = ""; }
+      else cur += ch;
+    }
+    out.push(cur);
+    return out.map((s) => s.trim());
+  }
+  // Parse a Renpho "Health" CSV export into weigh-in entries. Tolerant of
+  // column order, missing readings ("--"), and lb-vs-kg (unit lives in the
+  // header, e.g. "Weight(lb)"); kg columns are converted to lb.
+  function parseScaleCsv(text) {
+    const lines = text.split(/\r?\n/).filter((l) => l.trim().length);
+    if (lines.length < 2) return { entries: [], error: "That file has no data rows." };
+    const headers = csvSplitLine(lines[0]);
+    // A trailing "(...)" is only a unit if it looks like one — otherwise it's a
+    // description (e.g. "WHR (Waist-to-Hip Ratio)") and stays part of the label.
+    const UNIT_RE = /^(%|lb|lbs|kg|g|kcal|cal|cm|in|yr|yrs|bpm|kg\/m²|kg\/m2)$/i;
+    const headerParts = (h) => {
+      const m = h.match(/^(.*?)\s*\(([^)]*)\)\s*$/);
+      if (m && UNIT_RE.test(m[2].trim())) return { label: m[1].trim(), unit: m[2].trim() };
+      return { label: h.trim(), unit: "" };
+    };
+    let dateIdx = -1, timeIdx = -1, weightIdx = -1;
+    headers.forEach((h, i) => {
+      const n = h.toLowerCase();
+      if (dateIdx < 0 && /date/.test(n)) dateIdx = i;
+      if (timeIdx < 0 && /time/.test(n)) timeIdx = i;
+      if (weightIdx < 0 && /^weight/.test(n)) weightIdx = i;
+    });
+    if (dateIdx < 0 || weightIdx < 0) {
+      return { entries: [], error: "Couldn't find Date and Weight columns — is this a Renpho export?" };
+    }
+    const weightIsKg = /kg/i.test(headerParts(headers[weightIdx]).unit);
+    const entries = [];
+    for (let r = 1; r < lines.length; r++) {
+      const cells = csvSplitLine(lines[r]);
+      const date = (cells[dateIdx] || "").replace(/[./]/g, "-"); // 2026.06.26 → 2026-06-26
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+      const time = timeIdx >= 0 ? (cells[timeIdx] || "") : "";
+      const rawW = cells[weightIdx];
+      if (!rawW || rawW === "--") continue;
+      let wv = parseFloat(rawW);
+      if (!isFinite(wv)) continue;
+      if (weightIsKg) wv *= KG_TO_LB;
+      const weightLb = String(Math.round(wv * 10) / 10);
+      const metrics = [];
+      headers.forEach((h, i) => {
+        if (i === dateIdx || i === timeIdx || i === weightIdx) return;
+        const n = h.toLowerCase();
+        if (n === "" || /^no\.?$/.test(n)) return; // skip index + trailing empty column
+        const raw = cells[i];
+        if (raw == null || raw === "" || raw === "--") return;
+        const parts = headerParts(h);
+        let unit = parts.unit, value = raw;
+        if (/^[-+]?\d*\.?\d+$/.test(raw)) {
+          const num = parseFloat(raw);
+          if (/kg/i.test(unit)) { value = Math.round(num * KG_TO_LB * 10) / 10; unit = "lb"; }
+          else value = num;
+        }
+        metrics.push({ label: parts.label, value, unit });
+      });
+      entries.push({ date, time, weightLb, metrics });
+    }
+    return { entries, error: null };
+  }
+  function importScaleCsv(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const { entries, error } = parseScaleCsv(String(reader.result || ""));
+      if (error) { toast(error); return; }
+      if (!entries.length) { toast("No weigh-ins found in that file."); return; }
+      const log = state.clientData.progress.bodyweightLog;
+      // Dedupe by date + time so multiple weigh-ins on one day are all kept,
+      // but re-importing the same file adds nothing.
+      const seen = new Set(log.map((e) => e.date + "|" + (e.time || "")));
+      let added = 0;
+      entries.forEach((e) => {
+        const key = e.date + "|" + (e.time || "");
+        if (seen.has(key)) return;
+        seen.add(key);
+        log.push({ id: uid(), date: e.date, time: e.time, weightLb: e.weightLb, metrics: e.metrics, source: "renpho" });
+        added++;
+      });
+      saveClient();
+      renderBwHistory();
+      toast(added ? `Imported ${added} weigh-in${added === 1 ? "" : "s"} ✓` : "Already up to date — nothing new.");
+    };
+    reader.onerror = () => toast("Couldn't read that file.");
+    reader.readAsText(file);
   }
   // -------- Modal --------
   function openModal({ title, body, actions = [] }) {
@@ -8044,6 +8171,12 @@
     $("#btn-client-logout").addEventListener("click", exitClient);
     $("#btn-back-to-picker")?.addEventListener("click", backToWorkoutPicker);
     $("#btn-log-bw").addEventListener("click", logBodyweight);
+    $("#btn-import-scale")?.addEventListener("click", () => $("#scale-csv-input")?.click());
+    $("#scale-csv-input")?.addEventListener("change", (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (f) importScaleCsv(f);
+      e.target.value = ""; // allow re-selecting the same file
+    });
     $("#btn-add-cardio")?.addEventListener("click", () => openCardioModal());
     $("#client-feedback").addEventListener("input", () => {
       state.clientData.progress.feedback = $("#client-feedback").value;

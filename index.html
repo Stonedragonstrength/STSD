@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=themes7" />
+  <link rel="stylesheet" href="styles.css?v=scale1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -664,6 +664,11 @@
             </label>
             <button class="btn btn-primary" id="btn-log-bw">Log weight</button>
           </div>
+          <div class="bw-import">
+            <button class="btn btn-ghost" type="button" id="btn-import-scale">Import from scale…</button>
+            <span class="muted">Renpho: Profile → Settings → Export Data, then upload the CSV.</span>
+            <input type="file" id="scale-csv-input" accept=".csv,text/csv" hidden />
+          </div>
         </div>
         <div class="card">
           <h3>Body weight history</h3>
@@ -784,7 +789,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
   <script src="cloud.js?v=openslots3"></script>
-  <script src="app.js?v=themes8"></script>
+  <script src="app.js?v=scale1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

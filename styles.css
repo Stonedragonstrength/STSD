@@ -1606,6 +1606,41 @@ input[type="date"] { color-scheme: dark; }
 }
 .bw-entry .delete-bw:hover { color: var(--danger); }
 
+.bw-import {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5em 0.9em;
+  margin-top: 0.9em;
+}
+.bw-import .muted { font-size: 0.8rem; }
+
+/* Body-weight list with expandable scale metrics (shared coach + athlete) */
+.bw-list { display: flex; flex-direction: column; gap: 0.4em; }
+.bw-entry-wrap { display: flex; flex-direction: column; }
+.bw-toggle {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.78rem;
+  padding: 0 0.25em;
+}
+.bw-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.35em 0.9em;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+  padding: 0.6em 0.8em;
+  font-size: 0.82rem;
+}
+.bw-metric { display: flex; justify-content: space-between; gap: 0.5em; }
+.bw-metric span { color: var(--text-soft); }
+
 /* Diet on client side */
 .client-diet-day {
   background: var(--surface-2);
