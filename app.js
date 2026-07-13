@@ -350,6 +350,55 @@
     });
   }
 
+  // ── Effort / intensity (coach-set) ──
+  // A small "heat ramp" cue: how hard the coach wants this exercise pushed.
+  // Light→yellow, Moderate→orange, Hard→red. Stored as ex.effort. Shown as a
+  // left-anchored warm gradient on the card + a flame/label tag.
+  const EFFORT_LEVELS = {
+    light:    { label: "Light",    rgb: "234,179,8",  flames: "🔥" },
+    moderate: { label: "Moderate", rgb: "249,115,22", flames: "🔥🔥" },
+    hard:     { label: "Hard",     rgb: "239,68,68",  flames: "🔥🔥🔥" },
+  };
+  function effortLevel(ex) { return ex && ex.effort ? EFFORT_LEVELS[ex.effort] : null; }
+  // Layer the warm gradient onto a card wrapper (coach row or athlete card).
+  function applyEffortWrapper(wrapper, ex) {
+    const m = effortLevel(ex);
+    wrapper.classList.toggle("has-effort", !!m);
+    if (m) wrapper.style.setProperty("--effort-rgb", m.rgb);
+    else wrapper.style.removeProperty("--effort-rgb");
+  }
+
+  function openEffortPicker(ex, anchorBtn, onChange) {
+    document.querySelector(".effort-pop")?.remove();
+    const pop = document.createElement("div");
+    pop.className = "grid-picker-pop effort-pop";
+    pop.style.cssText = "position:fixed;z-index:9999;visibility:hidden";
+    const opts = [
+      { key: null, label: "None", flames: "—", rgb: null },
+      { key: "light", ...EFFORT_LEVELS.light },
+      { key: "moderate", ...EFFORT_LEVELS.moderate },
+      { key: "hard", ...EFFORT_LEVELS.hard },
+    ];
+    const current = ex.effort || null;
+    opts.forEach((o) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "effort-opt" + (current === o.key ? " on" : "");
+      if (o.rgb) b.style.setProperty("--effort-rgb", o.rgb);
+      b.innerHTML = `<span class="effort-opt-flames">${o.flames}</span><span class="effort-opt-lbl">${escapeHtml(o.label)}</span>`;
+      b.addEventListener("click", () => {
+        if (o.key) ex.effort = o.key; else delete ex.effort;
+        saveTrainer();
+        onChange();
+        pop.remove();
+      });
+      pop.appendChild(b);
+    });
+    document.body.appendChild(pop);
+    requestAnimationFrame(() => _positionPop(pop, anchorBtn));
+    _attachOutsideClose(pop, anchorBtn);
+  }
+
   function openFinisherPicker(ex, anchorBtn, onChange) {
     document.querySelector(".finisher-pop")?.remove();
     const pop = document.createElement("div");
@@ -3667,6 +3716,21 @@
     refreshFinisherBtn();
     finisherBtn.addEventListener("click", (e) => { e.stopPropagation(); openFinisherPicker(ex, finisherBtn, refreshFinisherBtn); });
 
+    // Effort / intensity (heat ramp) — sits with the finisher.
+    const effortBtn = document.createElement("button");
+    effortBtn.className = "picker-btn picker-btn-sm ex-effort-btn";
+    effortBtn.title = "Effort / intensity";
+    const refreshEffortBtn = () => {
+      const m = effortLevel(ex);
+      effortBtn.textContent = m ? m.flames : "＋🔥";
+      effortBtn.classList.toggle("empty", !m);
+      if (m) effortBtn.style.setProperty("--effort-rgb", m.rgb);
+      else effortBtn.style.removeProperty("--effort-rgb");
+      applyEffortWrapper(wrapper, ex);
+    };
+    refreshEffortBtn();
+    effortBtn.addEventListener("click", (e) => { e.stopPropagation(); openEffortPicker(ex, effortBtn, refreshEffortBtn); });
+
     // Expand (notes + video)
     const expandBtn = document.createElement("button");
     expandBtn.className = "btn-icon-mini ex-expand-btn";
@@ -3693,6 +3757,7 @@
       crBtn.disabled = locked;
       warmupBtn.disabled = locked;
       finisherBtn.disabled = locked;
+      effortBtn.disabled = locked;
       handle.style.opacity = locked ? "0.3" : "";
       handle.style.pointerEvents = locked ? "none" : "";
       moveUpBtn.disabled = locked;
@@ -3751,6 +3816,7 @@
     row.appendChild(warmupBtn);
     row.appendChild(metricsGroup);
     row.appendChild(finisherBtn);
+    row.appendChild(effortBtn);
     row.appendChild(expandBtn); row.appendChild(saveBtn); row.appendChild(editBtn); row.appendChild(ssBtn); row.appendChild(delBtn);
 
     // Detail panel (notes + video), hidden by default
@@ -7645,6 +7711,17 @@
     nameEl.className = "cex-name";
     nameEl.textContent = exerciseDisplayLabel(ex);
     nameBlock.appendChild(nameEl);
+
+    // Effort / intensity (heat ramp): warm gradient on the card + flame tag.
+    const effortMeta = effortLevel(ex);
+    if (effortMeta) {
+      applyEffortWrapper(wrapper, ex);
+      const tag = document.createElement("span");
+      tag.className = "effort-tag";
+      tag.style.setProperty("--effort-rgb", effortMeta.rgb);
+      tag.innerHTML = `<span class="effort-tag-flames">${effortMeta.flames}</span><span class="effort-tag-lbl">${escapeHtml(effortMeta.label)}</span>`;
+      nameBlock.appendChild(tag);
+    }
 
     content.appendChild(nameBlock);
 
