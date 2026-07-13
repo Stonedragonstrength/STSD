@@ -599,6 +599,9 @@ input[type="date"] { color-scheme: dark; }
    pill instead of an underline. */
 /* Pull the athlete tab bar up near the header — it had a lot of floating room. */
 #screen-client .app-main { padding-top: 0.7rem; }
+/* Let the athlete header scroll away with the page (not pinned) — the nav bar
+   already scrolls — so both move with the screen and free up room. */
+#screen-client .app-header { position: static; }
 #screen-client .tabs {
   gap: 0.25em;
   overflow-x: hidden;
