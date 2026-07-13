@@ -602,9 +602,9 @@ input[type="date"] { color-scheme: dark; }
 #screen-client .tabs {
   gap: 0.25em;
   overflow-x: hidden;
-  border-bottom: none;
+  border-bottom: 1px solid var(--border); /* separator line, like the coach nav */
   margin-bottom: 1.1rem;
-  padding: 0;
+  padding: 0 0 0.55rem;
 }
 #screen-client .tab {
   position: relative;
