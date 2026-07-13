@@ -597,28 +597,28 @@ input[type="date"] { color-scheme: dark; }
 /* Athlete tabs styled exactly like the coach nav: rounded pill cells that
    fill the width evenly (no scroll), icon over label, with a filled active
    pill instead of an underline. */
-/* Pull the athlete tab bar up near the header — it had a lot of floating room.
-   (Header stays sticky — Nathan wants header + nav pinned while scrolling,
-   like the coach side.) */
-#screen-client .app-main { padding-top: 0.7rem; }
+/* Nav sits FLUSH under the header (no gap) so it pins immediately with no
+   pre-scroll jump — that gap is what made it "move at the beginning". Header
+   + nav stay pinned while scrolling, like the coach side. */
+#screen-client .app-main { padding-top: 0; }
 #screen-client .tabs {
   gap: 0.25em;
   overflow-x: hidden;
   border-bottom: 1px solid var(--border); /* separator line, like the coach nav */
   margin-bottom: 1.1rem;
   padding: 0.45rem 1.5rem 0.55rem;
-  /* Pinned under the sticky header while scrolling, like the coach nav.
-     Full-bleed side margins (matching .app-main's padding) + a solid theme
-     background so content doesn't peek around/through as it scrolls under. */
+  /* Pinned right under the sticky header. `top` = header height so the nav's
+     resting position already equals its stuck position → zero jump. Full-bleed
+     side margins + solid bg so content scrolls cleanly underneath. */
   position: sticky;
-  top: 62px; /* header height (~63px at desktop padding); ≤600px override below */
+  top: 63px; /* desktop header height; ≤600px override below */
   z-index: 9;
   background: var(--bg);
   margin-left: -1.5rem;
   margin-right: -1.5rem;
 }
 @media (max-width: 600px) {
-  #screen-client .tabs { top: 55px; } /* mobile header is shorter (0.7rem padding) */
+  #screen-client .tabs { top: 59px; } /* mobile header is shorter */
 }
 @media (max-width: 640px) {
   #screen-client .tabs {
