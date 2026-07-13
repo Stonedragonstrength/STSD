@@ -5247,6 +5247,13 @@
     return card;
   }
 
+  // Format loose digits into mm/dd/yy as the athlete types (PR date fields).
+  function formatShortDate(v) {
+    const d = String(v).replace(/\D/g, "").slice(0, 6);
+    if (d.length > 4) return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
+    if (d.length > 2) return `${d.slice(0, 2)}/${d.slice(2)}`;
+    return d;
+  }
   function renderAthletePRs() {
     const container = $("#athlete-pr-container");
     const empty = $("#athlete-pr-empty");
@@ -5277,7 +5284,7 @@
           <div class="pr-field-group${lk ? " is-locked" : ""}">
             <label class="pr-field-label">${label}</label>
             <input class="pr-${n}rm-input" type="number" min="0" step="any" placeholder="${ph}" value="${escapeHtml(entry[`pr${n}`] || "")}" ${ro}>
-            <input class="pr-${n}rm-date pr-date-input" type="date" title="Date achieved" value="${escapeHtml(entry[`pr${n}Date`] || "")}" ${ro}>
+            <input class="pr-${n}rm-date pr-date-input" type="text" inputmode="numeric" maxlength="8" placeholder="mm/dd/yy" title="Date achieved" value="${escapeHtml(entry[`pr${n}Date`] || "")}" ${ro}>
             <button class="pr-lock-btn${lk ? " is-locked" : ""}" data-slot="${n}" type="button" title="${lk ? "Locked — tap to edit" : "Lock in"}" aria-label="${lk ? "Locked — tap to edit" : "Lock in"}">${lk ? "🔒" : "🔓"}</button>
           </div>`;
       };
@@ -5292,7 +5299,11 @@
         </div>`;
       [1, 2, 3].forEach((n) => {
         card.querySelector(`.pr-${n}rm-input`).addEventListener("input", (e) => { entry[`pr${n}`] = e.target.value; pushCoachPRs(); });
-        card.querySelector(`.pr-${n}rm-date`).addEventListener("input", (e) => { entry[`pr${n}Date`] = e.target.value; pushCoachPRs(); });
+        card.querySelector(`.pr-${n}rm-date`).addEventListener("input", (e) => {
+          e.target.value = formatShortDate(e.target.value); // auto mm/dd/yy
+          entry[`pr${n}Date`] = e.target.value;
+          pushCoachPRs();
+        });
       });
       card.querySelectorAll(".pr-lock-btn").forEach((btn) => {
         btn.addEventListener("click", () => {
