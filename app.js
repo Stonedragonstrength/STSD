@@ -3810,13 +3810,13 @@
     row.appendChild(moveUpBtn);
     row.appendChild(moveDownBtn);
     row.appendChild(chipsBefore);
+    row.appendChild(effortBtn);
     row.appendChild(nameInput);
     row.appendChild(chipsAfter);
     row.appendChild(modBtn);
     row.appendChild(warmupBtn);
     row.appendChild(metricsGroup);
     row.appendChild(finisherBtn);
-    row.appendChild(effortBtn);
     row.appendChild(expandBtn); row.appendChild(saveBtn); row.appendChild(editBtn); row.appendChild(ssBtn); row.appendChild(delBtn);
 
     // Detail panel (notes + video), hidden by default
