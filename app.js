@@ -1338,6 +1338,24 @@
     if (name === "program-editor" || name === "day-editor") { showLibSidebar(); } else if (name !== "client") { hideLibSidebar(); }
   }
 
+  // Coach profile page — reached by clicking the coach's name in the header,
+  // mirroring the athlete profile. Holds identity, athlete count, appearance.
+  function openCoachProfile() {
+    _programEditorId = null;
+    state.currentClientId = null;
+    switchCoachView("settings");
+    hideLibSidebar();
+    const t = state.trainerData.trainer || {};
+    const name = t.name || "Coach";
+    const nameEl = $("#coach-profile-name"); if (nameEl) nameEl.textContent = name;
+    const emailEl = $("#coach-profile-email"); if (emailEl) emailEl.textContent = t.email || "";
+    const av = $("#coach-profile-avatar");
+    if (av) { av.textContent = nameInitials(name); av.style.background = avatarColor(name); }
+    const cnt = $("#coach-profile-clients");
+    if (cnt) cnt.textContent = String(state.trainerData.clients?.length || 0);
+    renderThemePicker($("#coach-theme-picker"), "coach");
+  }
+
   const AVATAR_COLORS = ["#06b6d4","#10b981","#8b5cf6","#f59e0b","#ef4444","#ec4899","#3b82f6","#f97316"];
   function avatarColor(name) {
     const code = (name || "?").toUpperCase().charCodeAt(0);
@@ -1400,22 +1418,6 @@
     const grid = $("#client-grid");
     const empty = $("#client-empty");
     grid.innerHTML = "";
-
-    // Stats strip
-    let strip = $("#dash-stats-strip");
-    if (!strip) {
-      strip = document.createElement("div");
-      strip.id = "dash-stats-strip";
-      strip.className = "dash-stats-strip";
-      grid.parentElement.insertBefore(strip, grid);
-    }
-    const totalWeeks = state.trainerData.clients.reduce((n, c) => n + c.weeks.length, 0);
-    const totalEx = state.trainerData.clients.reduce((n, c) =>
-      n + c.weeks.reduce((m, w) => m + w.days.reduce((k, d) => k + d.exercises.length, 0), 0), 0);
-    strip.innerHTML = `
-      <div class="dash-stat-item"><div class="num">${state.trainerData.clients.length}</div><div class="lbl">Athletes</div></div>
-      <div class="dash-stat-item"><div class="num">${totalWeeks}</div><div class="lbl">Program Weeks</div></div>
-      <div class="dash-stat-item"><div class="num">${totalEx}</div><div class="lbl">Exercises</div></div>`;
 
     if (state.trainerData.clients.length === 0) { show(empty); return; }
     hide(empty);
@@ -8626,6 +8628,7 @@
     });
 
     $("#btn-logout").addEventListener("click", signOutTrainer);
+    $("#btn-coach-profile")?.addEventListener("click", openCoachProfile);
     $("#btn-add-client").addEventListener("click", addClientPrompt);
     $("#btn-back").addEventListener("click", renderDashboard);
     $("#btn-header-back").addEventListener("click", renderDashboard);

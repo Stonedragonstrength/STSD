@@ -545,6 +545,34 @@ input[type="date"] { color-scheme: dark; }
 .client-row-prog.no-data { display: flex; align-items: center; justify-content: flex-end; }
 .client-row-prog-status { font-size: 0.72rem; color: var(--muted); font-style: italic; }
 
+/* ============ Coach profile page ============ */
+.coach-profile-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1.6rem;
+}
+.coach-profile-id { display: flex; align-items: center; gap: 0.9rem; flex: 1; min-width: 0; }
+.coach-profile-avatar {
+  width: 52px; height: 52px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.15rem; font-weight: 800; color: #06101a; flex-shrink: 0; letter-spacing: -0.02em;
+}
+.coach-profile-idtext { min-width: 0; }
+.coach-profile-name { font-size: 1.15rem; font-weight: 800; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.coach-profile-email { font-size: 0.85rem; color: var(--text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.1em; }
+.coach-profile-stat {
+  display: flex; flex-direction: column; align-items: center;
+  padding-left: 1.1rem; border-left: 1px solid var(--border); flex-shrink: 0;
+}
+.coach-profile-stat-num { font-size: 1.7rem; font-weight: 800; color: var(--primary-bright); line-height: 1; }
+.coach-profile-stat-lbl { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-top: 0.3em; }
+.coach-profile-section { margin: 0 0 0.4rem; font-size: 1.05rem; color: var(--text); }
+
 /* ============ Client detail head ============ */
 .client-head {
   display: flex;

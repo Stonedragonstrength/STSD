@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=rows1" />
+  <link rel="stylesheet" href="styles.css?v=prof1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -218,7 +218,10 @@
         <div class="brand-mark sm"><img src="logo.png" alt="" onerror="this.onerror=null; this.src='icon-192.svg';" /></div>
         <div id="header-brand" class="">
           <div class="header-title">Stone Dragon</div>
-          <div class="header-sub" id="header-trainer-name"></div>
+          <button class="header-name-btn" id="btn-coach-profile" type="button" title="Your profile & appearance">
+            <span class="header-sub" id="header-trainer-name"></span>
+            <span class="header-name-caret">⚙</span>
+          </button>
         </div>
         <div id="header-breadcrumb" class="header-breadcrumb hidden">
           <button class="header-back-btn" id="btn-header-back">← Athletes</button>
@@ -253,10 +256,6 @@
         <button class="coach-nav-item" data-coach-nav="messages" type="button">
           <span class="coach-nav-icon">📣</span>
           <span class="coach-nav-label">Messages</span>
-        </button>
-        <button class="coach-nav-item" data-coach-nav="settings" type="button">
-          <span class="coach-nav-icon">🎨</span>
-          <span class="coach-nav-label">Appearance</span>
         </button>
       </nav>
 
@@ -642,10 +641,25 @@
       <div id="view-settings" class="view hidden">
         <div class="view-head">
           <div>
-            <h2>Appearance</h2>
-            <p class="muted view-sub">Pick a color scheme for your coach view.</p>
+            <h2>Profile</h2>
+            <p class="muted view-sub">Your account and appearance.</p>
           </div>
         </div>
+        <div class="coach-profile-card">
+          <div class="coach-profile-id">
+            <div class="coach-profile-avatar" id="coach-profile-avatar"></div>
+            <div class="coach-profile-idtext">
+              <div class="coach-profile-name" id="coach-profile-name"></div>
+              <div class="coach-profile-email" id="coach-profile-email"></div>
+            </div>
+          </div>
+          <div class="coach-profile-stat">
+            <span class="coach-profile-stat-num" id="coach-profile-clients">0</span>
+            <span class="coach-profile-stat-lbl">athletes</span>
+          </div>
+        </div>
+        <h3 class="coach-profile-section">Appearance</h3>
+        <p class="muted view-sub" style="margin-top:-0.4em; margin-bottom:0.9rem">Pick a color scheme for your coach view.</p>
         <div class="theme-picker" id="coach-theme-picker"></div>
       </div>
 
@@ -937,7 +951,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
   <script src="cloud.js?v=profile1"></script>
-  <script src="app.js?v=rows1"></script>
+  <script src="app.js?v=prof1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
