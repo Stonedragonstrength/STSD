@@ -1331,6 +1331,20 @@
     if (m.athlete && athleteEl && !athleteEl.value) athleteEl.value = m.athlete;
   }
 
+  // The coach's home view (the training Overview) — used by the nav item and as
+  // the landing view on sign-in / reload.
+  function showCoachOverview() {
+    _programEditorId = null;
+    state.currentClientId = null;
+    if (!state.dashCal) { const n = new Date(); state.dashCal = { year: n.getFullYear(), month: n.getMonth() }; }
+    switchCoachView("overview");
+    updateHeaderBreadcrumb(null);
+    hideLibSidebar();
+    renderDashboardCalendar();
+    refreshCoachOpenSlots();
+    renderBulletinBoard();
+  }
+
   function signIntoTrainer() {
     state.mode = "trainer";
     sessionStorage.setItem(KEY_SESSION, "trainer");
@@ -1339,7 +1353,10 @@
     show($("#screen-app"));
     hide($("#screen-client"));
     $("#header-trainer-name").textContent = state.trainerData.trainer.name;
+    // Populate the athletes grid + package badge in the background, then land on
+    // the Overview page.
     renderDashboard();
+    showCoachOverview();
   }
 
   function signOutTrainer() {
@@ -8722,14 +8739,7 @@
           state.currentClientId = null;
           renderProgramsList();
         } else if (target === "overview") {
-          _programEditorId = null;
-          state.currentClientId = null;
-          if (!state.dashCal) { const n = new Date(); state.dashCal = { year: n.getFullYear(), month: n.getMonth() }; }
-          switchCoachView("overview");
-          hideLibSidebar();
-          renderDashboardCalendar();
-          refreshCoachOpenSlots();
-          renderBulletinBoard();
+          showCoachOverview();
         } else if (target === "packages") {
           _programEditorId = null;
           state.currentClientId = null;
