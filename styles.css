@@ -502,14 +502,14 @@ input[type="date"] { color-scheme: dark; }
 /* ============ Client grid ============ */
 .client-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.7rem;
 }
 .client-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 1.25rem;
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
   cursor: pointer;
   transition: border-color 0.15s, transform 0.12s, box-shadow 0.15s;
   display: flex;
@@ -524,39 +524,39 @@ input[type="date"] { color-scheme: dark; }
 .client-card-top {
   display: flex;
   align-items: center;
-  gap: 0.85rem;
-  margin-bottom: 0.9rem;
+  gap: 0.65rem;
+  margin-bottom: 0.6rem;
 }
 .client-avatar {
-  width: 46px;
-  height: 46px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1rem;
+  font-size: 0.88rem;
   font-weight: 800;
   color: #06101a;
   flex-shrink: 0;
   letter-spacing: -0.02em;
 }
 .client-card-info { min-width: 0; flex: 1; }
-.client-card-info h3 { margin: 0 0 0.15em; font-size: 1.05rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.client-card-info .meta { color: var(--text-soft); font-size: 0.82rem; }
+.client-card-info h3 { margin: 0 0 0.1em; font-size: 0.98rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.client-card-info .meta { color: var(--text-soft); font-size: 0.8rem; }
 .client-card-mobile-progress { display: none; } /* shown in place of most of the card on mobile — see the mobile block below */
 .client-card .stats {
   display: flex;
-  gap: 1.2em;
-  margin-bottom: 0.85rem;
-  font-size: 0.83rem;
+  gap: 1.1em;
+  margin-bottom: 0;
+  font-size: 0.8rem;
 }
 .client-card .stat { color: var(--text-soft); }
-.client-card .stat strong { color: var(--primary-bright); display: block; font-size: 1.1rem; font-weight: 800; }
+.client-card .stat strong { color: var(--primary-bright); display: inline; margin-right: 0.3em; font-size: 0.95rem; font-weight: 800; }
 .card-quick-actions {
   display: flex;
-  gap: 0.45em;
-  margin-top: 0.85rem;
-  padding-top: 0.85rem;
+  gap: 0.4em;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
   border-top: 1px solid var(--border);
 }
 .card-quick-actions .btn {
@@ -3164,17 +3164,17 @@ button.ov-stat:hover { background: var(--surface-2); }
 
 /* Dashboard client card weekly progress */
 .client-card .week-progress-mini {
-  margin-top: 0.9em;
-  padding-top: 0.9em;
+  margin-top: 0.6em;
+  padding-top: 0.6em;
   border-top: 1px solid var(--border);
 }
 .client-card .week-progress-mini .progress-label {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-soft);
-  margin-bottom: 0.4em;
+  margin-bottom: 0.3em;
   display: flex;
   justify-content: space-between;
   align-items: center;
