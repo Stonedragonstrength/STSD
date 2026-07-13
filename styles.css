@@ -597,17 +597,36 @@ input[type="date"] { color-scheme: dark; }
 /* Athlete tabs styled exactly like the coach nav: rounded pill cells that
    fill the width evenly (no scroll), icon over label, with a filled active
    pill instead of an underline. */
-/* Pull the athlete tab bar up near the header — it had a lot of floating room. */
+/* Pull the athlete tab bar up near the header — it had a lot of floating room.
+   (Header stays sticky — Nathan wants header + nav pinned while scrolling,
+   like the coach side.) */
 #screen-client .app-main { padding-top: 0.7rem; }
-/* Let the athlete header scroll away with the page (not pinned) — the nav bar
-   already scrolls — so both move with the screen and free up room. */
-#screen-client .app-header { position: static; }
 #screen-client .tabs {
   gap: 0.25em;
   overflow-x: hidden;
   border-bottom: 1px solid var(--border); /* separator line, like the coach nav */
   margin-bottom: 1.1rem;
-  padding: 0 0 0.55rem;
+  padding: 0.45rem 1.5rem 0.55rem;
+  /* Pinned under the sticky header while scrolling, like the coach nav.
+     Full-bleed side margins (matching .app-main's padding) + a solid theme
+     background so content doesn't peek around/through as it scrolls under. */
+  position: sticky;
+  top: 62px; /* header height (~63px at desktop padding); ≤600px override below */
+  z-index: 9;
+  background: var(--bg);
+  margin-left: -1.5rem;
+  margin-right: -1.5rem;
+}
+@media (max-width: 600px) {
+  #screen-client .tabs { top: 55px; } /* mobile header is shorter (0.7rem padding) */
+}
+@media (max-width: 640px) {
+  #screen-client .tabs {
+    margin-left: calc(-1 * max(0.85rem, env(safe-area-inset-left)));
+    margin-right: calc(-1 * max(0.85rem, env(safe-area-inset-right)));
+    padding-left: max(0.85rem, env(safe-area-inset-left));
+    padding-right: max(0.85rem, env(safe-area-inset-right));
+  }
 }
 #screen-client .tab {
   position: relative;
@@ -3406,7 +3425,11 @@ input[type="date"] { color-scheme: dark; }
 html, body {
   -webkit-tap-highlight-color: transparent;
   -webkit-text-size-adjust: 100%;
-  overflow-x: hidden;
+  /* clip (not hidden): hidden turns body into a scroll container on mobile,
+     which silently kills every position:sticky descendant — that's why the
+     coach header/nav weren't pinning on phones. clip clips the same without
+     creating a scroll container. */
+  overflow-x: clip;
 }
 button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
 
@@ -3719,7 +3742,11 @@ body::before {
 @keyframes gridDrift {
   to { background-position: 56px 56px; }
 }
-.screen, .app-header { position: relative; z-index: 1; }
+/* Layer screens above the body::before HUD grid. NOTE: .app-header must NOT
+   be in this rule — position:relative here silently overrode the header's
+   position:sticky, which is why headers never pinned while scrolling. The
+   header's own z-index:10 already stacks it above the grid. */
+.screen { position: relative; z-index: 1; }
 
 /* -------- Logo entrance animation -------- */
 @keyframes logoZoom {
