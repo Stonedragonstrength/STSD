@@ -502,69 +502,48 @@ input[type="date"] { color-scheme: dark; }
 /* ============ Client grid ============ */
 .client-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 0.7rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
 }
-.client-card {
+/* Compact horizontal athlete rows: avatar · name+position · progress. */
+.client-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.85rem 1rem;
+  padding: 0.5rem 0.8rem;
   cursor: pointer;
-  transition: border-color 0.15s, transform 0.12s, box-shadow 0.15s;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
+  transition: border-color 0.15s, background 0.15s;
 }
-.client-card:hover {
-  border-color: var(--primary);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 28px rgba(var(--primary-rgb), 0.14);
-}
-.client-card-top {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  margin-bottom: 0.6rem;
-}
+.client-row:hover { border-color: var(--primary); background: var(--surface-2); }
 .client-avatar {
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.88rem;
+  font-size: 0.8rem;
   font-weight: 800;
   color: #06101a;
   flex-shrink: 0;
   letter-spacing: -0.02em;
 }
-.client-card-info { min-width: 0; flex: 1; }
-.client-card-info h3 { margin: 0 0 0.1em; font-size: 0.98rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.client-card-info .meta { color: var(--text-soft); font-size: 0.8rem; }
-.client-card-mobile-progress { display: none; } /* shown in place of most of the card on mobile — see the mobile block below */
-.client-card .stats {
-  display: flex;
-  gap: 1.1em;
-  margin-bottom: 0;
-  font-size: 0.8rem;
-}
-.client-card .stat { color: var(--text-soft); }
-.client-card .stat strong { color: var(--primary-bright); display: inline; margin-right: 0.3em; font-size: 0.95rem; font-weight: 800; }
-.card-quick-actions {
-  display: flex;
-  gap: 0.4em;
-  margin-top: 0.6rem;
-  padding-top: 0.6rem;
-  border-top: 1px solid var(--border);
-}
-.card-quick-actions .btn {
-  flex: 1;
-  font-size: 0.78rem;
-  padding: 0.45em 0.4em;
-  min-width: 0;
-}
+.client-row-main { min-width: 0; flex: 1; }
+.client-row-name { font-size: 0.92rem; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.client-row-sub { font-size: 0.76rem; color: var(--text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.1em; }
+.client-row-prog { width: 108px; flex-shrink: 0; }
+.client-row-prog-top { display: flex; align-items: baseline; justify-content: flex-end; gap: 0.4em; margin-bottom: 0.28em; }
+.client-row-prog-top .pct { font-size: 0.9rem; font-weight: 800; color: var(--primary-bright); }
+.client-row-prog-top .days { font-size: 0.66rem; color: var(--muted); }
+.client-row-prog .progress-track { height: 5px; background: var(--surface-3); border-radius: 999px; overflow: hidden; }
+.client-row-prog .progress-fill { height: 100%; background: linear-gradient(90deg, var(--primary-bright), var(--accent)); border-radius: 999px; transition: width 0.4s ease; }
+.client-row-prog.complete .pct { color: var(--accent); }
+.client-row-prog.complete .progress-fill { background: var(--accent); }
+.client-row-prog.no-data { display: flex; align-items: center; justify-content: flex-end; }
+.client-row-prog-status { font-size: 0.72rem; color: var(--muted); font-style: italic; }
 
 /* ============ Client detail head ============ */
 .client-head {

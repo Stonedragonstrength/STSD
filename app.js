@@ -1435,104 +1435,48 @@
         Object.keys(c.importedProgress.exerciseLogs || {}).length > 0
       );
 
+      // Compact horizontal row: avatar · name+details · progress.
       const card = document.createElement("div");
-      card.className = "client-card";
+      card.className = "client-row";
 
-      // Top: avatar + name + meta
-      const top = document.createElement("div");
-      top.className = "client-card-top";
       const avatar = document.createElement("div");
       avatar.className = "client-avatar";
       avatar.style.background = avatarColor(c.name);
       avatar.textContent = nameInitials(c.name);
-      const info = document.createElement("div");
-      info.className = "client-card-info";
-      const nameEl = document.createElement("h3");
+
+      const main = document.createElement("div");
+      main.className = "client-row-main";
+      const nameEl = document.createElement("div");
+      nameEl.className = "client-row-name";
       nameEl.textContent = c.name;
-      const metaEl = document.createElement("div");
-      metaEl.className = "meta";
-      const metaParts = [];
-      if (c.age) metaParts.push(c.age + " yrs");
-      if (c.weightLb) metaParts.push(c.weightLb + " lb");
-      metaEl.textContent = metaParts.join(" · ") || "Profile incomplete";
-      info.appendChild(nameEl);
-      info.appendChild(metaEl);
-      top.appendChild(avatar);
-      top.appendChild(info);
+      const subEl = document.createElement("div");
+      subEl.className = "client-row-sub";
+      // Where they are in their program (current week · day), not raw counts.
+      subEl.textContent = currentProgressLabel(c, totalDays, hasSyncedData, isComplete);
+      main.appendChild(nameEl);
+      main.appendChild(subEl);
 
-      // Mobile-only compact line: current week/day they've completed up to.
-      // (Desktop keeps the fuller stats + progress-bar layout below.)
-      const mobileProgress = document.createElement("div");
-      mobileProgress.className = "client-card-mobile-progress";
-      mobileProgress.textContent = currentProgressLabel(c, totalDays, hasSyncedData, isComplete);
-      info.appendChild(mobileProgress);
-
-      // Stats row
-      const statsRow = document.createElement("div");
-      statsRow.className = "stats";
-      statsRow.innerHTML = `
-        <div class="stat"><strong>${weekCount}</strong>${weekCount === 1 ? "wk" : "wks"}</div>
-        <div class="stat"><strong>${exerciseCount}</strong>${exerciseCount === 1 ? "exercise" : "exercises"}</div>`;
-
-      // Progress
       const prog = document.createElement("div");
+      prog.className = "client-row-prog";
       if (totalDays === 0) {
-        prog.className = "week-progress-mini no-data";
-        prog.textContent = "No program yet";
+        prog.classList.add("no-data");
+        prog.innerHTML = `<span class="client-row-prog-status">No program</span>`;
       } else if (!hasSyncedData) {
-        prog.className = "week-progress-mini no-data";
-        prog.textContent = "Awaiting first sync";
+        prog.classList.add("no-data");
+        prog.innerHTML = `<span class="client-row-prog-status">Awaiting sync</span>`;
       } else {
-        prog.className = `week-progress-mini${isComplete ? " complete" : ""}`;
+        if (isComplete) prog.classList.add("complete");
         prog.innerHTML = `
-          <div class="progress-label">
-            <span>${completedDays} / ${totalDays} days</span>
+          <div class="client-row-prog-top">
             <span class="pct">${pct}%</span>
+            <span class="days">${completedDays}/${totalDays} days</span>
           </div>
           <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>`;
       }
 
-      // Quick actions
-      const actions = document.createElement("div");
-      actions.className = "card-quick-actions";
-
-      const openBtn = document.createElement("button");
-      openBtn.className = "btn btn-primary btn-sm";
-      openBtn.textContent = "Program";
-      openBtn.addEventListener("click", (e) => { e.stopPropagation(); openClient(c.id); setTab("program"); });
-
-      const shareBtn = document.createElement("button");
-      shareBtn.className = "btn btn-ghost btn-sm";
-      shareBtn.textContent = "Share";
-      shareBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        openClient(c.id);
-        shareClient();
-      });
-
-      const inviteBtn = document.createElement("button");
-      inviteBtn.className = "btn btn-ghost btn-sm";
-      inviteBtn.textContent = "🔑 Code";
-      inviteBtn.title = c.inviteCode || "";
-      inviteBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (c.inviteCode) {
-          navigator.clipboard?.writeText(c.inviteCode)
-            .then(() => toast(`Invite code copied: ${c.inviteCode}`))
-            .catch(() => toast(`Invite code: ${c.inviteCode}`, 4000));
-        } else {
-          toast("No invite code — open athlete to generate one.");
-        }
-      });
-
-      actions.appendChild(openBtn);
-      actions.appendChild(shareBtn);
-      actions.appendChild(inviteBtn);
-
-      card.appendChild(top);
-      card.appendChild(statsRow);
+      card.appendChild(avatar);
+      card.appendChild(main);
       card.appendChild(prog);
-      card.appendChild(actions);
       card.addEventListener("click", () => { openClient(c.id); setTab("profile"); });
       grid.appendChild(card);
     }
