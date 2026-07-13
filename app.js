@@ -6691,54 +6691,118 @@
     renderAthleteOverview();
     refreshAthleteOpenSlots();
   }
-  // -------- Athlete Overview (home: weekly days-left + sessions + calendar) --------
+  // -------- Athlete Overview (home dashboard) --------
   function renderAthleteOverview() {
     const host = $("#overview-stats");
     if (!host) return;
     const prog = state.clientData.program;
     const c = prog?.client;
     if (!c) { host.innerHTML = ""; return; }
+    ensureSessionBank(c);
+    const progress = state.clientData.progress || {};
+    const today = todayISO();
 
-    // Weekly training days left — for the athlete's current week.
+    // ---- Weekly progress (current week) ----
     const weeks = c.weeks || [];
     const activeWeekId = state.workoutView?.weekId || state.clientData.selectedWeekId || weeks[0]?.id;
     const week = weeks.find((w) => w.id === activeWeekId) || weeks[0];
     const days = week?.days || [];
-    const dc = state.clientData.progress?.dayCompletions || {};
+    const dc = progress.dayCompletions || {};
+    const isDone = (d) => Array.isArray(dc[d.id]) && dc[d.id].length;
     const totalDays = days.length;
-    const doneDays = days.filter((d) => Array.isArray(dc[d.id]) && dc[d.id].length).length;
+    const doneDays = days.filter(isDone).length;
     const daysLeft = Math.max(0, totalDays - doneDays);
     const weekLabel = week?.label || "This week";
-    // The day to jump to = first not-yet-completed day this week (else the first).
-    const nextDay = days.find((d) => !(Array.isArray(dc[d.id]) && dc[d.id].length)) || days[0];
+    const pct = totalDays ? Math.round((doneDays / totalDays) * 100) : 0;
+    const nextDay = days.find((d) => !isDone(d)) || days[0];
 
-    // Session balance + low-balance nudge.
-    const sum = sessionBankSummary(c);
-    const remaining = sum.remaining;
+    // ---- Adaptive "up next" hero: Today / Up next / Rest / All caught up ----
+    const dayHero = (wkId, day, kicker) => {
+      const list = (weeks.find((w) => w.id === wkId)?.days) || [];
+      const col = getDayColor(Math.max(0, list.findIndex((d) => d.id === day.id)));
+      const n = day.exercises.length;
+      return { icon: day.icon || workoutIconFor(day.name), kicker, title: escapeHtml(day.name),
+        sub: `${n} exercise${n === 1 ? "" : "s"} · ${escapeHtml(weekLabel)}`, color: col.color, soft: col.soft,
+        jump: { weekId: wkId, dayId: day.id }, cta: "Start" };
+    };
+    const selfToday = progress.selfSchedule?.[today];
+    let hero = null;
+    if (!totalDays) {
+      hero = { icon: "📋", kicker: "PROGRAM", title: "No program yet", sub: "Your coach is setting it up." };
+    } else if (selfToday?.rest) {
+      hero = { icon: "🛌", kicker: "TODAY", title: "Rest day", sub: daysLeft ? `Next up: ${escapeHtml(nextDay.name)}` : "Recover up." };
+    } else if (selfToday?.weekId && selfToday?.dayId) {
+      const wd = findWeekDay(c, selfToday.weekId, selfToday.dayId);
+      if (wd) hero = dayHero(selfToday.weekId, wd.day, "TODAY");
+    }
+    if (!hero) {
+      if (daysLeft > 0 && nextDay) hero = dayHero(week.id, nextDay, "UP NEXT");
+      else hero = { icon: "🎉", kicker: "THIS WEEK", title: "All caught up!", sub: `${escapeHtml(weekLabel)} complete — nice work.` };
+    }
+
+    // ---- Sessions + next booking ----
+    const remaining = sessionBankSummary(c).remaining;
     const low = remaining <= 2;
+    const nextBooking = (c.sessionBank.upcomingBookings || [])
+      .filter((b) => b.date >= today)
+      .sort((a, b) => new Date(a.startAt || a.date) - new Date(b.startAt || b.date))[0];
+    let bookingLabel = "";
+    if (nextBooking) {
+      const wd = nextBooking.startAt ? new Date(nextBooking.startAt).toLocaleDateString(undefined, { weekday: "short" }) : "";
+      bookingLabel = `${wd} ${nextBooking.time || ""}`.trim();
+    }
+
+    // ---- Bodyweight latest + trend ----
+    const bw = [...(progress.bodyweightLog || [])].sort((a, b) => (b.date + (b.time || "")).localeCompare(a.date + (a.time || "")));
+    let bwHtml = "";
+    if (bw.length) {
+      const latest = parseFloat(bw[0].weightLb);
+      let arrow = "→", cls = "flat";
+      if (bw.length > 1) { const prev = parseFloat(bw[1].weightLb); if (isFinite(prev) && isFinite(latest)) { if (latest > prev + 0.05) { arrow = "↗"; cls = "up"; } else if (latest < prev - 0.05) { arrow = "↘"; cls = "down"; } } }
+      bwHtml = `<div class="ov-mini"><div class="ov-mini-top"><span class="ov-mini-val">${escapeHtml(String(latest))} lb</span> <span class="ov-mini-trend ${cls}">${arrow}</span></div><div class="ov-mini-lbl">bodyweight</div></div>`;
+    }
+
+    // ---- Top PR ----
+    let prHtml = "";
+    const prWithVal = (c.coachPRs || []).filter((p) => p.name && p.pr1);
+    if (prWithVal.length) {
+      const top = prWithVal.slice().sort((a, b) => Number(b.pr1) - Number(a.pr1))[0];
+      prHtml = `<div class="ov-mini"><div class="ov-mini-top"><span class="ov-mini-val">${escapeHtml(top.pr1)} lb</span></div><div class="ov-mini-lbl">${escapeHtml(top.name)} 1RM</div></div>`;
+    }
+
+    const firstName = escapeHtml((c.name || "").trim().split(/\s+/)[0] || "athlete");
 
     host.innerHTML = `
-      <div class="overview-stat${totalDays ? " is-clickable" : ""}" id="ov-workouts-stat">
-        <div class="overview-stat-num">${totalDays ? daysLeft : "—"}</div>
-        <div class="overview-stat-label">${daysLeft === 1 ? "training day left" : "training days left"}</div>
-        ${totalDays
-          ? `<div class="overview-stat-sub">${escapeHtml(weekLabel)} · ${doneDays}/${totalDays} done</div>
-             <span class="overview-nudge overview-nudge-go">${daysLeft === 0 ? "Review workout" : "Go to today's workout"} →</span>`
-          : `<div class="overview-stat-sub">No program yet</div>`}
+      <div class="ov-greeting">Hey, ${firstName} 👋</div>
+      <div class="ov-hero${hero.jump ? " is-clickable" : ""}" id="ov-hero" style="--hero-color:${hero.color || "var(--primary-bright)"};--hero-soft:${hero.soft || "var(--primary-soft)"}">
+        <div class="ov-hero-icon">${dayIconHtml(hero.icon)}</div>
+        <div class="ov-hero-body">
+          <div class="ov-hero-kicker">${hero.kicker}</div>
+          <div class="ov-hero-title">${hero.title}</div>
+          <div class="ov-hero-sub">${hero.sub}</div>
+        </div>
+        ${hero.cta ? `<span class="ov-hero-cta">${hero.cta} →</span>` : ""}
       </div>
-      <div class="overview-stat${low ? " is-low" : ""}">
-        <div class="overview-stat-num">${remaining}</div>
-        <div class="overview-stat-label">${remaining === 1 ? "session left" : "sessions left"}</div>
-        ${low
-          ? `<button class="overview-nudge" id="ov-buy-more" type="button">${remaining === 0 ? "Buy sessions" : "Running low — buy more"} →</button>`
-          : `<div class="overview-stat-sub">You're all set 💪</div>`}
-      </div>`;
-    if (totalDays && week && nextDay) {
-      $("#ov-workouts-stat")?.addEventListener("click", () =>
-        jumpToWorkout({ weekId: week.id, dayId: nextDay.id }, todayISO())
-      );
-    }
-    $("#ov-buy-more")?.addEventListener("click", () => { setClientTab("sessions"); openAthleteRequestPackageModal(); });
+      <div class="ov-strip">
+        <button class="ov-stat" id="ov-stat-days" type="button">
+          <span class="ov-stat-num">${totalDays ? daysLeft : "—"}</span>
+          <span class="ov-stat-lbl">days left</span>
+        </button>
+        <button class="ov-stat${low ? " is-low" : ""}" id="ov-stat-sessions" type="button">
+          <span class="ov-stat-num">${remaining}</span>
+          <span class="ov-stat-lbl">sessions</span>
+        </button>
+        ${bookingLabel ? `<div class="ov-stat"><span class="ov-stat-num ov-stat-sm">${escapeHtml(bookingLabel)}</span><span class="ov-stat-lbl">next session</span></div>` : ""}
+      </div>
+      ${totalDays ? `<div class="ov-progress">
+        <div class="ov-progress-top"><span>${escapeHtml(weekLabel)}</span><span>${doneDays}/${totalDays} done</span></div>
+        <div class="ov-progress-track"><div class="ov-progress-fill" style="width:${pct}%"></div></div>
+      </div>` : ""}
+      ${(bwHtml || prHtml) ? `<div class="ov-mini-row">${bwHtml}${prHtml}</div>` : ""}`;
+
+    if (hero.jump) $("#ov-hero")?.addEventListener("click", () => jumpToWorkout(hero.jump, today));
+    if (totalDays && week && nextDay) $("#ov-stat-days")?.addEventListener("click", () => jumpToWorkout({ weekId: week.id, dayId: nextDay.id }, today));
+    $("#ov-stat-sessions")?.addEventListener("click", () => { setClientTab("sessions"); if (low) openAthleteRequestPackageModal(); });
   }
   // -------- Athlete self-service profile (name / age / height / weight / goals) --------
   function renderAthleteProfileFields() {
