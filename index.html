@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=dash1" />
+  <link rel="stylesheet" href="styles.css?v=msg1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -250,6 +250,10 @@
           <span class="coach-nav-label">Packages</span>
           <span class="coach-nav-badge hidden" id="packages-nav-badge"></span>
         </button>
+        <button class="coach-nav-item" data-coach-nav="messages" type="button">
+          <span class="coach-nav-icon">📣</span>
+          <span class="coach-nav-label">Messages</span>
+        </button>
         <button class="coach-nav-item" data-coach-nav="settings" type="button">
           <span class="coach-nav-icon">🎨</span>
           <span class="coach-nav-label">Appearance</span>
@@ -294,6 +298,30 @@
 
         <div class="card" style="margin-top:1.5rem">
           <div class="program-head">
+            <h3 style="margin:0">📌 Bulletin Board</h3>
+          </div>
+          <p class="muted" style="font-size:0.85rem">Post a notice every athlete sees on their Overview. It comes down automatically when the time's up.</p>
+          <div class="bulletin-compose">
+            <textarea id="bulletin-text" class="msg-textarea" rows="2" maxlength="1000" placeholder="e.g. Gym closed next Monday for the holiday 🎉"></textarea>
+            <div class="bulletin-compose-row">
+              <label class="msg-duration">
+                <span class="muted">Show for</span>
+                <select id="bulletin-weeks" class="msg-select">
+                  <option value="1">1 week</option>
+                  <option value="2">2 weeks</option>
+                  <option value="3">3 weeks</option>
+                  <option value="4">4 weeks</option>
+                </select>
+              </label>
+              <span class="muted" id="bulletin-status" style="margin-right:auto"></span>
+              <button class="btn btn-primary btn-sm" id="bulletin-post-btn" type="button">📌 Post</button>
+            </div>
+          </div>
+          <div id="bulletin-active" class="bulletin-active"></div>
+        </div>
+
+        <div class="card" style="margin-top:1.5rem">
+          <div class="program-head">
             <h3 style="margin:0">📣 Open Slots</h3>
             <button class="btn btn-primary btn-sm" id="btn-post-open-slot">+ Post open slot</button>
           </div>
@@ -313,6 +341,38 @@
         </div>
         <div id="packages-requests-container"></div>
         <div id="packages-athletes-container"></div>
+      </div>
+
+      <!-- Athlete messaging -->
+      <div id="view-messages" class="view hidden">
+        <div class="view-head">
+          <div>
+            <h2>Messages</h2>
+            <p class="muted view-sub">Send an announcement to one athlete, several, or everyone.</p>
+          </div>
+        </div>
+
+        <div class="msg-compose">
+          <div class="msg-compose-field">
+            <label class="msg-label">To</label>
+            <div class="msg-recip-row">
+              <button class="btn btn-ghost msg-recip-all" id="msg-select-all" type="button">Select all</button>
+              <button class="btn btn-ghost msg-recip-all" id="msg-clear-all" type="button">Clear</button>
+              <span class="muted msg-recip-count" id="msg-recip-count">0 selected</span>
+            </div>
+            <div id="msg-recipients" class="msg-recipients"></div>
+          </div>
+          <div class="msg-compose-field">
+            <label class="msg-label" for="msg-text">Message</label>
+            <textarea id="msg-text" class="msg-textarea" rows="4" maxlength="1000" placeholder="Write your announcement…"></textarea>
+          </div>
+          <div class="msg-compose-actions">
+            <span class="muted" id="msg-send-status"></span>
+            <button class="btn btn-primary" id="msg-send-btn" type="button">📣 Send</button>
+          </div>
+        </div>
+        <h3 class="msg-history-head">Recently sent</h3>
+        <div id="msg-history" class="msg-history"></div>
       </div>
 
       <!-- Programs list -->
@@ -638,6 +698,7 @@
           <h3>Overview</h3>
         </div>
         <div id="overview-stats" class="overview-stats"></div>
+        <div id="ov-messages" class="ov-messages"></div>
         <div class="session-calendar">
           <div class="calendar-head">
             <div class="cal-nav">
@@ -855,7 +916,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
   <script src="cloud.js?v=profile1"></script>
-  <script src="app.js?v=dash1"></script>
+  <script src="app.js?v=msg1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

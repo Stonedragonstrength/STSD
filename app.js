@@ -173,7 +173,8 @@
       weeks: [],
       schedule: {},
       coachPRs: DEFAULT_PR_LIFTS.map((n) => ({ id: uid(), name: n, pr1: "", pr2: "", pr3: "" })),
-      sessionBank: { packages: [], redemptions: [] },
+      // Seed with any active bulletins so a new athlete sees current notices.
+      sessionBank: { packages: [], redemptions: [], bulletins: activeCoachBulletins().map((b) => ({ ...b })) },
       archivedPrograms: [],
       inviteCode: makeInviteCode(),
       importedProgress: null,
@@ -189,6 +190,13 @@
     // the existing session_bank jsonb so the athlete sees them on their calendar
     // (no schema change). See syncUpcomingBookingsToAthletes().
     if (!Array.isArray(c.sessionBank.upcomingBookings)) c.sessionBank.upcomingBookings = [];
+    // Coach → athlete announcements — rides the existing session_bank jsonb
+    // (coach-write-only column, so no athlete/coach write conflict; no schema
+    // change). The athlete reads these read-only on their Overview.
+    if (!Array.isArray(c.sessionBank.messages)) c.sessionBank.messages = [];
+    // Coach bulletin board — the same time-boxed notice mirrored to every
+    // athlete. The coach's board is the union of these across athletes.
+    if (!Array.isArray(c.sessionBank.bulletins)) c.sessionBank.bulletins = [];
   }
   function sessionBankSummary(c) {
     ensureSessionBank(c);
@@ -1313,6 +1321,7 @@
       athletes:        "#view-dashboard",
       overview:        "#view-overview",
       packages:        "#view-packages",
+      messages:        "#view-messages",
       settings:        "#view-settings",
       programs:        "#view-programs",
       "program-editor": "#view-program-editor",
@@ -6212,6 +6221,190 @@
     updatePackagesNavBadge();
   }
 
+  // ---- Coach → athlete announcements (Messages view) ---------------------
+  const _msgSelected = new Set();
+
+  function renderMessagesView() {
+    const host = $("#msg-recipients");
+    if (!host) return;
+    const clients = [...(state.trainerData.clients || [])]
+      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    // Drop any selections for athletes that no longer exist.
+    const ids = new Set(clients.map((c) => c.id));
+    [..._msgSelected].forEach((id) => { if (!ids.has(id)) _msgSelected.delete(id); });
+
+    if (!clients.length) {
+      host.innerHTML = `<p class="muted" style="padding:0.4rem">Add an athlete first — then you can message them here.</p>`;
+    } else {
+      host.innerHTML = clients.map((c) => {
+        const on = _msgSelected.has(c.id);
+        return `<button class="msg-recip${on ? " is-on" : ""}" type="button" data-cid="${escapeHtml(c.id)}">
+          <span class="msg-recip-check">${on ? "✓" : ""}</span>
+          <span class="msg-recip-name">${escapeHtml(c.name || "Unnamed")}</span>
+        </button>`;
+      }).join("");
+      host.querySelectorAll(".msg-recip").forEach((b) => {
+        b.addEventListener("click", () => {
+          const id = b.dataset.cid;
+          if (_msgSelected.has(id)) _msgSelected.delete(id); else _msgSelected.add(id);
+          renderMessagesView();
+        });
+      });
+    }
+    const cnt = $("#msg-recip-count");
+    if (cnt) cnt.textContent = `${_msgSelected.size} selected`;
+    renderMessageHistory();
+  }
+
+  function renderMessageHistory() {
+    const host = $("#msg-history");
+    if (!host) return;
+    // Collect every message this coach has sent, de-duped by message id, newest first.
+    const seen = new Map();
+    (state.trainerData.clients || []).forEach((c) => {
+      ensureSessionBank(c);
+      (c.sessionBank.messages || []).forEach((m) => {
+        const entry = seen.get(m.id) || { text: m.text, sentAt: m.sentAt, names: [] };
+        entry.names.push(c.name || "Unnamed");
+        seen.set(m.id, entry);
+      });
+    });
+    const list = [...seen.values()].sort((a, b) => (b.sentAt || "").localeCompare(a.sentAt || ""));
+    if (!list.length) {
+      host.innerHTML = `<p class="muted" style="padding:0.4rem">No messages sent yet.</p>`;
+      return;
+    }
+    host.innerHTML = list.slice(0, 25).map((m) => {
+      const who = m.names.length > 3 ? `${m.names.length} athletes` : m.names.join(", ");
+      return `<div class="msg-hist-item">
+        <div class="msg-hist-text">${escapeHtml(m.text)}</div>
+        <div class="msg-hist-meta">${escapeHtml(who)} · ${escapeHtml(msgWhen(m.sentAt))}</div>
+      </div>`;
+    }).join("");
+  }
+
+  function msgWhen(iso) {
+    const d = iso ? new Date(iso) : null;
+    if (!d || isNaN(d)) return "";
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
+      ", " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+
+  function sendCoachMessage() {
+    const ta = $("#msg-text");
+    const statusEl = $("#msg-send-status");
+    const text = (ta?.value || "").trim();
+    if (!_msgSelected.size) { if (statusEl) statusEl.textContent = "Pick at least one athlete."; return; }
+    if (!text) { if (statusEl) statusEl.textContent = "Write a message first."; return; }
+    const msg = { id: uid(), text, sentAt: new Date().toISOString() };
+    const recipients = (state.trainerData.clients || []).filter((c) => _msgSelected.has(c.id));
+    recipients.forEach((c) => {
+      ensureSessionBank(c);
+      c.sessionBank.messages.push({ ...msg });
+      // Keep the stored history bounded so the jsonb doesn't grow forever.
+      if (c.sessionBank.messages.length > 50) c.sessionBank.messages = c.sessionBank.messages.slice(-50);
+    });
+    saveTrainer();
+    // Push each recipient's row directly (saveTrainer only debounces the current athlete).
+    if (window.Cloud?.enabled) {
+      recipients.forEach((c) => window.Cloud.upsertAthlete(c, state.trainerData.coachId));
+    }
+    if (ta) ta.value = "";
+    toast(`📣 Sent to ${recipients.length} athlete${recipients.length === 1 ? "" : "s"}`);
+    if (statusEl) statusEl.textContent = "";
+    renderMessagesView();
+  }
+
+  // ---- Coach bulletin board (shown to all athletes, self-expiring) --------
+  // Stored on every athlete's sessionBank.bulletins; the coach's board is the
+  // union of those (deduped by id), so it survives across the coach's devices.
+  function activeCoachBulletins() {
+    const now = Date.now();
+    const seen = new Map();
+    (state.trainerData.clients || []).forEach((c) => {
+      ensureSessionBank(c);
+      (c.sessionBank.bulletins || []).forEach((b) => {
+        if (!b || (b.expiresAt && new Date(b.expiresAt).getTime() <= now)) return;
+        if (!seen.has(b.id)) seen.set(b.id, b);
+      });
+    });
+    return [...seen.values()].sort((a, b) => (b.postedAt || "").localeCompare(a.postedAt || ""));
+  }
+
+  function postBulletin() {
+    const ta = $("#bulletin-text");
+    const weeksSel = $("#bulletin-weeks");
+    const statusEl = $("#bulletin-status");
+    const text = (ta?.value || "").trim();
+    if (!text) { if (statusEl) statusEl.textContent = "Write something first."; return; }
+    const clients = state.trainerData.clients || [];
+    if (!clients.length) { if (statusEl) statusEl.textContent = "Add an athlete first."; return; }
+    const weeks = Math.min(4, Math.max(1, parseInt(weeksSel?.value, 10) || 1));
+    const now = new Date();
+    const expires = new Date(now.getTime() + weeks * 7 * 24 * 60 * 60 * 1000);
+    const bulletin = { id: uid(), text, postedAt: now.toISOString(), expiresAt: expires.toISOString(), weeks };
+    clients.forEach((c) => {
+      ensureSessionBank(c);
+      c.sessionBank.bulletins.push({ ...bulletin });
+      pruneBulletins(c);
+    });
+    saveTrainer();
+    if (window.Cloud?.enabled) clients.forEach((c) => window.Cloud.upsertAthlete(c, state.trainerData.coachId));
+    if (ta) ta.value = "";
+    if (statusEl) statusEl.textContent = "";
+    toast("📌 Posted to all athletes");
+    renderBulletinBoard();
+  }
+
+  function removeBulletin(id) {
+    const clients = state.trainerData.clients || [];
+    clients.forEach((c) => {
+      ensureSessionBank(c);
+      c.sessionBank.bulletins = c.sessionBank.bulletins.filter((b) => b.id !== id);
+    });
+    saveTrainer();
+    if (window.Cloud?.enabled) clients.forEach((c) => window.Cloud.upsertAthlete(c, state.trainerData.coachId));
+    renderBulletinBoard();
+  }
+
+  // Drop expired bulletins from an athlete's stored list.
+  function pruneBulletins(c) {
+    const now = Date.now();
+    if (!c.sessionBank?.bulletins) return;
+    c.sessionBank.bulletins = c.sessionBank.bulletins.filter(
+      (b) => b && (!b.expiresAt || new Date(b.expiresAt).getTime() > now)
+    );
+  }
+
+  function bulletinExpiryLabel(b) {
+    const ms = new Date(b.expiresAt).getTime() - Date.now();
+    if (ms <= 0) return "expired";
+    const days = Math.ceil(ms / (24 * 60 * 60 * 1000));
+    if (days >= 14) return `${Math.round(days / 7)} weeks left`;
+    if (days > 1) return `${days} days left`;
+    return "ends today";
+  }
+
+  function renderBulletinBoard() {
+    const host = $("#bulletin-active");
+    if (!host) return;
+    const list = activeCoachBulletins();
+    if (!list.length) {
+      host.innerHTML = `<p class="muted" style="padding:0.5rem 0 0;font-size:0.85rem">No active notices.</p>`;
+      return;
+    }
+    host.innerHTML = list.map((b) => `<div class="bulletin-item">
+      <div class="bulletin-item-body">
+        <div class="bulletin-item-text">${escapeHtml(b.text)}</div>
+        <div class="bulletin-item-meta">${escapeHtml(bulletinExpiryLabel(b))}</div>
+      </div>
+      <button class="btn btn-ghost btn-sm bulletin-remove" type="button" data-bid="${escapeHtml(b.id)}">Remove</button>
+    </div>`).join("");
+    host.querySelectorAll(".bulletin-remove").forEach((btn) => {
+      btn.addEventListener("click", () => removeBulletin(btn.dataset.bid));
+    });
+  }
+
   function renderPackagesView() {
     const reqContainer = $("#packages-requests-container");
     const athContainer = $("#packages-athletes-container");
@@ -6692,13 +6885,68 @@
     refreshAthleteOpenSlots();
   }
   // -------- Athlete Overview (home dashboard) --------
+  // Athlete-side read-only inbox for coach announcements (piggybacks
+  // sessionBank.messages, which the coach writes). Shows newest first, and
+  // remembers which the athlete has seen via a local set so nothing flashes
+  // as "new" forever.
+  function renderAthleteCoachMessages(c) {
+    const host = $("#ov-messages");
+    if (!host) return;
+    const now = Date.now();
+    // Active (non-expired) bulletins, pinned above targeted messages.
+    const bulletins = (c ? (c.sessionBank?.bulletins || []) : [])
+      .filter((b) => b && (!b.expiresAt || new Date(b.expiresAt).getTime() > now))
+      .sort((a, b) => (b.postedAt || "").localeCompare(a.postedAt || ""));
+    const msgs = c ? [...(c.sessionBank?.messages || [])] : [];
+    if (!bulletins.length && !msgs.length) { host.innerHTML = ""; return; }
+    msgs.sort((a, b) => (b.sentAt || "").localeCompare(a.sentAt || ""));
+    const seen = state.clientData.progress?.seenMessages || {};
+
+    let html = "";
+    if (bulletins.length) {
+      const bitems = bulletins.map((b) => `<div class="ovmsg-item">
+        <div class="ovmsg-text">${escapeHtml(b.text)}</div>
+      </div>`).join("");
+      html += `<div class="ovmsg-card ovmsg-bulletin">
+        <div class="ovmsg-head"><span class="ovmsg-icon">📌</span><span>Bulletin board</span></div>
+        ${bitems}
+      </div>`;
+    }
+    if (msgs.length) {
+      const items = msgs.slice(0, 8).map((m) => {
+        const fresh = !seen[m.id];
+        return `<div class="ovmsg-item${fresh ? " is-new" : ""}">
+          <div class="ovmsg-text">${escapeHtml(m.text)}</div>
+          <div class="ovmsg-meta">${fresh ? `<span class="ovmsg-new">New</span>` : ""}${escapeHtml(msgWhen(m.sentAt))}</div>
+        </div>`;
+      }).join("");
+      html += `<div class="ovmsg-card">
+        <div class="ovmsg-head"><span class="ovmsg-icon">📣</span><span>From your coach</span></div>
+        ${items}
+      </div>`;
+    }
+    host.innerHTML = html;
+    if (!msgs.length) return;
+    // Mark all currently-shown messages as seen (persist locally).
+    if (!state.clientData.progress) state.clientData.progress = {};
+    if (!state.clientData.progress.seenMessages) state.clientData.progress.seenMessages = {};
+    const seenMap = state.clientData.progress.seenMessages;
+    let changed = false;
+    msgs.forEach((m) => { if (!seenMap[m.id]) { seenMap[m.id] = true; changed = true; } });
+    // Prune ids no longer present so the map can't grow forever.
+    const live = new Set(msgs.map((m) => m.id));
+    Object.keys(seenMap).forEach((id) => { if (!live.has(id)) { delete seenMap[id]; changed = true; } });
+    if (changed) saveClient();
+  }
+
   function renderAthleteOverview() {
     const host = $("#overview-stats");
     if (!host) return;
     const prog = state.clientData.program;
     const c = prog?.client;
-    if (!c) { host.innerHTML = ""; return; }
+    if (!c) { host.innerHTML = ""; renderAthleteCoachMessages(null); return; }
     ensureSessionBank(c);
+    renderAthleteCoachMessages(c);
     const progress = state.clientData.progress || {};
     const today = todayISO();
 
@@ -8488,6 +8736,7 @@
           hideLibSidebar();
           renderDashboardCalendar();
           refreshCoachOpenSlots();
+          renderBulletinBoard();
         } else if (target === "packages") {
           _programEditorId = null;
           state.currentClientId = null;
@@ -8495,6 +8744,12 @@
           hideLibSidebar();
           renderPackagesView();
           refreshAllAthletePackages();
+        } else if (target === "messages") {
+          _programEditorId = null;
+          state.currentClientId = null;
+          switchCoachView("messages");
+          hideLibSidebar();
+          renderMessagesView();
         } else if (target === "settings") {
           _programEditorId = null;
           state.currentClientId = null;
@@ -8507,6 +8762,15 @@
         }
       });
     });
+
+    // Athlete messaging
+    $("#msg-send-btn")?.addEventListener("click", sendCoachMessage);
+    $("#msg-select-all")?.addEventListener("click", () => {
+      (state.trainerData.clients || []).forEach((c) => _msgSelected.add(c.id));
+      renderMessagesView();
+    });
+    $("#msg-clear-all")?.addEventListener("click", () => { _msgSelected.clear(); renderMessagesView(); });
+    $("#bulletin-post-btn")?.addEventListener("click", postBulletin);
 
     // Program creator
     $("#btn-new-program")?.addEventListener("click", newProgram);
