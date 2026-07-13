@@ -2190,6 +2190,31 @@ button.ov-stat:hover { background: var(--surface-2); }
 /* Athlete-side bulletin card accent (distinct from the 📣 messages card) */
 .ovmsg-bulletin { border-left-color: var(--accent); }
 
+/* ---- Single-day editor (full page) ---- */
+.day-editor-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 0.75rem 1rem;
+  margin-bottom: 1.1rem;
+}
+.day-editor-meta label { display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.85rem; color: var(--text-soft); font-weight: 600; }
+.day-editor-meta input,
+.day-editor-meta textarea {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  padding: 0.55em 0.7em;
+  font: inherit;
+  font-size: 0.92rem;
+}
+.day-editor-meta textarea { resize: vertical; line-height: 1.4; }
+.day-editor-meta input:focus,
+.day-editor-meta textarea:focus { outline: none; border-color: var(--primary); }
+@media (max-width: 620px) {
+  .day-editor-meta { grid-template-columns: 1fr; }
+}
+
 .session-manage {
   margin-top: 1.4rem;
   border: 1px solid var(--border);

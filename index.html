@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=msg1" />
+  <link rel="stylesheet" href="styles.css?v=day1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -437,6 +437,27 @@
           <p>Create a reusable day — like "Heavy Push" or "Leg Day" — and drop it into any program.</p>
           <button class="btn btn-primary" style="margin-top:0.75em" id="btn-daylib-new-empty">+ New day</button>
         </div>
+      </div>
+
+      <!-- Single-day editor (full page, same system as the program builder) -->
+      <div id="view-day-editor" class="view hidden">
+        <button class="btn-link back-link" id="btn-day-editor-back">← Day Library</button>
+        <div class="view-head">
+          <div>
+            <h2 id="day-editor-title">New day</h2>
+            <p class="muted view-sub">Build a reusable day. Drag exercises from the library, then save it to reuse in any program.</p>
+          </div>
+          <button class="btn btn-primary" id="btn-day-editor-save">Save to library</button>
+        </div>
+        <div class="day-editor-meta">
+          <label>Focus / theme
+            <input type="text" id="day-editor-focus" placeholder="e.g. Lats + mid back" />
+          </label>
+          <label>Notes
+            <textarea id="day-editor-notes" rows="2" placeholder="e.g. Always start with a 5 min row warm-up"></textarea>
+          </label>
+        </div>
+        <div id="day-editor-day"></div>
       </div>
 
 
@@ -916,7 +937,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
   <script src="cloud.js?v=profile1"></script>
-  <script src="app.js?v=msg1"></script>
+  <script src="app.js?v=day1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

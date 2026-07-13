@@ -1326,15 +1326,16 @@
       programs:        "#view-programs",
       "program-editor": "#view-program-editor",
       "day-library":   "#view-day-library",
+      "day-editor":    "#view-day-editor",
       client:          "#view-client",
     };
     Object.values(map).forEach((sel) => { const el = $(sel); if (el) hide(el); });
     show($(map[name] || map.athletes));
-    const navKey = { client: "athletes", "program-editor": "programs", "day-library": "programs" }[name] || name;
+    const navKey = { client: "athletes", "program-editor": "programs", "day-library": "programs", "day-editor": "programs" }[name] || name;
     document.querySelectorAll('#coach-nav [data-coach-nav]').forEach((b) => {
       b.classList.toggle("active", b.dataset.coachNav === navKey);
     });
-    if (name === "program-editor") { showLibSidebar(); } else if (name !== "client") { hideLibSidebar(); }
+    if (name === "program-editor" || name === "day-editor") { showLibSidebar(); } else if (name !== "client") { hideLibSidebar(); }
   }
 
   const AVATAR_COLORS = ["#06b6d4","#10b981","#8b5cf6","#f59e0b","#ef4444","#ec4899","#3b82f6","#f97316"];
@@ -2471,98 +2472,65 @@
     });
   }
 
-  function openTemplateEditor(template) {
-    // Edit a deep copy so Cancel discards changes.
-    const editing = !!template;
-    const draft = template
-      ? JSON.parse(JSON.stringify(template))
-      : makeWorkoutTemplate("");
-    if (!editing) draft.name = "";
+  // ---- Single-day editor (full page — same builder the program editor uses) ----
+  // We edit a deep copy so "← Back" discards changes; the draft is a workout
+  // template, which is shape-compatible with a program "day" (name/icon/
+  // exercises), so we mount it straight into renderDayContent + the library.
+  let _dayEditorDraft = null;
+  let _dayEditorEditingId = null;
 
-    openModal({
-      title: editing ? "Edit template" : "New workout template",
-      body: `
-        <div class="template-editor-section">
-          <label>Name<input type="text" id="tpl-name" placeholder="e.g. Back Day" autofocus /></label>
-          <label>Focus / theme<input type="text" id="tpl-focus" placeholder="e.g. Lats + mid back" /></label>
-          <label>Notes<textarea id="tpl-notes" rows="2" placeholder="e.g. Always start with a 5 min row warm-up"></textarea></label>
-        </div>
-        <div class="template-editor-section">
-          <h4>Exercises</h4>
-          <div class="template-exercises" id="tpl-ex-list"></div>
-          <button class="add-inline-btn" id="tpl-add-ex" type="button" style="margin-top:0.7em">+ Add exercise</button>
-        </div>
-        <p id="tpl-error" class="error hidden"></p>
-      `,
-      actions: [
-        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
-        { label: editing ? "Save changes" : "Create template", className: "btn btn-primary",
-          onClick: () => {
-            const name = $("#tpl-name").value.trim();
-            const err = $("#tpl-error");
-            if (!name) return showErr(err, "Give the template a name.");
-            draft.name = name;
-            draft.focus = $("#tpl-focus").value.trim();
-            draft.notes = $("#tpl-notes").value.trim();
-            draft.updatedAt = Date.now();
-            // Strip empty exercises (no name AND no notes) so coach can add and skip placeholders.
-            draft.exercises = draft.exercises.filter((ex) =>
-              (ex.name || "").trim() || (ex.notes || "").trim()
-            );
-            if (!draft.exercises.length) return showErr(err, "Add at least one exercise.");
-            if (editing) {
-              state.trainerData.workoutTemplates = state.trainerData.workoutTemplates.map((t) =>
-                t.id === draft.id ? draft : t
-              );
-            } else {
-              state.trainerData.workoutTemplates.push(draft);
-            }
-            saveTrainer();
-            closeModal();
-            renderDayLibrary();
-            toast(editing ? "Template updated" : "Template created 📚");
-          },
-        },
-      ],
-    });
+  function openTemplateEditor(template) { openDayEditor(template); }
 
-    // Populate fields after modal mounts.
-    $("#tpl-name").value = draft.name;
-    $("#tpl-focus").value = draft.focus || "";
-    $("#tpl-notes").value = draft.notes || "";
+  function openDayEditor(template) {
+    _dayEditorEditingId = template ? template.id : null;
+    _dayEditorDraft = template ? JSON.parse(JSON.stringify(template)) : makeWorkoutTemplate("");
+    if (!template) _dayEditorDraft.name = "";
+    switchCoachView("day-editor");
+    renderDayEditor();
+    setTimeout(() => $("#day-editor-day .day-name-compact")?.focus(), 60);
+  }
 
-    function paintExercises() {
-      const wrap = $("#tpl-ex-list");
-      wrap.innerHTML = "";
-      draft.exercises.forEach((ex, idx) => {
-        const row = document.createElement("div");
-        row.className = "template-ex-row";
-        row.innerHTML = `
-          <div class="row-name"><input type="text" placeholder="Exercise name (e.g. Lat Pulldown)" value="${escapeHtml(ex.name || "")}" /></div>
-          <div class="row-grid">
-            <input type="number" min="0" placeholder="Sets" value="${escapeHtml(ex.sets || "")}" />
-            <input type="number" min="0" placeholder="Reps" value="${escapeHtml(ex.currentReps || "")}" />
-            <input type="text" placeholder="Notes / cue" value="${escapeHtml(ex.notes || "")}" />
-            <button class="row-delete" type="button" title="Remove exercise">✕</button>
-          </div>
-        `;
-        const [nameI, setsI, repsI, notesI] = row.querySelectorAll("input");
-        nameI.addEventListener("input", () => { draft.exercises[idx].name = nameI.value; });
-        setsI.addEventListener("input", () => { draft.exercises[idx].sets = setsI.value; });
-        repsI.addEventListener("input", () => { draft.exercises[idx].currentReps = repsI.value; });
-        notesI.addEventListener("input", () => { draft.exercises[idx].notes = notesI.value; });
-        row.querySelector(".row-delete").addEventListener("click", () => {
-          draft.exercises.splice(idx, 1);
-          paintExercises();
-        });
-        wrap.appendChild(row);
-      });
+  function renderDayEditor() {
+    const d = _dayEditorDraft;
+    if (!d) return;
+    const title = $("#day-editor-title");
+    if (title) title.textContent = _dayEditorEditingId ? "Edit day" : "New day";
+    const focusI = $("#day-editor-focus");
+    const notesI = $("#day-editor-notes");
+    if (focusI) { focusI.value = d.focus || ""; focusI.oninput = () => { d.focus = focusI.value; }; }
+    if (notesI) { notesI.value = d.notes || ""; notesI.oninput = () => { d.notes = notesI.value; }; }
+    const host = $("#day-editor-day");
+    if (!host) return;
+    host.innerHTML = "";
+    // Synthetic single-day "week" so renderDayContent's shared machinery works;
+    // hideDelete drops the per-day delete button (there's only one day here).
+    const synthWeek = { id: "_daytpl", days: [d] };
+    host.appendChild(renderDayContent(synthWeek, d, renderDayEditor, { hideDelete: true }));
+  }
+
+  function saveDayEditor() {
+    const d = _dayEditorDraft;
+    if (!d) return;
+    const name = (d.name || "").trim();
+    if (!name) { toast("Give the day a name"); $("#day-editor-day .day-name-compact")?.focus(); return; }
+    d.name = name;
+    d.focus = ($("#day-editor-focus")?.value || "").trim();
+    d.notes = ($("#day-editor-notes")?.value || "").trim();
+    // Strip empty exercises (no name AND no notes).
+    d.exercises = d.exercises.filter((ex) => (ex.name || "").trim() || (ex.notes || "").trim());
+    if (!d.exercises.length) { toast("Add at least one exercise"); return; }
+    d.updatedAt = Date.now();
+    if (_dayEditorEditingId) {
+      state.trainerData.workoutTemplates = state.trainerData.workoutTemplates.map((t) =>
+        t.id === d.id ? d : t);
+    } else {
+      state.trainerData.workoutTemplates.push(d);
     }
-    paintExercises();
-    $("#tpl-add-ex").addEventListener("click", () => {
-      draft.exercises.push(makeExercise());
-      paintExercises();
-    });
+    saveTrainer();
+    const wasEditing = !!_dayEditorEditingId;
+    _dayEditorDraft = null; _dayEditorEditingId = null;
+    renderDayLibrary();
+    toast(wasEditing ? "Day updated" : "Day created 📚");
   }
 
   function openLoadTemplateModal(week, day) {
@@ -3507,7 +3475,8 @@
     });
   }
 
-  function renderDayContent(week, day, rerenderFn) {
+  function renderDayContent(week, day, rerenderFn, opts) {
+    opts = opts || {};
     const wrapper = document.createElement("div");
     wrapper.className = "day-content";
 
@@ -3570,7 +3539,7 @@
     actionBar.appendChild(nameWrap);
     actionBar.appendChild(spacer);
     actionBar.appendChild(libBtn);
-    actionBar.appendChild(delDayBtn);
+    if (!opts.hideDelete) actionBar.appendChild(delDayBtn);
 
     // Table header
     const tableHead = document.createElement("div");
@@ -8779,11 +8748,13 @@
     $("#btn-editor-add-week-empty")?.addEventListener("click", addWeek);
     // Day Library (reachable from the Programs page)
     $("#btn-programs-day-library")?.addEventListener("click", () => { _programEditorId = null; renderDayLibrary(); });
-    $("#btn-programs-new-day")?.addEventListener("click", () => { _programEditorId = null; openTemplateEditor(null); });
+    $("#btn-programs-new-day")?.addEventListener("click", () => { _programEditorId = null; openDayEditor(null); });
     $("#btn-daylib-back")?.addEventListener("click", () => { _programEditorId = null; renderProgramsList(); });
-    $("#btn-daylib-new")?.addEventListener("click", () => openTemplateEditor(null));
-    $("#btn-daylib-new-empty")?.addEventListener("click", () => openTemplateEditor(null));
+    $("#btn-daylib-new")?.addEventListener("click", () => openDayEditor(null));
+    $("#btn-daylib-new-empty")?.addEventListener("click", () => openDayEditor(null));
     $("#btn-daylib-recommended")?.addEventListener("click", openRecommendedTemplatesModal);
+    $("#btn-day-editor-back")?.addEventListener("click", () => renderDayLibrary());
+    $("#btn-day-editor-save")?.addEventListener("click", saveDayEditor);
     $("#btn-assign-program")?.addEventListener("click", () => { if (_programEditorId) assignProgramPrompt(_programEditorId); });
     $("#btn-toggle-program-status")?.addEventListener("click", () => {
       const tpl = currentProgramTemplate(); if (!tpl) return;
