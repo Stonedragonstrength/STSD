@@ -5110,13 +5110,12 @@
 
   function buildCoachPRCard(c, entry, inEdit, isNew, athletePR) {
     const card = document.createElement("div");
-    card.className = "pr-edit-card" + (inEdit ? " is-editing" : "");
+    card.className = "pr-edit-card" + (isNew ? " is-editing" : " pr-shared-card");
 
-    if (inEdit) {
+    if (isNew) {
+      // Create-new-lift card: name + 3 values + Save (needs a name first).
       card.innerHTML = `
-        ${isNew
-          ? `<div class="pr-edit-name-row"><input class="pr-name-input" placeholder="Exercise name…" value="${escapeHtml(entry.name || "")}"></div>`
-          : `<div class="pr-edit-name">${escapeHtml(entry.name)}</div>`}
+        <div class="pr-edit-name-row"><input class="pr-name-input" placeholder="Exercise name…" value="${escapeHtml(entry.name || "")}"></div>
         <div class="pr-edit-fields">
           <div class="pr-field-group">
             <label class="pr-field-label">1 Rep PR (lb)</label>
@@ -5136,55 +5135,45 @@
           <button class="pr-save-btn btn btn-primary btn-sm">Save PR</button>
         </div>`;
 
-      if (!isNew) {
-        card.querySelector(".pr-1rm-input").value = entry.pr1 || "";
-        card.querySelector(".pr-2rm-input").value = entry.pr2 || "";
-        card.querySelector(".pr-3rm-input").value = entry.pr3 || "";
-      }
-
       card.querySelector(".pr-save-btn").addEventListener("click", () => {
-        const newName = isNew ? (card.querySelector(".pr-name-input")?.value.trim() || "") : entry.name;
+        const newName = card.querySelector(".pr-name-input")?.value.trim() || "";
         const pr1 = card.querySelector(".pr-1rm-input").value.trim();
         const pr2 = card.querySelector(".pr-2rm-input").value.trim();
         const pr3 = card.querySelector(".pr-3rm-input").value.trim();
         if (!newName) { toast("Enter a lift name"); return; }
         if (!pr1 && !pr2 && !pr3) { toast("Enter at least one PR"); return; }
-        if (isNew) {
-          c.coachPRs.push({ id: uid(), name: newName, pr1, pr2, pr3 });
-          _prNewLifts = _prNewLifts.filter(nl => nl.tempId !== entry.id);
-        } else {
-          const real = c.coachPRs.find(p => p.id === entry.id);
-          if (real) { real.pr1 = pr1; real.pr2 = pr2; real.pr3 = pr3; real.date = todayISO(); }
-          _prEditIds.delete(entry.id);
-        }
+        c.coachPRs.push({ id: uid(), name: newName, pr1, pr2, pr3 });
+        _prNewLifts = _prNewLifts.filter(nl => nl.tempId !== entry.id);
         saveTrainer();
         renderCoachPRs();
       });
-
       card.querySelector(".pr-cancel-btn").addEventListener("click", () => {
-        if (isNew) {
-          _prNewLifts = _prNewLifts.filter(nl => nl.tempId !== entry.id);
-        } else {
-          _prEditIds.delete(entry.id);
-        }
+        _prNewLifts = _prNewLifts.filter(nl => nl.tempId !== entry.id);
         renderCoachPRs();
       });
     } else {
-      const rmPill = (label, val) => val
-        ? `<span class="pr-rm-pill"><span class="pr-rm-label">${label}</span>${escapeHtml(val)} lb</span>`
-        : `<span class="pr-rm-pill pr-rm-empty"><span class="pr-rm-label">${label}</span>—</span>`;
+      // Existing lift: autosave card with per-PR value + mm/dd/yy date + lock
+      // (same as the athlete side; coachPRs is the shared list).
+      const slot = (n, label, ph) => {
+        const lk = !!entry[`pr${n}Locked`];
+        const ro = lk ? "readonly" : "";
+        return `
+          <div class="pr-field-group${lk ? " is-locked" : ""}">
+            <label class="pr-field-label">${label}</label>
+            <input class="pr-${n}rm-input" type="number" min="0" step="any" placeholder="${ph}" value="${escapeHtml(entry[`pr${n}`] || "")}" ${ro}>
+            <input class="pr-${n}rm-date pr-date-input" type="text" inputmode="numeric" maxlength="8" placeholder="mm/dd/yy" title="Date achieved" value="${escapeHtml(entry[`pr${n}Date`] || "")}" ${ro}>
+            <button class="pr-lock-btn${lk ? " is-locked" : ""}" data-slot="${n}" type="button" title="${lk ? "Locked — tap to edit" : "Lock in"}" aria-label="${lk ? "Locked — tap to edit" : "Lock in"}">${lk ? "🔒" : "🔓"}</button>
+          </div>`;
+      };
       card.innerHTML = `
         <div class="pr-view-header">
           <h4 class="pr-exercise-name">${escapeHtml(entry.name)}</h4>
-          <div class="pr-view-btns">
-            <button class="pr-edit-btn btn btn-ghost btn-sm">Edit</button>
-            <button class="pr-delete-btn" title="Delete">×</button>
-          </div>
+          <button class="pr-delete-btn" title="Delete">×</button>
         </div>
-        <div class="pr-rm-row">
-          ${rmPill("1RM", entry.pr1)}
-          ${rmPill("2RM", entry.pr2)}
-          ${rmPill("3RM", entry.pr3)}
+        <div class="pr-edit-fields">
+          ${slot(1, "1 Rep PR (lb)", "e.g. 315")}
+          ${slot(2, "2 Rep PR (lb)", "e.g. 295")}
+          ${slot(3, "3 Rep PR (lb)", "e.g. 275")}
         </div>
         ${athletePR ? `
           <div class="pr-athlete-row">
@@ -5192,9 +5181,20 @@
             <span>${escapeHtml(athletePR.weight || "—")} lb × ${escapeHtml(athletePR.reps || "—")} reps</span>
           </div>` : ""}`;
 
-      card.querySelector(".pr-edit-btn").addEventListener("click", () => {
-        _prEditIds.add(entry.id);
-        renderCoachPRs();
+      [1, 2, 3].forEach((n) => {
+        card.querySelector(`.pr-${n}rm-input`).addEventListener("input", (e) => { entry[`pr${n}`] = e.target.value; saveTrainer(); });
+        card.querySelector(`.pr-${n}rm-date`).addEventListener("input", (e) => {
+          e.target.value = formatShortDate(e.target.value); // auto mm/dd/yy
+          entry[`pr${n}Date`] = e.target.value;
+          saveTrainer();
+        });
+      });
+      card.querySelectorAll(".pr-lock-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          entry[`pr${btn.dataset.slot}Locked`] = !entry[`pr${btn.dataset.slot}Locked`];
+          saveTrainer();
+          renderCoachPRs();
+        });
       });
       card.querySelector(".pr-delete-btn").addEventListener("click", () => {
         if (!window.confirm(`Delete "${entry.name}" PR?`)) return;
