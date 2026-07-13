@@ -5268,27 +5268,40 @@
     coachPRs.forEach(entry => {
       const card = document.createElement("div");
       card.className = "pr-edit-card pr-shared-card";
+      // Each PR (1RM/2RM/3RM) has its own value + date + lock, so one can be
+      // locked (read-only, can't be accidentally changed/cleared) on its own.
+      const slot = (n, label, ph) => {
+        const lk = !!entry[`pr${n}Locked`];
+        const ro = lk ? "readonly" : "";
+        return `
+          <div class="pr-field-group${lk ? " is-locked" : ""}">
+            <label class="pr-field-label">${label}</label>
+            <input class="pr-${n}rm-input" type="number" min="0" step="any" placeholder="${ph}" value="${escapeHtml(entry[`pr${n}`] || "")}" ${ro}>
+            <input class="pr-${n}rm-date pr-date-input" type="date" title="Date achieved" value="${escapeHtml(entry[`pr${n}Date`] || "")}" ${ro}>
+            <button class="pr-lock-btn${lk ? " is-locked" : ""}" data-slot="${n}" type="button" title="${lk ? "Locked — tap to edit" : "Lock in"}" aria-label="${lk ? "Locked — tap to edit" : "Lock in"}">${lk ? "🔒" : "🔓"}</button>
+          </div>`;
+      };
       card.innerHTML = `
         <div class="pr-view-header">
           <h4 class="pr-exercise-name">${escapeHtml(entry.name)}</h4>
         </div>
         <div class="pr-edit-fields">
-          <div class="pr-field-group">
-            <label class="pr-field-label">1 Rep PR (lb)</label>
-            <input class="pr-1rm-input" type="number" min="0" step="any" placeholder="e.g. 315" value="${escapeHtml(entry.pr1 || "")}">
-          </div>
-          <div class="pr-field-group">
-            <label class="pr-field-label">2 Rep PR (lb)</label>
-            <input class="pr-2rm-input" type="number" min="0" step="any" placeholder="e.g. 295" value="${escapeHtml(entry.pr2 || "")}">
-          </div>
-          <div class="pr-field-group">
-            <label class="pr-field-label">3 Rep PR (lb)</label>
-            <input class="pr-3rm-input" type="number" min="0" step="any" placeholder="e.g. 275" value="${escapeHtml(entry.pr3 || "")}">
-          </div>
+          ${slot(1, "1 Rep PR (lb)", "e.g. 315")}
+          ${slot(2, "2 Rep PR (lb)", "e.g. 295")}
+          ${slot(3, "3 Rep PR (lb)", "e.g. 275")}
         </div>`;
-      card.querySelector(".pr-1rm-input").addEventListener("input", (e) => { entry.pr1 = e.target.value; pushCoachPRs(); });
-      card.querySelector(".pr-2rm-input").addEventListener("input", (e) => { entry.pr2 = e.target.value; pushCoachPRs(); });
-      card.querySelector(".pr-3rm-input").addEventListener("input", (e) => { entry.pr3 = e.target.value; pushCoachPRs(); });
+      [1, 2, 3].forEach((n) => {
+        card.querySelector(`.pr-${n}rm-input`).addEventListener("input", (e) => { entry[`pr${n}`] = e.target.value; pushCoachPRs(); });
+        card.querySelector(`.pr-${n}rm-date`).addEventListener("input", (e) => { entry[`pr${n}Date`] = e.target.value; pushCoachPRs(); });
+      });
+      card.querySelectorAll(".pr-lock-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const n = btn.dataset.slot;
+          entry[`pr${n}Locked`] = !entry[`pr${n}Locked`];
+          pushCoachPRs();
+          renderAthletePRs();
+        });
+      });
       container.appendChild(card);
     });
 

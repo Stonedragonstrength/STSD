@@ -2849,11 +2849,39 @@ input[type="date"] { color-scheme: dark; }
   display: grid; grid-template-columns: 1fr 1fr 1fr;
   gap: 0.75rem; margin-bottom: 0.75rem;
 }
+/* Stack the three PRs on mobile — date inputs are too wide for 3 columns. */
+@media (max-width: 600px) {
+  .pr-edit-fields { grid-template-columns: 1fr; gap: 0.9rem; }
+  .pr-lock-btn { align-self: flex-start; }
+}
 .pr-field-group { display: flex; flex-direction: column; gap: 0.3rem; }
 .pr-field-label {
   font-size: 0.72rem; font-weight: 700; color: var(--text-soft);
   text-transform: uppercase; letter-spacing: 0.05em;
 }
+/* Per-PR date + lock */
+.pr-date-input { font-size: 0.74rem; padding: 0.32em 0.4em; }
+.pr-field-group input[readonly] {
+  background: var(--surface-2);
+  color: var(--text-soft);
+  cursor: default;
+  border-style: dashed;
+}
+.pr-lock-btn {
+  align-self: center;
+  margin-top: 0.1em;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-soft);
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 0.25em 0.55em;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.pr-lock-btn:hover { border-color: var(--primary); }
+.pr-lock-btn.is-locked { border-color: var(--accent); background: var(--accent-soft); }
 .pr-name-input:focus { outline: none; border-color: var(--primary); }
 .pr-edit-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
 .pr-view-header {
