@@ -8764,6 +8764,11 @@
     $$("#login-role [data-role], .role-btn[data-role]").forEach((b) => b.addEventListener("click", () => pickRole(b.dataset.role)));
     $$(".back-to-role").forEach((b) => b.addEventListener("click", () => showLoginScreen("#login-role")));
     $("#btn-athlete-signup").addEventListener("click", showAthleteImport);
+    $("#btn-copy-app-link")?.addEventListener("click", async () => {
+      const link = "https://stonedragonstrength.github.io/STSD/";
+      try { await navigator.clipboard.writeText(link); toast("App link copied"); }
+      catch { toast(link); }
+    });
 
     // Coach sign-in
     $("#btn-signin").addEventListener("click", signInCoach);
