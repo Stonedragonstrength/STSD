@@ -2665,7 +2665,7 @@
   const EXERCISE_LIBRARY = [
     { cat: "Chest",      ex: ["Bench Press","Incline Bench Press","Decline Bench Press","Fly","Cable Fly","Push-Up","Dips","Pec Deck","Pullover","Machine Chest Press","Incline Dumbbell Press","Floor Press","Landmine Press","Svend Press"] },
     { cat: "Back",       ex: ["Pull-Up","Chin-Up","Row","Pendlay Row","Lat Pulldown","T-Bar Row","Chest-Supported Row","Straight-Arm Pulldown","Seated Cable Row","Single-Arm Row","Meadows Row","Rack Pull","Inverted Row","Wide-Grip Pulldown"] },
-    { cat: "Quads",      ex: ["Back Squat","Front Squat","Leg Press","Hack Squat","Trap Bar Deadlift","Bulgarian Split Squat","Walking Lunge","Leg Extension","Step-Up","Goblet Squat","Box Squat","Reverse Lunge","Sissy Squat","Pause Squat","Pendulum Squat","Zercher Squat"] },
+    { cat: "Quads",      ex: ["Back Squat","Front Squat","Leg Press","Hack Squat","Trap Bar Deadlift","Bulgarian Split Squat","Lunge","Walking Lunge","Leg Extension","Step-Up","Goblet Squat","Box Squat","Reverse Lunge","Sissy Squat","Pause Squat","Pendulum Squat","Zercher Squat"] },
     { cat: "Hamstrings", ex: ["Deadlift","Romanian Deadlift","Stiff-Leg Deadlift","Lying Leg Curl","Seated Leg Curl","Leg Curl","Nordic Curl","Good Morning","Glute-Ham Raise","Single-Leg RDL","Cable Pull-Through","Kettlebell Swing"] },
     { cat: "Glutes",     ex: ["Hip Thrust","Glute Bridge","Kickback","Sumo Deadlift","Abductor","Lateral Walk","Donkey Kick","Pull-Through","Frog Pump","B-Stance Hip Thrust","Curtsy Lunge","Cable Kickback"] },
     { cat: "Adductors",  ex: ["Hip Adduction","Copenhagen Plank","Lateral Lunge","Cossack Squat","Sumo Squat","Side-Lying Adduction","Adductor Machine"] },
