@@ -5253,6 +5253,37 @@ input:focus, textarea:focus, select:focus {
   padding: 0.2rem 0.15rem 0.1rem;
 }
 
+/* Coach-side collapsible mobility area at the top of a day. */
+.coach-mobility-section {
+  border: 1px solid rgba(var(--primary-rgb), 0.28);
+  border-radius: var(--radius);
+  background: rgba(var(--primary-rgb), 0.06);
+  margin-bottom: 0.45rem;
+}
+.coach-mobility-summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  user-select: none;
+}
+.coach-mobility-summary::-webkit-details-marker { display: none; }
+.coach-mobility-summary::before { content: "▸"; transition: transform 0.15s; }
+.coach-mobility-section[open] > .coach-mobility-summary::before { transform: rotate(90deg); }
+.coach-mobility-list {
+  padding: 0 0.4rem 0.45rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
 .cex-rx {
   display: flex;
   align-items: baseline;
@@ -5694,6 +5725,14 @@ input:focus, textarea:focus, select:focus {
   border-top: none;
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
   padding-bottom: 0.5rem;
+}
+/* Program builder: drop the surface "card" panel behind the week/day content —
+   it reads as a stray floating card while building a program. (Athlete program
+   editing keeps its panel.) */
+#program-editor-weeks .coach-week-body {
+  background: none;
+  border: none;
+  border-radius: 0;
 }
 
 /* ===== Load Program Modal ===== */

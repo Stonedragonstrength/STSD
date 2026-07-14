@@ -164,6 +164,7 @@
   let _prEditIds = new Set();
   let _exLibraryTarget = null; // { day, rerenderFn } — set by openExLibrary(), used for tap-to-add
   let _focusQuickAddDayId = null; // day id whose type-to-add input should refocus after a rerender
+  const _coachMobOpen = new Set(); // day ids whose coach-side mobility section is expanded
   let _prNewLifts = [];
   let _prDragSrcId = null;
   function currentProgramTemplate() {
@@ -3719,7 +3720,29 @@
     const list = document.createElement("div");
     list.className = "ex-compact-list";
 
-    appendExerciseGroups(list, day, (ex) => renderExerciseRow(day, ex, rerenderFn), false);
+    // Mobility/stretching sits in its own collapsible section at the top of the
+    // day (click to open); the rest of the exercises follow below.
+    const rowRenderer = (ex) => renderExerciseRow(day, ex, rerenderFn);
+    const mobEx = day.exercises.filter((e) => e.kind === "mobility");
+    const mainEx = day.exercises.filter((e) => e.kind !== "mobility");
+    if (mobEx.length) {
+      const details = document.createElement("details");
+      details.className = "coach-mobility-section";
+      details.open = _coachMobOpen.has(day.id);
+      details.addEventListener("toggle", () => {
+        if (details.open) _coachMobOpen.add(day.id); else _coachMobOpen.delete(day.id);
+      });
+      const summary = document.createElement("summary");
+      summary.className = "coach-mobility-summary";
+      summary.textContent = `🧘 Mobility & Stretching (${mobEx.length})`;
+      details.appendChild(summary);
+      const mobList = document.createElement("div");
+      mobList.className = "coach-mobility-list";
+      appendExerciseGroups(mobList, { exercises: mobEx }, rowRenderer, false);
+      details.appendChild(mobList);
+      list.appendChild(details);
+    }
+    appendExerciseGroups(list, { exercises: mainEx }, rowRenderer, false);
 
     // Always show a drop zone — big when empty, slim hint when exercises exist
     const dropHint = document.createElement("div");
