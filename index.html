@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=grantmonth" />
+  <link rel="stylesheet" href="styles.css?v=cleanui" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -269,7 +269,6 @@
         <div class="view-head">
           <div>
             <h2>Athletes</h2>
-            <p class="muted view-sub">Manage your athletes and programs.</p>
           </div>
           <button class="btn btn-primary" id="btn-add-client">+ Add athlete</button>
         </div>
@@ -286,7 +285,6 @@
         <div class="view-head">
           <div>
             <h2>Training Overview</h2>
-            <p class="muted view-sub">All athlete workouts at a glance. Synced from athlete progress.</p>
           </div>
         </div>
         <div id="overview-requests" class="overview-requests"></div>
@@ -338,7 +336,6 @@
         <div class="view-head">
           <div>
             <h2>Messages</h2>
-            <p class="muted view-sub">Send an announcement to one athlete, several, or everyone.</p>
           </div>
         </div>
 
@@ -370,7 +367,6 @@
         <div class="view-head">
           <div>
             <h2>Programs</h2>
-            <p class="muted view-sub">Build reusable multi-week programs and assign them to athletes.</p>
           </div>
           <div class="library-head-actions">
             <button class="btn btn-ghost" id="btn-programs-new-day">+ New day</button>
@@ -416,7 +412,6 @@
         <div class="view-head">
           <div>
             <h2>Day Library</h2>
-            <p class="muted view-sub">Reusable single days — build them here, then import into any week with the 📥 Library button.</p>
           </div>
           <div class="library-head-actions">
             <button class="btn btn-ghost" id="btn-daylib-recommended">✨ Recommended</button>
@@ -438,7 +433,6 @@
         <div class="view-head">
           <div>
             <h2 id="day-editor-title">New day</h2>
-            <p class="muted view-sub">Build a reusable day. Drag exercises from the library, then save it to reuse in any program.</p>
           </div>
           <button class="btn btn-primary" id="btn-day-editor-save">Save to library</button>
         </div>
@@ -556,7 +550,6 @@
         <div class="tab-panel" data-tab-panel="diet">
           <div class="program-head">
             <h3>Nutrition Plan</h3>
-            <p class="muted">One standing set of daily targets — it applies until you change it, and every change is kept in history.</p>
           </div>
           <div id="diet-container" class="weeks-container"></div>
         </div>
@@ -566,7 +559,6 @@
           <div class="program-head">
             <h3>Personal Records</h3>
           </div>
-          <p class="muted" style="margin-bottom:1em">Fill in your athlete's current PRs. Click Edit to update, or + Add lift to add a new one.</p>
           <div id="coach-pr-container"></div>
           <div id="coach-pr-empty" class="empty-state hidden">
             <div class="empty-emoji">🏆</div>
@@ -612,7 +604,6 @@
         <div class="tab-panel" data-tab-panel="logs">
           <div class="program-head">
             <h3>Cardio</h3>
-            <p class="muted">Cardio your athlete has logged. Synced from their device.</p>
           </div>
           <div id="logs-container"></div>
           <div id="logs-empty" class="empty-state">
@@ -626,7 +617,6 @@
         <div class="tab-panel" data-tab-panel="archive">
           <div class="program-head">
             <h3>Program Archive</h3>
-            <p class="muted">Read-only snapshots of past programs.</p>
           </div>
           <div id="archive-container"></div>
           <div id="archive-empty" class="empty-state hidden">
@@ -642,7 +632,6 @@
         <div class="view-head">
           <div>
             <h2>Profile</h2>
-            <p class="muted view-sub">Your account and appearance.</p>
           </div>
         </div>
         <div class="coach-profile-card">
@@ -659,7 +648,6 @@
           </div>
         </div>
         <h3 class="coach-profile-section">Appearance</h3>
-        <p class="muted view-sub" style="margin-top:-0.4em; margin-bottom:0.9rem">Pick a color scheme for your coach view.</p>
         <div class="theme-picker" id="coach-theme-picker"></div>
       </div>
 
@@ -955,7 +943,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
   <script src="cloud.js?v=saveflush"></script>
-  <script src="app.js?v=grantmonth"></script>
+  <script src="app.js?v=cleanui"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

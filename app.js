@@ -6627,8 +6627,8 @@
     } else {
       host.innerHTML = clients.map((c) => {
         const on = _msgSelected.has(c.id);
-        return `<button class="msg-recip${on ? " is-on" : ""}" type="button" data-cid="${escapeHtml(c.id)}">
-          <span class="msg-recip-check">${on ? "✓" : ""}</span>
+        return `<button class="msg-recip${on ? " is-on" : ""}" type="button" data-cid="${escapeHtml(c.id)}" aria-pressed="${on}">
+          ${on ? `<span class="msg-recip-check">✓</span>` : ""}
           <span class="msg-recip-name">${escapeHtml(c.name || "Unnamed")}</span>
         </button>`;
       }).join("");
