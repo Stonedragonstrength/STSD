@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=qrshare" />
+  <link rel="stylesheet" href="styles.css?v=progactions" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -391,11 +391,13 @@
       <div id="view-program-editor" class="view hidden">
         <div class="program-editor-head">
           <button class="btn-link back-link" id="btn-back-to-programs">← Programs</button>
-          <button class="btn btn-ghost" id="btn-toggle-program-status">Mark complete ✓</button>
-          <button class="btn btn-ghost" id="btn-assign-program">Assign to athlete →</button>
           <div class="program-editor-fields">
             <input type="text" id="program-editor-name" class="program-editor-name-input" placeholder="Program name…" />
             <input type="text" id="program-editor-desc" class="program-editor-desc-input" placeholder="Short description (optional)" />
+          </div>
+          <div class="program-editor-actions">
+            <button class="btn btn-ghost" id="btn-toggle-program-status">Mark complete ✓</button>
+            <button class="btn btn-ghost" id="btn-assign-program">Assign to athlete →</button>
           </div>
         </div>
         <div id="program-editor-weeks" class="weeks-container"></div>
