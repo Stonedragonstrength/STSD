@@ -3272,7 +3272,7 @@ button.ov-stat:hover { background: var(--surface-2); }
   .pr-field-group { gap: 0.25rem; }
   .pr-field-label { font-size: 0.58rem; letter-spacing: 0.01em; }
   .pr-edit-fields input { font-size: 0.82rem; padding: 0.35em 0.3em; }
-  .pr-date-input { font-size: 0.64rem; padding: 0.35em 0.1em; text-align: center; letter-spacing: -0.01em; }
+  .pr-date-input { font-size: 0.55rem; padding: 0.4em 0.05em; text-align: center; letter-spacing: -0.02em; }
   .pr-lock-btn { padding: 0.2em 0.4em; font-size: 0.85rem; }
 }
 .pr-field-group { display: flex; flex-direction: column; gap: 0.3rem; }
@@ -3281,7 +3281,7 @@ button.ov-stat:hover { background: var(--surface-2); }
   text-transform: uppercase; letter-spacing: 0.05em;
 }
 /* Per-PR date + lock */
-.pr-date-input { font-size: 0.68rem; padding: 0.32em 0.25em; text-align: center; letter-spacing: -0.01em; }
+.pr-date-input { font-size: 0.58rem; padding: 0.34em 0.1em; text-align: center; letter-spacing: -0.02em; min-width: 0; }
 .pr-field-group input[readonly] {
   background: var(--surface-2);
   color: var(--text-soft);
