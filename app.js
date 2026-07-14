@@ -6442,11 +6442,10 @@
     }
 
     // --- Per-athlete balances (2-column rows, matching the Athletes list) ---
-    const card = document.createElement("div");
-    card.className = "card";
-    card.innerHTML = `<h4 style="margin-top:0">Athlete balances</h4>`;
+    // No wrapping card — rows sit directly on the page, like the Athletes list.
+    athContainer.insertAdjacentHTML("beforeend", `<h4 style="margin-top:0">Athlete balances</h4>`);
     if (!clients.length) {
-      card.insertAdjacentHTML("beforeend", `<p class="muted">No athletes yet.</p>`);
+      athContainer.insertAdjacentHTML("beforeend", `<p class="muted">No athletes yet.</p>`);
     } else {
       const grid = document.createElement("div");
       grid.className = "coach-row-grid";
@@ -6492,9 +6491,8 @@
         row.addEventListener("click", () => { openClient(c.id); setTab("sessions"); });
         grid.appendChild(row);
       });
-      card.appendChild(grid);
+      athContainer.appendChild(grid);
     }
-    athContainer.appendChild(card);
   }
 
   // -------- Share / import --------
