@@ -3639,6 +3639,27 @@
     });
   }
 
+  // Collapsible coach-side mobility group (warm-up at top / finisher at bottom).
+  // Open/closed state persists across rerenders, keyed by day id + slot.
+  function coachMobilitySection(dayId, slot, label, items, rowRenderer) {
+    const stateKey = dayId + ":" + slot;
+    const details = document.createElement("details");
+    details.className = "coach-mobility-section";
+    details.open = _coachMobOpen.has(stateKey);
+    details.addEventListener("toggle", () => {
+      if (details.open) _coachMobOpen.add(stateKey); else _coachMobOpen.delete(stateKey);
+    });
+    const summary = document.createElement("summary");
+    summary.className = "coach-mobility-summary";
+    summary.textContent = `${label} (${items.length})`;
+    details.appendChild(summary);
+    const inner = document.createElement("div");
+    inner.className = "coach-mobility-list";
+    appendExerciseGroups(inner, { exercises: items }, rowRenderer, false);
+    details.appendChild(inner);
+    return details;
+  }
+
   function renderDayContent(week, day, rerenderFn, opts) {
     opts = opts || {};
     const wrapper = document.createElement("div");
@@ -3720,29 +3741,15 @@
     const list = document.createElement("div");
     list.className = "ex-compact-list";
 
-    // Mobility/stretching sits in its own collapsible section at the top of the
-    // day (click to open); the rest of the exercises follow below.
+    // Mobility/stretching sits in its own collapsible section (click to open):
+    // warm-up holds pin to the top of the day, finisher holds to the bottom.
     const rowRenderer = (ex) => renderExerciseRow(day, ex, rerenderFn);
-    const mobEx = day.exercises.filter((e) => e.kind === "mobility");
+    const mobTop = day.exercises.filter((e) => e.kind === "mobility" && e.mobPlacement !== "bottom");
+    const mobBottom = day.exercises.filter((e) => e.kind === "mobility" && e.mobPlacement === "bottom");
     const mainEx = day.exercises.filter((e) => e.kind !== "mobility");
-    if (mobEx.length) {
-      const details = document.createElement("details");
-      details.className = "coach-mobility-section";
-      details.open = _coachMobOpen.has(day.id);
-      details.addEventListener("toggle", () => {
-        if (details.open) _coachMobOpen.add(day.id); else _coachMobOpen.delete(day.id);
-      });
-      const summary = document.createElement("summary");
-      summary.className = "coach-mobility-summary";
-      summary.textContent = `🧘 Mobility & Stretching (${mobEx.length})`;
-      details.appendChild(summary);
-      const mobList = document.createElement("div");
-      mobList.className = "coach-mobility-list";
-      appendExerciseGroups(mobList, { exercises: mobEx }, rowRenderer, false);
-      details.appendChild(mobList);
-      list.appendChild(details);
-    }
+    if (mobTop.length) list.appendChild(coachMobilitySection(day.id, "top", "🧘 Mobility & Stretching", mobTop, rowRenderer));
     appendExerciseGroups(list, { exercises: mainEx }, rowRenderer, false);
+    if (mobBottom.length) list.appendChild(coachMobilitySection(day.id, "bottom", "🧘 Finisher Stretches", mobBottom, rowRenderer));
 
     // Always show a drop zone — big when empty, slim hint when exercises exist
     const dropHint = document.createElement("div");
@@ -3886,6 +3893,19 @@
     holdBtn.addEventListener("click", (e) => { e.stopPropagation(); openGridPicker("Hold (sec)", HOLD_SEC_VALUES, ex.currentReps || "30", (val) => {
       ex.currentReps = val; saveTrainer(); holdBtn.textContent = val + "s"; holdBtn.classList.remove("empty");
     }, holdBtn, 4); });
+
+    // Mobility placement toggle: warm-up (top) vs finisher (bottom). Only used
+    // when isMob. mobPlacement defaults to "top" when unset.
+    const placeBtn = document.createElement("button");
+    placeBtn.className = "picker-btn picker-btn-sm ex-place-btn";
+    const isBottom = ex.mobPlacement === "bottom";
+    placeBtn.textContent = isBottom ? "⬆ Warm-up" : "⬇ Finisher";
+    placeBtn.title = isBottom ? "Move to warm-up (top)" : "Move to finisher (bottom)";
+    placeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      ex.mobPlacement = isBottom ? "top" : "bottom";
+      saveTrainer(); rerenderFn();
+    });
 
     const at = document.createElement("span");
     at.className = "ex-row-sep"; at.textContent = "@";
@@ -4056,6 +4076,7 @@
     if (!isMob) row.appendChild(warmupBtn); // warm-up/finisher don't apply to holds
     row.appendChild(metricsGroup);
     if (!isMob) row.appendChild(finisherBtn);
+    if (isMob) row.appendChild(placeBtn); // warm-up ↔ finisher placement
     row.appendChild(expandBtn); row.appendChild(saveBtn); row.appendChild(editBtn); row.appendChild(ssBtn); row.appendChild(delBtn);
 
     // Detail panel (notes + video), hidden by default
@@ -7801,14 +7822,20 @@
       list.innerHTML = `<div class="empty-state"><div class="empty-emoji">💤</div><p>No exercises for this day.</p></div>`;
     } else {
       const renderer = (ex) => renderClientExercise(week, day, ex, null);
-      const mob = day.exercises.filter((e) => e.kind === "mobility");
+      const mobTop = day.exercises.filter((e) => e.kind === "mobility" && e.mobPlacement !== "bottom");
+      const mobBottom = day.exercises.filter((e) => e.kind === "mobility" && e.mobPlacement === "bottom");
       const main = day.exercises.filter((e) => e.kind !== "mobility");
-      if (mob.length) {
-        const sec = mobilitySection();
-        appendExerciseGroups(sec, { exercises: mob }, renderer, true);
+      if (mobTop.length) {
+        const sec = mobilitySection("🧘 Mobility & Stretching");
+        appendExerciseGroups(sec, { exercises: mobTop }, renderer, true);
         list.appendChild(sec);
       }
       appendExerciseGroups(list, { exercises: main }, renderer, true);
+      if (mobBottom.length) {
+        const sec = mobilitySection("🧘 Finisher Stretches");
+        appendExerciseGroups(sec, { exercises: mobBottom }, renderer, true);
+        list.appendChild(sec);
+      }
     }
     list.appendChild(renderDayNoteBlock(day.id));
 
@@ -7901,25 +7928,31 @@
     });
     const exList = document.createElement("div");
     exList.className = "cex-list";
-    const mob = day.exercises.filter((e) => e.kind === "mobility");
+    const mobTop = day.exercises.filter((e) => e.kind === "mobility" && e.mobPlacement !== "bottom");
+    const mobBottom = day.exercises.filter((e) => e.kind === "mobility" && e.mobPlacement === "bottom");
     const main = day.exercises.filter((e) => e.kind !== "mobility");
-    if (mob.length) {
-      const sec = mobilitySection();
-      mob.forEach((ex) => sec.appendChild(renderClientExercise(week, day, ex, jumpTo)));
+    if (mobTop.length) {
+      const sec = mobilitySection("🧘 Mobility & Stretching");
+      mobTop.forEach((ex) => sec.appendChild(renderClientExercise(week, day, ex, jumpTo)));
       exList.appendChild(sec);
     }
     main.forEach((ex) => exList.appendChild(renderClientExercise(week, day, ex, jumpTo)));
+    if (mobBottom.length) {
+      const sec = mobilitySection("🧘 Finisher Stretches");
+      mobBottom.forEach((ex) => sec.appendChild(renderClientExercise(week, day, ex, jumpTo)));
+      exList.appendChild(sec);
+    }
     card.appendChild(exList);
     return card;
   }
-  // Wrapper for the athlete-side mobility/stretching block that sits above the
-  // main exercises with its own header.
-  function mobilitySection() {
+  // Wrapper for an athlete-side mobility/stretching block with its own header.
+  // Warm-up holds render above the exercises, finisher holds below.
+  function mobilitySection(label) {
     const sec = document.createElement("div");
     sec.className = "mobility-section";
     const h = document.createElement("div");
     h.className = "mobility-section-head";
-    h.textContent = "🧘 Mobility & Stretching";
+    h.textContent = label || "🧘 Mobility & Stretching";
     sec.appendChild(h);
     return sec;
   }

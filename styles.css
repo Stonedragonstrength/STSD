@@ -5283,6 +5283,8 @@ input:focus, textarea:focus, select:focus {
   flex-direction: column;
   gap: 0.4rem;
 }
+/* Warm-up ↔ finisher placement toggle on a mobility row. */
+.ex-place-btn { color: var(--primary); white-space: nowrap; }
 
 .cex-rx {
   display: flex;
