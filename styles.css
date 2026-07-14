@@ -5189,6 +5189,49 @@ input:focus, textarea:focus, select:focus {
 }
 .cex-wrapper.logged > .cex-row .cex-name { color: var(--text-soft); }
 
+/* ---- Mobility / stretching card: name · prescription · round checks in a row ---- */
+.cex-mob-line {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+}
+.cex-mob-rx {
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.cex-mob-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-left: auto; /* right-align the checks after name + prescription */
+}
+.cex-mob-check {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.cex-mob-check:hover { border-color: var(--accent); }
+.cex-mob-check.on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+.cex-mob-panel { padding: 0 0.85rem 0.6rem 2.15rem; }
+
 .cex-rx {
   display: flex;
   align-items: baseline;

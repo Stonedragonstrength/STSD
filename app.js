@@ -253,12 +253,18 @@
     return { id: uid(), name: name || `Day ${n}`, exercises: [] };
   }
   function makeExercise(seed) {
+    // Mobility/stretching items are prescribed as rounds × hold-seconds. We reuse
+    // `sets` for rounds and `currentReps` for the hold duration (in seconds) so no
+    // new persisted fields are needed. `kind` is derived from the library name.
+    const kind = seed?.kind || (seed?.name && isMobilityName(seed.name) ? "mobility" : "strength");
+    const isMob = kind === "mobility";
     return {
       id: uid(),
       name: seed?.name || "",
+      kind,
       sets: seed?.sets || "3",
       currentWeight: "",
-      currentReps: seed?.reps || "",
+      currentReps: seed?.reps || (isMob ? "30" : ""),
       goalWeight: "",
       goalReps: "",
       notes: seed?.notes || "",
@@ -2703,6 +2709,7 @@
     { cat: "Hamstrings", ex: ["Deadlift","Romanian Deadlift","Stiff-Leg Deadlift","Lying Leg Curl","Seated Leg Curl","Leg Curl","Nordic Curl","Good Morning","Glute-Ham Raise","Single-Leg RDL","Cable Pull-Through","Kettlebell Swing"] },
     { cat: "Glutes",     ex: ["Hip Thrust","Glute Bridge","Kickback","Sumo Deadlift","Abductor","Lateral Walk","Donkey Kick","Pull-Through","Frog Pump","B-Stance Hip Thrust","Curtsy Lunge","Cable Kickback"] },
     { cat: "Adductors",  ex: ["Hip Adduction","Copenhagen Plank","Lateral Lunge","Cossack Squat","Sumo Squat","Side-Lying Adduction","Adductor Machine"] },
+    { cat: "Abductors",  ex: ["Hip Abduction"] },
     { cat: "Shoulders",  ex: ["Overhead Press","Overhead Raise","Lateral Raise","Front Raise","Rear Delt Fly","Arnold Press","Upright Row","Face Pull","Shrug","Seated Dumbbell Press","Cable Lateral Raise","Reverse Pec Deck","Push Press","Z Press","Landmine Press"] },
     { cat: "Biceps",     ex: ["Curl","Hammer Curl","Preacher Curl","Concentration Curl","EZ-Bar Curl","Spider Curl","Incline Curl","Cable Curl","Bayesian Curl","Reverse Curl","Zottman Curl","Drag Curl"] },
     { cat: "Triceps",    ex: ["Tricep Pushdown","Skull Crusher","Close-Grip Bench Press","Overhead Tricep Extension","Tricep Dips","Diamond Push-Up","Kickback","Rope Pushdown","JM Press","Tate Press","Cable Overhead Extension"] },
@@ -2716,6 +2723,12 @@
   // Categories whose exercises are prescribed as holds-for-time (sets × seconds),
   // not weight × reps. Exercises added from these get kind:"mobility".
   const MOBILITY_CATS = ["Mobility & Stretching"];
+  const MOBILITY_NAMES = new Set(
+    EXERCISE_LIBRARY.filter((c) => MOBILITY_CATS.includes(c.cat)).flatMap((c) => c.ex)
+  );
+  function isMobilityName(name) { return MOBILITY_NAMES.has(name); }
+  // Hold-duration options (seconds) for the coach's mobility prescription picker.
+  const HOLD_SEC_VALUES = ["10", "15", "20", "30", "45", "60", "90", "120"];
 
   // Flat, de-duped, alphabetised list of every library exercise — feeds the
   // native <datalist> that powers the type-to-add field on each day.
@@ -3764,6 +3777,7 @@
     row.className = "ex-row";
 
     if (!ex.modifiers) ex.modifiers = []; // backfill old data
+    const isMob = ex.kind === "mobility"; // rounds × hold-seconds, no weights
 
     // Drag handle (desktop — hidden on mobile where native HTML5 drag doesn't work)
     const handle = document.createElement("span");
@@ -3824,10 +3838,20 @@
     const setsBtn = document.createElement("button");
     setsBtn.className = "picker-btn picker-btn-sm" + (ex.sets ? "" : " empty");
     setsBtn.textContent = ex.sets || "—";
-    setsBtn.title = "Sets";
-    setsBtn.addEventListener("click", (e) => { e.stopPropagation(); openGridPicker("Sets", SETS_VALUES, ex.sets || "3", (val) => {
+    setsBtn.title = isMob ? "Rounds" : "Sets";
+    setsBtn.addEventListener("click", (e) => { e.stopPropagation(); openGridPicker(isMob ? "Rounds" : "Sets", SETS_VALUES, ex.sets || "3", (val) => {
       ex.sets = val; saveTrainer(); setsBtn.textContent = val; setsBtn.classList.remove("empty");
     }, setsBtn); });
+
+    // Mobility hold-duration button (seconds). Edits ex.currentReps (reused as the
+    // hold length) and displays like "30s". Only used when isMob.
+    const holdBtn = document.createElement("button");
+    holdBtn.className = "picker-btn picker-btn-sm" + (ex.currentReps ? "" : " empty");
+    holdBtn.textContent = ex.currentReps ? ex.currentReps + "s" : "Hold";
+    holdBtn.title = "Hold (seconds)";
+    holdBtn.addEventListener("click", (e) => { e.stopPropagation(); openGridPicker("Hold (sec)", HOLD_SEC_VALUES, ex.currentReps || "30", (val) => {
+      ex.currentReps = val; saveTrainer(); holdBtn.textContent = val + "s"; holdBtn.classList.remove("empty");
+    }, holdBtn, 4); });
 
     const at = document.createElement("span");
     at.className = "ex-row-sep"; at.textContent = "@";
@@ -3976,9 +4000,14 @@
     // independent row items that can wrap on their own on mobile.
     const metricsGroup = document.createElement("div");
     metricsGroup.className = "ex-metrics-group";
-    metricsGroup.appendChild(setsBtn); metricsGroup.appendChild(at);
-    metricsGroup.appendChild(cwBtn); metricsGroup.appendChild(dash); metricsGroup.appendChild(gwBtn);
-    metricsGroup.appendChild(x1); metricsGroup.appendChild(crBtn);
+    if (isMob) {
+      // Rounds × Hold(s) — no weights.
+      metricsGroup.appendChild(setsBtn); metricsGroup.appendChild(x1); metricsGroup.appendChild(holdBtn);
+    } else {
+      metricsGroup.appendChild(setsBtn); metricsGroup.appendChild(at);
+      metricsGroup.appendChild(cwBtn); metricsGroup.appendChild(dash); metricsGroup.appendChild(gwBtn);
+      metricsGroup.appendChild(x1); metricsGroup.appendChild(crBtn);
+    }
 
     row.appendChild(handle);
     row.appendChild(moveUpBtn);
@@ -3988,9 +4017,9 @@
     row.appendChild(nameInput);
     row.appendChild(chipsAfter);
     row.appendChild(modBtn);
-    row.appendChild(warmupBtn);
+    if (!isMob) row.appendChild(warmupBtn); // warm-up/finisher don't apply to holds
     row.appendChild(metricsGroup);
-    row.appendChild(finisherBtn);
+    if (!isMob) row.appendChild(finisherBtn);
     row.appendChild(expandBtn); row.appendChild(saveBtn); row.appendChild(editBtn); row.appendChild(ssBtn); row.appendChild(delBtn);
 
     // Detail panel (notes + video), hidden by default
@@ -7820,7 +7849,128 @@
     });
     return [...before, ex.name || "(unnamed)", ...after].join(" ");
   }
+  // Mobility / stretching card: hold-for-time, no weight logging. The athlete
+  // taps a checkmark per round; the row is "done" once every round is checked.
+  // Name · prescription · round checks all sit on one horizontal line.
+  function renderClientMobility(week, day, ex, jumpTo) {
+    const numRounds = parseInt(ex.sets) || 0;
+    const holdSec = ex.currentReps || "";
+    const logDate = state.workoutView?.dayId === day.id && state.workoutView?.date
+      ? state.workoutView.date
+      : (jumpTo?.dayId === day.id ? jumpTo.date : todayISO());
+
+    const exLogs = state.clientData.progress?.exerciseLogs?.[ex.id] || [];
+    const todayLog = exLogs.find((l) => l.date === logDate);
+    const rounds = Array.from({ length: numRounds }, (_, i) => !!(todayLog?.rounds?.[i]));
+    const allDone = () => numRounds > 0 && rounds.every(Boolean);
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "cex-wrapper cex-mobility" + (allDone() ? " logged" : "");
+    wrapper.dataset.week = week.id;
+    wrapper.dataset.day = day.id;
+
+    const row = document.createElement("div");
+    row.className = "cex-row";
+
+    const doneCircle = document.createElement("div");
+    doneCircle.className = "cex-circle" + (allDone() ? " done" : "");
+    doneCircle.textContent = allDone() ? "✓" : "";
+
+    const content = document.createElement("div");
+    content.className = "cex-content";
+
+    const line = document.createElement("div");
+    line.className = "cex-mob-line";
+
+    const nameEl = document.createElement("span");
+    nameEl.className = "cex-name";
+    nameEl.textContent = exerciseDisplayLabel(ex);
+    line.appendChild(nameEl);
+
+    const rx = document.createElement("span");
+    rx.className = "cex-mob-rx";
+    rx.textContent = numRounds ? `${numRounds} × ${holdSec ? holdSec + "s" : "hold"}` : "—";
+    line.appendChild(rx);
+
+    const persist = () => {
+      const store = state.clientData.progress.exerciseLogs || (state.clientData.progress.exerciseLogs = {});
+      if (!rounds.some(Boolean)) {
+        if (store[ex.id]) store[ex.id] = store[ex.id].filter((l) => l.date !== logDate);
+      } else {
+        if (!store[ex.id]) store[ex.id] = [];
+        const arr = store[ex.id];
+        const idx = arr.findIndex((l) => l.date === logDate);
+        const entry = { id: idx >= 0 ? arr[idx].id : uid(), date: logDate, rounds: [...rounds], locked: allDone() };
+        if (idx >= 0) arr[idx] = entry; else arr.push(entry);
+      }
+      saveClient();
+      const done = allDone();
+      doneCircle.classList.toggle("done", done);
+      doneCircle.textContent = done ? "✓" : "";
+      wrapper.classList.toggle("logged", done);
+      autoSyncDayCompletion(day);
+      renderAthleteCalendar();
+      if (state.workoutView?.mode === "detail" && state.workoutView.dayId === day.id) {
+        renderWorkoutDetailHeader(week, day);
+      }
+    };
+
+    if (numRounds) {
+      const checks = document.createElement("div");
+      checks.className = "cex-mob-checks";
+      for (let i = 0; i < numRounds; i++) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "cex-mob-check" + (rounds[i] ? " on" : "");
+        b.textContent = rounds[i] ? "✓" : "";
+        b.title = `Round ${i + 1}`;
+        b.addEventListener("click", (e) => {
+          e.stopPropagation();
+          rounds[i] = !rounds[i];
+          b.classList.toggle("on", rounds[i]);
+          b.textContent = rounds[i] ? "✓" : "";
+          persist();
+        });
+        checks.appendChild(b);
+      }
+      line.appendChild(checks);
+    }
+
+    content.appendChild(line);
+    row.appendChild(doneCircle);
+    row.appendChild(content);
+    wrapper.appendChild(row);
+
+    // Coach note + video demo, if any.
+    if (ex.notes || ex.videoUrl) {
+      const panel = document.createElement("div");
+      panel.className = "cex-panel cex-mob-panel";
+      if (ex.notes) {
+        const notesEl = document.createElement("div");
+        notesEl.className = "cex-coach-note";
+        notesEl.textContent = ex.notes;
+        panel.appendChild(notesEl);
+      }
+      const ytId = getYouTubeId(ex.videoUrl);
+      if (ytId || ex.videoUrl) {
+        const vBtn = document.createElement("button");
+        vBtn.className = "btn btn-sm btn-ghost";
+        vBtn.textContent = "▶ Watch demo";
+        vBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (ytId) openVideoModal(ytId, ex.name || "Stretch");
+          else window.open(ex.videoUrl, "_blank", "noopener");
+        });
+        panel.appendChild(vBtn);
+      }
+      wrapper.appendChild(panel);
+    }
+
+    return wrapper;
+  }
+
   function renderClientExercise(week, day, ex, jumpTo) {
+    if (ex.kind === "mobility") return renderClientMobility(week, day, ex, jumpTo);
     if (!ex.modifiers) ex.modifiers = [];
     const logs = state.clientData.progress?.exerciseLogs?.[ex.id] || [];
     const isDone = hasAnyLog(ex);
