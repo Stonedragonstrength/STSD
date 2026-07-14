@@ -1392,7 +1392,6 @@
     const map = {
       athletes:        "#view-dashboard",
       overview:        "#view-overview",
-      packages:        "#view-packages",
       messages:        "#view-messages",
       settings:        "#view-settings",
       programs:        "#view-programs",
@@ -1479,16 +1478,21 @@
     state.currentClientId = null;
     switchCoachView("athletes");
     updateHeaderBreadcrumb(null);
-    updatePackagesNavBadge();
-    // One background pull per session so the badge is fresh at login without
-    // waiting for the coach to open each athlete.
+    // One background pull per session so the session-balance chips on each
+    // athlete card are fresh at login without opening every athlete.
     if (!_packagesBadgeBootstrapped && window.Cloud?.enabled) {
       _packagesBadgeBootstrapped = true;
       refreshAllAthletePackages();
     }
+    renderClientGrid();
+  }
 
+  // Re-render just the athlete cards (no view switch). Safe to call after a
+  // package approve/decline or a background refresh to update the 🎟 chips.
+  function renderClientGrid() {
     const grid = $("#client-grid");
     const empty = $("#client-empty");
+    if (!grid) return;
     grid.innerHTML = "";
 
     if (state.trainerData.clients.length === 0) { show(empty); return; }
@@ -1551,6 +1555,30 @@
       card.appendChild(avatar);
       card.appendChild(main);
       card.appendChild(prog);
+
+      // Session-balance chip + pending-request badge (moved here from the old
+      // Packages page). Only shown once an athlete has any package activity.
+      const sum = sessionBankSummary(c);
+      const pendingCount = openRequestsFor(c).length;
+      if (sum.granted > 0 || sum.used > 0 || pendingCount > 0) {
+        const sess = document.createElement("div");
+        sess.className = "client-row-sessions";
+        const chip = document.createElement("span");
+        chip.className = "booked-balance-chip" + (sum.remaining <= 1 ? " low" : "");
+        chip.textContent = `🎟 ${sum.remaining} left`;
+        sess.appendChild(chip);
+        if (pendingCount) {
+          const pend = document.createElement("span");
+          pend.className = "pkg-track-pending";
+          pend.textContent = `${pendingCount} req`;
+          sess.appendChild(pend);
+        }
+        // Tapping the chips jumps straight to that athlete's Sessions tab,
+        // where packages are approved/managed (the rest of the card → profile).
+        sess.addEventListener("click", (e) => { e.stopPropagation(); openClient(c.id); setTab("sessions"); });
+        card.appendChild(sess);
+      }
+
       card.addEventListener("click", () => { openClient(c.id); setTab("profile"); });
       grid.appendChild(card);
     }
@@ -6236,8 +6264,8 @@
       );
     }
     if (state.currentClientId === c.id) renderCoachSessions();
-    if (!$("#view-packages").classList.contains("hidden")) renderPackagesView();
-    updatePackagesNavBadge();
+    // Keep the athlete-card 🎟 chips fresh if the Athletes list is showing.
+    if (!$("#view-dashboard").classList.contains("hidden")) renderClientGrid();
   }
 
   // -------- Packages tracker (all athletes) --------
@@ -6249,26 +6277,15 @@
       .filter((req) => !c.sessionBank.packages.some((p) => p.requestId === req.id));
   }
 
-  function updatePackagesNavBadge() {
-    const badge = $("#packages-nav-badge");
-    if (!badge) return;
-    const count = (state.trainerData.clients || [])
-      .reduce((n, c) => n + openRequestsFor(c).length, 0);
-    badge.textContent = count > 9 ? "9+" : String(count);
-    badge.classList.toggle("hidden", count === 0);
-  }
-
   // Pull fresh progress (which carries package requests) for every athlete,
   // then re-render. Also runs once in the background at coach entry so the
-  // nav badge is current without visiting the page.
+  // athlete-card session chips are current without visiting each athlete.
   let _packagesRefreshing = false;
   async function refreshAllAthletePackages() {
     if (!window.Cloud?.enabled || _packagesRefreshing) return;
     const clients = state.trainerData.clients || [];
     if (!clients.length) return;
     _packagesRefreshing = true;
-    const btn = $("#btn-packages-refresh");
-    if (btn) { btn.disabled = true; btn.textContent = "Syncing…"; }
     try {
       await Promise.all(clients.map(async (c) => {
         const progress = await window.Cloud.getProgress(c.id);
@@ -6279,10 +6296,9 @@
       console.warn("[Packages] refresh failed", e);
     } finally {
       _packagesRefreshing = false;
-      if (btn) { btn.disabled = false; btn.textContent = "🔄 Refresh"; }
     }
-    if (!$("#view-packages").classList.contains("hidden")) renderPackagesView();
-    updatePackagesNavBadge();
+    // Update the athlete-card chips if the Athletes list is on screen.
+    if (!$("#view-dashboard").classList.contains("hidden")) renderClientGrid();
   }
 
   // ---- Coach → athlete announcements (Messages view) ---------------------
@@ -6467,99 +6483,6 @@
     host.querySelectorAll(".bulletin-remove").forEach((btn) => {
       btn.addEventListener("click", () => removeBulletin(btn.dataset.bid));
     });
-  }
-
-  function renderPackagesView() {
-    const reqContainer = $("#packages-requests-container");
-    const athContainer = $("#packages-athletes-container");
-    if (!reqContainer || !athContainer) return;
-    reqContainer.innerHTML = "";
-    athContainer.innerHTML = "";
-    const clients = [...(state.trainerData.clients || [])]
-      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-
-    // --- Open purchase requests across all athletes ---
-    const open = [];
-    clients.forEach((c) => openRequestsFor(c).forEach((req) => open.push({ c, req })));
-    if (open.length) {
-      const card = document.createElement("div");
-      card.className = "card";
-      card.innerHTML = `<h4 style="margin-top:0">Purchase requests</h4>
-        <p class="muted" style="font-size:0.85rem">Confirm payment outside the app (Venmo, cash, Stripe link), then approve.</p>`;
-      open.sort((a, b) => (b.req.requestedAt || 0) - (a.req.requestedAt || 0));
-      open.forEach(({ c, req }) => {
-        const row = document.createElement("div");
-        row.className = "pending-request-row";
-        row.innerHTML = `
-          <div>
-            <strong>${escapeHtml(c.name)}</strong> · ${escapeHtml(String(req.size))} sessions${req.price ? ` · $${escapeHtml(Number(req.price).toLocaleString())}` : ""}
-            <span class="muted"> · ${escapeHtml(req.requestedAt ? new Date(req.requestedAt).toLocaleDateString() : "")}</span>
-          </div>
-          <div class="pending-request-actions">
-            <button class="btn btn-ghost btn-sm" data-decline="${escapeHtml(req.id)}">Decline</button>
-            <button class="btn btn-primary btn-sm" data-approve="${escapeHtml(req.id)}">Approve &amp; mark paid</button>
-          </div>`;
-        row.querySelector("[data-approve]").addEventListener("click", () =>
-          approvePackageRequest(c, req.id, Number(req.size), Number(req.price) || 0));
-        row.querySelector("[data-decline]").addEventListener("click", () =>
-          declinePackageRequest(c, req.id));
-        card.appendChild(row);
-      });
-      reqContainer.appendChild(card);
-    }
-
-    // --- Per-athlete balances (2-column rows, matching the Athletes list) ---
-    // No wrapping card — rows sit directly on the page, like the Athletes list.
-    athContainer.insertAdjacentHTML("beforeend", `<h4 style="margin-top:0">Athlete balances</h4>`);
-    if (!clients.length) {
-      athContainer.insertAdjacentHTML("beforeend", `<p class="muted">No athletes yet.</p>`);
-    } else {
-      const grid = document.createElement("div");
-      grid.className = "coach-row-grid";
-      clients.forEach((c) => {
-        const sum = sessionBankSummary(c);
-        const lastRed = [...c.sessionBank.redemptions].sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0];
-        const pendingCount = openRequestsFor(c).length;
-        const row = document.createElement("div");
-        row.className = "coach-row";
-
-        const av = document.createElement("div");
-        av.className = "client-avatar";
-        av.style.background = avatarColor(c.name);
-        av.textContent = nameInitials(c.name);
-
-        const main = document.createElement("div");
-        main.className = "coach-row-main";
-        const nm = document.createElement("div");
-        nm.className = "coach-row-name";
-        nm.textContent = c.name;
-        const sub = document.createElement("div");
-        sub.className = "coach-row-sub";
-        sub.textContent = `${sum.granted} purchased · ${sum.used} used${lastRed ? ` · last ${lastRed.date}` : ""}`;
-        main.appendChild(nm);
-        main.appendChild(sub);
-
-        const actions = document.createElement("div");
-        actions.className = "coach-row-actions";
-        if (pendingCount) {
-          const pend = document.createElement("span");
-          pend.className = "pkg-track-pending";
-          pend.textContent = `${pendingCount} request${pendingCount > 1 ? "s" : ""}`;
-          actions.appendChild(pend);
-        }
-        const chip = document.createElement("span");
-        chip.className = "booked-balance-chip" + (sum.remaining <= 1 ? " low" : "");
-        chip.textContent = `🎟 ${sum.remaining} left`;
-        actions.appendChild(chip);
-
-        row.appendChild(av);
-        row.appendChild(main);
-        row.appendChild(actions);
-        row.addEventListener("click", () => { openClient(c.id); setTab("sessions"); });
-        grid.appendChild(row);
-      });
-      athContainer.appendChild(grid);
-    }
   }
 
   // -------- Share / import --------
@@ -8833,13 +8756,6 @@
           renderProgramsList();
         } else if (target === "overview") {
           showCoachOverview();
-        } else if (target === "packages") {
-          _programEditorId = null;
-          state.currentClientId = null;
-          switchCoachView("packages");
-          hideLibSidebar();
-          renderPackagesView();
-          refreshAllAthletePackages();
         } else if (target === "messages") {
           _programEditorId = null;
           state.currentClientId = null;
@@ -8932,7 +8848,6 @@
     $("#btn-post-open-slot")?.addEventListener("click", openPostSlotModal);
     $("#btn-redeem-session")?.addEventListener("click", openRedeemSessionModal);
     $("#btn-athlete-request-package")?.addEventListener("click", openAthleteRequestPackageModal);
-    $("#btn-packages-refresh")?.addEventListener("click", refreshAllAthletePackages);
     prefillRememberedEmails();
     $("#btn-export-sessions")?.addEventListener("click", () => {
       const c = currentClient(); if (c) exportSessionHistory(c);

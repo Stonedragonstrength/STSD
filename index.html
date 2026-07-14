@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=athnav" />
+  <link rel="stylesheet" href="styles.css?v=cardpkg" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -248,11 +248,6 @@
           <span class="coach-nav-icon">🐉</span>
           <span class="coach-nav-label">Athletes</span>
         </button>
-        <button class="coach-nav-item" data-coach-nav="packages" type="button">
-          <span class="coach-nav-icon">🎟️</span>
-          <span class="coach-nav-label">Packages</span>
-          <span class="coach-nav-badge hidden" id="packages-nav-badge"></span>
-        </button>
         <button class="coach-nav-item" data-coach-nav="messages" type="button">
           <span class="coach-nav-icon">📣</span>
           <span class="coach-nav-label">Messages</span>
@@ -327,19 +322,6 @@
           <p class="muted" style="font-size:0.85rem">Post an opening — athletes can claim it first-come from their side. You confirm and book it in Setmore.</p>
           <div id="open-slots-container"></div>
         </div>
-      </div>
-
-      <!-- Session packages tracker -->
-      <div id="view-packages" class="view hidden">
-        <div class="view-head">
-          <div>
-            <h2>Session Packages</h2>
-            <p class="muted view-sub">Purchase requests and session balances for every athlete.</p>
-          </div>
-          <button class="btn btn-ghost" id="btn-packages-refresh">🔄 Refresh</button>
-        </div>
-        <div id="packages-requests-container"></div>
-        <div id="packages-athletes-container"></div>
       </div>
 
       <!-- Athlete messaging -->
@@ -955,7 +937,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
   <script src="cloud.js?v=profile1"></script>
-  <script src="app.js?v=lunge"></script>
+  <script src="app.js?v=cardpkg"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

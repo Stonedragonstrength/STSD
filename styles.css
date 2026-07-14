@@ -544,6 +544,18 @@ input[type="date"] { color-scheme: dark; }
 .client-row-prog.complete .progress-fill { background: var(--accent); }
 .client-row-prog.no-data { display: flex; align-items: center; justify-content: flex-end; }
 .client-row-prog-status { font-size: 0.72rem; color: var(--muted); font-style: italic; }
+/* Session-balance chip + pending-request badge on each athlete card (replaces
+   the old Packages page). Tapping this block jumps to the athlete's Sessions tab. */
+.client-row-sessions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.client-row-sessions .booked-balance-chip { margin-left: 0; }
+.client-row-sessions:hover .booked-balance-chip { filter: brightness(1.15); }
 
 /* ============ Shared coach list rows (Programs / Day Library / Packages) ============ */
 .coach-row-grid {
@@ -2492,8 +2504,7 @@ button.ov-stat:hover { background: var(--surface-2); }
 .redemption-note-list { margin: 0.6em 0 0; padding-left: 1.2em; }
 .redemption-note-list li { margin-bottom: 0.35em; font-size: 0.9rem; }
 
-/* Packages tracker (all athletes) */
-#packages-requests-container .card { margin-bottom: 1rem; }
+/* Packages tracker (per-athlete Sessions tab) */
 .pkg-track-row {
   display: flex;
   align-items: center;
