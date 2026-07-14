@@ -6,6 +6,10 @@
   const KEY_TRAINER = "trainerpro_data_v1";
   const KEY_CLIENT  = "trainerpro_client_v1";
   const KEY_SESSION = "trainerpro_session_v1";
+  // Set while a coach-template edit is saved locally but not yet confirmed pushed
+  // to the cloud. Guards boot from overwriting unsynced local work with a stale
+  // cloud copy (the cause of "my in-progress program disappeared").
+  const KEY_TEMPLATES_DIRTY = "trainerpro_templates_dirty_v1";
 
   // -------- Color themes (full recolor, per role) --------
   // "blue" is the original (default :root, no data-theme attribute). Each role
@@ -91,13 +95,15 @@
     // Cloud: debounced push of the coach's program/workout template library,
     // so templates created on one device show up on every other device.
     if (window.Cloud?.enabled && state.trainerData.coachId) {
-      window.Cloud.debounce(`coach-templates:${state.trainerData.coachId}`, () =>
-        window.Cloud.updateCoachTemplates(
+      localStorage.setItem(KEY_TEMPLATES_DIRTY, "1");
+      window.Cloud.debounce(`coach-templates:${state.trainerData.coachId}`, async () => {
+        await window.Cloud.updateCoachTemplates(
           state.trainerData.coachId,
           state.trainerData.programTemplates,
           state.trainerData.workoutTemplates
-        )
-      );
+        );
+        localStorage.removeItem(KEY_TEMPLATES_DIRTY); // confirmed in the cloud
+      });
     }
   }
   function saveClient() {
@@ -1306,12 +1312,17 @@
     }
   }
 
-  function populateCoachFromCloud(coach, athletes) {
+  function populateCoachFromCloud(coach, athletes, opts = {}) {
     state.trainerData.trainer = { name: coach.display_name || "", email: coach.email || "" };
     state.trainerData.coachId = coach.id;
     state.trainerData.coachAuthId = coach.auth_user_id;
-    state.trainerData.programTemplates = coach.program_templates || [];
-    state.trainerData.workoutTemplates = coach.workout_templates || [];
+    // Keep locally-edited-but-unsynced templates instead of clobbering them with a
+    // possibly-stale cloud copy. The caller (boot) sets this when the dirty flag
+    // is present; the local work is re-pushed by the saveTrainer() below.
+    if (!opts.keepLocalTemplates) {
+      state.trainerData.programTemplates = coach.program_templates || [];
+      state.trainerData.workoutTemplates = coach.workout_templates || [];
+    }
     state.trainerData.openSlots = coach.open_slots || [];
     state.trainerData.clients = (athletes || []).map((a) => {
       if (!a.schedule) a.schedule = {};
@@ -9082,6 +9093,22 @@
     $("#btn-daylib-recommended")?.addEventListener("click", openRecommendedTemplatesModal);
     $("#btn-day-editor-back")?.addEventListener("click", () => renderDayLibrary());
     $("#btn-day-editor-save")?.addEventListener("click", saveDayEditor);
+    $("#btn-save-program")?.addEventListener("click", async () => {
+      const btn = $("#btn-save-program");
+      saveTrainer(); // localStorage is written synchronously here
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = "Saving…";
+      try {
+        // Push everything pending to the cloud now instead of waiting out the
+        // debounce — so work is safe the moment you step away.
+        await window.Cloud?.flush?.();
+        btn.textContent = "Saved ✓";
+      } catch {
+        btn.textContent = "Saved locally";
+      } finally {
+        setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 1800);
+      }
+    });
     $("#btn-assign-program")?.addEventListener("click", () => { if (_programEditorId) assignProgramPrompt(_programEditorId); });
     $("#btn-toggle-program-status")?.addEventListener("click", () => {
       const tpl = currentProgramTemplate(); if (!tpl) return;
@@ -9204,6 +9231,13 @@
 
     bindProfileInputs();
 
+    // Safety net: when the tab is hidden or closed, immediately flush any pending
+    // debounced cloud pushes so stepping away can't lose recent edits.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") window.Cloud?.flush?.();
+    });
+    window.addEventListener("pagehide", () => { window.Cloud?.flush?.(); });
+
     // Boot: check for password-recovery URL hash, then Supabase session, then show login
     if (window.Cloud?.enabled) {
       try {
@@ -9215,10 +9249,14 @@
           // created on another device shows up here too; degrade to the
           // cached data silently if offline.
           if (state.trainerData.trainer && state.trainerData.coachAuthId === userId) {
+            // If local template edits haven't been confirmed pushed, don't let the
+            // cloud refresh overwrite them — keep local and re-push instead.
+            const templatesDirty = localStorage.getItem(KEY_TEMPLATES_DIRTY) === "1";
             try {
               const fresh = await window.Cloud.getCoachByAuthUserId(userId);
-              if (fresh) populateCoachFromCloud(fresh.coach, fresh.athletes);
+              if (fresh) populateCoachFromCloud(fresh.coach, fresh.athletes, { keepLocalTemplates: templatesDirty });
             } catch (e) { console.warn("[Boot] Coach refresh failed, using cached data", e); }
+            if (templatesDirty) saveTrainer(); // reconcile unsynced local templates up to the cloud
             signIntoTrainer(); return;
           }
           if (state.clientData.program && state.clientData.profile?.email === session.user.email) {

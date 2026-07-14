@@ -396,6 +396,7 @@
             <input type="text" id="program-editor-desc" class="program-editor-desc-input" placeholder="Short description (optional)" />
           </div>
           <div class="program-editor-actions">
+            <button class="btn btn-primary" id="btn-save-program">💾 Save</button>
             <button class="btn btn-ghost" id="btn-toggle-program-status">Mark complete ✓</button>
             <button class="btn btn-ghost" id="btn-assign-program">Assign to athlete →</button>
           </div>
@@ -947,8 +948,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
-  <script src="cloud.js?v=profile1"></script>
-  <script src="app.js?v=effortleft"></script>
+  <script src="cloud.js?v=saveflush"></script>
+  <script src="app.js?v=saveflush"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

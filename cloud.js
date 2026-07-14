@@ -410,14 +410,29 @@
   }
 
   // -------- Debounce helper --------
-  const _debounceTimers = new Map();
+  // Stores the pending fn alongside its timer so callers can force it to run
+  // immediately via flush() (e.g. a Save button or when the page is hidden),
+  // instead of waiting out the debounce window and risking loss on close.
+  const _debounceTimers = new Map(); // key -> { timer, fn }
   function debounce(key, fn, ms = 1500) {
     const prev = _debounceTimers.get(key);
-    if (prev) clearTimeout(prev);
-    _debounceTimers.set(key, setTimeout(() => {
+    if (prev) clearTimeout(prev.timer);
+    const timer = setTimeout(() => {
       _debounceTimers.delete(key);
       Promise.resolve(fn()).catch((e) => console.warn("[Cloud] debounced call failed", e));
-    }, ms));
+    }, ms);
+    _debounceTimers.set(key, { timer, fn });
+  }
+  // Immediately run any pending debounced calls (optionally only those whose key
+  // starts with keyPrefix). Resolves once all have settled.
+  async function flush(keyPrefix) {
+    const entries = [..._debounceTimers.entries()]
+      .filter(([k]) => !keyPrefix || k.startsWith(keyPrefix));
+    await Promise.all(entries.map(async ([k, entry]) => {
+      clearTimeout(entry.timer);
+      _debounceTimers.delete(k);
+      try { await entry.fn(); } catch (e) { console.warn("[Cloud] flush failed", e); }
+    }));
   }
 
   window.Cloud = {
@@ -460,6 +475,7 @@
     refreshSetmoreSync,
     // Utils
     debounce,
+    flush,
   };
   console.log("[Cloud] ready");
 })();
