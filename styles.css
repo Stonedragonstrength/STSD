@@ -3482,12 +3482,21 @@ button.ov-stat:hover { background: var(--surface-2); }
   padding: 0.05em 0.5em; margin-left: 0.35em; vertical-align: middle;
 }
 
-/* Coach profile — membership picker (matches other profile fields) */
-.profile-membership-row { margin-top: 0.4rem; }
+/* Coach profile — membership picker + grant button (matches other profile fields) */
+.profile-membership-row {
+  margin-top: 0.4rem;
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
 .profile-membership-row > label {
   display: flex; flex-direction: column; gap: 0.25em;
   font-size: 0.8rem; color: var(--muted);
+  flex: 1 1 220px; min-width: 0;
 }
+#btn-grant-month { flex: 0 0 auto; white-space: nowrap; }
+#btn-grant-month:disabled { opacity: 0.5; cursor: default; }
 #prof-membership {
   padding: 0.5em 0.6em;
   background: var(--surface); color: var(--text);

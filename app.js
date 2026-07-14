@@ -2095,6 +2095,39 @@
     if (lastCat !== null) html += `</optgroup>`;
     sel.innerHTML = html;
     sel.value = current;
+    refreshGrantBtn();
+  }
+  // Keeps the "Grant this month's N sessions" button label + enabled state in
+  // sync with the currently-selected membership tier.
+  function refreshGrantBtn() {
+    const btn = $("#btn-grant-month"); if (!btn) return;
+    const m = membershipById($("#prof-membership")?.value);
+    btn.disabled = !m;
+    btn.textContent = m
+      ? `＋ Grant this month's ${m.sessions} sessions`
+      : `＋ Grant this month's sessions`;
+  }
+  // Adds one month's worth of sessions (per the selected membership tier) to the
+  // athlete's pool as a paid package. Guards against granting the same month twice.
+  function grantMembershipMonth() {
+    const c = currentClient(); if (!c) return;
+    const m = membershipById($("#prof-membership")?.value);
+    if (!m) { toast("Pick a membership first"); return; }
+    ensureSessionBank(c);
+    const monthKey = new Date().toISOString().slice(0, 7); // YYYY-MM
+    const monthLabel = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    const already = (c.sessionBank.packages || []).some((p) => p.membershipGrant === monthKey);
+    if (already && !window.confirm(`You already granted ${monthLabel}'s sessions to ${c.name || "this athlete"}. Grant another ${m.sessions}?`)) return;
+    // Keep the saved membership in step with what's shown, then grant.
+    c.sessionBank.membership = m.id;
+    c.sessionBank.packages.push({
+      id: uid(), size: m.sessions, status: "paid", price: m.price,
+      addedAt: Date.now(), paidAt: Date.now(),
+      note: `Membership — ${membershipTitle(m)} · ${monthLabel}`,
+      membershipGrant: monthKey,
+    });
+    saveTrainer();
+    toast(`Granted ${m.sessions} sessions for ${monthLabel} ✓`);
   }
   function saveProfileFields() {
     const c = currentClient(); if (!c) return;
@@ -2133,6 +2166,8 @@
       $("#prof-name").focus();
     });
     $("#btn-profile-save").addEventListener("click", saveProfileFields);
+    $("#prof-membership")?.addEventListener("change", refreshGrantBtn);
+    $("#btn-grant-month")?.addEventListener("click", grantMembershipMonth);
   }
   // ============ Workout Templates (library) ============
   function makeWorkoutTemplate(name, exercises) {
