@@ -7777,7 +7777,15 @@
     if (!day.exercises.length) {
       list.innerHTML = `<div class="empty-state"><div class="empty-emoji">💤</div><p>No exercises for this day.</p></div>`;
     } else {
-      appendExerciseGroups(list, day, (ex) => renderClientExercise(week, day, ex, null), true);
+      const renderer = (ex) => renderClientExercise(week, day, ex, null);
+      const mob = day.exercises.filter((e) => e.kind === "mobility");
+      const main = day.exercises.filter((e) => e.kind !== "mobility");
+      if (mob.length) {
+        const sec = mobilitySection();
+        appendExerciseGroups(sec, { exercises: mob }, renderer, true);
+        list.appendChild(sec);
+      }
+      appendExerciseGroups(list, { exercises: main }, renderer, true);
     }
     list.appendChild(renderDayNoteBlock(day.id));
 
@@ -7870,9 +7878,27 @@
     });
     const exList = document.createElement("div");
     exList.className = "cex-list";
-    day.exercises.forEach((ex) => exList.appendChild(renderClientExercise(week, day, ex, jumpTo)));
+    const mob = day.exercises.filter((e) => e.kind === "mobility");
+    const main = day.exercises.filter((e) => e.kind !== "mobility");
+    if (mob.length) {
+      const sec = mobilitySection();
+      mob.forEach((ex) => sec.appendChild(renderClientExercise(week, day, ex, jumpTo)));
+      exList.appendChild(sec);
+    }
+    main.forEach((ex) => exList.appendChild(renderClientExercise(week, day, ex, jumpTo)));
     card.appendChild(exList);
     return card;
+  }
+  // Wrapper for the athlete-side mobility/stretching block that sits above the
+  // main exercises with its own header.
+  function mobilitySection() {
+    const sec = document.createElement("div");
+    sec.className = "mobility-section";
+    const h = document.createElement("div");
+    h.className = "mobility-section-head";
+    h.textContent = "🧘 Mobility & Stretching";
+    sec.appendChild(h);
+    return sec;
   }
   function exerciseDisplayLabel(ex) {
     const before = [];

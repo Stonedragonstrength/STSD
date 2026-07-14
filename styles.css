@@ -5232,6 +5232,27 @@ input:focus, textarea:focus, select:focus {
 }
 .cex-mob-panel { padding: 0 0.85rem 0.6rem 2.15rem; }
 
+/* Athlete-side Mobility & Stretching block — sits above the main exercises in
+   its own labelled, tinted area so warm-up work reads as a separate phase. */
+.mobility-section {
+  margin-bottom: 0.85rem;
+  padding: 0.35rem 0.5rem 0.5rem;
+  border: 1px solid rgba(var(--primary-rgb), 0.28);
+  border-radius: var(--radius);
+  background: rgba(var(--primary-rgb), 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.mobility-section-head {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--primary);
+  padding: 0.2rem 0.15rem 0.1rem;
+}
+
 .cex-rx {
   display: flex;
   align-items: baseline;
