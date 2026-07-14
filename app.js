@@ -4040,8 +4040,30 @@
     videoInput.value = ex.videoUrl || "";
     videoInput.addEventListener("input", () => { ex.videoUrl = videoInput.value; saveTrainer(); });
 
+    // Manual fallback: flip any exercise into hold-for-time mode (rounds × hold
+    // seconds), independent of whether it came from the mobility library.
+    const kindToggle = document.createElement("label");
+    kindToggle.className = "ex-kind-toggle";
+    const kindCb = document.createElement("input");
+    kindCb.type = "checkbox";
+    kindCb.checked = isMob;
+    kindCb.addEventListener("change", () => {
+      if (kindCb.checked) {
+        ex.kind = "mobility";
+        if (!ex.currentReps) ex.currentReps = "30"; // default hold
+        ex.currentWeight = ""; ex.goalWeight = "";  // weights don't apply
+      } else {
+        ex.kind = "strength";
+      }
+      saveTrainer();
+      rerenderFn();
+    });
+    kindToggle.appendChild(kindCb);
+    kindToggle.appendChild(document.createTextNode(" Hold for time (stretch / mobility)"));
+
     detail.appendChild(notesTA);
     detail.appendChild(videoInput);
+    detail.appendChild(kindToggle);
 
     if (ex.notes || ex.videoUrl) {
       detail.classList.remove("hidden");

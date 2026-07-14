@@ -6355,6 +6355,19 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   min-width: 0;
   font-size: 0.78rem;
 }
+/* "Hold for time" fallback toggle — sits on its own line under notes/video. */
+.ex-detail-panel { flex-wrap: wrap; }
+.ex-kind-toggle {
+  flex: 0 0 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.ex-kind-toggle input { accent-color: var(--primary); cursor: pointer; }
 .add-ex-btn {
   margin: 0.5rem 1rem;
   align-self: flex-start;
