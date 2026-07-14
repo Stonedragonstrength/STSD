@@ -1603,6 +1603,21 @@
         card.appendChild(sess);
       }
 
+      // Quick "view as athlete" — jumps straight into their athlete view
+      // without opening the coach detail first.
+      const viewBtn = document.createElement("button");
+      viewBtn.className = "client-row-view";
+      viewBtn.type = "button";
+      viewBtn.title = `View as ${c.name || "athlete"}`;
+      viewBtn.setAttribute("aria-label", `View ${c.name || "athlete"}'s athlete view`);
+      viewBtn.textContent = "👁️";
+      viewBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        state.currentClientId = c.id;
+        previewAsAthlete();
+      });
+      card.appendChild(viewBtn);
+
       card.addEventListener("click", () => { openClient(c.id); setTab("profile"); });
       grid.appendChild(card);
     }
@@ -9313,7 +9328,6 @@
     });
     $("#btn-browse-recommended-empty")?.addEventListener("click", openRecommendedTemplatesModal);
     $("#btn-delete-client").addEventListener("click", deleteClientPrompt);
-    $("#btn-preview-athlete")?.addEventListener("click", previewAsAthlete);
     $("#btn-exit-preview")?.addEventListener("click", exitPreview);
     $("#btn-load-program").addEventListener("click", openLoadProgramModal);
     $("#btn-load-program-empty").addEventListener("click", openLoadProgramModal);

@@ -562,6 +562,24 @@ input[type="date"] { color-scheme: dark; }
 }
 .client-row-sessions .booked-balance-chip { margin-left: 0; }
 .client-row-sessions:hover .booked-balance-chip { filter: brightness(1.15); }
+/* Quick "view as athlete" eye button on each athlete card. */
+.client-row-view {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-2);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.75;
+  transition: border-color 0.15s, background 0.15s, opacity 0.15s;
+}
+.client-row-view:hover { border-color: var(--primary); background: var(--surface-3); opacity: 1; }
 
 /* ============ Shared coach list rows (Programs / Day Library / Packages) ============ */
 .coach-row-grid {
