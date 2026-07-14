@@ -5432,10 +5432,14 @@ input:focus, textarea:focus, select:focus {
 @media (max-width: 600px) {
   /* Shrink set columns so 5-6 sets fit on one row instead of wrapping
      and growing the card's height. */
-  .cex-set-table { gap: 0.3rem 0.22rem; flex-wrap: nowrap; overflow-x: auto; }
-  /* Columns shrink to fit more sets on screen (down to a usable min), then
-     scroll only once they can't shrink further. */
-  .cex-set-col { flex: 0 1 36px; min-width: 30px; width: auto; }
+  /* Full width so the growable columns have space to fill (was shrink-to-content
+     via align-self:flex-start, which left them pinned small with empty space). */
+  .cex-set-table { gap: 0.3rem 0.22rem; flex-wrap: nowrap; overflow-x: auto; width: 100%; align-self: stretch; }
+  /* Columns GROW to fill the card comfortably when there are only a few sets
+     (up to a cap), and only shrink toward the min — then scroll — once there
+     are enough columns (warm-ups + sets + dropset) to fill the row. Previously
+     flex-grow:0 pinned them at a cramped 36px even with acres of empty space. */
+  .cex-set-col { flex: 1 1 44px; min-width: 30px; max-width: 64px; width: auto; }
   /* Font now scales with column width via container queries (see base rules),
      so no fixed mobile font-size override — just tighten the input padding. */
   .cex-set-col .cex-input { padding: 0.3em 0.05em; }
