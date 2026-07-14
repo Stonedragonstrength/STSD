@@ -1566,7 +1566,7 @@
         prog.innerHTML = `<span class="client-row-prog-status">No program</span>`;
       } else if (!hasSyncedData) {
         prog.classList.add("no-data");
-        prog.innerHTML = `<span class="client-row-prog-status">Awaiting sync</span>`;
+        prog.innerHTML = `<span class="client-row-prog-status" title="Awaiting sync">No sync</span>`;
       } else {
         if (isComplete) prog.classList.add("complete");
         prog.innerHTML = `
@@ -1590,7 +1590,7 @@
         sess.className = "client-row-sessions";
         const chip = document.createElement("span");
         chip.className = "booked-balance-chip" + (sum.remaining <= 1 ? " low" : "");
-        chip.textContent = `🎟 ${sum.remaining} left`;
+        chip.textContent = `🎟 ${sum.remaining}`;
         sess.appendChild(chip);
         if (pendingCount) {
           const pend = document.createElement("span");

@@ -538,7 +538,7 @@ input[type="date"] { color-scheme: dark; }
   letter-spacing: -0.02em;
 }
 .client-row-main { min-width: 0; flex: 1; }
-.client-row-name { font-size: 1.08rem; font-weight: 800; color: var(--text); letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.client-row-name { font-size: 1.08rem; font-weight: 800; color: var(--text); letter-spacing: -0.01em; white-space: normal; overflow-wrap: break-word; line-height: 1.2; }
 .client-row-sub { font-size: 0.74rem; color: var(--text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.1em; }
 .client-row-prog { width: 82px; flex-shrink: 0; }
 .client-row-prog-top { display: flex; align-items: baseline; justify-content: flex-end; gap: 0.3em; margin-bottom: 0.24em; }
@@ -5221,7 +5221,7 @@ input:focus, textarea:focus, select:focus {
 
 .workout-detail-list {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: 1fr;
   background: var(--border);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
