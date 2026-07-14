@@ -702,7 +702,7 @@ input[type="date"] { color-scheme: dark; }
   overflow-x: hidden;
   border-bottom: 1px solid var(--border); /* separator line, like the coach nav */
   margin-bottom: 1.1rem;
-  padding: 0.45rem 1.5rem 0.55rem;
+  padding: 0.3rem 0.85rem 0.35rem;
   /* Pinned right under the sticky header. `top` = header height so the nav's
      resting position already equals its stuck position → zero jump. Full-bleed
      side margins + solid bg so content scrolls cleanly underneath. */
@@ -733,7 +733,7 @@ input[type="date"] { color-scheme: dark; }
   align-items: center;
   justify-content: center;
   gap: 2px;
-  padding: 0.4em 0.15em;
+  padding: 0.28em 0.15em;
   border: 1px solid transparent;
   border-radius: 12px;
   text-transform: none;
