@@ -500,10 +500,16 @@ input[type="date"] { color-scheme: dark; }
 }
 
 /* ============ Client grid ============ */
+/* Column-major fill: athletes run alphabetically DOWN the left column, then
+   continue down the right (multicol flows top-to-bottom, then next column). */
 .client-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.55rem;
+  column-count: 2;
+  column-gap: 0.55rem;
+}
+.client-grid > .client-row {
+  break-inside: avoid;
+  -webkit-column-break-inside: avoid;
+  margin-bottom: 0.55rem;
 }
 /* Compact horizontal athlete rows: avatar · name+position · progress. */
 .client-row {
@@ -2231,7 +2237,7 @@ button.ov-stat:hover { background: var(--surface-2); }
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  max-width: 640px;
+  max-width: 760px;
 }
 .msg-compose-field { display: flex; flex-direction: column; gap: 0.5rem; }
 .msg-label { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-soft); }
@@ -2240,7 +2246,7 @@ button.ov-stat:hover { background: var(--surface-2); }
 .msg-recip-count { font-size: 0.78rem; margin-left: auto; }
 .msg-recipients {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.5rem;
 }
 .msg-recip {
@@ -2297,7 +2303,7 @@ button.ov-stat:hover { background: var(--surface-2); }
 .msg-compose-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.75rem; }
 .msg-compose-actions .muted { margin-right: auto; font-size: 0.8rem; }
 .msg-history-head { margin: 1.6rem 0 0.7rem; font-size: 0.95rem; color: var(--text-soft); }
-.msg-history { display: flex; flex-direction: column; gap: 0.55rem; max-width: 640px; }
+.msg-history { display: flex; flex-direction: column; gap: 0.55rem; max-width: 760px; }
 .msg-hist-item {
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -3932,7 +3938,8 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
   .btn-sm { min-height: 34px; padding: 0.4em 0.7em; font-size: 0.78rem; }
 
   /* Client grid: one column */
-  .client-grid { grid-template-columns: 1fr; gap: 0.5rem; }
+  .client-grid { column-count: 1; }
+  .client-grid > .client-row { margin-bottom: 0.5rem; }
   .template-grid { grid-template-columns: 1fr; gap: 0.7rem; }
   .library-head-actions { width: 100%; }
   .library-head-actions .btn { flex: 1; }
