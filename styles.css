@@ -3282,6 +3282,9 @@ button.ov-stat:hover { background: var(--surface-2); }
 }
 /* Per-PR date + lock */
 .pr-date-input { font-size: 0.58rem; padding: 0.34em 0.1em; text-align: center; letter-spacing: -0.02em; min-width: 0; }
+/* The mm/dd/yy example (placeholder) shrinks a bit more than typed values so
+   the whole example — including the yy — is visible in the narrow box. */
+.pr-date-input::placeholder { font-size: 0.82em; letter-spacing: -0.04em; }
 .pr-field-group input[readonly] {
   background: var(--surface-2);
   color: var(--text-soft);
@@ -5496,6 +5499,20 @@ input:focus, textarea:focus, select:focus {
 @media (min-width: 721px) {
   .workout-detail-list .cex-set-table { align-self: stretch; }
   .workout-detail-list .cex-set-col { flex: 0 1 72px; }
+  /* Small gap between top-level cards (standalone exercises + whole superset
+     groups) so they read as distinct, instead of a flush connected table.
+     Supersets keep their own bordered box, so they stay visually grouped. */
+  .workout-detail-list {
+    background: transparent;
+    border: none;
+    overflow: visible;
+    gap: 6px;
+  }
+  .workout-detail-list > .cex-wrapper {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
 }
 /* Lock / Edit control pinned to the top-right of the exercise title row. */
 .cex-lock-slot {
