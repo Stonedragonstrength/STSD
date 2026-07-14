@@ -157,6 +157,7 @@
   let _coachActiveWeekIdx = 0;
   let _prEditIds = new Set();
   let _exLibraryTarget = null; // { day, rerenderFn } — set by openExLibrary(), used for tap-to-add
+  let _focusQuickAddDayId = null; // day id whose type-to-add input should refocus after a rerender
   let _prNewLifts = [];
   let _prDragSrcId = null;
   function currentProgramTemplate() {
@@ -271,6 +272,7 @@
     { group: "Alternation", tags: ["Alternating", "Non-Alternating"] },
     { group: "Equipment",   tags: ["BB", "DB", "KB", "EZ Bar", "Cable", "Rope", "Band", "Machine"], multi: true },
     { group: "Position",    tags: ["Incline", "Decline", "Elevated", "Seated", "Standing", "Kneeling", "Raised"] },
+    { group: "Grip",        tags: ["Supinated", "Neutral", "Pronated"] },
     { group: "Style",       tags: ["Pause", "Tempo", "Explosive", "Isometric"] },
     { group: "Hold",        tags: ["1S", "2S", "3S", "4S", "5S"] },
   ];
@@ -297,6 +299,9 @@
     "Standing":  { color: "#e879f9", bg: "rgba(232,121,249,0.18)" },
     "Kneeling":  { color: "#f43f5e", bg: "rgba(244,63,94,0.18)"   },
     "Raised":    { color: "#f472b6", bg: "rgba(244,114,182,0.18)" },
+    "Supinated": { color: "#5eead4", bg: "rgba(94,234,212,0.18)"  },
+    "Neutral":   { color: "#cbd5e1", bg: "rgba(203,213,225,0.18)" },
+    "Pronated":  { color: "#fda4af", bg: "rgba(253,164,175,0.18)" },
     "Pause":     { color: "#34d399", bg: "rgba(52,211,153,0.18)"  },
     "Tempo":     { color: "#6366f1", bg: "rgba(99,102,241,0.18)"  },
     "Explosive": { color: "#fb7185", bg: "rgba(251,113,133,0.18)" },
@@ -2707,6 +2712,28 @@
     { cat: "Cardio",     ex: ["Treadmill Run","Stationary Bike","Rowing","Jump Rope","Sled Push","Battle Ropes","Farmer's Walk","Assault Bike","Stair Climber","Sprint Intervals","Incline Walk","Ski Erg","Box Jump","Burpee","High Knees"] },
   ];
 
+  // Flat, de-duped, alphabetised list of every library exercise — feeds the
+  // native <datalist> that powers the type-to-add field on each day.
+  const ALL_EXERCISE_NAMES = [...new Set(EXERCISE_LIBRARY.flatMap((c) => c.ex))]
+    .sort((a, b) => a.localeCompare(b));
+
+  // Rebuild a single shared <datalist> (respecting the coach's hidden list) and
+  // return its id so type-to-add inputs can point at it via `list=`.
+  function ensureExerciseDatalist() {
+    const hidden = state.trainerData.hiddenExercises || [];
+    let dl = document.getElementById("ex-name-datalist");
+    if (!dl) {
+      dl = document.createElement("datalist");
+      dl.id = "ex-name-datalist";
+      document.body.appendChild(dl);
+    }
+    dl.innerHTML = ALL_EXERCISE_NAMES
+      .filter((n) => !hidden.includes(n))
+      .map((n) => `<option value="${escapeHtml(n)}"></option>`)
+      .join("");
+    return "ex-name-datalist";
+  }
+
   function openExLibrary(day, rerenderFn) {
     _exLibraryTarget = day ? { day, rerenderFn } : null;
     show($("#ex-library-overlay"));
@@ -3671,6 +3698,36 @@
     dropHint.textContent = day.exercises.length === 0 ? "Drag exercises from the library →" : "drag to add more";
     dropHint.setAttribute("aria-hidden", "true");
     list.appendChild(dropHint);
+
+    // Type-to-add — autocompletes from the library but also accepts any custom
+    // name. Complements drag-and-drop and is the fast path on touch devices.
+    const quickAdd = document.createElement("form");
+    quickAdd.className = "ex-quick-add";
+    const quickInput = document.createElement("input");
+    quickInput.type = "text";
+    quickInput.className = "ex-quick-add-input";
+    quickInput.placeholder = "Type an exercise to add…";
+    quickInput.setAttribute("list", ensureExerciseDatalist());
+    quickInput.setAttribute("autocomplete", "off");
+    const quickBtn = document.createElement("button");
+    quickBtn.type = "submit";
+    quickBtn.className = "btn btn-primary btn-sm ex-quick-add-btn";
+    quickBtn.textContent = "Add";
+    quickAdd.appendChild(quickInput);
+    quickAdd.appendChild(quickBtn);
+    quickAdd.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const name = quickInput.value.trim();
+      if (!name) return;
+      day.exercises.push(makeExercise({ name }));
+      _focusQuickAddDayId = day.id; // keep focus so several can be added in a row
+      saveTrainer(); rerenderFn();
+    });
+    list.appendChild(quickAdd);
+    if (_focusQuickAddDayId === day.id) {
+      _focusQuickAddDayId = null;
+      setTimeout(() => quickInput.focus(), 0);
+    }
 
     list.addEventListener("dragover", (e) => {
       if (!e.dataTransfer.types.includes("text/ex-name")) return;
