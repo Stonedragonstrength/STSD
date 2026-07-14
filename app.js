@@ -2056,6 +2056,9 @@
       if (locked) el.setAttribute("readonly", "readonly");
       else el.removeAttribute("readonly");
     });
+    // <select> can't use readonly — toggle disabled instead.
+    const memSel = $("#prof-membership");
+    if (memSel) memSel.disabled = locked;
     $(".profile-card")?.classList.toggle("locked", locked);
     hide(locked ? $("#btn-profile-save") : $("#btn-profile-edit"));
     show(locked ? $("#btn-profile-edit") : $("#btn-profile-save"));
@@ -2072,7 +2075,26 @@
     $("#prof-notes").value = c.notes;
     if (!c.inviteCode) { c.inviteCode = makeInviteCode(); saveTrainer(); }
     $("#invite-code-display").textContent = c.inviteCode;
+    populateMembershipSelect(c);
     setProfileLocked(true);
+  }
+  function populateMembershipSelect(c) {
+    const sel = $("#prof-membership"); if (!sel) return;
+    ensureSessionBank(c);
+    const current = c.sessionBank?.membership || "";
+    let html = `<option value="">— No membership set —</option>`;
+    let lastCat = null;
+    MEMBERSHIPS.forEach((m) => {
+      if (m.cat !== lastCat) {
+        if (lastCat !== null) html += `</optgroup>`;
+        html += `<optgroup label="${escapeHtml(m.cat)}">`;
+        lastCat = m.cat;
+      }
+      html += `<option value="${m.id}">${m.perWeek}× / week · ${m.sessions} sessions/mo · $${m.price.toLocaleString()}</option>`;
+    });
+    if (lastCat !== null) html += `</optgroup>`;
+    sel.innerHTML = html;
+    sel.value = current;
   }
   function saveProfileFields() {
     const c = currentClient(); if (!c) return;
@@ -2084,6 +2106,8 @@
     const ft = Number($("#prof-height-ft").value) || 0;
     const inch = Number($("#prof-height-in").value) || 0;
     c.heightIn = (ft * 12 + inch) || "";
+    ensureSessionBank(c);
+    c.sessionBank.membership = $("#prof-membership")?.value || "";
     saveTrainer();
     $("#client-name-display").textContent = c.name || "(unnamed)";
     $("#client-meta-display").textContent = clientMetaText(c);
@@ -5747,6 +5771,25 @@
     const balHost = $("#athlete-balance-host");
     if (balHost) balHost.replaceChildren(balance); else container.appendChild(balance);
 
+    // Membership card — coach-assigned plan (read-only), top of the Sessions tab.
+    const membership = membershipById(prog.client.sessionBank?.membership);
+    const memCard = document.createElement("div");
+    memCard.className = "card membership-card";
+    memCard.innerHTML = membership
+      ? `<div class="membership-badge">🏅</div>
+         <div class="membership-info">
+           <div class="membership-label">Your membership</div>
+           <div class="membership-title">${escapeHtml(membershipTitle(membership))}${membership.popular ? ` <span class="membership-pop">Most popular</span>` : ``}</div>
+           <div class="membership-sub">${escapeHtml(membershipSub(membership))}</div>
+         </div>`
+      : `<div class="membership-badge">🏅</div>
+         <div class="membership-info">
+           <div class="membership-label">Your membership</div>
+           <div class="membership-title muted">Not set yet</div>
+           <div class="membership-sub muted">Your coach will set your plan.</div>
+         </div>`;
+    container.appendChild(memCard);
+
     // Open slots posted by the coach (skip entirely if this athlete is muted).
     if (!prog.client.hideOpenSlots) {
       const visible = athleteOpenSlots().filter((s) => s.status !== "closed");
@@ -6010,6 +6053,24 @@
     { sessions: 16, price: 1320, cadence: "4×/week" },
   ];
   const PACKAGE_SIZES = PACKAGE_OPTIONS.map((o) => o.sessions);
+
+  // Membership tiers from stonedragonstrengthtraining.com/memberships (pre-pay
+  // monthly pricing). Coach assigns one per athlete in the Profile tab; athlete
+  // sees it read-only on their Sessions tab. Stored as `client.sessionBank.membership`
+  // (the id) — rides the coach-write-only session_bank jsonb, no DB migration.
+  const MEMBERSHIPS = [
+    { id: "single-1", cat: "Single Sessions",  perWeek: 1, sessions: 4,  price: 400  },
+    { id: "single-2", cat: "Single Sessions",  perWeek: 2, sessions: 8,  price: 725, popular: true },
+    { id: "single-3", cat: "Single Sessions",  perWeek: 3, sessions: 12, price: 1020 },
+    { id: "single-4", cat: "Single Sessions",  perWeek: 4, sessions: 16, price: 1320 },
+    { id: "couples-1", cat: "Couples Sessions", perWeek: 1, sessions: 4,  price: 550  },
+    { id: "couples-2", cat: "Couples Sessions", perWeek: 2, sessions: 8,  price: 1040 },
+    { id: "couples-3", cat: "Couples Sessions", perWeek: 3, sessions: 12, price: 1500 },
+  ];
+  function membershipById(id) { return MEMBERSHIPS.find((m) => m.id === id) || null; }
+  function membershipTitle(m) { return `${m.cat} · ${m.perWeek}× / week`; }
+  function membershipSub(m) { return `${m.sessions} sessions / month · $${m.price.toLocaleString()}/mo`; }
+
   function packageOptionButtonsHtml() {
     return PACKAGE_OPTIONS.map((o) => `
       <button class="pkg-size-btn" type="button" data-buy-size="${o.sessions}">
