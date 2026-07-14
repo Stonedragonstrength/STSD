@@ -2266,6 +2266,27 @@ button.ov-stat:hover { background: var(--surface-2); }
 .bulletin-compose { display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.6rem; }
 .bulletin-compose-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
 .bulletin-active { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.9rem; }
+
+/* Overview pending purchase-requests inbox — accent border so a new request
+   stands out at sign-in. Empty container renders nothing (no card). */
+.overview-requests:empty { display: none; }
+.overview-requests { margin-bottom: 1.25rem; }
+.overview-requests-card { border-left: 3px solid var(--primary); }
+.overview-req-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5em;
+  height: 1.5em;
+  padding: 0 0.4em;
+  margin-left: 0.35em;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #062131;
+  font-size: 0.72rem;
+  font-weight: 800;
+  vertical-align: middle;
+}
 .bulletin-item {
   display: flex;
   align-items: flex-start;

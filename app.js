@@ -1349,6 +1349,7 @@
     renderDashboardCalendar();
     refreshCoachOpenSlots();
     renderBulletinBoard();
+    renderOverviewRequests();
   }
 
   function signIntoTrainer() {
@@ -6266,6 +6267,47 @@
     if (state.currentClientId === c.id) renderCoachSessions();
     // Keep the athlete-card 🎟 chips fresh if the Athletes list is showing.
     if (!$("#view-dashboard").classList.contains("hidden")) renderClientGrid();
+    // Keep the Overview pending-requests inbox fresh if it's showing.
+    if (!$("#view-overview").classList.contains("hidden")) renderOverviewRequests();
+  }
+
+  // Cross-athlete "pending purchase requests" inbox on the Overview page, so
+  // new requests greet the coach at sign-in. Renders nothing when empty.
+  function renderOverviewRequests() {
+    const host = $("#overview-requests");
+    if (!host) return;
+    host.innerHTML = "";
+    const open = [];
+    (state.trainerData.clients || []).forEach((c) =>
+      openRequestsFor(c).forEach((req) => open.push({ c, req })));
+    if (!open.length) return;
+    open.sort((a, b) => (b.req.requestedAt || 0) - (a.req.requestedAt || 0));
+
+    const card = document.createElement("div");
+    card.className = "card overview-requests-card";
+    card.innerHTML = `<div class="program-head">
+        <h3 style="margin:0">🎟 Purchase requests <span class="overview-req-count">${open.length}</span></h3>
+      </div>
+      <p class="muted" style="font-size:0.85rem">Confirm payment outside the app (Venmo, cash, Stripe link), then approve.</p>`;
+    open.forEach(({ c, req }) => {
+      const row = document.createElement("div");
+      row.className = "pending-request-row";
+      row.innerHTML = `
+        <div>
+          <strong>${escapeHtml(c.name)}</strong> · ${escapeHtml(String(req.size))} sessions${req.price ? ` · $${escapeHtml(Number(req.price).toLocaleString())}` : ""}
+          <span class="muted"> · ${escapeHtml(req.requestedAt ? new Date(req.requestedAt).toLocaleDateString() : "")}</span>
+        </div>
+        <div class="pending-request-actions">
+          <button class="btn btn-ghost btn-sm" data-decline="${escapeHtml(req.id)}">Decline</button>
+          <button class="btn btn-primary btn-sm" data-approve="${escapeHtml(req.id)}">Approve &amp; mark paid</button>
+        </div>`;
+      row.querySelector("[data-approve]").addEventListener("click", () =>
+        approvePackageRequest(c, req.id, Number(req.size), Number(req.price) || 0));
+      row.querySelector("[data-decline]").addEventListener("click", () =>
+        declinePackageRequest(c, req.id));
+      card.appendChild(row);
+    });
+    host.appendChild(card);
   }
 
   // -------- Packages tracker (all athletes) --------
@@ -6297,8 +6339,9 @@
     } finally {
       _packagesRefreshing = false;
     }
-    // Update the athlete-card chips if the Athletes list is on screen.
+    // Update the athlete-card chips / Overview inbox if either is on screen.
     if (!$("#view-dashboard").classList.contains("hidden")) renderClientGrid();
+    if (!$("#view-overview").classList.contains("hidden")) renderOverviewRequests();
   }
 
   // ---- Coach → athlete announcements (Messages view) ---------------------
