@@ -5490,6 +5490,13 @@ input:focus, textarea:focus, select:focus {
   margin: 0;
   padding: 0.3rem 0;
 }
+/* Desktop: the athlete workout-detail panel is full width, so let the set
+   columns pack straight across it (and sit a touch roomier) instead of the
+   table hugging its content and wrapping the 3rd set onto a new row early. */
+@media (min-width: 721px) {
+  .workout-detail-list .cex-set-table { align-self: stretch; }
+  .workout-detail-list .cex-set-col { flex: 0 1 72px; }
+}
 /* Lock / Edit control pinned to the top-right of the exercise title row. */
 .cex-lock-slot {
   flex-shrink: 0;
