@@ -4442,11 +4442,11 @@ input:focus, textarea:focus, select:focus {
   .coach-nav {
     flex-direction: column;
     gap: 0.3em;
-    width: 240px;
-    min-width: 240px;
+    width: 196px;
+    min-width: 196px;
     border-bottom: 0;
     border-right: 1px solid var(--border);
-    padding: 1.4rem 0.9rem 1.4rem 1.2rem;
+    padding: 1.4rem 0.7rem 1.4rem 1rem;
     position: sticky;
     top: 64px;
     align-self: flex-start;
@@ -6288,8 +6288,8 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 .ex-lib-sidebar {
   display: none; /* hidden by default; shown via .show-lib-sidebar on parent */
   flex-direction: column;
-  width: 270px;
-  min-width: 270px;
+  width: 232px;
+  min-width: 232px;
   border-left: 1px solid var(--border);
   background: var(--surface);
   position: sticky;
@@ -6369,8 +6369,10 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   z-index: 1;
 }
 .ex-lib-sb-item {
-  display: block;
-  padding: 0.42rem 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.42rem 0.5rem 0.42rem 0.75rem;
   font-size: 0.82rem;
   color: var(--text-soft);
   cursor: grab;
@@ -6378,9 +6380,69 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   transition: background 0.1s, color 0.1s;
   user-select: none;
 }
+.ex-lib-sb-item .ex-lib-sb-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .ex-lib-sb-item:hover { background: var(--primary-soft); color: var(--text); }
 .ex-lib-sb-item:active { cursor: grabbing; }
 .ex-lib-sb-item.dragging-active { opacity: 0.4; }
+.ex-lib-sb-item.is-hidden-row { cursor: default; }
+
+/* Hide (✕) / restore (↩) button on each library row */
+.ex-lib-sb-actbtn {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s, color 0.1s;
+}
+.ex-lib-sb-item:hover .ex-lib-sb-actbtn { opacity: 1; }
+.ex-lib-sb-item.is-hidden-row .ex-lib-sb-actbtn { opacity: 0.7; }
+.ex-lib-sb-actbtn:hover { background: var(--surface-3); color: var(--text); }
+
+/* Library / Hidden tab toggle */
+.ex-lib-sb-tabs {
+  display: flex;
+  gap: 0.3em;
+  padding: 0.15rem 0.75rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.ex-lib-sb-tab {
+  flex: 1;
+  padding: 0.3em 0.4em;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-soft);
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.ex-lib-sb-tab:hover { color: var(--text); background: var(--surface-2); }
+.ex-lib-sb-tab.active {
+  background: var(--primary-soft);
+  color: var(--text);
+  border-color: var(--primary);
+}
+.ex-lib-sb-tab .ex-lib-sb-tab-count { opacity: 0.7; font-weight: 700; }
 
 /* Hide the mobile library button on desktop where the sidebar is visible */
 @media (min-width: 900px) {

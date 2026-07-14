@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=rows2" />
+  <link rel="stylesheet" href="styles.css?v=libhide" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -669,7 +669,11 @@
       <aside id="ex-lib-sidebar" class="ex-lib-sidebar" aria-label="Exercise Library">
         <div class="ex-lib-sb-head">
           <span class="ex-lib-sb-title">Exercise Library</span>
-          <span class="ex-lib-sb-hint">Drag onto a day</span>
+          <span class="ex-lib-sb-hint" id="ex-lib-sb-hint">Drag onto a day</span>
+        </div>
+        <div class="ex-lib-sb-tabs">
+          <button type="button" class="ex-lib-sb-tab active" data-lib-tab="active">Library</button>
+          <button type="button" class="ex-lib-sb-tab" data-lib-tab="hidden">Hidden <span class="ex-lib-sb-tab-count" id="ex-lib-hidden-count"></span></button>
         </div>
         <div class="ex-lib-sb-search">
           <input type="text" id="ex-lib-sb-search" placeholder="Search…" autocomplete="off" />
@@ -951,7 +955,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
   <script src="cloud.js?v=profile1"></script>
-  <script src="app.js?v=pkgnocard"></script>
+  <script src="app.js?v=libhide"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

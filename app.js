@@ -726,6 +726,10 @@
   if (!Array.isArray(state.trainerData.programTemplates)) {
     state.trainerData.programTemplates = [];
   }
+  // Coach-side list of exercise names hidden from the library sidebar (local-only).
+  if (!Array.isArray(state.trainerData.hiddenExercises)) {
+    state.trainerData.hiddenExercises = [];
+  }
   state.trainerData.clients.forEach((c) => {
     if (!c.schedule) c.schedule = {};
     if (!c.coachPRs) c.coachPRs = [];
@@ -2684,9 +2688,11 @@
   function renderExLibrary(filter) {
     const q = filter.toLowerCase().trim();
     const body = $("#ex-library-body");
+    const hidden = state.trainerData.hiddenExercises || [];
     let html = "";
     for (const { cat, ex } of EXERCISE_LIBRARY) {
-      const items = q ? ex.filter((e) => e.toLowerCase().includes(q)) : ex;
+      let items = ex.filter((e) => !hidden.includes(e));
+      if (q) items = items.filter((e) => e.toLowerCase().includes(q));
       if (!items.length) continue;
       html += `<div class="ex-cat-header">${escapeHtml(cat)}</div>`;
       html += items.map((name) =>
@@ -2714,13 +2720,44 @@
   }
 
   // -------- Persistent Library Sidebar --------
+  // Which tab is showing: "active" (draggable library) or "hidden" (parked exercises).
+  let _libSbTab = "active";
+
+  function isExHidden(name) {
+    return (state.trainerData.hiddenExercises || []).includes(name);
+  }
+  function hideExercise(name) {
+    if (!Array.isArray(state.trainerData.hiddenExercises)) state.trainerData.hiddenExercises = [];
+    if (!state.trainerData.hiddenExercises.includes(name)) {
+      state.trainerData.hiddenExercises.push(name);
+      saveTrainer();
+    }
+    renderSidebarLibrary($("#ex-lib-sb-search")?.value || "");
+  }
+  function unhideExercise(name) {
+    state.trainerData.hiddenExercises = (state.trainerData.hiddenExercises || []).filter((n) => n !== name);
+    saveTrainer();
+    renderSidebarLibrary($("#ex-lib-sb-search")?.value || "");
+  }
+
   function renderSidebarLibrary(filter) {
     const q = (filter || "").toLowerCase().trim();
     const body = $("#ex-lib-sb-body");
     if (!body) return;
+    const hidden = state.trainerData.hiddenExercises || [];
+    const showingHidden = _libSbTab === "hidden";
+
+    // Keep the tab UI + hint in sync with the active tab.
+    $$(".ex-lib-sb-tab").forEach((t) => t.classList.toggle("active", t.dataset.libTab === _libSbTab));
+    const countEl = $("#ex-lib-hidden-count");
+    if (countEl) countEl.textContent = hidden.length ? `(${hidden.length})` : "";
+    const hintEl = $("#ex-lib-sb-hint");
+    if (hintEl) hintEl.textContent = showingHidden ? "Tap ↩ to restore" : "Drag onto a day";
+
     body.innerHTML = "";
     for (const { cat, ex } of EXERCISE_LIBRARY) {
-      const items = q ? ex.filter((e) => e.toLowerCase().includes(q)) : ex;
+      let items = ex.filter((e) => (showingHidden ? hidden.includes(e) : !hidden.includes(e)));
+      if (q) items = items.filter((e) => e.toLowerCase().includes(q));
       if (!items.length) continue;
       const catEl = document.createElement("div");
       catEl.className = "ex-lib-sb-cat";
@@ -2728,22 +2765,52 @@
       body.appendChild(catEl);
       items.forEach((name) => {
         const item = document.createElement("div");
-        item.className = "ex-lib-sb-item";
-        item.textContent = name;
-        item.draggable = true;
-        item.dataset.exname = name;
-        item.addEventListener("dragstart", (e) => {
-          item.classList.add("dragging-active");
-          e.dataTransfer.setData("text/ex-name", name);
-          e.dataTransfer.effectAllowed = "copy";
-        });
-        item.addEventListener("dragend", () => item.classList.remove("dragging-active"));
+        item.className = "ex-lib-sb-item" + (showingHidden ? " is-hidden-row" : "");
+
+        const label = document.createElement("span");
+        label.className = "ex-lib-sb-item-name";
+        label.textContent = name;
+        item.appendChild(label);
+
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "ex-lib-sb-actbtn";
+        if (showingHidden) {
+          btn.textContent = "↩";
+          btn.title = "Restore to library";
+          btn.addEventListener("click", (e) => { e.stopPropagation(); unhideExercise(name); });
+        } else {
+          btn.textContent = "✕";
+          btn.title = "Hide from library";
+          btn.addEventListener("click", (e) => { e.stopPropagation(); hideExercise(name); });
+        }
+        item.appendChild(btn);
+
+        // Only active-library rows are drag sources.
+        if (!showingHidden) {
+          item.draggable = true;
+          item.dataset.exname = name;
+          item.addEventListener("dragstart", (e) => {
+            item.classList.add("dragging-active");
+            e.dataTransfer.setData("text/ex-name", name);
+            e.dataTransfer.effectAllowed = "copy";
+          });
+          item.addEventListener("dragend", () => item.classList.remove("dragging-active"));
+        }
         body.appendChild(item);
       });
     }
     if (!body.children.length) {
-      body.innerHTML = '<div style="padding:1rem;color:var(--muted);font-size:0.82rem">No exercises found.</div>';
+      const msg = showingHidden
+        ? (hidden.length ? "No hidden exercises match your search." : "No hidden exercises. Tap ✕ on a library exercise to park it here.")
+        : "No exercises found.";
+      body.innerHTML = `<div style="padding:1rem;color:var(--muted);font-size:0.82rem">${msg}</div>`;
     }
+  }
+
+  function setLibSbTab(tab) {
+    _libSbTab = tab === "hidden" ? "hidden" : "active";
+    renderSidebarLibrary($("#ex-lib-sb-search")?.value || "");
   }
 
   function showLibSidebar() {
@@ -8852,6 +8919,7 @@
     $("#ex-library-backdrop").addEventListener("click", closeExLibrary);
     $("#ex-library-search").addEventListener("input", (e) => renderExLibrary(e.target.value));
     $("#ex-lib-sb-search")?.addEventListener("input", (e) => renderSidebarLibrary(e.target.value));
+    $$(".ex-lib-sb-tab").forEach((t) => t.addEventListener("click", () => setLibSbTab(t.dataset.libTab)));
 
     // Drum picker
     $("#btn-drum-confirm").addEventListener("click", confirmDrum);
