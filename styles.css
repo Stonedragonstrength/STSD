@@ -538,18 +538,18 @@ input[type="date"] { color-scheme: dark; }
   letter-spacing: -0.02em;
 }
 .client-row-main { min-width: 0; flex: 1; }
-.client-row-name { font-size: 0.92rem; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.client-row-sub { font-size: 0.76rem; color: var(--text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.1em; }
-.client-row-prog { width: 108px; flex-shrink: 0; }
-.client-row-prog-top { display: flex; align-items: baseline; justify-content: flex-end; gap: 0.4em; margin-bottom: 0.28em; }
-.client-row-prog-top .pct { font-size: 0.9rem; font-weight: 800; color: var(--primary-bright); }
-.client-row-prog-top .days { font-size: 0.66rem; color: var(--muted); }
-.client-row-prog .progress-track { height: 5px; background: var(--surface-3); border-radius: 999px; overflow: hidden; }
+.client-row-name { font-size: 1.08rem; font-weight: 800; color: var(--text); letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.client-row-sub { font-size: 0.74rem; color: var(--text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.1em; }
+.client-row-prog { width: 82px; flex-shrink: 0; }
+.client-row-prog-top { display: flex; align-items: baseline; justify-content: flex-end; gap: 0.3em; margin-bottom: 0.24em; }
+.client-row-prog-top .pct { font-size: 0.78rem; font-weight: 800; color: var(--primary-bright); }
+.client-row-prog-top .days { font-size: 0.6rem; color: var(--muted); }
+.client-row-prog .progress-track { height: 4px; background: var(--surface-3); border-radius: 999px; overflow: hidden; }
 .client-row-prog .progress-fill { height: 100%; background: linear-gradient(90deg, var(--primary-bright), var(--accent)); border-radius: 999px; transition: width 0.4s ease; }
 .client-row-prog.complete .pct { color: var(--accent); }
 .client-row-prog.complete .progress-fill { background: var(--accent); }
 .client-row-prog.no-data { display: flex; align-items: center; justify-content: flex-end; }
-.client-row-prog-status { font-size: 0.72rem; color: var(--muted); font-style: italic; }
+.client-row-prog-status { font-size: 0.62rem; color: var(--muted); font-style: italic; }
 /* Session-balance chip + pending-request badge on each athlete card (replaces
    the old Packages page). Tapping this block jumps to the athlete's Sessions tab. */
 .client-row-sessions {
