@@ -277,6 +277,19 @@
     } catch (e) { console.warn("[Cloud] updateAthleteCoachPRs", e); return false; }
   }
 
+  // Coach-side "reset access": clears the athlete's auth link so their row is
+  // unclaimed again and can be claimed fresh with a newly regenerated invite
+  // code. Pairs with the hardened claim RPC (which refuses to re-link an
+  // already-claimed account). The coach owns the row, so RLS permits this.
+  async function unlinkAthleteAuth(athleteId) {
+    if (!athleteId) return false;
+    try {
+      const { error } = await sb.from("athletes").update({ auth_user_id: null }).eq("id", athleteId);
+      if (error) console.warn("[Cloud] unlinkAthleteAuth error", error.message);
+      return !error;
+    } catch (e) { console.warn("[Cloud] unlinkAthleteAuth", e); return false; }
+  }
+
   // Athlete-side write: toggle their own open-slot alert preference.
   async function updateAthleteHideOpenSlots(athleteId, hide) {
     if (!athleteId) return false;
@@ -458,6 +471,7 @@
     // Athlete
     upsertAthlete,
     deleteAthlete,
+    unlinkAthleteAuth,
     getAthleteByInviteCode,
     getProgressByInviteCode,
     getAthleteById,

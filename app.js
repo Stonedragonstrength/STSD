@@ -283,7 +283,7 @@
   const EXERCISE_MODIFIERS = [
     { group: "Unilateral",  tags: ["1A", "1L"] },
     { group: "Alternation", tags: ["Alternating", "Non-Alternating"] },
-    { group: "Equipment",   tags: ["BB", "DB", "KB", "EZ Bar", "Cable", "Rope", "Band", "Machine"], multi: true },
+    { group: "Equipment",   tags: ["BB", "DB", "KB", "EZ Bar", "Cable", "Rope", "Band", "Machine", "Landmine"], multi: true },
     { group: "Position",    tags: ["Incline", "Decline", "Elevated", "Seated", "Standing", "Kneeling", "Raised"] },
     { group: "Grip",        tags: ["Supinated", "Neutral", "Pronated"] },
     { group: "Style",       tags: ["Pause", "Tempo", "Explosive", "Isometric"] },
@@ -305,6 +305,7 @@
     "Rope":      { color: "#38bdf8", bg: "rgba(56,189,248,0.18)"  },
     "Band":      { color: "#4ade80", bg: "rgba(74,222,128,0.18)"  },
     "Machine":   { color: "#facc15", bg: "rgba(250,204,21,0.18)"  },
+    "Landmine":  { color: "#d97706", bg: "rgba(217,119,6,0.18)"   },
     "Incline":   { color: "#fbbf24", bg: "rgba(251,191,36,0.18)"  },
     "Decline":   { color: "#f97316", bg: "rgba(249,115,22,0.18)"  },
     "Elevated":  { color: "#22d3ee", bg: "rgba(34,211,238,0.18)"  },
@@ -2164,9 +2165,12 @@
   }
   function regenerateInviteCode() {
     const c = currentClient(); if (!c) return;
-    if (!window.confirm("Regenerate this athlete's invite code? Any old code you've sent them will stop working.")) return;
+    if (!window.confirm("Regenerate this athlete's invite code? Any old code stops working. If they've already signed in, this resets their access — they'll re-enter the new code to reconnect.")) return;
     c.inviteCode = makeInviteCode();
     saveTrainer();
+    // Clear the auth link so the row is unclaimed and can be claimed fresh with
+    // the new code (the hardened claim RPC won't re-link an active account).
+    if (window.Cloud?.enabled) window.Cloud.unlinkAthleteAuth(c.id);
     $("#invite-code-display").textContent = c.inviteCode;
     toast("New code generated");
   }
