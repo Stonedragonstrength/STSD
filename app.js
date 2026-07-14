@@ -8232,17 +8232,6 @@
     nameEl.textContent = exerciseDisplayLabel(ex);
     nameBlock.appendChild(nameEl);
 
-    // Effort / intensity (heat ramp): warm gradient on the card + flame tag.
-    const effortMeta = effortLevel(ex);
-    if (effortMeta) {
-      applyEffortWrapper(wrapper, ex);
-      const tag = document.createElement("span");
-      tag.className = "effort-tag";
-      tag.style.setProperty("--effort-rgb", effortMeta.rgb);
-      tag.innerHTML = `<span class="effort-tag-flames">${effortMeta.flames}</span><span class="effort-tag-lbl">${escapeHtml(effortMeta.label)}</span>`;
-      nameBlock.appendChild(tag);
-    }
-
     content.appendChild(nameBlock);
 
     const rxEl = document.createElement("div");
@@ -8275,7 +8264,23 @@
     }
 
     content.appendChild(rxEl);
-    row.appendChild(doneCircle);
+
+    // Left rail: the coach's intensity cue (flames only, no words) sitting
+    // right above the done-check that fills in when the exercise is completed.
+    const leftCol = document.createElement("div");
+    leftCol.className = "cex-left";
+    const effortMeta = effortLevel(ex);
+    if (effortMeta) {
+      applyEffortWrapper(wrapper, ex);
+      const tag = document.createElement("span");
+      tag.className = "effort-tag flames-only";
+      tag.style.setProperty("--effort-rgb", effortMeta.rgb);
+      tag.textContent = effortMeta.flames;
+      tag.title = effortMeta.label + " intensity";
+      leftCol.appendChild(tag);
+    }
+    leftCol.appendChild(doneCircle);
+    row.appendChild(leftCol);
     row.appendChild(content);
     // Lock/Edit control lives at the top-right of the title; the buttons are
     // built later (only when the exercise has sets) and dropped in here.

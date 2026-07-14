@@ -658,6 +658,9 @@ input[type="date"] { color-scheme: dark; }
   padding: 0.12em 0.45em; border-radius: 999px; white-space: nowrap; line-height: 1.4;
 }
 .effort-tag-flames { font-size: 0.9em; }
+/* Left rail on athlete exercise rows: flames stacked above the done-check. */
+.cex-left { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; flex-shrink: 0; }
+.effort-tag.flames-only { padding: 0.08em 0.32em; font-size: 0.6rem; letter-spacing: 0; gap: 0; line-height: 1; }
 /* Coach row button */
 .ex-effort-btn { min-width: 0; font-size: 0.78rem; }
 .ex-effort-btn:not(.empty) {
