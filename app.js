@@ -4012,8 +4012,10 @@
     row.appendChild(handle);
     row.appendChild(moveUpBtn);
     row.appendChild(moveDownBtn);
-    row.appendChild(chipsBefore);
+    // Effort/heat stays pinned on the left; tag chips render after it so adding
+    // tags never shifts the effort button around.
     row.appendChild(effortBtn);
+    row.appendChild(chipsBefore);
     row.appendChild(nameInput);
     row.appendChild(chipsAfter);
     row.appendChild(modBtn);
