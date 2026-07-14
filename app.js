@@ -358,6 +358,7 @@
     light:    { label: "Light",    rgb: "234,179,8",  flames: "🔥" },
     moderate: { label: "Moderate", rgb: "249,115,22", flames: "🔥🔥" },
     hard:     { label: "Hard",     rgb: "239,68,68",  flames: "🔥🔥🔥" },
+    max:      { label: "Max",      rgb: "185,28,28",  flames: "🔥🔥🔥🔥" },
   };
   function effortLevel(ex) { return ex && ex.effort ? EFFORT_LEVELS[ex.effort] : null; }
   // Layer the warm gradient onto a card wrapper (coach row or athlete card).
@@ -378,6 +379,7 @@
       { key: "light", ...EFFORT_LEVELS.light },
       { key: "moderate", ...EFFORT_LEVELS.moderate },
       { key: "hard", ...EFFORT_LEVELS.hard },
+      { key: "max", ...EFFORT_LEVELS.max },
     ];
     const current = ex.effort || null;
     opts.forEach((o) => {
@@ -1573,73 +1575,62 @@
     const daysPerWeek = tpl.weeks.reduce((max, w) => Math.max(max, w.days.length), 0);
     const exCount = tpl.weeks.reduce((n, w) => n + w.days.reduce((m, d) => m + d.exercises.length, 0), 0);
     const ready = tpl.status === "ready";
-    const card = document.createElement("div");
-    card.className = "program-tpl-card" + (ready ? " is-ready" : "");
 
-    const nameEl = document.createElement("h3");
+    // Compact 2-column row (matches the Athletes list). Whole row opens the
+    // editor; status toggling also lives in the editor's status button.
+    const row = document.createElement("div");
+    row.className = "coach-row";
+
+    const icon = document.createElement("div");
+    icon.className = "coach-row-icon";
+    icon.textContent = "📋";
+
+    const main = document.createElement("div");
+    main.className = "coach-row-main";
+    const nameEl = document.createElement("div");
+    nameEl.className = "coach-row-name";
     nameEl.textContent = tpl.name || "Untitled Program";
-    const desc = document.createElement("p");
-    desc.className = "desc";
-    desc.textContent = tpl.description || "";
-    const meta = document.createElement("div");
-    meta.className = "program-tpl-meta";
-    meta.innerHTML = `<span class="tpl-chip">🗓️ ${weekCount} week${weekCount !== 1 ? "s" : ""}</span><span class="tpl-chip">📆 ${daysPerWeek} day${daysPerWeek !== 1 ? "s" : ""}/week</span><span class="tpl-chip">🏋️ ${exCount} exercise${exCount !== 1 ? "s" : ""}</span>`;
-
-    const info = document.createElement("div");
-    info.className = "program-tpl-info";
-    info.appendChild(nameEl);
-    if (tpl.description) info.appendChild(desc);
-    info.appendChild(meta);
+    const sub = document.createElement("div");
+    sub.className = "coach-row-sub";
+    sub.textContent = `${weekCount} wk${weekCount !== 1 ? "s" : ""} · ${daysPerWeek} day${daysPerWeek !== 1 ? "s" : ""}/wk · ${exCount} ex`;
+    main.appendChild(nameEl);
+    main.appendChild(sub);
 
     const actions = document.createElement("div");
-    actions.className = "program-tpl-actions";
+    actions.className = "coach-row-actions";
+
+    if (ready) {
+      const assignBtn = document.createElement("button");
+      assignBtn.className = "btn btn-primary btn-sm";
+      assignBtn.textContent = "Assign";
+      assignBtn.addEventListener("click", (e) => { e.stopPropagation(); assignProgramPrompt(tpl.id); });
+      actions.appendChild(assignBtn);
+    } else {
+      const readyBtn = document.createElement("button");
+      readyBtn.className = "btn btn-ghost btn-sm";
+      readyBtn.textContent = "✓ Ready";
+      readyBtn.title = "Mark ready to assign";
+      readyBtn.addEventListener("click", (e) => { e.stopPropagation(); setProgramStatus(tpl, "ready"); renderProgramsList(); });
+      actions.appendChild(readyBtn);
+    }
 
     const deleteBtn = document.createElement("button");
     deleteBtn.className = "btn-delete-mini";
     deleteBtn.title = "Delete program";
     deleteBtn.textContent = "×";
-    deleteBtn.addEventListener("click", () => {
+    deleteBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
       if (!window.confirm(`Delete "${tpl.name || "this program"}"?`)) return;
       state.trainerData.programTemplates = state.trainerData.programTemplates.filter((p) => p.id !== tpl.id);
       saveTrainer(); renderProgramsList();
     });
-
-    if (ready) {
-      // Ready to assign: lead with the assign action; keep edit + reopen handy.
-      const assignBtn = document.createElement("button");
-      assignBtn.className = "btn btn-primary btn-sm";
-      assignBtn.textContent = "Assign";
-      assignBtn.addEventListener("click", () => assignProgramPrompt(tpl.id));
-      const editBtn = document.createElement("button");
-      editBtn.className = "btn btn-ghost btn-sm";
-      editBtn.textContent = "Edit";
-      editBtn.addEventListener("click", () => openProgramEditor(tpl.id));
-      const reopenBtn = document.createElement("button");
-      reopenBtn.className = "btn btn-ghost btn-sm";
-      reopenBtn.textContent = "Reopen";
-      reopenBtn.title = "Move back to in progress";
-      reopenBtn.addEventListener("click", () => { setProgramStatus(tpl, "draft"); renderProgramsList(); });
-      actions.appendChild(assignBtn);
-      actions.appendChild(editBtn);
-      actions.appendChild(reopenBtn);
-    } else {
-      // In progress: lead with edit; let it be marked complete.
-      const editBtn = document.createElement("button");
-      editBtn.className = "btn btn-primary btn-sm";
-      editBtn.textContent = "Edit";
-      editBtn.addEventListener("click", () => openProgramEditor(tpl.id));
-      const completeBtn = document.createElement("button");
-      completeBtn.className = "btn btn-ghost btn-sm";
-      completeBtn.textContent = "Mark complete ✓";
-      completeBtn.addEventListener("click", () => { setProgramStatus(tpl, "ready"); renderProgramsList(); });
-      actions.appendChild(editBtn);
-      actions.appendChild(completeBtn);
-    }
     actions.appendChild(deleteBtn);
 
-    card.appendChild(info);
-    card.appendChild(actions);
-    return card;
+    row.appendChild(icon);
+    row.appendChild(main);
+    row.appendChild(actions);
+    row.addEventListener("click", () => openProgramEditor(tpl.id));
+    return row;
   }
 
   function renderProgramsList() {
@@ -1666,7 +1657,7 @@
       sec.appendChild(head);
       if (list.length) {
         const inner = document.createElement("div");
-        inner.className = "program-template-grid-inner";
+        inner.className = "coach-row-grid";
         list.forEach((tpl) => inner.appendChild(makeProgramCard(tpl)));
         sec.appendChild(inner);
       } else {
@@ -2443,34 +2434,37 @@
     const templates = [...(state.trainerData.workoutTemplates || [])].sort((a, b) => a.name.localeCompare(b.name));
     if (!templates.length) { show(empty); hide(grid); return; }
     hide(empty); show(grid);
-    templates.forEach((t, idx) => {
-      const card = document.createElement("div");
-      card.className = "template-card";
-      card.style.animationDelay = `${idx * 40}ms`;
+    templates.forEach((t) => {
       const exCount = t.exercises?.length || 0;
-      const icon = workoutIconFor(t.name);
-      card.innerHTML = `
-        <div class="template-card-head">
-          <div class="template-card-icon">${icon}</div>
-          <div style="flex:1; min-width: 0;">
-            <h3>${escapeHtml(t.name)}</h3>
-            ${t.focus ? `<p class="template-focus">${escapeHtml(t.focus)}</p>` : ""}
-          </div>
-        </div>
-        <div class="template-pills">
-          <span class="meta-pill">${exCount} exercise${exCount === 1 ? "" : "s"}</span>
-          ${t.notes ? `<span class="meta-pill">📝 notes</span>` : ""}
-        </div>
-        <div class="template-actions">
-          <button class="btn btn-ghost btn-sm" data-tpl-edit>Edit</button>
-          <button class="btn btn-danger btn-sm" data-tpl-delete>Delete</button>
-        </div>
-      `;
-      card.querySelector("[data-tpl-edit]").addEventListener("click", (e) => {
-        e.stopPropagation();
-        openTemplateEditor(t);
-      });
-      card.querySelector("[data-tpl-delete]").addEventListener("click", (e) => {
+      const row = document.createElement("div");
+      row.className = "coach-row";
+
+      const icon = document.createElement("div");
+      icon.className = "coach-row-icon";
+      icon.textContent = workoutIconFor(t.name);
+
+      const main = document.createElement("div");
+      main.className = "coach-row-main";
+      const nameEl = document.createElement("div");
+      nameEl.className = "coach-row-name";
+      nameEl.textContent = t.name;
+      const sub = document.createElement("div");
+      sub.className = "coach-row-sub";
+      const subParts = [];
+      if (t.focus) subParts.push(t.focus);
+      subParts.push(`${exCount} exercise${exCount === 1 ? "" : "s"}`);
+      if (t.notes) subParts.push("📝 notes");
+      sub.textContent = subParts.join(" · ");
+      main.appendChild(nameEl);
+      main.appendChild(sub);
+
+      const actions = document.createElement("div");
+      actions.className = "coach-row-actions";
+      const deleteBtn = document.createElement("button");
+      deleteBtn.className = "btn-delete-mini";
+      deleteBtn.title = "Delete day";
+      deleteBtn.textContent = "×";
+      deleteBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         if (!window.confirm(`Delete day template "${t.name}"?`)) return;
         state.trainerData.workoutTemplates =
@@ -2479,8 +2473,13 @@
         renderDayLibrary();
         toast("Day template deleted");
       });
-      card.addEventListener("click", () => openTemplateEditor(t));
-      grid.appendChild(card);
+      actions.appendChild(deleteBtn);
+
+      row.appendChild(icon);
+      row.appendChild(main);
+      row.appendChild(actions);
+      row.addEventListener("click", () => openDayEditor(t));
+      grid.appendChild(row);
     });
   }
 
@@ -6442,30 +6441,59 @@
       reqContainer.appendChild(card);
     }
 
-    // --- Per-athlete balances ---
+    // --- Per-athlete balances (2-column rows, matching the Athletes list) ---
     const card = document.createElement("div");
     card.className = "card";
     card.innerHTML = `<h4 style="margin-top:0">Athlete balances</h4>`;
     if (!clients.length) {
       card.insertAdjacentHTML("beforeend", `<p class="muted">No athletes yet.</p>`);
+    } else {
+      const grid = document.createElement("div");
+      grid.className = "coach-row-grid";
+      clients.forEach((c) => {
+        const sum = sessionBankSummary(c);
+        const lastRed = [...c.sessionBank.redemptions].sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0];
+        const pendingCount = openRequestsFor(c).length;
+        const row = document.createElement("div");
+        row.className = "coach-row";
+
+        const av = document.createElement("div");
+        av.className = "client-avatar";
+        av.style.background = avatarColor(c.name);
+        av.textContent = nameInitials(c.name);
+
+        const main = document.createElement("div");
+        main.className = "coach-row-main";
+        const nm = document.createElement("div");
+        nm.className = "coach-row-name";
+        nm.textContent = c.name;
+        const sub = document.createElement("div");
+        sub.className = "coach-row-sub";
+        sub.textContent = `${sum.granted} purchased · ${sum.used} used${lastRed ? ` · last ${lastRed.date}` : ""}`;
+        main.appendChild(nm);
+        main.appendChild(sub);
+
+        const actions = document.createElement("div");
+        actions.className = "coach-row-actions";
+        if (pendingCount) {
+          const pend = document.createElement("span");
+          pend.className = "pkg-track-pending";
+          pend.textContent = `${pendingCount} request${pendingCount > 1 ? "s" : ""}`;
+          actions.appendChild(pend);
+        }
+        const chip = document.createElement("span");
+        chip.className = "booked-balance-chip" + (sum.remaining <= 1 ? " low" : "");
+        chip.textContent = `🎟 ${sum.remaining} left`;
+        actions.appendChild(chip);
+
+        row.appendChild(av);
+        row.appendChild(main);
+        row.appendChild(actions);
+        row.addEventListener("click", () => { openClient(c.id); setTab("sessions"); });
+        grid.appendChild(row);
+      });
+      card.appendChild(grid);
     }
-    clients.forEach((c) => {
-      const sum = sessionBankSummary(c);
-      const lastRed = [...c.sessionBank.redemptions].sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0];
-      const pendingCount = openRequestsFor(c).length;
-      const row = document.createElement("div");
-      row.className = "pkg-track-row";
-      row.innerHTML = `
-        <div class="pkg-track-info">
-          <strong>${escapeHtml(c.name)}</strong>
-          <span class="muted">${sum.granted} purchased · ${sum.used} used${lastRed ? ` · last session ${escapeHtml(lastRed.date)}` : ""}</span>
-        </div>
-        ${pendingCount ? `<span class="pkg-track-pending">${pendingCount} request${pendingCount > 1 ? "s" : ""}</span>` : ""}
-        <span class="booked-balance-chip${sum.remaining <= 1 ? " low" : ""}">🎟 ${sum.remaining} left</span>
-        <span class="dash-booked-arrow">›</span>`;
-      row.addEventListener("click", () => { openClient(c.id); setTab("sessions"); });
-      card.appendChild(row);
-    });
     athContainer.appendChild(card);
   }
 
