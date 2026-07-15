@@ -6635,6 +6635,34 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   .coach-layout.show-lib-sidebar .ex-lib-mobile-btn { display: none; }
 }
 
+/* ============ Tablet-safe touch gating (2026-07-15) ============
+   Interactions are gated by POINTER TYPE, not width: a landscape iPad is
+   ≥900px wide (desktop layout) but HTML5 drag-and-drop doesn't work on
+   touch. Wherever the primary pointer is coarse, swap drag affordances for
+   their tap equivalents regardless of viewport width. Placed AFTER the
+   width-based rules above so it wins the cascade. */
+@media (pointer: coarse) {
+  /* Reorder: tap ▲/▼, not drag. */
+  .ex-drag-handle { display: none; }
+  .ex-move-btn { display: inline-flex; }
+  /* "Drag exercises here" hints are dead weight on touch. */
+  .ex-list-empty-drop,
+  .ex-list-drop-hint { display: none; }
+  /* The drag-only library sidebar is useless on touch — hide it and keep
+     the tap-to-add 📖 Library button visible at every width instead. */
+  .coach-layout.show-lib-sidebar .ex-lib-sidebar { display: none; }
+  .coach-layout.show-lib-sidebar .ex-lib-mobile-btn { display: inline-flex; }
+}
+
+/* Tablet portrait / narrow desktop (601–899px): the exercise row and day
+   action bar previously only wrapped ≤600px — between there and the 900px
+   sidebar layout they could run off-screen. Wrap-if-needed, without the
+   phone block's heavier compaction. */
+@media (max-width: 899px) {
+  .ex-row { flex-wrap: wrap; }
+  .day-action-bar { flex-wrap: wrap; row-gap: 0.4em; }
+}
+
 /* ===== Exercise Modifier Chips ===== */
 .mod-chips-before,
 .mod-chips-after {
