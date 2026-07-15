@@ -1657,7 +1657,25 @@
       card.addEventListener("click", () => { Nav.push(renderDashboard); openClient(c.id); setTab("profile"); });
       grid.appendChild(card);
     }
+    fitClientRowNames();
+    requestAnimationFrame(fitClientRowNames); // again post-layout, in case the view was still hidden
   }
+
+  // Names stay on one line: shrink the font until the full name fits its row
+  // (9px floor, where ellipsis takes over). Mobile rows are too narrow for
+  // long names at the default size.
+  function fitClientRowNames() {
+    $$("#client-grid .client-row-name").forEach((el) => {
+      el.style.fontSize = "";
+      if (!el.clientWidth) return;
+      let px = parseFloat(getComputedStyle(el).fontSize);
+      while (el.scrollWidth > el.clientWidth && px > 9) {
+        px -= 0.5;
+        el.style.fontSize = px + "px";
+      }
+    });
+  }
+  window.addEventListener("resize", () => requestAnimationFrame(fitClientRowNames));
 
   // -------- Program Templates --------
   function ensureProgramTemplates() {

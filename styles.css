@@ -516,7 +516,7 @@ input[type="date"] { color-scheme: dark; }
   letter-spacing: -0.02em;
 }
 .client-row-main { min-width: 0; flex: 1; }
-.client-row-name { font-size: 1.08rem; font-weight: 800; color: var(--text); letter-spacing: -0.01em; white-space: normal; overflow-wrap: break-word; line-height: 1.2; }
+.client-row-name { font-size: 1.08rem; font-weight: 800; color: var(--text); letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2; }
 .client-row-sub { font-size: 0.74rem; color: var(--text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.1em; }
 .client-row-prog { width: 82px; flex-shrink: 0; }
 .client-row-prog-top { display: flex; align-items: baseline; justify-content: flex-end; gap: 0.3em; margin-bottom: 0.24em; }
@@ -3768,6 +3768,13 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
   /* Client grid: one column */
   .client-grid { column-count: 1; }
   .client-grid > .client-row { margin-bottom: 0.5rem; }
+  /* Compact the row's fixed columns so the full name gets one uncut line
+     (paired with the JS font-shrink in fitClientRowNames). */
+  .client-row { gap: 0.5rem; padding: 0.5rem 0.6rem; }
+  .client-avatar { width: 30px; height: 30px; font-size: 0.72rem; }
+  .client-row-prog { width: 54px; }
+  .client-row-prog-top .days { display: none; }
+  .client-row-view { width: 30px; height: 30px; font-size: 0.9rem; }
   .template-grid { grid-template-columns: 1fr; gap: 0.7rem; }
   .library-head-actions { width: 100%; }
   .library-head-actions .btn { flex: 1; }
