@@ -8011,7 +8011,7 @@
     if (prog && prog.earned > 0) {
       const chip = document.createElement("span");
       chip.className = "cex-prog-chip";
-      chip.textContent = `📈 +${Math.round(prog.earned * prog.inc * 100) / 100} lb earned`;
+      chip.textContent = `📈 +${Math.round(prog.earned * prog.inc * 100) / 100} lb`;
       chip.title = "Auto-progression: you hit the rep ceiling on every set, so the target went up";
       rxEl.appendChild(chip);
     }
