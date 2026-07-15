@@ -5858,9 +5858,10 @@ input:focus, textarea:focus, select:focus {
   padding-bottom: 0.5rem;
 }
 /* Program builder: drop the surface "card" panel behind the week/day content —
-   it reads as a stray floating card while building a program. (Athlete program
-   editing keeps its panel.) */
-#program-editor-weeks .coach-week-body {
+   it reads as a stray floating card while building a program. Applies to both
+   the standalone Programs editor and the athlete's Program tab. */
+#program-editor-weeks .coach-week-body,
+#weeks-container .coach-week-body {
   background: none;
   border: none;
   border-radius: 0;
