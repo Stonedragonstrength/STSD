@@ -477,28 +477,6 @@ input[type="date"] { color-scheme: dark; }
   margin-bottom: 1rem;
 }
 
-/* ============ Dashboard stats strip ============ */
-.dash-stats-strip {
-  display: flex;
-  gap: 2rem;
-  margin-bottom: 1.75rem;
-  flex-wrap: wrap;
-}
-.dash-stat-item .num {
-  font-size: 2rem;
-  font-weight: 800;
-  color: var(--primary-bright);
-  line-height: 1;
-  letter-spacing: -0.02em;
-}
-.dash-stat-item .lbl {
-  font-size: 0.72rem;
-  color: var(--text-soft);
-  text-transform: uppercase;
-  letter-spacing: 0.09em;
-  margin-top: 0.2em;
-}
-
 /* ============ Client grid ============ */
 /* Column-major fill: athletes run alphabetically DOWN the left column, then
    continue down the right (multicol flows top-to-bottom, then next column). */
@@ -3229,49 +3207,6 @@ button.ov-stat:hover { background: var(--surface-2); }
   #coach-pr-container, #athlete-pr-container { grid-template-columns: 1fr; }
 }
 
-/* Dashboard client card weekly progress */
-.client-card .week-progress-mini {
-  margin-top: 0.6em;
-  padding-top: 0.6em;
-  border-top: 1px solid var(--border);
-}
-.client-card .week-progress-mini .progress-label {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-soft);
-  margin-bottom: 0.3em;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.client-card .week-progress-mini .progress-label .pct {
-  color: var(--primary-bright);
-  font-size: 0.85rem;
-}
-.client-card .week-progress-mini .progress-track {
-  height: 6px;
-  background: var(--surface-3);
-  border-radius: 999px;
-  overflow: hidden;
-}
-.client-card .week-progress-mini .progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--primary-bright), var(--accent));
-  transition: width 0.4s ease;
-  border-radius: 999px;
-}
-.client-card .week-progress-mini.complete .progress-fill {
-  background: var(--accent);
-}
-.client-card .week-progress-mini.complete .pct { color: var(--accent); }
-.client-card .week-progress-mini.no-data {
-  color: var(--muted);
-  font-size: 0.8rem;
-  font-style: italic;
-}
-
 /* ============ Invite code ============ */
 .invite-code-bar {
   display: flex;
@@ -3836,28 +3771,6 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
   .library-head-actions { width: 100%; }
   .library-head-actions .btn { flex: 1; }
   .coach-main { padding: 1rem 0.85rem 4rem; }
-  .client-card h3 { font-size: 1.05rem; }
-
-  /* Thin athlete-list cards: the stats strip, per-card week/exercise counts,
-     progress bar, and quick-action buttons all get dropped in favor of a
-     single compact line (current week/day) so ~5 athletes fit on screen
-     at once. Tapping anywhere on the card still opens their profile (see
-     the existing card click handler in app.js). */
-  .dash-stats-strip { display: none; }
-  .client-card { padding: 0.6em 0.85em; }
-  .client-card-top { margin-bottom: 0; gap: 0.6rem; }
-  .client-avatar { width: 34px; height: 34px; font-size: 0.8rem; }
-  .client-card-info h3 { font-size: 0.92rem; margin-bottom: 0.05em; }
-  .client-card-info .meta { display: none; }
-  .client-card-mobile-progress {
-    display: block;
-    color: var(--text-soft);
-    font-size: 0.76rem;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .client-card .stats,
-  .client-card .week-progress-mini,
-  .card-quick-actions { display: none; }
 
   /* Client head actions: wrap to 2 columns */
   .client-head { gap: 0.8em; }
@@ -4200,23 +4113,6 @@ body.login-success #screen-client {
   100% { box-shadow: 0 0 0 12px transparent; }
 }
 .btn:focus-visible { animation: pressPulse 0.45s ease-out; outline: none; }
-
-/* -------- Cards: hover lift, glow trim -------- */
-.client-card { position: relative; overflow: hidden; }
-.client-card::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, transparent 30%, rgba(var(--primary-bright-rgb), 0.12) 50%, transparent 70%);
-  transform: translateX(-100%);
-  transition: transform 0.7s cubic-bezier(0.22, 0.85, 0.34, 1);
-  pointer-events: none;
-}
-.client-card:hover::after { transform: translateX(100%); }
-.client-card:hover {
-  box-shadow: 0 18px 42px rgba(var(--primary-rgb), 0.28), 0 0 0 1px rgba(var(--primary-bright-rgb), 0.4);
-}
 
 /* -------- Tabs: animated active underline -------- */
 .tab {
@@ -6908,3 +6804,197 @@ body.preview-mode #screen-client #ccal-today {
 }
 /* Header Exit/Install would sign the coach out — hide during preview. */
 body.preview-mode #screen-client .header-right { display: none; }
+
+/* ==========================================================================
+   Forged-steel facelift
+   Layered cards, fading hairlines, gradient energy rails, plate-segment
+   progress meters, calendar status underlines, notched primary buttons,
+   and a superset spine. Every color leans on the theme tokens
+   (--primary-rgb & friends), so all themes — including white — inherit it.
+   ========================================================================== */
+
+/* -------- 1 · Layered cards: surface gradient + lit top edge + depth ----- */
+.card,
+.client-row,
+.week-card,
+.modal-card {
+  background: linear-gradient(180deg, var(--surface-2), var(--surface) 62%);
+  border-color: color-mix(in srgb, var(--border) 55%, transparent);
+  border-top-color: rgba(255, 255, 255, 0.14);
+  box-shadow: var(--shadow);
+}
+.client-row {
+  transition: border-color 0.15s, background 0.15s, transform 0.15s, box-shadow 0.2s;
+}
+.client-row:hover {
+  transform: translateY(-2px);
+  border-color: rgba(var(--primary-rgb), 0.55);
+  background: linear-gradient(180deg, var(--surface-3), var(--surface-2) 70%);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(var(--primary-rgb), 0.15);
+}
+@media (prefers-reduced-motion: reduce) {
+  .client-row, .client-row:hover { transform: none; }
+}
+
+/* -------- 2 · Hairlines that fade instead of rules that slice ------------ */
+.tabs {
+  border-bottom-color: transparent;
+  border-image: linear-gradient(90deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.16) 55%, transparent) 1;
+}
+.week-card.open .week-head {
+  border-bottom-color: transparent;
+  border-image: linear-gradient(90deg, rgba(255, 255, 255, 0.14), transparent 85%) 1;
+}
+.ovmsg-item {
+  border-top-color: transparent;
+  border-image: linear-gradient(90deg, rgba(255, 255, 255, 0.14), transparent 80%) 1;
+}
+/* Active-tab underline: fade at both ends and glow at the center. */
+.tab::after {
+  background: linear-gradient(90deg, transparent, var(--primary-bright), transparent);
+  box-shadow: 0 0 10px rgba(var(--primary-bright-rgb), 0.8);
+}
+
+/* -------- 3 · Energy rails: hot at the top, cooling downward ------------- */
+.week-card { position: relative; }
+.week-card.phase-card { border-left: none; }
+.week-card.phase-card::before {
+  content: "";
+  position: absolute; left: 0; top: 0; bottom: 0; width: 4px; z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(180deg, var(--primary-bright), var(--primary) 45%, rgba(var(--primary-rgb), 0.12));
+  box-shadow: 1px 0 10px rgba(var(--primary-rgb), 0.4);
+}
+.week-card.phase-card::after {
+  content: "";
+  position: absolute; inset: 0; z-index: 1;
+  pointer-events: none;
+  background: radial-gradient(160px 90px at 0% 0%, rgba(var(--primary-rgb), 0.13), transparent 70%);
+}
+.ovmsg-card, .bulletin-item {
+  --rail-rgb: var(--primary-rgb);
+  border-left: none;
+  position: relative;
+  overflow: hidden;
+}
+.bulletin-item, .ovmsg-bulletin { --rail-rgb: 16, 185, 129; } /* accent = notice green */
+.ovmsg-card::before, .bulletin-item::before {
+  content: "";
+  position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgb(var(--rail-rgb)), rgba(var(--rail-rgb), 0.12));
+  box-shadow: 1px 0 8px rgba(var(--rail-rgb), 0.35);
+}
+.ovmsg-card { padding-left: calc(1rem + 3px); }
+.bulletin-item { padding-left: calc(0.75rem + 3px); }
+
+/* -------- 4 · Progress: plate-segment meters + gradient numerals --------- */
+.week-progress-track,
+.client-row-prog .progress-track {
+  border-radius: 4px;
+  -webkit-mask: repeating-linear-gradient(90deg, #000 0, #000 calc(10% - 3px), transparent calc(10% - 3px), transparent 10%);
+  mask: repeating-linear-gradient(90deg, #000 0, #000 calc(10% - 3px), transparent calc(10% - 3px), transparent 10%);
+}
+.week-progress-track { height: 12px; }
+.client-row-prog .progress-track { height: 6px; }
+.week-progress-fill,
+.client-row-prog .progress-fill {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.session-balance-num,
+.client-row-prog-top .pct,
+.ov-mini-val {
+  background-image: linear-gradient(180deg, var(--text) 10%, var(--primary-bright) 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: var(--primary-bright); /* fallback when background-clip:text is unsupported */
+}
+.client-row-prog.complete .pct {
+  background-image: linear-gradient(180deg, var(--text) 10%, var(--accent) 90%);
+  color: var(--accent);
+}
+
+/* -------- 5 · Calendar: status as an underline, today as the only glow --- */
+.cal-day {
+  border-color: transparent;
+  padding-bottom: 0.8em;
+}
+.cal-day::after {
+  content: "";
+  position: absolute; left: 8%; right: 8%; bottom: 4px; height: 3px;
+  border-radius: 3px;
+  pointer-events: none;
+}
+.cal-day.done {
+  background: rgba(16, 185, 129, 0.07);
+  border-color: transparent;
+}
+.cal-day.done::after { background: linear-gradient(90deg, var(--accent), rgba(16, 185, 129, 0.25)); }
+.cal-day.partial {
+  background: rgba(var(--primary-rgb), 0.06);
+  border-color: transparent;
+}
+.cal-day.partial::after { background: linear-gradient(90deg, var(--primary-bright), rgba(var(--primary-rgb), 0.25)); }
+.cal-day.missed {
+  background: rgba(239, 68, 68, 0.05);
+  border-color: transparent;
+}
+.cal-day.missed::after { background: rgba(239, 68, 68, 0.65); }
+.cal-day.rest {
+  background: var(--surface);
+  border: 1px dashed var(--border);
+}
+.cal-day:hover { border-color: rgba(var(--primary-rgb), 0.6); }
+.cal-day.today,
+.dash-cal-day.today {
+  border-color: rgba(var(--primary-rgb), 0.8);
+  box-shadow: 0 0 0 1px rgba(var(--primary-rgb), 0.35), 0 0 16px rgba(var(--primary-rgb), 0.25);
+}
+/* Coach overview month grid (separate component, same treatment) */
+.dash-cal-day { border-color: transparent; }
+.dash-cal-day.has-log:hover { border-color: rgba(var(--primary-rgb), 0.6); }
+
+/* -------- 6 · Notched primary button: cut steel, not a pill -------------- */
+.btn-primary {
+  border-radius: 6px;
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  /* clip-path clips box-shadow, so the outer glow rides drop-shadow instead */
+  filter: drop-shadow(0 3px 10px rgba(var(--primary-rgb), 0.35));
+}
+.btn-primary:hover {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  filter: drop-shadow(0 5px 14px rgba(var(--primary-rgb), 0.55)) brightness(1.07);
+}
+.btn-primary:focus-visible {
+  /* the shared pressPulse ring gets clipped by the notch — use an inset ring */
+  animation: none;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+/* -------- 7 · Superset: bracket spine + node dots, not a box ------------- */
+.superset-group {
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  padding: 0 0 0 16px;
+  position: relative;
+}
+.superset-group::before {
+  content: "";
+  position: absolute; left: 4px; top: 22px; bottom: 8px; width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--primary-bright), rgba(var(--primary-rgb), 0.2));
+  box-shadow: 0 0 8px rgba(var(--primary-rgb), 0.5);
+}
+.superset-group > :not(.superset-head) { position: relative; }
+.superset-group > :not(.superset-head)::before {
+  content: "";
+  position: absolute; left: -15px; top: 50%;
+  transform: translateY(-50%);
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--primary-bright);
+  box-shadow: 0 0 6px rgba(var(--primary-bright-rgb), 0.9);
+  z-index: 1;
+}
