@@ -365,6 +365,65 @@
     else wrapper.style.removeProperty("--effort-rgb");
   }
 
+  // -------- Auto-progression (📈, double progression) --------
+  // Coach tags an exercise with a rep ceiling + weight increment. The written
+  // reps are the floor. When the athlete locks in EVERY prescribed set at
+  // ≥ the ceiling reps and ≥ the effective weight, the next week's matching
+  // exercise (by name) shows +increment. Misses hold steady. Program data is
+  // never mutated — the effective target is computed from weeks + logs.
+  function progressionRule(ex) {
+    const p = ex && ex.progression;
+    if (!p || !p.ceil || !p.inc) return null;
+    const floor = parseInt(ex.currentReps, 10);
+    const base = parseFloat(ex.currentWeight);
+    if (!floor || !isFinite(base)) return null; // needs a rep floor + numeric weight
+    const ceil = parseInt(p.ceil, 10);
+    const inc = parseFloat(p.inc);
+    if (!ceil || ceil <= floor || !inc) return null;
+    return { floor, ceil, inc };
+  }
+
+  // Did the athlete's most recent locked log for this exercise copy hit the
+  // ceiling on every prescribed set at (or above) that week's effective weight?
+  function progressionHit(exCopy, effWeight, ceil, logsMap) {
+    const arr = logsMap?.[exCopy.id];
+    if (!Array.isArray(arr) || !arr.length) return false;
+    const entry = [...arr].sort((a, b) => String(b.date).localeCompare(String(a.date)))
+      .find((l) => l.locked === true && Array.isArray(l.sets) && l.sets.length);
+    if (!entry) return false;
+    const need = parseInt(exCopy.sets, 10) || 0;
+    if (!need || entry.sets.length < need) return false;
+    return entry.sets.slice(0, need).every((s) =>
+      (parseInt(s.reps, 10) || 0) >= ceil && (parseFloat(s.weight) || 0) >= effWeight - 0.01);
+  }
+
+  // Walk this exercise's copies (matched by name) in program order up to the
+  // given instance and chain earned increments. A hand-edited written weight
+  // (different from the previous copy's) re-bases the chain from that number,
+  // so the coach can deload / jump mid-program by just typing a new weight.
+  // Returns { weight, earned, floor, ceil, inc } or null when no rule applies.
+  function effectiveProgression(weeks, ex, logsMap) {
+    const rule = progressionRule(ex);
+    if (!rule) return null;
+    const name = String(ex.name || "").trim().toLowerCase();
+    if (!name) return null;
+    let eff = null, earned = 0, prevWritten = null;
+    for (const w of weeks || []) {
+      for (const d of w.days || []) {
+        for (const e of d.exercises || []) {
+          if (String(e.name || "").trim().toLowerCase() !== name) continue;
+          const written = parseFloat(e.currentWeight);
+          if (!isFinite(written)) continue; // skip BW/blank copies
+          if (prevWritten === null || written !== prevWritten) { eff = written; earned = 0; }
+          prevWritten = written;
+          if (e.id === ex.id) return { weight: Math.round(eff * 100) / 100, earned, ...rule };
+          if (progressionHit(e, eff, rule.ceil, logsMap)) { eff += rule.inc; earned += 1; }
+        }
+      }
+    }
+    return null; // instance not found in the given weeks
+  }
+
   function openEffortPicker(ex, anchorBtn, onChange) {
     document.querySelector(".effort-pop")?.remove();
     const pop = document.createElement("div");
@@ -392,6 +451,71 @@
       });
       pop.appendChild(b);
     });
+    document.body.appendChild(pop);
+    requestAnimationFrame(() => _positionPop(pop, anchorBtn));
+    _attachOutsideClose(pop, anchorBtn);
+  }
+
+  const PROG_CEIL_VALUES = [6, 8, 10, 12, 15, 20];
+  const PROG_INC_VALUES = [2.5, 5, 10];
+
+  function openProgressionPicker(ex, anchorBtn, onChange) {
+    document.querySelector(".prog-pop")?.remove();
+    const pop = document.createElement("div");
+    pop.className = "grid-picker-pop prog-pop";
+    pop.style.cssText = "position:fixed;z-index:9999;visibility:hidden";
+
+    const floor = parseInt(ex.currentReps, 10) || 0;
+    const render = () => {
+      pop.innerHTML = "";
+      const p = ex.progression || {};
+      const head = document.createElement("div");
+      head.className = "prog-pop-head";
+      head.textContent = "📈 Auto-progression";
+      pop.appendChild(head);
+
+      const hint = document.createElement("p");
+      hint.className = "prog-pop-hint";
+      hint.textContent = floor
+        ? `Reps climb from ${floor}. When every set hits the ceiling, next week adds weight and reps reset to ${floor}. Misses hold steady.`
+        : "Set prescribed reps first — they become the rep floor.";
+      pop.appendChild(hint);
+
+      const section = (label, values, cur, fmt, onPick) => {
+        const lbl = document.createElement("div");
+        lbl.className = "prog-pop-lbl";
+        lbl.textContent = label;
+        pop.appendChild(lbl);
+        const row = document.createElement("div");
+        row.className = "prog-pop-row";
+        values.forEach((v) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "prog-opt" + (cur === v ? " on" : "");
+          b.textContent = fmt(v);
+          b.disabled = !floor;
+          b.addEventListener("click", () => onPick(v));
+          row.appendChild(b);
+        });
+        pop.appendChild(row);
+      };
+
+      section("Rep ceiling", PROG_CEIL_VALUES.filter((v) => v > floor), parseInt(p.ceil, 10) || null,
+        (v) => `${floor || "?"}–${v}`,
+        (v) => { ex.progression = { ceil: v, inc: parseFloat(p.inc) || 5 }; saveTrainer(); onChange(); render(); });
+      section("Then add", PROG_INC_VALUES, parseFloat(p.inc) || null,
+        (v) => `+${v} lb`,
+        (v) => { ex.progression = { ceil: parseInt(p.ceil, 10) || (floor + 4), inc: v }; saveTrainer(); onChange(); render(); });
+
+      const off = document.createElement("button");
+      off.type = "button";
+      off.className = "prog-opt prog-opt-off" + (!ex.progression ? " on" : "");
+      off.textContent = "No auto-progression";
+      off.addEventListener("click", () => { delete ex.progression; saveTrainer(); onChange(); render(); });
+      pop.appendChild(off);
+    };
+    render();
+
     document.body.appendChild(pop);
     requestAnimationFrame(() => _positionPop(pop, anchorBtn));
     _attachOutsideClose(pop, anchorBtn);
@@ -4086,6 +4210,20 @@
     refreshEffortBtn();
     effortBtn.addEventListener("click", (e) => { e.stopPropagation(); openEffortPicker(ex, effortBtn, refreshEffortBtn); });
 
+    // Auto-progression (double progression) — reps climb to a ceiling, then
+    // the athlete's next-week target adds weight. Computed display, see
+    // effectiveProgression(); doesn't apply to holds or BW lifts.
+    const progBtn = document.createElement("button");
+    progBtn.className = "picker-btn picker-btn-sm ex-prog-btn";
+    progBtn.title = "Auto-progression: when every set hits the rep ceiling, next week's target adds weight";
+    const refreshProgBtn = () => {
+      const r = progressionRule(ex);
+      progBtn.textContent = r ? `📈${r.floor}–${r.ceil} +${r.inc}` : "＋📈";
+      progBtn.classList.toggle("empty", !r);
+    };
+    refreshProgBtn();
+    progBtn.addEventListener("click", (e) => { e.stopPropagation(); openProgressionPicker(ex, progBtn, refreshProgBtn); });
+
     // Expand (notes + video)
     const expandBtn = document.createElement("button");
     expandBtn.className = "btn-icon-mini ex-expand-btn";
@@ -4113,6 +4251,7 @@
       warmupBtn.disabled = locked;
       finisherBtn.disabled = locked;
       effortBtn.disabled = locked;
+      progBtn.disabled = locked;
       handle.style.opacity = locked ? "0.3" : "";
       handle.style.pointerEvents = locked ? "none" : "";
       moveUpBtn.disabled = locked;
@@ -4178,6 +4317,7 @@
     row.appendChild(modBtn);
     if (!isMob) row.appendChild(warmupBtn); // warm-up/finisher don't apply to holds
     row.appendChild(metricsGroup);
+    if (!isMob) row.appendChild(progBtn); // auto-progression rides the working sets
     if (!isMob) row.appendChild(finisherBtn);
     if (isMob) row.appendChild(placeBtn); // warm-up ↔ finisher placement
     row.appendChild(expandBtn); row.appendChild(saveBtn); row.appendChild(editBtn); row.appendChild(ssBtn); row.appendChild(delBtn);
@@ -7815,6 +7955,9 @@
     const logs = state.clientData.progress?.exerciseLogs?.[ex.id] || [];
     const isDone = hasAnyLog(ex);
     const lastLog = logs.length ? [...logs].sort((a, b) => b.date.localeCompare(a.date))[0] : null;
+    // Auto-progression: effective target computed from prior weeks' locked
+    // logs (chain of earned increments). Null when the exercise has no rule.
+    const prog = effectiveProgression(state.clientData.program?.client?.weeks, ex, state.clientData.progress?.exerciseLogs);
 
     const wrapper = document.createElement("div");
     wrapper.className = "cex-wrapper" + (isDone ? " logged" : "");
@@ -7846,18 +7989,32 @@
     rxEl.className = "cex-rx";
     const rxParts = [];
     if (ex.sets) rxParts.push(ex.sets + " sets");
-    if (ex.currentWeight) {
-      const lo = ex.currentWeight === "BW" ? "BW" : ex.currentWeight + " lb";
-      const hi = ex.goalWeight && ex.goalWeight !== ex.currentWeight
-        ? (ex.goalWeight === "BW" ? "BW" : ex.goalWeight + " lb")
-        : null;
-      rxParts.push(hi ? lo + "–" + hi : lo);
+    if (prog) {
+      // Effective target: computed weight, reps shown as floor–ceiling range.
+      rxParts.push(prog.weight + " lb");
+      rxParts.push(`× ${prog.floor}–${prog.ceil}`);
+    } else {
+      if (ex.currentWeight) {
+        const lo = ex.currentWeight === "BW" ? "BW" : ex.currentWeight + " lb";
+        const hi = ex.goalWeight && ex.goalWeight !== ex.currentWeight
+          ? (ex.goalWeight === "BW" ? "BW" : ex.goalWeight + " lb")
+          : null;
+        rxParts.push(hi ? lo + "–" + hi : lo);
+      }
+      if (ex.currentReps) rxParts.push("× " + ex.currentReps);
     }
-    if (ex.currentReps) rxParts.push("× " + ex.currentReps);
     const rxMain = document.createElement("span");
     rxMain.className = "cex-rx-main";
     rxMain.textContent = rxParts.join(" · ") || "—";
     rxEl.appendChild(rxMain);
+
+    if (prog && prog.earned > 0) {
+      const chip = document.createElement("span");
+      chip.className = "cex-prog-chip";
+      chip.textContent = `📈 +${Math.round(prog.earned * prog.inc * 100) / 100} lb earned`;
+      chip.title = "Auto-progression: you hit the rep ceiling on every set, so the target went up";
+      rxEl.appendChild(chip);
+    }
 
     if (lastLog) {
       const ll = document.createElement("span");
@@ -7928,8 +8085,9 @@
     logForm.className = "cex-log-form";
 
     const numSets = parseInt(ex.sets) || 0;
-    const wtPh = ex.currentWeight && ex.currentWeight !== "BW" ? ex.currentWeight : "";
-    const repPh = ex.currentReps || "";
+    // With a progression rule, placeholders/seeds use the computed target.
+    const wtPh = prog ? String(prog.weight) : (ex.currentWeight && ex.currentWeight !== "BW" ? ex.currentWeight : "");
+    const repPh = prog ? `${prog.floor}+` : (ex.currentReps || "");
 
     // Header row
     const setTable = document.createElement("div");
@@ -7944,7 +8102,7 @@
 
     // Prescribed reps/weight seed the per-field steppers when a field is empty.
     const prescribedReps = parseInt(ex.currentReps, 10);
-    const weightBase = parseFloat(ex.currentWeight);
+    const weightBase = prog ? prog.weight : parseFloat(ex.currentWeight);
 
     const setInputs = [];
     // Per-field steppers: tap ▼ / ▲ to nudge a set's weight (±2.5 lb) or reps
@@ -8051,7 +8209,8 @@
     const finisherWrap = document.createElement("div");
     finisherWrap.className = "cex-finisher-wrap";
     const addFinisherSlot = (kind, dropIdx, label, pct) => {
-      const target = finisherDropWeight(ex.currentWeight, pct);
+      // Drop % computes off the effective (progressed) weight when a rule is set.
+      const target = finisherDropWeight(prog ? String(prog.weight) : ex.currentWeight, pct);
       const wtTxt = target != null ? ` · ${target} lb` : (ex.currentWeight === "BW" ? " · BW" : "");
       const fr = document.createElement("div");
       fr.className = "cex-finisher-row";

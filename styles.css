@@ -665,6 +665,34 @@ input[type="date"] { color-scheme: dark; }
 .effort-opt-flames { min-width: 3.3em; }
 .effort-opt-lbl { flex: 1; }
 
+/* Auto-progression (📈) button + picker */
+.ex-prog-btn { min-width: 0; font-size: 0.78rem; }
+.ex-prog-btn:not(.empty) {
+  color: var(--primary-bright);
+  border-color: rgba(var(--primary-bright-rgb), 0.55);
+  background: rgba(var(--primary-bright-rgb), 0.1);
+}
+.ex-prog-btn.empty { color: var(--muted); border-style: dashed; }
+.prog-pop { min-width: 230px; max-width: 270px; padding: 0.55rem; display: flex; flex-direction: column; gap: 0.35rem; }
+.prog-pop-head { font-weight: 800; font-size: 0.85rem; }
+.prog-pop-hint { margin: 0; font-size: 0.72rem; color: var(--muted); line-height: 1.35; }
+.prog-pop-lbl { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-soft); margin-top: 0.25rem; }
+.prog-pop-row { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.prog-opt {
+  padding: 0.38em 0.6em; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text-soft); font-size: 0.8rem; cursor: pointer;
+}
+.prog-opt:hover:not(:disabled) { border-color: var(--border-strong); }
+.prog-opt:disabled { opacity: 0.45; cursor: default; }
+.prog-opt.on {
+  color: var(--primary-bright);
+  border-color: rgba(var(--primary-bright-rgb), 0.7);
+  background: rgba(var(--primary-bright-rgb), 0.14);
+  font-weight: 700;
+}
+.prog-opt-off { margin-top: 0.3rem; }
+
 /* ============ Client detail head ============ */
 .client-head {
   display: flex;
@@ -5170,6 +5198,17 @@ input:focus, textarea:focus, select:focus {
   overflow: hidden;
   text-overflow: ellipsis;
   flex-shrink: 1;
+}
+/* Earned auto-progression bump on the athlete exercise card */
+.cex-prog-chip {
+  font-size: 0.64rem;
+  font-weight: 700;
+  color: var(--primary-bright);
+  background: rgba(var(--primary-bright-rgb), 0.12);
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.35);
+  border-radius: 999px;
+  padding: 0.12em 0.55em;
+  white-space: nowrap;
 }
 
 /* ── Panel ── */
