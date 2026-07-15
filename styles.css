@@ -3184,6 +3184,7 @@ button.ov-stat:hover { background: var(--surface-2); }
   color: var(--text); font-size: 1rem; width: 100%;
 }
 .pr-1rm-input:focus, .pr-2rm-input:focus, .pr-3rm-input:focus { outline: none; border-color: var(--primary); }
+#pr-weight, #pr-reps { text-align: center; }
 .pr-athlete-row {
   margin-top: 0.5rem; padding-top: 0.5rem;
   border-top: 1px solid var(--border);
