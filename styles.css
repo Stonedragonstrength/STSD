@@ -724,14 +724,14 @@ input[type="date"] { color-scheme: dark; }
      resting position already equals its stuck position → zero jump. Full-bleed
      side margins + solid bg so content scrolls cleanly underneath. */
   position: sticky;
-  top: 63px; /* desktop header height; ≤600px override below */
+  /* --header-h is measured off the real header by a ResizeObserver in app.js,
+     so the nav's resting position always equals its stuck position (zero jump)
+     even when header padding/content changes. Fallback ≈ desktop height. */
+  top: var(--header-h, 63px);
   z-index: 9;
   background: var(--bg);
   margin-left: -1.5rem;
   margin-right: -1.5rem;
-}
-@media (max-width: 600px) {
-  #screen-client .tabs { top: 59px; } /* mobile header is shorter */
 }
 @media (max-width: 640px) {
   #screen-client .tabs {
@@ -4295,7 +4295,7 @@ input:focus, textarea:focus, select:focus {
   overflow-x: auto;
   scrollbar-width: none;
   position: sticky;
-  top: 56px;
+  top: var(--header-h, 56px); /* measured off the real header in app.js */
   z-index: 9;
 }
 .coach-nav::-webkit-scrollbar { display: none; }
@@ -4362,9 +4362,9 @@ input:focus, textarea:focus, select:focus {
     border-right: 1px solid var(--border);
     padding: 1.4rem 0.7rem 1.4rem 1rem;
     position: sticky;
-    top: 64px;
+    top: var(--header-h, 64px); /* measured off the real header in app.js */
     align-self: flex-start;
-    max-height: calc(100vh - 64px);
+    max-height: calc(100vh - var(--header-h, 64px));
     overflow-y: auto;
     overflow-x: visible;
   }
@@ -6363,10 +6363,10 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   border-left: 1px solid var(--border);
   background: var(--surface);
   position: sticky;
-  top: 64px;
+  top: var(--header-h, 64px); /* measured off the real header in app.js */
   align-self: flex-start; /* don't stretch to the content column's height, or
                              sticky has no room to move and just scrolls away */
-  height: calc(100vh - 64px);
+  height: calc(100vh - var(--header-h, 64px));
   overflow: hidden;
   flex-shrink: 0;
 }

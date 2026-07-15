@@ -784,8 +784,28 @@
   // -------- DOM helpers --------
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
-  function show(el) { el.classList.remove("hidden"); }
+  function show(el) {
+    el.classList.remove("hidden");
+    // Screens carry sticky bars offset by --header-h; re-measure whenever one
+    // becomes visible (hidden headers measure 0, so boot-time sync can't).
+    if (el.classList.contains("screen")) syncHeaderHeights();
+  }
   function hide(el) { el.classList.add("hidden"); }
+
+  // Sticky offsets (.coach-nav, #screen-client .tabs, .ex-lib-sidebar) pin at
+  // the real rendered header height instead of a hardcoded px guess — see the
+  // var(--header-h, …) rules in styles.css. The first-frame measure right
+  // after a screen unhides can be a few px off (fonts/layout still settling),
+  // so re-measure on the next frame and once more shortly after.
+  function syncHeaderHeights() {
+    const apply = () => $$(".screen").forEach((s) => {
+      const header = s.querySelector(".app-header");
+      if (header && header.offsetHeight) s.style.setProperty("--header-h", header.offsetHeight + "px");
+    });
+    apply();
+    requestAnimationFrame(apply);
+    setTimeout(apply, 250);
+  }
 
   // ---- Back-button router --------------------------------------------------
   // Makes the phone / browser Back button step back through in-app screens
@@ -8967,6 +8987,14 @@
       if (document.visibilityState === "hidden") window.Cloud?.flush?.();
     });
     window.addEventListener("pagehide", () => { window.Cloud?.flush?.(); });
+
+    // Keep --header-h equal to each screen's real header height so the sticky
+    // coach nav / athlete tabs pin exactly where they rest (no slide-under on
+    // scroll when header padding or content changes the height). Re-measured
+    // on resize and after full load (the header logo image can shift height).
+    window.addEventListener("resize", syncHeaderHeights);
+    window.addEventListener("load", syncHeaderHeights);
+    syncHeaderHeights();
 
     // Boot: check for password-recovery URL hash, then Supabase session, then show login
     if (window.Cloud?.enabled) {
