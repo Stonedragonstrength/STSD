@@ -7973,7 +7973,31 @@
     if (!ex.modifiers) ex.modifiers = [];
     const logs = state.clientData.progress?.exerciseLogs?.[ex.id] || [];
     const isDone = hasAnyLog(ex);
-    const lastLog = logs.length ? [...logs].sort((a, b) => b.date.localeCompare(a.date))[0] : null;
+    // The date being logged right now — needed up here so the "Last:" line can
+    // exclude today's in-progress entry.
+    const logDate = state.workoutView?.dayId === day.id && state.workoutView?.date
+      ? state.workoutView.date
+      : (jumpTo?.dayId === day.id ? jumpTo.date : todayISO());
+    // "Last:" = the previous SESSION of this exercise — the most recent
+    // completed (locked; legacy entries pass) log from any copy of this
+    // exercise across the program (matched by name, like progression does),
+    // strictly before the date being logged. Never today's own numbers.
+    const lastLog = (() => {
+      const name = String(ex.name || "").trim().toLowerCase();
+      const logsMap = state.clientData.progress?.exerciseLogs || {};
+      const candidates = [];
+      for (const w of state.clientData.program?.client?.weeks || []) {
+        for (const d of w.days || []) {
+          for (const e of d.exercises || []) {
+            if (String(e.name || "").trim().toLowerCase() !== name) continue;
+            (logsMap[e.id] || []).forEach((l) => {
+              if (l.locked !== false && String(l.date) < logDate) candidates.push(l);
+            });
+          }
+        }
+      }
+      return candidates.sort((a, b) => String(b.date).localeCompare(String(a.date)))[0] || null;
+    })();
     // Auto-progression: effective target computed from prior weeks' locked
     // logs (chain of earned increments). Null when the exercise has no rule.
     const prog = effectiveProgression(state.clientData.program?.client?.weeks, ex, state.clientData.progress?.exerciseLogs);
@@ -8037,11 +8061,16 @@
       const ll = document.createElement("span");
       ll.className = "cex-last-log";
       if (lastLog.sets?.length) {
-        const s = lastLog.sets[0];
-        ll.textContent = `Last: ${s.weight ? s.weight + " lb" : "BW"} × ${s.reps || "?"} (${lastLog.sets.length} set${lastLog.sets.length === 1 ? "" : "s"})`;
+        // All working sets from the previous session. One weight → "135 lb × 9, 9, 8";
+        // mixed weights → "135×9 · 130×8".
+        const wts = [...new Set(lastLog.sets.map((s) => s.weight || "BW"))];
+        ll.textContent = wts.length === 1
+          ? `Last: ${wts[0] === "BW" ? "BW" : wts[0] + " lb"} × ${lastLog.sets.map((s) => s.reps || "?").join(", ")}`
+          : `Last: ${lastLog.sets.map((s) => `${s.weight || "BW"}×${s.reps || "?"}`).join(" · ")}`;
       } else {
         ll.textContent = `Last: ${lastLog.weight ? lastLog.weight + " lb" : "BW"} × ${lastLog.reps || "?"}`;
       }
+      ll.title = `Previous session (${lastLog.date})`;
       rxEl.appendChild(ll);
     }
 
@@ -8094,10 +8123,7 @@
       panel.appendChild(vBtn);
     }
 
-    // Log form
-    const logDate = state.workoutView?.dayId === day.id && state.workoutView?.date
-      ? state.workoutView.date
-      : (jumpTo?.dayId === day.id ? jumpTo.date : todayISO());
+    // Log form (logDate computed at the top of the function)
     const logForm = document.createElement("div");
     logForm.className = "cex-log-form";
 
