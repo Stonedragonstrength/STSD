@@ -383,41 +383,54 @@
     return { floor, ceil, inc };
   }
 
-  // Did the athlete's most recent locked log for this exercise copy hit the
-  // ceiling on every prescribed set at (or above) that week's effective weight?
-  function progressionHit(exCopy, effWeight, ceil, logsMap) {
+  // The athlete's most recent locked log for this exercise copy, evaluated at
+  // that week's effective weight: returns the WORST set's reps when every
+  // prescribed set was done at ≥ the effective weight, else null (no full
+  // locked log at weight = hold, same as a miss).
+  function progressionMinReps(exCopy, effWeight, logsMap) {
     const arr = logsMap?.[exCopy.id];
-    if (!Array.isArray(arr) || !arr.length) return false;
+    if (!Array.isArray(arr) || !arr.length) return null;
     const entry = [...arr].sort((a, b) => String(b.date).localeCompare(String(a.date)))
       .find((l) => l.locked === true && Array.isArray(l.sets) && l.sets.length);
-    if (!entry) return false;
+    if (!entry) return null;
     const need = parseInt(exCopy.sets, 10) || 0;
-    if (!need || entry.sets.length < need) return false;
-    return entry.sets.slice(0, need).every((s) =>
-      (parseInt(s.reps, 10) || 0) >= ceil && (parseFloat(s.weight) || 0) >= effWeight - 0.01);
+    if (!need || entry.sets.length < need) return null;
+    let min = Infinity;
+    for (const s of entry.sets.slice(0, need)) {
+      if ((parseFloat(s.weight) || 0) < effWeight - 0.01) return null;
+      min = Math.min(min, parseInt(s.reps, 10) || 0);
+    }
+    return min;
   }
 
   // Walk this exercise's copies (matched by name) in program order up to the
-  // given instance and chain earned increments. A hand-edited written weight
-  // (different from the previous copy's) re-bases the chain from that number,
-  // so the coach can deload / jump mid-program by just typing a new weight.
-  // Returns { weight, earned, floor, ceil, inc } or null when no rule applies.
+  // given instance, chaining BOTH legs of double progression:
+  //   - reps climb: hit every set at ≥ the current rep target → next target =
+  //     worst set + 1 (capped at the ceiling);
+  //   - weight jump: every set at ≥ the ceiling → +inc lb, reps reset to floor;
+  //   - miss (or no locked log) → hold everything.
+  // A hand-edited written weight (different from the previous copy's) re-bases
+  // the chain, so the coach can deload / jump mid-program by typing a number.
+  // Returns { weight, reps, earned, floor, ceil, inc } or null when no rule.
   function effectiveProgression(weeks, ex, logsMap) {
     const rule = progressionRule(ex);
     if (!rule) return null;
     const name = String(ex.name || "").trim().toLowerCase();
     if (!name) return null;
-    let eff = null, earned = 0, prevWritten = null;
+    let eff = null, reps = rule.floor, earned = 0, prevWritten = null;
     for (const w of weeks || []) {
       for (const d of w.days || []) {
         for (const e of d.exercises || []) {
           if (String(e.name || "").trim().toLowerCase() !== name) continue;
           const written = parseFloat(e.currentWeight);
           if (!isFinite(written)) continue; // skip BW/blank copies
-          if (prevWritten === null || written !== prevWritten) { eff = written; earned = 0; }
+          if (prevWritten === null || written !== prevWritten) { eff = written; reps = rule.floor; earned = 0; }
           prevWritten = written;
-          if (e.id === ex.id) return { weight: Math.round(eff * 100) / 100, earned, ...rule };
-          if (progressionHit(e, eff, rule.ceil, logsMap)) { eff += rule.inc; earned += 1; }
+          if (e.id === ex.id) return { weight: Math.round(eff * 100) / 100, reps, earned, ...rule };
+          const min = progressionMinReps(e, eff, logsMap);
+          if (min == null || min < reps) continue; // miss / no log → hold
+          if (min >= rule.ceil) { eff += rule.inc; reps = rule.floor; earned += 1; }
+          else reps = Math.min(min + 1, rule.ceil);
         }
       }
     }
@@ -7990,9 +8003,10 @@
     const rxParts = [];
     if (ex.sets) rxParts.push(ex.sets + " sets");
     if (prog) {
-      // Effective target: computed weight, reps shown as floor–ceiling range.
+      // Effective target: computed weight + this week's rep target (climbs
+      // toward the ceiling as prior weeks are hit; "+" = beat it if you can).
       rxParts.push(prog.weight + " lb");
-      rxParts.push(`× ${prog.floor}–${prog.ceil}`);
+      rxParts.push(`× ${prog.reps}+`);
     } else {
       if (ex.currentWeight) {
         const lo = ex.currentWeight === "BW" ? "BW" : ex.currentWeight + " lb";
@@ -8006,6 +8020,7 @@
     const rxMain = document.createElement("span");
     rxMain.className = "cex-rx-main";
     rxMain.textContent = rxParts.join(" · ") || "—";
+    if (prog) rxMain.title = `Double progression ${prog.floor}–${prog.ceil}: hit every set at the target to move up a rep next week; hit ${prog.ceil} on all sets and the weight goes up ${prog.inc} lb (reps back to ${prog.floor}).`;
     rxEl.appendChild(rxMain);
 
     if (prog && prog.earned > 0) {
@@ -8087,7 +8102,7 @@
     const numSets = parseInt(ex.sets) || 0;
     // With a progression rule, placeholders/seeds use the computed target.
     const wtPh = prog ? String(prog.weight) : (ex.currentWeight && ex.currentWeight !== "BW" ? ex.currentWeight : "");
-    const repPh = prog ? `${prog.floor}+` : (ex.currentReps || "");
+    const repPh = prog ? `${prog.reps}+` : (ex.currentReps || "");
 
     // Header row
     const setTable = document.createElement("div");
@@ -8101,7 +8116,7 @@
     let isLocked = isLogEntryLocked(todayLog, ex, numSets);
 
     // Prescribed reps/weight seed the per-field steppers when a field is empty.
-    const prescribedReps = parseInt(ex.currentReps, 10);
+    const prescribedReps = prog ? prog.reps : parseInt(ex.currentReps, 10);
     const weightBase = prog ? prog.weight : parseFloat(ex.currentWeight);
 
     const setInputs = [];
