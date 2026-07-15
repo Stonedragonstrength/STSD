@@ -4150,26 +4150,16 @@
     const at = document.createElement("span");
     at.className = "ex-row-sep"; at.textContent = "@";
 
-    // Prescribed weight (lower)
+    // Prescribed weight (single — the old upper/range weight was retired
+    // 2026-07-15 when auto-progression replaced weight ranges; goalWeight
+    // stays in the data model but has no UI, like goalReps)
     const cwBtn = document.createElement("button");
     cwBtn.className = "picker-btn picker-btn-sm" + (ex.currentWeight ? "" : " empty");
     cwBtn.textContent = wtLabel(ex.currentWeight) || "Wt";
-    cwBtn.title = "Prescribed weight (lower)";
+    cwBtn.title = "Prescribed weight";
     cwBtn.addEventListener("click", (e) => { e.stopPropagation(); openWeightPicker(ex.currentWeight || "BW", (val) => {
       ex.currentWeight = val; saveTrainer(); cwBtn.textContent = wtLabel(val) || "Wt"; cwBtn.classList.toggle("empty", !val);
     }, cwBtn); });
-
-    const dash = document.createElement("span");
-    dash.className = "ex-row-sep"; dash.textContent = "–";
-
-    // Prescribed weight (upper / range)
-    const gwBtn = document.createElement("button");
-    gwBtn.className = "picker-btn picker-btn-sm" + (ex.goalWeight ? "" : " empty");
-    gwBtn.textContent = wtLabel(ex.goalWeight) || "Wt";
-    gwBtn.title = "Prescribed weight (upper)";
-    gwBtn.addEventListener("click", (e) => { e.stopPropagation(); openWeightPicker(ex.goalWeight || ex.currentWeight || "BW", (val) => {
-      ex.goalWeight = val; saveTrainer(); gwBtn.textContent = wtLabel(val) || "Wt"; gwBtn.classList.toggle("empty", !val);
-    }, gwBtn); });
 
     const x1 = document.createElement("span");
     x1.className = "ex-row-sep"; x1.textContent = "×";
@@ -4259,7 +4249,6 @@
       modBtn.disabled = locked;
       setsBtn.disabled = locked;
       cwBtn.disabled = locked;
-      gwBtn.disabled = locked;
       crBtn.disabled = locked;
       warmupBtn.disabled = locked;
       finisherBtn.disabled = locked;
@@ -4314,7 +4303,7 @@
       metricsGroup.appendChild(setsBtn); metricsGroup.appendChild(x1); metricsGroup.appendChild(holdBtn);
     } else {
       metricsGroup.appendChild(setsBtn); metricsGroup.appendChild(at);
-      metricsGroup.appendChild(cwBtn); metricsGroup.appendChild(dash); metricsGroup.appendChild(gwBtn);
+      metricsGroup.appendChild(cwBtn);
       metricsGroup.appendChild(x1); metricsGroup.appendChild(crBtn);
     }
 
@@ -8008,13 +7997,9 @@
       rxParts.push(prog.weight + " lb");
       rxParts.push(`× ${prog.reps}+`);
     } else {
-      if (ex.currentWeight) {
-        const lo = ex.currentWeight === "BW" ? "BW" : ex.currentWeight + " lb";
-        const hi = ex.goalWeight && ex.goalWeight !== ex.currentWeight
-          ? (ex.goalWeight === "BW" ? "BW" : ex.goalWeight + " lb")
-          : null;
-        rxParts.push(hi ? lo + "–" + hi : lo);
-      }
+      // Single prescribed weight (the old upper/range display was retired
+      // 2026-07-15 along with the coach-side range picker).
+      if (ex.currentWeight) rxParts.push(ex.currentWeight === "BW" ? "BW" : ex.currentWeight + " lb");
       if (ex.currentReps) rxParts.push("× " + ex.currentReps);
     }
     const rxMain = document.createElement("span");
