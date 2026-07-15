@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=msg4col" />
+  <link rel="stylesheet" href="styles.css?v=overviewfit" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -288,7 +288,7 @@
           </div>
         </div>
         <div id="overview-requests" class="overview-requests"></div>
-        <div class="cal-nav" style="margin-bottom:1rem">
+        <div class="cal-nav" style="margin-bottom:0.6rem">
           <button class="btn btn-ghost btn-sm" id="dash-cal-prev">‹</button>
           <h4 class="cal-title" id="dash-cal-title"></h4>
           <button class="btn btn-ghost btn-sm" id="dash-cal-next">›</button>
@@ -297,37 +297,39 @@
         </div>
         <div id="dash-cal-grid" class="cal-grid dash-cal-grid"></div>
 
-        <div class="card" style="margin-top:1.5rem">
-          <div class="program-head">
-            <h3 style="margin:0">📌 Bulletin Board</h3>
-          </div>
-          <p class="muted" style="font-size:0.85rem">Post a notice every athlete sees on their Overview. It comes down automatically when the time's up.</p>
-          <div class="bulletin-compose">
-            <textarea id="bulletin-text" class="msg-textarea" rows="2" maxlength="1000" placeholder="e.g. Gym closed next Monday for the holiday 🎉"></textarea>
-            <div class="bulletin-compose-row">
-              <label class="msg-duration">
-                <span class="muted">Show for</span>
-                <select id="bulletin-weeks" class="msg-select">
-                  <option value="1">1 week</option>
-                  <option value="2">2 weeks</option>
-                  <option value="3">3 weeks</option>
-                  <option value="4">4 weeks</option>
-                </select>
-              </label>
-              <span class="muted" id="bulletin-status" style="margin-right:auto"></span>
-              <button class="btn btn-primary btn-sm" id="bulletin-post-btn" type="button">📌 Post</button>
+        <div class="overview-bottom">
+          <div class="card">
+            <div class="program-head">
+              <h3 style="margin:0">📌 Bulletin Board</h3>
             </div>
+            <p class="muted" style="font-size:0.85rem">Post a notice every athlete sees on their Overview. It comes down automatically when the time's up.</p>
+            <div class="bulletin-compose">
+              <textarea id="bulletin-text" class="msg-textarea" rows="2" maxlength="1000" placeholder="e.g. Gym closed next Monday for the holiday 🎉"></textarea>
+              <div class="bulletin-compose-row">
+                <label class="msg-duration">
+                  <span class="muted">Show for</span>
+                  <select id="bulletin-weeks" class="msg-select">
+                    <option value="1">1 week</option>
+                    <option value="2">2 weeks</option>
+                    <option value="3">3 weeks</option>
+                    <option value="4">4 weeks</option>
+                  </select>
+                </label>
+                <span class="muted" id="bulletin-status" style="margin-right:auto"></span>
+                <button class="btn btn-primary btn-sm" id="bulletin-post-btn" type="button">📌 Post</button>
+              </div>
+            </div>
+            <div id="bulletin-active" class="bulletin-active"></div>
           </div>
-          <div id="bulletin-active" class="bulletin-active"></div>
-        </div>
 
-        <div class="card" style="margin-top:1.5rem">
-          <div class="program-head">
-            <h3 style="margin:0">📣 Open Slots</h3>
-            <button class="btn btn-primary btn-sm" id="btn-post-open-slot">+ Post open slot</button>
+          <div class="card">
+            <div class="program-head">
+              <h3 style="margin:0">📣 Open Slots</h3>
+              <button class="btn btn-primary btn-sm" id="btn-post-open-slot">+ Post open slot</button>
+            </div>
+            <p class="muted" style="font-size:0.85rem">Post an opening — athletes can claim it first-come from their side. You confirm and book it in Setmore.</p>
+            <div id="open-slots-container"></div>
           </div>
-          <p class="muted" style="font-size:0.85rem">Post an opening — athletes can claim it first-come from their side. You confirm and book it in Setmore.</p>
-          <div id="open-slots-container"></div>
         </div>
       </div>
 
