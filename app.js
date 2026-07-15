@@ -8136,6 +8136,18 @@
       if (withSteppers) field.appendChild(mkBtn("▲", 1));
       field.appendChild(input);
       if (withSteppers) field.appendChild(mkBtn("▼", -1));
+      // Tapping an empty field accepts the prescription: the placeholder value
+      // becomes the real value, so clicking off keeps it — no typing needed
+      // when the athlete did exactly what was prescribed. The value is
+      // selected so typing a different number just replaces it.
+      input.addEventListener("focus", () => {
+        if (input.readOnly) return;
+        if (input.value === "" && Number.isFinite(seed)) {
+          input.value = String(seed);
+          autoSave();
+        }
+        try { input.select(); } catch (_) {}
+      });
       return field;
     };
 
