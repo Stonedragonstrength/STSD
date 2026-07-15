@@ -3115,12 +3115,24 @@
     "eq:rack": '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3.9" y="2.6" width="2.3" height="18.8" rx="1"/><rect x="17.8" y="2.6" width="2.3" height="18.8" rx="1"/><rect x="2.8" y="7.8" width="18.4" height="2.3" rx="1"/><rect x="2.2" y="6.8" width="2" height="4.2" rx=".9"/><rect x="19.8" y="6.8" width="2" height="4.2" rx=".9"/></svg>',
     "eq:pullup": '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="2.4" y="3.8" width="19.2" height="2.4" rx="1.2"/><rect x="3.8" y="2.6" width="2.1" height="4.2" rx=".9"/><rect x="18.1" y="2.6" width="2.1" height="4.2" rx=".9"/><rect x="8.1" y="6" width="1.8" height="7.2" rx=".9"/><rect x="14.1" y="6" width="1.8" height="7.2" rx=".9"/><rect x="7.4" y="12.6" width="3.2" height="1.9" rx=".9"/><rect x="13.4" y="12.6" width="3.2" height="1.9" rx=".9"/></svg>',
     "eq:medball": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18" stroke-width="1.4"/></svg>',
+    // Stone Dragon branded set — thin-line marks matching the logo's theme.
+    // Auto-picked per day name by workoutIconFor(); also coach-pickable.
+    "sd:claw": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M5.3 4.2C8 7 9.2 11.5 8.3 16.5"/><path d="M11.6 3c3 3.6 4.2 8.8 3.2 14.8"/><path d="M17.8 4.2c2.4 2.8 3.2 6.8 2.4 10.8"/></svg>',
+    "sd:talon": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.6 3.5h-4.4"/><path d="M15.6 3.5v9.4a4.6 4.6 0 0 1-9.2 0v-2.1"/><path d="M4.5 12.7l1.9-1.9 1.9 1.9"/></svg>',
+    "sd:press": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 20.2h15"/><path d="M12 16.2V5.2"/><path d="M7.6 9.4 12 5l4.4 4.4"/></svg>',
+    "sd:mountain": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.8 19.5 8.9 8.4l4 6.4 2.6-4.1 5.7 8.8Z"/></svg>',
+    "sd:scale": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.2c2.6 1.9 5 2.8 7.3 2.9-.1 5.9-2.3 10.9-7.3 14.7-5-3.8-7.2-8.8-7.3-14.7 2.3-.1 4.7-1 7.3-2.9Z"/><path d="M12 8v7.5"/></svg>',
+    "sd:flame": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.2c.9 2.8 2.7 4.4 3.9 5.9 1.3 1.6 2 3.1 2 4.7a5.9 5.9 0 0 1-11.8 0c0-2.2 1-3.9 2.2-5.4 0 1.6.6 2.7 1.8 3.3.1-3.2.8-5.7 1.9-8.5Z"/></svg>',
+    "sd:moon": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/></svg>',
   };
   function isSvgIcon(v) { return typeof v === "string" && Object.prototype.hasOwnProperty.call(DAY_ICON_SVGS, v); }
   function dayIconHtml(v) { return isSvgIcon(v) ? DAY_ICON_SVGS[v] : escapeHtml(v || ""); }
   function setDayIcon(el, v) { if (isSvgIcon(v)) el.innerHTML = DAY_ICON_SVGS[v]; else el.textContent = v || ""; }
 
   const DAY_ICON_CATEGORIES = [
+    { label: "Stone Dragon", icons: [
+      "sd:claw","sd:talon","sd:press","sd:mountain","sd:scale","sd:flame","sd:moon",
+    ] },
     { label: "Dragons", icons: [
       "🐉","🐲","🦖","🦕","🔥","⚡","🌋","💥","⭐","🌟","✨","🛡️","⚔️","🗡️","🏹",
       "🔮","💎","👑","🦄","🐍","🦂","🕷️","🦇","👹","👺","💀","☠️","🧙","🧙‍♂️","🧝",
@@ -7473,19 +7485,20 @@
       if (checked || allLogged) card.classList.add("is-done");
       else if (doneEx > 0) card.classList.add("is-partial");
       card.style.animationDelay = `${idx * 60}ms`;
-      const icon = day.icon || workoutIconFor(day.name);
+      // Branded line icons only in this view: honor a coach-picked SVG token,
+      // otherwise auto-match from the day name. Coach-picked EMOJI are shown
+      // as branded icons here too (they still show in the coach editor).
+      const icon = isSvgIcon(day.icon) ? day.icon : workoutIconFor(day.name);
+      const status = checked
+        ? `<span class="wc-status done">Done ✓</span>`
+        : doneEx > 0
+          ? `<span class="wc-status progress">${doneEx}/${totalEx} logged</span>`
+          : `<span class="wc-status todo">Tap to start</span>`;
       card.innerHTML = `
         <div class="workout-card-icon">${dayIconHtml(icon)}</div>
         <div class="workout-card-body">
           <h4 class="workout-card-title">${escapeHtml(day.name)}</h4>
-          <div class="workout-card-meta">
-            <span class="meta-pill">${totalEx} exercise${totalEx === 1 ? "" : "s"}</span>
-            ${checked
-              ? `<span class="meta-pill meta-done">Done ✓</span>`
-              : doneEx > 0
-                ? `<span class="meta-pill meta-progress">${doneEx} / ${totalEx} logged</span>`
-                : `<span class="meta-pill meta-todo">Tap to start</span>`}
-          </div>
+          <div class="workout-card-meta">${totalEx} exercise${totalEx === 1 ? "" : "s"} · ${status}</div>
         </div>
         <div class="workout-card-chevron">›</div>
       `;
@@ -7499,16 +7512,18 @@
   }
 
   // Pick a fun emoji based on day name keywords. Pure UI flavor.
+  // Branded line icons per day type (the athlete picker's look). Emoji are
+  // gone from the picker — coach-set SVG tokens win, otherwise keyword match.
   function workoutIconFor(name) {
     const n = String(name || "").toLowerCase();
-    if (/(squat|lower|leg|quad|hamstring)/.test(n)) return "🦵";
-    if (/(deadlift|pull|back|row|lat)/.test(n)) return "🪝";
-    if (/(push|chest|bench|press|shoulder|delt|tricep)/.test(n)) return "💪";
-    if (/(bicep|arm|curl)/.test(n)) return "💪";
-    if (/(core|abs|trunk)/.test(n)) return "🌀";
-    if (/(cardio|condition|run|sprint|hiit)/.test(n)) return "🏃";
-    if (/(rest|recovery|mobility|stretch)/.test(n)) return "🧘";
-    return "🐉";
+    if (/(squat|lower|leg|quad|hamstring|glute|calf)/.test(n)) return "sd:mountain";
+    if (/(deadlift|pull|back|row|lat)/.test(n)) return "sd:talon";
+    if (/(push|chest|bench|press|shoulder|delt|tricep)/.test(n)) return "sd:press";
+    if (/(bicep|arm|curl)/.test(n)) return "sd:claw";
+    if (/(core|abs|trunk)/.test(n)) return "sd:scale";
+    if (/(cardio|condition|run|sprint|hiit)/.test(n)) return "sd:flame";
+    if (/(rest|recovery|mobility|stretch|yoga)/.test(n)) return "sd:moon";
+    return "sd:claw";
   }
 
   function renderDayNoteBlock(dayId) {
@@ -7572,11 +7587,7 @@
         <h2>${escapeHtml(day.name)}</h2>
         <input type="date" class="detail-log-date" id="detail-log-date" value="${escapeHtml(state.workoutView.date)}" title="Date these logs are for" />
       </div>
-      <div class="detail-head-stats">
-        <span class="meta-pill">${totalEx} exercise${totalEx === 1 ? "" : "s"}</span>
-        ${doneEx > 0 ? `<span class="meta-pill meta-progress">${doneEx} / ${totalEx} logged</span>` : ""}
-        ${checked ? `<span class="meta-pill meta-done">Day done ✓</span>` : ""}
-      </div>
+      <div class="detail-head-stats">${totalEx} exercise${totalEx === 1 ? "" : "s"}${doneEx > 0 ? ` · <span class="wc-status progress">${doneEx}/${totalEx} logged</span>` : ""}${checked ? ` · <span class="wc-status done">Day done ✓</span>` : ""}</div>
     `;
     head.querySelector("#detail-toggle").addEventListener("click", () => {
       toggleDayComplete(day.id);
