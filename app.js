@@ -810,6 +810,42 @@
   function show(el) { el.classList.remove("hidden"); }
   function hide(el) { el.classList.add("hidden"); }
 
+  // ---- Back-button router --------------------------------------------------
+  // Makes the phone / browser Back button step back through in-app screens
+  // instead of exiting the installed PWA. Drilling into a screen (open a
+  // workout, open an athlete, enter preview) calls Nav.push(backFn) which adds
+  // one history entry; Back — whether the hardware button or an in-app back
+  // button routed through Nav.back() — pops one level and runs that handler.
+  // Root screens reset the stack, so Back there exits as usual. `inBack` makes
+  // push/reset no-ops while a back handler runs (those handlers call the same
+  // navigation functions), keeping history and the stack in sync.
+  const Nav = (function () {
+    const stack = [];
+    let inBack = false;
+    function push(backFn) {
+      if (inBack || typeof backFn !== "function") return;
+      stack.push(backFn);
+      try { history.pushState({ sdDepth: stack.length }, ""); } catch (e) {}
+    }
+    function reset() {
+      if (inBack) return;
+      stack.length = 0;
+      try { history.replaceState({ sdDepth: 0 }, ""); } catch (e) {}
+    }
+    function back(fallback) {
+      if (stack.length) history.back();
+      else if (typeof fallback === "function") fallback();
+    }
+    window.addEventListener("popstate", () => {
+      const fn = stack.pop();
+      if (!fn) return;
+      inBack = true;
+      try { fn(); } catch (e) { console.warn("[Nav] back handler failed", e); }
+      inBack = false;
+    });
+    return { push, reset, back };
+  })();
+
   function playLoginFlash() {
     document.body.classList.add("login-success");
     setTimeout(() => document.body.classList.remove("login-success"), 1100);
@@ -1500,6 +1536,7 @@
 
   let _packagesBadgeBootstrapped = false;
   function renderDashboard() {
+    Nav.reset(); // coach root — Back from here exits the app
     state.currentClientId = null;
     switchCoachView("athletes");
     updateHeaderBreadcrumb(null);
@@ -1600,7 +1637,7 @@
         }
         // Tapping the chips jumps straight to that athlete's Sessions tab,
         // where packages are approved/managed (the rest of the card → profile).
-        sess.addEventListener("click", (e) => { e.stopPropagation(); openClient(c.id); setTab("sessions"); });
+        sess.addEventListener("click", (e) => { e.stopPropagation(); Nav.push(renderDashboard); openClient(c.id); setTab("sessions"); });
         card.appendChild(sess);
       }
 
@@ -1615,11 +1652,12 @@
       viewBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         state.currentClientId = c.id;
+        Nav.push(exitPreview); // Back leaves the athlete preview
         previewAsAthlete();
       });
       card.appendChild(viewBtn);
 
-      card.addEventListener("click", () => { openClient(c.id); setTab("profile"); });
+      card.addEventListener("click", () => { Nav.push(renderDashboard); openClient(c.id); setTab("profile"); });
       grid.appendChild(card);
     }
   }
@@ -7821,6 +7859,7 @@
       `;
       card.addEventListener("click", () => {
         state.workoutView = { mode: "detail", weekId: week.id, dayId: day.id, date: todayISO() };
+        Nav.push(backToWorkoutPicker); // Back returns to the day list, not out of the app
         renderWorkoutDetailUI();
       });
       grid.appendChild(card);
@@ -7963,6 +8002,7 @@
   }
 
   function backToWorkoutPicker() {
+    Nav.reset(); // athlete workouts root — the day list
     state.workoutView.mode = "picker";
     state.workoutView.dayId = null;
     renderWorkoutPickerUI();
@@ -9234,14 +9274,15 @@
       if (_signOutOnLeave && window.Cloud?.enabled) window.Cloud.signOut();
     });
 
-    $("#btn-logout").addEventListener("click", signOutTrainer);
+    $("#btn-logout").addEventListener("click", () => { Nav.reset(); signOutTrainer(); });
     $("#btn-coach-profile")?.addEventListener("click", openCoachProfile);
     $("#btn-add-client").addEventListener("click", addClientPrompt);
-    $("#btn-back").addEventListener("click", renderDashboard);
-    $("#btn-header-back").addEventListener("click", renderDashboard);
+    $("#btn-back").addEventListener("click", () => Nav.back(renderDashboard));
+    $("#btn-header-back").addEventListener("click", () => Nav.back(renderDashboard));
     // Coach side-nav
     document.querySelectorAll('#coach-nav [data-coach-nav]').forEach((b) => {
       b.addEventListener("click", () => {
+        Nav.reset(); // top-level nav is a new root
         const target = b.dataset.coachNav;
         if (target === "library") {
           _programEditorId = null;
@@ -9337,7 +9378,7 @@
     });
     $("#btn-browse-recommended-empty")?.addEventListener("click", openRecommendedTemplatesModal);
     $("#btn-delete-client").addEventListener("click", deleteClientPrompt);
-    $("#btn-exit-preview")?.addEventListener("click", exitPreview);
+    $("#btn-exit-preview")?.addEventListener("click", () => Nav.back(exitPreview));
     $("#btn-load-program").addEventListener("click", openLoadProgramModal);
     $("#btn-load-program-empty").addEventListener("click", openLoadProgramModal);
     $("#btn-archive-program").addEventListener("click", archiveCurrentProgram);
@@ -9406,11 +9447,14 @@
     $("#dash-cal-refresh")?.addEventListener("click", refreshDashCalSetmore);
 
     $$(".tab[data-tab]").forEach((t) => t.addEventListener("click", () => setTab(t.dataset.tab)));
-    $$(".tab[data-ctab]").forEach((t) => t.addEventListener("click", () => setClientTab(t.dataset.ctab)));
+    $$(".tab[data-ctab]").forEach((t) => t.addEventListener("click", () => {
+      if (!state.previewMode) Nav.reset(); // switching top-level tabs is a new root (except mid-preview)
+      setClientTab(t.dataset.ctab);
+    }));
 
-    $("#btn-client-logout").addEventListener("click", exitClient);
+    $("#btn-client-logout").addEventListener("click", () => { Nav.reset(); exitClient(); });
     $("#btn-client-profile")?.addEventListener("click", () => setClientTab("profile"));
-    $("#btn-back-to-picker")?.addEventListener("click", backToWorkoutPicker);
+    $("#btn-back-to-picker")?.addEventListener("click", () => Nav.back(backToWorkoutPicker));
     $("#btn-log-bw").addEventListener("click", logBodyweight);
     $("#btn-import-scale")?.addEventListener("click", () => $("#scale-csv-input")?.click());
     $("#scale-csv-input")?.addEventListener("change", (e) => {
