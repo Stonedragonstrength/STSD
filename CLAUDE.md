@@ -57,9 +57,9 @@ Both roles use **Supabase Auth (email + password)** — real accounts, not the o
 
 ## Key UI flows
 - **Coach adds athlete** → `makeClient()` → push to `state.trainerData.clients` → `saveTrainer()` → cloud upsert
-- **Coach shares athlete** → `encodeData()` base64-encodes the athlete object → coach copies code → athlete pastes it
-- **Athlete sends progress** → `encodeData()` encodes progress → athlete copies → coach pastes via "Import progress"
+- **Program & progress sync** → both directions go through Supabase (`cloud.js` upserts, pulled on sign-in) — no manual code passing
 - **Athlete invite code** → short code stored on Supabase; athlete enters it, app does `Cloud.getAthleteByInviteCode()`
+- **Legacy access code** → athlete-side "Got a long access code instead?" fallback still decodes old base64 program codes via `decodeData()`; nothing generates new ones anymore
 
 ## Local dev
 ```bash
@@ -71,6 +71,6 @@ No install, no build. Just open `index.html` or serve over HTTP.
 ## Conventions
 - Cache-busting via `?v=` query strings on script/style tags in `index.html` — bump manually on deploy. This is also what ships new code to installed PWA users: `sw.js` caches assets cache-first keyed by full URL, so a new `?v=` = a fresh fetch. The HTML doc is network-first, so a fresh deploy is picked up on the next online open (no user prompt). Bump the `CACHE` name in `sw.js` if you change the worker itself.
 - `uid()` generates IDs: `Date.now().toString(36) + random`
-- `todayISO()` / `dateISO()` / `parseISO()` handle dates as `YYYY-MM-DD` strings
+- `todayISO()` / `dateISO()` handle dates as `YYYY-MM-DD` strings
 - `escapeHtml()` is used whenever rendering user content into innerHTML
 - Migration logic lives inline in the boot sequence (backfilling new fields on old data shapes)

@@ -1326,86 +1326,6 @@ input[type="date"] { color-scheme: dark; }
   border-radius: 8px; padding: 0.25em 0.7em;
 }
 
-/* ===== Drum Picker ===== */
-.drum-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.65);
-  z-index: 300;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-}
-.drum-sheet {
-  background: var(--surface);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  width: 100%;
-  max-width: 480px;
-  border-top: 1px solid var(--border-strong);
-  padding-bottom: env(safe-area-inset-bottom, 0.5rem);
-}
-.drum-sheet-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.9rem 1.25rem 0.75rem;
-  border-bottom: 1px solid var(--border);
-}
-.drum-sheet-header h4 { margin: 0; font-size: 1rem; color: var(--text); }
-.drum-wrap {
-  position: relative;
-  height: 240px;
-  overflow: hidden;
-  margin: 0.25rem 0;
-}
-.drum-selector {
-  position: absolute;
-  top: 50%;
-  left: 1rem; right: 1rem;
-  transform: translateY(-50%);
-  height: 48px;
-  border-radius: 8px;
-  background: var(--primary-soft);
-  border: 1px solid var(--primary-glow);
-  z-index: 1;
-  pointer-events: none;
-}
-.drum-wrap::before, .drum-wrap::after {
-  content: "";
-  position: absolute;
-  left: 0; right: 0;
-  height: 90px;
-  z-index: 2;
-  pointer-events: none;
-}
-.drum-wrap::before { top: 0; background: linear-gradient(to bottom, var(--surface) 20%, transparent); }
-.drum-wrap::after  { bottom: 0; background: linear-gradient(to top, var(--surface) 20%, transparent); }
-.drum-scroll {
-  height: 240px;
-  overflow-y: scroll;
-  scroll-snap-type: y mandatory;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-}
-.drum-scroll::-webkit-scrollbar { display: none; }
-.drum-spacer { height: 96px; flex-shrink: 0; }
-.drum-item {
-  height: 48px;
-  scroll-snap-align: center;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.15rem;
-  font-weight: 500;
-  color: var(--text-soft);
-  cursor: pointer;
-}
-.drum-actions {
-  display: flex;
-  gap: 0.75rem;
-  padding: 0.75rem 1.25rem 1rem;
-}
-
 /* Add buttons */
 .add-inline-btn {
   background: transparent;
@@ -1766,7 +1686,7 @@ input[type="date"] { color-scheme: dark; }
   line-height: 1.45;
 }
 
-#client-code, #import-code-input {
+#client-code {
   font-family: ui-monospace, "SF Mono", Consolas, monospace;
   font-size: 0.8rem;
   word-break: break-all;
@@ -2055,17 +1975,6 @@ input[type="date"] { color-scheme: dark; }
 .client-diet-day .day-name { font-weight: 700; color: var(--primary-bright); }
 .client-diet-day .target { color: var(--text-soft); font-size: 0.9rem; }
 .client-diet-day .target strong { color: var(--text); font-weight: 700; }
-
-/* Code share/import */
-.code-textarea {
-  width: 100%;
-  min-height: 130px;
-  font-family: ui-monospace, "SF Mono", Consolas, monospace;
-  font-size: 0.75rem;
-  word-break: break-all;
-  background: var(--surface-2);
-}
-.code-actions { display: flex; gap: 0.5em; margin-top: 0.6em; flex-wrap: wrap; }
 
 /* Trainer's client logs view */
 .log-week-card {
@@ -2933,33 +2842,6 @@ button.ov-stat:hover { background: var(--surface-2); }
   .cal-day-status { font-size: 0.6rem; }
 }
 
-/* Schedule modal */
-.sched-options {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4em;
-  margin-bottom: 1em;
-}
-.sched-options select { margin-top: 0; }
-
-/* Template scaffolding modal */
-.template-info {
-  background: var(--primary-soft);
-  border-radius: var(--radius);
-  padding: 0.9em 1em;
-  margin-bottom: 1em;
-  border: 1px solid rgba(var(--primary-rgb), 0.25);
-  font-size: 0.9rem;
-  color: var(--text-soft);
-}
-.template-info strong { color: var(--primary-bright); }
-.template-phase-list {
-  margin: 0.6em 0 0;
-  padding-left: 1.2em;
-}
-.template-phase-list li { margin-bottom: 0.3em; }
-.template-phase-list strong { color: var(--primary-bright); }
-
 /* ============ Video / YouTube ============ */
 .exercise-video { margin-top: 0.7em; }
 .exercise-video label { margin: 0; }
@@ -2984,42 +2866,6 @@ button.ov-stat:hover { background: var(--surface-2); }
 .video-btn:hover {
   background: linear-gradient(180deg, var(--primary), var(--primary-hover));
   box-shadow: 0 0 0 3px var(--primary-soft);
-}
-
-/* Watch button on calendar day cells */
-.cal-day-video {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  background: linear-gradient(180deg, var(--primary-bright), var(--primary));
-  color: #062131;
-  border: none;
-  border-radius: 6px;
-  padding: 2px 7px;
-  font-size: 0.65rem;
-  font-weight: 800;
-  cursor: pointer;
-  font-family: inherit;
-  z-index: 2;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-  letter-spacing: 0.04em;
-}
-.cal-day-video:hover {
-  background: linear-gradient(180deg, #67e8f9, var(--primary-bright));
-  box-shadow: 0 0 0 2px var(--primary-soft), 0 1px 4px rgba(0, 0, 0, 0.4);
-}
-.cal-day.done .cal-day-video,
-.cal-day.partial .cal-day-video,
-.cal-day.missed .cal-day-video {
-  /* Keep visible but slightly tucked when cell has color */
-  opacity: 0.95;
-}
-
-@media (max-width: 600px) {
-  .cal-day-video {
-    padding: 1px 5px;
-    font-size: 0.55rem;
-  }
 }
 
 .video-pick-list { display: flex; flex-direction: column; gap: 0.4em; }
@@ -4089,13 +3935,6 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
   .cal-day .cal-day-pill-token { font-size: 0.72rem; border: none; background: none; padding: 0; }
   .cal-day-label { font-size: 0.55rem; line-height: 1.15; }
   .cal-day-status { font-size: 0.55rem; }
-  .cal-day-video {
-    top: 2px;
-    right: 2px;
-    padding: 1px 4px;
-    font-size: 0.55rem;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.4);
-  }
   .cal-dow { font-size: 0.6rem; padding: 0.25em 0; letter-spacing: 0.04em; }
   .cal-title { font-size: 0.95rem; min-width: 0; flex: 1; text-align: center; }
   .cal-nav .btn { min-height: 34px; padding: 0.3em 0.65em; }
@@ -4450,13 +4289,6 @@ input:focus, textarea:focus, select:focus {
 .cal-day { transition: transform 0.12s, border-color 0.18s, background 0.18s; }
 .cal-day:hover:not(.outside) { transform: translateY(-2px) scale(1.03); }
 .cal-day:active:not(.outside) { transform: scale(0.96); }
-
-/* Video badge on calendar gets a continuous tiny breathing glow */
-@keyframes videoBadgeGlow {
-  0%, 100% { box-shadow: 0 1px 3px rgba(0,0,0,0.4), 0 0 0 transparent; }
-  50%      { box-shadow: 0 1px 3px rgba(0,0,0,0.4), 0 0 10px rgba(var(--primary-bright-rgb), 0.75); }
-}
-.cal-day-video { animation: videoBadgeGlow 2.5s ease-in-out infinite; }
 
 /* -------- Toast: spicier entrance -------- */
 @keyframes toastIn {

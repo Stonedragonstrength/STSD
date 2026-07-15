@@ -145,12 +145,6 @@
     const tz = d.getTimezoneOffset() * 60000;
     return new Date(d - tz).toISOString().slice(0, 10);
   }
-  function parseISO(s) { return new Date(s + "T00:00:00"); }
-
-  function encodeData(obj) {
-    const json = JSON.stringify(obj);
-    return btoa(unescape(encodeURIComponent(json)));
-  }
   function decodeData(str) {
     const cleaned = String(str).replace(/\s+/g, "");
     const json = decodeURIComponent(escape(atob(cleaned)));
@@ -238,23 +232,6 @@
         protein: "",
       },
     };
-  }
-  function ensureDietShape(week) {
-    if (!week.diet || typeof week.diet !== "object") week.diet = {};
-    if (typeof week.diet.notes !== "string") week.diet.notes = "";
-    // Migration: collapse legacy per-day grid into single weekly target (use first non-empty day).
-    if (week.diet.calories == null && Array.isArray(week.diet.days)) {
-      const firstCal = week.diet.days.find((d) => d.calories !== "" && d.calories != null);
-      week.diet.calories = firstCal ? firstCal.calories : "";
-    }
-    if (week.diet.protein == null && Array.isArray(week.diet.days)) {
-      const firstP = week.diet.days.find((d) => d.protein !== "" && d.protein != null);
-      week.diet.protein = firstP ? firstP.protein : "";
-    }
-    if (week.diet.calories == null) week.diet.calories = "";
-    if (week.diet.protein == null) week.diet.protein = "";
-    // Drop legacy days array now that single-target is the source of truth.
-    delete week.diet.days;
   }
   function makeDay(n, name) {
     return { id: uid(), name: name || `Day ${n}`, exercises: [] };
@@ -2662,8 +2639,6 @@
   let _dayEditorDraft = null;
   let _dayEditorEditingId = null;
 
-  function openTemplateEditor(template) { openDayEditor(template); }
-
   function openDayEditor(template) {
     _dayEditorEditingId = template ? template.id : null;
     _dayEditorDraft = template ? JSON.parse(JSON.stringify(template)) : makeWorkoutTemplate("");
@@ -2925,9 +2900,6 @@
   // Which tab is showing: "active" (draggable library) or "hidden" (parked exercises).
   let _libSbTab = "active";
 
-  function isExHidden(name) {
-    return (state.trainerData.hiddenExercises || []).includes(name);
-  }
   function hideExercise(name) {
     if (!Array.isArray(state.trainerData.hiddenExercises)) state.trainerData.hiddenExercises = [];
     if (!state.trainerData.hiddenExercises.includes(name)) {
@@ -3025,9 +2997,8 @@
     if (layout) layout.classList.remove("show-lib-sidebar");
   }
 
-  // -------- Drum Picker (kept for fallback) --------
+  // -------- Picker value tables --------
   const REPS_VALUES   = [...Array.from({ length: 30 }, (_, i) => String(i + 1)), "AMAP"];
-  const WEIGHT_VALUES = Array.from({ length: 161 }, (_, i) => i === 0 ? "BW" : String(i * 5));
   const SETS_VALUES   = ["1","2","3","4","5","6"];
   const WEIGHT_RANGES = [
     { label: "BW",      values: ["BW"] },
@@ -3247,40 +3218,6 @@
     document.body.appendChild(pop);
     showRange(activeRange);
     _attachOutsideClose(pop, anchorEl);
-  }
-
-  let _drumVals = [];
-  let _drumCb   = null;
-
-  function openDrumPicker(label, values, currentVal, cb) {
-    _drumVals = values;
-    _drumCb   = cb;
-    $("#drum-label").textContent = label;
-    const scroll = $("#drum-scroll");
-    scroll.innerHTML =
-      '<div class="drum-spacer"></div>' +
-      values.map((v) => `<div class="drum-item">${escapeHtml(String(v))}</div>`).join("") +
-      '<div class="drum-spacer"></div>';
-    show($("#drum-modal"));
-    const idx = values.indexOf(String(currentVal));
-    const scrollTo = (idx >= 0 ? idx : 0) * 48;
-    requestAnimationFrame(() => { scroll.scrollTop = scrollTo; });
-  }
-  function confirmDrum() {
-    const scroll = $("#drum-scroll");
-    const idx = Math.round(scroll.scrollTop / 48);
-    const val = _drumVals[Math.max(0, Math.min(idx, _drumVals.length - 1))];
-    hide($("#drum-modal"));
-    if (_drumCb) { _drumCb(val); _drumCb = null; }
-  }
-  function cancelDrum() { hide($("#drum-modal")); _drumCb = null; }
-
-  function pickerBtnEl(value, emptyLabel, openFn) {
-    const btn = document.createElement("button");
-    btn.className = "picker-btn" + (value ? "" : " empty");
-    btn.textContent = value || emptyLabel;
-    btn.addEventListener("click", openFn);
-    return btn;
   }
 
   // -------- Weeks/program --------
@@ -4308,144 +4245,6 @@
     renderWeeks(); renderDiet(); renderCoachCalendar();
   }
 
-  // -------- 12-week template (generic phased periodization) --------
-  function loadTemplate() {
-    const c = currentClient(); if (!c) return;
-    if (c.weeks.length > 0) {
-      if (!window.confirm("This will replace the existing program with the 12-week template. Continue?")) return;
-    }
-    c.weeks = buildTemplateWeeks();
-    saveTrainer();
-    renderWeeks(); renderDiet(); renderCoachCalendar();
-    toast("12-week template loaded");
-  }
-
-  function buildTemplateWeeks() {
-    // Four phases × 3 weeks. Standard periodization model:
-    // Foundation → Hypertrophy → Maximal Strength → Peak (Power).
-    // Exercise selections are common compound + accessory movements
-    // any strength coach would prescribe. Coach should personalize weights.
-    const phases = [
-      {
-        label: "Foundation",
-        focus: "Anatomical adaptation, movement quality, base volume",
-        scheme: { setsCompound: "3", repsCompound: "10", setsAccessory: "3", repsAccessory: "12" },
-        cue: "Moderate loads (~65% 1RM). Focus on form, tempo, and full ROM. Build base work capacity.",
-      },
-      {
-        label: "Hypertrophy",
-        focus: "Drive muscle growth with higher volume",
-        scheme: { setsCompound: "4", repsCompound: "8", setsAccessory: "3", repsAccessory: "12" },
-        cue: "~70–75% 1RM. Push every set to within 1–2 reps of failure (RPE 8). 60–90 sec rest on accessories.",
-      },
-      {
-        label: "Strength",
-        focus: "Build maximal strength with heavier loads",
-        scheme: { setsCompound: "5", repsCompound: "5", setsAccessory: "3", repsAccessory: "8" },
-        cue: "~80–87% 1RM. Long rest (2–3 min) on compounds. Add 5 lb week-to-week when all reps clean.",
-      },
-      {
-        label: "Peak",
-        focus: "Intensify, test top sets, then deload final week",
-        scheme: { setsCompound: "5", repsCompound: "3", setsAccessory: "3", repsAccessory: "6" },
-        cue: "~88–92% 1RM. Top single allowed in week 11. Week 12 = deload at 60% for recovery.",
-      },
-    ];
-
-    // 4 training days, body-part split — universal pattern in strength coaching
-    const dayTemplates = [
-      {
-        name: "Day 1 — Lower Body (Squat focus)",
-        exercises: [
-          { name: "Back Squat", role: "compound" },
-          { name: "Romanian Deadlift", role: "compound" },
-          { name: "Walking Lunges", role: "accessory" },
-          { name: "Leg Curl", role: "accessory" },
-          { name: "Standing Calf Raise", role: "accessory" },
-        ],
-      },
-      {
-        name: "Day 2 — Upper Push (Chest / Shoulders / Triceps)",
-        exercises: [
-          { name: "Bench Press", role: "compound" },
-          { name: "Overhead Press", role: "compound" },
-          { name: "Incline Dumbbell Press", role: "accessory" },
-          { name: "Lateral Raise", role: "accessory" },
-          { name: "Triceps Pressdown", role: "accessory" },
-        ],
-      },
-      {
-        name: "Day 3 — Lower Body (Deadlift focus)",
-        exercises: [
-          { name: "Deadlift", role: "compound" },
-          { name: "Front Squat", role: "compound" },
-          { name: "Bulgarian Split Squat", role: "accessory" },
-          { name: "Hip Thrust", role: "accessory" },
-          { name: "Hanging Knee Raise", role: "accessory" },
-        ],
-      },
-      {
-        name: "Day 4 — Upper Pull (Back / Biceps)",
-        exercises: [
-          { name: "Pull-up (or Lat Pulldown)", role: "compound" },
-          { name: "Barbell Row", role: "compound" },
-          { name: "Seated Cable Row", role: "accessory" },
-          { name: "Face Pull", role: "accessory" },
-          { name: "Barbell Curl", role: "accessory" },
-        ],
-      },
-    ];
-
-    const weeks = [];
-    let weekIdx = 0;
-    phases.forEach((phase) => {
-      for (let pw = 1; pw <= 3; pw++) {
-        const week = {
-          id: uid(),
-          label: `Week ${weekIdx + 1}`,
-          focus: phase.focus + (pw === 3 ? " (intensification)" : pw === 1 ? " (intro)" : ""),
-          phaseLabel: phase.label,
-          days: dayTemplates.map((dt, di) => ({
-            id: uid(),
-            name: dt.name,
-            exercises: dt.exercises.map((e) => {
-              const isCompound = e.role === "compound";
-              return {
-                id: uid(),
-                name: e.name,
-                sets: isCompound ? phase.scheme.setsCompound : phase.scheme.setsAccessory,
-                currentWeight: "",
-                currentReps: isCompound ? phase.scheme.repsCompound : phase.scheme.repsAccessory,
-                goalWeight: "",
-                goalReps: "",
-                notes: isCompound
-                  ? `${phase.label} phase. ${phase.cue}`
-                  : "Controlled tempo, full ROM. Pair with main lift; 60–90 sec rest.",
-              };
-            }),
-          })),
-          diet: {
-            notes: phase.label === "Hypertrophy"
-              ? "Slight surplus (~+250 kcal) to support growth. Protein 0.9–1.0 g per lb bodyweight."
-              : phase.label === "Strength"
-              ? "Maintenance to small surplus. Eat enough carbs around training to fuel heavy sessions."
-              : phase.label === "Peak"
-              ? "Maintenance. Prioritize sleep, hydration, recovery."
-              : "Eat at maintenance. Protein 0.8 g per lb bodyweight minimum.",
-            calories: "",
-            protein: "",
-          },
-        };
-        weeks.push(week);
-        weekIdx++;
-      }
-    });
-    return weeks;
-  }
-
-  // -------- Diet --------
-  const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
   // -------- Nutrition plan (standing per-athlete targets + history) --------
   // Macro slice colors are CVD-validated against the app surface (dataviz
   // six-checks) — don't swap them for the raw theme tokens.
@@ -4703,54 +4502,6 @@
     const d = w.days.find((x) => x.id === dayId);
     if (!d) return null;
     return { week: w, day: d };
-  }
-
-  // Status for an athlete (uses progress logs) - returns: 'done' | 'partial' | 'missed' | 'scheduled' | 'rest' | null
-  function dayStatusForCoach(c, dateISOStr) {
-    const sched = c.schedule?.[dateISOStr];
-    if (!sched) return null;
-    if (sched.rest) return "rest";
-    const wd = findWeekDay(c, sched.weekId, sched.dayId);
-    if (!wd) return "scheduled";
-
-    const logs = c.importedProgress?.exerciseLogs || {};
-    const totalEx = wd.day.exercises.length;
-    let doneEx = 0;
-    wd.day.exercises.forEach((ex) => {
-      const exLogs = logs[ex.id] || [];
-      if (exLogs.some((l) => l.date === dateISOStr)) doneEx++;
-    });
-    if (doneEx >= totalEx && totalEx > 0) return "done";
-    if (doneEx > 0) return "partial";
-    if (dateISOStr < todayISO()) return "missed";
-    return "scheduled";
-  }
-
-  function dayStatusForAthlete(program, progress, dateISOStr) {
-    const sched = program.client.schedule?.[dateISOStr];
-    if (!sched) return null;
-    if (sched.rest) return "rest";
-    const wd = findWeekDay(program.client, sched.weekId, sched.dayId);
-    if (!wd) return "scheduled";
-    const logs = progress?.exerciseLogs || {};
-    const totalEx = wd.day.exercises.length;
-    let doneEx = 0;
-    wd.day.exercises.forEach((ex) => {
-      const exLogs = logs[ex.id] || [];
-      if (exLogs.some((l) => l.date === dateISOStr)) doneEx++;
-    });
-    if (doneEx >= totalEx && totalEx > 0) return "done";
-    if (doneEx > 0) return "partial";
-    if (dateISOStr < todayISO()) return "missed";
-    return "scheduled";
-  }
-
-  function dayLabel(c, sched) {
-    if (!sched) return "";
-    if (sched.rest) return "Rest";
-    const wd = findWeekDay(c, sched.weekId, sched.dayId);
-    if (!wd) return "—";
-    return `${wd.week.label} · ${wd.day.name.split(" — ")[0] || wd.day.name}`;
   }
 
   function buildMonthGrid(year, month) {
@@ -5253,91 +5004,6 @@
       body: bodyHtml,
       actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
     });
-  }
-
-  function attachDayVideoButton(cell, videos, dayLabelStr) {
-    const btn = document.createElement("button");
-    btn.className = "cal-day-video";
-    btn.type = "button";
-    btn.innerHTML = `▶ ${videos.length}`;
-    btn.title = `${videos.length} demo${videos.length === 1 ? "" : "s"} available`;
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openDayVideoPicker(videos, dayLabelStr);
-    });
-    cell.appendChild(btn);
-  }
-
-  function openScheduleModal(iso) {
-    const c = currentClient(); if (!c) return;
-    const existing = c.schedule[iso] || {};
-    const weekOpts = c.weeks.map((w) =>
-      `<option value="${w.id}" ${existing.weekId === w.id ? "selected" : ""}>${escapeHtml((w.phaseLabel ? "[" + w.phaseLabel + "] " : "") + w.label)}</option>`
-    ).join("");
-    openModal({
-      title: `Schedule for ${iso}`,
-      body: `
-        <div class="sched-options">
-          <label>Type
-            <select id="sched-type">
-              <option value="workout" ${existing.weekId ? "selected" : ""}>Workout day</option>
-              <option value="rest" ${existing.rest ? "selected" : ""}>Rest day</option>
-              <option value="clear" ${!existing.weekId && !existing.rest ? "selected" : ""}>(Unscheduled)</option>
-            </select>
-          </label>
-          <div id="sched-workout-fields" ${existing.rest ? 'class="hidden"' : ""}>
-            <label>Week
-              <select id="sched-week">${weekOpts || '<option value="">(no weeks yet — add a week first)</option>'}</select>
-            </label>
-            <label>Day
-              <select id="sched-day"></select>
-            </label>
-          </div>
-        </div>`,
-      actions: [
-        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
-        ...(c.schedule[iso] ? [{
-          label: "Clear", className: "btn btn-danger", onClick: () => {
-            delete c.schedule[iso];
-            saveTrainer(); renderCoachCalendar(); closeModal();
-            toast("Cleared");
-          },
-        }] : []),
-        { label: "Save", className: "btn btn-primary", onClick: () => {
-            const type = $("#sched-type").value;
-            if (type === "clear") {
-              delete c.schedule[iso];
-            } else if (type === "rest") {
-              c.schedule[iso] = { rest: true };
-            } else {
-              const weekId = $("#sched-week").value;
-              const dayId = $("#sched-day").value;
-              if (!weekId || !dayId) { toast("Pick a week & day"); return; }
-              c.schedule[iso] = { weekId, dayId };
-            }
-            saveTrainer(); renderCoachCalendar(); closeModal();
-            toast("Schedule saved");
-          },
-        },
-      ],
-    });
-
-    const typeSel = $("#sched-type");
-    const wfields = $("#sched-workout-fields");
-    const weekSel = $("#sched-week");
-    const daySel = $("#sched-day");
-    function rebuildDays() {
-      const w = c.weeks.find((x) => x.id === weekSel.value);
-      daySel.innerHTML = w ? w.days.map((d) =>
-        `<option value="${d.id}" ${existing.dayId === d.id ? "selected" : ""}>${escapeHtml(d.name)}</option>`
-      ).join("") : "";
-    }
-    rebuildDays();
-    typeSel.addEventListener("change", () => {
-      if (typeSel.value === "workout") wfields.classList.remove("hidden");
-      else wfields.classList.add("hidden");
-    });
-    weekSel?.addEventListener("change", rebuildDays);
   }
 
   // -------- Coach Cardio view (athlete's logged cardio only) --------
@@ -6144,7 +5810,6 @@
     { sessions: 12, price: 1020, cadence: "3×/week" },
     { sessions: 16, price: 1320, cadence: "4×/week" },
   ];
-  const PACKAGE_SIZES = PACKAGE_OPTIONS.map((o) => o.sessions);
 
   // Membership tiers from stonedragonstrengthtraining.com/memberships (pre-pay
   // monthly pricing). Coach assigns one per athlete in the Profile tab; athlete
@@ -6849,77 +6514,6 @@
     host.querySelectorAll(".bulletin-remove").forEach((btn) => {
       btn.addEventListener("click", () => removeBulletin(btn.dataset.bid));
     });
-  }
-
-  // -------- Share / import --------
-  function shareClient() {
-    const c = currentClient(); if (!c) return;
-    const payload = {
-      kind: "tp-program", v: 2,
-      clientId: c.id,
-      trainerName: state.trainerData.trainer?.name || "",
-      sharedAt: Date.now(),
-      client: {
-        id: c.id, name: c.name, age: c.age, heightIn: c.heightIn, weightLb: c.weightLb,
-        goals: c.goals, weeks: c.weeks, schedule: c.schedule || {},
-        coachPRs: c.coachPRs || [],
-        sessionBank: c.sessionBank || { packages: [], redemptions: [] },
-        nutrition: c.nutrition || { current: null, history: [] },
-        archivedPrograms: c.archivedPrograms || [],
-        inviteCode: c.inviteCode || "",
-      },
-    };
-    const code = encodeData(payload);
-    openModal({
-      title: "Access code for " + c.name,
-      body: `
-        <p>Send this code to <strong>${escapeHtml(c.name)}</strong>. They paste it into the Athlete Portal on their own device.</p>
-        <textarea class="code-textarea" id="share-code-output" readonly>${escapeHtml(code)}</textarea>
-        <div class="code-actions">
-          <button class="btn btn-primary" id="btn-copy-share">Copy code</button>
-        </div>
-        <p class="muted" style="margin-top:0.8em">Re-share any time you update the program or schedule. The athlete's logs are preserved on re-import.</p>`,
-      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
-    });
-    $("#btn-copy-share").addEventListener("click", async () => {
-      try { await navigator.clipboard.writeText(code); toast("Code copied"); }
-      catch { $("#share-code-output").select(); document.execCommand("copy"); toast("Code copied"); }
-    });
-  }
-
-  function importProgressPrompt() {
-    openModal({
-      title: "Import athlete progress",
-      body: `
-        <p>Paste the progress code your athlete sent you.</p>
-        <textarea class="code-textarea" id="import-code-input" placeholder="Paste long string here..."></textarea>
-        <p id="import-progress-error" class="error hidden"></p>`,
-      actions: [
-        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
-        { label: "Import", className: "btn btn-primary", onClick: () => {
-            const err = $("#import-progress-error");
-            try {
-              const obj = decodeData($("#import-code-input").value);
-              if (obj.kind !== "tp-progress") throw new Error("Wrong code type — this looks like a program code, not a progress code.");
-              const c = state.trainerData.clients.find((x) => x.id === obj.clientId);
-              if (!c) throw new Error("This code belongs to a different athlete (id not found here).");
-              c.importedProgress = { ...obj.progress, syncedAt: Date.now() };
-              saveTrainer();
-              closeModal();
-              setTab("logs");
-              renderClientLogs();
-              renderCoachCalendar();
-              renderCoachPRs();
-              toast("Progress imported");
-            } catch (e) {
-              err.textContent = "Couldn't import: " + (e.message || "invalid code");
-              err.classList.remove("hidden");
-            }
-          },
-        },
-      ],
-    });
-    setTimeout(() => $("#import-code-input")?.focus(), 50);
   }
 
   // -------- Athlete mode: invite-code login --------
@@ -8009,37 +7603,6 @@
     hide($("#workout-detail"));
     show($("#workout-picker"));
   }
-  function renderClientWeek(week, wIdx, expand, jumpTo) {
-    const card = document.createElement("div");
-    card.className = "week-card";
-    if (week.phaseLabel) card.classList.add("phase-card");
-    if (expand) card.classList.add("open");
-    const totalDays = week.days.length;
-    const completedDays = week.days.filter((d) => isDayChecked(d.id)).length;
-    const pct = totalDays ? Math.round((completedDays * 100) / totalDays) : 0;
-    const weekComplete = completedDays === totalDays && totalDays > 0;
-    const head = document.createElement("div");
-    head.className = "week-head";
-    head.innerHTML = `
-      <div>
-        <h4>${week.phaseLabel ? `<span class="phase-badge">${escapeHtml(week.phaseLabel)}</span>` : ""}${escapeHtml(week.label)}${week.focus ? " — " + escapeHtml(week.focus) : ""}</h4>
-        <div class="week-info">${completedDays} / ${totalDays} day${totalDays === 1 ? "" : "s"} complete${weekComplete ? " · ✓ Week done" : ""}</div>
-      </div>
-      <div class="week-head-right"><span class="week-toggle">▾</span></div>`;
-    head.addEventListener("click", () => card.classList.toggle("open"));
-    const body = document.createElement("div");
-    body.className = "week-body";
-    const progress = document.createElement("div");
-    progress.className = "week-progress" + (weekComplete ? " complete" : "");
-    progress.innerHTML = `
-      <div class="week-progress-label">${weekComplete ? "Week complete ✓" : `${completedDays} / ${totalDays} days`}</div>
-      <div class="week-progress-track"><div class="week-progress-fill" style="width:${pct}%"></div></div>
-      <div class="week-progress-pct">${pct}%</div>`;
-    body.appendChild(progress);
-    week.days.forEach((day) => body.appendChild(renderClientDay(week, day, jumpTo)));
-    card.appendChild(head); card.appendChild(body);
-    return card;
-  }
   function isLogEntryLocked(l, ex, numSets) {
     if (!l) return false;
     if (l.locked === true) return true;
@@ -8057,50 +7620,6 @@
     if (!numSets) return logs.length > 0;
     return logs.some((l) => isLogEntryLocked(l, ex, numSets));
   }
-  function renderClientDay(week, day, jumpTo) {
-    const card = document.createElement("div");
-    card.className = "client-day-card";
-    const totalEx = day.exercises.length;
-    const doneEx = day.exercises.filter((ex) => hasAnyLog(ex)).length;
-    const checked = isDayChecked(day.id);
-    if (checked) card.classList.add("day-checked");
-    card.innerHTML = `
-      <div class="client-day-head">
-        <div class="day-head-left-flex">
-          <button class="day-check-toggle ${checked ? "checked" : ""}" data-action="toggle-day" type="button" aria-label="Mark day complete">${checked ? "✓" : ""}</button>
-          <h4>${escapeHtml(day.name)}</h4>
-        </div>
-        <div class="day-head-stats">
-          ${checked ? `<span class="day-complete-badge">Done ✓</span>` : ""}
-          ${doneEx > 0
-            ? `<span class="muted">${doneEx} / ${totalEx} logged</span>`
-            : ""}
-        </div>
-      </div>`;
-    card.querySelector('[data-action="toggle-day"]').addEventListener("click", () => {
-      toggleDayComplete(day.id);
-      toast(checked ? "Unchecked" : "Day complete ✓");
-    });
-    const exList = document.createElement("div");
-    exList.className = "cex-list";
-    const mobTop = day.exercises.filter((e) => e.kind === "mobility" && e.mobPlacement !== "bottom");
-    const mobBottom = day.exercises.filter((e) => e.kind === "mobility" && e.mobPlacement === "bottom");
-    const main = day.exercises.filter((e) => e.kind !== "mobility");
-    if (mobTop.length) {
-      const sec = mobilitySection("🧘 Mobility & Stretching");
-      mobTop.forEach((ex) => sec.appendChild(renderClientExercise(week, day, ex, jumpTo)));
-      exList.appendChild(sec);
-    }
-    main.forEach((ex) => exList.appendChild(renderClientExercise(week, day, ex, jumpTo)));
-    if (mobBottom.length) {
-      const sec = mobilitySection("🧘 Finisher Stretches");
-      mobBottom.forEach((ex) => sec.appendChild(renderClientExercise(week, day, ex, jumpTo)));
-      exList.appendChild(sec);
-    }
-    card.appendChild(exList);
-    return card;
-  }
-  // Wrapper for an athlete-side mobility/stretching block with its own header.
   // Warm-up holds render above the exercises, finisher holds below.
   function mobilitySection(label) {
     const sec = document.createElement("div");
@@ -8671,35 +8190,6 @@
     wrapper.appendChild(row);
     wrapper.appendChild(panel);
     return wrapper;
-  }
-
-  function getDayVideos(client, sched) {
-    if (!sched || sched.rest) return [];
-    const wd = findWeekDay(client, sched.weekId, sched.dayId);
-    if (!wd) return [];
-    return wd.day.exercises
-      .map((ex) => ({ id: ex.id, name: ex.name || "(unnamed)", ytId: getYouTubeId(ex.videoUrl) }))
-      .filter((x) => x.ytId);
-  }
-
-  function openDayVideoPicker(videos, dayLabelStr) {
-    if (videos.length === 1) {
-      openVideoModal(videos[0].ytId, videos[0].name);
-      return;
-    }
-    const list = videos.map((v) =>
-      `<button class="video-pick-btn" data-yt="${escapeHtml(v.ytId)}" data-name="${escapeHtml(v.name)}"><span class="video-pick-icon">▶</span>${escapeHtml(v.name)}</button>`
-    ).join("");
-    openModal({
-      title: `Demos — ${dayLabelStr}`,
-      body: `<p class="muted" style="margin-top:-0.4em">Pick an exercise to watch.</p><div class="video-pick-list">${list}</div>`,
-      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
-    });
-    document.querySelectorAll(".video-pick-btn").forEach((b) => {
-      b.addEventListener("click", () => {
-        openVideoModal(b.dataset.yt, b.dataset.name);
-      });
-    });
   }
 
   function openVideoModal(ytId, name) {
@@ -9390,11 +8880,6 @@
     $("#ex-lib-sb-search")?.addEventListener("input", (e) => renderSidebarLibrary(e.target.value));
     $$(".ex-lib-sb-tab").forEach((t) => t.addEventListener("click", () => setLibSbTab(t.dataset.libTab)));
 
-    // Drum picker
-    $("#btn-drum-confirm").addEventListener("click", confirmDrum);
-    $("#btn-drum-cancel").addEventListener("click", cancelDrum);
-    $("#btn-drum-cancel-2").addEventListener("click", cancelDrum);
-    $("#drum-modal").addEventListener("click", (e) => { if (e.target === e.currentTarget) cancelDrum(); });
     $("#btn-athlete-add-pr").addEventListener("click", () => openAddPRModal("athlete"));
     $("#btn-add-package")?.addEventListener("click", openAddPackageModal);
     $("#btn-gift-session")?.addEventListener("click", openGiftSessionModal);
