@@ -269,6 +269,19 @@
   // Hold (seconds) tags only apply alongside the Isometric tag.
   const HOLD_TAGS = ["1S", "2S", "3S", "4S", "5S"];
 
+  // A dumbbell exercise without a unilateral tag is a PAIR — the weight reads
+  // plural gym-style ("50s"). Adding 1A/1L (one arm/leg = one dumbbell)
+  // reverts it to "50 lb". BW passes through untouched.
+  function usesDumbbellPair(ex) {
+    const mods = (ex && ex.modifiers) || [];
+    return mods.includes("DB") && !mods.includes("1A") && !mods.includes("1L");
+  }
+  function exWeightLabel(ex, v) {
+    if (!v) return null;
+    if (v === "BW") return "BW";
+    return usesDumbbellPair(ex) ? v + "s" : v + " lb";
+  }
+
   const TAG_COLORS = {
     "1A":        { color: "#f87171", bg: "rgba(248,113,113,0.18)" },
     "1L":        { color: "#fb923c", bg: "rgba(251,146,60,0.18)"  },
@@ -329,8 +342,9 @@
   // shown as W1/W2 on the athlete card. Stored as ex.warmups = [{weight,reps}].
   function warmupSummary(ex) {
     if (!ex.warmups?.length) return "";
+    const s = usesDumbbellPair(ex) ? "s" : ""; // DB pair reads plural ("45s")
     return "W " + ex.warmups
-      .map((w) => (w.weight ? (w.weight === "BW" ? "BW" : w.weight) : "?"))
+      .map((w) => (w.weight ? (w.weight === "BW" ? "BW" : w.weight + s) : "?"))
       .join("·");
   }
 
@@ -611,7 +625,7 @@
     pop.style.cssText = "position:fixed;z-index:9999;visibility:hidden";
 
     const save = () => { saveTrainer(); onChange(); };
-    const wtLabel = (v) => (v ? (v === "BW" ? "BW" : v + " lb") : "Wt");
+    const wtLabel = (v) => exWeightLabel(ex, v) || "Wt"; // "50s" on DB pairs
 
     function setCount(n) {
       if (!ex.warmups) ex.warmups = [];
@@ -729,7 +743,7 @@
     });
   }
 
-  function openModPicker(ex, anchorBtn, chipsBefore, chipsAfter) {
+  function openModPicker(ex, anchorBtn, chipsBefore, chipsAfter, onTagsChange) {
     document.querySelector(".mod-picker-pop")?.remove();
     const pop = document.createElement("div");
     pop.className = "mod-picker-pop";
@@ -796,9 +810,10 @@
             setHoldRowOpen(false);
           }
           saveTrainer();
-          const reopen = () => openModPicker(ex, anchorBtn, chipsBefore, chipsAfter);
+          const reopen = () => openModPicker(ex, anchorBtn, chipsBefore, chipsAfter, onTagsChange);
           renderModChips(chipsBefore, ex, "before", reopen);
           renderModChips(chipsAfter, ex, "after", reopen);
+          onTagsChange?.();
         });
         btn.dataset.tag = tag;
         row.appendChild(btn);
@@ -4086,7 +4101,9 @@
 
     // Opens the tag picker; chips clicked below route here so tags can only be
     // removed by unclicking them inside the popup (never by tapping the chip).
-    const openPicker = () => openModPicker(ex, modBtn, chipsBefore, chipsAfter);
+    // refreshCwLabel keeps the weight label's singular/plural (DB pair) form
+    // in sync as tags toggle — defined further down, resolved at click time.
+    const openPicker = () => openModPicker(ex, modBtn, chipsBefore, chipsAfter, () => { refreshCwLabel(); refreshWarmupBtn(); });
 
     // Modifier chips BEFORE name (Unilateral, Equipment, Position)
     const chipsBefore = document.createElement("div");
@@ -4113,7 +4130,6 @@
     modBtn.textContent = "tag";
     modBtn.addEventListener("click", (e) => { e.stopPropagation(); openPicker(); });
 
-    function wtLabel(v) { return v ? (v === "BW" ? "BW" : v + " lb") : null; }
 
     // Sets
     const setsBtn = document.createElement("button");
@@ -4155,10 +4171,11 @@
     // stays in the data model but has no UI, like goalReps)
     const cwBtn = document.createElement("button");
     cwBtn.className = "picker-btn picker-btn-sm" + (ex.currentWeight ? "" : " empty");
-    cwBtn.textContent = wtLabel(ex.currentWeight) || "Wt";
+    const refreshCwLabel = () => { cwBtn.textContent = exWeightLabel(ex, ex.currentWeight) || "Wt"; };
+    refreshCwLabel();
     cwBtn.title = "Prescribed weight";
     cwBtn.addEventListener("click", (e) => { e.stopPropagation(); openWeightPicker(ex.currentWeight || "BW", (val) => {
-      ex.currentWeight = val; saveTrainer(); cwBtn.textContent = wtLabel(val) || "Wt"; cwBtn.classList.toggle("empty", !val);
+      ex.currentWeight = val; saveTrainer(); refreshCwLabel(); cwBtn.classList.toggle("empty", !val);
     }, cwBtn); });
 
     const x1 = document.createElement("span");
@@ -7994,12 +8011,12 @@
     if (prog) {
       // Effective target: computed weight + this week's rep target (climbs
       // toward the ceiling as prior weeks are hit; "+" = beat it if you can).
-      rxParts.push(prog.weight + " lb");
+      rxParts.push(exWeightLabel(ex, String(prog.weight)));
       rxParts.push(`× ${prog.reps}+`);
     } else {
       // Single prescribed weight (the old upper/range display was retired
       // 2026-07-15 along with the coach-side range picker).
-      if (ex.currentWeight) rxParts.push(ex.currentWeight === "BW" ? "BW" : ex.currentWeight + " lb");
+      if (ex.currentWeight) rxParts.push(exWeightLabel(ex, ex.currentWeight));
       if (ex.currentReps) rxParts.push("× " + ex.currentReps);
     }
     const rxMain = document.createElement("span");
@@ -8086,7 +8103,9 @@
 
     const numSets = parseInt(ex.sets) || 0;
     // With a progression rule, placeholders/seeds use the computed target.
-    const wtPh = prog ? String(prog.weight) : (ex.currentWeight && ex.currentWeight !== "BW" ? ex.currentWeight : "");
+    // DB-pair exercises read plural ("50s") in placeholders, matching the rx.
+    const pairS = usesDumbbellPair(ex) ? "s" : "";
+    const wtPh = prog ? prog.weight + pairS : (ex.currentWeight && ex.currentWeight !== "BW" ? ex.currentWeight + pairS : "");
     const repPh = prog ? `${prog.reps}+` : (ex.currentReps || "");
 
     // Header row
@@ -8172,7 +8191,7 @@
 
       const wSeed = parseFloat(w.weight);
       const rSeed = parseInt(w.reps, 10);
-      const wt = Object.assign(document.createElement("input"), { type: "number", step: "0.5", min: "0", placeholder: (w.weight && w.weight !== "BW") ? w.weight : "lb", readOnly: isLocked });
+      const wt = Object.assign(document.createElement("input"), { type: "number", step: "0.5", min: "0", placeholder: (w.weight && w.weight !== "BW") ? w.weight + pairS : "lb", readOnly: isLocked });
       const rp = Object.assign(document.createElement("input"), { type: "number", min: "0", placeholder: w.reps || "reps", readOnly: isLocked });
       wt.className = "cex-input"; rp.className = "cex-input";
       wt.addEventListener("click", (e) => e.stopPropagation());
