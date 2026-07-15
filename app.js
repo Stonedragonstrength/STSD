@@ -8128,6 +8128,7 @@
           let v = Math.max(0, cur + dir * step);
           v = Math.round(v * 100) / 100; // trim float dust (e.g. 0.1 + 0.2)
           input.value = String(v);
+          delete input.dataset.seeded; // stepped value is deliberate — typing shouldn't wipe it
           autoSave();
         });
         setSteppers.push(b);
@@ -8138,16 +8139,22 @@
       if (withSteppers) field.appendChild(mkBtn("▼", -1));
       // Tapping an empty field accepts the prescription: the placeholder value
       // becomes the real value, so clicking off keeps it — no typing needed
-      // when the athlete did exactly what was prescribed. The value is
-      // selected so typing a different number just replaces it.
+      // when the athlete did exactly what was prescribed. No select() — the
+      // selection callout (Cut/Copy) on mobile can't be suppressed, so the
+      // first keystroke on a just-seeded field clears it instead, giving the
+      // same type-to-replace feel without any selection.
       input.addEventListener("focus", () => {
         if (input.readOnly) return;
         if (input.value === "" && Number.isFinite(seed)) {
           input.value = String(seed);
+          input.dataset.seeded = "1";
           autoSave();
         }
-        try { input.select(); } catch (_) {}
       });
+      input.addEventListener("beforeinput", () => {
+        if (input.dataset.seeded) { delete input.dataset.seeded; input.value = ""; }
+      });
+      input.addEventListener("blur", () => { delete input.dataset.seeded; });
       return field;
     };
 
