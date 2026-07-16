@@ -3112,6 +3112,43 @@
     return "ex-name-datalist";
   }
 
+  // Coach's custom category order (array of cat names, persisted in trainerData).
+  // Categories not in the saved order (e.g. added in an app update) keep their
+  // built-in position at the end.
+  function orderedExerciseLibrary() {
+    const saved = Array.isArray(state.trainerData.exCatOrder) ? state.trainerData.exCatOrder : [];
+    const byCat = new Map(EXERCISE_LIBRARY.map((c) => [c.cat, c]));
+    const out = [];
+    const seen = new Set();
+    for (const cat of saved) {
+      const entry = byCat.get(cat);
+      if (entry && !seen.has(cat)) { out.push(entry); seen.add(cat); }
+    }
+    for (const entry of EXERCISE_LIBRARY) if (!seen.has(entry.cat)) out.push(entry);
+    return out;
+  }
+  function moveExCategory(cat, dir) {
+    const order = orderedExerciseLibrary().map((c) => c.cat);
+    const i = order.indexOf(cat);
+    const j = i + dir;
+    if (i === -1 || j < 0 || j >= order.length) return;
+    [order[i], order[j]] = [order[j], order[i]];
+    state.trainerData.exCatOrder = order;
+    saveTrainer();
+    renderExLibrary($("#ex-library-search")?.value || "");
+    renderSidebarLibrary($("#ex-lib-sb-search")?.value || "");
+  }
+
+  // Which categories are expanded (session-only — everything starts collapsed).
+  // Shared by the modal library and the sidebar library.
+  const _expandedExCats = new Set();
+  function toggleExCategory(cat) {
+    if (_expandedExCats.has(cat)) _expandedExCats.delete(cat);
+    else _expandedExCats.add(cat);
+    renderExLibrary($("#ex-library-search")?.value || "");
+    renderSidebarLibrary($("#ex-lib-sb-search")?.value || "");
+  }
+
   function openExLibrary(day, rerenderFn) {
     _exLibraryTarget = day ? { day, rerenderFn } : null;
     show($("#ex-library-overlay"));
@@ -3123,17 +3160,37 @@
     const q = filter.toLowerCase().trim();
     const body = $("#ex-library-body");
     const hidden = state.trainerData.hiddenExercises || [];
+    const cats = orderedExerciseLibrary();
     let html = "";
-    for (const { cat, ex } of EXERCISE_LIBRARY) {
+    cats.forEach(({ cat, ex }, idx) => {
       let items = ex.filter((e) => !hidden.includes(e));
       if (q) items = items.filter((e) => e.toLowerCase().includes(q));
-      if (!items.length) continue;
-      html += `<div class="ex-cat-header">${escapeHtml(cat)}</div>`;
-      html += items.map((name) =>
+      if (!items.length) return;
+      // Searching force-expands every matching category so results stay visible.
+      const open = !!q || _expandedExCats.has(cat);
+      html += `<div class="ex-cat-header${open ? " open" : ""}" data-cat="${escapeHtml(cat)}">
+        <span class="ex-cat-caret">${open ? "▾" : "▸"}</span>
+        <span class="ex-cat-title">${escapeHtml(cat)}</span>
+        <span class="ex-cat-count">${items.length}</span>
+        ${q ? "" : `<span class="ex-cat-move">
+          <button type="button" class="ex-cat-move-btn" data-move="-1" data-cat="${escapeHtml(cat)}" title="Move category up"${idx === 0 ? " disabled" : ""}>↑</button>
+          <button type="button" class="ex-cat-move-btn" data-move="1" data-cat="${escapeHtml(cat)}" title="Move category down"${idx === cats.length - 1 ? " disabled" : ""}>↓</button>
+        </span>`}
+      </div>`;
+      if (open) html += items.map((name) =>
         `<div class="ex-lib-item" draggable="true" data-exname="${escapeHtml(name)}">${escapeHtml(name)}</div>`
       ).join("");
-    }
+    });
     body.innerHTML = html || '<div class="ex-lib-empty">No exercises found.</div>';
+    body.querySelectorAll(".ex-cat-header").forEach((h) => {
+      h.addEventListener("click", () => { if (!q) toggleExCategory(h.dataset.cat); });
+    });
+    body.querySelectorAll(".ex-cat-move-btn").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        moveExCategory(btn.dataset.cat, Number(btn.dataset.move));
+      });
+    });
     body.querySelectorAll(".ex-lib-item").forEach((item) => {
       item.addEventListener("dragstart", (e) => {
         e.dataTransfer.setData("text/ex-name", item.dataset.exname);
@@ -3186,14 +3243,52 @@
     if (hintEl) hintEl.textContent = showingHidden ? "Tap ↩ to restore" : "Drag onto a day";
 
     body.innerHTML = "";
-    for (const { cat, ex } of EXERCISE_LIBRARY) {
+    const cats = orderedExerciseLibrary();
+    cats.forEach(({ cat, ex }, idx) => {
       let items = ex.filter((e) => (showingHidden ? hidden.includes(e) : !hidden.includes(e)));
       if (q) items = items.filter((e) => e.toLowerCase().includes(q));
-      if (!items.length) continue;
+      if (!items.length) return;
+      // Searching force-expands every matching category so results stay visible.
+      const open = !!q || _expandedExCats.has(cat);
       const catEl = document.createElement("div");
-      catEl.className = "ex-lib-sb-cat";
-      catEl.textContent = cat;
+      catEl.className = "ex-lib-sb-cat" + (open ? " open" : "");
+
+      const caret = document.createElement("span");
+      caret.className = "ex-cat-caret";
+      caret.textContent = open ? "▾" : "▸";
+      catEl.appendChild(caret);
+
+      const title = document.createElement("span");
+      title.className = "ex-cat-title";
+      title.textContent = cat;
+      catEl.appendChild(title);
+
+      const count = document.createElement("span");
+      count.className = "ex-cat-count";
+      count.textContent = items.length;
+      catEl.appendChild(count);
+
+      // Reorder arrows: active tab only, and not while searching (the visible
+      // neighbours wouldn't match the real order).
+      if (!showingHidden && !q) {
+        const moveWrap = document.createElement("span");
+        moveWrap.className = "ex-cat-move";
+        [["-1", "↑", "Move category up", idx === 0], ["1", "↓", "Move category down", idx === cats.length - 1]].forEach(([dir, sym, tip, atEdge]) => {
+          const mb = document.createElement("button");
+          mb.type = "button";
+          mb.className = "ex-cat-move-btn";
+          mb.textContent = sym;
+          mb.title = tip;
+          mb.disabled = atEdge;
+          mb.addEventListener("click", (e) => { e.stopPropagation(); moveExCategory(cat, Number(dir)); });
+          moveWrap.appendChild(mb);
+        });
+        catEl.appendChild(moveWrap);
+      }
+
+      catEl.addEventListener("click", () => { if (!q) toggleExCategory(cat); });
       body.appendChild(catEl);
+      if (!open) return;
       items.forEach((name) => {
         const item = document.createElement("div");
         item.className = "ex-lib-sb-item" + (showingHidden ? " is-hidden-row" : "");
@@ -3230,7 +3325,7 @@
         }
         body.appendChild(item);
       });
-    }
+    });
     if (!body.children.length) {
       const msg = showingHidden
         ? (hidden.length ? "No hidden exercises match your search." : "No hidden exercises. Tap ✕ on a library exercise to park it here.")

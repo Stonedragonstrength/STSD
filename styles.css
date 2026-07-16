@@ -1148,14 +1148,64 @@ input[type="date"] { color-scheme: dark; }
   padding: 0.4rem 0;
 }
 .ex-cat-header {
-  padding: 0.6rem 1rem 0.2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.5rem 0.75rem 0.5rem 1rem;
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--primary);
   margin-top: 0.2rem;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 6px;
 }
+.ex-cat-header:hover { background: var(--primary-soft); }
+
+/* Shared bits of the collapsible category headers (modal + sidebar) */
+.ex-cat-caret {
+  flex-shrink: 0;
+  width: 1em;
+  text-align: center;
+  color: var(--muted);
+}
+.ex-cat-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ex-cat-count {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+.ex-cat-move {
+  flex-shrink: 0;
+  display: inline-flex;
+  gap: 0.2em;
+}
+.ex-cat-move-btn {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.ex-cat-move-btn:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
+.ex-cat-move-btn:disabled { opacity: 0.3; cursor: default; }
 .ex-lib-item {
   padding: 0.5rem 0.75rem 0.5rem 1rem;
   cursor: grab;
@@ -6555,7 +6605,10 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   padding: 0.25rem 0;
 }
 .ex-lib-sb-cat {
-  padding: 0.5rem 0.75rem 0.2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.4rem 0.5rem 0.4rem 0.75rem;
   font-size: 0.68rem;
   font-weight: 800;
   text-transform: uppercase;
@@ -6565,7 +6618,11 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   top: 0;
   background: var(--surface);
   z-index: 1;
+  cursor: pointer;
+  user-select: none;
 }
+.ex-lib-sb-cat:hover { background: var(--surface-2); }
+.ex-lib-sb-cat .ex-cat-move-btn { width: 22px; height: 22px; }
 .ex-lib-sb-item {
   display: flex;
   align-items: center;
