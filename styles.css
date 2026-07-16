@@ -704,6 +704,18 @@ input[type="date"] { color-scheme: dark; }
   font-weight: 700;
 }
 .prog-opt-off { margin-top: 0.3rem; }
+.prog-reset-input {
+  width: 72px;
+  padding: 0.35em 0.5em;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+.prog-reset-input:focus { outline: none; border-color: var(--primary); }
+.prog-reset-input:disabled { opacity: 0.45; }
 
 /* ============ Client detail head ============ */
 .client-head {

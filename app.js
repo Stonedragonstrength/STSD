@@ -400,7 +400,10 @@
     const base = parseFloat(ex.currentWeight);
     const inc = parseFloat(p.inc);
     if (!isFinite(base) || !inc) return null; // weighted needs a base + increment
-    return { floor, ceil, inc };
+    // Optional custom rep target after a weight jump ("sometimes the reps
+    // need to drop when going up in weight") — defaults to the floor.
+    const reset = parseInt(p.reset, 10);
+    return { floor, ceil, inc, reset: reset >= 1 && reset < ceil ? reset : floor };
   }
 
   // The athlete's most recent locked log for this exercise copy, evaluated at
@@ -472,7 +475,7 @@
           if (e.id === ex.id) return { weight: Math.round(eff * 100) / 100, reps, earned, ...rule };
           const min = progressionMinReps(e, eff, logsMap);
           if (min == null || min < reps) continue; // miss / no log → hold
-          if (min >= rule.ceil) { eff += rule.inc; reps = rule.floor; earned += 1; }
+          if (min >= rule.ceil) { eff += rule.inc; reps = rule.reset; earned += 1; }
           else reps = Math.min(min + 1, rule.ceil);
         }
       }
@@ -572,7 +575,30 @@
           (v) => { ex.progression = { ceil: v, inc: parseFloat(p.inc) || 5 }; saveTrainer(); onChange(); render(); });
         section("Then add", PROG_INC_VALUES, parseFloat(p.inc) || null,
           (v) => `+${v} lb`,
-          (v) => { ex.progression = { ceil: parseInt(p.ceil, 10) || (floor + 4), inc: v }; saveTrainer(); onChange(); render(); });
+          (v) => { ex.progression = { ceil: parseInt(p.ceil, 10) || (floor + 4), inc: v, ...(p.reset ? { reset: p.reset } : {}) }; saveTrainer(); onChange(); render(); });
+
+        // Optional: custom rep target after a weight jump (defaults to the
+        // floor). Lets a heavier week start lower, e.g. 8–12 then +10 → 6.
+        const rLbl = document.createElement("div");
+        rLbl.className = "prog-pop-lbl";
+        rLbl.textContent = "Reps after the jump (optional)";
+        pop.appendChild(rLbl);
+        const rInp = document.createElement("input");
+        rInp.type = "number";
+        rInp.min = "1";
+        rInp.className = "prog-reset-input";
+        rInp.placeholder = floor ? String(floor) : "—";
+        rInp.value = p.reset || "";
+        rInp.disabled = !floor || !p.ceil;
+        rInp.addEventListener("click", (e) => e.stopPropagation());
+        rInp.addEventListener("change", () => {
+          if (!ex.progression) return;
+          const v = parseInt(rInp.value, 10);
+          if (v >= 1 && v < (parseInt(ex.progression.ceil, 10) || Infinity)) ex.progression.reset = v;
+          else { delete ex.progression.reset; rInp.value = ""; }
+          saveTrainer(); onChange();
+        });
+        pop.appendChild(rInp);
       }
 
       const off = document.createElement("button");
@@ -4283,7 +4309,7 @@
       const r = progressionRule(ex);
       progBtn.textContent = !r ? "＋📈"
         : r.bw ? `📈${r.floor}→${r.ceil === PROG_NO_CAP ? "∞" : r.ceil}`
-        : `📈${r.floor}–${r.ceil} +${r.inc}`;
+        : `📈${r.floor}–${r.ceil} +${r.inc}${r.reset !== r.floor ? "→" + r.reset : ""}`;
       progBtn.classList.toggle("empty", !r);
     };
     refreshProgBtn();
@@ -8094,7 +8120,7 @@
     rxMain.textContent = rxParts.join(" · ") || "—";
     if (prog) rxMain.title = prog.bw
       ? `Rep ladder: hit every set at the target and next week asks for your worst set + 1${prog.ceil === PROG_NO_CAP ? "" : `, up to ${prog.ceil}`}. No weight added.`
-      : `Double progression ${prog.floor}–${prog.ceil}: hit every set at the target to move up a rep next week; hit ${prog.ceil} on all sets and the weight goes up ${prog.inc} lb (reps back to ${prog.floor}).`;
+      : `Double progression ${prog.floor}–${prog.ceil}: hit every set at the target to move up a rep next week; hit ${prog.ceil} on all sets and the weight goes up ${prog.inc} lb (reps drop to ${prog.reset}).`;
     rxEl.appendChild(rxMain);
 
     if (prog && prog.earned > 0) {
