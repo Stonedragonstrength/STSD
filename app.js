@@ -385,15 +385,21 @@
   // ≥ the ceiling reps and ≥ the effective weight, the next week's matching
   // exercise (by name) shows +increment. Misses hold steady. Program data is
   // never mutated — the effective target is computed from weeks + logs.
+  // Ceiling sentinel for bodyweight rep ladders with no cap ("∞").
+  const PROG_NO_CAP = 999;
+
   function progressionRule(ex) {
     const p = ex && ex.progression;
-    if (!p || !p.ceil || !p.inc) return null;
+    if (!p || !p.ceil) return null;
     const floor = parseInt(ex.currentReps, 10);
-    const base = parseFloat(ex.currentWeight);
-    if (!floor || !isFinite(base)) return null; // needs a rep floor + numeric weight
+    if (!floor) return null; // needs a rep floor
     const ceil = parseInt(p.ceil, 10);
+    if (!ceil || ceil <= floor) return null;
+    // Bodyweight: pure rep ladder — no weight leg, holds at the cap.
+    if (ex.currentWeight === "BW") return { floor, ceil, inc: 0, bw: true };
+    const base = parseFloat(ex.currentWeight);
     const inc = parseFloat(p.inc);
-    if (!ceil || ceil <= floor || !inc) return null;
+    if (!isFinite(base) || !inc) return null; // weighted needs a base + increment
     return { floor, ceil, inc };
   }
 
@@ -431,6 +437,29 @@
     if (!rule) return null;
     const name = String(ex.name || "").trim().toLowerCase();
     if (!name) return null;
+    if (rule.bw) {
+      // Bodyweight rep ladder: worst set + 1 on a hit, hold at the cap (no
+      // weight to jump to). A hand-edited written REPS value re-bases it,
+      // mirroring the weighted chain's re-base on a written-weight edit.
+      let reps = rule.floor, prevFloor = null;
+      for (const w of weeks || []) {
+        for (const d of w.days || []) {
+          for (const e of d.exercises || []) {
+            if (String(e.name || "").trim().toLowerCase() !== name) continue;
+            if (e.currentWeight !== "BW") continue; // ladder only chains BW copies
+            const f = parseInt(e.currentReps, 10);
+            if (!f) continue;
+            if (prevFloor === null || f !== prevFloor) reps = f;
+            prevFloor = f;
+            if (e.id === ex.id) return { weight: null, reps, earned: 0, ...rule };
+            const min = progressionMinReps(e, 0, logsMap);
+            if (min == null || min < reps) continue; // miss / no log → hold
+            reps = Math.min(min + 1, rule.ceil);
+          }
+        }
+      }
+      return null;
+    }
     let eff = null, reps = rule.floor, earned = 0, prevWritten = null;
     for (const w of weeks || []) {
       for (const d of w.days || []) {
@@ -484,6 +513,7 @@
   }
 
   const PROG_CEIL_VALUES = [6, 8, 10, 12, 15, 20];
+  const PROG_BW_CEIL_VALUES = [10, 12, 15, 20, 25, 30, 40, 50];
   const PROG_INC_VALUES = [2.5, 5, 10];
 
   function openProgressionPicker(ex, anchorBtn, onChange) {
@@ -493,19 +523,22 @@
     pop.style.cssText = "position:fixed;z-index:9999;visibility:hidden";
 
     const floor = parseInt(ex.currentReps, 10) || 0;
+    const isBW = ex.currentWeight === "BW";
     const render = () => {
       pop.innerHTML = "";
       const p = ex.progression || {};
       const head = document.createElement("div");
       head.className = "prog-pop-head";
-      head.textContent = "📈 Auto-progression";
+      head.textContent = isBW ? "📈 Rep ladder (bodyweight)" : "📈 Auto-progression";
       pop.appendChild(head);
 
       const hint = document.createElement("p");
       hint.className = "prog-pop-hint";
-      hint.textContent = floor
-        ? `Reps climb from ${floor}. When every set hits the ceiling, next week adds weight and reps reset to ${floor}. Misses hold steady.`
-        : "Set prescribed reps first — they become the rep floor.";
+      hint.textContent = !floor
+        ? "Set prescribed reps first — they become the rep floor."
+        : isBW
+          ? `Reps climb from ${floor} each week they hit the target (worst set + 1), and hold at the cap. No weight is added.`
+          : `Reps climb from ${floor}. When every set hits the ceiling, next week adds weight and reps reset to ${floor}. Misses hold steady.`;
       pop.appendChild(hint);
 
       const section = (label, values, cur, fmt, onPick) => {
@@ -527,12 +560,20 @@
         pop.appendChild(row);
       };
 
-      section("Rep ceiling", PROG_CEIL_VALUES.filter((v) => v > floor), parseInt(p.ceil, 10) || null,
-        (v) => `${floor || "?"}–${v}`,
-        (v) => { ex.progression = { ceil: v, inc: parseFloat(p.inc) || 5 }; saveTrainer(); onChange(); render(); });
-      section("Then add", PROG_INC_VALUES, parseFloat(p.inc) || null,
-        (v) => `+${v} lb`,
-        (v) => { ex.progression = { ceil: parseInt(p.ceil, 10) || (floor + 4), inc: v }; saveTrainer(); onChange(); render(); });
+      if (isBW) {
+        // Rep cap only — no weight leg. PROG_NO_CAP = climb forever ("∞").
+        section("Rep cap", [...PROG_BW_CEIL_VALUES.filter((v) => v > floor), PROG_NO_CAP],
+          parseInt(p.ceil, 10) || null,
+          (v) => (v === PROG_NO_CAP ? "∞ no cap" : `${floor || "?"}→${v}`),
+          (v) => { ex.progression = { ceil: v }; saveTrainer(); onChange(); render(); });
+      } else {
+        section("Rep ceiling", PROG_CEIL_VALUES.filter((v) => v > floor), parseInt(p.ceil, 10) || null,
+          (v) => `${floor || "?"}–${v}`,
+          (v) => { ex.progression = { ceil: v, inc: parseFloat(p.inc) || 5 }; saveTrainer(); onChange(); render(); });
+        section("Then add", PROG_INC_VALUES, parseFloat(p.inc) || null,
+          (v) => `+${v} lb`,
+          (v) => { ex.progression = { ceil: parseInt(p.ceil, 10) || (floor + 4), inc: v }; saveTrainer(); onChange(); render(); });
+      }
 
       const off = document.createElement("button");
       off.type = "button";
@@ -4176,6 +4217,7 @@
     cwBtn.title = "Prescribed weight";
     cwBtn.addEventListener("click", (e) => { e.stopPropagation(); openWeightPicker(ex.currentWeight || "BW", (val) => {
       ex.currentWeight = val; saveTrainer(); refreshCwLabel(); cwBtn.classList.toggle("empty", !val);
+      refreshProgBtn(); // BW ↔ weighted flips the progression rule type
     }, cwBtn); });
 
     const x1 = document.createElement("span");
@@ -4188,6 +4230,7 @@
     crBtn.title = "Prescribed reps";
     crBtn.addEventListener("click", (e) => { e.stopPropagation(); openGridPicker("Reps", REPS_VALUES, ex.currentReps || "8", (val) => {
       ex.currentReps = val; saveTrainer(); crBtn.textContent = val; crBtn.classList.toggle("empty", !val);
+      refreshProgBtn(); // reps are the ladder's floor
     }, crBtn, 6); });
 
     // Warm-up sets (optional, up to 2) — explicit lb × reps, done before the
@@ -4238,7 +4281,9 @@
     progBtn.title = "Auto-progression: when every set hits the rep ceiling, next week's target adds weight";
     const refreshProgBtn = () => {
       const r = progressionRule(ex);
-      progBtn.textContent = r ? `📈${r.floor}–${r.ceil} +${r.inc}` : "＋📈";
+      progBtn.textContent = !r ? "＋📈"
+        : r.bw ? `📈${r.floor}→${r.ceil === PROG_NO_CAP ? "∞" : r.ceil}`
+        : `📈${r.floor}–${r.ceil} +${r.inc}`;
       progBtn.classList.toggle("empty", !r);
     };
     refreshProgBtn();
@@ -8035,7 +8080,8 @@
     if (prog) {
       // Effective target: computed weight + this week's rep target (climbs
       // toward the ceiling as prior weeks are hit; "+" = beat it if you can).
-      rxParts.push(exWeightLabel(ex, String(prog.weight)));
+      // Bodyweight ladders have no weight leg — just BW and the moving reps.
+      rxParts.push(prog.bw ? "BW" : exWeightLabel(ex, String(prog.weight)));
       rxParts.push(`× ${prog.reps}+`);
     } else {
       // Single prescribed weight (the old upper/range display was retired
@@ -8046,7 +8092,9 @@
     const rxMain = document.createElement("span");
     rxMain.className = "cex-rx-main";
     rxMain.textContent = rxParts.join(" · ") || "—";
-    if (prog) rxMain.title = `Double progression ${prog.floor}–${prog.ceil}: hit every set at the target to move up a rep next week; hit ${prog.ceil} on all sets and the weight goes up ${prog.inc} lb (reps back to ${prog.floor}).`;
+    if (prog) rxMain.title = prog.bw
+      ? `Rep ladder: hit every set at the target and next week asks for your worst set + 1${prog.ceil === PROG_NO_CAP ? "" : `, up to ${prog.ceil}`}. No weight added.`
+      : `Double progression ${prog.floor}–${prog.ceil}: hit every set at the target to move up a rep next week; hit ${prog.ceil} on all sets and the weight goes up ${prog.inc} lb (reps back to ${prog.floor}).`;
     rxEl.appendChild(rxMain);
 
     if (prog && prog.earned > 0) {
@@ -8131,7 +8179,7 @@
     // With a progression rule, placeholders/seeds use the computed target.
     // DB-pair exercises read plural ("50s") in placeholders, matching the rx.
     const pairS = usesDumbbellPair(ex) ? "s" : "";
-    const wtPh = prog ? prog.weight + pairS : (ex.currentWeight && ex.currentWeight !== "BW" ? ex.currentWeight + pairS : "");
+    const wtPh = prog && !prog.bw ? prog.weight + pairS : (ex.currentWeight && ex.currentWeight !== "BW" ? ex.currentWeight + pairS : "");
     const repPh = prog ? `${prog.reps}+` : (ex.currentReps || "");
 
     // Header row
@@ -8147,7 +8195,7 @@
 
     // Prescribed reps/weight seed the per-field steppers when a field is empty.
     const prescribedReps = prog ? prog.reps : parseInt(ex.currentReps, 10);
-    const weightBase = prog ? prog.weight : parseFloat(ex.currentWeight);
+    const weightBase = prog && !prog.bw ? prog.weight : parseFloat(ex.currentWeight);
 
     const setInputs = [];
     // Per-field steppers: tap ▼ / ▲ to nudge a set's weight (±2.5 lb) or reps
@@ -8274,7 +8322,7 @@
     finisherWrap.className = "cex-finisher-wrap";
     const addFinisherSlot = (kind, dropIdx, label, pct) => {
       // Drop % computes off the effective (progressed) weight when a rule is set.
-      const target = finisherDropWeight(prog ? String(prog.weight) : ex.currentWeight, pct);
+      const target = finisherDropWeight(prog && !prog.bw ? String(prog.weight) : ex.currentWeight, pct);
       const wtTxt = target != null ? ` · ${target} lb` : (ex.currentWeight === "BW" ? " · BW" : "");
       const fr = document.createElement("div");
       fr.className = "cex-finisher-row";
