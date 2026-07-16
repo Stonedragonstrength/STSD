@@ -262,7 +262,7 @@
       id: uid(),
       name: seed?.name || "",
       kind,
-      sets: seed?.sets || "3",
+      sets: seed?.sets || (isMob ? "1" : "3"),
       currentWeight: "",
       currentReps: seed?.reps || (isMob ? "30" : ""),
       goalWeight: "",
@@ -276,7 +276,7 @@
   const EXERCISE_MODIFIERS = [
     { group: "Unilateral",  tags: ["1A", "1L"] },
     { group: "Alternation", tags: ["Alternating", "Non-Alternating"] },
-    { group: "Equipment",   tags: ["BB", "DB", "KB", "EZ Bar", "Cable", "Rope", "Band", "Machine", "Landmine"], multi: true },
+    { group: "Equipment",   tags: ["BB", "DB", "KB", "EZ Bar", "Cable", "Rope", "Wide Bar", "Band", "Machine", "Landmine"], multi: true },
     { group: "Position",    tags: ["Incline", "Decline", "Elevated", "Seated", "Standing", "Kneeling", "Raised"] },
     { group: "Grip",        tags: ["Supinated", "Neutral", "Pronated"] },
     { group: "Style",       tags: ["Pause", "Tempo", "Explosive", "Isometric"] },
@@ -309,6 +309,7 @@
     "EZ Bar":    { color: "#c084fc", bg: "rgba(192,132,252,0.18)" },
     "Cable":     { color: "#2dd4bf", bg: "rgba(45,212,191,0.18)"  },
     "Rope":      { color: "#38bdf8", bg: "rgba(56,189,248,0.18)"  },
+    "Wide Bar":  { color: "#22d3ee", bg: "rgba(34,211,238,0.18)"  },
     "Band":      { color: "#4ade80", bg: "rgba(74,222,128,0.18)"  },
     "Machine":   { color: "#facc15", bg: "rgba(250,204,21,0.18)"  },
     "Landmine":  { color: "#d97706", bg: "rgba(217,119,6,0.18)"   },
@@ -389,7 +390,8 @@
   function effortLevel(ex) { return ex && ex.effort ? EFFORT_LEVELS[ex.effort] : null; }
   // Layer the warm gradient onto a card wrapper (coach row or athlete card).
   function applyEffortWrapper(wrapper, ex) {
-    const m = effortLevel(ex);
+    // Intensity doesn't apply to mobility/stretching — never tint those cards.
+    const m = ex?.kind === "mobility" ? null : effortLevel(ex);
     wrapper.classList.toggle("has-effort", !!m);
     if (m) wrapper.style.setProperty("--effort-rgb", m.rgb);
     else wrapper.style.removeProperty("--effort-rgb");
@@ -4626,8 +4628,9 @@
     row.appendChild(moveUpBtn);
     row.appendChild(moveDownBtn);
     // Effort/heat stays pinned on the left; tag chips render after it so adding
-    // tags never shifts the effort button around.
-    row.appendChild(effortBtn);
+    // tags never shifts the effort button around. Intensity doesn't apply to
+    // mobility/stretching holds.
+    if (!isMob) row.appendChild(effortBtn);
     row.appendChild(chipsBefore);
     row.appendChild(nameInput);
     row.appendChild(chipsAfter);
