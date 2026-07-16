@@ -6647,6 +6647,62 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 .ex-lib-sb-item.dragging-active { opacity: 0.4; }
 .ex-lib-sb-item.is-hidden-row { cursor: default; }
 
+/* "+ Custom exercise" button + inline form (sidebar and modal) */
+.ex-lib-add {
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.ex-lib-add-btn {
+  width: 100%;
+  padding: 0.4em 0.6em;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ex-lib-add-btn:hover { border-color: var(--primary); color: var(--primary); }
+.ex-lib-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+}
+.ex-lib-add-form input,
+.ex-lib-add-form select {
+  width: 100%;
+  padding: 0.45em 0.6em;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.82rem;
+}
+.ex-lib-add-actions {
+  display: flex;
+  gap: 0.4em;
+}
+.ex-lib-add-actions button {
+  flex: 1;
+  padding: 0.4em 0.6em;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ex-lib-add-save {
+  border: 0;
+  background: var(--primary);
+  color: #062131;
+}
+.ex-lib-add-cancel {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-soft);
+}
+
 /* Hide (✕) / restore (↩) button on each library row */
 .ex-lib-sb-actbtn {
   flex-shrink: 0;

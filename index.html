@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=libcats" />
+  <link rel="stylesheet" href="styles.css?v=customex" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -667,6 +667,18 @@
         <div class="ex-lib-sb-search">
           <input type="text" id="ex-lib-sb-search" placeholder="Search…" autocomplete="off" />
         </div>
+        <div class="ex-lib-add">
+          <button type="button" class="ex-lib-add-btn" id="ex-lib-sb-add-btn">＋ Custom exercise</button>
+          <div class="ex-lib-add-form hidden" id="ex-lib-sb-add-form">
+            <input type="text" id="ex-lib-sb-add-name" placeholder="Exercise name…" autocomplete="off" />
+            <select id="ex-lib-sb-add-cat"></select>
+            <input type="text" id="ex-lib-sb-add-newcat" class="hidden" placeholder="New category name…" autocomplete="off" />
+            <div class="ex-lib-add-actions">
+              <button type="button" class="ex-lib-add-save" id="ex-lib-sb-add-save">Add</button>
+              <button type="button" class="ex-lib-add-cancel" id="ex-lib-sb-add-cancel">Cancel</button>
+            </div>
+          </div>
+        </div>
         <div class="ex-lib-sb-body" id="ex-lib-sb-body"></div>
       </aside>
     </div>
@@ -918,6 +930,18 @@
       <div class="ex-library-search">
         <input type="text" id="ex-library-search" placeholder="Search exercises…" autocomplete="off" />
       </div>
+      <div class="ex-lib-add">
+        <button type="button" class="ex-lib-add-btn" id="ex-lib-md-add-btn">＋ Custom exercise</button>
+        <div class="ex-lib-add-form hidden" id="ex-lib-md-add-form">
+          <input type="text" id="ex-lib-md-add-name" placeholder="Exercise name…" autocomplete="off" />
+          <select id="ex-lib-md-add-cat"></select>
+          <input type="text" id="ex-lib-md-add-newcat" class="hidden" placeholder="New category name…" autocomplete="off" />
+          <div class="ex-lib-add-actions">
+            <button type="button" class="ex-lib-add-save" id="ex-lib-md-add-save">Add</button>
+            <button type="button" class="ex-lib-add-cancel" id="ex-lib-md-add-cancel">Cancel</button>
+          </div>
+        </div>
+      </div>
       <div class="ex-library-body" id="ex-library-body"></div>
       <div class="ex-library-hint">Tap an exercise to add it (or drag it onto a day)</div>
     </div>
@@ -925,8 +949,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
-  <script src="cloud.js?v=lockclaims"></script>
-  <script src="app.js?v=libcats"></script>
+  <script src="cloud.js?v=customex"></script>
+  <script src="app.js?v=customex"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

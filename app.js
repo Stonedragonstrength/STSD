@@ -10,6 +10,9 @@
   // to the cloud. Guards boot from overwriting unsynced local work with a stale
   // cloud copy (the cause of "my in-progress program disappeared").
   const KEY_TEMPLATES_DIRTY = "trainerpro_templates_dirty_v1";
+  // Same guard for the coach's exercise-library customizations (custom
+  // exercises, hidden list, category order) — synced as one blob.
+  const KEY_LIBPREFS_DIRTY = "trainerpro_libprefs_dirty_v1";
 
   // -------- Color themes (full recolor, per role) --------
   // "blue" is the original (default :root, no data-theme attribute). Each role
@@ -103,6 +106,19 @@
           state.trainerData.workoutTemplates
         );
         localStorage.removeItem(KEY_TEMPLATES_DIRTY); // confirmed in the cloud
+      });
+    }
+    // Cloud: debounced push of the coach's exercise-library customizations
+    // (custom exercises, hidden exercises, category order).
+    if (window.Cloud?.enabled && state.trainerData.coachId) {
+      localStorage.setItem(KEY_LIBPREFS_DIRTY, "1");
+      window.Cloud.debounce(`coach-libprefs:${state.trainerData.coachId}`, async () => {
+        const ok = await window.Cloud.updateCoachLibraryPrefs(state.trainerData.coachId, {
+          customExercises: state.trainerData.customExercises || [],
+          hiddenExercises: state.trainerData.hiddenExercises || [],
+          exCatOrder: state.trainerData.exCatOrder || [],
+        });
+        if (ok) localStorage.removeItem(KEY_LIBPREFS_DIRTY); // confirmed in the cloud
       });
     }
   }
@@ -941,9 +957,13 @@
   if (!Array.isArray(state.trainerData.programTemplates)) {
     state.trainerData.programTemplates = [];
   }
-  // Coach-side list of exercise names hidden from the library sidebar (local-only).
+  // Coach-side list of exercise names hidden from the library sidebar.
   if (!Array.isArray(state.trainerData.hiddenExercises)) {
     state.trainerData.hiddenExercises = [];
+  }
+  // Coach-added custom exercises ({ name, cat }) shown alongside the built-in library.
+  if (!Array.isArray(state.trainerData.customExercises)) {
+    state.trainerData.customExercises = [];
   }
   state.trainerData.clients.forEach((c) => {
     if (!c.schedule) c.schedule = {};
@@ -1576,6 +1596,14 @@
     if (!opts.keepLocalTemplates) {
       state.trainerData.programTemplates = coach.program_templates || [];
       state.trainerData.workoutTemplates = coach.workout_templates || [];
+    }
+    // Exercise-library customizations, same dirty-flag protection as templates.
+    // Missing keys (older rows, or the column not existing yet) keep local data.
+    if (!opts.keepLocalLibPrefs) {
+      const prefs = coach.library_prefs || {};
+      if (Array.isArray(prefs.customExercises)) state.trainerData.customExercises = prefs.customExercises;
+      if (Array.isArray(prefs.hiddenExercises)) state.trainerData.hiddenExercises = prefs.hiddenExercises;
+      if (Array.isArray(prefs.exCatOrder)) state.trainerData.exCatOrder = prefs.exCatOrder;
     }
     state.trainerData.openSlots = coach.open_slots || [];
     state.trainerData.clients = (athletes || []).map((a) => {
@@ -3086,7 +3114,11 @@
   const MOBILITY_NAMES = new Set(
     EXERCISE_LIBRARY.filter((c) => MOBILITY_CATS.includes(c.cat)).flatMap((c) => c.ex)
   );
-  function isMobilityName(name) { return MOBILITY_NAMES.has(name); }
+  function isMobilityName(name) {
+    if (MOBILITY_NAMES.has(name)) return true;
+    // Custom exercises filed under a mobility category are holds too.
+    return customExerciseList().some((c) => c.name === name && MOBILITY_CATS.includes(c.cat));
+  }
   // Hold-duration options (seconds) for the coach's mobility prescription picker.
   const HOLD_SEC_VALUES = ["10", "15", "20", "30", "45", "60", "90", "120"];
 
@@ -3105,27 +3137,123 @@
       dl.id = "ex-name-datalist";
       document.body.appendChild(dl);
     }
-    dl.innerHTML = ALL_EXERCISE_NAMES
+    const names = [...new Set([...ALL_EXERCISE_NAMES, ...customExerciseList().map((c) => c.name)])]
+      .sort((a, b) => a.localeCompare(b));
+    dl.innerHTML = names
       .filter((n) => !hidden.includes(n))
       .map((n) => `<option value="${escapeHtml(n)}"></option>`)
       .join("");
     return "ex-name-datalist";
   }
 
+  // Coach-added custom exercises. Guarded for the athlete side, where
+  // trainerData may not exist.
+  function customExerciseList() {
+    return state.trainerData?.customExercises || [];
+  }
+  function isCustomExercise(name) {
+    return customExerciseList().some((c) => c.name === name);
+  }
+
+  // Built-in library merged with the coach's custom exercises. Customs filed
+  // under a built-in category append to it; unknown categories become new ones.
+  function fullExerciseLibrary() {
+    const cats = EXERCISE_LIBRARY.map((c) => ({ cat: c.cat, ex: [...c.ex] }));
+    for (const ce of customExerciseList()) {
+      if (!ce?.name) continue;
+      const cat = ce.cat || "My Exercises";
+      let entry = cats.find((c) => c.cat === cat);
+      if (!entry) { entry = { cat, ex: [] }; cats.push(entry); }
+      if (!entry.ex.includes(ce.name)) entry.ex.push(ce.name);
+    }
+    return cats;
+  }
+
   // Coach's custom category order (array of cat names, persisted in trainerData).
   // Categories not in the saved order (e.g. added in an app update) keep their
   // built-in position at the end.
   function orderedExerciseLibrary() {
+    const lib = fullExerciseLibrary();
     const saved = Array.isArray(state.trainerData.exCatOrder) ? state.trainerData.exCatOrder : [];
-    const byCat = new Map(EXERCISE_LIBRARY.map((c) => [c.cat, c]));
+    const byCat = new Map(lib.map((c) => [c.cat, c]));
     const out = [];
     const seen = new Set();
     for (const cat of saved) {
       const entry = byCat.get(cat);
       if (entry && !seen.has(cat)) { out.push(entry); seen.add(cat); }
     }
-    for (const entry of EXERCISE_LIBRARY) if (!seen.has(entry.cat)) out.push(entry);
+    for (const entry of lib) if (!seen.has(entry.cat)) out.push(entry);
     return out;
+  }
+
+  function addCustomExercise(rawName, rawCat) {
+    const name = (rawName || "").trim();
+    const cat = (rawCat || "").trim() || "My Exercises";
+    if (!name) { toast("Enter an exercise name"); return false; }
+    const clash = fullExerciseLibrary().some((c) => c.ex.some((e) => e.toLowerCase() === name.toLowerCase()));
+    if (clash) {
+      const hidden = state.trainerData.hiddenExercises || [];
+      toast(hidden.some((h) => h.toLowerCase() === name.toLowerCase())
+        ? "Already in the library — check the Hidden tab"
+        : "That exercise is already in the library");
+      return false;
+    }
+    if (!Array.isArray(state.trainerData.customExercises)) state.trainerData.customExercises = [];
+    state.trainerData.customExercises.push({ name, cat });
+    _expandedExCats.add(cat); // show the new exercise right away
+    saveTrainer();
+    ensureExerciseDatalist();
+    renderExLibrary($("#ex-library-search")?.value || "");
+    renderSidebarLibrary($("#ex-lib-sb-search")?.value || "");
+    toast(`Added ${name} to the library 💪`);
+    return true;
+  }
+
+  function deleteCustomExercise(name) {
+    if (!window.confirm(`Remove "${name}" from your library? Days already using it keep it.`)) return;
+    state.trainerData.customExercises = customExerciseList().filter((c) => c.name !== name);
+    saveTrainer();
+    ensureExerciseDatalist();
+    renderExLibrary($("#ex-library-search")?.value || "");
+    renderSidebarLibrary($("#ex-lib-sb-search")?.value || "");
+    toast("Custom exercise removed");
+  }
+
+  // Wire one "+ Custom exercise" button/form pair (sidebar and modal each have
+  // one; ids share a prefix: `${prefix}-btn`, `-form`, `-name`, `-cat`,
+  // `-newcat`, `-save`, `-cancel`).
+  function setupExAddForm(prefix) {
+    const btn = $(`#${prefix}-btn`), form = $(`#${prefix}-form`),
+          nameEl = $(`#${prefix}-name`), catEl = $(`#${prefix}-cat`),
+          newCatEl = $(`#${prefix}-newcat`), saveEl = $(`#${prefix}-save`),
+          cancelEl = $(`#${prefix}-cancel`);
+    if (!btn || !form) return;
+    const close = () => { hide(form); show(btn); };
+    btn.addEventListener("click", () => {
+      catEl.innerHTML = orderedExerciseLibrary()
+        .map(({ cat }) => `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`)
+        .join("") + `<option value="__new__">➕ New category…</option>`;
+      nameEl.value = "";
+      newCatEl.value = "";
+      hide(newCatEl);
+      show(form); hide(btn);
+      nameEl.focus();
+    });
+    catEl.addEventListener("change", () => {
+      if (catEl.value === "__new__") { show(newCatEl); newCatEl.focus(); }
+      else hide(newCatEl);
+    });
+    const submit = () => {
+      const cat = catEl.value === "__new__" ? newCatEl.value.trim() : catEl.value;
+      if (catEl.value === "__new__" && !cat) { toast("Enter a category name"); newCatEl.focus(); return; }
+      if (addCustomExercise(nameEl.value, cat)) close();
+    };
+    saveEl.addEventListener("click", submit);
+    cancelEl.addEventListener("click", close);
+    [nameEl, newCatEl].forEach((el) => el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); submit(); }
+      if (e.key === "Escape") close();
+    }));
   }
   function moveExCategory(cat, dir) {
     const order = orderedExerciseLibrary().map((c) => c.cat);
@@ -3305,6 +3433,10 @@
           btn.textContent = "↩";
           btn.title = "Restore to library";
           btn.addEventListener("click", (e) => { e.stopPropagation(); unhideExercise(name); });
+        } else if (isCustomExercise(name)) {
+          btn.textContent = "🗑";
+          btn.title = "Delete custom exercise";
+          btn.addEventListener("click", (e) => { e.stopPropagation(); deleteCustomExercise(name); });
         } else {
           btn.textContent = "✕";
           btn.title = "Hide from library";
@@ -9320,6 +9452,8 @@
     $("#ex-library-search").addEventListener("input", (e) => renderExLibrary(e.target.value));
     $("#ex-lib-sb-search")?.addEventListener("input", (e) => renderSidebarLibrary(e.target.value));
     $$(".ex-lib-sb-tab").forEach((t) => t.addEventListener("click", () => setLibSbTab(t.dataset.libTab)));
+    setupExAddForm("ex-lib-sb-add");
+    setupExAddForm("ex-lib-md-add");
 
     $("#btn-athlete-add-pr").addEventListener("click", () => openAddPRModal("athlete"));
     $("#btn-add-package")?.addEventListener("click", openAddPackageModal);
@@ -9431,11 +9565,12 @@
             // If local template edits haven't been confirmed pushed, don't let the
             // cloud refresh overwrite them — keep local and re-push instead.
             const templatesDirty = localStorage.getItem(KEY_TEMPLATES_DIRTY) === "1";
+            const libPrefsDirty = localStorage.getItem(KEY_LIBPREFS_DIRTY) === "1";
             try {
               const fresh = await window.Cloud.getCoachByAuthUserId(userId);
-              if (fresh) populateCoachFromCloud(fresh.coach, fresh.athletes, { keepLocalTemplates: templatesDirty });
+              if (fresh) populateCoachFromCloud(fresh.coach, fresh.athletes, { keepLocalTemplates: templatesDirty, keepLocalLibPrefs: libPrefsDirty });
             } catch (e) { console.warn("[Boot] Coach refresh failed, using cached data", e); }
-            if (templatesDirty) saveTrainer(); // reconcile unsynced local templates up to the cloud
+            if (templatesDirty || libPrefsDirty) saveTrainer(); // reconcile unsynced local work up to the cloud
             signIntoTrainer(); return;
           }
           if (state.clientData.program && state.clientData.profile?.email === session.user.email) {

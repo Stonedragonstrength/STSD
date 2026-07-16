@@ -178,6 +178,19 @@
     } catch (e) { console.warn("[Cloud] updateCoachTemplates", e); return false; }
   }
 
+  // Coach's exercise-library customizations (custom exercises, hidden list,
+  // category order) — one jsonb blob so they follow the coach across devices.
+  async function updateCoachLibraryPrefs(coachId, prefs) {
+    if (!coachId) return false;
+    try {
+      const { error } = await sb.from("coaches").update({
+        library_prefs: prefs || {},
+      }).eq("id", coachId);
+      if (error) console.warn("[Cloud] updateCoachLibraryPrefs error", error.message);
+      return !error;
+    } catch (e) { console.warn("[Cloud] updateCoachLibraryPrefs", e); return false; }
+  }
+
   // -------- Open slots (coach broadcasts appointment openings) --------
   async function updateCoachOpenSlots(coachId, openSlots) {
     if (!coachId) return false;
@@ -463,6 +476,7 @@
     upsertCoach,
     getCoachByAuthUserId,
     updateCoachTemplates,
+    updateCoachLibraryPrefs,
     // Open slots
     updateCoachOpenSlots,
     getCoachOpenSlots,
