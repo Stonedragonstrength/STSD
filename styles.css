@@ -6652,6 +6652,19 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
      the tap-to-add 📖 Library button visible at every width instead. */
   .coach-layout.show-lib-sidebar .ex-lib-sidebar { display: none; }
   .coach-layout.show-lib-sidebar .ex-lib-mobile-btn { display: inline-flex; }
+  /* Mini row buttons (⋮ notes, ✕ delete, ✓/✎ lock, 🔗 superset, ▲▼ move)
+     were ~14px tap targets — nearly impossible to hit on touch (the ⋮ notes
+     panel "wouldn't close" because the second tap kept missing). Give them a
+     real target and keep them visible (no hover on touch). */
+  .btn-icon-mini {
+    min-width: 32px;
+    min-height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.95rem;
+  }
+  .ex-expand-btn, .ex-del-btn { opacity: 0.7; }
 }
 
 /* Tablet portrait / narrow desktop (601–899px): the exercise row and day
