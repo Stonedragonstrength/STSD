@@ -14,6 +14,10 @@
   // exercises, hidden list, category order) — synced as one blob.
   const KEY_LIBPREFS_DIRTY = "trainerpro_libprefs_dirty_v1";
 
+  // Public deployed URL — used in shareable links (invite emails, app-link
+  // copy). Hardcoded so links point at production even from local dev.
+  const APP_URL = "https://stonedragonstrength.github.io/STSD/";
+
   // -------- Color themes (full recolor, per role) --------
   // "blue" is the original (default :root, no data-theme attribute). Each role
   // (coach / athlete) remembers its own pick under KEY_THEME.
@@ -2393,6 +2397,7 @@
     $("#prof-notes").value = c.notes;
     if (!c.inviteCode) { c.inviteCode = makeInviteCode(); saveTrainer(); }
     $("#invite-code-display").textContent = c.inviteCode;
+    setInviteCodeVisible(false); // code stays tucked away until "Show code"
     populateMembershipSelect(c);
     setProfileLocked(true);
   }
@@ -2465,6 +2470,14 @@
     flashSaved($("#prof-saved"));
     setProfileLocked(true);
   }
+  // The raw code is hidden by default — the email invite link is the main
+  // flow now, so the code + copy/regen only appear behind "Show code".
+  function setInviteCodeVisible(vis) {
+    [$("#invite-code-display"), $("#btn-copy-invite"), $("#btn-regen-invite")]
+      .forEach((el) => el && (vis ? show(el) : hide(el)));
+    const btn = $("#btn-show-invite");
+    if (btn) btn.textContent = vis ? "Hide code" : "Show code";
+  }
   function regenerateInviteCode() {
     const c = currentClient(); if (!c) return;
     if (!window.confirm("Regenerate this athlete's invite code? Any old code stops working. If they've already signed in, this resets their access — they'll re-enter the new code to reconnect.")) return;
@@ -2480,6 +2493,28 @@
     const c = currentClient(); if (!c) return;
     try { await navigator.clipboard.writeText(c.inviteCode); toast("Code copied"); }
     catch { toast("Couldn't copy — code: " + c.inviteCode, 4000); }
+  }
+  // Opens the coach's mail app with a prefilled invite: a deep link that lands
+  // the athlete on the invite screen with their code already entered.
+  function emailInviteLink() {
+    const c = currentClient(); if (!c) return;
+    if (!c.inviteCode) { c.inviteCode = makeInviteCode(); saveTrainer(); }
+    const link = `${APP_URL}?invite=${c.inviteCode}`;
+    const first = (c.name || "").trim().split(/\s+/)[0];
+    const subject = "Your Stone Dragon Strength training app invite";
+    const body = [
+      `Hi${first ? " " + first : ""},`,
+      "",
+      "Here's your invite to the Stone Dragon Strength training app — your programs, workout logging, and progress tracking all live there.",
+      "",
+      "Tap this link to get set up (your invite code fills in automatically):",
+      link,
+      "",
+      `If the link doesn't work, open ${APP_URL} , tap "Athlete sign up", and enter this invite code: ${c.inviteCode}`,
+      "",
+      "See you in the gym!",
+    ].join("\n");
+    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   }
   function bindProfileInputs() {
     $("#btn-profile-edit").addEventListener("click", () => {
@@ -9262,9 +9297,8 @@
     $$(".back-to-role").forEach((b) => b.addEventListener("click", () => showLoginScreen("#login-role")));
     $("#btn-athlete-signup").addEventListener("click", showAthleteImport);
     $("#btn-copy-app-link")?.addEventListener("click", async () => {
-      const link = "https://stonedragonstrength.github.io/STSD/";
-      try { await navigator.clipboard.writeText(link); toast("App link copied"); }
-      catch { toast(link); }
+      try { await navigator.clipboard.writeText(APP_URL); toast("App link copied"); }
+      catch { toast(APP_URL); }
     });
 
     // Coach sign-in
@@ -9395,7 +9429,6 @@
     $("#btn-editor-add-week-empty")?.addEventListener("click", addWeek);
     // Day Library (reachable from the Programs page)
     $("#btn-programs-day-library")?.addEventListener("click", () => { _programEditorId = null; renderDayLibrary(); });
-    $("#btn-programs-new-day")?.addEventListener("click", () => { _programEditorId = null; openDayEditor(null); });
     $("#btn-daylib-back")?.addEventListener("click", () => { _programEditorId = null; renderProgramsList(); });
     $("#btn-daylib-new")?.addEventListener("click", () => openDayEditor(null));
     $("#btn-daylib-new-empty")?.addEventListener("click", () => openDayEditor(null));
@@ -9473,6 +9506,10 @@
     });
     $("#btn-regen-invite").addEventListener("click", regenerateInviteCode);
     $("#btn-copy-invite").addEventListener("click", copyInviteCode);
+    $("#btn-email-invite")?.addEventListener("click", emailInviteLink);
+    $("#btn-show-invite")?.addEventListener("click", () => {
+      setInviteCodeVisible($("#invite-code-display").classList.contains("hidden"));
+    });
 
     // Calendar (coach)
     $("#cal-prev").addEventListener("click", () => { stepCoachMonth(-1); });
@@ -9553,6 +9590,21 @@
     window.addEventListener("resize", syncHeaderHeights);
     window.addEventListener("load", syncHeaderHeights);
     syncHeaderHeights();
+
+    // Invite deep link: ?invite=XXXX-XXXX (from the coach's emailed invite)
+    // jumps straight to the athlete invite screen with the code pre-filled
+    // and submitted. Takes priority over session restore — the recipient is
+    // (re)claiming this program on purpose. Param is stripped so a reload
+    // doesn't re-run the flow.
+    const inviteParam = new URLSearchParams(window.location.search).get("invite");
+    if (inviteParam && normalizeInviteCode(inviteParam).length === 8) {
+      const code = normalizeInviteCode(inviteParam);
+      history.replaceState(null, "", window.location.pathname);
+      showAthleteImport();
+      $("#invite-code-input").value = formatInviteInput(code);
+      loginWithInviteCode();
+      return;
+    }
 
     // Boot: check for password-recovery URL hash, then Supabase session, then show login
     if (window.Cloud?.enabled) {

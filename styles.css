@@ -3330,6 +3330,7 @@ button.ov-stat:hover { background: var(--surface-2); }
 .invite-code-bar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.65rem;
   padding: 0.55rem 0.9rem;
   background: var(--surface-2);
@@ -3337,6 +3338,8 @@ button.ov-stat:hover { background: var(--surface-2); }
   border-radius: var(--radius);
   margin-top: 0.75rem;
 }
+/* Code stays tucked behind this toggle — email invite is the main flow */
+#btn-show-invite { margin-left: auto; }
 .invite-code-bar-label {
   font-size: 0.78rem;
   color: var(--text-soft);

@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=mobflare" />
+  <link rel="stylesheet" href="styles.css?v=invitelink" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -371,7 +371,6 @@
             <h2>Programs</h2>
           </div>
           <div class="library-head-actions">
-            <button class="btn btn-ghost" id="btn-programs-new-day">+ New day</button>
             <button class="btn btn-ghost" id="btn-programs-day-library">📚 Day Library</button>
             <button class="btn btn-primary" id="btn-new-program">+ New program</button>
           </div>
@@ -520,10 +519,12 @@
             </div>
           </div>
           <div class="invite-code-bar">
-            <span class="invite-code-bar-label">🔑 Invite code</span>
-            <span class="invite-code-display" id="invite-code-display">XXXX-XXXX</span>
-            <button class="btn btn-primary btn-sm" id="btn-copy-invite">Copy</button>
-            <button class="btn btn-ghost btn-sm" id="btn-regen-invite" title="Regenerate code">↻</button>
+            <span class="invite-code-bar-label">🔑 Invite</span>
+            <button class="btn btn-primary btn-sm" id="btn-email-invite" title="Email an invite link that fills the code in automatically">✉️ Email invite</button>
+            <button class="btn btn-ghost btn-sm" id="btn-show-invite">Show code</button>
+            <span class="invite-code-display hidden" id="invite-code-display">XXXX-XXXX</span>
+            <button class="btn btn-ghost btn-sm hidden" id="btn-copy-invite">Copy</button>
+            <button class="btn btn-ghost btn-sm hidden" id="btn-regen-invite" title="Regenerate code">↻</button>
           </div>
         </div>
 
@@ -950,7 +951,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
   <script src="cloud.js?v=customex"></script>
-  <script src="app.js?v=widebar2"></script>
+  <script src="app.js?v=invitelink2"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
