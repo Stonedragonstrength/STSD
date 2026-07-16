@@ -46,4 +46,10 @@ Supabase config, and boot only shows the coach UI with a live Supabase session
   `document.querySelector("#ex-library-overlay").classList.remove("hidden")`
   then dispatch an `input` event on `#ex-library-search`.
 - Clicking two coach-nav targets back-to-back can race the re-render — click,
-  screenshot, then click the next thing.
+  screenshot, then click the next thing. This is worst right after a page
+  load: clicks during the async boot get swallowed and the app lands back on
+  Overview. Confirm each navigation with a screenshot before the next click.
+- The service worker caches versioned assets cache-first by full URL. If you
+  edit app.js/styles.css AGAIN mid-verification without bumping the `?v=`
+  string in index.html again, the browser serves the stale file and your new
+  code silently never loads. Bump `?v=` on every edit-retest cycle.
