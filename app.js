@@ -7220,7 +7220,11 @@
       pruneBulletins(c);
     });
     saveTrainer();
-    if (window.Cloud?.enabled) clients.forEach((c) => window.Cloud.upsertAthlete(c, state.trainerData.coachId));
+    if (window.Cloud?.enabled) {
+      clients.forEach((c) => window.Cloud.upsertAthlete(c, state.trainerData.coachId));
+      // Ping every athlete who's opted into notifications.
+      window.Cloud.sendPush?.(clients.map((c) => c.id), "📌 New bulletin from your coach", text, "./");
+    }
     if (ta) ta.value = "";
     if (statusEl) statusEl.textContent = "";
     toast("📌 Posted to all athletes");
@@ -7618,6 +7622,8 @@
     renderAthleteSessions();
     renderAthleteOverview();
     refreshAthleteOpenSlots();
+    renderAthleteNotifyCard();
+    refreshPushSubscription();
   }
   // -------- Athlete Overview (home dashboard) --------
   // Athlete-side read-only inbox for coach announcements (piggybacks
@@ -9860,6 +9866,125 @@
   }
   function closeModal() { hide($("#modal")); }
 
+  // -------- Web push (athlete notifications) --------
+  // The athlete opts in from Profile → 🔔. Their browser subscription is
+  // stored per-device in Supabase (push_subscriptions, RLS: athlete-owned);
+  // the coach's bulletins and nudges go out via the send-push Edge Function.
+  const KEY_PUSH = "trainerpro_push_v1"; // "1" = this device opted in
+  function pushSupported() {
+    return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  }
+  function urlB64ToUint8Array(b64) {
+    const pad = "=".repeat((4 - (b64.length % 4)) % 4);
+    const base = (b64 + pad).replace(/-/g, "+").replace(/_/g, "/");
+    const raw = atob(base);
+    return Uint8Array.from([...raw].map((ch) => ch.charCodeAt(0)));
+  }
+  async function subscribePush() {
+    const athleteId = state.clientData.program?.clientId;
+    const vapid = window.STONE_DRAGON_CONFIG?.VAPID_PUBLIC_KEY;
+    if (!athleteId || !vapid || !window.Cloud?.enabled || !pushSupported()) return false;
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") return false;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlB64ToUint8Array(vapid),
+      });
+      const ok = await window.Cloud.savePushSubscription(athleteId, sub.toJSON());
+      if (ok) localStorage.setItem(KEY_PUSH, "1");
+      return ok;
+    } catch (e) { console.warn("[Push] subscribe failed", e); return false; }
+  }
+  async function unsubscribePush() {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await window.Cloud?.deletePushSubscription?.(sub.endpoint);
+        await sub.unsubscribe();
+      }
+    } catch (e) {}
+    localStorage.removeItem(KEY_PUSH);
+  }
+  // Endpoints rotate — silently re-assert the subscription on portal entry.
+  async function refreshPushSubscription() {
+    if (state.previewMode) return;
+    if (localStorage.getItem(KEY_PUSH) !== "1") return;
+    if (!pushSupported() || Notification.permission !== "granted") return;
+    const vapid = window.STONE_DRAGON_CONFIG?.VAPID_PUBLIC_KEY;
+    const athleteId = state.clientData.program?.clientId;
+    if (!vapid || !athleteId || !window.Cloud?.enabled) return;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = (await reg.pushManager.getSubscription()) ||
+        (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8Array(vapid) }));
+      await window.Cloud.savePushSubscription(athleteId, sub.toJSON());
+    } catch (e) {}
+  }
+  function renderAthleteNotifyCard() {
+    const host = $("#athlete-notify-host");
+    if (!host) return;
+    if (state.previewMode) { host.innerHTML = ""; return; } // coach preview: not their device
+    const supported = pushSupported();
+    const enabled = supported && Notification.permission === "granted" && localStorage.getItem(KEY_PUSH) === "1";
+    const blocked = supported && Notification.permission === "denied";
+    const iosTip = /iphone|ipad|ipod/i.test(navigator.userAgent) && !isStandalone()
+      ? `<p class="muted" style="font-size:0.8rem">On iPhone: install the app first (Share → Add to Home Screen), then enable here.</p>`
+      : "";
+    let inner;
+    if (!supported) {
+      inner = `<p class="muted">This browser doesn't support notifications.</p>`;
+    } else if (blocked) {
+      inner = `<p class="muted">Notifications are blocked for this site — allow them in your browser settings, then come back.</p>`;
+    } else {
+      inner = `
+        <p class="muted" style="font-size:0.85rem">Get a ping when your coach posts a bulletin or sends you a message.</p>
+        ${iosTip}
+        <button class="btn ${enabled ? "btn-ghost" : "btn-primary"} btn-sm" id="btn-toggle-push" type="button">${enabled ? "🔕 Turn off notifications" : "🔔 Enable notifications"}</button>`;
+    }
+    host.innerHTML = `<div class="card"><h4 style="margin-top:0">🔔 Notifications</h4>${inner}</div>`;
+    $("#btn-toggle-push")?.addEventListener("click", async () => {
+      const btn = $("#btn-toggle-push");
+      if (btn) { btn.disabled = true; btn.textContent = "Working…"; }
+      if (enabled) {
+        await unsubscribePush();
+        toast("Notifications off");
+      } else {
+        const ok = await subscribePush();
+        toast(ok
+          ? "Notifications on 🔔"
+          : (Notification.permission === "denied"
+            ? "Blocked — allow notifications in your browser settings"
+            : "Couldn't enable — check your connection"), 3000);
+      }
+      renderAthleteNotifyCard();
+    });
+  }
+  // Coach → one athlete: push a custom message to their phone.
+  function openNudgeModal() {
+    const c = currentClient(); if (!c) return;
+    openModal({
+      title: `🔔 Nudge ${c.name}`,
+      body: `
+        <p class="muted" style="margin-top:-0.4em">Sends a push notification to their phone. They need notifications enabled in their app (Profile → 🔔 Notifications).</p>
+        <textarea id="nudge-text" rows="3" style="width:100%">Time to get back in the gym 💪</textarea>`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Send nudge", className: "btn btn-primary", onClick: async () => {
+          const text = $("#nudge-text")?.value.trim();
+          if (!text) return;
+          closeModal();
+          const res = await window.Cloud?.sendPush?.([c.id], "Stone Dragon Strength", text, "./");
+          toast(res?.sent
+            ? `Nudge sent to ${c.name} ✓`
+            : `No devices reached — has ${c.name} enabled notifications?`, 3500);
+        } },
+      ],
+    });
+  }
+
   // -------- Install to Home Screen (PWA) --------
   // Chrome/Android/desktop fire `beforeinstallprompt`, which we capture and
   // replay from our own button. iOS Safari has no such API — installing there
@@ -10149,6 +10274,7 @@
     });
     $("#btn-browse-recommended-empty")?.addEventListener("click", openRecommendedTemplatesModal);
     $("#btn-delete-client").addEventListener("click", deleteClientPrompt);
+    $("#btn-nudge-athlete")?.addEventListener("click", openNudgeModal);
     $("#btn-exit-preview")?.addEventListener("click", () => Nav.back(exitPreview));
     // Flip a read-only preview into a live logging session in place.
     $("#btn-preview-live")?.addEventListener("click", () => {

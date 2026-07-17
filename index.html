@@ -460,6 +460,7 @@
             <div class="muted" id="client-meta-display"></div>
           </div>
           <div class="client-head-actions">
+            <button class="btn btn-ghost" id="btn-nudge-athlete" title="Send a push notification to this athlete's phone">🔔 Nudge</button>
             <button class="btn btn-danger" id="btn-delete-client">Delete</button>
           </div>
         </div>
@@ -882,6 +883,7 @@
         <div class="program-head">
           <h3>Profile</h3>
         </div>
+        <div id="athlete-notify-host"></div>
         <div class="card profile-card">
           <div class="profile-card-head">
             <h3 id="profile-name">My details</h3>
@@ -969,9 +971,9 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js?v=setlog3"></script>
-  <script src="cloud.js?v=customex"></script>
-  <script src="app.js?v=gamify2"></script>
+  <script src="config.js?v=push1"></script>
+  <script src="cloud.js?v=push1"></script>
+  <script src="app.js?v=push1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

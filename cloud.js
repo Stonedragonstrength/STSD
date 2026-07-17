@@ -367,6 +367,38 @@
     } catch (e) { console.warn("[Cloud] linkAthleteToAuth", e); return false; }
   }
 
+  // -------- Web push --------
+  // Subscription rows are written by the signed-in athlete (RLS-scoped);
+  // sends go through the send-push Edge Function with the coach's JWT.
+  async function savePushSubscription(athleteId, subscription) {
+    if (!athleteId || !subscription?.endpoint) return false;
+    try {
+      const { error } = await sb.from("push_subscriptions").upsert(
+        { athlete_id: athleteId, endpoint: subscription.endpoint, subscription },
+        { onConflict: "endpoint" }
+      );
+      if (error) { console.warn("[Cloud] savePushSubscription", error.message); return false; }
+      return true;
+    } catch (e) { console.warn("[Cloud] savePushSubscription", e); return false; }
+  }
+  async function deletePushSubscription(endpoint) {
+    if (!endpoint) return false;
+    try {
+      const { error } = await sb.from("push_subscriptions").delete().eq("endpoint", endpoint);
+      if (error) { console.warn("[Cloud] deletePushSubscription", error.message); return false; }
+      return true;
+    } catch (e) { console.warn("[Cloud] deletePushSubscription", e); return false; }
+  }
+  async function sendPush(athleteIds, title, body, url) {
+    try {
+      const { data, error } = await sb.functions.invoke("send-push", {
+        body: { athleteIds, title, body, url },
+      });
+      if (error) { console.warn("[Cloud] sendPush", error.message || error); return null; }
+      return data;
+    } catch (e) { console.warn("[Cloud] sendPush", e); return null; }
+  }
+
   // -------- Progress methods --------
   async function upsertProgress(athleteId, progress) {
     if (!athleteId) return false;
@@ -498,6 +530,10 @@
     upsertProgress,
     getProgress,
     upsertAthleteProfile,
+    // Web push
+    savePushSubscription,
+    deletePushSubscription,
+    sendPush,
     // Setmore sync
     getSetmoreEvents,
     refreshSetmoreSync,

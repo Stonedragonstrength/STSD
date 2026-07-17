@@ -20,7 +20,7 @@
  * Because navigations are network-first, a fresh deploy is picked up on the
  * next online open automatically — no user prompt.
  */
-const CACHE = "stonedragon-v2";
+const CACHE = "stonedragon-v3";
 
 // Stable, un-versioned URLs worth precaching up front. The versioned css/js
 // (styles.css?v=…, app.js?v=…) are cached at runtime on first online load —
@@ -123,4 +123,31 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   // Anything else (Supabase REST/auth, etc.): leave alone — default network.
+});
+
+// -------- Web push --------
+// Payload is JSON from the send-push Edge Function: { title, body, url }.
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) {}
+  event.waitUntil(
+    self.registration.showNotification(data.title || "Stone Dragon Strength", {
+      body: data.body || "",
+      icon: "./logo-192.png",
+      badge: "./logo-192.png",
+      data: { url: data.url || "./" },
+    })
+  );
+});
+
+// Tap → focus an open app window, or open one at the notification's url.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = new URL(event.notification.data?.url || "./", self.location.href).href;
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      for (const c of list) { if ("focus" in c) return c.focus(); }
+      return clients.openWindow(url);
+    })
+  );
 });
