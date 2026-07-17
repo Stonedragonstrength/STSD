@@ -439,8 +439,12 @@
     // Bodyweight: pure rep ladder — no weight leg, holds at the cap.
     if (ex.currentWeight === "BW") return { floor, ceil, inc: 0, bw: true };
     const base = parseFloat(ex.currentWeight);
+    if (!isFinite(base)) return null;
+    // Reps-only (weighted): the weight stays as written — reps climb to the
+    // ceiling and hold there. Same ladder as bodyweight, but with a bar.
+    if (p.repsOnly) return { floor, ceil, inc: 0, repsOnly: true };
     const inc = parseFloat(p.inc);
-    if (!isFinite(base) || !inc) return null; // weighted needs a base + increment
+    if (!inc) return null; // weighted needs a base + increment
     // Optional custom rep target after a weight jump ("sometimes the reps
     // need to drop when going up in weight") — defaults to the floor.
     const reset = parseInt(p.reset, 10);
@@ -455,12 +459,13 @@
     const arr = logsMap?.[exCopy.id];
     if (!Array.isArray(arr) || !arr.length) return null;
     const entry = [...arr].sort((a, b) => String(b.date).localeCompare(String(a.date)))
-      .find((l) => l.locked === true && Array.isArray(l.sets) && l.sets.length);
-    if (!entry) return null;
+      .find((l) => l.locked === true && (l.skipped || (Array.isArray(l.sets) && l.sets.length)));
+    if (!entry || entry.skipped) return null; // whole-exercise skip = miss, targets hold
     const need = parseInt(exCopy.sets, 10) || 0;
     if (!need || entry.sets.length < need) return null;
     let min = Infinity;
     for (const s of entry.sets.slice(0, need)) {
+      if (s.skipped) return null; // skipped set = miss, targets hold
       if ((parseFloat(s.weight) || 0) < effWeight - 0.01) return null;
       min = Math.min(min, parseInt(s.reps, 10) || 0);
     }
@@ -516,7 +521,8 @@
           if (e.id === ex.id) return { weight: Math.round(eff * 100) / 100, reps, earned, ...rule };
           const min = progressionMinReps(e, eff, logsMap);
           if (min == null || min < reps) continue; // miss / no log → hold
-          if (min >= rule.ceil) { eff += rule.inc; reps = rule.reset; earned += 1; }
+          // Reps-only rules never jump weight — the ladder just tops out.
+          if (min >= rule.ceil && !rule.repsOnly) { eff += rule.inc; reps = rule.reset; earned += 1; }
           else reps = Math.min(min + 1, rule.ceil);
         }
       }
@@ -556,7 +562,8 @@
     _attachOutsideClose(pop, anchorBtn);
   }
 
-  const PROG_CEIL_VALUES = [6, 8, 10, 12, 15, 20];
+  const PROG_CEIL_VALUES = [6, 8, 10, 12, 15, 18, 20];
+  const PROG_REPS_ONLY = 0; // "Then add" sentinel: no weight leg, reps climb and hold at the ceiling
   const PROG_BW_CEIL_VALUES = [10, 12, 15, 20, 25, 30, 40, 50];
   const PROG_INC_VALUES = [2.5, 5, 10];
 
@@ -582,7 +589,9 @@
         ? "Set prescribed reps first — they become the rep floor."
         : isBW
           ? `Reps climb from ${floor} each week they hit the target (worst set + 1), and hold at the cap. No weight is added.`
-          : `Reps climb from ${floor}. When every set hits the ceiling, next week adds weight and reps reset to ${floor}. Misses hold steady.`;
+          : p.repsOnly
+            ? `Reps climb from ${floor} each week they hit the target (worst set + 1), and hold at the ceiling. The weight stays as written.`
+            : `Reps climb from ${floor}. When every set hits the ceiling, next week adds weight and reps reset to ${floor}. Misses hold steady.`;
       pop.appendChild(hint);
 
       const section = (label, values, cur, fmt, onPick) => {
@@ -613,10 +622,15 @@
       } else {
         section("Rep ceiling", PROG_CEIL_VALUES.filter((v) => v > floor), parseInt(p.ceil, 10) || null,
           (v) => `${floor || "?"}–${v}`,
-          (v) => { ex.progression = { ceil: v, inc: parseFloat(p.inc) || 5 }; saveTrainer(); onChange(); render(); });
-        section("Then add", PROG_INC_VALUES, parseFloat(p.inc) || null,
-          (v) => `+${v} lb`,
-          (v) => { ex.progression = { ceil: parseInt(p.ceil, 10) || (floor + 4), inc: v, ...(p.reset ? { reset: p.reset } : {}) }; saveTrainer(); onChange(); render(); });
+          (v) => { ex.progression = p.repsOnly ? { ceil: v, repsOnly: true } : { ceil: v, inc: parseFloat(p.inc) || 5 }; saveTrainer(); onChange(); render(); });
+        // "Reps only" rides the increment row: same ladder, no weight leg.
+        section("Then add", [...PROG_INC_VALUES, PROG_REPS_ONLY], p.repsOnly ? PROG_REPS_ONLY : (parseFloat(p.inc) || null),
+          (v) => (v === PROG_REPS_ONLY ? "Reps only" : `+${v} lb`),
+          (v) => {
+            const ceil = parseInt(p.ceil, 10) || (floor + 4);
+            ex.progression = v === PROG_REPS_ONLY ? { ceil, repsOnly: true } : { ceil, inc: v, ...(p.reset ? { reset: p.reset } : {}) };
+            saveTrainer(); onChange(); render();
+          });
 
         // Optional: custom rep target after a weight jump (defaults to the
         // floor). Lets a heavier week start lower, e.g. 8–12 then +10 → 6.
@@ -630,7 +644,7 @@
         rInp.className = "prog-reset-input";
         rInp.placeholder = floor ? String(floor) : "—";
         rInp.value = p.reset || "";
-        rInp.disabled = !floor || !p.ceil;
+        rInp.disabled = !floor || !p.ceil || !!p.repsOnly; // no jump → no reset reps
         rInp.addEventListener("click", (e) => e.stopPropagation());
         rInp.addEventListener("change", () => {
           if (!ex.progression) return;
@@ -1961,35 +1975,20 @@
         card.appendChild(sess);
       }
 
-      // Quick "view as athlete" — jumps straight into their athlete view
-      // without opening the coach detail first.
-      const viewBtn = document.createElement("button");
-      viewBtn.className = "client-row-view";
-      viewBtn.type = "button";
-      viewBtn.title = `View as ${c.name || "athlete"}`;
-      viewBtn.setAttribute("aria-label", `View ${c.name || "athlete"}'s athlete view`);
-      viewBtn.textContent = "👁️";
-      viewBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        state.currentClientId = c.id;
-        Nav.push(exitPreview); // Back leaves the athlete preview
-        previewAsAthlete();
-      });
-      card.appendChild(viewBtn);
-
       // Quick "live session" — opens the athlete's current day in their own
-      // logging UI, with every entry saving to the athlete's account.
+      // logging UI, with every entry saving to the athlete's account. (The old
+      // read-only 👁️ preview was retired 2026-07-17 — this is the one door in.)
       const logBtn = document.createElement("button");
       logBtn.className = "client-row-view";
       logBtn.type = "button";
-      logBtn.title = `Live session — log ${c.name || "athlete"}'s workout`;
+      logBtn.title = `Fill out ${c.name || "athlete"}'s workout`;
       logBtn.setAttribute("aria-label", `Log ${c.name || "athlete"}'s workout in a live session`);
       logBtn.textContent = "🏋️";
       logBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         state.currentClientId = c.id;
         Nav.push(exitPreview); // Back leaves the live session
-        previewAsAthlete(true);
+        previewAsAthlete();
       });
       card.appendChild(logBtn);
 
@@ -4671,6 +4670,7 @@
       const r = progressionRule(ex);
       progBtn.textContent = !r ? "＋📈"
         : r.bw ? `📈${r.floor}→${r.ceil === PROG_NO_CAP ? "∞" : r.ceil}`
+        : r.repsOnly ? `📈${r.floor}→${r.ceil} reps`
         : `📈${r.floor}–${r.ceil} +${r.inc}${r.reset !== r.floor ? "→" + r.reset : ""}`;
       progBtn.classList.toggle("empty", !r);
     };
@@ -7884,15 +7884,15 @@
     showLoginScreen("#login-role");
   }
 
-  // -------- Coach "View as athlete" (read-only preview + live session) --------
+  // -------- Coach live session (fill out the athlete's workout) --------
   // Renders the athlete portal off a throwaway clientData built from the coach's
-  // athlete object + their last-synced progress. Read-only preview: saveClient()
-  // is a no-op, nothing persists. Live session (live=true): the portal is fully
-  // interactive and every save mirrors into c.importedProgress and the athlete's
-  // cloud progress — for in-person sessions where the coach enters the sets,
-  // reps, and weights the athlete just completed.
+  // athlete object + their last-synced progress. The portal is fully interactive
+  // and every save mirrors into c.importedProgress and the athlete's cloud
+  // progress — for in-person sessions where the coach enters the sets, reps,
+  // and weights the athlete just completed. (The read-only preview variant was
+  // retired 2026-07-17; state.previewMode still gates the save/persist paths.)
   let _previewReturn = null;
-  async function previewAsAthlete(live = false) {
+  async function previewAsAthlete() {
     const c = currentClient();
     if (!c) return;
     ensureSessionBank(c);
@@ -7900,37 +7900,31 @@
     try { await pullProgressFromCloud(c); } catch (e) {}
     _previewReturn = { clientData: state.clientData, mode: state.mode, clientId: c.id };
     state.previewMode = true;
-    state.liveLog = !!live;
-    document.body.classList.add(live ? "live-log-mode" : "preview-mode");
-    // Clone so preview browsing can't mutate the coach's live data. In live
-    // mode the clone is still the working copy — saveClient() mirrors it back.
+    state.liveLog = true;
+    document.body.classList.add("live-log-mode");
+    // The clone is the working copy — saveClient() mirrors it back to the
+    // athlete's row, never straight into the coach's live data.
     const program = structuredClone(buildProgramFromAthlete(c));
     const progress = c.importedProgress ? structuredClone(c.importedProgress) : emptyProgress();
     state.clientData = { program, progress };
     enterClientPortal();
     updatePreviewBanner(c);
     show($("#preview-banner"));
-    if (live) {
-      // Land directly on the day they're on, ready to log.
-      const pos = athleteCurrentDay(c);
-      if (pos) {
-        setClientTab("workouts");
-        state.workoutView = { mode: "detail", weekId: pos.weekId, dayId: pos.dayId, date: todayISO() };
-        Nav.push(backToWorkoutPicker);
-        renderWorkoutDetailUI();
-      }
+    // Land directly on the day they're on, ready to log.
+    const pos = athleteCurrentDay(c);
+    if (pos) {
+      setClientTab("workouts");
+      state.workoutView = { mode: "detail", weekId: pos.weekId, dayId: pos.dayId, date: todayISO() };
+      Nav.push(backToWorkoutPicker);
+      renderWorkoutDetailUI();
     }
   }
   function updatePreviewBanner(c) {
     const banner = $("#preview-banner");
     if (!banner) return;
-    banner.classList.toggle("live", !!state.liveLog);
-    $(".preview-banner-msg").innerHTML = state.liveLog
-      ? `🏋️ Live session — logging <strong>${escapeHtml(c.name)}</strong>'s workout, saves to their account`
-      : `👁️ Coach preview — read-only view of <strong>${escapeHtml(c.name)}</strong>'s program`;
-    // Flipping to live only makes sense from the read-only preview.
-    const liveBtn = $("#btn-preview-live");
-    if (liveBtn) liveBtn.classList.toggle("hidden", !!state.liveLog);
+    banner.classList.add("live");
+    $(".preview-banner-msg").innerHTML =
+      `🏋️ Live session — logging <strong>${escapeHtml(c.name)}</strong>'s workout, saves to their account`;
   }
   function exitPreview() {
     if (!state.previewMode) return;
@@ -8637,7 +8631,10 @@
           for (const e of d.exercises || []) {
             if (String(e.name || "").trim().toLowerCase() !== name) continue;
             (logsMap[e.id] || []).forEach((l) => {
-              if (l.locked !== false && String(l.date) < logDate) candidates.push(l);
+              if (l.locked === false || l.skipped || String(l.date) >= logDate) return;
+              // Skipped sets aren't real numbers — show only what was lifted.
+              const sets = Array.isArray(l.sets) ? l.sets.filter((s) => !s.skipped) : [];
+              if (sets.length || l.reps) candidates.push({ ...l, sets });
             });
           }
         }
@@ -8695,7 +8692,9 @@
     rxMain.textContent = rxParts.join(" · ") || "—";
     if (prog) rxMain.title = prog.bw
       ? `Rep ladder: hit every set at the target and next week asks for your worst set + 1${prog.ceil === PROG_NO_CAP ? "" : `, up to ${prog.ceil}`}. No weight added.`
-      : `Double progression ${prog.floor}–${prog.ceil}: hit every set at the target to move up a rep next week; hit ${prog.ceil} on all sets and the weight goes up ${prog.inc} lb (reps drop to ${prog.reset}).`;
+      : prog.repsOnly
+        ? `Rep ladder ${prog.floor}→${prog.ceil}: hit every set at the target and next week asks for your worst set + 1, up to ${prog.ceil}. The weight stays at ${prog.weight} lb.`
+        : `Double progression ${prog.floor}–${prog.ceil}: hit every set at the target to move up a rep next week; hit ${prog.ceil} on all sets and the weight goes up ${prog.inc} lb (reps drop to ${prog.reset}).`;
     rxEl.appendChild(rxMain);
 
     if (prog && prog.earned > 0) {
@@ -8806,9 +8805,21 @@
     // (±1). Empty fields seed from the prescription so the first tap lands on a
     // sensible number instead of 0. Collected so they disable when locked.
     const setSteppers = [];
+    // Values that are actually filled in (typed, stepped, tapped-to-accept, or
+    // restored from today's draft) render in the edited tint, so it's obvious
+    // at a glance which fields hold real numbers vs. placeholder targets.
+    const markEdited = (input) => input.classList.toggle("edited", input.value !== "");
+    // Editing either field of a set accepts the prescription in its sibling,
+    // so one touch per set is enough when the athlete did what was written.
+    const fillSibling = (other, seed) => {
+      if (other.readOnly || other.value !== "" || !Number.isFinite(seed)) return;
+      other.value = String(seed);
+      markEdited(other);
+    };
     // Build a field as ▲ (top) / input / ▼ (bottom). Steppers omitted when
     // withSteppers is false (e.g. the weight box on bodyweight lifts).
-    const mkStepField = (input, step, seed, withSteppers) => {
+    // onUserEdit fires on any deliberate touch (step / tap-to-accept).
+    const mkStepField = (input, step, seed, withSteppers, onUserEdit) => {
       const field = document.createElement("div");
       field.className = "cex-set-field";
       const mkBtn = (glyph, dir) => {
@@ -8826,6 +8837,8 @@
           v = Math.round(v * 100) / 100; // trim float dust (e.g. 0.1 + 0.2)
           input.value = String(v);
           delete input.dataset.seeded; // stepped value is deliberate — typing shouldn't wipe it
+          markEdited(input);
+          onUserEdit?.();
           autoSave();
         });
         setSteppers.push(b);
@@ -8845,13 +8858,15 @@
         if (input.value === "" && Number.isFinite(seed)) {
           input.value = String(seed);
           input.dataset.seeded = "1";
+          markEdited(input);
+          onUserEdit?.();
           autoSave();
         }
       });
       input.addEventListener("beforeinput", () => {
         if (input.dataset.seeded) { delete input.dataset.seeded; input.value = ""; }
       });
-      input.addEventListener("blur", () => { delete input.dataset.seeded; });
+      input.addEventListener("blur", () => { delete input.dataset.seeded; markEdited(input); });
       return field;
     };
 
@@ -8874,10 +8889,12 @@
       wt.className = "cex-input"; rp.className = "cex-input";
       wt.addEventListener("click", (e) => e.stopPropagation());
       rp.addEventListener("click", (e) => e.stopPropagation());
+      wt.addEventListener("input", () => { markEdited(wt); fillSibling(rp, rSeed); });
+      rp.addEventListener("input", () => { markEdited(rp); fillSibling(wt, wSeed); });
 
       col.appendChild(lbl);
-      col.appendChild(mkStepField(wt, 2.5, wSeed, w.weight !== "BW"));
-      col.appendChild(mkStepField(rp, 1, rSeed, true));
+      col.appendChild(mkStepField(wt, 2.5, wSeed, w.weight !== "BW", () => fillSibling(rp, rSeed)));
+      col.appendChild(mkStepField(rp, 1, rSeed, true, () => fillSibling(wt, wSeed)));
 
       setTable.appendChild(col);
       warmupInputs.push({ wt, rp });
@@ -8887,30 +8904,54 @@
       const col = document.createElement("div");
       col.className = "cex-set-col";
 
-      const lbl = document.createElement("span");
+      // Set label doubles as the per-set skip toggle: tap S2 → that set is
+      // recorded as skipped (counts for locking, reads as a miss for
+      // progression) instead of faking it with zeros.
+      const lbl = document.createElement("button");
+      lbl.type = "button";
       lbl.className = "cex-set-lbl";
       lbl.textContent = `S${s + 1}`;
+      lbl.title = "Tap to skip this set";
 
       const wt = Object.assign(document.createElement("input"), { type: "number", step: "0.5", min: "0", placeholder: wtPh || "lb", readOnly: isLocked });
       const rp = Object.assign(document.createElement("input"), { type: "number", min: "0", placeholder: repPh || "reps", readOnly: isLocked });
       wt.className = "cex-input"; rp.className = "cex-input";
       wt.addEventListener("click", (e) => e.stopPropagation());
       rp.addEventListener("click", (e) => e.stopPropagation());
+      wt.addEventListener("input", () => { markEdited(wt); fillSibling(rp, prescribedReps); });
+      rp.addEventListener("input", () => { markEdited(rp); fillSibling(wt, weightBase); });
+
+      const item = { wt, rp, skipped: false };
+      item.applySkip = () => {
+        col.classList.toggle("skipped", item.skipped);
+        lbl.textContent = item.skipped ? `S${s + 1}⊘` : `S${s + 1}`;
+        lbl.title = item.skipped ? "Skipped — tap to un-skip" : "Tap to skip this set";
+        wt.disabled = item.skipped; rp.disabled = item.skipped;
+      };
+      lbl.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (isLocked) return;
+        item.skipped = !item.skipped;
+        item.applySkip();
+        autoSave();
+      });
 
       col.appendChild(lbl);
       // Weight field, ±2.5 lb (bodyweight lifts log reps only — no weight arrows).
-      col.appendChild(mkStepField(wt, 2.5, weightBase, ex.currentWeight !== "BW"));
+      col.appendChild(mkStepField(wt, 2.5, weightBase, ex.currentWeight !== "BW", () => fillSibling(rp, prescribedReps)));
       // Reps field, ±1.
-      col.appendChild(mkStepField(rp, 1, prescribedReps, true));
+      col.appendChild(mkStepField(rp, 1, prescribedReps, true, () => fillSibling(wt, weightBase)));
 
       setTable.appendChild(col);
-      setInputs.push({ wt, rp });
+      setInputs.push(item);
     }
 
     // Pre-fill today's existing log so edits persist
     if (todayLog?.sets?.length) {
       todayLog.sets.forEach((s, i) => {
-        if (setInputs[i]) { setInputs[i].wt.value = s.weight || ""; setInputs[i].rp.value = s.reps || ""; }
+        if (!setInputs[i]) return;
+        if (s.skipped) { setInputs[i].skipped = true; setInputs[i].applySkip(); }
+        else { setInputs[i].wt.value = s.weight || ""; setInputs[i].rp.value = s.reps || ""; }
       });
     }
     if (todayLog?.warmups?.length) {
@@ -8918,6 +8959,7 @@
         if (warmupInputs[i]) { warmupInputs[i].wt.value = w.weight || ""; warmupInputs[i].rp.value = w.reps || ""; }
       });
     }
+    [...setInputs, ...warmupInputs].forEach(({ wt, rp }) => { markEdited(wt); markEdited(rp); });
 
     // Finisher slots (burnout / dropset). Weight is the drop-to % of the
     // prescribed weight (computed, shown as a target); the athlete logs reps.
@@ -8976,8 +9018,8 @@
     const autoSave = () => {
       clearTimeout(_ast);
       _ast = setTimeout(() => {
-        const sets = setInputs.map(({ wt, rp }) => ({ weight: wt.value, reps: rp.value }))
-                              .filter(s => s.weight || s.reps);
+        const sets = setInputs.map(({ wt, rp, skipped }) => (skipped ? { weight: "", reps: "", skipped: true } : { weight: wt.value, reps: rp.value }))
+                              .filter(s => s.skipped || s.weight || s.reps);
         if (!sets.length && !finisherHasData() && !warmupHasData()) {
           if (state.clientData.progress.exerciseLogs[ex.id]) {
             state.clientData.progress.exerciseLogs[ex.id] =
@@ -9005,7 +9047,8 @@
       wt.addEventListener("input", autoSave);
       rp.addEventListener("input", autoSave);
     });
-    finisherInputs.forEach(({ rp }) => rp.addEventListener("input", autoSave));
+    finisherInputs.forEach(({ rp }) => rp.addEventListener("input", () => { markEdited(rp); autoSave(); }));
+    finisherInputs.forEach(({ rp }) => markEdited(rp)); // pre-filled finisher reps tint too
 
     // Lock / Edit toggle — lives in the title's lock slot (top-right). The
     // green ✓ only fills in once the athlete explicitly locks completed sets.
@@ -9020,6 +9063,26 @@
     editBtn.className = "cex-edit-btn";
     editBtn.textContent = "✎ Edit";
 
+    // Skip the whole exercise — logs a locked "skipped" entry (so the day can
+    // still complete) instead of zeros. Undo via ✎ Edit.
+    const skipBtn = document.createElement("button");
+    skipBtn.type = "button";
+    skipBtn.className = "cex-skip-btn";
+    skipBtn.textContent = "⊘ Skip";
+    skipBtn.title = "Skip this exercise today";
+
+    const applySkippedUI = (on) => {
+      wrapper.classList.toggle("skipped", on);
+      doneCircle.classList.toggle("skip", on);
+      if (on) {
+        wrapper.classList.remove("logged");
+        doneCircle.classList.remove("done");
+        doneCircle.textContent = "⊘";
+      } else if (!doneCircle.classList.contains("done")) {
+        doneCircle.textContent = "";
+      }
+    };
+
     const setFieldsReadonly = (readonly) => {
       setInputs.forEach(({ wt, rp }) => { wt.readOnly = readonly; rp.readOnly = readonly; });
       warmupInputs.forEach(({ wt, rp }) => { wt.readOnly = readonly; rp.readOnly = readonly; });
@@ -9029,13 +9092,21 @@
     const refreshLockUI = () => {
       hide(isLocked ? lockBtn : editBtn);
       show(isLocked ? editBtn : lockBtn);
+      if (isLocked) hide(skipBtn); else show(skipBtn);
       setFieldsReadonly(isLocked);
     };
 
     lockBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      const sets = setInputs.map(({ wt, rp }) => ({ weight: wt.value, reps: rp.value }));
-      const complete = sets.every((s) => s.reps && (s.weight || ex.currentWeight === "BW"));
+      // Locking accepts the prescription: untouched fields fill from the
+      // written target, so "did exactly what was asked" is a single tap.
+      setInputs.forEach((it) => {
+        if (it.skipped) return;
+        if (it.rp.value === "" && Number.isFinite(prescribedReps)) { it.rp.value = String(prescribedReps); markEdited(it.rp); }
+        if (it.wt.value === "" && ex.currentWeight !== "BW" && Number.isFinite(weightBase)) { it.wt.value = String(weightBase); markEdited(it.wt); }
+      });
+      const sets = setInputs.map(({ wt, rp, skipped }) => (skipped ? { weight: "", reps: "", skipped: true } : { weight: wt.value, reps: rp.value }));
+      const complete = sets.every((s) => s.skipped || (s.reps && (s.weight || ex.currentWeight === "BW")));
       if (!complete) { toast("Fill in all sets before locking in."); return; }
       if (!finisherComplete()) { toast("Fill in your burnout/dropset reps before locking in."); return; }
       clearTimeout(_ast);
@@ -9071,10 +9142,11 @@
           .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
           .find((l) => isLogEntryLocked(l, ex, numSets));
       }
-      if (entry) entry.locked = false;
+      if (entry) { entry.locked = false; delete entry.skipped; }
       saveClient();
       isLocked = false;
       refreshLockUI();
+      applySkippedUI(false);
       doneCircle.classList.remove("done"); doneCircle.textContent = "";
       wrapper.classList.remove("logged");
       autoSyncDayCompletion(day);
@@ -9083,10 +9155,33 @@
       }
     });
 
+    skipBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const hasData = setInputs.some((it) => !it.skipped && (it.wt.value || it.rp.value)) || warmupHasData() || finisherHasData();
+      if (hasData && !window.confirm("Discard the entered numbers and mark this exercise skipped?")) return;
+      clearTimeout(_ast);
+      if (!state.clientData.progress.exerciseLogs[ex.id])
+        state.clientData.progress.exerciseLogs[ex.id] = [];
+      const exLogs = state.clientData.progress.exerciseLogs[ex.id];
+      const idx = exLogs.findIndex(l => l.date === logDate);
+      const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets: [], skipped: true, locked: true };
+      if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
+      saveClient();
+      isLocked = true;
+      refreshLockUI();
+      applySkippedUI(true);
+      autoSyncDayCompletion(day);
+      if (state.workoutView?.mode === "detail" && state.workoutView.dayId === day.id) {
+        renderWorkoutDetailHeader(week, day);
+      }
+    });
+
+    lockSlot.appendChild(skipBtn);
     lockSlot.appendChild(lockBtn);
     lockSlot.appendChild(editBtn);
 
     refreshLockUI();
+    if (todayLog?.skipped && isLocked) applySkippedUI(true);
 
     logForm.appendChild(setTable);
     if (finisherInputs.length) logForm.appendChild(finisherWrap);
@@ -9100,8 +9195,12 @@
       [...logs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3).forEach((l) => {
         const item = document.createElement("div");
         item.className = "cex-hist-item";
-        const setStr = l.sets?.length
-          ? l.sets.map((s, i) => `<span class="cex-hist-set"><em>S${i+1}</em> ${escapeHtml(s.weight || "BW")} × ${escapeHtml(s.reps || "?")}</span>`).join("")
+        const setStr = l.skipped
+          ? `<span class="cex-hist-set cex-hist-skip">⊘ Skipped</span>`
+          : l.sets?.length
+          ? l.sets.map((s, i) => s.skipped
+              ? `<span class="cex-hist-set cex-hist-skip"><em>S${i+1}</em> ⊘</span>`
+              : `<span class="cex-hist-set"><em>S${i+1}</em> ${escapeHtml(s.weight || "BW")} × ${escapeHtml(s.reps || "?")}</span>`).join("")
           : `<span class="cex-hist-set">${escapeHtml(l.weight || "BW")} lb × ${escapeHtml(l.reps || "?")} reps</span>`;
         const dateHtml = l.date === logDate ? "" : `<span class="cex-hist-date">${escapeHtml(l.date)}</span>`;
         item.innerHTML = `${dateHtml}
@@ -9921,6 +10020,19 @@
 
   // -------- Rest timer (athlete workout detail) --------
   let _restEnd = 0, _restIv = null;
+  // End-of-rest ding. iPads/tablets refuse audio that wasn't unlocked by a
+  // touch, so the shared AudioContext is created/resumed inside the tap that
+  // starts the timer — by the time it dings, audio is already unlocked.
+  const KEY_REST_SOUND = "trainerpro_rest_sound_v1";
+  let _restAC = null;
+  function restSoundOn() { return localStorage.getItem(KEY_REST_SOUND) !== "0"; }
+  function unlockRestAudio() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+      if (!_restAC) _restAC = new AC();
+      if (_restAC.state === "suspended") _restAC.resume();
+    } catch (e) {}
+  }
   function showRestTimer() { const w = $("#rest-timer"); if (w) show(w); }
   function hideRestTimer() {
     stopRestTimer(false);
@@ -9928,6 +10040,7 @@
     $("#rest-timer-pop")?.classList.add("hidden");
   }
   function startRestTimer(sec) {
+    if (restSoundOn()) unlockRestAudio(); // user gesture — unlock the ding now
     _restEnd = Date.now() + sec * 1000;
     clearInterval(_restIv);
     $("#rest-timer-btn")?.classList.add("running");
@@ -9960,14 +10073,22 @@
     btn.textContent = `⏱ ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
   }
   function restBeep() {
+    if (!restSoundOn()) return;
     try {
-      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
-      const ac = new AC();
-      const o = ac.createOscillator(); const g = ac.createGain();
-      o.connect(g); g.connect(ac.destination);
-      o.frequency.value = 880; g.gain.value = 0.08;
-      o.start();
-      setTimeout(() => { try { o.stop(); ac.close(); } catch (e) {} }, 400);
+      unlockRestAudio();
+      const ac = _restAC; if (!ac) return;
+      // Two-tone "ding": 880 Hz then 1175 Hz, on the shared unlocked context.
+      [[880, 0], [1175, 220]].forEach(([hz, delay]) => {
+        setTimeout(() => {
+          try {
+            const o = ac.createOscillator(); const g = ac.createGain();
+            o.connect(g); g.connect(ac.destination);
+            o.frequency.value = hz; g.gain.value = 0.08;
+            o.start();
+            setTimeout(() => { try { o.stop(); } catch (e) {} }, 300);
+          } catch (e) {}
+        }, delay);
+      });
     } catch (e) {}
   }
 
@@ -10433,16 +10554,6 @@
     $("#btn-delete-client").addEventListener("click", deleteClientPrompt);
     $("#btn-nudge-athlete")?.addEventListener("click", openNudgeModal);
     $("#btn-exit-preview")?.addEventListener("click", () => Nav.back(exitPreview));
-    // Flip a read-only preview into a live logging session in place.
-    $("#btn-preview-live")?.addEventListener("click", () => {
-      if (!state.previewMode || state.liveLog) return;
-      state.liveLog = true;
-      document.body.classList.remove("preview-mode");
-      document.body.classList.add("live-log-mode");
-      const c = state.trainerData.clients.find((x) => x.id === state.clientData.program?.clientId);
-      if (c) updatePreviewBanner(c);
-      toast(`Live session — entries save to ${c?.name || "the athlete"}'s account`);
-    });
     // From preview straight into the editor: the day being viewed, or (from
     // the picker / other tabs) the day the athlete is on per synced progress.
     $("#btn-preview-edit-day")?.addEventListener("click", () => {
@@ -10541,6 +10652,20 @@
     });
     $$("#rest-timer-pop [data-rest]").forEach((b) =>
       b.addEventListener("click", () => startRestTimer(Number(b.dataset.rest))));
+    // 🔔/🔕 — end-of-rest ding on/off, remembered per device.
+    const restSoundBtn = $("#rest-sound-btn");
+    const refreshRestSoundBtn = () => {
+      if (!restSoundBtn) return;
+      restSoundBtn.textContent = restSoundOn() ? "🔔" : "🔕";
+      restSoundBtn.classList.toggle("off", !restSoundOn());
+      restSoundBtn.title = restSoundOn() ? "Timer ding: on" : "Timer ding: off";
+    };
+    refreshRestSoundBtn();
+    restSoundBtn?.addEventListener("click", () => {
+      localStorage.setItem(KEY_REST_SOUND, restSoundOn() ? "0" : "1");
+      refreshRestSoundBtn();
+      if (restSoundOn()) restBeep(); // audible confirm doubles as the audio unlock
+    });
 
     $("#btn-client-logout").addEventListener("click", () => { Nav.reset(); exitClient(); });
     $("#btn-client-profile")?.addEventListener("click", () => setClientTab("profile"));

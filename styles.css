@@ -25,6 +25,10 @@
   --danger: #ef4444;
   --danger-soft: rgba(239, 68, 68, 0.18);
   --warn: #f59e0b;
+  /* Filled-in (edited/accepted) rep-sheet values — light blue, theme-stable
+     so it never collides with a theme's primary. */
+  --edited-val: #7dd3fc;
+  --edited-val-rgb: 125, 211, 252;
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45);
   --shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
   --shadow-lg: 0 20px 50px rgba(0, 0, 0, 0.75);
@@ -94,6 +98,8 @@
   --text: #0f172a; --text-soft: #41526a; --muted: #566579;
   --primary-rgb: 30, 41, 59; --primary-bright-rgb: 51, 65, 85;
   --primary: #1e293b; --primary-bright: #334155; --primary-hover: #0f172a;
+  --edited-val: #0369a1; /* sky-300 washes out on white — darker blue ink */
+  --edited-val-rgb: 3, 105, 161;
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.12);
   --shadow: 0 6px 20px rgba(15, 23, 42, 0.15);
   --shadow-lg: 0 20px 50px rgba(15, 23, 42, 0.22);
@@ -5229,6 +5235,16 @@ input:focus, textarea:focus, select:focus {
   background: var(--accent);
   color: #fff;
 }
+/* Skipped exercise — amber ⊘ instead of the green check. */
+.cex-circle.skip {
+  border-color: var(--warn);
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--warn);
+}
+.cex-wrapper.skipped {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.10), rgba(245, 158, 11, 0) 55%), var(--surface);
+}
+.cex-hist-skip { color: var(--warn); }
 
 .cex-name-block {
   flex: 1;
@@ -5465,6 +5481,29 @@ input:focus, textarea:focus, select:focus {
   letter-spacing: 0.06em;
   color: var(--text-soft);
   text-align: center;
+  /* Working-set labels are <button>s (tap = skip that set) — neutralize the
+     native button chrome so they look identical to the warm-up <span>s. */
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+}
+button.cex-set-lbl { cursor: pointer; }
+button.cex-set-lbl:hover { color: var(--warn); }
+/* Skipped set — amber ⊘ column, inputs muted, steppers inert. */
+.cex-set-col.skipped .cex-set-lbl { color: var(--warn); }
+.cex-set-col.skipped .cex-input { opacity: 0.35; }
+.cex-set-col.skipped .cex-step { opacity: 0.35; pointer-events: none; }
+/* Values actually filled in (typed / stepped / accepted / saved draft) read
+   light blue so it's obvious which fields hold real numbers. Locked (readonly)
+   and skipped (disabled) fields fall back to their muted states. */
+.cex-input.edited:not([readonly]):not(:disabled) {
+  color: var(--edited-val);
+  font-weight: 700;
+  /* Field tint too — the value alone can sit next to a same-hued placeholder,
+     the filled box makes "already entered" readable across every theme. */
+  border-color: rgba(var(--edited-val-rgb), 0.55);
+  background: rgba(var(--edited-val-rgb), 0.10);
 }
 .cex-no-sets {
   font-size: 0.78rem;
@@ -5473,12 +5512,15 @@ input:focus, textarea:focus, select:focus {
   margin: 0;
   padding: 0.3rem 0;
 }
-/* Desktop: the athlete workout-detail panel is full width, so let the set
-   columns pack straight across it (and sit a touch roomier) instead of the
-   table hugging its content and wrapping the 3rd set onto a new row early. */
+/* Tablet & desktop: the exercise card is full width, so the set columns pack
+   into ONE row that stretches across it — columns grow to soak up the real
+   estate instead of hugging small and wrapping onto a second row. Applies to
+   every rep-sheet context (workout detail, all-weeks cards, coach live log). */
+@media (min-width: 601px) {
+  .cex-set-table { align-self: stretch; width: 100%; flex-wrap: nowrap; overflow-x: auto; }
+  .cex-set-col { flex: 1 1 0; min-width: 40px; max-width: 130px; }
+}
 @media (min-width: 721px) {
-  .workout-detail-list .cex-set-table { align-self: stretch; }
-  .workout-detail-list .cex-set-col { flex: 0 1 72px; }
   /* Small gap between top-level cards (standalone exercises + whole superset
      groups) so they read as distinct, instead of a flush connected table.
      Supersets keep their own bordered box, so they stay visually grouped. */
@@ -5499,8 +5541,23 @@ input:focus, textarea:focus, select:focus {
   flex-shrink: 0;
   display: flex;
   align-items: center;
+  gap: 0.45rem;
 }
 .cex-lock-btn { padding: 0.35em 0.6em; font-size: 0.9rem; line-height: 1; }
+/* Skip-whole-exercise: quiet outline button beside the lock. */
+.cex-skip-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-soft);
+  border-radius: 8px;
+  padding: 0.3em 0.55em;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.cex-skip-btn:hover { border-color: var(--warn); color: var(--warn); }
 /* The ▲ / ▼ buttons above and below each weight/reps box (weight ±2.5 lb,
    reps ±1). Full width of the field, short height. */
 .cex-step {
@@ -7167,6 +7224,15 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 
 /* Rest timer — floats over the workout detail */
 .rest-timer { position: fixed; right: 16px; bottom: 78px; z-index: 60; display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem; }
+.rest-timer-row { display: flex; align-items: center; gap: 0.5rem; }
+/* 🔔/🔕 end-of-rest ding toggle riding beside the pill */
+.rest-sound-btn {
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+  width: 40px; height: 40px; border-radius: 999px; font-size: 0.95rem;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+.rest-sound-btn.off { opacity: 0.6; }
 .rest-timer-btn {
   border: 1px solid var(--primary); background: var(--surface-2); color: var(--primary-bright);
   font-weight: 800; font-size: 1rem; padding: 0.65em 1.05em; border-radius: 999px;
@@ -7236,36 +7302,10 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   font-weight: 600;
   white-space: nowrap;
 }
-/* Read-only: block ALL interaction inside the portal body, then re-enable
-   ONLY navigation (tabs, week chips, day cards, back link, calendar nav).
-   Blocking at the container also defeats the <label>-wrapped toggle gotcha
-   (the label itself becomes inert), and covers every athlete-side action
-   button — sessions, PRs, cardio, nutrition — without an allow-list per tab.
-   The athlete can't type in reps/weight, log, claim slots, or toggle prefs. */
-body.preview-mode #screen-client .app-main { pointer-events: none; }
-/* Dim data-entry fields + every button so it's obvious nothing on the
-   athlete's side is live... */
-body.preview-mode #screen-client input,
-body.preview-mode #screen-client textarea,
-body.preview-mode #screen-client select,
-body.preview-mode #screen-client .app-main button {
-  opacity: 0.45;
-}
-/* ...then re-enable AND un-dim only the navigation controls. */
-body.preview-mode #screen-client .tab,
-body.preview-mode #screen-client .week-chip,
-body.preview-mode #screen-client .workout-card,
-body.preview-mode #screen-client .back-link,
-body.preview-mode #screen-client .ov-trophies > summary,
-body.preview-mode #screen-client .ov-volchart .bw-range-btn,
-body.preview-mode #screen-client #ccal-prev,
-body.preview-mode #screen-client #ccal-next,
-body.preview-mode #screen-client #ccal-today {
-  pointer-events: auto;
-  opacity: 1;
-}
-/* Header Exit/Install would sign the coach out — hide during preview. */
-body.preview-mode #screen-client .header-right { display: none; }
+/* (The read-only preview mode and its interaction blocking were retired
+   2026-07-17 — the live session is the only coach door into the portal.)
+   Header Exit/Install would sign the coach out — hide during a live session. */
+body.live-log-mode #screen-client .header-right { display: none; }
 
 /* ==========================================================================
    Forged-steel facelift
