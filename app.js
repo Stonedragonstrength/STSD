@@ -1707,6 +1707,10 @@
     // the Overview page.
     renderDashboard();
     showCoachOverview();
+    // First time on this device: one guided lap. Skippable, never repeats.
+    if (!localStorage.getItem(KEY_TOUR_COACH)) {
+      setTimeout(() => { if (state.mode === "trainer") startTour(coachTourSteps(), KEY_TOUR_COACH); }, 800);
+    }
   }
 
   function signOutTrainer() {
@@ -7624,6 +7628,11 @@
     refreshAthleteOpenSlots();
     renderAthleteNotifyCard();
     refreshPushSubscription();
+    // First time on this device: one guided lap (never during a coach live
+    // session — that's the coach's screen, not the athlete's).
+    if (!state.previewMode && !localStorage.getItem(KEY_TOUR_ATHLETE)) {
+      setTimeout(() => { if (!state.previewMode && state.mode === "client") startTour(athleteTourSteps(), KEY_TOUR_ATHLETE); }, 800);
+    }
   }
   // -------- Athlete Overview (home dashboard) --------
   // Athlete-side read-only inbox for coach announcements (piggybacks
@@ -8384,7 +8393,9 @@
         <h2>${escapeHtml(day.name)}</h2>
         <input type="date" class="detail-log-date" id="detail-log-date" value="${escapeHtml(state.workoutView.date)}" title="Date these logs are for" />
       </div>
-      <div class="detail-head-stats">${totalEx} exercise${totalEx === 1 ? "" : "s"}${doneEx > 0 ? ` · <span class="wc-status progress">${doneEx}/${totalEx} logged</span>` : ""}${checked ? ` · <span class="wc-status done">Day done ✓</span>` : ""}</div>
+      <div class="detail-head-stats">${totalEx} exercise${totalEx === 1 ? "" : "s"}${doneEx > 0 ? ` · <span class="wc-status progress">${doneEx}/${totalEx} logged</span>` : ""}${checked ? ` · <span class="wc-status done">Day done ✓</span>` : ""}
+        <button type="button" class="detail-clear-day" id="detail-clear-day" title="Clear this day's unlocked numbers">⌫ Clear day</button>
+      </div>
     `;
     head.querySelector("#detail-toggle").addEventListener("click", () => {
       toggleDayComplete(day.id);
@@ -8394,6 +8405,26 @@
     head.querySelector("#detail-log-date").addEventListener("change", (e) => {
       state.workoutView.date = e.target.value || todayISO();
       renderWorkoutDetailUI();
+    });
+    // Clear the day's UNLOCKED drafts in one go (tapped-around-by-accident
+    // rescue). Locked exercises are deliberate — they stay until un-locked.
+    head.querySelector("#detail-clear-day").addEventListener("click", () => {
+      const date = state.workoutView.date || todayISO();
+      const logsMap = state.clientData.progress?.exerciseLogs || {};
+      const targets = day.exercises.filter((ex) => {
+        const entry = (logsMap[ex.id] || []).find((l) => l.date === date);
+        return entry && !isLogEntryLocked(entry, ex, parseInt(ex.sets, 10) || 0);
+      });
+      if (!targets.length) { toast("Nothing to clear — locked exercises stay (✎ Edit them first)."); return; }
+      if (!window.confirm(`Clear this day's unlocked numbers (${targets.length} exercise${targets.length === 1 ? "" : "s"})?`)) return;
+      targets.forEach((ex) => {
+        const rest = logsMap[ex.id].filter((l) => l.date !== date);
+        if (rest.length) logsMap[ex.id] = rest; else delete logsMap[ex.id];
+      });
+      saveClient();
+      renderAthleteCalendar();
+      renderWorkoutDetailUI();
+      toast("Cleared ✓");
     });
   }
 
@@ -9016,6 +9047,7 @@
     // Drafts never lock in the green checkmark — only the Lock button does.
     let _ast = null;
     const autoSave = () => {
+      refreshClearBtn(); // values are already current — keep ⌫ in sync live
       clearTimeout(_ast);
       _ast = setTimeout(() => {
         const sets = setInputs.map(({ wt, rp, skipped }) => (skipped ? { weight: "", reps: "", skipped: true } : { weight: wt.value, reps: rp.value }))
@@ -9071,6 +9103,19 @@
     skipBtn.textContent = "⊘ Skip";
     skipBtn.title = "Skip this exercise today";
 
+    // Clear today's draft — the escape hatch for tapped-by-accident numbers.
+    // Only shown while unlocked AND something is filled in.
+    const clearBtn = document.createElement("button");
+    clearBtn.type = "button";
+    clearBtn.className = "cex-skip-btn cex-clear-btn";
+    clearBtn.textContent = "⌫ Clear";
+    clearBtn.title = "Clear today's numbers for this exercise";
+    const draftHasData = () =>
+      setInputs.some((it) => it.skipped || it.wt.value || it.rp.value) || warmupHasData() || finisherHasData();
+    const refreshClearBtn = () => {
+      if (isLocked || !draftHasData()) hide(clearBtn); else show(clearBtn);
+    };
+
     const applySkippedUI = (on) => {
       wrapper.classList.toggle("skipped", on);
       doneCircle.classList.toggle("skip", on);
@@ -9093,6 +9138,7 @@
       hide(isLocked ? lockBtn : editBtn);
       show(isLocked ? editBtn : lockBtn);
       if (isLocked) hide(skipBtn); else show(skipBtn);
+      refreshClearBtn();
       setFieldsReadonly(isLocked);
     };
 
@@ -9176,6 +9222,24 @@
       }
     });
 
+    clearBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!window.confirm("Clear today's numbers for this exercise?")) return;
+      clearTimeout(_ast);
+      const exLogs = state.clientData.progress.exerciseLogs[ex.id];
+      if (exLogs) {
+        const rest = exLogs.filter((l) => l.date !== logDate);
+        if (rest.length) state.clientData.progress.exerciseLogs[ex.id] = rest;
+        else delete state.clientData.progress.exerciseLogs[ex.id];
+      }
+      saveClient();
+      // Full re-render resets fields, blue tints, skips and history in one go.
+      if (state.workoutView?.mode === "detail") renderWorkoutDetailUI();
+      else renderClientWorkouts();
+      renderAthleteCalendar();
+    });
+
+    lockSlot.appendChild(clearBtn);
     lockSlot.appendChild(skipBtn);
     lockSlot.appendChild(lockBtn);
     lockSlot.appendChild(editBtn);
@@ -10018,6 +10082,173 @@
     toast(`🎉 New PR — ${name}: ${top.w} lb × ${top.r}!`, 3500);
   }
 
+  // -------- Guided tour (spotlight walkthrough) --------
+  // A dimmed overlay whose glowing cutout glides between real UI elements,
+  // with a floating card explaining each stop. Steps are plain data:
+  // { sel, go, title, text } — go() runs first (switching tab/view), and a
+  // step whose target is missing or hidden is skipped, so tours degrade
+  // gracefully on empty accounts. Auto-runs once per device (doneKey);
+  // replayable from the ? button in either header.
+  const KEY_TOUR_COACH = "trainerpro_tour_coach_v1";
+  const KEY_TOUR_ATHLETE = "trainerpro_tour_athlete_v1";
+  let _tour = null;
+
+  function startTour(steps, doneKey) {
+    endTour(false);
+    if (!steps?.length) return;
+    const wrap = document.createElement("div");
+    wrap.className = "tour-wrap"; // full-screen shield: blocks app clicks mid-tour
+    const spot = document.createElement("div");
+    spot.className = "tour-spot";
+    const card = document.createElement("div");
+    card.className = "tour-card";
+    wrap.appendChild(spot);
+    wrap.appendChild(card);
+    document.body.appendChild(wrap);
+    _tour = { steps, i: -1, wrap, spot, card, doneKey };
+    window.addEventListener("resize", _tourRepos);
+    document.addEventListener("keydown", _tourKeys);
+    showTourStep(0, 1);
+  }
+  function endTour(markDone) {
+    const t = _tour;
+    if (!t) return;
+    _tour = null;
+    window.removeEventListener("resize", _tourRepos);
+    document.removeEventListener("keydown", _tourKeys);
+    t.wrap.remove();
+    // Skip also marks done — a dismissed tour shouldn't nag on next boot.
+    if (markDone !== false && t.doneKey) localStorage.setItem(t.doneKey, "1");
+  }
+  function _tourRepos() { if (_tour) _positionTourStep(); }
+  function _tourKeys(e) {
+    if (!_tour) return;
+    if (e.key === "Escape") endTour(true);
+    else if (e.key === "ArrowRight") showTourStep(_tour.i + 1, 1);
+    else if (e.key === "ArrowLeft") showTourStep(_tour.i - 1, -1);
+  }
+  function showTourStep(i, dir) {
+    const t = _tour; if (!t) return;
+    // Walk in `dir` until a step's target exists and is visible on screen.
+    while (i >= 0 && i < t.steps.length) {
+      const s = t.steps[i];
+      if (s.go) s.go();
+      const el = $(s.sel);
+      if (el && el.offsetParent !== null) break;
+      i += dir;
+    }
+    if (i < 0) i = 0;
+    if (i >= t.steps.length) { endTour(true); toast("Tour complete ✓"); return; }
+    t.i = i;
+    const s = t.steps[i];
+    $(s.sel).scrollIntoView({ block: "center" });
+    t.card.innerHTML = `
+      <div class="tour-count">${i + 1} / ${t.steps.length}</div>
+      <h4>${escapeHtml(s.title)}</h4>
+      <p>${escapeHtml(s.text)}</p>
+      <div class="tour-nav">
+        <button type="button" class="tour-skip">Skip</button>
+        <span class="tour-nav-right">
+          ${i > 0 ? `<button type="button" class="tour-back">← Back</button>` : ""}
+          <button type="button" class="tour-next">${i === t.steps.length - 1 ? "Done ✓" : "Next →"}</button>
+        </span>
+      </div>`;
+    t.card.querySelector(".tour-skip").addEventListener("click", () => endTour(true));
+    t.card.querySelector(".tour-back")?.addEventListener("click", () => showTourStep(t.i - 1, -1));
+    t.card.querySelector(".tour-next").addEventListener("click", () => showTourStep(t.i + 1, 1));
+    // Position after the tab switch renders and the scroll settles.
+    requestAnimationFrame(() => setTimeout(_positionTourStep, 80));
+  }
+  function _positionTourStep() {
+    const t = _tour; if (!t) return;
+    const s = t.steps[t.i];
+    const el = s && $(s.sel);
+    if (!el || el.offsetParent === null) return;
+    const pad = 8;
+    const r = el.getBoundingClientRect();
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const top = Math.max(r.top - pad, 4), left = Math.max(r.left - pad, 4);
+    const w = Math.min(r.width + pad * 2, vw - 8), h = Math.min(r.height + pad * 2, vh - 8);
+    Object.assign(t.spot.style, { top: top + "px", left: left + "px", width: w + "px", height: h + "px" });
+    // Card below the spotlight when there's room, else above, else pinned low.
+    const c = t.card;
+    const cw = Math.min(320, Math.round(vw * 0.88));
+    c.style.width = cw + "px";
+    const ch = c.offsetHeight || 170;
+    let cy, caret;
+    if (top + h + ch + 20 < vh) { cy = top + h + 14; caret = "top"; }
+    else if (top - ch - 14 > 4) { cy = top - ch - 14; caret = "bottom"; }
+    else { cy = vh - ch - 12; caret = "none"; }
+    const cx = Math.min(Math.max(left + w / 2 - cw / 2, 10), Math.max(vw - cw - 10, 10));
+    c.classList.remove("caret-top", "caret-bottom", "caret-none");
+    c.classList.add("caret-" + caret);
+    c.style.setProperty("--caret-x", Math.min(Math.max(left + w / 2 - cx, 22), cw - 22) + "px");
+    Object.assign(c.style, { top: cy + "px", left: cx + "px" });
+  }
+
+  function athleteTourSteps() {
+    // First day with exercises → the rep-sheet stops have something real to
+    // point at. Missing program = those steps silently skip.
+    let pos = null;
+    for (const w of state.clientData?.program?.client?.weeks || []) {
+      for (const d of w.days || []) {
+        if (d.exercises?.length) { pos = { weekId: w.id, dayId: d.id }; break; }
+      }
+      if (pos) break;
+    }
+    const goDetail = pos && (() => {
+      setClientTab("workouts");
+      if (state.workoutView?.mode !== "detail" || state.workoutView.dayId !== pos.dayId) {
+        state.workoutView = { mode: "detail", weekId: pos.weekId, dayId: pos.dayId, date: todayISO() };
+        renderWorkoutDetailUI();
+      }
+    });
+    return [
+      { sel: "#screen-client .tabs", go: () => setClientTab("overview"),
+        title: "Welcome to Stone Dragon", text: "Quick lap around your training hub — about a minute, skip any time. These tabs are everything." },
+      { sel: '[data-ctab-panel="overview"]',
+        title: "Overview", text: "Your streak, last workout, lifetime totals, charts and trophies. It fills in as you train." },
+      { sel: '[data-ctab-panel="workouts"]', go: () => setClientTab("workouts"),
+        title: "Your program", text: "Everything your coach wrote for you. Tap a day to open the session and start logging." },
+      { sel: ".workout-detail-list .cex-set-table", go: goDetail,
+        title: "Logging sets", text: "Tap a box to accept the day's target (it turns blue), or type / use the ▲▼ arrows to adjust. It saves as you go." },
+      { sel: ".workout-detail-list button.cex-set-lbl", go: goDetail,
+        title: "Skip a set", text: "Didn't do one? Tap its label (S1, S2…) to mark it skipped — honest data beats zeros." },
+      { sel: ".workout-detail-list .cex-skip-btn", go: goDetail,
+        title: "Skip an exercise", text: "Had to pass on the whole thing? One tap here records it as skipped, and your day can still complete." },
+      { sel: ".workout-detail-list .cex-lock-btn", go: goDetail,
+        title: "Lock it in", text: "When you're done, lock the exercise — untouched boxes fill with the plan, and the green check makes it count." },
+      { sel: "#rest-timer-btn", go: goDetail,
+        title: "Rest timer", text: "Tap, pick a duration, and it dings when it's time to lift again. The bell next to it mutes the ding." },
+      { sel: '[data-ctab-panel="prs"]', go: () => setClientTab("prs"),
+        title: "Personal records", text: "Your PRs live here — locking a heavy set can raise them automatically." },
+      { sel: "#client-feedback", go: () => setClientTab("diet"),
+        title: "Nutrition, cardio & notes", text: "Coach's nutrition targets and your cardio log — and this note box goes straight to your coach." },
+      { sel: '[data-ctab-panel="sessions"]', go: () => setClientTab("sessions"),
+        title: "Sessions", text: "Your session packages, bookings and open slots with your coach." },
+      { sel: "#btn-tour-client", go: () => setClientTab("overview"),
+        title: "That's the lap", text: "Replay this tour any time from this button. Now go lift something heavy." },
+    ];
+  }
+  function coachTourSteps() {
+    return [
+      { sel: "#coach-nav", go: () => showCoachOverview(),
+        title: "Welcome, coach", text: "Quick lap around the app — about a minute, skip any time. This nav is home base." },
+      { sel: "#view-overview",
+        title: "Overview", text: "Every athlete on one calendar — completed days, sessions, open slots and incoming requests." },
+      { sel: "#client-grid", go: () => renderDashboard(),
+        title: "Your athletes", text: "One card per athlete. Tap a card for their profile, program, nutrition, PRs and sessions." },
+      { sel: "#client-grid .client-row-view",
+        title: "Live fill-out", text: "This button drops you into their workout to log sets together — rest timer included. Everything saves to their account." },
+      { sel: "#view-programs", go: () => { state.currentClientId = null; renderProgramsList(); },
+        title: "Programs", text: "Build programs and day templates once, reuse them across athletes." },
+      { sel: "#view-messages", go: () => { switchCoachView("messages"); renderMessagesView(); },
+        title: "Messages", text: "Chat with your athletes, or post a bulletin everyone sees." },
+      { sel: "#btn-tour-coach", go: () => showCoachOverview(),
+        title: "That's the lap", text: "Replay this tour any time from this button." },
+    ];
+  }
+
   // -------- Rest timer (athlete workout detail) --------
   let _restEnd = 0, _restIv = null;
   // End-of-rest ding. iPads/tablets refuse audio that wasn't unlocked by a
@@ -10666,6 +10897,10 @@
       refreshRestSoundBtn();
       if (restSoundOn()) restBeep(); // audible confirm doubles as the audio unlock
     });
+
+    // Guided tour replays (? buttons in both headers)
+    $("#btn-tour-coach")?.addEventListener("click", () => startTour(coachTourSteps(), KEY_TOUR_COACH));
+    $("#btn-tour-client")?.addEventListener("click", () => startTour(athleteTourSteps(), KEY_TOUR_ATHLETE));
 
     $("#btn-client-logout").addEventListener("click", () => { Nav.reset(); exitClient(); });
     $("#btn-client-profile")?.addEventListener("click", () => setClientTab("profile"));

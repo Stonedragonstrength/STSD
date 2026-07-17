@@ -5558,6 +5558,22 @@ button.cex-set-lbl:hover { color: var(--warn); }
   white-space: nowrap;
 }
 .cex-skip-btn:hover { border-color: var(--warn); color: var(--warn); }
+.cex-clear-btn:hover { border-color: var(--danger); color: var(--danger); }
+/* Day-level clear — quiet, rides the header's stats line */
+.detail-clear-day {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-soft);
+  border-radius: 8px;
+  padding: 0.25em 0.6em;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  margin-left: 0.6em;
+  white-space: nowrap;
+}
+.detail-clear-day:hover { border-color: var(--danger); color: var(--danger); }
 /* The ▲ / ▼ buttons above and below each weight/reps box (weight ±2.5 lb,
    reps ±1). Full width of the field, short height. */
 .cex-step {
@@ -7233,6 +7249,62 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   cursor: pointer; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
 }
 .rest-sound-btn.off { opacity: 0.6; }
+
+/* ===== Guided tour (spotlight walkthrough) ===== */
+.tour-wrap { position: fixed; inset: 0; z-index: 4000; }
+/* The cutout IS the dim layer: a huge box-shadow floods everything outside
+   the spotlight rect, which glides between targets on an eased transition. */
+.tour-spot {
+  position: fixed;
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 9999px rgba(2, 4, 10, 0.72),
+    0 0 0 2px rgba(var(--primary-rgb), 0.85),
+    0 0 26px rgba(var(--primary-rgb), 0.4);
+  transition: top 0.35s cubic-bezier(0.4, 0, 0.2, 1), left 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+    width 0.35s cubic-bezier(0.4, 0, 0.2, 1), height 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+.tour-card {
+  position: fixed;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  padding: 0.9rem 1rem;
+  box-shadow: var(--shadow-lg);
+  transition: top 0.35s cubic-bezier(0.4, 0, 0.2, 1), left 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.tour-card h4 { margin: 0 0 0.3em; font-size: 1rem; color: var(--text); }
+.tour-card p { margin: 0 0 0.8em; font-size: 0.85rem; color: var(--text-soft); line-height: 1.45; }
+.tour-count { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 0.35em; }
+.tour-nav { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.tour-nav-right { display: flex; gap: 0.5rem; }
+.tour-nav button {
+  font-family: inherit; cursor: pointer; border-radius: 8px;
+  font-size: 0.8rem; font-weight: 700; padding: 0.45em 0.9em;
+}
+.tour-skip { background: none; border: none; color: var(--muted); padding-left: 0; }
+.tour-skip:hover { color: var(--text-soft); }
+.tour-back { background: none; border: 1px solid var(--border); color: var(--text-soft); }
+.tour-back:hover { border-color: var(--border-strong); }
+.tour-next { background: var(--primary); border: 1px solid var(--primary); color: var(--bg); }
+.tour-next:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+/* Caret pointing from the card at the highlighted element */
+.tour-card::before {
+  content: "";
+  position: absolute;
+  width: 12px; height: 12px;
+  background: var(--surface-2);
+  border-left: 1px solid var(--border-strong);
+  border-top: 1px solid var(--border-strong);
+  left: var(--caret-x, 24px);
+  margin-left: -6px;
+}
+.tour-card.caret-top::before { top: -7px; transform: rotate(45deg); }
+.tour-card.caret-bottom::before { bottom: -7px; transform: rotate(225deg); }
+.tour-card.caret-none::before { display: none; }
+/* ? replay button in both headers */
+.tour-help-btn { min-width: 2.1em; font-weight: 800; }
 .rest-timer-btn {
   border: 1px solid var(--primary); background: var(--surface-2); color: var(--primary-bright);
   font-weight: 800; font-size: 1rem; padding: 0.65em 1.05em; border-radius: 999px;
