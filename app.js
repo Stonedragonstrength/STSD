@@ -127,8 +127,23 @@
     }
   }
   function saveClient() {
-    // Coach "View as athlete" is a read-only preview — never persist or push.
-    if (state.previewMode) return;
+    if (state.previewMode) {
+      // Read-only preview — never persist or push.
+      if (!state.liveLog) return;
+      // Live session: the coach is logging on the athlete's behalf. Mirror
+      // the progress into the coach's own copy and push it to the athlete's
+      // cloud row (RLS lets a coach write their own athletes' progress).
+      const liveAthleteId = state.clientData.program?.clientId;
+      const liveClient = state.trainerData.clients.find((x) => x.id === liveAthleteId);
+      if (!liveClient) return;
+      liveClient.importedProgress = { ...structuredClone(state.clientData.progress), syncedAt: Date.now() };
+      localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+      if (window.Cloud?.enabled) {
+        const snap = liveClient.importedProgress; // capture — exitPreview swaps state.clientData back
+        window.Cloud.debounce(`progress:${liveAthleteId}`, () => window.Cloud.upsertProgress(liveAthleteId, snap));
+      }
+      return;
+    }
     localStorage.setItem(KEY_CLIENT, JSON.stringify(state.clientData));
     // Cloud: debounced push of athlete progress.
     const athleteId = state.clientData.program?.clientId;
@@ -1945,22 +1960,21 @@
       });
       card.appendChild(viewBtn);
 
-      // Quick "edit current day" — opens the program editor on the day the
-      // athlete is on (per their last-synced progress).
-      const editBtn = document.createElement("button");
-      editBtn.className = "client-row-view";
-      editBtn.type = "button";
-      editBtn.title = `Edit ${c.name || "athlete"}'s current day`;
-      editBtn.setAttribute("aria-label", `Edit ${c.name || "athlete"}'s current day`);
-      editBtn.textContent = "✏️";
-      editBtn.addEventListener("click", (e) => {
+      // Quick "live session" — opens the athlete's current day in their own
+      // logging UI, with every entry saving to the athlete's account.
+      const logBtn = document.createElement("button");
+      logBtn.className = "client-row-view";
+      logBtn.type = "button";
+      logBtn.title = `Live session — log ${c.name || "athlete"}'s workout`;
+      logBtn.setAttribute("aria-label", `Log ${c.name || "athlete"}'s workout in a live session`);
+      logBtn.textContent = "🏋️";
+      logBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        Nav.push(renderDashboard);
-        const pos = athleteCurrentDay(c);
-        if (pos) editClientDay(c.id, pos.weekId, pos.dayId);
-        else { openClient(c.id); setTab("program"); }
+        state.currentClientId = c.id;
+        Nav.push(exitPreview); // Back leaves the live session
+        previewAsAthlete(true);
       });
-      card.appendChild(editBtn);
+      card.appendChild(logBtn);
 
       card.addEventListener("click", () => { Nav.push(renderDashboard); openClient(c.id); setTab("profile"); });
       grid.appendChild(card);
@@ -7670,31 +7684,62 @@
     showLoginScreen("#login-role");
   }
 
-  // -------- Coach "View as athlete" (read-only preview) --------
+  // -------- Coach "View as athlete" (read-only preview + live session) --------
   // Renders the athlete portal off a throwaway clientData built from the coach's
-  // athlete object + their last-synced progress. saveClient() is a no-op while
-  // state.previewMode is on, so nothing here persists or pushes to the cloud.
+  // athlete object + their last-synced progress. Read-only preview: saveClient()
+  // is a no-op, nothing persists. Live session (live=true): the portal is fully
+  // interactive and every save mirrors into c.importedProgress and the athlete's
+  // cloud progress — for in-person sessions where the coach enters the sets,
+  // reps, and weights the athlete just completed.
   let _previewReturn = null;
-  function previewAsAthlete() {
+  async function previewAsAthlete(live = false) {
     const c = currentClient();
     if (!c) return;
     ensureSessionBank(c);
+    // Start from the athlete's freshest synced progress (cached copy if offline).
+    try { await pullProgressFromCloud(c); } catch (e) {}
     _previewReturn = { clientData: state.clientData, mode: state.mode, clientId: c.id };
     state.previewMode = true;
-    document.body.classList.add("preview-mode");
-    // Clone so nothing done in the preview can mutate the coach's live data.
+    state.liveLog = !!live;
+    document.body.classList.add(live ? "live-log-mode" : "preview-mode");
+    // Clone so preview browsing can't mutate the coach's live data. In live
+    // mode the clone is still the working copy — saveClient() mirrors it back.
     const program = structuredClone(buildProgramFromAthlete(c));
     const progress = c.importedProgress ? structuredClone(c.importedProgress) : emptyProgress();
     state.clientData = { program, progress };
     enterClientPortal();
-    $("#preview-athlete-name").textContent = c.name;
+    updatePreviewBanner(c);
     show($("#preview-banner"));
+    if (live) {
+      // Land directly on the day they're on, ready to log.
+      const pos = athleteCurrentDay(c);
+      if (pos) {
+        setClientTab("workouts");
+        state.workoutView = { mode: "detail", weekId: pos.weekId, dayId: pos.dayId, date: todayISO() };
+        Nav.push(backToWorkoutPicker);
+        renderWorkoutDetailUI();
+      }
+    }
+  }
+  function updatePreviewBanner(c) {
+    const banner = $("#preview-banner");
+    if (!banner) return;
+    banner.classList.toggle("live", !!state.liveLog);
+    $(".preview-banner-msg").innerHTML = state.liveLog
+      ? `🏋️ Live session — logging <strong>${escapeHtml(c.name)}</strong>'s workout, saves to their account`
+      : `👁️ Coach preview — read-only view of <strong>${escapeHtml(c.name)}</strong>'s program`;
+    // Flipping to live only makes sense from the read-only preview.
+    const liveBtn = $("#btn-preview-live");
+    if (liveBtn) liveBtn.classList.toggle("hidden", !!state.liveLog);
   }
   function exitPreview() {
     if (!state.previewMode) return;
+    // Push any pending live-session writes before tearing the preview down.
+    if (state.liveLog) window.Cloud?.flush?.();
     const ret = _previewReturn; _previewReturn = null;
     state.previewMode = false;
-    document.body.classList.remove("preview-mode");
+    state.liveLog = false;
+    document.body.classList.remove("preview-mode", "live-log-mode");
     hide($("#preview-banner"));
     state.clientData = ret.clientData;
     state.mode = ret.mode;
@@ -9533,6 +9578,16 @@
     $("#btn-browse-recommended-empty")?.addEventListener("click", openRecommendedTemplatesModal);
     $("#btn-delete-client").addEventListener("click", deleteClientPrompt);
     $("#btn-exit-preview")?.addEventListener("click", () => Nav.back(exitPreview));
+    // Flip a read-only preview into a live logging session in place.
+    $("#btn-preview-live")?.addEventListener("click", () => {
+      if (!state.previewMode || state.liveLog) return;
+      state.liveLog = true;
+      document.body.classList.remove("preview-mode");
+      document.body.classList.add("live-log-mode");
+      const c = state.trainerData.clients.find((x) => x.id === state.clientData.program?.clientId);
+      if (c) updatePreviewBanner(c);
+      toast(`Live session — entries save to ${c?.name || "the athlete"}'s account`);
+    });
     // From preview straight into the editor: the day being viewed, or (from
     // the picker / other tabs) the day the athlete is on per synced progress.
     $("#btn-preview-edit-day")?.addEventListener("click", () => {
