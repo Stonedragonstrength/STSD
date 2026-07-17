@@ -3459,7 +3459,9 @@ button.ov-stat:hover { background: var(--surface-2); }
 
 /* Coach profile — membership picker + grant button (matches other profile fields) */
 .profile-membership-row {
-  margin-top: 0.4rem;
+  /* Bottom margin keeps the grant button clear of the Overall-goals label
+     below — same vertical rhythm as the rest of the card's rows. */
+  margin: 0.4rem 0 0.9rem;
   display: flex;
   align-items: flex-end;
   gap: 0.6rem;
