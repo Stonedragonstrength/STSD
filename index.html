@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=grantgap" />
+  <link rel="stylesheet" href="styles.css?v=autorenew2" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -508,6 +508,9 @@
                 <select id="prof-membership"></select>
               </label>
               <button class="btn btn-ghost btn-sm" id="btn-grant-month" type="button">＋ Grant this month's sessions</button>
+              <label class="autorenew-toggle" title="On the first app open each month, grants a pending package sized to this athlete's booked sessions that month">
+                <input type="checkbox" id="prof-autorenew" /> 🔁 Auto-renew
+              </label>
             </div>
             <div class="profile-notes-grid">
               <label>Overall goals
@@ -846,9 +849,6 @@
       <div class="tab-panel" data-ctab-panel="sessions">
         <div class="program-head">
           <h3>Sessions</h3>
-          <div class="library-head-actions">
-            <button class="btn btn-primary" id="btn-athlete-request-package">+ Buy package</button>
-          </div>
         </div>
         <div id="athlete-balance-host"></div>
         <details class="session-manage" id="athlete-session-details">
@@ -955,7 +955,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
   <script src="cloud.js?v=customex"></script>
-  <script src="app.js?v=livelog2"></script>
+  <script src="app.js?v=autorenew"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

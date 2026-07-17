@@ -227,6 +227,10 @@
     // the existing session_bank jsonb so the athlete sees them on their calendar
     // (no schema change). See syncUpcomingBookingsToAthletes().
     if (!Array.isArray(c.sessionBank.upcomingBookings)) c.sessionBank.upcomingBookings = [];
+    // Missed-session markers (close-call freebie vs charged) — also rides the
+    // session_bank jsonb so the athlete's calendar shows them. See
+    // markBookingMissed().
+    if (!Array.isArray(c.sessionBank.missedSessions)) c.sessionBank.missedSessions = [];
     // Coach → athlete announcements — rides the existing session_bank jsonb
     // (coach-write-only column, so no athlete/coach write conflict; no schema
     // change). The athlete reads these read-only on their Overview.
@@ -2468,6 +2472,8 @@
     $("#invite-code-display").textContent = c.inviteCode;
     setInviteCodeVisible(false); // code stays tucked away until "Show code"
     populateMembershipSelect(c);
+    const autoRenewBox = $("#prof-autorenew");
+    if (autoRenewBox) autoRenewBox.checked = !!c.sessionBank?.autoRenew;
     setProfileLocked(true);
   }
   function populateMembershipSelect(c) {
@@ -2593,6 +2599,15 @@
     $("#btn-profile-save").addEventListener("click", saveProfileFields);
     $("#prof-membership")?.addEventListener("change", refreshGrantBtn);
     $("#btn-grant-month")?.addEventListener("click", grantMembershipMonth);
+    $("#prof-autorenew")?.addEventListener("change", (e) => {
+      const c = currentClient(); if (!c) return;
+      ensureSessionBank(c);
+      c.sessionBank.autoRenew = e.target.checked;
+      saveTrainer();
+      toast(e.target.checked
+        ? "🔁 Auto-renew on — each month grants a package sized to their bookings"
+        : "Auto-renew off");
+    });
   }
   // ============ Workout Templates (library) ============
   function makeWorkoutTemplate(name, exercises) {
@@ -5152,18 +5167,134 @@
     const notes = reds.map((r) => r.note).filter(Boolean).join(" · ");
     return `<div class="cal-day-pill cal-day-pill-token" title="${escapeHtml(notes)}">${label}</div>`;
   }
-  function openRedemptionDetailsModal(iso, reds) {
-    const items = reds.map((r) =>
-      `<li>${r.note ? escapeHtml(r.note) : `<span class="muted">No note</span>`}</li>`).join("");
+  function openRedemptionDetailsModal(iso, reds, missed = []) {
+    const items = [
+      ...reds.map((r) => `<li>${r.note ? escapeHtml(r.note) : `<span class="muted">No note</span>`}</li>`),
+      ...missed.map((m) => m.type === "closecall"
+        ? `<li>🤝 Close call — free missed session (monthly freebie, no charge)</li>`
+        : `<li>✕ Missed session — charged</li>`),
+    ].join("");
     openModal({
-      title: `🎟 Session used — ${iso}`,
+      title: `${reds.length ? "🎟" : "🤝"} Session — ${iso}`,
       body: `
-        <p class="muted" style="margin-top:-0.4em">${reds.length > 1
-          ? `${reds.length} workout session tokens were`
-          : "A workout session token was"} redeemed on this day.</p>
+        <p class="muted" style="margin-top:-0.4em">What happened on this day:</p>
         <ul class="redemption-note-list">${items}</ul>`,
       actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
     });
+  }
+
+  // -------- Missed sessions: close-call freebie vs charged --------
+  // Marked by the coach from the dashboard calendar's day modal. "closecall"
+  // is the one-free-per-month pass: it waives the session charge (removing
+  // the auto-redeemed token if it already fired — auto-redeem skips waived
+  // bookings from then on). "charged" keeps the token spend and just makes
+  // the paid-but-missed session visible on both calendars. Markers live on
+  // sessionBank.missedSessions (coach-write-only jsonb, syncs to the athlete).
+  function missedByDate(client) {
+    const map = {};
+    (client?.sessionBank?.missedSessions || []).forEach((m) => {
+      if (!m?.date) return;
+      (map[m.date] = map[m.date] || []).push(m);
+    });
+    return map;
+  }
+  function missedPillHtml(list) {
+    return list.map((m) => m.type === "closecall"
+      ? `<div class="cal-day-pill cal-day-pill-closecall" title="Close call — free missed session">🤝 Close call</div>`
+      : `<div class="cal-day-pill cal-day-pill-missed" title="Missed session — charged">✕ Missed</div>`).join("");
+  }
+  function closeCallUsedInMonth(c, monthKey) {
+    return (c.sessionBank.missedSessions || []).some((m) =>
+      m.type === "closecall" && (m.date || "").slice(0, 7) === monthKey);
+  }
+  // Persist + cloud-push one athlete's trainer-side data (session bank edits).
+  function pushAthleteBank(c) {
+    localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+    if (window.Cloud?.enabled) window.Cloud.debounce(`athlete:${c.id}`, () =>
+      window.Cloud.upsertAthlete(c, state.trainerData.coachId));
+  }
+  function markBookingMissed(e, c, type) {
+    ensureSessionBank(c);
+    const date = dateISO(new Date(e.startAt));
+    const monthKey = date.slice(0, 7);
+    if (type === "closecall") {
+      if (closeCallUsedInMonth(c, monthKey) &&
+          !window.confirm(`${c.name} already used their free close call this month. Give another one anyway?`)) return;
+      // Waive the charge — drop the auto-redeemed token for this booking.
+      c.sessionBank.redemptions = c.sessionBank.redemptions.filter((r) => !e.uid || r.setmoreUid !== e.uid);
+    } else {
+      // Charged: make sure the token is spent even if auto-redeem hasn't run
+      // yet, and label it so the athlete sees why.
+      const existing = c.sessionBank.redemptions.find((r) => e.uid && r.setmoreUid === e.uid);
+      if (existing) existing.note = `Missed session — charged · ${fmtSetmoreTime(e.startAt)}`;
+      else c.sessionBank.redemptions.push({
+        id: uid(), date,
+        note: `Missed session — charged · ${fmtSetmoreTime(e.startAt)}`,
+        setmoreUid: e.uid || "",
+      });
+    }
+    c.sessionBank.missedSessions.push({ id: uid(), date, setmoreUid: e.uid || "", type, at: Date.now() });
+    pushAthleteBank(c);
+    toast(type === "closecall"
+      ? `🤝 Close call — ${c.name}'s monthly freebie used`
+      : `✕ Marked missed — session still charged`);
+    closeModal();
+    renderDashboardCalendar();
+  }
+  function unmarkBookingMissed(e, c) {
+    ensureSessionBank(c);
+    const m = (c.sessionBank.missedSessions || []).find((x) => e.uid && x.setmoreUid === e.uid);
+    if (!m) return;
+    c.sessionBank.missedSessions = c.sessionBank.missedSessions.filter((x) => x !== m);
+    // A cleared close call becomes a normal finished booking again — the next
+    // auto-redeem pass re-spends the token. A cleared "charged" keeps its
+    // redemption (the slot was still used).
+    pushAthleteBank(c);
+    toast("Missed-session mark removed");
+    closeModal();
+    renderDashboardCalendar();
+  }
+
+  // -------- Auto-renew: monthly package sized from booked sessions --------
+  // Opt-in per athlete (Profile → 🔁 Auto-renew). On the first app open in a
+  // new month, grants a PENDING package sized to that athlete's matched
+  // Setmore bookings this month — the coach marks it paid when money changes
+  // hands. Same once-per-month dedupe idea as the manual grant button.
+  function runAutoRenewGrants(year, month) {
+    const now = new Date();
+    if (year !== now.getFullYear() || month !== now.getMonth()) return;
+    const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
+    const monthLabel = now.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    const renewed = [];
+    (state.trainerData.clients || []).forEach((c) => {
+      if (!c.sessionBank?.autoRenew) return;
+      ensureSessionBank(c);
+      const already = c.sessionBank.packages.some((p) =>
+        p.membershipGrant === monthKey || p.autoRenewGrant === monthKey);
+      if (already) return;
+      const count = _dashCalSetmoreEvents.filter((e) =>
+        dateISO(new Date(e.startAt)).slice(0, 7) === monthKey &&
+        matchAthleteBySetmoreName(e.clientName) === c
+      ).length;
+      if (!count) return;
+      const m = membershipById(c.sessionBank.membership);
+      const perSession = m ? Math.round(m.price / m.sessions) : 0;
+      c.sessionBank.packages.push({
+        id: uid(), size: count, status: "pending",
+        addedAt: Date.now(),
+        price: perSession ? perSession * count : undefined,
+        note: `Auto-renew · ${monthLabel} · ${count} booked session${count === 1 ? "" : "s"}`,
+        autoRenewGrant: monthKey,
+      });
+      renewed.push(c);
+    });
+    if (!renewed.length) return;
+    localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+    renewed.forEach((c) => {
+      if (window.Cloud?.enabled) window.Cloud.debounce(`athlete:${c.id}`, () =>
+        window.Cloud.upsertAthlete(c, state.trainerData.coachId));
+    });
+    toast(`🔁 Auto-renew: ${renewed.map((c) => c.name).join(", ")} — ${monthLabel} package${renewed.length === 1 ? "" : "s"} added (pending payment)`, 4000);
   }
 
   // -------- Dashboard overview calendar --------
@@ -5190,6 +5321,7 @@
     );
     _dashCalSetmoreEvents = events;
     autoRedeemFinishedBookings();
+    runAutoRenewGrants(year, month);
     syncUpcomingBookingsToAthletes();
     // Only re-render if still on the same month (avoid clobbering a nav that happened mid-fetch)
     if (state.dashCal && state.dashCal.year === year && state.dashCal.month === month) {
@@ -5233,6 +5365,8 @@
       const reds = c.sessionBank.redemptions;
       if (reds.some((r) => r.setmoreUid === e.uid)) return;
       if (reds.some((r) => !r.setmoreUid && r.date === date)) return;
+      // Close-called bookings are waived — never auto-charge them.
+      if ((c.sessionBank.missedSessions || []).some((m) => m.setmoreUid === e.uid && m.type === "closecall")) return;
       reds.push({
         id: uid(), date,
         note: `Booked session · ${fmtSetmoreTime(e.startAt)}`,
@@ -5394,6 +5528,15 @@
       if (setmoreEvents.length) {
         html += `<div class="dash-cal-pill dash-cal-pill-booked">📅 ${setmoreEvents.length} booked</div>`;
       }
+      // Missed-session marks (any athlete): green close call / dark charged
+      clients.forEach((c) => {
+        (c.sessionBank?.missedSessions || []).forEach((m) => {
+          if (m.date !== iso) return;
+          html += m.type === "closecall"
+            ? `<div class="dash-cal-pill cal-day-pill-closecall" title="${escapeHtml(c.name)} — close call (free)">🤝 ${escapeHtml(clientInitials(c.name))}</div>`
+            : `<div class="dash-cal-pill cal-day-pill-missed" title="${escapeHtml(c.name)} — missed, charged">✕ ${escapeHtml(clientInitials(c.name))}</div>`;
+        });
+      });
       // Mobile shows a compact count badge instead of pills (CSS swaps them)
       const dayCount = entries.filter(e => !e.rest).length + setmoreEvents.length;
       if (dayCount) html += `<div class="dash-cal-count">${dayCount}</div>`;
@@ -5425,11 +5568,18 @@
         const time = `<span class="breakdown-set-pill">${escapeHtml(fmtSetmoreTime(e.startAt))}</span>`;
         if (athlete) {
           const sum = sessionBankSummary(athlete);
+          const mark = (athlete.sessionBank?.missedSessions || []).find((m) => e.uid && m.setmoreUid === e.uid);
+          const missedUi = mark
+            ? `<span class="missed-chip ${mark.type === "closecall" ? "closecall" : "charged"}">${mark.type === "closecall" ? "🤝 Close call" : "✕ Missed · charged"}</span>
+               <button class="btn-missed-mark" type="button" data-unmark-missed="${i}" title="Remove this mark">↺</button>`
+            : `<button class="btn-missed-mark cc" type="button" data-miss-cc="${i}" title="Close call — use their free missed session for this month (no charge)">🤝</button>
+               <button class="btn-missed-mark chg" type="button" data-miss-charge="${i}" title="Missed — session is still charged">✕</button>`;
           body += `<div class="breakdown-ex dash-booked-row dash-booked-linked" data-open-athlete="${escapeHtml(athlete.id)}">
             <div class="breakdown-ex-name">${escapeHtml(athlete.name)}
               <span class="booked-balance-chip${sum.remaining <= 0 ? " low" : ""}">🎟 ${sum.remaining} left</span>
             </div>
             <div class="breakdown-sets">${time}
+              ${missedUi}
               <button class="btn-unlink-setmore" type="button" data-unlink-booking="${i}" title="Unlink this booking from ${escapeHtml(athlete.name)}">Unlink</button>
               <span class="dash-booked-arrow">›</span>
             </div>
@@ -5503,6 +5653,18 @@
         if (e) unlinkSetmoreBooking(e.clientName);
       });
     });
+    // Missed-session marks: close call (free) / missed but charged / undo
+    const missedHandler = (attr, fn) => $$(`[data-${attr}]`).forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const e = dayEvents[Number(btn.getAttribute(`data-${attr}`))];
+        const a = e && matchAthleteBySetmoreName(e.clientName);
+        if (e && a) fn(e, a);
+      });
+    });
+    missedHandler("miss-cc", (e, a) => markBookingMissed(e, a, "closecall"));
+    missedHandler("miss-charge", (e, a) => markBookingMissed(e, a, "charged"));
+    missedHandler("unmark-missed", (e, a) => unmarkBookingMissed(e, a));
   }
 
   // Disconnect a Setmore booking name from an athlete by removing the alias
@@ -6244,18 +6406,30 @@
       });
     }
 
-    // Redemption history (read-only view of coach's record)
+    // Redemption history (read-only view of coach's record) — close-call
+    // freebies are folded in so the athlete sees them alongside used sessions.
     const redemptions = prog.client.sessionBank.redemptions || [];
+    const closeCalls = (prog.client.sessionBank.missedSessions || []).filter((m) => m.type === "closecall");
+    const historyRows = [
+      ...redemptions.map((r) => ({
+        date: r.date || "",
+        html: `<div><strong>${escapeHtml(r.date || "")}</strong>${r.note ? ` · <span class="muted">${escapeHtml(r.note)}</span>` : ""}</div>`,
+      })),
+      ...closeCalls.map((m) => ({
+        date: m.date || "",
+        html: `<div><strong>${escapeHtml(m.date || "")}</strong> · <span class="closecall-history">🤝 Close call — free missed session</span></div>`,
+      })),
+    ];
     const redCard = document.createElement("div");
     redCard.className = "card";
     redCard.innerHTML = `<h4 style="margin-top:0">Recent sessions</h4>`;
-    if (!redemptions.length) {
+    if (!historyRows.length) {
       redCard.insertAdjacentHTML("beforeend", `<p class="muted">No sessions logged yet. Your coach marks each session after it happens.</p>`);
     } else {
-      [...redemptions].sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 12).forEach((r) => {
+      historyRows.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 12).forEach((r) => {
         const row = document.createElement("div");
         row.className = "session-redeem-row";
-        row.innerHTML = `<div><strong>${escapeHtml(r.date || "")}</strong>${r.note ? ` · <span class="muted">${escapeHtml(r.note)}</span>` : ""}</div>`;
+        row.innerHTML = r.html;
         redCard.appendChild(row);
       });
     }
@@ -6294,34 +6468,9 @@
     if (typeof renderAthleteOverview === "function") renderAthleteOverview(); // keep the Overview session count fresh
   }
 
-  function requestPackage(size) {
-    const opt = PACKAGE_OPTIONS.find((o) => o.sessions === size);
-    if (!opt) return;
-    if (!state.clientData.progress.packageRequests) state.clientData.progress.packageRequests = [];
-    state.clientData.progress.packageRequests.push({
-      id: uid(), size, price: opt.price, requestedAt: Date.now(),
-    });
-    saveClient();
-    renderAthleteSessions();
-    toast(`Requested ${size} sessions ($${opt.price.toLocaleString()}).`);
-  }
-
-  function openAthleteRequestPackageModal() {
-    openModal({
-      title: "Buy more sessions",
-      body: `
-        <p class="muted" style="margin-top:-0.4em">Pre-pay pricing (10% off). Tapping a card sends a purchase request to your coach. The app doesn't process payment — pay your coach directly (Venmo, cash, etc.) and they'll mark it paid.</p>
-        <div class="pkg-size-grid">${packageOptionButtonsHtml()}</div>
-        <p class="session-faq-link"><a href="https://www.stonedragonstrengthtraining.com/faqs" target="_blank" rel="noopener noreferrer">❓ How do sessions &amp; packages work?</a></p>`,
-      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
-    });
-    $("#modal-body").querySelectorAll("[data-buy-size]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        requestPackage(Number(btn.dataset.buySize));
-        closeModal();
-      });
-    });
-  }
+  // (Athlete-initiated package purchases are gone — packages now arrive via
+  // the coach's monthly auto-renew, sized from booked sessions. The pending-
+  // request rendering below stays so any old requests can drain out.)
 
   // -------- Day color system --------
   const DAY_COLORS = [
@@ -6416,15 +6565,6 @@
   }
 
   // -------- Session bank (coach side) --------
-  // Mirrors the pre-pay (10% off) private 1-on-1 pricing on
-  // stonedragonstrengthtraining.com/memberships.html — update both together.
-  const PACKAGE_OPTIONS = [
-    { sessions: 4,  price: 400,  cadence: "1×/week" },
-    { sessions: 8,  price: 725,  cadence: "2×/week" },
-    { sessions: 12, price: 1020, cadence: "3×/week" },
-    { sessions: 16, price: 1320, cadence: "4×/week" },
-  ];
-
   // Membership tiers from stonedragonstrengthtraining.com/memberships (pre-pay
   // monthly pricing). Coach assigns one per athlete in the Profile tab; athlete
   // sees it read-only on their Sessions tab. Stored as `client.sessionBank.membership`
@@ -6441,15 +6581,6 @@
   function membershipById(id) { return MEMBERSHIPS.find((m) => m.id === id) || null; }
   function membershipTitle(m) { return `${m.cat} · ${m.perWeek}× / week`; }
   function membershipSub(m) { return `${m.sessions} sessions / month · $${m.price.toLocaleString()}/mo`; }
-
-  function packageOptionButtonsHtml() {
-    return PACKAGE_OPTIONS.map((o) => `
-      <button class="pkg-size-btn" type="button" data-buy-size="${o.sessions}">
-        <span class="pkg-size-num">${o.sessions}</span>
-        <span class="pkg-size-lbl">sessions · ${o.cadence}</span>
-        <span class="pkg-size-price">$${o.price.toLocaleString()}</span>
-      </button>`).join("");
-  }
 
   function renderCoachSessions() {
     const c = currentClient(); if (!c) return;
@@ -7638,7 +7769,7 @@
 
     if (hero.jump) $("#ov-hero")?.addEventListener("click", () => jumpToWorkout(hero.jump, today));
     if (totalDays && week && nextDay) $("#ov-stat-days")?.addEventListener("click", () => jumpToWorkout({ weekId: week.id, dayId: nextDay.id }, today));
-    $("#ov-stat-sessions")?.addEventListener("click", () => { setClientTab("sessions"); if (low) openAthleteRequestPackageModal(); });
+    $("#ov-stat-sessions")?.addEventListener("click", () => setClientTab("sessions"));
   }
   // -------- Athlete self-service profile (name / age / height / weight / goals) --------
   function renderAthleteProfileFields() {
@@ -7774,6 +7905,7 @@
     const today = todayISO();
     const selfSched = state.clientData.progress.selfSchedule || {};
     const redsByDate = redemptionsByDate(prog.client);
+    const missedByD = missedByDate(prog.client);
     // Upcoming Setmore bookings the coach matched to this athlete (synced via
     // sessionBank.upcomingBookings) → a "📅 time" pill on those future days.
     const upcomingByDate = {};
@@ -7816,18 +7948,24 @@
         pillHtml += upc.map((b) => `<div class="cal-day-pill cal-booked-pill">${escapeHtml(b.time || "Session")}</div>`).join("");
         cell.classList.add("has-log");
       }
-      const reds = redsByDate[iso] || [];
+      // Missed-session marks from the coach (close call = green freebie,
+      // charged = dark). A charged mark replaces its token pill so the day
+      // reads "✕ Missed" instead of a generic 🎟.
+      const missed = missedByD[iso] || [];
+      const chargedUids = new Set(missed.filter((m) => m.type === "charged" && m.setmoreUid).map((m) => m.setmoreUid));
+      const reds = (redsByDate[iso] || []).filter((r) => !chargedUids.has(r.setmoreUid));
       if (reds.length) pillHtml += tokenPillHtml(reds);
+      if (missed.length) { pillHtml += missedPillHtml(missed); cell.classList.add("has-log"); }
       cell.innerHTML = `<div class="cal-date-num">${d.getDate()}</div>${pillHtml}`;
       // Athletes can only plan today/future days here — completion itself
       // is auto-detected from locked-in exercise logs, not hand-picked.
       if (inMonth && isUpcoming) {
         cell.addEventListener("click", () => openAthleteLogDayModal(iso));
-      } else if (inMonth && reds.length) {
+      } else if (inMonth && (reds.length || missed.length)) {
         // Past days aren't plannable, so a tap can surface the redemption
         // details instead (title tooltips don't exist on mobile).
         cell.classList.add("has-log");
-        cell.addEventListener("click", () => openRedemptionDetailsModal(iso, reds));
+        cell.addEventListener("click", () => openRedemptionDetailsModal(iso, reds, missed));
       }
       grid.appendChild(cell);
     });
@@ -9624,7 +9762,6 @@
     $("#btn-gift-session")?.addEventListener("click", openGiftSessionModal);
     $("#btn-post-open-slot")?.addEventListener("click", openPostSlotModal);
     $("#btn-redeem-session")?.addEventListener("click", openRedeemSessionModal);
-    $("#btn-athlete-request-package")?.addEventListener("click", openAthleteRequestPackageModal);
     prefillRememberedEmails();
     $("#btn-export-sessions")?.addEventListener("click", () => {
       const c = currentClient(); if (c) exportSessionHistory(c);
