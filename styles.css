@@ -7108,6 +7108,16 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 
 /* Trophy case */
 .trophy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 0.5rem; }
+/* Trophy case collapses (details/summary) so it stays out of the way */
+.ov-trophies > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 0.5em;
+  font-weight: 700; font-size: 1rem;
+}
+.ov-trophies > summary::-webkit-details-marker { display: none; }
+.ov-trophies-chev { margin-left: auto; color: var(--text-soft); transition: transform 0.15s ease; }
+.ov-trophies[open] .ov-trophies-chev { transform: rotate(90deg); }
+.ov-trophies[open] > summary { margin-bottom: 0.7em; }
 .trophy {
   display: flex; flex-direction: column; align-items: center; gap: 0.2em;
   padding: 0.55em 0.3em; border-radius: 10px; text-align: center;
@@ -7230,6 +7240,7 @@ body.preview-mode #screen-client .tab,
 body.preview-mode #screen-client .week-chip,
 body.preview-mode #screen-client .workout-card,
 body.preview-mode #screen-client .back-link,
+body.preview-mode #screen-client .ov-trophies > summary,
 body.preview-mode #screen-client #ccal-prev,
 body.preview-mode #screen-client #ccal-next,
 body.preview-mode #screen-client #ccal-today {

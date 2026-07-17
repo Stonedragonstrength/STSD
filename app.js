@@ -7787,12 +7787,13 @@
           ${recap.bwDelta != null ? `<div class="ov-recap-stat"><span class="num">${recap.bwDelta > 0 ? "+" : ""}${recap.bwDelta.toFixed(1)}</span><span class="lbl">lb bodyweight</span></div>` : ""}
         </div>
       </div>` : "";
-    const badges = computeBadges(progress);
+    const badges = computeBadges(progress, c);
     const earnedCount = badges.filter((b) => b.earned).length;
-    const trophyHtml = earnedCount ? `<div class="card ov-trophies">
-        <div class="ov-recap-head"><h4>🏆 Trophy case</h4><span class="muted">${earnedCount}/${badges.length}</span></div>
+    // Collapsed by default — the summary line carries the earned count.
+    const trophyHtml = earnedCount ? `<details class="card ov-trophies">
+        <summary>🏆 Trophy case <span class="muted">${earnedCount}/${badges.length}</span><span class="ov-trophies-chev">▸</span></summary>
         <div class="trophy-grid">${badges.map((b) => `<div class="trophy${b.earned ? " earned" : ""}" title="${escapeHtml(b.hint)}"><span class="trophy-icon">${b.icon}</span><span class="trophy-name">${escapeHtml(b.name)}</span></div>`).join("")}</div>
-      </div>` : "";
+      </details>` : "";
 
     host.innerHTML = `
       <div class="ov-greeting">Hey, ${firstName} 👋</div>
@@ -9629,7 +9630,53 @@
     if (t >= 1e4) return Math.round(t / 1000) + "k";
     return t.toLocaleString();
   }
-  function computeBadges(progress) {
+  // Heaviest set ever put up on the big lifts (squat / bench / any deadlift,
+  // trap bar included / pulldown variations) — from workout logs plus the
+  // athlete's PR list.
+  function bestBigThreeLift(progress, client) {
+    const rx = /(deadlift|squat|bench|pull.?down)/i;
+    let best = 0;
+    const logs = progress?.exerciseLogs || {};
+    (client?.weeks || []).forEach((w) => (w.days || []).forEach((d) => (d.exercises || []).forEach((ex) => {
+      if (!rx.test(ex.name || "")) return;
+      (logs[ex.id] || []).forEach((l) => (l.sets || []).forEach((s) => {
+        const wgt = parseFloat(s.weight);
+        if (isFinite(wgt) && wgt > best) best = wgt;
+      }));
+    })));
+    (progress?.personalRecords || []).forEach((p) => {
+      if (!rx.test(p.name || "")) return;
+      const wgt = parseFloat(p.weight);
+      if (isFinite(wgt) && wgt > best) best = wgt;
+    });
+    return best;
+  }
+  function latestBodyweight(progress, client) {
+    const latest = [...(progress?.bodyweightLog || [])]
+      .sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0];
+    const v = parseFloat(latest?.weightLb ?? client?.weightLb);
+    return isFinite(v) && v > 0 ? v : null;
+  }
+  // Most pull-ups / chin-ups in a single set — logs plus the PR list.
+  function bestPullupReps(progress, client) {
+    const rx = /(pull.?up|chin.?up)/i;
+    let best = 0;
+    const logs = progress?.exerciseLogs || {};
+    (client?.weeks || []).forEach((w) => (w.days || []).forEach((d) => (d.exercises || []).forEach((ex) => {
+      if (!rx.test(ex.name || "")) return;
+      (logs[ex.id] || []).forEach((l) => (l.sets || []).forEach((s) => {
+        const r = parseInt(s.reps) || 0;
+        if (r > best) best = r;
+      }));
+    })));
+    (progress?.personalRecords || []).forEach((p) => {
+      if (!rx.test(p.name || "")) return;
+      const r = parseInt(p.reps) || 0;
+      if (r > best) best = r;
+    });
+    return best;
+  }
+  function computeBadges(progress, client) {
     const dates = completionDateList(progress);
     const workouts = dates.length;
     const prCount = (progress?.personalRecords || []).length;
@@ -9642,18 +9689,53 @@
     const byMonth = {};
     dates.forEach((d) => { const k = d.slice(0, 7); byMonth[k] = (byMonth[k] || 0) + 1; });
     const ironMonth = Object.values(byMonth).some((n) => n >= 12);
+    // Single-day volume (10k-lb day)
+    const dayVolume = {};
+    Object.values(progress?.exerciseLogs || {}).forEach((ls) => (ls || []).forEach((l) => {
+      if (!l.date) return;
+      (l.sets || []).forEach((s) => {
+        const w = parseFloat(s.weight), r = parseInt(s.reps) || 0;
+        if (isFinite(w) && w > 0 && r) dayVolume[l.date] = (dayVolume[l.date] || 0) + w * r;
+      });
+    }));
+    const tenKDay = Object.values(dayVolume).some((v) => v >= 10000);
+    const cardioCount = (progress?.cardioLogs || []).length;
+    // Bodyweight-ratio ladder on the big lifts
+    const bw = latestBodyweight(progress, client);
+    const bigLift = bestBigThreeLift(progress, client);
+    const ratioPct = bw && bigLift ? Math.round((bigLift / bw) * 100) : 0;
+    const bwHint = (pct) => bw
+      ? `Put ${pct}% of your bodyweight on the bar — squat, bench, deadlift, or pulldown. Best so far: ${ratioPct}%`
+      : `Put ${pct}% of your bodyweight on the bar — squat, bench, deadlift, or pulldown. Log your bodyweight first!`;
+    const pullups = bestPullupReps(progress, client);
+    const puHint = (n) => `Do ${n} pull-up${n === 1 ? "" : "s"} in one set${pullups ? ` — best so far: ${pullups}` : ""}`;
     return [
       { icon: "🥇", name: "First workout", hint: "Complete your first workout", earned: workouts >= 1 },
       { icon: "🔟", name: "10 workouts", hint: "Complete 10 workouts", earned: workouts >= 10 },
       { icon: "🎯", name: "25 workouts", hint: "Complete 25 workouts", earned: workouts >= 25 },
       { icon: "💪", name: "50 workouts", hint: "Complete 50 workouts", earned: workouts >= 50 },
       { icon: "👑", name: "100 workouts", hint: "Complete 100 workouts", earned: workouts >= 100 },
+      { icon: "🗿", name: "250 workouts", hint: "Complete 250 workouts", earned: workouts >= 250 },
       { icon: "🏆", name: "First PR", hint: "Log your first personal record", earned: prCount >= 1 },
       { icon: "⚡", name: "5 PRs", hint: "Log 5 personal records", earned: prCount >= 5 },
-      { icon: "🐉", name: "10 PRs", hint: "Log 10 personal records", earned: prCount >= 10 },
+      { icon: "⚔️", name: "10 PRs", hint: "Log 10 personal records", earned: prCount >= 10 },
       { icon: "🔥", name: "4-week streak", hint: "Train 4 weeks in a row", earned: streak >= 4 },
+      { icon: "☄️", name: "8-week streak", hint: "Train 8 weeks in a row", earned: streak >= 8 },
       { icon: "🗓️", name: "Iron month", hint: "12 workouts in one calendar month", earned: ironMonth },
       { icon: "🦅", name: "Comeback", hint: "Return after 3+ weeks away", earned: comeback },
+      { icon: "🔨", name: "10k day", hint: "Move 10,000 lb of volume in a single workout", earned: tenKDay },
+      { icon: "🏃", name: "Engine builder", hint: "Log 10 cardio sessions", earned: cardioCount >= 10 },
+      { icon: "🌱", name: "½ bodyweight", hint: bwHint(50), earned: ratioPct >= 50 },
+      { icon: "🪨", name: "¾ bodyweight", hint: bwHint(75), earned: ratioPct >= 75 },
+      { icon: "🦍", name: "Bodyweight club", hint: bwHint(100), earned: ratioPct >= 100 },
+      { icon: "🐂", name: "1.25× bodyweight", hint: bwHint(125), earned: ratioPct >= 125 },
+      { icon: "🦏", name: "1.5× bodyweight", hint: bwHint(150), earned: ratioPct >= 150 },
+      { icon: "🐻", name: "1.75× bodyweight", hint: bwHint(175), earned: ratioPct >= 175 },
+      { icon: "🐉", name: "2× bodyweight", hint: bwHint(200), earned: ratioPct >= 200 },
+      { icon: "🐒", name: "First pull-up", hint: puHint(1), earned: pullups >= 1 },
+      { icon: "🧗", name: "5 pull-ups", hint: puHint(5), earned: pullups >= 5 },
+      { icon: "🦾", name: "10 pull-ups", hint: puHint(10), earned: pullups >= 10 },
+      { icon: "🦸", name: "20 pull-ups", hint: puHint(20), earned: pullups >= 20 },
       { icon: "🏋️", name: "100k club", hint: "Lift 100,000 lb lifetime", earned: ton >= 100000 },
       { icon: "⛰️", name: "500k club", hint: "Lift 500,000 lb lifetime", earned: ton >= 500000 },
       { icon: "🌋", name: "Million-lb club", hint: "Lift 1,000,000 lb lifetime", earned: ton >= 1000000 },
