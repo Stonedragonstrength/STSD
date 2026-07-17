@@ -7776,18 +7776,21 @@
         <span class="ov-stat-num">🔥 ${streakN}</span><span class="ov-stat-lbl">week streak</span>
       </div>`;
     const ton = lifetimeTonnage(progress);
-    const tonHtml = ton > 0 ? `<div class="ov-mini"><div class="ov-mini-top"><span class="ov-mini-val">${formatTonnage(ton)} lb</span></div><div class="ov-mini-lbl">lifetime lifted</div></div>` : "";
     const lastWk = lastWorkoutVolume(progress);
     const lastWkLabel = lastWk ? new Date(lastWk.date + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
     const lastWkHtml = lastWk ? `<div class="ov-mini"><div class="ov-mini-top"><span class="ov-mini-val">${formatTonnage(lastWk.volume)} lb</span></div><div class="ov-mini-lbl">last workout · ${escapeHtml(lastWkLabel)}</div></div>` : "";
-    const recap = monthRecap(progress);
-    const recapHtml = recap.workouts ? `<div class="card ov-recap">
-        <div class="ov-recap-head"><h4>📊 ${escapeHtml(recap.label)} so far</h4><button class="btn btn-ghost btn-sm" id="btn-share-recap" type="button">📤 Share</button></div>
+    // Lifetime lifting stats — the tonnage lives here (not as a mini tile too)
+    const lifeStats = {
+      workouts: completionDateList(progress).length,
+      prs: (progress.personalRecords || []).length,
+      volume: ton,
+    };
+    const recapHtml = (lifeStats.workouts || ton) ? `<div class="card ov-recap">
+        <div class="ov-recap-head"><h4>🏋️ Lifetime lifting stats</h4><button class="btn btn-ghost btn-sm" id="btn-share-recap" type="button">📤 Share</button></div>
         <div class="ov-recap-grid">
-          <div class="ov-recap-stat"><span class="num">${recap.workouts}</span><span class="lbl">workouts</span></div>
-          <div class="ov-recap-stat"><span class="num">${recap.prs}</span><span class="lbl">PRs</span></div>
-          <div class="ov-recap-stat"><span class="num">${formatTonnage(recap.volume)}</span><span class="lbl">lb lifted</span></div>
-          ${recap.bwDelta != null ? `<div class="ov-recap-stat"><span class="num">${recap.bwDelta > 0 ? "+" : ""}${recap.bwDelta.toFixed(1)}</span><span class="lbl">lb bodyweight</span></div>` : ""}
+          <div class="ov-recap-stat"><span class="num">${lifeStats.workouts}</span><span class="lbl">workouts</span></div>
+          <div class="ov-recap-stat"><span class="num">${lifeStats.prs}</span><span class="lbl">PRs</span></div>
+          <div class="ov-recap-stat"><span class="num">${formatTonnage(ton)}</span><span class="lbl">lb lifted</span></div>
         </div>
       </div>` : "";
     const badges = computeBadges(progress, c);
@@ -7826,7 +7829,7 @@
         <div class="ov-progress-top"><span>${escapeHtml(weekLabel)}</span><span>${doneDays}/${totalDays} done</span></div>
         <div class="ov-progress-track"><div class="ov-progress-fill" style="width:${pct}%"></div></div>
       </div>` : ""}
-      ${(bwHtml || prHtml || tonHtml || lastWkHtml) ? `<div class="ov-mini-row">${bwHtml}${prHtml}${lastWkHtml}${tonHtml}</div>` : ""}
+      ${(bwHtml || prHtml || lastWkHtml) ? `<div class="ov-mini-row">${bwHtml}${prHtml}${lastWkHtml}</div>` : ""}
       ${recapHtml}
       <div id="ov-volchart-host"></div>
       ${trophyHtml}`;
@@ -7834,7 +7837,7 @@
     if (hero.jump) $("#ov-hero")?.addEventListener("click", () => jumpToWorkout(hero.jump, today));
     if (totalDays && week && nextDay) $("#ov-stat-days")?.addEventListener("click", () => jumpToWorkout({ weekId: week.id, dayId: nextDay.id }, today));
     $("#ov-stat-sessions")?.addEventListener("click", () => setClientTab("sessions"));
-    $("#btn-share-recap")?.addEventListener("click", () => shareRecapImage(recap, c.name));
+    $("#btn-share-recap")?.addEventListener("click", () => shareLifetimeImage(lifeStats, c.name));
     renderVolumeChart(progress);
   }
   // -------- Athlete self-service profile (name / age / height / weight / goals) --------
@@ -8789,7 +8792,10 @@
       logForm.appendChild(setTable);
     } else {
     const todayLog = logs.find(l => l.date === logDate);
-    let isLocked = isLogEntryLocked(todayLog, ex, numSets);
+    // Locked when this date's entry is locked — or when the exercise reads
+    // "done" from a session on another date (the card shows a green ✓ from
+    // hasAnyLog, so the control must be Edit, not a dead-end lock button).
+    let isLocked = isLogEntryLocked(todayLog, ex, numSets) || (!todayLog && hasAnyLog(ex));
 
     // Prescribed reps/weight seed the per-field steppers when a field is empty.
     const prescribedReps = prog ? prog.reps : parseInt(ex.currentReps, 10);
@@ -9056,7 +9062,15 @@
     editBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       const exLogs = state.clientData.progress.exerciseLogs[ex.id];
-      const entry = exLogs?.find(l => l.date === logDate);
+      let entry = exLogs?.find(l => l.date === logDate);
+      // Date drift (logged yesterday / coach live-logged another date):
+      // unlock the most recent locked session instead of silently doing
+      // nothing — otherwise the day-done ✓ can never be cleared from here.
+      if (!entry && exLogs?.length) {
+        entry = [...exLogs]
+          .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
+          .find((l) => isLogEntryLocked(l, ex, numSets));
+      }
       if (entry) entry.locked = false;
       saveClient();
       isLocked = false;
@@ -9824,30 +9838,8 @@
       { icon: "🌋", name: "Million-lb club", hint: "Lift 1,000,000 lb lifetime", earned: ton >= 1000000 },
     ];
   }
-  function monthRecap(progress) {
-    const key = todayISO().slice(0, 7);
-    const label = new Date().toLocaleDateString("en-US", { month: "long" });
-    const workouts = completionDateList(progress).filter((d) => d.startsWith(key)).length;
-    const prs = (progress?.personalRecords || []).filter((p) => (p.date || "").startsWith(key)).length;
-    let volume = 0;
-    Object.values(progress?.exerciseLogs || {}).forEach((ls) => (ls || []).forEach((l) => {
-      if (!(l.date || "").startsWith(key)) return;
-      (l.sets || []).forEach((s) => {
-        const w = parseFloat(s.weight), r = parseInt(s.reps) || 0;
-        if (isFinite(w) && w > 0 && r) volume += w * r;
-      });
-    }));
-    const bw = (progress?.bodyweightLog || []).filter((b) => (b.date || "").startsWith(key))
-      .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
-    let bwDelta = null;
-    if (bw.length > 1) {
-      const first = parseFloat(bw[0].weightLb), lastV = parseFloat(bw[bw.length - 1].weightLb);
-      if (isFinite(first) && isFinite(lastV)) bwDelta = lastV - first;
-    }
-    return { key, label, workouts, prs, volume: Math.round(volume), bwDelta };
-  }
-  // Draws the recap as a 1080×1080 brand card and shares/downloads it.
-  async function shareRecapImage(recap, name) {
+  // Draws the lifetime stats as a 1080×1080 brand card and shares/downloads it.
+  async function shareLifetimeImage(stats0, name) {
     const cv = document.createElement("canvas");
     cv.width = 1080; cv.height = 1080;
     const x = cv.getContext("2d");
@@ -9858,11 +9850,11 @@
     x.fillStyle = "#22d3ee"; x.font = "800 46px system-ui, sans-serif";
     x.fillText("STONE DRAGON STRENGTH", 540, 116);
     x.fillStyle = "#94a3b8"; x.font = "600 40px system-ui, sans-serif";
-    x.fillText(`${recap.label} — ${(name || "athlete").trim().split(/\s+/)[0]}`, 540, 186);
+    x.fillText(`Lifetime stats — ${(name || "athlete").trim().split(/\s+/)[0]}`, 540, 186);
     const stats = [
-      [String(recap.workouts), "WORKOUTS"],
-      [String(recap.prs), "PERSONAL RECORDS"],
-      [formatTonnage(recap.volume) + " lb", "TOTAL LIFTED"],
+      [String(stats0.workouts), "WORKOUTS"],
+      [String(stats0.prs), "PERSONAL RECORDS"],
+      [formatTonnage(stats0.volume) + " lb", "TOTAL LIFTED"],
     ];
     let y = 400;
     stats.forEach(([num, lbl]) => {
@@ -9876,17 +9868,17 @@
     x.fillText("stonedragonstrengthtraining.com", 540, 1014);
     const blob = await new Promise((res) => cv.toBlob(res, "image/png"));
     if (!blob) return;
-    const file = new File([blob], `stone-dragon-${recap.key}.png`, { type: "image/png" });
+    const file = new File([blob], "stone-dragon-lifetime.png", { type: "image/png" });
     try {
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: "My training recap" });
+        await navigator.share({ files: [file], title: "My lifetime lifting stats" });
         return;
       }
     } catch (e) { if (e?.name === "AbortError") return; }
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob); a.download = file.name; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    toast("Recap image downloaded");
+    toast("Stats image downloaded");
   }
 
   // -------- Auto-PR detection at lock-in --------
