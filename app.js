@@ -1784,6 +1784,44 @@
     return `${wk} · ${dayName}`;
   }
 
+  // Where the athlete is in their program: the first day, in program order,
+  // that isn't checked off or fully logged in their last-synced progress.
+  // Lands on the last day once everything's done; null if no program.
+  function athleteCurrentDay(c) {
+    if (!c) return null;
+    const weeks = (c.weeks || []).filter((w) => (w.days || []).length);
+    if (!weeks.length) return null;
+    const dc = c.importedProgress?.dayCompletions || {};
+    const logs = c.importedProgress?.exerciseLogs || {};
+    const dayDone = (d) =>
+      (dc[d.id] || []).length > 0 ||
+      (d.exercises.length > 0 && d.exercises.every((ex) => (logs[ex.id] || []).length > 0));
+    for (const w of weeks) {
+      for (const d of w.days) {
+        if (!dayDone(d)) return { weekId: w.id, dayId: d.id };
+      }
+    }
+    const lastWeek = weeks[weeks.length - 1];
+    return { weekId: lastWeek.id, dayId: lastWeek.days[lastWeek.days.length - 1].id };
+  }
+
+  // Open the coach program editor directly on one week/day of an athlete's
+  // program (✏️ on athlete cards, "Edit this day" in the athlete preview).
+  function editClientDay(clientId, weekId, dayId) {
+    openClient(clientId);
+    const c = currentClient();
+    if (!c || !c.weeks.length) return;
+    const wIdx = c.weeks.findIndex((w) => w.id === weekId);
+    if (wIdx >= 0) {
+      _coachActiveWeekIdx = wIdx;
+      const dIdx = (c.weeks[wIdx].days || []).findIndex((d) => d.id === dayId);
+      if (dIdx >= 0) c.weeks[wIdx]._activeDayIdx = dIdx;
+    }
+    setTab("program");
+    renderWeeks();
+    setTimeout(() => $("#weeks-container")?.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
+  }
+
   let _packagesBadgeBootstrapped = false;
   function renderDashboard() {
     Nav.reset(); // coach root — Back from here exits the app
@@ -1906,6 +1944,23 @@
         previewAsAthlete();
       });
       card.appendChild(viewBtn);
+
+      // Quick "edit current day" — opens the program editor on the day the
+      // athlete is on (per their last-synced progress).
+      const editBtn = document.createElement("button");
+      editBtn.className = "client-row-view";
+      editBtn.type = "button";
+      editBtn.title = `Edit ${c.name || "athlete"}'s current day`;
+      editBtn.setAttribute("aria-label", `Edit ${c.name || "athlete"}'s current day`);
+      editBtn.textContent = "✏️";
+      editBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        Nav.push(renderDashboard);
+        const pos = athleteCurrentDay(c);
+        if (pos) editClientDay(c.id, pos.weekId, pos.dayId);
+        else { openClient(c.id); setTab("program"); }
+      });
+      card.appendChild(editBtn);
 
       card.addEventListener("click", () => { Nav.push(renderDashboard); openClient(c.id); setTab("profile"); });
       grid.appendChild(card);
@@ -9478,6 +9533,24 @@
     $("#btn-browse-recommended-empty")?.addEventListener("click", openRecommendedTemplatesModal);
     $("#btn-delete-client").addEventListener("click", deleteClientPrompt);
     $("#btn-exit-preview")?.addEventListener("click", () => Nav.back(exitPreview));
+    // From preview straight into the editor: the day being viewed, or (from
+    // the picker / other tabs) the day the athlete is on per synced progress.
+    $("#btn-preview-edit-day")?.addEventListener("click", () => {
+      if (!state.previewMode) return;
+      const view = state.workoutView || {};
+      const viewed = view.mode === "detail" && view.dayId
+        ? { weekId: view.weekId, dayId: view.dayId }
+        : null;
+      exitPreview();
+      // The preview's nav entries are stale now — Back should return to the
+      // athlete list, same as opening the editor from a card.
+      Nav.reset();
+      Nav.push(renderDashboard);
+      const c = currentClient();
+      if (!c) return;
+      const pos = viewed || athleteCurrentDay(c);
+      if (pos) editClientDay(c.id, pos.weekId, pos.dayId);
+    });
     $("#btn-load-program").addEventListener("click", openLoadProgramModal);
     $("#btn-load-program-empty").addEventListener("click", openLoadProgramModal);
     $("#btn-archive-program").addEventListener("click", archiveCurrentProgram);

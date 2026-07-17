@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=invitelink" />
+  <link rel="stylesheet" href="styles.css?v=editday" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -705,7 +705,10 @@
 
     <div id="preview-banner" class="preview-banner hidden">
       <span class="preview-banner-msg">👁️ Coach preview — read-only view of <strong id="preview-athlete-name"></strong>'s program</span>
-      <button class="btn btn-sm" id="btn-exit-preview">← Back to coach view</button>
+      <div class="preview-banner-actions">
+        <button class="btn btn-sm" id="btn-preview-edit-day">✏️ Edit this day</button>
+        <button class="btn btn-sm" id="btn-exit-preview">← Back to coach view</button>
+      </div>
     </div>
 
     <main class="app-main">
@@ -951,7 +954,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
   <script src="cloud.js?v=customex"></script>
-  <script src="app.js?v=invitelink2"></script>
+  <script src="app.js?v=editday"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

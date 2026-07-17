@@ -7069,6 +7069,7 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   font-size: 0.9rem;
 }
 .preview-banner-msg { color: var(--text-soft); }
+.preview-banner-actions { display: flex; gap: 0.5em; flex-wrap: wrap; }
 .preview-banner-msg strong { color: var(--warn); }
 .preview-banner .btn {
   background: var(--warn);
