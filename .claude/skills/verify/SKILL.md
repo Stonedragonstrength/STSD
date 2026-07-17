@@ -62,13 +62,12 @@ Supabase config, and boot only shows the coach UI with a live Supabase session
   ~5pm local, which silently changes day-completion / streak / current-day
   behavior under test. Write literal `"YYYY-MM-DD"` strings or compute via
   `dateISO(new Date())`-equivalent locally in the seed snippet.
-- Coach "View as athlete" preview blocks pointer events on the whole athlete
-  portal (`body.preview-mode #screen-client .app-main`), so buttons inside it
-  can't be clicked during preview verification. Options: flip to the live
-  session (🏋️ Log for them — fully interactive), poke the DOM via
-  javascript_tool, or add the control to the re-enable whitelist in
-  styles.css (the `body.preview-mode … pointer-events: auto` rule group)
-  when it's genuinely navigation-like.
+- The read-only "View as athlete" preview was retired 2026-07-17: the 🏋️
+  button on an athlete card goes straight into the fully-interactive live
+  session (`body.live-log-mode`), which lands on the athlete's current day
+  in workout detail. Everything is clickable there — but the floating rest
+  timer (bottom-right) overlays card controls near the viewport's bottom
+  edge, so scroll a card's Skip/lock buttons clear of it before clicking.
 - The Chrome window size varies between sessions — never reuse coordinates
   from an earlier session's screenshots; re-locate elements from a fresh
   screenshot first.
