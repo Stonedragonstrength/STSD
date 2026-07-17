@@ -7828,12 +7828,14 @@
       </div>` : ""}
       ${(bwHtml || prHtml || tonHtml || lastWkHtml) ? `<div class="ov-mini-row">${bwHtml}${prHtml}${lastWkHtml}${tonHtml}</div>` : ""}
       ${recapHtml}
+      <div id="ov-volchart-host"></div>
       ${trophyHtml}`;
 
     if (hero.jump) $("#ov-hero")?.addEventListener("click", () => jumpToWorkout(hero.jump, today));
     if (totalDays && week && nextDay) $("#ov-stat-days")?.addEventListener("click", () => jumpToWorkout({ weekId: week.id, dayId: nextDay.id }, today));
     $("#ov-stat-sessions")?.addEventListener("click", () => setClientTab("sessions"));
     $("#btn-share-recap")?.addEventListener("click", () => shareRecapImage(recap, c.name));
+    renderVolumeChart(progress);
   }
   // -------- Athlete self-service profile (name / age / height / weight / goals) --------
   function renderAthleteProfileFields() {
@@ -9633,6 +9635,69 @@
     if (t >= 1e4) return Math.round(t / 1000) + "k";
     return t.toLocaleString();
   }
+  // Volume (weight × reps, working sets) bucketed by week or calendar month,
+  // as a contiguous run ending at the current period — quiet periods show as
+  // zero rather than vanishing. Capped to the last 12 buckets.
+  const KEY_VOLMODE = "trainerpro_volmode_v1"; // "week" (default) | "month"
+  function volumeBuckets(progress, mode) {
+    const by = {};
+    Object.values(progress?.exerciseLogs || {}).forEach((ls) => (ls || []).forEach((l) => {
+      if (!l.date) return;
+      const k = mode === "week" ? weekStartISO(l.date) : l.date.slice(0, 7);
+      (l.sets || []).forEach((s) => {
+        const w = parseFloat(s.weight), r = parseInt(s.reps) || 0;
+        if (isFinite(w) && w > 0 && r) by[k] = (by[k] || 0) + w * r;
+      });
+    }));
+    const keys = Object.keys(by).sort();
+    if (!keys.length) return [];
+    const out = [];
+    let cur = keys[0];
+    const end = mode === "week" ? weekStartISO(todayISO()) : todayISO().slice(0, 7);
+    while (cur <= end && out.length < 120) {
+      out.push({ key: cur, v: Math.round(by[cur] || 0) });
+      if (mode === "week") {
+        cur = addDaysISO(cur, 7);
+      } else {
+        const [y, m] = cur.split("-").map(Number);
+        cur = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
+      }
+    }
+    const last12 = out.slice(-12);
+    last12.forEach((o) => {
+      o.label = mode === "week"
+        ? new Date(o.key + "T12:00:00").toLocaleDateString(undefined, { month: "numeric", day: "numeric" })
+        : new Date(o.key + "-15T12:00:00").toLocaleDateString(undefined, { month: "short" });
+    });
+    return last12;
+  }
+  function renderVolumeChart(progress) {
+    const host = $("#ov-volchart-host");
+    if (!host) return;
+    const mode = localStorage.getItem(KEY_VOLMODE) === "month" ? "month" : "week";
+    const buckets = volumeBuckets(progress, mode);
+    if (buckets.length < 2) { host.innerHTML = ""; return; }
+    const maxV = Math.max(...buckets.map((m) => m.v), 1);
+    host.innerHTML = `<div class="card ov-volchart">
+      <div class="ov-recap-head"><h4>🏋️ ${mode === "week" ? "Weekly" : "Monthly"} volume</h4>
+        <div class="bw-range" role="group" aria-label="Bucket size">
+          <button type="button" class="bw-range-btn${mode === "week" ? " on" : ""}" data-volmode="week">Weeks</button>
+          <button type="button" class="bw-range-btn${mode === "month" ? " on" : ""}" data-volmode="month">Months</button>
+        </div>
+      </div>
+      <div class="vol-chart">${buckets.map((m) => `
+        <div class="vol-col" title="${mode === "week" ? "Week of " : ""}${escapeHtml(m.label)}: ${m.v.toLocaleString()} lb lifted">
+          <span class="vol-val">${m.v ? formatTonnage(m.v) : ""}</span>
+          <div class="vol-bar" style="height:${Math.max(2, Math.round((m.v / maxV) * 100))}%"></div>
+          <span class="vol-lbl">${escapeHtml(m.label)}</span>
+        </div>`).join("")}</div>
+    </div>`;
+    host.querySelectorAll("[data-volmode]").forEach((b) => b.addEventListener("click", () => {
+      localStorage.setItem(KEY_VOLMODE, b.dataset.volmode);
+      renderVolumeChart(progress);
+    }));
+  }
+
   // Total volume (weight × reps, working sets) of the most recent logged day.
   function lastWorkoutVolume(progress) {
     const byDate = {};

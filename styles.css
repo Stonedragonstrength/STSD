@@ -7141,6 +7141,22 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 .ov-recap-stat .lbl { font-size: 0.68rem; color: var(--text-soft); }
 .ov-recap, .ov-trophies { margin-top: 0.85rem; }
 
+/* Monthly volume bars (athlete overview) */
+.ov-volchart { margin-top: 0.85rem; }
+.vol-chart { display: flex; align-items: stretch; gap: 6px; height: 130px; }
+.vol-col {
+  flex: 1; min-width: 0; height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+  gap: 0.25em;
+}
+.vol-bar {
+  width: 100%; max-width: 34px; min-height: 2px;
+  background: linear-gradient(180deg, var(--primary-bright), var(--primary));
+  border-radius: 4px 4px 0 0;
+}
+.vol-val { font-size: 0.62rem; font-weight: 700; color: var(--text-soft); white-space: nowrap; }
+.vol-lbl { font-size: 0.66rem; color: var(--muted); }
+
 /* Strength progression card */
 .strength-progress-card { margin-bottom: 1rem; }
 .strength-ex-select {
@@ -7241,6 +7257,7 @@ body.preview-mode #screen-client .week-chip,
 body.preview-mode #screen-client .workout-card,
 body.preview-mode #screen-client .back-link,
 body.preview-mode #screen-client .ov-trophies > summary,
+body.preview-mode #screen-client .ov-volchart .bw-range-btn,
 body.preview-mode #screen-client #ccal-prev,
 body.preview-mode #screen-client #ccal-next,
 body.preview-mode #screen-client #ccal-today {
