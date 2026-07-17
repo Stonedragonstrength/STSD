@@ -7777,6 +7777,9 @@
       </div>`;
     const ton = lifetimeTonnage(progress);
     const tonHtml = ton > 0 ? `<div class="ov-mini"><div class="ov-mini-top"><span class="ov-mini-val">${formatTonnage(ton)} lb</span></div><div class="ov-mini-lbl">lifetime lifted</div></div>` : "";
+    const lastWk = lastWorkoutVolume(progress);
+    const lastWkLabel = lastWk ? new Date(lastWk.date + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+    const lastWkHtml = lastWk ? `<div class="ov-mini"><div class="ov-mini-top"><span class="ov-mini-val">${formatTonnage(lastWk.volume)} lb</span></div><div class="ov-mini-lbl">last workout · ${escapeHtml(lastWkLabel)}</div></div>` : "";
     const recap = monthRecap(progress);
     const recapHtml = recap.workouts ? `<div class="card ov-recap">
         <div class="ov-recap-head"><h4>📊 ${escapeHtml(recap.label)} so far</h4><button class="btn btn-ghost btn-sm" id="btn-share-recap" type="button">📤 Share</button></div>
@@ -7823,7 +7826,7 @@
         <div class="ov-progress-top"><span>${escapeHtml(weekLabel)}</span><span>${doneDays}/${totalDays} done</span></div>
         <div class="ov-progress-track"><div class="ov-progress-fill" style="width:${pct}%"></div></div>
       </div>` : ""}
-      ${(bwHtml || prHtml || tonHtml) ? `<div class="ov-mini-row">${bwHtml}${prHtml}${tonHtml}</div>` : ""}
+      ${(bwHtml || prHtml || tonHtml || lastWkHtml) ? `<div class="ov-mini-row">${bwHtml}${prHtml}${lastWkHtml}${tonHtml}</div>` : ""}
       ${recapHtml}
       ${trophyHtml}`;
 
@@ -9629,6 +9632,21 @@
     if (t >= 1e6) return (t / 1e6).toFixed(2) + "M";
     if (t >= 1e4) return Math.round(t / 1000) + "k";
     return t.toLocaleString();
+  }
+  // Total volume (weight × reps, working sets) of the most recent logged day.
+  function lastWorkoutVolume(progress) {
+    const byDate = {};
+    Object.values(progress?.exerciseLogs || {}).forEach((ls) => (ls || []).forEach((l) => {
+      if (!l.date) return;
+      (l.sets || []).forEach((s) => {
+        const w = parseFloat(s.weight), r = parseInt(s.reps) || 0;
+        if (isFinite(w) && w > 0 && r) byDate[l.date] = (byDate[l.date] || 0) + w * r;
+      });
+    }));
+    const dates = Object.keys(byDate).sort();
+    if (!dates.length) return null;
+    const date = dates[dates.length - 1];
+    return { date, volume: Math.round(byDate[date]) };
   }
   // Heaviest set ever put up on the big lifts (squat / bench / any deadlift,
   // trap bar included / pulldown variations) — from workout logs plus the
