@@ -7153,6 +7153,8 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   display: flex; gap: 0.4rem; padding: 0.45rem;
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  /* Seven presets: wrap into rows on narrow phones instead of overflowing */
+  flex-wrap: wrap; justify-content: flex-end; max-width: min(78vw, 320px);
 }
 .rest-timer-pop button {
   border: 1px solid var(--border); background: var(--surface); color: var(--text);
