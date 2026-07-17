@@ -127,6 +127,7 @@
     }
   }
   function saveClient() {
+    if (state.tourDemo) return; // demo program during the tour — never persist
     if (state.previewMode) {
       // Read-only preview — never persist or push.
       if (!state.liveLog) return;
@@ -256,8 +257,20 @@
       reps: seed?.reps || "",
       date: seed?.date || todayISO(),
       notes: seed?.notes || "",
+      auto: !!seed?.auto, // detected from logged sets vs. hand-entered
     };
   }
+  // Estimated 1-rep max (Epley): weight × (1 + reps/30). One comparable number
+  // so a heavy low-rep set and a lighter high-rep set can be ranked fairly —
+  // 225×5 (≈262) correctly outranks 235×1 (≈243).
+  function epley1RM(w, r) { return (parseFloat(w) || 0) * (1 + (parseInt(r, 10) || 0) / 30); }
+  // Stable-ish identity for matching a lift's history across program copies:
+  // case-, whitespace-, and trailing-punctuation-insensitive so "Bench Press",
+  // "bench  press" and "Bench Press." all count as the same lift.
+  function exKey(name) { return String(name || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/[.,;:!]+$/, ""); }
+  // A PR (or set) with no real barbell weight is judged by reps (bodyweight
+  // lifts like pull-ups, and any weightless entry).
+  function prIsRepOnly(p) { const w = Number(p && p.weight); return !(isFinite(w) && w > 0); }
   function makeWeek(index, label, focus, phaseLabel) {
     return {
       id: uid(),
@@ -5838,15 +5851,22 @@
     const groups = new Map();
     prs.forEach((p) => {
       if (!p.name) return;
-      const k = p.name.trim().toLowerCase();
+      const k = exKey(p.name);
       if (!groups.has(k)) groups.set(k, { displayName: p.name.trim(), entries: [] });
       groups.get(k).entries.push(p);
     });
     return Array.from(groups.values()).sort((a, b) => a.displayName.localeCompare(b.displayName));
   }
+  // Rank sets/PRs by estimated 1RM (weighted) or reps (bodyweight), so a rep PR
+  // at the same weight, or a lighter high-rep set, is scored correctly.
   function prSortKey(p) {
-    const w = Number(p.weight);
-    return isNaN(w) ? -1 : w;
+    return prIsRepOnly(p) ? (parseInt(p.reps, 10) || 0) : epley1RM(p.weight, p.reps);
+  }
+  // "225 lb × 5", or "5 reps" for bodyweight / weightless entries.
+  function prValueLabel(p) {
+    return prIsRepOnly(p)
+      ? `${escapeHtml(p.reps || "?")} reps`
+      : `${escapeHtml(p.weight)} lb × ${escapeHtml(p.reps || "?")}`;
   }
   function renderPRGroup(group) {
     const sorted = [...group.entries].sort((a, b) => prSortKey(b) - prSortKey(a));
@@ -5857,7 +5877,7 @@
     head.className = "pr-exercise-header";
     head.innerHTML = `
       <h4 class="pr-exercise-name">${escapeHtml(group.displayName)}</h4>
-      ${best && best.weight ? `<span class="pr-best"><span class="pr-best-label">PR</span>${escapeHtml(best.weight)} lb × ${escapeHtml(best.reps || "?")}</span>` : ""}
+      ${best && (best.weight || best.reps) ? `<span class="pr-best"><span class="pr-best-label">PR</span>${prValueLabel(best)}</span>` : ""}
     `;
     card.appendChild(head);
     const realEntries = sorted.filter((p) => p.weight || p.reps);
@@ -5871,7 +5891,7 @@
         const row = document.createElement("div");
         row.className = "pr-row" + (idx === 0 ? " is-best" : "");
         row.innerHTML = `
-          <div><span class="pr-weight">${escapeHtml(p.weight || "—")} lb</span> <span class="pr-reps">× ${escapeHtml(p.reps || "—")} reps</span></div>
+          <div><span class="pr-weight">${prIsRepOnly(p) ? (p.weight === "BW" ? "BW" : "—") : escapeHtml(p.weight) + " lb"}</span> <span class="pr-reps">× ${escapeHtml(p.reps || "—")} reps</span>${p.auto ? `<span class="pr-auto" title="Auto-detected from your logged sets">auto</span>` : ""}</div>
           <div class="pr-date">${escapeHtml(p.date || "")}</div>
           <span class="pr-author ${p._author || "coach"}">${(p._author || "coach")}</span>
           <button class="pr-delete" data-id="${p.id}" data-author="${p._author || ""}" title="Delete">×</button>
@@ -6110,6 +6130,7 @@
     const prog = state.clientData.program; if (!prog) return;
     const athleteOwn = (state.clientData.progress.personalRecords || []).map((p) => ({ ...p, _author: "athlete" }));
     const coachPRs = (prog.client.coachPRs || []).filter(p => p.name);
+    renderPRArchive($("#athlete-pr-archive"), state.clientData.progress.personalRecords || []);
     if (!athleteOwn.length && !coachPRs.length) { show(empty); return; }
     hide(empty);
 
@@ -7631,7 +7652,7 @@
     // First time on this device: one guided lap (never during a coach live
     // session — that's the coach's screen, not the athlete's).
     if (!state.previewMode && !localStorage.getItem(KEY_TOUR_ATHLETE)) {
-      setTimeout(() => { if (!state.previewMode && state.mode === "client") startTour(athleteTourSteps(), KEY_TOUR_ATHLETE); }, 800);
+      setTimeout(() => { if (!state.previewMode && state.mode === "client") beginAthleteTour(); }, 800);
     }
   }
   // -------- Athlete Overview (home dashboard) --------
@@ -9713,8 +9734,61 @@
     });
     host.appendChild(card);
   }
+  // -------- PR archive (each recorded PR plotted over time) --------
+  // Groups the athlete's logged PRs by lift and plots the milestone value over
+  // time — weight for weighted lifts, reps for bodyweight — so they can see
+  // when their last PR landed. Needs ≥2 dated PRs for a given lift to draw.
+  function prArchiveByName(prs) {
+    const byName = {};
+    (prs || []).forEach((p) => {
+      if (!p.name || !p.date) return;
+      const repOnly = prIsRepOnly(p);
+      const v = repOnly ? (parseInt(p.reps, 10) || 0) : Number(p.weight);
+      if (!v || !isFinite(v)) return;
+      const k = exKey(p.name);
+      (byName[k] = byName[k] || { name: p.name.trim(), bw: repOnly, pts: [] })
+        .pts.push({ t: new Date(p.date + "T12:00:00").getTime(), v, reps: parseInt(p.reps, 10) || 0, date: p.date });
+    });
+    Object.keys(byName).forEach((k) => {
+      const seen = {};
+      byName[k].pts = byName[k].pts.sort((a, b) => a.t - b.t)
+        .filter((p) => (seen[p.date] ? false : (seen[p.date] = 1)));
+      if (byName[k].pts.length < 2) delete byName[k];
+    });
+    return byName;
+  }
+  function renderPRArchive(host, prs) {
+    if (!host) return;
+    host.innerHTML = "";
+    const byName = prArchiveByName(prs);
+    const keys = Object.keys(byName).sort((a, b) => byName[b].pts.length - byName[a].pts.length);
+    if (!keys.length) return;
+    const hid = host.id || "pra";
+    let sel = _strengthSelByHost[hid];
+    if (!byName[sel]) sel = keys[0];
+    _strengthSelByHost[hid] = sel;
+    const g = byName[sel];
+    const card = document.createElement("div");
+    card.className = "card strength-progress-card";
+    card.innerHTML = `
+      <div class="bw-charts-head">
+        <h4>🏆 PR archive</h4>
+        <select class="strength-ex-select" aria-label="Exercise">${keys.map((k) => `<option value="${escapeHtml(k)}"${k === sel ? " selected" : ""}>${escapeHtml(byName[k].name)}</option>`).join("")}</select>
+      </div>`;
+    card.appendChild(strengthChartCard(g.name, g.pts, { unit: g.bw ? "reps" : "lb", title: `${g.pts.length} PRs over time`, bw: g.bw }));
+    card.querySelector(".strength-ex-select").addEventListener("change", (e) => {
+      _strengthSelByHost[hid] = e.target.value;
+      renderPRArchive(host, prs);
+    });
+    host.appendChild(card);
+  }
+
   // Same anatomy/interaction as the bodyweight trend cards (shared CSS).
-  function strengthChartCard(name, pts) {
+  // opts.unit / opts.title / opts.bw let the PR archive reuse this component
+  // (reps instead of lb, a milestone-count subtitle).
+  function strengthChartCard(name, pts, opts = {}) {
+    const unit = opts.unit != null ? opts.unit : "lb";
+    const title = opts.title != null ? opts.title : `Top set · ${pts.length} sessions`;
     const W = 320, H = 96, padL = 4, padR = 4, padT = 12, padB = 10;
     const last = pts[pts.length - 1].v;
     const delta = last - pts[0].v;
@@ -9734,10 +9808,10 @@
     card.className = "bw-chart-card";
     card.innerHTML = `
       <div class="bw-chart-top">
-        <span class="bw-chart-title">Top set · ${escapeHtml(String(pts.length))} sessions</span>
-        <span class="bw-chart-delta" title="Change over the logged history">${arrow} ${Math.abs(delta).toFixed(0)} lb</span>
+        <span class="bw-chart-title">${escapeHtml(title)}</span>
+        <span class="bw-chart-delta" title="Change over the logged history">${arrow} ${Math.abs(delta).toFixed(0)} ${escapeHtml(unit)}</span>
       </div>
-      <div class="bw-chart-val">${escapeHtml(String(last))}<span class="bw-chart-unit">lb</span></div>
+      <div class="bw-chart-val">${escapeHtml(String(last))}<span class="bw-chart-unit">${escapeHtml(unit)}</span></div>
       <div class="bw-chart-plot">
         <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="bw-chart-svg" aria-hidden="true">
           <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
@@ -9767,7 +9841,9 @@
       cross.style.display = ""; cross.style.left = lx;
       hdot.style.display = ""; hdot.style.left = lx; hdot.style.top = (best.fy * 100).toFixed(2) + "%";
       tip.style.display = "";
-      tip.innerHTML = `<strong>${escapeHtml(String(best.v))} lb × ${escapeHtml(String(best.reps || "?"))}</strong><span>${escapeHtml(best.date)}</span>`;
+      tip.innerHTML = opts.bw
+        ? `<strong>${escapeHtml(String(best.v))} reps</strong><span>${escapeHtml(best.date)}</span>`
+        : `<strong>${escapeHtml(String(best.v))} lb × ${escapeHtml(String(best.reps || "?"))}</strong><span>${escapeHtml(best.date)}</span>`;
       tip.style.left = Math.max(4, Math.min(rect.width - 4, best.fx * rect.width)) + "px";
     };
     const hideTip = () => { cross.style.display = "none"; hdot.style.display = "none"; tip.style.display = "none"; };
@@ -10049,37 +10125,58 @@
   // same exercise NAME (weeks duplicate exercises under new ids). A heavier
   // top set — or more reps at the same weight — celebrates on the spot and
   // writes an entry into the athlete's PR list.
+  // Decide whether the just-locked entry set a personal record, and if so file
+  // one. Weighted lifts are judged by estimated 1RM (so rep PRs count too);
+  // bodyweight lifts by reps. Matching uses exKey() so renames/typos don't
+  // split history, and warm-ups/skipped sets never count.
   function detectAndCelebratePR(ex, entry, cardEl) {
-    let top = null;
-    (entry.sets || []).forEach((s) => {
-      const w = parseFloat(s.weight), r = parseInt(s.reps) || 0;
-      if (!isFinite(w) || w <= 0) return;
-      if (!top || w > top.w || (w === top.w && r > top.r)) top = { w, r };
-    });
-    if (!top) return;
     const name = (ex.name || "").trim();
     if (!name || ex.kind === "mobility") return;
+    const key = exKey(name);
+    const bw = ex.currentWeight === "BW";
     const logs = state.clientData.progress.exerciseLogs || {};
-    let prevBest = null;
+    const workingSets = (l) => (l.sets || []).filter((s) => !s.skipped);
+
+    // Best of today's working sets — score = e1RM (weighted) or reps (BW).
+    let cur = null; // { score, weight, reps }
+    workingSets(entry).forEach((s) => {
+      const r = parseInt(s.reps, 10) || 0;
+      if (bw) {
+        if (r > 0 && (!cur || r > cur.score)) cur = { score: r, weight: "BW", reps: r };
+      } else {
+        const w = parseFloat(s.weight);
+        if (isFinite(w) && w > 0 && r > 0) {
+          const e = epley1RM(w, r);
+          if (!cur || e > cur.score) cur = { score: e, weight: String(w), reps: r };
+        }
+      }
+    });
+    if (!cur) return;
+
+    // Prior best across every copy of this lift (by key), minus the set judged.
+    let prev = null;
     (state.clientData.program?.client?.weeks || []).forEach((wk) => (wk.days || []).forEach((d) => (d.exercises || []).forEach((e2) => {
-      if ((e2.name || "").trim().toLowerCase() !== name.toLowerCase()) return;
+      if (exKey(e2.name) !== key) return;
       (logs[e2.id] || []).forEach((l) => {
         if (e2.id === ex.id && l.date === entry.date) return; // the set being judged
-        (l.sets || []).forEach((s) => {
-          const w = parseFloat(s.weight), r = parseInt(s.reps) || 0;
-          if (!isFinite(w) || w <= 0) return;
-          if (!prevBest || w > prevBest.w || (w === prevBest.w && r > prevBest.r)) prevBest = { w, r };
+        workingSets(l).forEach((s) => {
+          const r = parseInt(s.reps, 10) || 0;
+          if (bw) { if (r > 0 && (prev == null || r > prev)) prev = r; }
+          else { const w = parseFloat(s.weight); if (isFinite(w) && w > 0 && r > 0) { const e = epley1RM(w, r); if (prev == null || e > prev) prev = e; } }
         });
       });
     })));
-    if (!prevBest) return; // first session of this lift — nothing to beat yet
-    if (!(top.w > prevBest.w || (top.w === prevBest.w && top.r > prevBest.r))) return;
+    if (prev == null) return;                 // first time doing this lift
+    if (cur.score <= prev + 0.01) return;     // didn't beat the prior best
+    // Fat-finger guard (135 → 1350): skip the auto-award on an implausible
+    // one-session jump. It can still be added by hand.
+    if (!bw && cur.score > prev * 1.4) return;
+
     const prs = state.clientData.progress.personalRecords || (state.clientData.progress.personalRecords = []);
-    if (!prs.some((p) => p.name === name && p.date === entry.date && String(p.weight) === String(top.w))) {
-      prs.push(makePR({ name, weight: String(top.w), reps: String(top.r), date: entry.date, notes: "Auto-detected during workout 🎉" }));
-    }
+    if (prs.some((p) => exKey(p.name) === key && p.date === entry.date && String(p.weight) === String(cur.weight) && String(p.reps) === String(cur.reps))) return;
+    prs.push(makePR({ name, weight: cur.weight, reps: String(cur.reps), date: entry.date, notes: "Auto-detected during workout 🎉", auto: true }));
     if (cardEl) celebrateElement(cardEl, "pr-celebrate");
-    toast(`🎉 New PR — ${name}: ${top.w} lb × ${top.r}!`, 3500);
+    toast(`🎉 New PR — ${name}: ${bw ? cur.reps + " reps" : cur.weight + " lb × " + cur.reps}!`, 3500);
   }
 
   // -------- Guided tour (spotlight walkthrough) --------
@@ -10093,9 +10190,11 @@
   const KEY_TOUR_ATHLETE = "trainerpro_tour_athlete_v1";
   let _tour = null;
 
-  function startTour(steps, doneKey) {
+  // onEnd runs when the tour closes (finish OR skip) — used to tear down the
+  // temporary demo program the athlete tour stands up on an empty account.
+  function startTour(steps, doneKey, onEnd) {
     endTour(false);
-    if (!steps?.length) return;
+    if (!steps?.length) { onEnd?.(); return; }
     const wrap = document.createElement("div");
     wrap.className = "tour-wrap"; // full-screen shield: blocks app clicks mid-tour
     const spot = document.createElement("div");
@@ -10105,7 +10204,7 @@
     wrap.appendChild(spot);
     wrap.appendChild(card);
     document.body.appendChild(wrap);
-    _tour = { steps, i: -1, wrap, spot, card, doneKey };
+    _tour = { steps, i: -1, wrap, spot, card, doneKey, onEnd };
     window.addEventListener("resize", _tourRepos);
     document.addEventListener("keydown", _tourKeys);
     showTourStep(0, 1);
@@ -10119,6 +10218,7 @@
     t.wrap.remove();
     // Skip also marks done — a dismissed tour shouldn't nag on next boot.
     if (markDone !== false && t.doneKey) localStorage.setItem(t.doneKey, "1");
+    if (t.onEnd) t.onEnd(); // restore real program / clear demo state
   }
   function _tourRepos() { if (_tour) _positionTourStep(); }
   function _tourKeys(e) {
@@ -10186,9 +10286,57 @@
     Object.assign(c.style, { top: cy + "px", left: cx + "px" });
   }
 
+  // A throwaway one-day program the athlete tour stands up when the athlete
+  // has no real program yet, so the "logging" stops always have a real rep
+  // sheet to point at. Never saved (saveClient no-ops while state.tourDemo).
+  function demoTourProgram() {
+    const real = state.clientData?.program;
+    return {
+      clientId: real?.clientId,
+      client: {
+        ...(real?.client || {}),
+        weeks: [{
+          id: "__tour_wk", label: "Sample week", focus: "Full body", phaseLabel: "Demo", diet: {},
+          days: [{
+            id: "__tour_day", name: "Sample Day", exercises: [
+              { id: "__tour_ex1", name: "Goblet Squat", sets: "3", currentWeight: "40", currentReps: "10", progression: { ceil: 12, inc: 5 }, notes: "Just a sample — this day disappears when the tour ends.", videoUrl: "" },
+              { id: "__tour_ex2", name: "Push-Up", sets: "3", currentWeight: "BW", currentReps: "10", notes: "", videoUrl: "" },
+              { id: "__tour_ex3", name: "Dumbbell Row", sets: "3", currentWeight: "35", currentReps: "12", notes: "", videoUrl: "" },
+            ],
+          }],
+        }],
+      },
+    };
+  }
+
+  // Athlete tour entry point: on an empty account, swap in the demo program
+  // for the tour's duration and restore it (untouched) when the tour closes.
+  function beginAthleteTour() {
+    let hasReal = false;
+    for (const w of state.clientData?.program?.client?.weeks || []) {
+      if ((w.days || []).some((d) => d.exercises?.length)) { hasReal = true; break; }
+    }
+    let onEnd = null;
+    if (!hasReal) {
+      const savedProgram = state.clientData.program;
+      const savedView = state.workoutView;
+      state.tourDemo = true; // freezes saveClient — the demo never persists
+      state.clientData.program = demoTourProgram();
+      renderClientWorkouts(); // picker shows the sample day
+      onEnd = () => {
+        state.tourDemo = false;
+        state.clientData.program = savedProgram;
+        state.workoutView = savedView || { mode: "picker" };
+        renderClientWorkouts();
+        setClientTab("overview");
+      };
+    }
+    startTour(athleteTourSteps(), KEY_TOUR_ATHLETE, onEnd);
+  }
+
   function athleteTourSteps() {
     // First day with exercises → the rep-sheet stops have something real to
-    // point at. Missing program = those steps silently skip.
+    // point at (a real program, or the demo one beginAthleteTour stands up).
     let pos = null;
     for (const w of state.clientData?.program?.client?.weeks || []) {
       for (const d of w.days || []) {
@@ -10900,7 +11048,7 @@
 
     // Guided tour replays (? buttons in both headers)
     $("#btn-tour-coach")?.addEventListener("click", () => startTour(coachTourSteps(), KEY_TOUR_COACH));
-    $("#btn-tour-client")?.addEventListener("click", () => startTour(athleteTourSteps(), KEY_TOUR_ATHLETE));
+    $("#btn-tour-client")?.addEventListener("click", () => beginAthleteTour());
 
     $("#btn-client-logout").addEventListener("click", () => { Nav.reset(); exitClient(); });
     $("#btn-client-profile")?.addEventListener("click", () => setClientTab("profile"));

@@ -3164,6 +3164,17 @@ button.ov-stat:hover { background: var(--surface-2); }
 .pr-row.is-best { background: var(--primary-soft); padding: 0.5em 0.6em; border-radius: var(--radius); border-top: 0; margin-top: 0.3em; }
 .pr-row .pr-weight { font-weight: 800; color: var(--primary-bright); font-size: 1rem; }
 .pr-row .pr-reps { color: var(--text-soft); }
+/* Auto-detected badge — this PR came from a locked set, not hand entry. */
+.pr-row .pr-auto {
+  font-size: 0.58rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--accent); border: 1px solid var(--accent-soft); border-radius: 5px;
+  padding: 0.05em 0.4em; margin-left: 0.5em; vertical-align: middle;
+}
+/* PR add/edit modal: center the numeric fields on tablet & desktop so the
+   placeholder and value sit under the label instead of hugging the left. */
+@media (min-width: 601px) {
+  #pr-weight, #pr-reps { text-align: center; }
+}
 .pr-row .pr-date { color: var(--muted); font-size: 0.85rem; }
 .pr-row .pr-author {
   font-size: 0.7rem;
