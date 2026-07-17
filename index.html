@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=autorenew2" />
+  <link rel="stylesheet" href="styles.css?v=gamify" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -288,6 +288,7 @@
           </div>
         </div>
         <div id="overview-requests" class="overview-requests"></div>
+        <div id="dash-money-strip"></div>
         <div class="cal-nav" style="margin-bottom:0.6rem">
           <button class="btn btn-ghost btn-sm" id="dash-cal-prev">‹</button>
           <h4 class="cal-title" id="dash-cal-title"></h4>
@@ -564,6 +565,7 @@
           <div class="program-head">
             <h3>Personal Records</h3>
           </div>
+          <div id="coach-strength-charts"></div>
           <div id="coach-pr-container"></div>
           <div id="coach-pr-empty" class="empty-state hidden">
             <div class="empty-emoji">🏆</div>
@@ -770,8 +772,8 @@
               <h3>Workout Program</h3>
               <p class="picker-sub">Tap a day to start logging your sets.</p>
             </div>
-            <div class="picker-logged" title="Total exercises logged">
-              <strong id="streak-count">0</strong> exercises logged
+            <div class="picker-logged" title="Consecutive weeks with at least one completed workout">
+              🔥 <strong id="streak-count">0</strong> week streak
             </div>
           </div>
           <div class="week-chips" id="workout-week-chips" role="tablist"></div>
@@ -783,6 +785,16 @@
           <button class="btn btn-ghost btn-sm back-link" id="btn-back-to-picker">← Workouts</button>
           <div id="workout-detail-head" class="workout-detail-head"></div>
           <div id="workout-detail-list" class="workout-detail-list"></div>
+        </div>
+        <!-- Floating rest timer — visible only while a day detail is open -->
+        <div id="rest-timer" class="rest-timer hidden">
+          <div id="rest-timer-pop" class="rest-timer-pop hidden">
+            <button type="button" data-rest="60">1:00</button>
+            <button type="button" data-rest="90">1:30</button>
+            <button type="button" data-rest="120">2:00</button>
+            <button type="button" data-rest="180">3:00</button>
+          </div>
+          <button id="rest-timer-btn" class="rest-timer-btn" type="button">⏱ Rest</button>
         </div>
       </div>
 
@@ -837,6 +849,7 @@
           <button class="btn btn-primary" id="btn-athlete-add-pr">+ Add PR</button>
         </div>
         <p class="muted" style="margin-bottom:1em">Log your best lifts. The heaviest set per exercise is highlighted as your current PR.</p>
+        <div id="athlete-strength-charts"></div>
         <div id="athlete-pr-container"></div>
         <div id="athlete-pr-empty" class="empty-state hidden">
           <div class="empty-emoji">🏆</div>
@@ -955,7 +968,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=setlog3"></script>
   <script src="cloud.js?v=customex"></script>
-  <script src="app.js?v=autorenew"></script>
+  <script src="app.js?v=gamify2"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

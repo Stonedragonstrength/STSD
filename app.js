@@ -1900,6 +1900,19 @@
       subEl.className = "client-row-sub";
       // Where they are in their program (current week · day), not raw counts.
       subEl.textContent = currentProgressLabel(c, totalDays, hasSyncedData, isComplete);
+      // Quiet flag: no logged activity in 7+ days → retention nudge. Lives on
+      // the name line (the sub line ellipsizes and would swallow it).
+      const lastAct = lastActivityISO(c.importedProgress);
+      if (lastAct) {
+        const quietDays = Math.floor((Date.now() - new Date(lastAct + "T12:00:00").getTime()) / 86400000);
+        if (quietDays >= 7) {
+          const q = document.createElement("span");
+          q.className = "quiet-chip";
+          q.title = `No logged activity since ${lastAct}`;
+          q.textContent = `😴 ${quietDays}d`;
+          nameEl.appendChild(q);
+        }
+      }
       main.appendChild(nameEl);
       main.appendChild(subEl);
 
@@ -2390,6 +2403,7 @@
     renderDiet();
     renderClientLogs();
     renderCoachPRs();
+    renderStrengthProgress($("#coach-strength-charts"), c, c.importedProgress || {});
     renderCoachSessions();
     const now = new Date();
     state.coachCal = { year: now.getFullYear(), month: now.getMonth() };
@@ -5482,6 +5496,7 @@
       loadDashCalSetmoreEvents(year, month);
     }
     $("#dash-cal-title").textContent = `${MONTH_NAMES[month]} ${year}`;
+    renderMoneyStrip();
     const grid = $("#dash-cal-grid");
     grid.innerHTML = "";
     DOW_LABELS.forEach(d => {
@@ -7599,6 +7614,7 @@
     renderClientProgress();
     renderAthleteCardio();
     renderAthletePRs();
+    renderStrengthProgress($("#athlete-strength-charts"), prog.client, state.clientData.progress);
     renderAthleteSessions();
     renderAthleteOverview();
     refreshAthleteOpenSlots();
@@ -7739,6 +7755,39 @@
 
     const firstName = escapeHtml((c.name || "").trim().split(/\s+/)[0] || "athlete");
 
+    // ---- Streak · ring · tonnage · recap · trophies ----
+    const streakN = weeklyStreak(progress);
+    const CIRC = 2 * Math.PI * 18;
+    const ringOff = CIRC * (1 - pct / 100);
+    const ringStat = totalDays ? `<div class="ov-stat ov-ring-stat" title="${doneDays} of ${totalDays} workouts done in ${escapeHtml(weekLabel)}">
+        <span class="ov-ring-wrap"><svg viewBox="0 0 44 44" class="ov-ring" aria-hidden="true">
+          <circle class="ov-ring-track" cx="22" cy="22" r="18"/>
+          <circle class="ov-ring-fill" cx="22" cy="22" r="18" style="stroke-dasharray:${CIRC.toFixed(1)};stroke-dashoffset:${ringOff.toFixed(1)}"/>
+        </svg><span class="ov-ring-txt">${doneDays}/${totalDays}</span></span>
+        <span class="ov-stat-lbl">this week</span>
+      </div>` : "";
+    const streakStat = `<div class="ov-stat" title="Consecutive weeks with at least one completed workout">
+        <span class="ov-stat-num">🔥 ${streakN}</span><span class="ov-stat-lbl">week streak</span>
+      </div>`;
+    const ton = lifetimeTonnage(progress);
+    const tonHtml = ton > 0 ? `<div class="ov-mini"><div class="ov-mini-top"><span class="ov-mini-val">${formatTonnage(ton)} lb</span></div><div class="ov-mini-lbl">lifetime lifted</div></div>` : "";
+    const recap = monthRecap(progress);
+    const recapHtml = recap.workouts ? `<div class="card ov-recap">
+        <div class="ov-recap-head"><h4>📊 ${escapeHtml(recap.label)} so far</h4><button class="btn btn-ghost btn-sm" id="btn-share-recap" type="button">📤 Share</button></div>
+        <div class="ov-recap-grid">
+          <div class="ov-recap-stat"><span class="num">${recap.workouts}</span><span class="lbl">workouts</span></div>
+          <div class="ov-recap-stat"><span class="num">${recap.prs}</span><span class="lbl">PRs</span></div>
+          <div class="ov-recap-stat"><span class="num">${formatTonnage(recap.volume)}</span><span class="lbl">lb lifted</span></div>
+          ${recap.bwDelta != null ? `<div class="ov-recap-stat"><span class="num">${recap.bwDelta > 0 ? "+" : ""}${recap.bwDelta.toFixed(1)}</span><span class="lbl">lb bodyweight</span></div>` : ""}
+        </div>
+      </div>` : "";
+    const badges = computeBadges(progress);
+    const earnedCount = badges.filter((b) => b.earned).length;
+    const trophyHtml = earnedCount ? `<div class="card ov-trophies">
+        <div class="ov-recap-head"><h4>🏆 Trophy case</h4><span class="muted">${earnedCount}/${badges.length}</span></div>
+        <div class="trophy-grid">${badges.map((b) => `<div class="trophy${b.earned ? " earned" : ""}" title="${escapeHtml(b.hint)}"><span class="trophy-icon">${b.icon}</span><span class="trophy-name">${escapeHtml(b.name)}</span></div>`).join("")}</div>
+      </div>` : "";
+
     host.innerHTML = `
       <div class="ov-greeting">Hey, ${firstName} 👋</div>
       <div class="ov-hero${hero.jump ? " is-clickable" : ""}" id="ov-hero" style="--hero-color:${hero.color || "var(--primary-bright)"};--hero-soft:${hero.soft || "var(--primary-soft)"}">
@@ -7751,6 +7800,8 @@
         ${hero.cta ? `<span class="ov-hero-cta">${hero.cta} →</span>` : ""}
       </div>
       <div class="ov-strip">
+        ${ringStat}
+        ${streakStat}
         <button class="ov-stat" id="ov-stat-days" type="button">
           <span class="ov-stat-num">${totalDays ? daysLeft : "—"}</span>
           <span class="ov-stat-lbl">days left</span>
@@ -7765,11 +7816,14 @@
         <div class="ov-progress-top"><span>${escapeHtml(weekLabel)}</span><span>${doneDays}/${totalDays} done</span></div>
         <div class="ov-progress-track"><div class="ov-progress-fill" style="width:${pct}%"></div></div>
       </div>` : ""}
-      ${(bwHtml || prHtml) ? `<div class="ov-mini-row">${bwHtml}${prHtml}</div>` : ""}`;
+      ${(bwHtml || prHtml || tonHtml) ? `<div class="ov-mini-row">${bwHtml}${prHtml}${tonHtml}</div>` : ""}
+      ${recapHtml}
+      ${trophyHtml}`;
 
     if (hero.jump) $("#ov-hero")?.addEventListener("click", () => jumpToWorkout(hero.jump, today));
     if (totalDays && week && nextDay) $("#ov-stat-days")?.addEventListener("click", () => jumpToWorkout({ weekId: week.id, dayId: nextDay.id }, today));
     $("#ov-stat-sessions")?.addEventListener("click", () => setClientTab("sessions"));
+    $("#btn-share-recap")?.addEventListener("click", () => shareRecapImage(recap, c.name));
   }
   // -------- Athlete self-service profile (name / age / height / weight / goals) --------
   function renderAthleteProfileFields() {
@@ -7883,6 +7937,9 @@
   function setClientTab(name) {
     $$(".tab[data-ctab]").forEach((t) => t.classList.toggle("active", t.dataset.ctab === name));
     $$(".tab-panel[data-ctab-panel]").forEach((p) => p.classList.toggle("active", p.dataset.ctabPanel === name));
+    // Rest timer only floats over the workouts tab (and only in day detail)
+    if (name !== "workouts") hideRestTimer();
+    else if (state.workoutView?.mode === "detail") showRestTimer();
     // Profile has no tab button — it's reached via the header name link.
     const profLink = $("#btn-client-profile");
     if (profLink) profLink.classList.toggle("active", name === "profile");
@@ -8171,11 +8228,9 @@
       state.workoutView.weekId = clipboardWeeks[0]?.id || null;
     }
 
-    // Streak / total logged count (across all exercises)
-    const totalLogged = Object.values(state.clientData.progress?.exerciseLogs || {})
-      .reduce((n, arr) => n + (Array.isArray(arr) ? arr.length : 0), 0);
+    // Weekly streak — consecutive weeks with at least one completed workout
     const streakEl = $("#streak-count");
-    if (streakEl) streakEl.textContent = totalLogged;
+    if (streakEl) streakEl.textContent = weeklyStreak(state.clientData.progress);
 
     // Week chips
     chips.innerHTML = "";
@@ -8371,6 +8426,7 @@
 
     hide($("#workout-picker"));
     show($("#workout-detail"));
+    showRestTimer();
     // Keep the picker grid count fresh in case user comes back.
     renderWorkoutPickerUI();
     // Scroll detail into view smoothly.
@@ -8381,6 +8437,7 @@
     Nav.reset(); // athlete workouts root — the day list
     state.workoutView.mode = "picker";
     state.workoutView.dayId = null;
+    hideRestTimer();
     renderWorkoutPickerUI();
     hide($("#workout-detail"));
     show($("#workout-picker"));
@@ -8970,7 +9027,10 @@
       const idx = exLogs.findIndex(l => l.date === logDate);
       const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets, locked: true, ...collectWarmups(), ...collectFinishers() };
       if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
+      detectAndCelebratePR(ex, entry, wrapper);
       saveClient();
+      renderStrengthProgress($("#athlete-strength-charts"), state.clientData.program?.client, state.clientData.progress);
+      if (typeof renderAthletePRs === "function") renderAthletePRs();
       isLocked = true;
       refreshLockUI();
       doneCircle.classList.add("done"); doneCircle.textContent = "✓";
@@ -9409,6 +9469,380 @@
     return card;
   }
 
+  // ============ Gamification & insights ============
+
+  // -------- Strength progression (per-exercise trend) --------
+  // History is aggregated by exercise NAME across every week/day (each week's
+  // copy of "Bench Press" has its own id), using the top working-set weight
+  // of each logged session. Needs ≥2 sessions of a lift to draw anything.
+  const _strengthSelByHost = {};
+  function exerciseHistoryByName(client, progress) {
+    const logs = progress?.exerciseLogs || {};
+    const byName = {};
+    (client?.weeks || []).forEach((w) => (w.days || []).forEach((d) => (d.exercises || []).forEach((ex) => {
+      const name = (ex.name || "").trim();
+      if (!name || ex.kind === "mobility") return;
+      (logs[ex.id] || []).forEach((l) => {
+        let top = null;
+        (l.sets || []).forEach((s) => {
+          const wgt = parseFloat(s.weight); const reps = parseInt(s.reps) || 0;
+          if (!isFinite(wgt) || wgt <= 0) return;
+          if (!top || wgt > top.v || (wgt === top.v && reps > top.reps)) top = { v: wgt, reps };
+        });
+        if (!top || !l.date) return;
+        (byName[name] = byName[name] || []).push({ t: new Date(l.date + "T12:00:00").getTime(), v: top.v, reps: top.reps, date: l.date });
+      });
+    })));
+    Object.keys(byName).forEach((n) => {
+      const seen = {};
+      byName[n] = byName[n].sort((a, b) => a.t - b.t).filter((p) => (seen[p.date] ? false : (seen[p.date] = 1)));
+      if (byName[n].length < 2) delete byName[n];
+    });
+    return byName;
+  }
+  function renderStrengthProgress(host, client, progress) {
+    if (!host) return;
+    host.innerHTML = "";
+    const byName = exerciseHistoryByName(client, progress);
+    const names = Object.keys(byName).sort((a, b) => byName[b].length - byName[a].length);
+    if (!names.length) return;
+    const key = host.id || "s";
+    let sel = _strengthSelByHost[key];
+    if (!names.includes(sel)) sel = names[0];
+    _strengthSelByHost[key] = sel;
+    const card = document.createElement("div");
+    card.className = "card strength-progress-card";
+    card.innerHTML = `
+      <div class="bw-charts-head">
+        <h4>📈 Strength progress</h4>
+        <select class="strength-ex-select" aria-label="Exercise">${names.map((n) => `<option${n === sel ? " selected" : ""}>${escapeHtml(n)}</option>`).join("")}</select>
+      </div>`;
+    card.appendChild(strengthChartCard(sel, byName[sel]));
+    card.querySelector(".strength-ex-select").addEventListener("change", (e) => {
+      _strengthSelByHost[key] = e.target.value;
+      renderStrengthProgress(host, client, progress);
+    });
+    host.appendChild(card);
+  }
+  // Same anatomy/interaction as the bodyweight trend cards (shared CSS).
+  function strengthChartCard(name, pts) {
+    const W = 320, H = 96, padL = 4, padR = 4, padT = 12, padB = 10;
+    const last = pts[pts.length - 1].v;
+    const delta = last - pts[0].v;
+    const tMin = pts[0].t, tMax = pts[pts.length - 1].t;
+    let vMin = Math.min(...pts.map((p) => p.v)), vMax = Math.max(...pts.map((p) => p.v));
+    if (vMin === vMax) { vMin -= 1; vMax += 1; }
+    const vpad = (vMax - vMin) * 0.12; vMin -= vpad; vMax += vpad;
+    const xOf = (t) => tMax === tMin ? W / 2 : padL + ((t - tMin) / (tMax - tMin)) * (W - padL - padR);
+    const yOf = (v) => padT + (1 - (v - vMin) / (vMax - vMin)) * (H - padT - padB);
+    const xy = pts.map((p) => ({ x: xOf(p.t), y: yOf(p.v), v: p.v, reps: p.reps, date: p.date }));
+    const line = xy.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+    const area = `${line} L${xy[xy.length - 1].x.toFixed(1)} ${H - padB} L${xy[0].x.toFixed(1)} ${H - padB} Z`;
+    const lastPt = xy[xy.length - 1];
+    const gid = "sxg-" + Math.random().toString(36).slice(2, 7);
+    const arrow = Math.abs(delta) < 0.05 ? "▬" : (delta > 0 ? "▲" : "▼");
+    const card = document.createElement("div");
+    card.className = "bw-chart-card";
+    card.innerHTML = `
+      <div class="bw-chart-top">
+        <span class="bw-chart-title">Top set · ${escapeHtml(String(pts.length))} sessions</span>
+        <span class="bw-chart-delta" title="Change over the logged history">${arrow} ${Math.abs(delta).toFixed(0)} lb</span>
+      </div>
+      <div class="bw-chart-val">${escapeHtml(String(last))}<span class="bw-chart-unit">lb</span></div>
+      <div class="bw-chart-plot">
+        <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="bw-chart-svg" aria-hidden="true">
+          <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="currentColor" stop-opacity="0.22"/>
+            <stop offset="1" stop-color="currentColor" stop-opacity="0"/>
+          </linearGradient></defs>
+          <path d="${area}" fill="url(#${gid})" stroke="none"/>
+          <path d="${line}" fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>
+        </svg>
+        <div class="bw-cross" style="display:none"></div>
+        <div class="bw-dot bw-hover-dot" style="display:none"></div>
+        <div class="bw-dot bw-last-dot" style="left:${(lastPt.x / W * 100).toFixed(2)}%; top:${(lastPt.y / H * 100).toFixed(2)}%"></div>
+        <div class="bw-chart-tip" style="display:none"></div>
+      </div>`;
+    const plot = card.querySelector(".bw-chart-plot");
+    const cross = card.querySelector(".bw-cross");
+    const hdot = card.querySelector(".bw-hover-dot");
+    const tip = card.querySelector(".bw-chart-tip");
+    const data = xy.map((p) => ({ fx: p.x / W, fy: p.y / H, v: p.v, reps: p.reps, date: p.date }));
+    const showAt = (clientX) => {
+      const rect = plot.getBoundingClientRect();
+      if (!rect.width) return;
+      let f = (clientX - rect.left) / rect.width; f = Math.max(0, Math.min(1, f));
+      let best = data[0], bd = Infinity;
+      data.forEach((d) => { const dd = Math.abs(d.fx - f); if (dd < bd) { bd = dd; best = d; } });
+      const lx = (best.fx * 100).toFixed(2) + "%";
+      cross.style.display = ""; cross.style.left = lx;
+      hdot.style.display = ""; hdot.style.left = lx; hdot.style.top = (best.fy * 100).toFixed(2) + "%";
+      tip.style.display = "";
+      tip.innerHTML = `<strong>${escapeHtml(String(best.v))} lb × ${escapeHtml(String(best.reps || "?"))}</strong><span>${escapeHtml(best.date)}</span>`;
+      tip.style.left = Math.max(4, Math.min(rect.width - 4, best.fx * rect.width)) + "px";
+    };
+    const hideTip = () => { cross.style.display = "none"; hdot.style.display = "none"; tip.style.display = "none"; };
+    plot.addEventListener("pointermove", (e) => showAt(e.clientX));
+    plot.addEventListener("pointerdown", (e) => showAt(e.clientX));
+    plot.addEventListener("pointerleave", hideTip);
+    return card;
+  }
+
+  // -------- Weekly streak / tonnage / badges / recap --------
+  function completionDateList(progress) {
+    const out = [];
+    Object.values(progress?.dayCompletions || {}).forEach((v) => (Array.isArray(v) ? v : []).forEach((d) => { if (d) out.push(d); }));
+    return [...new Set(out)].sort();
+  }
+  function weekStartISO(iso) { const d = new Date(iso + "T12:00:00"); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return dateISO(d); }
+  function addDaysISO(iso, n) { const d = new Date(iso + "T12:00:00"); d.setDate(d.getDate() + n); return dateISO(d); }
+  // Consecutive calendar weeks (Mon-start) with ≥1 completed workout. The
+  // current week only counts once it has a completion, and a quiet current
+  // week doesn't break the run — training streaks respect rest days.
+  function weeklyStreak(progress) {
+    const wk = new Set(completionDateList(progress).map(weekStartISO));
+    if (!wk.size) return 0;
+    let cursor = weekStartISO(todayISO());
+    if (!wk.has(cursor)) cursor = addDaysISO(cursor, -7);
+    let n = 0;
+    while (wk.has(cursor)) { n++; cursor = addDaysISO(cursor, -7); }
+    return n;
+  }
+  function lifetimeTonnage(progress) {
+    let t = 0;
+    Object.values(progress?.exerciseLogs || {}).forEach((ls) => (ls || []).forEach((l) => {
+      (l.sets || []).forEach((s) => {
+        const w = parseFloat(s.weight), r = parseInt(s.reps) || 0;
+        if (isFinite(w) && w > 0 && r) t += w * r;
+      });
+    }));
+    return Math.round(t);
+  }
+  function formatTonnage(t) {
+    if (t >= 1e6) return (t / 1e6).toFixed(2) + "M";
+    if (t >= 1e4) return Math.round(t / 1000) + "k";
+    return t.toLocaleString();
+  }
+  function computeBadges(progress) {
+    const dates = completionDateList(progress);
+    const workouts = dates.length;
+    const prCount = (progress?.personalRecords || []).length;
+    const ton = lifetimeTonnage(progress);
+    const streak = weeklyStreak(progress);
+    let comeback = false;
+    for (let i = 1; i < dates.length; i++) {
+      if ((new Date(dates[i]) - new Date(dates[i - 1])) / 86400000 >= 21) { comeback = true; break; }
+    }
+    const byMonth = {};
+    dates.forEach((d) => { const k = d.slice(0, 7); byMonth[k] = (byMonth[k] || 0) + 1; });
+    const ironMonth = Object.values(byMonth).some((n) => n >= 12);
+    return [
+      { icon: "🥇", name: "First workout", hint: "Complete your first workout", earned: workouts >= 1 },
+      { icon: "🔟", name: "10 workouts", hint: "Complete 10 workouts", earned: workouts >= 10 },
+      { icon: "🎯", name: "25 workouts", hint: "Complete 25 workouts", earned: workouts >= 25 },
+      { icon: "💪", name: "50 workouts", hint: "Complete 50 workouts", earned: workouts >= 50 },
+      { icon: "👑", name: "100 workouts", hint: "Complete 100 workouts", earned: workouts >= 100 },
+      { icon: "🏆", name: "First PR", hint: "Log your first personal record", earned: prCount >= 1 },
+      { icon: "⚡", name: "5 PRs", hint: "Log 5 personal records", earned: prCount >= 5 },
+      { icon: "🐉", name: "10 PRs", hint: "Log 10 personal records", earned: prCount >= 10 },
+      { icon: "🔥", name: "4-week streak", hint: "Train 4 weeks in a row", earned: streak >= 4 },
+      { icon: "🗓️", name: "Iron month", hint: "12 workouts in one calendar month", earned: ironMonth },
+      { icon: "🦅", name: "Comeback", hint: "Return after 3+ weeks away", earned: comeback },
+      { icon: "🏋️", name: "100k club", hint: "Lift 100,000 lb lifetime", earned: ton >= 100000 },
+      { icon: "⛰️", name: "500k club", hint: "Lift 500,000 lb lifetime", earned: ton >= 500000 },
+      { icon: "🌋", name: "Million-lb club", hint: "Lift 1,000,000 lb lifetime", earned: ton >= 1000000 },
+    ];
+  }
+  function monthRecap(progress) {
+    const key = todayISO().slice(0, 7);
+    const label = new Date().toLocaleDateString("en-US", { month: "long" });
+    const workouts = completionDateList(progress).filter((d) => d.startsWith(key)).length;
+    const prs = (progress?.personalRecords || []).filter((p) => (p.date || "").startsWith(key)).length;
+    let volume = 0;
+    Object.values(progress?.exerciseLogs || {}).forEach((ls) => (ls || []).forEach((l) => {
+      if (!(l.date || "").startsWith(key)) return;
+      (l.sets || []).forEach((s) => {
+        const w = parseFloat(s.weight), r = parseInt(s.reps) || 0;
+        if (isFinite(w) && w > 0 && r) volume += w * r;
+      });
+    }));
+    const bw = (progress?.bodyweightLog || []).filter((b) => (b.date || "").startsWith(key))
+      .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    let bwDelta = null;
+    if (bw.length > 1) {
+      const first = parseFloat(bw[0].weightLb), lastV = parseFloat(bw[bw.length - 1].weightLb);
+      if (isFinite(first) && isFinite(lastV)) bwDelta = lastV - first;
+    }
+    return { key, label, workouts, prs, volume: Math.round(volume), bwDelta };
+  }
+  // Draws the recap as a 1080×1080 brand card and shares/downloads it.
+  async function shareRecapImage(recap, name) {
+    const cv = document.createElement("canvas");
+    cv.width = 1080; cv.height = 1080;
+    const x = cv.getContext("2d");
+    const g = x.createLinearGradient(0, 0, 0, 1080);
+    g.addColorStop(0, "#0c1322"); g.addColorStop(1, "#060a13");
+    x.fillStyle = g; x.fillRect(0, 0, 1080, 1080);
+    x.textAlign = "center";
+    x.fillStyle = "#22d3ee"; x.font = "800 46px system-ui, sans-serif";
+    x.fillText("STONE DRAGON STRENGTH", 540, 116);
+    x.fillStyle = "#94a3b8"; x.font = "600 40px system-ui, sans-serif";
+    x.fillText(`${recap.label} — ${(name || "athlete").trim().split(/\s+/)[0]}`, 540, 186);
+    const stats = [
+      [String(recap.workouts), "WORKOUTS"],
+      [String(recap.prs), "PERSONAL RECORDS"],
+      [formatTonnage(recap.volume) + " lb", "TOTAL LIFTED"],
+    ];
+    let y = 400;
+    stats.forEach(([num, lbl]) => {
+      x.fillStyle = "#e2e8f0"; x.font = "800 128px system-ui, sans-serif";
+      x.fillText(num, 540, y);
+      x.fillStyle = "#64748b"; x.font = "700 36px system-ui, sans-serif";
+      x.fillText(lbl, 540, y + 58);
+      y += 235;
+    });
+    x.fillStyle = "#22d3ee"; x.font = "600 32px system-ui, sans-serif";
+    x.fillText("stonedragonstrengthtraining.com", 540, 1014);
+    const blob = await new Promise((res) => cv.toBlob(res, "image/png"));
+    if (!blob) return;
+    const file = new File([blob], `stone-dragon-${recap.key}.png`, { type: "image/png" });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: "My training recap" });
+        return;
+      }
+    } catch (e) { if (e?.name === "AbortError") return; }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = file.name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    toast("Recap image downloaded");
+  }
+
+  // -------- Auto-PR detection at lock-in --------
+  // Compares the just-locked top set against every earlier session of the
+  // same exercise NAME (weeks duplicate exercises under new ids). A heavier
+  // top set — or more reps at the same weight — celebrates on the spot and
+  // writes an entry into the athlete's PR list.
+  function detectAndCelebratePR(ex, entry, cardEl) {
+    let top = null;
+    (entry.sets || []).forEach((s) => {
+      const w = parseFloat(s.weight), r = parseInt(s.reps) || 0;
+      if (!isFinite(w) || w <= 0) return;
+      if (!top || w > top.w || (w === top.w && r > top.r)) top = { w, r };
+    });
+    if (!top) return;
+    const name = (ex.name || "").trim();
+    if (!name || ex.kind === "mobility") return;
+    const logs = state.clientData.progress.exerciseLogs || {};
+    let prevBest = null;
+    (state.clientData.program?.client?.weeks || []).forEach((wk) => (wk.days || []).forEach((d) => (d.exercises || []).forEach((e2) => {
+      if ((e2.name || "").trim().toLowerCase() !== name.toLowerCase()) return;
+      (logs[e2.id] || []).forEach((l) => {
+        if (e2.id === ex.id && l.date === entry.date) return; // the set being judged
+        (l.sets || []).forEach((s) => {
+          const w = parseFloat(s.weight), r = parseInt(s.reps) || 0;
+          if (!isFinite(w) || w <= 0) return;
+          if (!prevBest || w > prevBest.w || (w === prevBest.w && r > prevBest.r)) prevBest = { w, r };
+        });
+      });
+    })));
+    if (!prevBest) return; // first session of this lift — nothing to beat yet
+    if (!(top.w > prevBest.w || (top.w === prevBest.w && top.r > prevBest.r))) return;
+    const prs = state.clientData.progress.personalRecords || (state.clientData.progress.personalRecords = []);
+    if (!prs.some((p) => p.name === name && p.date === entry.date && String(p.weight) === String(top.w))) {
+      prs.push(makePR({ name, weight: String(top.w), reps: String(top.r), date: entry.date, notes: "Auto-detected during workout 🎉" }));
+    }
+    if (cardEl) celebrateElement(cardEl, "pr-celebrate");
+    toast(`🎉 New PR — ${name}: ${top.w} lb × ${top.r}!`, 3500);
+  }
+
+  // -------- Rest timer (athlete workout detail) --------
+  let _restEnd = 0, _restIv = null;
+  function showRestTimer() { const w = $("#rest-timer"); if (w) show(w); }
+  function hideRestTimer() {
+    stopRestTimer(false);
+    const w = $("#rest-timer"); if (w) hide(w);
+    $("#rest-timer-pop")?.classList.add("hidden");
+  }
+  function startRestTimer(sec) {
+    _restEnd = Date.now() + sec * 1000;
+    clearInterval(_restIv);
+    $("#rest-timer-btn")?.classList.add("running");
+    _restIv = setInterval(tickRestTimer, 250);
+    tickRestTimer();
+    $("#rest-timer-pop")?.classList.add("hidden");
+  }
+  function stopRestTimer(finished) {
+    clearInterval(_restIv); _restIv = null; _restEnd = 0;
+    const btn = $("#rest-timer-btn");
+    if (!btn) return;
+    btn.classList.remove("running");
+    if (finished) {
+      btn.textContent = "✅ Go!";
+      btn.classList.add("done-flash");
+      setTimeout(() => { btn.classList.remove("done-flash"); if (!_restIv) btn.textContent = "⏱ Rest"; }, 2400);
+    } else {
+      btn.textContent = "⏱ Rest";
+    }
+  }
+  function tickRestTimer() {
+    const btn = $("#rest-timer-btn"); if (!btn) return;
+    const left = Math.ceil((_restEnd - Date.now()) / 1000);
+    if (left <= 0) {
+      stopRestTimer(true);
+      try { navigator.vibrate?.([200, 100, 200]); } catch (e) {}
+      restBeep();
+      return;
+    }
+    btn.textContent = `⏱ ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+  }
+  function restBeep() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+      const ac = new AC();
+      const o = ac.createOscillator(); const g = ac.createGain();
+      o.connect(g); g.connect(ac.destination);
+      o.frequency.value = 880; g.gain.value = 0.08;
+      o.start();
+      setTimeout(() => { try { o.stop(); ac.close(); } catch (e) {} }, 400);
+    } catch (e) {}
+  }
+
+  // -------- Coach: money strip + last-activity helpers --------
+  function lastActivityISO(p) {
+    if (!p) return null;
+    let last = null;
+    const consider = (d) => { if (d && (!last || d > last)) last = d; };
+    Object.values(p.exerciseLogs || {}).forEach((ls) => (ls || []).forEach((l) => consider(l.date)));
+    Object.values(p.dayCompletions || {}).forEach((v) => (Array.isArray(v) ? v : []).forEach(consider));
+    (p.bodyweightLog || []).forEach((b) => consider(b.date));
+    (p.cardioLogs || []).forEach((l) => consider(l.date));
+    return last;
+  }
+  function renderMoneyStrip() {
+    const host = $("#dash-money-strip"); if (!host) return;
+    const mk = todayISO().slice(0, 7);
+    let pendingTotal = 0, pendingCount = 0, monthCollected = 0;
+    const owing = [];
+    (state.trainerData.clients || []).forEach((c) => {
+      (c.sessionBank?.packages || []).forEach((p) => {
+        const price = Number(p.price) || 0;
+        if (p.status === "pending" || p.status === "unpaid") {
+          pendingCount++; pendingTotal += price;
+          if (!owing.includes(c.name)) owing.push(c.name);
+        } else if (p.status === "paid" && p.paidAt && dateISO(new Date(p.paidAt)).startsWith(mk)) {
+          monthCollected += price;
+        }
+      });
+    });
+    if (!pendingCount && !monthCollected) { host.innerHTML = ""; return; }
+    host.innerHTML = `<div class="money-strip">
+      <div class="money-chip"><span class="money-num">$${monthCollected.toLocaleString()}</span><span class="money-lbl">collected this month</span></div>
+      <div class="money-chip${pendingTotal ? " warn" : ""}"><span class="money-num">$${pendingTotal.toLocaleString()}</span><span class="money-lbl">pending · ${pendingCount} package${pendingCount === 1 ? "" : "s"}</span></div>
+      ${owing.length ? `<div class="money-chip"><span class="money-num">${owing.length}</span><span class="money-lbl">owe${owing.length === 1 ? "s" : ""}: ${escapeHtml(owing.slice(0, 3).join(", "))}${owing.length > 3 ? "…" : ""}</span></div>` : ""}
+    </div>`;
+  }
+
   // -------- Modal --------
   function openModal({ title, body, actions = [] }) {
     $("#modal-title").textContent = title;
@@ -9816,6 +10250,14 @@
       if (!state.previewMode) Nav.reset(); // switching top-level tabs is a new root (except mid-preview)
       setClientTab(t.dataset.ctab);
     }));
+
+    // Rest timer (athlete workout detail)
+    $("#rest-timer-btn")?.addEventListener("click", () => {
+      if (_restIv) { stopRestTimer(false); return; } // running → tap cancels
+      $("#rest-timer-pop")?.classList.toggle("hidden");
+    });
+    $$("#rest-timer-pop [data-rest]").forEach((b) =>
+      b.addEventListener("click", () => startRestTimer(Number(b.dataset.rest))));
 
     $("#btn-client-logout").addEventListener("click", () => { Nav.reset(); exitClient(); });
     $("#btn-client-profile")?.addEventListener("click", () => setClientTab("profile"));

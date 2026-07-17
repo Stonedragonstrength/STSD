@@ -7096,6 +7096,89 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 .ex-quick-add-input::placeholder { color: var(--muted); }
 .ex-quick-add-btn { flex: 0 0 auto; }
 
+/* ============ Gamification & insights ============ */
+
+/* Weekly consistency ring (athlete overview strip) */
+.ov-ring-wrap { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; }
+.ov-ring { width: 44px; height: 44px; transform: rotate(-90deg); }
+.ov-ring-track { fill: none; stroke: var(--border); stroke-width: 4; }
+.ov-ring-fill { fill: none; stroke: var(--primary-bright); stroke-width: 4; stroke-linecap: round; transition: stroke-dashoffset 0.6s ease; }
+.ov-ring-txt { position: absolute; font-size: 0.68rem; font-weight: 800; color: var(--text); }
+.ov-ring-stat { display: flex; flex-direction: column; align-items: center; gap: 0.25em; }
+
+/* Trophy case */
+.trophy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 0.5rem; }
+.trophy {
+  display: flex; flex-direction: column; align-items: center; gap: 0.2em;
+  padding: 0.55em 0.3em; border-radius: 10px; text-align: center;
+  border: 1px solid var(--border); background: var(--surface-2);
+  opacity: 0.38; filter: grayscale(0.9);
+}
+.trophy.earned {
+  opacity: 1; filter: none;
+  border-color: rgba(234, 179, 8, 0.45);
+  background: linear-gradient(180deg, rgba(234, 179, 8, 0.12), var(--surface-2));
+}
+.trophy-icon { font-size: 1.3rem; line-height: 1; }
+.trophy-name { font-size: 0.66rem; color: var(--text-soft); font-weight: 600; }
+
+/* Monthly recap */
+.ov-recap-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6em; margin-bottom: 0.6em; }
+.ov-recap-head h4 { margin: 0; }
+.ov-recap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 0.5rem; }
+.ov-recap-stat { display: flex; flex-direction: column; align-items: center; padding: 0.5em 0.2em; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
+.ov-recap-stat .num { font-size: 1.25rem; font-weight: 800; color: var(--primary-bright); }
+.ov-recap-stat .lbl { font-size: 0.68rem; color: var(--text-soft); }
+.ov-recap, .ov-trophies { margin-top: 0.85rem; }
+
+/* Strength progression card */
+.strength-progress-card { margin-bottom: 1rem; }
+.strength-ex-select {
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  font-size: 0.85rem; padding: 0.35em 0.5em; max-width: 60%;
+}
+
+/* Rest timer — floats over the workout detail */
+.rest-timer { position: fixed; right: 16px; bottom: 78px; z-index: 60; display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem; }
+.rest-timer-btn {
+  border: 1px solid var(--primary); background: var(--surface-2); color: var(--primary-bright);
+  font-weight: 800; font-size: 1rem; padding: 0.65em 1.05em; border-radius: 999px;
+  cursor: pointer; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); white-space: nowrap;
+}
+.rest-timer-btn.running { background: var(--primary); color: #04222b; }
+.rest-timer-btn.done-flash { animation: restDone 0.5s ease 3; }
+@keyframes restDone { 50% { transform: scale(1.14); } }
+.rest-timer-pop {
+  display: flex; gap: 0.4rem; padding: 0.45rem;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+.rest-timer-pop button {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  border-radius: 8px; padding: 0.4em 0.7em; font-weight: 700; cursor: pointer;
+}
+.rest-timer-pop button:hover { border-color: var(--primary); color: var(--primary-bright); }
+
+/* Coach money strip (dashboard) */
+.money-strip { display: flex; gap: 0.55rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
+.money-chip {
+  display: flex; flex-direction: column; gap: 0.1em;
+  padding: 0.5em 0.9em; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+}
+.money-chip .money-num { font-size: 1.1rem; font-weight: 800; color: var(--primary-bright); }
+.money-chip.warn .money-num { color: var(--warn); }
+.money-chip .money-lbl { font-size: 0.72rem; color: var(--text-soft); }
+
+/* Quiet-athlete flag on dashboard cards */
+.quiet-chip {
+  display: inline-block; margin-left: 0.35em; padding: 0.05em 0.45em;
+  border-radius: 999px; font-size: 0.7rem; font-weight: 700;
+  background: rgba(245, 158, 11, 0.14); color: var(--warn);
+  border: 1px solid rgba(245, 158, 11, 0.4); white-space: nowrap;
+}
+
 /* -------- Coach "View as athlete" preview -------- */
 .preview-banner {
   display: flex;
