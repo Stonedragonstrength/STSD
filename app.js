@@ -3858,6 +3858,7 @@
   function buildAnatomy(root) {
     if (root.dataset.anatomyBuilt) return;
     root.dataset.anatomyBuilt = "1";
+    root.classList.add("anatomy"); // enables the column layout + section spacing
     root.innerHTML = `
       <p class="anatomy-intro">Tap a muscle on the body or in the list to see what it does, how to train it, and example lifts.</p>
       <div class="anatomy-toggle" role="tablist">
