@@ -92,6 +92,8 @@
   }
   function saveTrainer() {
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+    // Editing a program template live-syncs every athlete it's assigned to.
+    if (_programEditorId) scheduleTemplateSync(_programEditorId);
     // Cloud: debounced push of the client we're currently editing.
     if (window.Cloud?.enabled && state.currentClientId) {
       const c = state.trainerData.clients.find((x) => x.id === state.currentClientId);
@@ -294,13 +296,17 @@
     // new persisted fields are needed. `kind` is derived from the library name.
     const kind = seed?.kind || (seed?.name && isMobilityName(seed.name) ? "mobility" : "strength");
     const isMob = kind === "mobility";
+    // Carries persist timed:true so athlete devices (which can't see the
+    // coach's custom-exercise categories) still render them as weight × time.
+    const timed = seed?.timed === true || (!isMob && !!seed?.name && isCarryName(seed.name));
     return {
       id: uid(),
       name: seed?.name || "",
       kind,
+      timed,
       sets: seed?.sets || (isMob ? "1" : "3"),
       currentWeight: "",
-      currentReps: seed?.reps || (isMob ? "30" : ""),
+      currentReps: seed?.reps || (isMob ? "30" : (timed ? "30" : "")),
       goalWeight: "",
       goalReps: "",
       notes: seed?.notes || "",
@@ -312,7 +318,7 @@
   const EXERCISE_MODIFIERS = [
     { group: "Unilateral",  tags: ["1A", "1L"] },
     { group: "Alternation", tags: ["Alternating", "Non-Alternating"] },
-    { group: "Equipment",   tags: ["BB", "DB", "KB", "EZ Bar", "Cable", "Rope", "Wide Bar", "Band", "Machine", "Landmine"], multi: true },
+    { group: "Equipment",   tags: ["BB", "DB", "DBs", "KB", "EZ Bar", "Cable", "Rope", "Wide Bar", "Band", "Machine", "Landmine"], multi: true },
     { group: "Position",    tags: ["Incline", "Decline", "Elevated", "Seated", "Standing", "Kneeling", "Raised"] },
     { group: "Grip",        tags: ["Supinated", "Neutral", "Pronated"] },
     { group: "Style",       tags: ["Pause", "Tempo", "Explosive", "Isometric"] },
@@ -321,12 +327,20 @@
   // Hold (seconds) tags only apply alongside the Isometric tag.
   const HOLD_TAGS = ["1S", "2S", "3S", "4S", "5S"];
 
-  // A dumbbell exercise without a unilateral tag is a PAIR — the weight reads
-  // plural gym-style ("50s"). Adding 1A/1L (one arm/leg = one dumbbell)
-  // reverts it to "50 lb". BW passes through untouched.
+  // "DBs" = a pair of dumbbells — the weight reads plural gym-style ("50s").
+  // "DB" = a single dumbbell — reads "50 lb". BW passes through untouched.
+  // (Before the 2026-07-17 split there was one DB tag whose plurality was
+  // inferred from 1A/1L; the boot migration rewrote those pairs to DBs.)
   function usesDumbbellPair(ex) {
     const mods = (ex && ex.modifiers) || [];
-    return mods.includes("DB") && !mods.includes("1A") && !mods.includes("1L");
+    return mods.includes("DBs");
+  }
+  // Carry-type exercises are prescribed and logged as weight × TIME (seconds),
+  // never reps. Library carries qualify by name; coach-made ones persist
+  // ex.timed from makeExercise. (kind stays "strength" — weights still apply,
+  // unlike mobility holds.)
+  function exIsTimed(ex) {
+    return !!ex && (ex.timed === true || isCarryName(ex.name));
   }
   function exWeightLabel(ex, v) {
     if (!v) return null;
@@ -341,6 +355,7 @@
     "Non-Alternating": { color: "#64748b", bg: "rgba(100,116,139,0.18)" },
     "BB":        { color: "#818cf8", bg: "rgba(129,140,248,0.18)" },
     "DB":        { color: "#60a5fa", bg: "rgba(96,165,250,0.18)"  },
+    "DBs":       { color: "#93c5fd", bg: "rgba(147,197,253,0.18)" },
     "KB":        { color: "#a78bfa", bg: "rgba(167,139,250,0.18)" },
     "EZ Bar":    { color: "#c084fc", bg: "rgba(192,132,252,0.18)" },
     "Cable":     { color: "#2dd4bf", bg: "rgba(45,212,191,0.18)"  },
@@ -1051,6 +1066,43 @@
     state.trainerData.autoRedeemSince = Date.now();
     _trainerDataDirty = true;
   }
+  // One-time DB → DBs tag split (2026-07-17): the old single DB tag meant a
+  // PAIR of dumbbells unless 1A/1L was present. Rewrite those to the explicit
+  // DBs tag so a bare DB can now mean one dumbbell. Runs once per device —
+  // after the split, a bare DB tag is a deliberate single and must stay.
+  const KEY_DBTAG_SPLIT = "trainerpro_dbtag_split_v1";
+  if (!localStorage.getItem(KEY_DBTAG_SPLIT)) {
+    let _clientDataDirty = false;
+    const migEx = (exs, markClient) => (exs || []).forEach((ex) => {
+      const m = ex && ex.modifiers;
+      if (Array.isArray(m) && m.includes("DB") && !m.includes("DBs") && !m.includes("1A") && !m.includes("1L")) {
+        ex.modifiers = m.map((t) => (t === "DB" ? "DBs" : t));
+        if (markClient) _clientDataDirty = true; else _trainerDataDirty = true;
+      }
+    });
+    const migWeeks = (weeks, markClient) =>
+      (weeks || []).forEach((w) => (w.days || []).forEach((d) => migEx(d.exercises, markClient)));
+    const changedClients = [];
+    state.trainerData.clients.forEach((c) => {
+      const wasDirty = _trainerDataDirty;
+      _trainerDataDirty = false;
+      migWeeks(c.weeks);
+      (c.archivedPrograms || []).forEach((a) => migWeeks(a.weeks));
+      if (_trainerDataDirty) changedClients.push(c);
+      _trainerDataDirty = _trainerDataDirty || wasDirty;
+    });
+    (state.trainerData.programTemplates || []).forEach((p) => migWeeks(p.weeks));
+    (state.trainerData.workoutTemplates || []).forEach((t) => migEx(t.exercises));
+    migWeeks(state.clientData.program?.client?.weeks, true);
+    localStorage.setItem(KEY_DBTAG_SPLIT, "1");
+    if (_clientDataDirty) localStorage.setItem(KEY_CLIENT, JSON.stringify(state.clientData));
+    // Push every migrated athlete so their devices pull the rewritten tags
+    // (the debounce gives the auth session time to restore; a failed push
+    // self-heals the next time that athlete is edited).
+    if (window.Cloud?.enabled) changedClients.forEach((c) =>
+      window.Cloud.debounce(`athlete:${c.id}`, () => window.Cloud.upsertAthlete(c, state.trainerData.coachId)));
+  }
+
   if (_trainerDataDirty) saveTrainer();
 
   // One-time cloud backfill: if this device has local data that predates cloud sync,
@@ -1846,13 +1898,30 @@
     const dayDone = (d) =>
       (dc[d.id] || []).length > 0 ||
       (d.exercises.length > 0 && d.exercises.every((ex) => (logs[ex.id] || []).length > 0));
-    for (const w of weeks) {
-      for (const d of w.days) {
-        if (!dayDone(d)) return { weekId: w.id, dayId: d.id };
-      }
+    const flat = [];
+    weeks.forEach((w) => w.days.forEach((d) => flat.push({ weekId: w.id, day: d })));
+    // Anchor on the most recent activity: a skipped day back in week 1 must
+    // not read as "the current day" forever once the athlete has moved on.
+    const lastDate = (d) => {
+      let max = "";
+      (dc[d.id] || []).forEach((iso) => { if (String(iso) > max) max = String(iso); });
+      (d.exercises || []).forEach((ex) =>
+        (logs[ex.id] || []).forEach((l) => { if (String(l.date || "") > max) max = String(l.date); }));
+      return max;
+    };
+    let anchorIdx = 0, anchorDate = "";
+    flat.forEach((f, i) => {
+      const dt = lastDate(f.day);
+      if (dt && dt >= anchorDate) { anchorDate = dt; anchorIdx = i; }
+    });
+    // First not-done day at or after the latest activity, else first not-done
+    // anywhere, else the last day of the program.
+    for (let i = anchorIdx; i < flat.length; i++) {
+      if (!dayDone(flat[i].day)) return { weekId: flat[i].weekId, dayId: flat[i].day.id };
     }
-    const lastWeek = weeks[weeks.length - 1];
-    return { weekId: lastWeek.id, dayId: lastWeek.days[lastWeek.days.length - 1].id };
+    for (const f of flat) if (!dayDone(f.day)) return { weekId: f.weekId, dayId: f.day.id };
+    const last = flat[flat.length - 1];
+    return { weekId: last.weekId, dayId: last.day.id };
   }
 
   // Open the coach program editor directly on one week/day of an athlete's
@@ -1866,6 +1935,10 @@
       _coachActiveWeekIdx = wIdx;
       const dIdx = (c.weeks[wIdx].days || []).findIndex((d) => d.id === dayId);
       if (dIdx >= 0) c.weeks[wIdx]._activeDayIdx = dIdx;
+    } else {
+      // Unknown week (stale id from another athlete/session) — land on week 1
+      // instead of whatever week index the editor last had open.
+      _coachActiveWeekIdx = 0;
     }
     setTab("program");
     renderWeeks();
@@ -1887,6 +1960,49 @@
     renderClientGrid();
   }
 
+  // Roster grouping: partition the athlete list under section headers.
+  // The chosen mode persists per device.
+  const KEY_ROSTER_GROUP = "trainerpro_roster_group_v1";
+  function groupRoster(clients, mode) {
+    if (mode === "membership") {
+      const buckets = new Map();
+      MEMBERSHIPS.forEach((m) => buckets.set(m.id, { label: `🏅 ${membershipTitle(m)}`, clients: [] }));
+      buckets.set("", { label: "No membership", clients: [] });
+      clients.forEach((c) => {
+        const id = c.sessionBank?.membership || "";
+        buckets.get(buckets.has(id) ? id : "").clients.push(c);
+      });
+      return [...buckets.values()].filter((g) => g.clients.length);
+    }
+    if (mode === "activity") {
+      const act = { label: "🔥 Active this week", clients: [] };
+      const quiet = { label: "😴 Quiet 7+ days", clients: [] };
+      const none = { label: "❔ No activity yet", clients: [] };
+      clients.forEach((c) => {
+        const iso = lastActivityISO(c.importedProgress);
+        if (!iso) return none.clients.push(c);
+        const days = Math.floor((Date.now() - new Date(iso + "T12:00:00").getTime()) / 86400000);
+        (days >= 7 ? quiet : act).clients.push(c);
+      });
+      return [act, quiet, none].filter((g) => g.clients.length);
+    }
+    if (mode === "program") {
+      const run = { label: "🏃 In progress", clients: [] };
+      const done = { label: "✅ Program complete", clients: [] };
+      const no = { label: "📭 No program", clients: [] };
+      clients.forEach((c) => {
+        const totalDays = (c.weeks || []).reduce((n, w) => n + w.days.length, 0);
+        if (!totalDays) return no.clients.push(c);
+        const dc = c.importedProgress?.dayCompletions || {};
+        const completed = c.weeks.reduce((n, w) =>
+          n + w.days.filter((d) => (dc[d.id] || []).length > 0).length, 0);
+        (completed === totalDays ? done : run).clients.push(c);
+      });
+      return [run, done, no].filter((g) => g.clients.length);
+    }
+    return [{ label: "", clients }];
+  }
+
   // Re-render just the athlete cards (no view switch). Safe to call after a
   // package approve/decline or a background refresh to update the 🎟 chips.
   function renderClientGrid() {
@@ -1895,11 +2011,30 @@
     if (!grid) return;
     grid.innerHTML = "";
 
-    if (state.trainerData.clients.length === 0) { show(empty); return; }
+    const controls = $("#roster-controls");
+    if (state.trainerData.clients.length === 0) {
+      show(empty);
+      if (controls) hide(controls);
+      return;
+    }
     hide(empty);
 
+    const groupMode = localStorage.getItem(KEY_ROSTER_GROUP) || "none";
+    if (controls) {
+      show(controls);
+      $$("#roster-controls [data-roster-group]").forEach((b) =>
+        b.classList.toggle("active", b.dataset.rosterGroup === groupMode));
+    }
+
     const sorted = [...state.trainerData.clients].sort((a, b) => a.name.localeCompare(b.name));
-    for (const c of sorted) {
+    for (const group of groupRoster(sorted, groupMode)) {
+    if (group.label) {
+      const head = document.createElement("div");
+      head.className = "roster-section-head";
+      head.textContent = `${group.label} · ${group.clients.length}`;
+      grid.appendChild(head);
+    }
+    for (const c of group.clients) {
       const weekCount = c.weeks.length;
       const exerciseCount = c.weeks.reduce((n, w) => n + w.days.reduce((m, d) => m + d.exercises.length, 0), 0);
       const totalDays = c.weeks.reduce((n, w) => n + w.days.length, 0);
@@ -2011,6 +2146,7 @@
 
       card.addEventListener("click", () => { Nav.push(renderDashboard); openClient(c.id); setTab("profile"); });
       grid.appendChild(card);
+    }
     }
     fitClientRowNames();
     requestAnimationFrame(fitClientRowNames); // again post-layout, in case the view was still hidden
@@ -2153,6 +2289,66 @@
     grid.appendChild(section("🟢 Ready to assign", "No finished programs yet. Mark one complete when it's ready.", ready));
   }
 
+  // ── Template → assigned-athlete live sync ──
+  // Assigning a program stamps client.assignedProgramId. From then on, edits
+  // in the Programs editor rewrite each linked athlete's copy (exercises are
+  // matched by name within the same day so logged history stays attached)
+  // and push them to the cloud. Direct edits to an athlete's own copy stay
+  // until the next template edit, when the template wins again.
+  let _tplSyncTimer = null;
+  function linkedClientsFor(tplId) {
+    return state.trainerData.clients.filter((c) => c.assignedProgramId === tplId);
+  }
+  function scheduleTemplateSync(tplId) {
+    clearTimeout(_tplSyncTimer);
+    _tplSyncTimer = setTimeout(() => {
+      const tpl = (state.trainerData.programTemplates || []).find((p) => p.id === tplId);
+      if (!tpl) return;
+      const linked = linkedClientsFor(tplId);
+      if (!linked.length) return;
+      linked.forEach((c) => {
+        syncWeeksFromTemplate(c, tpl);
+        if (window.Cloud?.enabled) window.Cloud.debounce(`athlete:${c.id}`, () =>
+          window.Cloud.upsertAthlete(c, state.trainerData.coachId));
+      });
+      localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+    }, 800);
+  }
+  function syncWeeksFromTemplate(client, tpl) {
+    const oldWeeks = client.weeks || [];
+    client.weeks = (tpl.weeks || []).map((tw, wi) => {
+      const ow = oldWeeks[wi];
+      const oldDays = ow?.days || [];
+      return {
+        ...structuredClone(tw),
+        id: ow?.id || uid(),
+        days: (tw.days || []).map((td, di) => {
+          const od = oldDays[di];
+          const pool = (od?.exercises || []).slice(); // consumed as names match
+          return {
+            ...structuredClone(td),
+            id: od?.id || uid(),
+            exercises: (td.exercises || []).map((te) => {
+              const key = String(te.name || "").trim().toLowerCase();
+              const mi = pool.findIndex((oe) => String(oe.name || "").trim().toLowerCase() === key);
+              const match = mi >= 0 ? pool.splice(mi, 1)[0] : null;
+              return { ...structuredClone(te), id: match ? match.id : uid() };
+            }),
+          };
+        }),
+      };
+    });
+  }
+  function refreshProgramEditorLinked(tpl) {
+    const el = $("#program-editor-linked");
+    if (!el) return;
+    const n = linkedClientsFor(tpl.id).length;
+    if (!n) { hide(el); return; }
+    const names = linkedClientsFor(tpl.id).map((c) => c.name).join(", ");
+    el.textContent = `🔗 Live on ${n} athlete${n === 1 ? "" : "s"} (${names}). Edits here update their program.`;
+    show(el);
+  }
+
   function openProgramEditor(id) {
     ensureProgramTemplates();
     _programEditorId = id;
@@ -2163,6 +2359,7 @@
     $("#program-editor-name").value = tpl.name || "";
     $("#program-editor-desc").value = tpl.description || "";
     updateProgramStatusBtn(tpl);
+    refreshProgramEditorLinked(tpl);
     renderWeeks();
   }
 
@@ -2234,6 +2431,7 @@
                 exercises: d.exercises.map((e) => ({ ...e, id: uid() })),
               })),
             }));
+            client.assignedProgramId = tpl.id; // template edits live-sync here
             // Target this athlete for the cloud push. saveTrainer() only syncs
             // state.currentClientId, which may be a different athlete (or none)
             // when assigning from the Programs tab — so point it here first and
@@ -2344,6 +2542,7 @@
               exercises: d.exercises.map((e) => ({ ...e, id: uid() })),
             })),
           }));
+          c.assignedProgramId = p.id; // template edits live-sync here
           saveTrainer();
           if (window.Cloud?.enabled) window.Cloud.upsertAthlete(c, state.trainerData.coachId);
           closeModal();
@@ -2402,6 +2601,10 @@
   function openClient(id) {
     const c = state.trainerData.clients.find((x) => x.id === id);
     if (!c) return renderDashboard();
+    // The client view edits the athlete's own copy, never a template. A stale
+    // editor id here made renderWeeks show the template instead of the
+    // athlete's program (the "Edit this day lands on a random program" bug).
+    _programEditorId = null;
     _coachActiveWeekIdx = 0;
     _prEditIds = new Set();
     _prNewLifts = [];
@@ -3272,6 +3475,21 @@
   }
   // Hold-duration options (seconds) for the coach's mobility prescription picker.
   const HOLD_SEC_VALUES = ["10", "15", "20", "30", "45", "60", "90", "120"];
+  // Categories whose exercises are weight × time (seconds) — see exIsTimed().
+  const TIMED_CATS = ["Carries"];
+  const CARRY_NAMES = new Set(
+    EXERCISE_LIBRARY.filter((c) => TIMED_CATS.includes(c.cat)).flatMap((c) => c.ex)
+  );
+  function isCarryName(name) {
+    if (!name) return false;
+    if (CARRY_NAMES.has(name)) return true;
+    // Any name that says "carry" counts (covers coach-typed variants on both
+    // the coach and athlete side, where the custom list isn't available).
+    if (/\bcarr(y|ies)\b/i.test(name)) return true;
+    return customExerciseList().some((c) => c.name === name && TIMED_CATS.includes(c.cat));
+  }
+  // Time options (seconds) for the coach's carry prescription picker.
+  const CARRY_SEC_VALUES = ["10", "15", "20", "30", "40", "45", "60", "90", "120"];
 
   // Flat, de-duped, alphabetised list of every library exercise — feeds the
   // native <datalist> that powers the type-to-add field on each day.
@@ -4519,6 +4737,7 @@
 
     if (!ex.modifiers) ex.modifiers = []; // backfill old data
     const isMob = ex.kind === "mobility"; // rounds × hold-seconds, no weights
+    const isTimed = exIsTimed(ex);        // carries: weight × time (seconds)
 
     // Drag handle (desktop — hidden on mobile where native HTML5 drag doesn't work)
     const handle = document.createElement("span");
@@ -4543,6 +4762,25 @@
     moveDownBtn.className = "btn-icon-mini ex-move-btn";
     moveDownBtn.title = "Move down"; moveDownBtn.textContent = "▼";
     moveDownBtn.addEventListener("click", () => moveExercise(1));
+
+    // Jump straight to the top/bottom of the day — the fast way to organize
+    // long days without tapping ▲/▼ a dozen times.
+    function moveExerciseEdge(toTop) {
+      const idx = day.exercises.findIndex((e) => e.id === ex.id);
+      if (idx === -1) return;
+      day.exercises.splice(idx, 1);
+      if (toTop) day.exercises.unshift(ex); else day.exercises.push(ex);
+      saveTrainer(); rerenderFn();
+    }
+    const moveTopBtn = document.createElement("button");
+    moveTopBtn.className = "btn-icon-mini ex-move-btn ex-move-edge-btn";
+    moveTopBtn.title = "Move to top"; moveTopBtn.textContent = "⤒";
+    moveTopBtn.addEventListener("click", () => moveExerciseEdge(true));
+
+    const moveBottomBtn = document.createElement("button");
+    moveBottomBtn.className = "btn-icon-mini ex-move-btn ex-move-edge-btn";
+    moveBottomBtn.title = "Move to bottom"; moveBottomBtn.textContent = "⤓";
+    moveBottomBtn.addEventListener("click", () => moveExerciseEdge(false));
 
     // Opens the tag picker; chips clicked below route here so tags can only be
     // removed by unclicking them inside the popup (never by tapping the chip).
@@ -4627,15 +4865,19 @@
     const x1 = document.createElement("span");
     x1.className = "ex-row-sep"; x1.textContent = "×";
 
-    // Prescribed reps
+    // Prescribed reps (carries: prescribed seconds, shown as "40s")
+    const crLabel = (v) => (isTimed && /^\d+(\.\d+)?$/.test(String(v)) ? v + "s" : v);
     const crBtn = document.createElement("button");
     crBtn.className = "picker-btn picker-btn-sm" + (ex.currentReps ? "" : " empty");
-    crBtn.textContent = ex.currentReps || "—";
-    crBtn.title = "Prescribed reps";
-    crBtn.addEventListener("click", (e) => { e.stopPropagation(); openGridPicker("Reps", REPS_VALUES, ex.currentReps || "8", (val) => {
-      ex.currentReps = val; saveTrainer(); crBtn.textContent = val; crBtn.classList.toggle("empty", !val);
+    crBtn.textContent = crLabel(ex.currentReps) || "—";
+    crBtn.title = isTimed ? "Prescribed time (seconds)" : "Prescribed reps";
+    crBtn.addEventListener("click", (e) => { e.stopPropagation(); openGridPicker(
+      isTimed ? "Time (sec)" : "Reps",
+      isTimed ? CARRY_SEC_VALUES : REPS_VALUES,
+      ex.currentReps || (isTimed ? "30" : "8"), (val) => {
+      ex.currentReps = val; saveTrainer(); crBtn.textContent = crLabel(val); crBtn.classList.toggle("empty", !val);
       refreshProgBtn(); // reps are the ladder's floor
-    }, crBtn, 6); });
+    }, crBtn, isTimed ? 4 : 6); });
 
     // Warm-up sets (optional, up to 2) — explicit lb × reps, done before the
     // working sets. Mirrors the finisher button; sits at the front of the cluster.
@@ -4725,6 +4967,8 @@
       handle.style.pointerEvents = locked ? "none" : "";
       moveUpBtn.disabled = locked;
       moveDownBtn.disabled = locked;
+      moveTopBtn.disabled = locked;
+      moveBottomBtn.disabled = locked;
       chipsBefore.style.pointerEvents = locked ? "none" : "";
       chipsAfter.style.pointerEvents = locked ? "none" : "";
       saveBtn.classList.toggle("hidden", locked);
@@ -4775,8 +5019,10 @@
     }
 
     row.appendChild(handle);
+    row.appendChild(moveTopBtn);
     row.appendChild(moveUpBtn);
     row.appendChild(moveDownBtn);
+    row.appendChild(moveBottomBtn);
     // Effort/heat stays pinned on the left; tag chips render after it so adding
     // tags never shifts the effort button around. Intensity doesn't apply to
     // mobility/stretching holds.
@@ -8398,6 +8644,37 @@
     return block;
   }
 
+  // -------- Day progress (floating bottom bar + per-card fill lines) --------
+  // Every exercise card rendered in the open day registers a getter that
+  // reports { done, total } in set units (working sets for lifts, rounds for
+  // holds). The floating bar sums them live as the athlete logs.
+  let _dayProgressGetters = [];
+  let _dayProgressOn = false;
+  function resetDayProgress() { _dayProgressGetters = []; }
+  function registerDayProgress(fn) { _dayProgressGetters.push(fn); }
+  function showDayProgress() {
+    _dayProgressOn = state.workoutView?.mode === "detail";
+    updateDayProgressBar();
+  }
+  function hideDayProgress() {
+    _dayProgressOn = false;
+    const el = $("#day-progress"); if (el) hide(el);
+  }
+  function updateDayProgressBar() {
+    const el = $("#day-progress"); if (!el) return;
+    if (!_dayProgressOn) { hide(el); return; }
+    let done = 0, total = 0;
+    _dayProgressGetters.forEach((g) => {
+      try { const r = g(); done += r.done; total += r.total; } catch (e) {}
+    });
+    if (!total) { hide(el); return; }
+    show(el);
+    const pct = Math.min(100, Math.round((done / total) * 100));
+    $("#day-progress-fill").style.width = pct + "%";
+    el.classList.toggle("complete", pct >= 100);
+    $("#day-progress-label").textContent = pct >= 100 ? "Day done 🎉" : `${done}/${total} sets`;
+  }
+
   function renderWorkoutDetailHeader(week, day) {
     if (!state.workoutView.date) state.workoutView.date = todayISO();
     const head = $("#workout-detail-head");
@@ -8462,6 +8739,7 @@
 
     renderWorkoutDetailHeader(week, day);
 
+    resetDayProgress(); // cards rendered below re-register their set counts
     const list = $("#workout-detail-list");
     list.innerHTML = "";
     if (!day.exercises.length) {
@@ -8583,6 +8861,21 @@
     rx.textContent = numRounds ? `${numRounds} × ${holdSec ? holdSec + "s" : "hold"}` : "—";
     line.appendChild(rx);
 
+    // Fill line at the bottom of the card — rounds ticked / rounds prescribed.
+    const mobBar = document.createElement("div");
+    mobBar.className = "cex-progress-line";
+    const mobBarFill = document.createElement("div");
+    mobBarFill.className = "cex-progress-fill";
+    mobBar.appendChild(mobBarFill);
+    const mobProgress = () => ({ done: rounds.filter(Boolean).length, total: numRounds });
+    const updateMobBar = () => {
+      const { done, total } = mobProgress();
+      const pct = total ? Math.min(100, Math.round((done / total) * 100)) : 0;
+      mobBarFill.style.width = pct + "%";
+      mobBar.classList.toggle("complete", pct >= 100);
+      updateDayProgressBar();
+    };
+
     const persist = () => {
       const store = state.clientData.progress.exerciseLogs || (state.clientData.progress.exerciseLogs = {});
       if (!rounds.some(Boolean)) {
@@ -8599,6 +8892,7 @@
       doneCircle.classList.toggle("done", done);
       doneCircle.textContent = done ? "✓" : "";
       wrapper.classList.toggle("logged", done);
+      updateMobBar();
       autoSyncDayCompletion(day);
       renderAthleteCalendar();
       if (state.workoutView?.mode === "detail" && state.workoutView.dayId === day.id) {
@@ -8657,12 +8951,24 @@
       wrapper.appendChild(panel);
     }
 
+    if (numRounds) {
+      wrapper.appendChild(mobBar);
+      updateMobBar();
+      if (state.workoutView?.mode === "detail" && state.workoutView.dayId === day.id) {
+        registerDayProgress(mobProgress);
+      }
+    }
+
     return wrapper;
   }
 
   function renderClientExercise(week, day, ex, jumpTo) {
     if (ex.kind === "mobility") return renderClientMobility(week, day, ex, jumpTo);
     if (!ex.modifiers) ex.modifiers = [];
+    // Carries log weight × time — the reps column reads as seconds ("40s").
+    const isTimed = exIsTimed(ex);
+    const tS = isTimed ? "s" : "";
+    const withT = (v) => (isTimed && /^\d+(\.\d+)?$/.test(String(v)) ? v + "s" : v);
     const logs = state.clientData.progress?.exerciseLogs?.[ex.id] || [];
     const isDone = hasAnyLog(ex);
     // The date being logged right now — needed up here so the "Last:" line can
@@ -8732,12 +9038,12 @@
       // toward the ceiling as prior weeks are hit; "+" = beat it if you can).
       // Bodyweight ladders have no weight leg — just BW and the moving reps.
       rxParts.push(prog.bw ? "BW" : exWeightLabel(ex, String(prog.weight)));
-      rxParts.push(`× ${prog.reps}+`);
+      rxParts.push(`× ${prog.reps}${tS}+`);
     } else {
       // Single prescribed weight (the old upper/range display was retired
       // 2026-07-15 along with the coach-side range picker).
       if (ex.currentWeight) rxParts.push(exWeightLabel(ex, ex.currentWeight));
-      if (ex.currentReps) rxParts.push("× " + ex.currentReps);
+      if (ex.currentReps) rxParts.push("× " + withT(ex.currentReps));
     }
     const rxMain = document.createElement("span");
     rxMain.className = "cex-rx-main";
@@ -8765,10 +9071,10 @@
         // mixed weights → "135×9 · 130×8".
         const wts = [...new Set(lastLog.sets.map((s) => s.weight || "BW"))];
         ll.textContent = wts.length === 1
-          ? `Last: ${wts[0] === "BW" ? "BW" : wts[0] + " lb"} × ${lastLog.sets.map((s) => s.reps || "?").join(", ")}`
-          : `Last: ${lastLog.sets.map((s) => `${s.weight || "BW"}×${s.reps || "?"}`).join(" · ")}`;
+          ? `Last: ${wts[0] === "BW" ? "BW" : wts[0] + " lb"} × ${lastLog.sets.map((s) => (s.reps ? s.reps + tS : "?")).join(", ")}`
+          : `Last: ${lastLog.sets.map((s) => `${s.weight || "BW"}×${s.reps ? s.reps + tS : "?"}`).join(" · ")}`;
       } else {
-        ll.textContent = `Last: ${lastLog.weight ? lastLog.weight + " lb" : "BW"} × ${lastLog.reps || "?"}`;
+        ll.textContent = `Last: ${lastLog.weight ? lastLog.weight + " lb" : "BW"} × ${lastLog.reps ? lastLog.reps + tS : "?"}`;
       }
       ll.title = `Previous session (${lastLog.date})`;
       rxEl.appendChild(ll);
@@ -8832,11 +9138,14 @@
     // DB-pair exercises read plural ("50s") in placeholders, matching the rx.
     const pairS = usesDumbbellPair(ex) ? "s" : "";
     const wtPh = prog && !prog.bw ? prog.weight + pairS : (ex.currentWeight && ex.currentWeight !== "BW" ? ex.currentWeight + pairS : "");
-    const repPh = prog ? `${prog.reps}+` : (ex.currentReps || "");
+    const repPh = prog ? `${prog.reps}${tS}+` : (ex.currentReps ? withT(ex.currentReps) : "");
 
     // Header row
     const setTable = document.createElement("div");
     setTable.className = "cex-set-table";
+
+    // Per-exercise fill line (bottom edge of the card) + day-bar registration.
+    let exBar = null, exProgress = null, updateExBar = () => {};
 
     if (!numSets) {
       setTable.innerHTML = `<p class="cex-no-sets">Sets not prescribed yet — your coach will fill this in.</p>`;
@@ -8857,6 +9166,24 @@
     // (±1). Empty fields seed from the prescription so the first tap lands on a
     // sensible number instead of 0. Collected so they disable when locked.
     const setSteppers = [];
+    // Card fill line: fraction of working sets filled in (or skipped).
+    // Locked cards read full.
+    const setDoneNow = (it) => it.skipped || (it.rp.value && (it.wt.value || ex.currentWeight === "BW"));
+    exProgress = () => (isLocked
+      ? { done: numSets, total: numSets }
+      : { done: setInputs.filter(setDoneNow).length, total: numSets });
+    exBar = document.createElement("div");
+    exBar.className = "cex-progress-line";
+    const exBarFill = document.createElement("div");
+    exBarFill.className = "cex-progress-fill";
+    exBar.appendChild(exBarFill);
+    updateExBar = () => {
+      const { done, total } = exProgress();
+      const pct = total ? Math.min(100, Math.round((done / total) * 100)) : 0;
+      exBarFill.style.width = pct + "%";
+      exBar.classList.toggle("complete", pct >= 100);
+      updateDayProgressBar();
+    };
     // Values that are actually filled in (typed, stepped, tapped-to-accept, or
     // restored from today's draft) render in the edited tint, so it's obvious
     // at a glance which fields hold real numbers vs. placeholder targets.
@@ -8937,7 +9264,7 @@
       const wSeed = parseFloat(w.weight);
       const rSeed = parseInt(w.reps, 10);
       const wt = Object.assign(document.createElement("input"), { type: "number", step: "0.5", min: "0", placeholder: (w.weight && w.weight !== "BW") ? w.weight + pairS : "lb", readOnly: isLocked });
-      const rp = Object.assign(document.createElement("input"), { type: "number", min: "0", placeholder: w.reps || "reps", readOnly: isLocked });
+      const rp = Object.assign(document.createElement("input"), { type: "number", min: "0", placeholder: w.reps ? withT(w.reps) : (isTimed ? "sec" : "reps"), readOnly: isLocked });
       wt.className = "cex-input"; rp.className = "cex-input";
       wt.addEventListener("click", (e) => e.stopPropagation());
       rp.addEventListener("click", (e) => e.stopPropagation());
@@ -8946,7 +9273,7 @@
 
       col.appendChild(lbl);
       col.appendChild(mkStepField(wt, 2.5, wSeed, w.weight !== "BW", () => fillSibling(rp, rSeed)));
-      col.appendChild(mkStepField(rp, 1, rSeed, true, () => fillSibling(wt, wSeed)));
+      col.appendChild(mkStepField(rp, isTimed ? 5 : 1, rSeed, true, () => fillSibling(wt, wSeed)));
 
       setTable.appendChild(col);
       warmupInputs.push({ wt, rp });
@@ -8966,7 +9293,7 @@
       lbl.title = "Tap to skip this set";
 
       const wt = Object.assign(document.createElement("input"), { type: "number", step: "0.5", min: "0", placeholder: wtPh || "lb", readOnly: isLocked });
-      const rp = Object.assign(document.createElement("input"), { type: "number", min: "0", placeholder: repPh || "reps", readOnly: isLocked });
+      const rp = Object.assign(document.createElement("input"), { type: "number", min: "0", placeholder: repPh || (isTimed ? "sec" : "reps"), readOnly: isLocked });
       wt.className = "cex-input"; rp.className = "cex-input";
       wt.addEventListener("click", (e) => e.stopPropagation());
       rp.addEventListener("click", (e) => e.stopPropagation());
@@ -8991,8 +9318,8 @@
       col.appendChild(lbl);
       // Weight field, ±2.5 lb (bodyweight lifts log reps only — no weight arrows).
       col.appendChild(mkStepField(wt, 2.5, weightBase, ex.currentWeight !== "BW", () => fillSibling(rp, prescribedReps)));
-      // Reps field, ±1.
-      col.appendChild(mkStepField(rp, 1, prescribedReps, true, () => fillSibling(wt, weightBase)));
+      // Reps field, ±1 (carries count seconds, ±5).
+      col.appendChild(mkStepField(rp, isTimed ? 5 : 1, prescribedReps, true, () => fillSibling(wt, weightBase)));
 
       setTable.appendChild(col);
       setInputs.push(item);
@@ -9069,6 +9396,7 @@
     let _ast = null;
     const autoSave = () => {
       refreshClearBtn(); // values are already current — keep ⌫ in sync live
+      updateExBar();     // ...and the card/day progress fills too
       clearTimeout(_ast);
       _ast = setTimeout(() => {
         const sets = setInputs.map(({ wt, rp, skipped }) => (skipped ? { weight: "", reps: "", skipped: true } : { weight: wt.value, reps: rp.value }))
@@ -9161,6 +9489,7 @@
       if (isLocked) hide(skipBtn); else show(skipBtn);
       refreshClearBtn();
       setFieldsReadonly(isLocked);
+      updateExBar();
     };
 
     lockBtn.addEventListener("click", (e) => {
@@ -9285,8 +9614,8 @@
           : l.sets?.length
           ? l.sets.map((s, i) => s.skipped
               ? `<span class="cex-hist-set cex-hist-skip"><em>S${i+1}</em> ⊘</span>`
-              : `<span class="cex-hist-set"><em>S${i+1}</em> ${escapeHtml(s.weight || "BW")} × ${escapeHtml(s.reps || "?")}</span>`).join("")
-          : `<span class="cex-hist-set">${escapeHtml(l.weight || "BW")} lb × ${escapeHtml(l.reps || "?")} reps</span>`;
+              : `<span class="cex-hist-set"><em>S${i+1}</em> ${escapeHtml(s.weight || "BW")} × ${escapeHtml(s.reps ? s.reps + tS : "?")}</span>`).join("")
+          : `<span class="cex-hist-set">${escapeHtml(l.weight || "BW")} lb × ${escapeHtml(l.reps || "?")} ${isTimed ? "sec" : "reps"}</span>`;
         const dateHtml = l.date === logDate ? "" : `<span class="cex-hist-date">${escapeHtml(l.date)}</span>`;
         item.innerHTML = `${dateHtml}
           <span class="cex-hist-sets">${setStr}</span>
@@ -9308,6 +9637,12 @@
 
     wrapper.appendChild(row);
     wrapper.appendChild(panel);
+    if (exBar) { wrapper.appendChild(exBar); updateExBar(); }
+    // Only cards in the OPEN day feed the floating bar (this renderer also
+    // serves the all-weeks view, which must not pollute the day's registry).
+    if (exProgress && state.workoutView?.mode === "detail" && state.workoutView.dayId === day.id) {
+      registerDayProgress(exProgress);
+    }
     return wrapper;
   }
 
@@ -9691,7 +10026,8 @@
     const byName = {};
     (client?.weeks || []).forEach((w) => (w.days || []).forEach((d) => (d.exercises || []).forEach((ex) => {
       const name = (ex.name || "").trim();
-      if (!name || ex.kind === "mobility") return;
+      // Timed carries are excluded — seconds would read as reps in e1RM math.
+      if (!name || ex.kind === "mobility" || exIsTimed(ex)) return;
       (logs[ex.id] || []).forEach((l) => {
         let top = null;
         (l.sets || []).forEach((s) => {
@@ -10131,7 +10467,8 @@
   // split history, and warm-ups/skipped sets never count.
   function detectAndCelebratePR(ex, entry, cardEl) {
     const name = (ex.name || "").trim();
-    if (!name || ex.kind === "mobility") return;
+    // Timed carries are excluded — seconds would read as reps in e1RM math.
+    if (!name || ex.kind === "mobility" || exIsTimed(ex)) return;
     const key = exKey(name);
     const bw = ex.currentWeight === "BW";
     const logs = state.clientData.progress.exerciseLogs || {};
@@ -10367,7 +10704,7 @@
       { sel: ".workout-detail-list .cex-lock-btn", go: goDetail,
         title: "Lock it in", text: "When you're done, lock the exercise. Untouched boxes fill with the plan, and the green check makes it count." },
       { sel: "#rest-timer-btn", go: goDetail,
-        title: "Rest timer", text: "Tap, pick a duration, and it dings when it's time to lift again. The bell next to it mutes the ding." },
+        title: "Rest timer", text: "Tap Go to start your rest. It dings when it's time to lift, then rolls straight into the next rest until you stop it. The small time button picks the length, the bell mutes the ding." },
       { sel: '[data-ctab-panel="prs"]', go: () => setClientTab("prs"),
         title: "Personal records", text: "Your PRs live here. Locking a heavy set can raise them automatically." },
       { sel: "#client-feedback", go: () => setClientTab("diet"),
@@ -10412,11 +10749,23 @@
       if (_restAC.state === "suspended") _restAC.resume();
     } catch (e) {}
   }
-  function showRestTimer() { const w = $("#rest-timer"); if (w) show(w); }
+  // Chosen rest length persists — the Go button reuses it and the timer
+  // auto-repeats with it after every ding until the athlete taps Stop.
+  const KEY_REST_DUR = "trainerpro_rest_dur_v1";
+  function restDur() {
+    const v = parseInt(localStorage.getItem(KEY_REST_DUR), 10);
+    return Number.isFinite(v) && v > 0 ? v : 90;
+  }
+  function fmtRest(sec) { return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`; }
+  function refreshRestOptBtn() {
+    const b = $("#rest-timer-opt-btn"); if (b) b.textContent = fmtRest(restDur());
+  }
+  function showRestTimer() { const w = $("#rest-timer"); if (w) show(w); refreshRestOptBtn(); showDayProgress(); }
   function hideRestTimer() {
     stopRestTimer(false);
     const w = $("#rest-timer"); if (w) hide(w);
     $("#rest-timer-pop")?.classList.add("hidden");
+    hideDayProgress();
   }
   function startRestTimer(sec) {
     if (restSoundOn()) unlockRestAudio(); // user gesture — unlock the ding now
@@ -10432,24 +10781,22 @@
     const btn = $("#rest-timer-btn");
     if (!btn) return;
     btn.classList.remove("running");
-    if (finished) {
-      btn.textContent = "✅ Go!";
-      btn.classList.add("done-flash");
-      setTimeout(() => { btn.classList.remove("done-flash"); if (!_restIv) btn.textContent = "⏱ Rest"; }, 2400);
-    } else {
-      btn.textContent = "⏱ Rest";
-    }
+    btn.textContent = "▶ Go";
   }
   function tickRestTimer() {
     const btn = $("#rest-timer-btn"); if (!btn) return;
     const left = Math.ceil((_restEnd - Date.now()) / 1000);
     if (left <= 0) {
-      stopRestTimer(true);
+      // Ding, then roll straight into the next rest — the timer loops with the
+      // same duration until the athlete taps Stop (or leaves the day).
       try { navigator.vibrate?.([200, 100, 200]); } catch (e) {}
       restBeep();
-      return;
+      btn.classList.add("done-flash");
+      setTimeout(() => btn.classList.remove("done-flash"), 1600);
+      _restEnd = Date.now() + restDur() * 1000;
     }
-    btn.textContent = `⏱ ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+    const l2 = Math.max(0, Math.ceil((_restEnd - Date.now()) / 1000));
+    btn.textContent = `⏹ ${fmtRest(l2)}`;
   }
   function restBeep() {
     if (!restSoundOn()) return;
@@ -10831,6 +11178,12 @@
     $("#btn-logout").addEventListener("click", () => { Nav.reset(); signOutTrainer(); });
     $("#btn-coach-profile")?.addEventListener("click", openCoachProfile);
     $("#btn-add-client").addEventListener("click", addClientPrompt);
+    // Roster grouping tabs (A to Z / Membership / Activity / Program)
+    $$("#roster-controls [data-roster-group]").forEach((b) =>
+      b.addEventListener("click", () => {
+        localStorage.setItem(KEY_ROSTER_GROUP, b.dataset.rosterGroup);
+        renderClientGrid();
+      }));
     $("#btn-back").addEventListener("click", () => Nav.back(renderDashboard));
     $("#btn-header-back").addEventListener("click", () => Nav.back(renderDashboard));
     // Coach side-nav
@@ -10960,6 +11313,16 @@
     $("#ex-library-backdrop").addEventListener("click", closeExLibrary);
     $("#ex-library-search").addEventListener("input", (e) => renderExLibrary(e.target.value));
     $("#ex-lib-sb-search")?.addEventListener("input", (e) => renderSidebarLibrary(e.target.value));
+    // × buttons wipe the search and put the cursor back in the field.
+    const wireLibClear = (inputSel, clearSel, rerender) => {
+      const inp = $(inputSel), btn = $(clearSel);
+      if (!inp || !btn) return;
+      const refresh = () => btn.classList.toggle("hidden", !inp.value);
+      inp.addEventListener("input", refresh);
+      btn.addEventListener("click", () => { inp.value = ""; refresh(); rerender(); inp.focus(); });
+    };
+    wireLibClear("#ex-library-search", "#ex-library-clear", () => renderExLibrary(""));
+    wireLibClear("#ex-lib-sb-search", "#ex-lib-sb-clear", () => renderSidebarLibrary(""));
     $$(".ex-lib-sb-tab").forEach((t) => t.addEventListener("click", () => setLibSbTab(t.dataset.libTab)));
     setupExAddForm("ex-lib-sb-add");
     setupExAddForm("ex-lib-md-add");
@@ -11024,13 +11387,21 @@
       setClientTab(t.dataset.ctab);
     }));
 
-    // Rest timer (athlete workout detail)
+    // Rest timer (athlete workout detail): the small button picks the length,
+    // ▶ Go starts/stops the repeating countdown.
     $("#rest-timer-btn")?.addEventListener("click", () => {
-      if (_restIv) { stopRestTimer(false); return; } // running → tap cancels
-      $("#rest-timer-pop")?.classList.toggle("hidden");
+      if (_restIv) { stopRestTimer(false); return; } // running → tap stops
+      startRestTimer(restDur());
     });
+    $("#rest-timer-opt-btn")?.addEventListener("click", () =>
+      $("#rest-timer-pop")?.classList.toggle("hidden"));
     $$("#rest-timer-pop [data-rest]").forEach((b) =>
-      b.addEventListener("click", () => startRestTimer(Number(b.dataset.rest))));
+      b.addEventListener("click", () => {
+        const sec = Number(b.dataset.rest);
+        localStorage.setItem(KEY_REST_DUR, String(sec));
+        refreshRestOptBtn();
+        startRestTimer(sec); // picking a length also starts it, one-tap flow
+      }));
     // 🔔/🔕 — end-of-rest ding on/off, remembered per device.
     const restSoundBtn = $("#rest-sound-btn");
     const refreshRestSoundBtn = () => {

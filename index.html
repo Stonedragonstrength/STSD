@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=prarchive1" />
+  <link rel="stylesheet" href="styles.css?v=batch12a" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -273,6 +273,15 @@
           </div>
           <button class="btn btn-primary" id="btn-add-client">+ Add athlete</button>
         </div>
+        <div class="roster-controls hidden" id="roster-controls">
+          <span class="roster-controls-lbl">Group by</span>
+          <div class="roster-group-tabs">
+            <button type="button" class="roster-group-tab" data-roster-group="none">A to Z</button>
+            <button type="button" class="roster-group-tab" data-roster-group="membership">Membership</button>
+            <button type="button" class="roster-group-tab" data-roster-group="activity">Activity</button>
+            <button type="button" class="roster-group-tab" data-roster-group="program">Program</button>
+          </div>
+        </div>
         <div id="client-grid" class="client-grid"></div>
         <div id="client-empty" class="empty-state hidden">
           <div class="empty-emoji">🐉</div>
@@ -400,6 +409,7 @@
             <button class="btn btn-ghost" id="btn-assign-program">Assign to athlete →</button>
           </div>
         </div>
+        <div id="program-editor-linked" class="program-editor-linked hidden"></div>
         <div id="program-editor-weeks" class="weeks-container"></div>
         <div id="program-editor-empty" class="empty-state hidden">
           <div class="empty-emoji">📋</div>
@@ -457,12 +467,11 @@
 
         <div class="client-head">
           <div>
-            <h2 id="client-name-display"></h2>
+            <div class="client-name-row">
+              <h2 id="client-name-display"></h2>
+              <button class="client-nudge-btn" id="btn-nudge-athlete" title="Send a push notification to this athlete's phone" aria-label="Nudge athlete">🔔</button>
+            </div>
             <div class="muted" id="client-meta-display"></div>
-          </div>
-          <div class="client-head-actions">
-            <button class="btn btn-ghost" id="btn-nudge-athlete" title="Send a push notification to this athlete's phone">🔔 Nudge</button>
-            <button class="btn btn-danger" id="btn-delete-client">Delete</button>
           </div>
         </div>
 
@@ -531,6 +540,9 @@
             <span class="invite-code-display hidden" id="invite-code-display">XXXX-XXXX</span>
             <button class="btn btn-ghost btn-sm hidden" id="btn-copy-invite">Copy</button>
             <button class="btn btn-ghost btn-sm hidden" id="btn-regen-invite" title="Regenerate code">↻</button>
+          </div>
+          <div class="profile-danger-row">
+            <button class="btn btn-danger btn-sm" id="btn-delete-client">🗑 Delete athlete</button>
           </div>
         </div>
 
@@ -674,6 +686,7 @@
         </div>
         <div class="ex-lib-sb-search">
           <input type="text" id="ex-lib-sb-search" placeholder="Search…" autocomplete="off" />
+          <button type="button" class="lib-search-clear hidden" id="ex-lib-sb-clear" aria-label="Clear search">×</button>
         </div>
         <div class="ex-lib-add">
           <button type="button" class="ex-lib-add-btn" id="ex-lib-sb-add-btn">＋ Custom exercise</button>
@@ -801,8 +814,14 @@
           </div>
           <div class="rest-timer-row">
             <button id="rest-sound-btn" class="rest-sound-btn" type="button" title="Timer ding">🔔</button>
-            <button id="rest-timer-btn" class="rest-timer-btn" type="button">⏱ Rest</button>
+            <button id="rest-timer-opt-btn" class="rest-opt-btn" type="button" title="Pick the rest length">1:30</button>
+            <button id="rest-timer-btn" class="rest-timer-btn" type="button">▶ Go</button>
           </div>
+        </div>
+        <!-- Floating whole-day progress — fills as sets are completed -->
+        <div id="day-progress" class="day-progress hidden">
+          <div class="day-progress-track"><div class="day-progress-fill" id="day-progress-fill"></div></div>
+          <span class="day-progress-label" id="day-progress-label"></span>
         </div>
       </div>
 
@@ -957,6 +976,7 @@
       </div>
       <div class="ex-library-search">
         <input type="text" id="ex-library-search" placeholder="Search exercises…" autocomplete="off" />
+        <button type="button" class="lib-search-clear hidden" id="ex-library-clear" aria-label="Clear search">×</button>
       </div>
       <div class="ex-lib-add">
         <button type="button" class="ex-lib-add-btn" id="ex-lib-md-add-btn">＋ Custom exercise</button>
@@ -978,7 +998,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=push1"></script>
   <script src="cloud.js?v=push1"></script>
-  <script src="app.js?v=prarchive1"></script>
+  <script src="app.js?v=batch12a"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
