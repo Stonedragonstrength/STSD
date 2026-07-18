@@ -1957,14 +1957,17 @@ input[type="date"] { color-scheme: dark; }
 /* Bodyweight form */
 .bw-form {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
+  /* minmax(0,1fr) (not plain 1fr) lets the columns shrink below the native
+     date input's intrinsic width, so the form fits instead of overflowing. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 0.6em;
   align-items: end;
 }
-.bw-form label { margin: 0; }
+.bw-form label { margin: 0; min-width: 0; }
+.bw-form input { min-width: 0; width: 100%; box-sizing: border-box; }
 .bw-form .btn { height: 38px; }
 @media (max-width: 600px) {
-  .bw-form { grid-template-columns: 1fr 1fr; }
+  .bw-form { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .bw-form .btn { grid-column: span 2; }
 }
 
