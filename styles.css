@@ -7318,6 +7318,21 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 .ov-recap-stat .lbl { font-size: 0.68rem; color: var(--text-soft); }
 .ov-recap, .ov-trophies { margin-top: 0.85rem; }
 
+/* Combined, collapsible lifting stats: lifetime totals + last workout + volume */
+.ov-liftstats { margin-top: 0.85rem; }
+.ov-liftstats > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 0.5em;
+  font-weight: 700; font-size: 1rem;
+}
+.ov-liftstats > summary::-webkit-details-marker { display: none; }
+.ov-liftstats-chev { margin-left: auto; color: var(--text-soft); transition: transform 0.15s ease; }
+.ov-liftstats[open] .ov-liftstats-chev { transform: rotate(90deg); }
+.ov-liftstats[open] > summary { margin-bottom: 0.85em; }
+.ov-liftstats-body .ov-volchart {
+  margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);
+}
+
 /* Monthly volume bars (athlete overview) */
 .ov-volchart { margin-top: 0.85rem; }
 .vol-chart { display: flex; align-items: stretch; gap: 6px; height: 130px; }

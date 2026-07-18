@@ -8779,15 +8779,6 @@
     }
 
     // ---- Bodyweight latest + trend ----
-    const bw = [...(progress.bodyweightLog || [])].sort((a, b) => (b.date + (b.time || "")).localeCompare(a.date + (a.time || "")));
-    let bwHtml = "";
-    if (bw.length) {
-      const latest = parseFloat(bw[0].weightLb);
-      let arrow = "→", cls = "flat";
-      if (bw.length > 1) { const prev = parseFloat(bw[1].weightLb); if (isFinite(prev) && isFinite(latest)) { if (latest > prev + 0.05) { arrow = "↗"; cls = "up"; } else if (latest < prev - 0.05) { arrow = "↘"; cls = "down"; } } }
-      bwHtml = `<div class="ov-mini"><div class="ov-mini-top"><span class="ov-mini-val">${escapeHtml(String(latest))} lb</span> <span class="ov-mini-trend ${cls}">${arrow}</span></div><div class="ov-mini-lbl">bodyweight</div></div>`;
-    }
-
     // ---- Top PR ----
     let prHtml = "";
     const prWithVal = (c.coachPRs || []).filter((p) => p.name && p.pr1);
@@ -8815,21 +8806,29 @@
     const ton = lifetimeTonnage(progress);
     const lastWk = lastWorkoutVolume(progress);
     const lastWkLabel = lastWk ? new Date(lastWk.date + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
-    const lastWkHtml = lastWk ? `<div class="ov-mini"><div class="ov-mini-top"><span class="ov-mini-val">${formatTonnage(lastWk.volume)} lb</span></div><div class="ov-mini-lbl">last workout · ${escapeHtml(lastWkLabel)}</div></div>` : "";
     // Lifetime lifting stats — the tonnage lives here (not as a mini tile too)
     const lifeStats = {
       workouts: completionDateList(progress).length,
       prs: (progress.personalRecords || []).length,
       volume: ton,
     };
-    const recapHtml = (lifeStats.workouts || ton) ? `<div class="card ov-recap">
-        <div class="ov-recap-head"><h4>🏋️ Lifetime lifting stats</h4><button class="btn btn-ghost btn-sm" id="btn-share-recap" type="button">📤 Share</button></div>
-        <div class="ov-recap-grid">
-          <div class="ov-recap-stat"><span class="num">${lifeStats.workouts}</span><span class="lbl">workouts</span></div>
-          <div class="ov-recap-stat"><span class="num">${lifeStats.prs}</span><span class="lbl">PRs</span></div>
-          <div class="ov-recap-stat"><span class="num">${formatTonnage(ton)}</span><span class="lbl">lb lifted</span></div>
+    // Combined, collapsible "Lifting stats": lifetime totals + last workout + volume chart.
+    const KEY_LIFTSTATS_OPEN = "trainerpro_liftstats_open_v1";
+    const liftOpen = localStorage.getItem(KEY_LIFTSTATS_OPEN) !== "0";
+    const lastWkStat = lastWk ? `<div class="ov-recap-stat" title="Last workout${lastWkLabel ? " · " + lastWkLabel : ""}"><span class="num">${formatTonnage(lastWk.volume)}</span><span class="lbl">last workout${lastWkLabel ? ` · ${escapeHtml(lastWkLabel)}` : ""}</span></div>` : "";
+    const statsHtml = (lifeStats.workouts || ton) ? `<details class="card ov-liftstats"${liftOpen ? " open" : ""}>
+        <summary><span class="ov-liftstats-title">🏋️ Lifting stats</span><span class="ov-liftstats-chev">▸</span></summary>
+        <div class="ov-liftstats-body">
+          <div class="ov-recap-head"><h4>Lifetime totals</h4><button class="btn btn-ghost btn-sm" id="btn-share-recap" type="button">📤 Share</button></div>
+          <div class="ov-recap-grid">
+            <div class="ov-recap-stat"><span class="num">${lifeStats.workouts}</span><span class="lbl">workouts</span></div>
+            <div class="ov-recap-stat"><span class="num">${lifeStats.prs}</span><span class="lbl">PRs</span></div>
+            <div class="ov-recap-stat"><span class="num">${formatTonnage(ton)}</span><span class="lbl">lb lifted</span></div>
+            ${lastWkStat}
+          </div>
+          <div id="ov-volchart-host"></div>
         </div>
-      </div>` : "";
+      </details>` : "";
     const badges = computeBadges(progress, c);
     const earnedCount = badges.filter((b) => b.earned).length;
     // Collapsed by default — the summary line carries the earned count.
@@ -8866,15 +8865,15 @@
         <div class="ov-progress-top"><span>${escapeHtml(weekLabel)}</span><span>${doneDays}/${totalDays} done</span></div>
         <div class="ov-progress-track"><div class="ov-progress-fill" style="width:${pct}%"></div></div>
       </div>` : ""}
-      ${(bwHtml || prHtml || lastWkHtml) ? `<div class="ov-mini-row">${bwHtml}${prHtml}${lastWkHtml}</div>` : ""}
-      ${recapHtml}
-      <div id="ov-volchart-host"></div>
+      ${prHtml ? `<div class="ov-mini-row">${prHtml}</div>` : ""}
+      ${statsHtml}
       ${trophyHtml}`;
 
     if (hero.jump) $("#ov-hero")?.addEventListener("click", () => jumpToWorkout(hero.jump, today));
     if (totalDays && week && nextDay) $("#ov-stat-days")?.addEventListener("click", () => jumpToWorkout({ weekId: week.id, dayId: nextDay.id }, today));
     $("#ov-stat-sessions")?.addEventListener("click", () => setClientTab("sessions"));
     $("#btn-share-recap")?.addEventListener("click", () => shareLifetimeImage(lifeStats, c.name));
+    $(".ov-liftstats")?.addEventListener("toggle", (e) => localStorage.setItem(KEY_LIFTSTATS_OPEN, e.target.open ? "1" : "0"));
     renderVolumeChart(progress);
   }
   // -------- Athlete self-service profile (name / age / height / weight / goals) --------
@@ -11051,8 +11050,8 @@
     const buckets = volumeBuckets(progress, mode);
     if (buckets.length < 2) { host.innerHTML = ""; return; }
     const maxV = Math.max(...buckets.map((m) => m.v), 1);
-    host.innerHTML = `<div class="card ov-volchart">
-      <div class="ov-recap-head"><h4>🏋️ ${mode === "week" ? "Weekly" : "Monthly"} volume</h4>
+    host.innerHTML = `<div class="ov-volchart">
+      <div class="ov-recap-head"><h4>${mode === "week" ? "Weekly" : "Monthly"} volume</h4>
         <div class="bw-range" role="group" aria-label="Bucket size">
           <button type="button" class="bw-range-btn${mode === "week" ? " on" : ""}" data-volmode="week">Weeks</button>
           <button type="button" class="bw-range-btn${mode === "month" ? " on" : ""}" data-volmode="month">Months</button>
