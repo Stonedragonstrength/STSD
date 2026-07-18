@@ -1914,6 +1914,7 @@
       athletes:        "#view-dashboard",
       overview:        "#view-overview",
       messages:        "#view-messages",
+      anatomy:         "#view-anatomy",
       settings:        "#view-settings",
       programs:        "#view-programs",
       "program-editor": "#view-program-editor",
@@ -3604,6 +3605,301 @@
   // native <datalist> that powers the type-to-add field on each day.
   const ALL_EXERCISE_NAMES = [...new Set(EXERCISE_LIBRARY.flatMap((c) => c.ex))]
     .sort((a, b) => a.localeCompare(b));
+
+  // ============================================================
+  // Anatomy Library — a browsable body map of the major muscle
+  // groups, shown to both coach and athlete. Each group teaches
+  // what the muscle does, coaching cues, common mistakes, and
+  // example lifts pulled from the exercise library above. Purely
+  // a reference: static content, no state, no saving.
+  // ============================================================
+  const ANATOMY_GROUPS = [
+    { id: "chest", name: "Chest", region: "front", pattern: "Push",
+      sub: "Pectoralis major & minor",
+      does: "Pushes your arms forward and across your body. The engine behind every press and push-up.",
+      cues: ["Pull your shoulder blades down and back before you press.", "Drive through the mid-chest, not the front of the shoulders."],
+      mistakes: ["Flaring the elbows straight out to 90 degrees.", "Bouncing the bar off the chest to cheat the rep."],
+      anchors: ["Bench Press", "Push-Up"],
+      accessories: ["Incline Dumbbell Press", "Cable Fly", "Dips", "Machine Chest Press"] },
+    { id: "shoulders", name: "Shoulders", region: "both", pattern: "Push",
+      sub: "Anterior, lateral & posterior deltoids",
+      does: "Lifts and rotates your arms in every direction. Caps the shoulder and keeps it stable overhead.",
+      cues: ["Raise to shoulder height, not higher, on lateral raises.", "Keep the ribs down so the delts press, not the lower back."],
+      mistakes: ["Swinging heavy weight up with momentum.", "Shrugging the traps into every raise."],
+      anchors: ["Overhead Press", "Lateral Raise"],
+      accessories: ["Arnold Press", "Face Pull", "Rear Delt Fly", "Front Raise"] },
+    { id: "biceps", name: "Biceps", region: "front", pattern: "Pull",
+      sub: "Biceps brachii, brachialis",
+      does: "Bends your elbow and turns your palm up. The showpiece on the front of the arm.",
+      cues: ["Keep the elbows pinned to your sides.", "Lower slowly, fighting the weight down."],
+      mistakes: ["Rocking the torso to fling the weight.", "Cutting the range short at the top and bottom."],
+      anchors: ["Curl", "Chin-Up"],
+      accessories: ["Hammer Curl", "Incline Curl", "Preacher Curl", "Cable Curl"] },
+    { id: "forearms", name: "Forearms & Grip", region: "front", pattern: "Isolation",
+      sub: "Wrist flexors, extensors, brachioradialis",
+      does: "Controls your grip and wrist. Strong forearms let every other lift hold on longer.",
+      cues: ["Squeeze the bar like you are crushing it.", "Train grip at the end so it never limits the big lifts."],
+      mistakes: ["Reaching for straps on every set and never building grip.", "Rushing wrist curls with no control."],
+      anchors: ["Farmer's Carry", "Hammer Curl"],
+      accessories: ["Reverse Curl", "Wrist Curl", "Dead Hang", "Zottman Curl"] },
+    { id: "core", name: "Core & Abs", region: "front", pattern: "Core",
+      sub: "Rectus abdominis, transverse abdominis",
+      does: "Braces your spine and passes force between the upper and lower body. The link in every heavy lift.",
+      cues: ["Brace like someone is about to poke your stomach.", "Exhale hard at the top of a crunch."],
+      mistakes: ["Pulling on the neck during sit-ups.", "Only ever crunching, never bracing under load."],
+      anchors: ["Plank", "Hanging Leg Raise"],
+      accessories: ["Cable Crunch", "Ab Wheel Rollout", "Dead Bug", "Hollow Hold"] },
+    { id: "obliques", name: "Obliques", region: "front", pattern: "Core",
+      sub: "Internal & external obliques",
+      does: "Rotates and side-bends your torso and resists twist. Your natural weight belt on the sides.",
+      cues: ["Move slow and feel the twist come from the waist.", "On anti-rotation moves, resist the pull, do not create it."],
+      mistakes: ["Swinging on Russian twists with a rounded back.", "Chasing heavy side-bends with no control."],
+      anchors: ["Side Plank", "Pallof Press"],
+      accessories: ["Russian Twist", "Bicycle Crunch", "Windshield Wiper", "Woodchopper"] },
+    { id: "quads", name: "Quadriceps", region: "front", pattern: "Squat",
+      sub: "Rectus femoris, vastus muscles",
+      does: "Straightens your knee and drives you out of a squat. The biggest muscles on the front of the legs.",
+      cues: ["Push the floor away and keep the knees tracking over the toes.", "Stay tall through the chest out of the hole."],
+      mistakes: ["Letting the knees cave inward.", "Cutting depth and never reaching parallel."],
+      anchors: ["Back Squat", "Leg Press"],
+      accessories: ["Front Squat", "Bulgarian Split Squat", "Leg Extension", "Walking Lunge"] },
+    { id: "adductors", name: "Adductors", region: "front", pattern: "Isolation",
+      sub: "Adductor magnus, longus, brevis (inner thigh)",
+      does: "Pulls your legs toward the midline and stabilizes wide stances. Key for squats and sideways power.",
+      cues: ["Sit into wide stances and feel the stretch inside the thigh.", "Control the return, do not let the legs snap in."],
+      mistakes: ["Bouncing out of a wide squat with no tension.", "Ignoring them until a groin strain shows up."],
+      anchors: ["Cossack Squat", "Sumo Deadlift"],
+      accessories: ["Hip Adduction", "Copenhagen Plank", "Lateral Lunge", "Sumo Squat"] },
+    { id: "calves", name: "Calves", region: "both", pattern: "Isolation",
+      sub: "Gastrocnemius, soleus, tibialis",
+      does: "Points and flexes your foot and springs you off the ground. The often-skipped lower leg.",
+      cues: ["Pause and squeeze hard at the top.", "Get a full stretch at the bottom of every rep."],
+      mistakes: ["Bouncing reps with a tiny range of motion.", "Only training the standing calf, never the seated."],
+      anchors: ["Standing Calf Raise", "Seated Calf Raise"],
+      accessories: ["Leg Press Calf Raise", "Single-Leg Calf Raise", "Tibialis Raise", "Jump Rope"] },
+    { id: "back", name: "Back & Lats", region: "back", pattern: "Pull",
+      sub: "Latissimus dorsi, rhomboids, erectors",
+      does: "Pulls your arms down and back and holds you upright. The widest, strongest pulling muscles you own.",
+      cues: ["Think elbows to your back pockets, not hands to chest.", "Start each pull by pulling the shoulder blades down."],
+      mistakes: ["Yanking with the arms instead of the back.", "Rounding forward and losing the chest-up position."],
+      anchors: ["Pull-Up", "Row"],
+      accessories: ["Lat Pulldown", "Seated Cable Row", "Chest-Supported Row", "Straight-Arm Pulldown"] },
+    { id: "traps", name: "Trapezius", region: "back", pattern: "Pull",
+      sub: "Upper, mid & lower trapezius",
+      does: "Shrugs, sets your shoulder blades, and supports your neck. Frames the whole upper back.",
+      cues: ["Shrug straight up toward the ears, not forward.", "Hold the top squeeze for a beat."],
+      mistakes: ["Rolling the shoulders in circles under load.", "Only training the upper traps, never the mid and lower."],
+      anchors: ["Shrug", "Face Pull"],
+      accessories: ["Rack Pull", "Farmer's Carry", "Upright Row", "Rear Delt Fly"] },
+    { id: "triceps", name: "Triceps", region: "back", pattern: "Push",
+      sub: "Triceps brachii (three heads)",
+      does: "Straightens your elbow and finishes every press. Two-thirds of your upper-arm size.",
+      cues: ["Keep the elbows tucked and pointed forward.", "Lock out fully and squeeze at the bottom."],
+      mistakes: ["Letting the elbows flare and drift.", "Going so heavy it turns into a shoulder move."],
+      anchors: ["Close-Grip Bench Press", "Tricep Pushdown"],
+      accessories: ["Skull Crusher", "Overhead Tricep Extension", "Tricep Dips", "Rope Pushdown"] },
+    { id: "lowerback", name: "Lower Back", region: "back", pattern: "Hinge",
+      sub: "Erector spinae (spinal erectors)",
+      does: "Extends and protects your spine and keeps posture tall under load. The pillar of every hinge and squat.",
+      cues: ["Keep a flat, neutral spine, never rounded under load.", "Brace hard before you lift, not after."],
+      mistakes: ["Rounding the low back on deadlifts.", "Hyperextending violently at lockout."],
+      anchors: ["Deadlift", "Back Extension"],
+      accessories: ["Good Morning", "Romanian Deadlift", "Bird Dog", "Superman"] },
+    { id: "glutes", name: "Glutes", region: "back", pattern: "Hinge",
+      sub: "Gluteus maximus, medius, minimus",
+      does: "Drives your hips forward and powers every jump, sprint, and lockout. The strongest muscle in the body.",
+      cues: ["Finish by squeezing the glutes and standing tall.", "Push the hips back to load them, do not just bend the knees."],
+      mistakes: ["Turning hip thrusts into a low-back arch.", "Quarter-repping and never fully locking the hips out."],
+      anchors: ["Hip Thrust", "Sumo Deadlift"],
+      accessories: ["Glute Bridge", "Bulgarian Split Squat", "Cable Kickback", "Curtsy Lunge"] },
+    { id: "hamstrings", name: "Hamstrings", region: "back", pattern: "Hinge",
+      sub: "Biceps femoris, semitendinosus, semimembranosus",
+      does: "Bends your knee and extends your hip. The back-of-thigh muscles behind speed and hinge strength.",
+      cues: ["Feel the stretch down the back of the thigh on RDLs.", "Keep a soft knee and push the hips back."],
+      mistakes: ["Turning RDLs into squats by bending the knees.", "Only ever training them with machine curls."],
+      anchors: ["Romanian Deadlift", "Lying Leg Curl"],
+      accessories: ["Stiff-Leg Deadlift", "Nordic Curl", "Glute-Ham Raise", "Good Morning"] },
+    { id: "abductors", name: "Abductors", region: "back", pattern: "Isolation",
+      sub: "Gluteus medius & minimus (outer hip)",
+      does: "Lifts your leg out to the side and stabilizes your hips when you walk, run, and squat.",
+      cues: ["Drive the knee out against tension on every rep.", "Keep the hips level, do not let one side drop."],
+      mistakes: ["Rushing band walks with collapsing knees.", "Skipping them and letting the knees cave on squats."],
+      anchors: ["Hip Abduction", "Lateral Walk"],
+      accessories: ["Abductor", "Curtsy Lunge", "Clamshell", "Cable Kickback"] },
+  ];
+  const ANATOMY_BY_ID = Object.fromEntries(ANATOMY_GROUPS.map((g) => [g.id, g]));
+  // Which groups list in each view's legend (region "both" shows in both).
+  const ANATOMY_VIEW_GROUPS = {
+    front: ANATOMY_GROUPS.filter((g) => g.region === "front" || g.region === "both").map((g) => g.id),
+    back: ANATOMY_GROUPS.filter((g) => g.region === "back" || g.region === "both").map((g) => g.id),
+  };
+
+  // Body-map shapes. Each zone is one muscle group drawn over a shared
+  // silhouette on a 220x470 canvas. `mir:true` auto-adds the mirrored
+  // shape across the vertical centre line so we only author one side.
+  const ANATOMY_FIG_W = 220;
+  const ANATOMY_ZONES = {
+    front: [
+      { m: "shoulders", mir: true, s: [{ t: "e", cx: 82, cy: 72, rx: 13, ry: 11 }] },
+      { m: "chest",     mir: true, s: [{ t: "e", cx: 98, cy: 96, rx: 15, ry: 13 }] },
+      { m: "biceps",    mir: true, s: [{ t: "e", cx: 66, cy: 118, rx: 10, ry: 22 }] },
+      { m: "forearms",  mir: true, s: [{ t: "e", cx: 54, cy: 196, rx: 8, ry: 34 }] },
+      { m: "obliques",  mir: true, s: [{ t: "e", cx: 90, cy: 150, rx: 7, ry: 28 }] },
+      { m: "core",      mir: false, s: [{ t: "r", x: 100, y: 110, w: 20, h: 78, rx: 8 }] },
+      { m: "quads",     mir: true, s: [{ t: "e", cx: 100, cy: 290, rx: 15, ry: 52 }] },
+      { m: "adductors", mir: true, s: [{ t: "e", cx: 102, cy: 285, rx: 5, ry: 40 }] },
+      { m: "calves",    mir: true, s: [{ t: "e", cx: 98, cy: 404, rx: 11, ry: 46 }] },
+    ],
+    back: [
+      { m: "back",      mir: true, s: [{ t: "e", cx: 95, cy: 130, rx: 14, ry: 32 }] },
+      { m: "traps",     mir: false, s: [{ t: "p", pts: "110,58 138,74 128,106 110,114 92,106 82,74" }] },
+      { m: "shoulders", mir: true, s: [{ t: "e", cx: 82, cy: 74, rx: 12, ry: 10 }] },
+      { m: "triceps",   mir: true, s: [{ t: "e", cx: 66, cy: 118, rx: 10, ry: 22 }] },
+      { m: "lowerback", mir: false, s: [{ t: "r", x: 100, y: 165, w: 20, h: 34, rx: 6 }] },
+      { m: "glutes",    mir: true, s: [{ t: "e", cx: 99, cy: 222, rx: 15, ry: 17 }] },
+      { m: "abductors", mir: true, s: [{ t: "e", cx: 82, cy: 210, rx: 7, ry: 13 }] },
+      { m: "hamstrings", mir: true, s: [{ t: "e", cx: 100, cy: 308, rx: 15, ry: 50 }] },
+      { m: "calves",    mir: true, s: [{ t: "e", cx: 98, cy: 404, rx: 11, ry: 46 }] },
+    ],
+  };
+  // Neutral silhouette drawn behind the interactive zones (shared by both views).
+  const ANATOMY_BACKDROP = [
+    '<circle class="a-body" cx="110" cy="30" r="18"/>',
+    '<rect class="a-body" x="103" y="44" width="14" height="12" rx="4"/>',
+    '<path class="a-body" d="M82,60 L138,60 L132,150 L126,205 L94,205 L88,150 Z"/>',
+    '<path class="a-body" d="M92,200 L128,200 L130,238 L90,238 Z"/>',
+    '<ellipse class="a-body" cx="66" cy="112" rx="11" ry="48"/>',
+    '<ellipse class="a-body" cx="154" cy="112" rx="11" ry="48"/>',
+    '<ellipse class="a-body" cx="54" cy="196" rx="9" ry="44"/>',
+    '<ellipse class="a-body" cx="166" cy="196" rx="9" ry="44"/>',
+    '<circle class="a-body" cx="50" cy="244" r="8"/>',
+    '<circle class="a-body" cx="170" cy="244" r="8"/>',
+    '<ellipse class="a-body" cx="100" cy="300" rx="17" ry="58"/>',
+    '<ellipse class="a-body" cx="120" cy="300" rx="17" ry="58"/>',
+    '<ellipse class="a-body" cx="98" cy="406" rx="12" ry="54"/>',
+    '<ellipse class="a-body" cx="122" cy="406" rx="12" ry="54"/>',
+    '<ellipse class="a-body" cx="96" cy="454" rx="11" ry="8"/>',
+    '<ellipse class="a-body" cx="124" cy="454" rx="11" ry="8"/>',
+  ].join("");
+
+  function anatomyMirrorShape(sh) {
+    const W = ANATOMY_FIG_W;
+    if (sh.t === "e") return { ...sh, cx: W - sh.cx };
+    if (sh.t === "r") return { ...sh, x: W - sh.x - sh.w };
+    if (sh.t === "p") return { ...sh, pts: sh.pts.split(" ").map((pt) => {
+      const [a, b] = pt.split(","); return `${W - Number(a)},${b}`;
+    }).join(" ") };
+    return sh;
+  }
+  function anatomyShapeSvg(sh, muscle) {
+    const attr = `class="a-zone" data-muscle="${muscle}"`;
+    if (sh.t === "e") return `<ellipse ${attr} cx="${sh.cx}" cy="${sh.cy}" rx="${sh.rx}" ry="${sh.ry}"/>`;
+    if (sh.t === "r") return `<rect ${attr} x="${sh.x}" y="${sh.y}" width="${sh.w}" height="${sh.h}" rx="${sh.rx || 0}"/>`;
+    if (sh.t === "p") return `<polygon ${attr} points="${sh.pts}"/>`;
+    return "";
+  }
+  function anatomyFigureSvg(view) {
+    const zones = ANATOMY_ZONES[view].map((z) => {
+      const shapes = z.mir ? z.s.concat(z.s.map(anatomyMirrorShape)) : z.s;
+      return shapes.map((sh) => anatomyShapeSvg(sh, z.m)).join("");
+    }).join("");
+    return `<svg class="a-svg${view === "front" ? "" : " hidden"}" data-fig="${view}" viewBox="0 0 220 470" `
+      + `role="img" aria-label="${view} muscle map">`
+      + `<g class="a-backdrop">${ANATOMY_BACKDROP}</g>`
+      + `<g class="a-zones">${zones}</g></svg>`;
+  }
+  function anatomyDetailHtml(g) {
+    const li = (t) => `<li>${escapeHtml(t)}</li>`;
+    const chip = (n, anchor) => `<span class="a-ex-chip${anchor ? " anchor" : ""}">${escapeHtml(n)}</span>`;
+    return `<div class="a-card">
+      <div class="a-card-head">
+        <h3>${escapeHtml(g.name)}</h3>
+        <span class="a-pattern" data-pattern="${g.pattern.toLowerCase()}">${escapeHtml(g.pattern)}</span>
+      </div>
+      <p class="a-sub">${escapeHtml(g.sub)}</p>
+      <p class="a-does">${escapeHtml(g.does)}</p>
+      <div class="a-cols">
+        <div class="a-col a-cues"><h4>Coaching cues</h4><ul>${g.cues.map(li).join("")}</ul></div>
+        <div class="a-col a-miss"><h4>Common mistakes</h4><ul>${g.mistakes.map(li).join("")}</ul></div>
+      </div>
+      <div class="a-ex">
+        <h4>Example exercises</h4>
+        <div class="a-ex-chips">
+          ${g.anchors.map((n) => chip(n, true)).join("")}
+          ${g.accessories.map((n) => chip(n, false)).join("")}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // Build the anatomy UI into one container. Static, built once per node.
+  function buildAnatomy(root) {
+    if (root.dataset.anatomyBuilt) return;
+    root.dataset.anatomyBuilt = "1";
+    root.innerHTML = `
+      <p class="anatomy-intro">Tap a muscle on the body or in the list to see what it does, how to train it, and example lifts.</p>
+      <div class="anatomy-toggle" role="tablist">
+        <button type="button" class="a-view-btn active" data-view="front">Front</button>
+        <button type="button" class="a-view-btn" data-view="back">Back</button>
+      </div>
+      <div class="anatomy-layout">
+        <div class="anatomy-figure">${anatomyFigureSvg("front")}${anatomyFigureSvg("back")}</div>
+        <div class="anatomy-list" data-anatomy-list></div>
+      </div>
+      <div class="anatomy-detail" data-anatomy-detail>
+        <div class="anatomy-detail-empty">Select a muscle group to see the details.</div>
+      </div>`;
+
+    const listEl = root.querySelector("[data-anatomy-list]");
+    const detailEl = root.querySelector("[data-anatomy-detail]");
+    let view = "front";
+    let selected = null;
+
+    function renderList() {
+      listEl.innerHTML = ANATOMY_VIEW_GROUPS[view].map((id) => {
+        const g = ANATOMY_BY_ID[id];
+        return `<button type="button" class="a-chip${id === selected ? " selected" : ""}" data-muscle="${id}">${escapeHtml(g.name)}</button>`;
+      }).join("");
+    }
+    function highlight() {
+      root.querySelectorAll(".a-zone.selected, .a-chip.selected").forEach((el) => el.classList.remove("selected"));
+      if (!selected) return;
+      root.querySelectorAll(`.a-svg[data-fig="${view}"] .a-zone[data-muscle="${selected}"], .a-chip[data-muscle="${selected}"]`)
+        .forEach((el) => el.classList.add("selected"));
+    }
+    function select(id) {
+      const g = ANATOMY_BY_ID[id];
+      if (!g) return;
+      selected = id;
+      detailEl.innerHTML = anatomyDetailHtml(g);
+      highlight();
+    }
+    function setView(next) {
+      if (next === view) return;
+      view = next;
+      root.querySelectorAll(".a-view-btn").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
+      root.querySelectorAll(".a-svg").forEach((s) => s.classList.toggle("hidden", s.dataset.fig !== view));
+      // Keep the selection if the group also lives in the new view, else clear.
+      if (selected && !ANATOMY_VIEW_GROUPS[view].includes(selected)) {
+        selected = null;
+        detailEl.innerHTML = '<div class="anatomy-detail-empty">Select a muscle group to see the details.</div>';
+      }
+      renderList();
+      highlight();
+    }
+
+    root.querySelectorAll(".a-view-btn").forEach((b) =>
+      b.addEventListener("click", () => setView(b.dataset.view)));
+    root.addEventListener("click", (e) => {
+      const zone = e.target.closest(".a-zone, .a-chip");
+      if (zone && root.contains(zone)) select(zone.dataset.muscle);
+    });
+    renderList();
+  }
+  // Build every anatomy mount point once at boot (coach view + athlete tab).
+  function initAnatomyLibrary() {
+    document.querySelectorAll("[data-anatomy-root]").forEach(buildAnatomy);
+  }
 
   // Rebuild a single shared <datalist> (respecting the coach's hidden list) and
   // return its id so type-to-add inputs can point at it via `list=`.
@@ -11479,6 +11775,7 @@
     $("#btn-back").addEventListener("click", () => Nav.back(renderDashboard));
     $("#btn-header-back").addEventListener("click", () => Nav.back(renderDashboard));
     // Coach side-nav
+    initAnatomyLibrary(); // build the coach + athlete body maps once
     document.querySelectorAll('#coach-nav [data-coach-nav]').forEach((b) => {
       b.addEventListener("click", () => {
         Nav.reset(); // top-level nav is a new root
@@ -11499,6 +11796,11 @@
           switchCoachView("messages");
           hideLibSidebar();
           renderMessagesView();
+        } else if (target === "anatomy") {
+          _programEditorId = null;
+          state.currentClientId = null;
+          switchCoachView("anatomy");
+          hideLibSidebar();
         } else if (target === "settings") {
           _programEditorId = null;
           state.currentClientId = null;

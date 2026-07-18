@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=msg2col1" />
+  <link rel="stylesheet" href="styles.css?v=anatomy2" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -261,6 +261,10 @@
           <span class="coach-nav-icon">📣</span>
           <span class="coach-nav-label">Messages</span>
         </button>
+        <button class="coach-nav-item" data-coach-nav="anatomy" type="button">
+          <span class="coach-nav-icon">💪</span>
+          <span class="coach-nav-label">Anatomy</span>
+        </button>
       </nav>
 
       <main class="app-main coach-main">
@@ -373,6 +377,16 @@
         </div>
         <h3 class="msg-history-head">Recently sent</h3>
         <div id="msg-history" class="msg-history"></div>
+      </div>
+
+      <!-- Anatomy library (coach reference) -->
+      <div id="view-anatomy" class="view hidden">
+        <div class="view-head">
+          <div>
+            <h2>Anatomy Library</h2>
+          </div>
+        </div>
+        <div data-anatomy-root></div>
       </div>
 
       <!-- Programs list -->
@@ -755,6 +769,10 @@
           <span class="tab-label">Sessions</span>
           <span class="tab-badge hidden" id="ctab-sessions-badge"></span>
         </button>
+        <button class="tab" data-ctab="anatomy">
+          <span class="tab-icon">💪</span>
+          <span class="tab-label">Anatomy</span>
+        </button>
       </div>
 
       <!-- Overview (athlete home — stats + calendar) -->
@@ -902,6 +920,14 @@
         </details>
       </div>
 
+      <!-- Anatomy library (athlete reference) -->
+      <div class="tab-panel" data-ctab-panel="anatomy">
+        <div class="program-head">
+          <h3>Anatomy Library</h3>
+        </div>
+        <div data-anatomy-root></div>
+      </div>
+
       <!-- Profile (athlete) -->
       <div class="tab-panel" data-ctab-panel="profile">
         <div class="program-head">
@@ -998,7 +1024,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=push1"></script>
   <script src="cloud.js?v=push1"></script>
-  <script src="app.js?v=nomoney1"></script>
+  <script src="app.js?v=anatomy2"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
