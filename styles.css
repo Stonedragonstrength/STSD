@@ -7922,6 +7922,34 @@ body.live-log-mode #screen-client .header-right { display: none; }
 }
 .a-sub { margin: 0; color: var(--muted); font-size: 0.85rem; font-style: italic; }
 .a-does { margin: 0; color: var(--text); font-size: 0.95rem; line-height: 1.5; }
+/* "Why it matters for athletes" accent callout */
+.a-why {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--primary-bright);
+  border-left: 3px solid rgba(var(--primary-bright-rgb), 0.5);
+  padding-left: 0.7em;
+}
+/* Quick facts: warm-up / pairs with / frequency */
+.a-facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; }
+.a-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15em;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.55em 0.7em;
+}
+.a-fact-label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-soft);
+}
+.a-fact-val { font-size: 0.85rem; line-height: 1.35; color: var(--text); }
 .a-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .a-col h4 { margin: 0 0 0.4em; font-size: 0.85rem; color: var(--text-soft); }
 .a-col ul { margin: 0; padding-left: 1.1em; display: flex; flex-direction: column; gap: 0.35em; }
@@ -7959,4 +7987,5 @@ body.live-log-mode #screen-client .header-right { display: none; }
   .anatomy-figure { max-width: 300px; }
   .a-svg { max-height: 56vh; }
   .a-cols { grid-template-columns: 1fr; gap: 0.75rem; }
+  .a-facts { grid-template-columns: 1fr; }
 }
