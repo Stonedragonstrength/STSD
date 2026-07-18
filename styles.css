@@ -2342,7 +2342,12 @@ button.ov-stat:hover { background: var(--surface-2); }
 /* Fewer columns as the compose panel narrows so names stay readable. */
 @media (max-width: 900px) { .msg-recipients { column-count: 3; } }
 @media (max-width: 680px) { .msg-recipients { column-count: 2; } }
-@media (max-width: 440px) { .msg-recipients { column-count: 1; } }
+/* Phones stay at 2 columns — chips tighten up so names still fit. */
+@media (max-width: 440px) {
+  .msg-recipients { column-count: 2; column-gap: 0.4rem; }
+  .msg-recip { padding: 0.45em 0.5em; font-size: 0.76rem; gap: 0.3rem; }
+  .msg-recip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
 .msg-recipients > .msg-recip {
   break-inside: avoid;
   -webkit-column-break-inside: avoid;
