@@ -8719,10 +8719,12 @@
 
   function renderAthleteOverview() {
     const host = $("#overview-stats");
+    const heroHost = $("#overview-hero");
+    const trophyHost = $("#overview-trophies");
     if (!host) return;
     const prog = state.clientData.program;
     const c = prog?.client;
-    if (!c) { host.innerHTML = ""; renderAthleteCoachMessages(null); return; }
+    if (!c) { host.innerHTML = ""; if (heroHost) heroHost.innerHTML = ""; if (trophyHost) trophyHost.innerHTML = ""; renderAthleteCoachMessages(null); return; }
     ensureSessionBank(c);
     renderAthleteCoachMessages(c);
     const progress = state.clientData.progress || {};
@@ -8801,7 +8803,7 @@
         <span class="ov-stat-lbl">this week</span>
       </div>` : "";
     const streakStat = `<div class="ov-stat" title="Consecutive weeks with at least one completed workout">
-        <span class="ov-stat-num">🔥 ${streakN}</span><span class="ov-stat-lbl">week streak</span>
+        <span class="ov-stat-ico">🔥</span><span class="ov-stat-num">${streakN}</span><span class="ov-stat-lbl">week streak</span>
       </div>`;
     const ton = lifetimeTonnage(progress);
     const lastWk = lastWorkoutVolume(progress);
@@ -8837,7 +8839,7 @@
         <div class="trophy-grid">${badges.map((b) => `<div class="trophy${b.earned ? " earned" : ""}" title="${escapeHtml(b.hint)}"><span class="trophy-icon">${b.icon}</span><span class="trophy-name">${escapeHtml(b.name)}</span></div>`).join("")}</div>
       </details>` : "";
 
-    host.innerHTML = `
+    if (heroHost) heroHost.innerHTML = `
       <div class="ov-greeting">Hey, ${firstName} 👋</div>
       <div class="ov-hero${hero.jump ? " is-clickable" : ""}" id="ov-hero" style="--hero-color:${hero.color || "var(--primary-bright)"};--hero-soft:${hero.soft || "var(--primary-soft)"}">
         <div class="ov-hero-icon">${dayIconHtml(hero.icon)}</div>
@@ -8847,27 +8849,34 @@
           <div class="ov-hero-sub">${hero.sub}</div>
         </div>
         ${hero.cta ? `<span class="ov-hero-cta">${hero.cta} →</span>` : ""}
-      </div>
+      </div>`;
+    host.innerHTML = `
       <div class="ov-strip">
         ${ringStat}
         ${streakStat}
         <button class="ov-stat" id="ov-stat-days" type="button">
+          <span class="ov-stat-ico">⏳</span>
           <span class="ov-stat-num">${totalDays ? daysLeft : "—"}</span>
           <span class="ov-stat-lbl">days left</span>
         </button>
         <button class="ov-stat${low ? " is-low" : ""}" id="ov-stat-sessions" type="button">
+          <span class="ov-stat-ico">🎟️</span>
           <span class="ov-stat-num">${remaining}</span>
           <span class="ov-stat-lbl">sessions</span>
         </button>
-        ${bookingLabel ? `<div class="ov-stat"><span class="ov-stat-num ov-stat-sm">${escapeHtml(bookingLabel)}</span><span class="ov-stat-lbl">next session</span></div>` : ""}
+        ${bookingLabel ? `<div class="ov-stat">
+          <span class="ov-stat-ico">📅</span>
+          <span class="ov-stat-num ov-stat-sm">${escapeHtml(bookingLabel)}</span>
+          <span class="ov-stat-lbl">next session</span>
+        </div>` : ""}
       </div>
       ${totalDays ? `<div class="ov-progress">
         <div class="ov-progress-top"><span>${escapeHtml(weekLabel)}</span><span>${doneDays}/${totalDays} done</span></div>
         <div class="ov-progress-track"><div class="ov-progress-fill" style="width:${pct}%"></div></div>
       </div>` : ""}
       ${prHtml ? `<div class="ov-mini-row">${prHtml}</div>` : ""}
-      ${statsHtml}
-      ${trophyHtml}`;
+      ${statsHtml}`;
+    if (trophyHost) trophyHost.innerHTML = trophyHtml;
 
     if (hero.jump) $("#ov-hero")?.addEventListener("click", () => jumpToWorkout(hero.jump, today));
     if (totalDays && week && nextDay) $("#ov-stat-days")?.addEventListener("click", () => jumpToWorkout({ weekId: week.id, dayId: nextDay.id }, today));

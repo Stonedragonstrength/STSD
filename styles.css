@@ -2210,6 +2210,11 @@ input[type="date"] { color-scheme: dark; }
 
 /* ===== Athlete Overview dashboard ===== */
 .overview-stats { display: flex; flex-direction: column; gap: 0.9rem; margin-bottom: 1.4rem; }
+/* Greeting + hero live above the bulletin; trophy case sits at the very bottom */
+#overview-hero { display: flex; flex-direction: column; gap: 0.9rem; margin-bottom: 0.9rem; }
+#overview-hero:empty { display: none; }
+#overview-trophies { margin-bottom: 1.4rem; }
+#overview-trophies:empty { display: none; }
 .ov-greeting { font-size: 1.15rem; font-weight: 800; letter-spacing: 0.01em; }
 
 /* Adaptive "up next" hero card (Today / Up next / Rest / All caught up) */
@@ -2248,26 +2253,23 @@ input[type="date"] { color-scheme: dark; }
 }
 
 /* Slim horizontal stat strip */
-.ov-strip {
-  display: flex;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
+/* Info strip: a row of equal-height, vertically-centred KPI cards */
+.ov-strip { display: flex; gap: 0.5rem; }
 .ov-stat {
   flex: 1; min-width: 0;
-  display: flex; flex-direction: column; align-items: center; gap: 1px;
-  padding: 0.55rem 0.35rem;
-  background: none; border: none; border-right: 1px solid var(--border);
-  font-family: inherit; cursor: pointer; color: inherit;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  padding: 0.7rem 0.35rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  font-family: inherit; color: inherit;
+  transition: background 0.15s, border-color 0.15s;
 }
-.ov-stat:last-child { border-right: none; }
+button.ov-stat { cursor: pointer; }
+.ov-stat-ico { font-size: 1.05rem; line-height: 1; }
 .ov-stat-num { font-size: 1.35rem; font-weight: 900; color: var(--primary-bright); line-height: 1; }
 .ov-stat-num.ov-stat-sm { font-size: 0.85rem; font-weight: 800; }
 .ov-stat.is-low .ov-stat-num { color: var(--warn); }
 .ov-stat-lbl { font-size: 0.62rem; color: var(--text-soft); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
-button.ov-stat:hover { background: var(--surface-2); }
+button.ov-stat:hover { background: var(--surface-2); border-color: var(--border-strong); }
 
 /* Weekly progress bar */
 .ov-progress-top { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-soft); font-weight: 600; margin-bottom: 0.3em; }
