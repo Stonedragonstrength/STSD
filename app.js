@@ -8817,16 +8817,17 @@
     // Combined, collapsible "Lifting stats": lifetime totals + last workout + volume chart.
     const KEY_LIFTSTATS_OPEN = "trainerpro_liftstats_open_v1";
     const liftOpen = localStorage.getItem(KEY_LIFTSTATS_OPEN) !== "0";
-    const lastWkStat = lastWk ? `<div class="ov-recap-stat" title="Last workout${lastWkLabel ? " · " + lastWkLabel : ""}"><span class="num">${formatTonnage(lastWk.volume)}</span><span class="lbl">last workout${lastWkLabel ? ` · ${escapeHtml(lastWkLabel)}` : ""}</span></div>` : "";
+    const statRow = (label, value, unit, when) =>
+      `<div class="ov-stat-row"><div class="sr-in"><span class="sr-lbl">${label}${when ? ` <span class="sr-when">${escapeHtml(when)}</span>` : ""}</span><span class="sr-val">${value}${unit ? `<span class="sr-unit">${unit}</span>` : ""}</span></div></div>`;
     const statsHtml = (lifeStats.workouts || ton) ? `<details class="card ov-liftstats"${liftOpen ? " open" : ""}>
         <summary><span class="ov-liftstats-title">🏋️ Lifting stats</span><span class="ov-liftstats-chev">▸</span></summary>
         <div class="ov-liftstats-body">
           <div class="ov-recap-head"><h4>Lifetime totals</h4><button class="btn btn-ghost btn-sm" id="btn-share-recap" type="button">📤 Share</button></div>
-          <div class="ov-recap-grid">
-            <div class="ov-recap-stat"><span class="num">${lifeStats.workouts}</span><span class="lbl">workouts</span></div>
-            <div class="ov-recap-stat"><span class="num">${lifeStats.prs}</span><span class="lbl">PRs</span></div>
-            <div class="ov-recap-stat"><span class="num">${formatTonnage(ton)}</span><span class="lbl">lb lifted</span></div>
-            ${lastWkStat}
+          <div class="ov-stats-list">
+            ${statRow("Workouts", lifeStats.workouts)}
+            ${statRow("PRs", lifeStats.prs)}
+            ${statRow("Total lifted", formatTonnage(ton), "lb")}
+            ${lastWk ? statRow("Last workout", formatTonnage(lastWk.volume), "lb", lastWkLabel) : ""}
           </div>
           <div id="ov-volchart-host"></div>
         </div>
@@ -8842,7 +8843,6 @@
     if (heroHost) heroHost.innerHTML = `
       <div class="ov-greeting">Hey, ${firstName} 👋</div>
       <div class="ov-hero${hero.jump ? " is-clickable" : ""}" id="ov-hero" style="--hero-color:${hero.color || "var(--primary-bright)"};--hero-soft:${hero.soft || "var(--primary-soft)"}">
-        <div class="ov-hero-icon">${dayIconHtml(hero.icon)}</div>
         <div class="ov-hero-body">
           <div class="ov-hero-kicker">${hero.kicker}</div>
           <div class="ov-hero-title">${hero.title}</div>
@@ -8854,11 +8854,6 @@
       <div class="ov-strip">
         ${ringStat}
         ${streakStat}
-        <button class="ov-stat" id="ov-stat-days" type="button">
-          <span class="ov-stat-ico">⏳</span>
-          <span class="ov-stat-num">${totalDays ? daysLeft : "—"}</span>
-          <span class="ov-stat-lbl">days left</span>
-        </button>
         <button class="ov-stat${low ? " is-low" : ""}" id="ov-stat-sessions" type="button">
           <span class="ov-stat-ico">🎟️</span>
           <span class="ov-stat-num">${remaining}</span>
@@ -8870,16 +8865,11 @@
           <span class="ov-stat-lbl">next session</span>
         </div>` : ""}
       </div>
-      ${totalDays ? `<div class="ov-progress">
-        <div class="ov-progress-top"><span>${escapeHtml(weekLabel)}</span><span>${doneDays}/${totalDays} done</span></div>
-        <div class="ov-progress-track"><div class="ov-progress-fill" style="width:${pct}%"></div></div>
-      </div>` : ""}
       ${prHtml ? `<div class="ov-mini-row">${prHtml}</div>` : ""}
       ${statsHtml}`;
     if (trophyHost) trophyHost.innerHTML = trophyHtml;
 
     if (hero.jump) $("#ov-hero")?.addEventListener("click", () => jumpToWorkout(hero.jump, today));
-    if (totalDays && week && nextDay) $("#ov-stat-days")?.addEventListener("click", () => jumpToWorkout({ weekId: week.id, dayId: nextDay.id }, today));
     $("#ov-stat-sessions")?.addEventListener("click", () => setClientTab("sessions"));
     $("#btn-share-recap")?.addEventListener("click", () => shareLifetimeImage(lifeStats, c.name));
     $(".ov-liftstats")?.addEventListener("toggle", (e) => localStorage.setItem(KEY_LIFTSTATS_OPEN, e.target.open ? "1" : "0"));

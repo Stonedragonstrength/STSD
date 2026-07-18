@@ -2224,29 +2224,21 @@ input[type="date"] { color-scheme: dark; }
 .ov-hero {
   display: flex;
   align-items: center;
-  gap: 0.9rem;
-  background: var(--surface);
+  gap: 0.8rem;
+  background: linear-gradient(100deg, var(--hero-soft, var(--primary-soft)) -25%, var(--surface) 52%);
   border: 1px solid var(--border);
   border-left: 3px solid var(--hero-color, var(--primary));
-  border-radius: var(--radius-lg);
-  padding: 0.9rem 1rem;
+  border-radius: var(--radius);
+  padding: 0.55rem 0.9rem;
   box-shadow: var(--shadow-sm);
   transition: box-shadow 0.15s, transform 0.15s;
 }
 .ov-hero.is-clickable { cursor: pointer; }
 .ov-hero.is-clickable:hover { box-shadow: 0 8px 22px rgba(var(--primary-rgb), 0.16); transform: translateY(-2px); }
-.ov-hero-icon {
-  width: 46px; height: 46px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 1.7rem; line-height: 1;
-  border-radius: 12px;
-  background: var(--hero-soft, var(--primary-soft));
-  color: var(--hero-color, var(--primary-bright));
-}
 .ov-hero-body { flex: 1; min-width: 0; }
-.ov-hero-kicker { font-size: 0.62rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-soft); }
-.ov-hero-title { font-size: 1.1rem; font-weight: 800; line-height: 1.15; margin: 0.05em 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ov-hero-sub { font-size: 0.78rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov-hero-kicker { font-size: 0.58rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--hero-color, var(--text-soft)); line-height: 1.2; }
+.ov-hero-title { font-size: 1.05rem; font-weight: 800; line-height: 1.1; margin: 0.05em 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov-hero-sub { font-size: 0.74rem; color: var(--muted); line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ov-hero-cta {
   flex-shrink: 0;
   background: linear-gradient(180deg, var(--primary-bright), var(--primary));
@@ -7322,6 +7314,29 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 .ov-recap-stat .num { font-size: 1.25rem; font-weight: 800; color: var(--primary-bright); }
 .ov-recap-stat .lbl { font-size: 0.68rem; color: var(--text-soft); }
 .ov-recap, .ov-trophies { margin-top: 0.85rem; }
+
+/* Lifetime totals as a racing-game style slanted stats list */
+.ov-stats-list { display: flex; flex-direction: column; gap: 0.4rem; }
+.ov-stat-row {
+  transform: skewX(-11deg);
+  border-radius: 5px;
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.28);
+  border-left: 3px solid var(--primary-bright);
+  background:
+    linear-gradient(100deg, rgba(var(--primary-rgb), 0.32) 0%, rgba(var(--primary-rgb), 0.08) 46%, rgba(var(--primary-rgb), 0) 82%),
+    linear-gradient(180deg, var(--surface-2), var(--surface));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+}
+.ov-stat-row .sr-in {
+  transform: skewX(11deg);
+  display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem;
+  padding: 0.5em 1.1em;
+}
+.sr-lbl { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.09em; color: var(--text-soft); }
+.sr-when { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.02em; color: var(--muted); margin-left: 0.35em; }
+.sr-val { font-size: 1.5rem; font-weight: 900; color: var(--primary-bright); line-height: 1; font-variant-numeric: tabular-nums; text-shadow: 0 0 12px rgba(var(--primary-bright-rgb), 0.35); }
+.sr-unit { font-size: 0.68rem; font-weight: 700; color: var(--text-soft); margin-left: 0.15em; }
 
 /* Combined, collapsible lifting stats: lifetime totals + last workout + volume */
 .ov-liftstats { margin-top: 0.85rem; }
