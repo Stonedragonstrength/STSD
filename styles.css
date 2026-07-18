@@ -7839,13 +7839,15 @@ body.live-log-mode #screen-client .header-right { display: none; }
 }
 .a-svg { display: block; width: 100%; height: auto; max-height: 62vh; }
 .a-svg.hidden { display: none; }
-.a-body { fill: var(--surface-3); stroke: var(--border); stroke-width: 1; }
+.a-body { fill: var(--surface-3); stroke: var(--border-strong); stroke-width: 1.2; }
+.a-def { fill: none; stroke: var(--border-strong); stroke-width: 1; stroke-linecap: round; opacity: 0.85; pointer-events: none; }
 .a-zone {
   fill: var(--primary);
-  fill-opacity: 0.22;
+  fill-opacity: 0.26;
   stroke: var(--primary-bright);
-  stroke-opacity: 0.45;
-  stroke-width: 1;
+  stroke-opacity: 0.5;
+  stroke-width: 0.8;
+  stroke-linejoin: round;
   cursor: pointer;
   transition: fill-opacity 0.15s, stroke-opacity 0.15s;
 }

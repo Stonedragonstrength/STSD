@@ -3756,50 +3756,57 @@
   };
 
   // Body-map shapes. Each zone is one muscle group drawn as an anatomically
-  // shaped path over a shared human silhouette on a 220x470 canvas. `mir:true`
+  // shaped path over a shared human silhouette on a 220x480 canvas. `mir:true`
   // draws a second, mirrored copy (via an SVG transform) so paired muscles
   // only need authoring on one side of the body.
   const ANATOMY_FIG_W = 220;
   const ANATOMY_MIRROR = `matrix(-1 0 0 1 ${ANATOMY_FIG_W} 0)`;
   const ANATOMY_ZONES = {
     front: [
-      { m: "delts-front", mir: true, s: [{ t: "pa", d: "M136,84 C146,82 156,90 156,104 C153,114 143,114 138,106 C134,96 132,88 136,84 Z" }] },
-      { m: "delts-side",  mir: true, s: [{ t: "pa", d: "M152,94 C160,96 162,110 159,122 C155,128 149,124 148,114 C148,104 149,98 152,94 Z" }] },
-      { m: "chest",       mir: true, s: [{ t: "pa", d: "M110,82 C124,80 136,86 138,100 C138,116 126,126 112,124 L110,120 Z" }] },
-      { m: "biceps",      mir: true, s: [{ t: "pa", d: "M140,110 C150,110 154,126 153,148 C152,164 148,172 143,170 C140,150 140,126 140,110 Z" }] },
-      { m: "forearms",    mir: true, s: [{ t: "pa", d: "M143,180 C150,182 151,205 148,232 C146,246 143,252 140,250 C139,225 140,198 143,180 Z" }] },
-      { m: "obliques",    mir: true, s: [{ t: "pa", d: "M122,138 C129,140 132,158 131,182 C130,194 126,200 122,196 C121,176 121,156 122,138 Z" }] },
-      { m: "core",        mir: false, s: [{ t: "pa", d: "M99,128 C105,126 115,126 121,128 C123,150 123,186 119,208 C113,214 107,214 101,208 C97,186 97,150 99,128 Z" }] },
-      { m: "quads",       mir: true, s: [{ t: "pa", d: "M124,258 C137,258 143,282 142,315 C141,342 133,358 126,356 C120,352 117,330 118,300 C119,280 120,262 124,258 Z" }] },
-      { m: "adductors",   mir: true, s: [{ t: "pa", d: "M117,262 C122,264 122,300 120,338 C118,348 113,347 112,338 C111,300 113,268 117,262 Z" }] },
-      { m: "calves",      mir: true, s: [{ t: "pa", d: "M124,378 C134,380 138,398 136,420 C134,438 129,448 125,446 C121,432 121,400 124,378 Z" }] },
+      { m: "delts-front", mir: true, s: [{ t: "pa", d: "M139,90 C148,88 156,96 159,108 C155,120 146,124 141,117 C137,105 135,95 139,90 Z" }] },
+      { m: "delts-side",  mir: true, s: [{ t: "pa", d: "M158,104 C165,110 166,126 161,138 C155,142 149,136 149,124 C150,112 154,106 158,104 Z" }] },
+      { m: "chest",       mir: true, s: [{ t: "pa", d: "M110,80 C123,78 133,83 138,96 C139,110 132,124 118,127 C114,127 110,125 110,121 L110,80 Z" }] },
+      { m: "biceps",      mir: true, s: [{ t: "pa", d: "M143,113 C153,112 158,130 157,156 C156,174 151,184 145,182 C142,158 141,131 143,113 Z" }] },
+      { m: "forearms",    mir: true, s: [{ t: "pa", d: "M144,190 C153,189 157,210 154,244 C152,268 148,284 143,288 C140,283 140,240 142,210 C142,200 143,194 144,190 Z" }] },
+      { m: "obliques",    mir: true, s: [{ t: "pa", d: "M128,148 C135,150 139,168 138,192 C137,206 131,212 126,210 C124,188 124,166 128,148 Z" }] },
+      { m: "core",        mir: false, s: [{ t: "pa", d: "M99,128 C104,126 116,126 121,128 C124,152 124,190 121,214 C121,232 118,244 110,247 C102,244 99,232 99,214 C96,190 96,152 99,128 Z" }] },
+      { m: "quads",       mir: true, s: [{ t: "pa", d: "M127,258 C138,258 145,282 142,320 C141,346 133,362 126,360 C119,354 116,326 117,296 C118,278 121,262 127,258 Z" }] },
+      { m: "adductors",   mir: true, s: [{ t: "pa", d: "M117,262 C122,264 122,302 120,342 C118,352 113,351 112,342 C111,302 113,266 117,262 Z" }] },
+      { m: "calves",      mir: true, s: [{ t: "pa", d: "M126,380 C135,382 139,402 137,424 C135,442 130,452 126,450 C122,436 121,404 126,380 Z" }] },
     ],
     back: [
-      { m: "traps",       mir: false, s: [{ t: "pa", d: "M110,72 C124,74 138,82 142,96 C132,104 121,108 110,108 C99,108 88,104 78,96 C82,82 96,74 110,72 Z" }] },
-      { m: "delts-rear",  mir: true, s: [{ t: "pa", d: "M137,86 C147,84 157,92 157,106 C154,116 144,116 139,108 C135,98 133,90 137,86 Z" }] },
-      { m: "rhomboids",   mir: true, s: [{ t: "pa", d: "M110,106 C119,108 127,115 126,130 C124,139 117,141 110,139 L110,106 Z" }] },
-      { m: "lats",        mir: true, s: [{ t: "pa", d: "M112,154 C122,150 132,151 137,160 C138,172 135,187 127,197 C121,203 116,205 114,203 C112,188 111,170 112,154 Z" }] },
-      { m: "triceps",     mir: true, s: [{ t: "pa", d: "M140,110 C150,110 155,128 154,150 C153,165 148,172 143,170 C140,150 140,128 140,110 Z" }] },
-      { m: "forearms",    mir: true, s: [{ t: "pa", d: "M143,180 C150,182 151,205 148,232 C146,246 143,252 140,250 C139,225 140,198 143,180 Z" }] },
-      { m: "lowerback",   mir: true, s: [{ t: "pa", d: "M111,152 C117,152 119,166 119,186 C119,200 116,208 112,208 C110,192 110,168 111,152 Z" }] },
-      { m: "glutes",      mir: true, s: [{ t: "pa", d: "M110,212 C124,212 138,220 138,240 C137,256 125,262 115,258 C111,248 110,230 110,218 Z" }] },
-      { m: "abductors",   mir: true, s: [{ t: "pa", d: "M138,214 C147,216 151,228 149,242 C145,250 139,248 137,240 C136,228 136,218 138,214 Z" }] },
-      { m: "hamstrings",  mir: true, s: [{ t: "pa", d: "M124,260 C137,260 143,284 142,316 C141,344 133,360 126,358 C120,354 117,332 118,302 C119,282 120,264 124,260 Z" }] },
-      { m: "calves",      mir: true, s: [{ t: "pa", d: "M124,376 C135,378 139,398 137,420 C135,438 130,448 126,446 C121,430 121,398 124,376 Z" }] },
+      { m: "traps",       mir: true, s: [{ t: "pa", d: "M110,70 C122,72 134,80 141,94 C134,103 122,107 110,107 Z" }] },
+      { m: "delts-rear",  mir: true, s: [{ t: "pa", d: "M139,90 C148,88 157,96 160,108 C156,120 147,124 141,117 C137,105 135,95 139,90 Z" }] },
+      { m: "rhomboids",   mir: true, s: [{ t: "pa", d: "M110,108 C119,110 127,118 126,133 C124,141 116,143 110,141 L110,108 Z" }] },
+      { m: "lats",        mir: true, s: [{ t: "pa", d: "M112,150 C124,146 135,148 140,159 C141,174 138,192 129,202 C121,208 116,209 114,206 C112,188 111,168 112,150 Z" }] },
+      { m: "triceps",     mir: true, s: [{ t: "pa", d: "M143,113 C153,112 159,130 158,156 C157,174 151,184 145,182 C142,158 141,131 143,113 Z" }] },
+      { m: "forearms",    mir: true, s: [{ t: "pa", d: "M144,190 C153,189 157,210 154,244 C152,268 148,284 143,288 C140,283 140,240 142,210 C142,200 143,194 144,190 Z" }] },
+      { m: "lowerback",   mir: true, s: [{ t: "pa", d: "M111,150 C117,150 120,165 120,188 C120,204 116,212 112,212 C110,192 110,166 111,150 Z" }] },
+      { m: "glutes",      mir: true, s: [{ t: "pa", d: "M110,214 C125,214 140,222 141,243 C140,261 126,267 115,262 C111,252 110,232 110,220 Z" }] },
+      { m: "abductors",   mir: true, s: [{ t: "pa", d: "M141,218 C149,220 153,232 151,246 C147,254 141,252 139,244 C138,232 138,222 141,218 Z" }] },
+      { m: "hamstrings",  mir: true, s: [{ t: "pa", d: "M127,262 C138,262 145,286 142,320 C141,348 133,364 126,362 C119,356 116,328 117,298 C118,280 121,266 127,262 Z" }] },
+      { m: "calves",      mir: true, s: [{ t: "pa", d: "M126,378 C136,380 140,400 138,422 C136,442 130,452 126,450 C122,434 121,402 126,378 Z" }] },
     ],
   };
-  // Human silhouette drawn behind the interactive zones (shared by both views).
-  // Centre parts are drawn once; each side limb is drawn once and mirrored.
+  // Human silhouette drawn behind the interactive zones. Head + neck + torso
+  // are symmetric and drawn once; each side limb (arm, leg, foot) is drawn
+  // once and mirrored across the centre line.
   const ANATOMY_BODY_CENTER = [
-    '<ellipse class="a-body" cx="110" cy="42" rx="18" ry="22"/>',
-    '<path class="a-body" d="M101,60 L119,60 L120,78 L100,78 Z"/>',
-    '<path class="a-body" d="M110,74 C122,74 132,78 138,86 C140,110 138,150 130,185 C136,205 140,220 140,236 C138,246 128,250 118,250 L110,252 L102,250 C92,250 82,246 80,236 C80,220 84,205 90,185 C82,150 80,110 82,86 C88,78 98,74 110,74 Z"/>',
+    '<ellipse class="a-body" cx="110" cy="40" rx="17" ry="22"/>',
+    '<path class="a-body" d="M102,58 L118,58 L119,74 L101,74 Z"/>',
+    '<path class="a-body" d="M110,72 C123,72 133,77 140,86 C142,112 139,152 131,186 C136,206 141,220 142,238 C140,248 129,252 118,252 L110,254 L102,252 C91,252 80,248 78,238 C79,220 84,206 89,186 C81,152 78,112 80,86 C87,77 97,72 110,72 Z"/>',
   ].join("");
   const ANATOMY_BODY_SIDE = [
-    '<path class="a-body" d="M140,86 C150,86 158,94 159,110 C159,140 156,170 154,178 C152,205 149,232 148,252 C148,262 147,268 144,270 C140,270 138,267 138,258 C138,232 140,205 142,178 C140,150 138,120 136,108 C135,96 134,88 140,86 Z"/>',
-    '<path class="a-body" d="M110,250 L128,250 C138,262 140,290 137,320 C135,345 132,362 130,372 C132,398 128,428 125,448 C124,456 122,461 118,462 L111,462 Z"/>',
-    '<ellipse class="a-body" cx="117" cy="463" rx="9" ry="6"/>',
+    '<path class="a-body" d="M143,88 C153,88 161,96 162,112 C162,142 159,172 157,182 C155,208 152,236 151,258 C154,266 155,277 152,285 C150,291 145,292 142,288 C139,283 139,274 140,266 C141,238 145,208 147,182 C148,150 145,120 143,110 C142,100 140,92 143,88 Z"/>',
+    '<path class="a-body" d="M110,254 L130,252 C140,262 142,292 139,322 C137,346 134,360 132,372 C134,398 130,428 127,448 C126,456 124,462 120,463 C117,464 114,466 116,470 L112,471 C112,430 112,350 112,300 L110,254 Z"/>',
+    '<ellipse class="a-body" cx="117" cy="467" rx="10" ry="6"/>',
   ].join("");
+  // Non-interactive definition lines (sternum, linea alba, ab rows, spine).
+  const ANATOMY_DEF = {
+    front: '<path class="a-def" d="M110,82 L110,127"/><path class="a-def" d="M110,133 L110,212"/>'
+      + '<path class="a-def" d="M102,151 L118,151"/><path class="a-def" d="M102,170 L118,170"/><path class="a-def" d="M103,190 L117,190"/>',
+    back: '<path class="a-def" d="M110,108 L110,210"/>',
+  };
   function anatomyBackdrop() {
     return `<g class="a-backdrop">${ANATOMY_BODY_CENTER}${ANATOMY_BODY_SIDE}`
       + `<g transform="${ANATOMY_MIRROR}">${ANATOMY_BODY_SIDE}</g></g>`;
@@ -3817,10 +3824,11 @@
       const s = z.s.map((sh) => anatomyShapeSvg(sh, z.m)).join("");
       return z.mir ? s + `<g transform="${ANATOMY_MIRROR}">${s}</g>` : s;
     }).join("");
-    return `<svg class="a-svg${view === "front" ? "" : " hidden"}" data-fig="${view}" viewBox="0 0 220 470" `
+    return `<svg class="a-svg${view === "front" ? "" : " hidden"}" data-fig="${view}" viewBox="0 0 220 480" `
       + `role="img" aria-label="${view} muscle map">`
       + anatomyBackdrop()
-      + `<g class="a-zones">${zones}</g></svg>`;
+      + `<g class="a-zones">${zones}</g>`
+      + `<g class="a-defs">${ANATOMY_DEF[view] || ""}</g></svg>`;
   }
   function anatomyDetailHtml(g) {
     const li = (t) => `<li>${escapeHtml(t)}</li>`;
