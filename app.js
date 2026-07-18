@@ -2444,8 +2444,9 @@
             toast(archiveFirst
               ? `Archived old program & assigned "${tpl.name || "Program"}" to ${client.name} ✓`
               : `"${tpl.name || "Program"}" assigned to ${client.name} ✓`);
-            openClient(client.id);
-            setTab("program");
+            // Land back on the Programs page — assigning is usually done from
+            // there, and the toast already confirms who got it.
+            renderProgramsList();
           };
 
           if (client.weeks.length > 0) {
