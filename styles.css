@@ -4690,6 +4690,12 @@ input:focus, textarea:focus, select:focus {
   .coach-nav-badge { position: absolute; top: 3px; right: calc(50% - 1.5em); min-width: 1.25em; height: 1.25em; }
 }
 
+/* Tablets: the nav is still a horizontal row (not yet the sidebar) and the few
+   items don't fill the width — centre them instead of left-aligning. */
+@media (min-width: 641px) and (max-width: 899px) {
+  .coach-nav { justify-content: center; }
+}
+
 /* ============================================================
    COACH WORKOUT LIBRARY
    ============================================================ */
