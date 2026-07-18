@@ -6150,6 +6150,96 @@
     return card;
   }
 
+  // "07/14/26" from "2026-07-14" — PR date fields use the short form.
+  function shortFromISO(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ""));
+    return m ? `${m[2]}/${m[3]}/${m[1].slice(2)}` : "";
+  }
+
+  // Best weight actually logged for ≥1 / ≥2 / ≥3 reps of a lift, across every
+  // program copy of it (matched by exKey, same as auto-PR detection). Drafts
+  // (locked === false) and skipped sets don't count; holds and timed carries
+  // have no lb × reps to report.
+  function bestLoggedByReps(name, weeks, logsMap) {
+    const key = exKey(name);
+    if (!key) return null;
+    const best = { 1: null, 2: null, 3: null };
+    (weeks || []).forEach((wk) => (wk.days || []).forEach((d) => (d.exercises || []).forEach((ex) => {
+      if (exKey(ex.name) !== key || ex.kind === "mobility" || exIsTimed(ex)) return;
+      ((logsMap || {})[ex.id] || []).forEach((l) => {
+        if (l.locked === false || l.skipped) return;
+        (l.sets || []).forEach((s) => {
+          if (s.skipped) return;
+          const w = parseFloat(s.weight), r = parseInt(s.reps, 10) || 0;
+          if (!isFinite(w) || w <= 0 || !r) return;
+          for (let n = 1; n <= 3; n++) {
+            if (r >= n && (!best[n] || w > best[n].weight)) best[n] = { weight: w, date: l.date || "" };
+          }
+        });
+      });
+    })));
+    return (best[1] || best[2] || best[3]) ? best : null;
+  }
+
+  // Picking a lift is enough — empty, unlocked slots fill themselves from the
+  // logged best as workouts come in. Typed or locked values are never touched.
+  function autoFillPRFromLogs(entry, best) {
+    if (!best) return false;
+    let changed = false;
+    [1, 2, 3].forEach((n) => {
+      const b = best[n];
+      if (!b || entry[`pr${n}`] || entry[`pr${n}Locked`]) return;
+      entry[`pr${n}`] = String(b.weight);
+      entry[`pr${n}Date`] = shortFromISO(b.date);
+      changed = true;
+    });
+    return changed;
+  }
+
+  // Chip shown on a slot when the logged best beats the recorded PR — one tap
+  // records it. Hidden on locked slots.
+  function prLoggedChip(entry, n, best) {
+    const b = best?.[n];
+    if (!b || entry[`pr${n}Locked`]) return "";
+    const cur = parseFloat(entry[`pr${n}`]);
+    if (isFinite(cur) && cur >= b.weight) return "";
+    const dt = shortFromISO(b.date);
+    return `<button class="pr-logged-chip" data-slot="${n}" type="button"
+      title="Best from logged workouts. Tap to record it.">🏋️ ${b.weight}${dt ? " · " + dt : ""}</button>`;
+  }
+  function wirePRLoggedChips(card, entry, best, onApply) {
+    card.querySelectorAll(".pr-logged-chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        const n = Number(chip.dataset.slot);
+        const b = best?.[n];
+        if (!b) return;
+        entry[`pr${n}`] = String(b.weight);
+        entry[`pr${n}Date`] = shortFromISO(b.date);
+        toast("PR recorded from workout logs 🏆");
+        onApply();
+      });
+    });
+  }
+
+  // A datalist of every pickable lift for PR tracking: the full library, the
+  // coach's custom exercises, and anything in this athlete's program (which
+  // catches custom/renamed lifts on the athlete side, where the coach's
+  // custom list isn't available). Stretches are excluded — no lb PR there.
+  function prExerciseDatalist(side) {
+    let dl = document.getElementById("pr-ex-datalist");
+    if (!dl) {
+      dl = document.createElement("datalist");
+      dl.id = "pr-ex-datalist";
+      document.body.appendChild(dl);
+    }
+    const names = new Set(ALL_EXERCISE_NAMES.filter((n) => !MOBILITY_NAMES.has(n)));
+    customExerciseList().forEach((cx) => { if (!MOBILITY_CATS.includes(cx.cat)) names.add(cx.name); });
+    suggestExerciseNames(side).forEach((n) => { if (!isMobilityName(n)) names.add(n); });
+    dl.innerHTML = [...names].sort((a, b) => a.localeCompare(b))
+      .map((n) => `<option value="${escapeHtml(n)}"></option>`).join("");
+    return "pr-ex-datalist";
+  }
+
   function renderCoachPRs() {
     const c = currentClient(); if (!c) return;
     const container = $("#coach-pr-container");
@@ -6175,14 +6265,23 @@
     });
 
     const hasAnything = nameMap.size > 0 || _prNewLifts.length > 0 || athleteBestMap.size > 0;
-    if (!hasAnything) { show(emptyEl); return; }
-    hide(emptyEl);
+    // Empty state and the + Add lift button coexist — an athlete with no PR
+    // cards yet still needs the door in.
+    if (hasAnything) hide(emptyEl); else show(emptyEl);
+
+    // Logged-workout bests feed the cards: current program + archives.
+    const coachWeeks = [...(c.weeks || []), ...(c.archivedPrograms || []).flatMap((a) => a.weeks || [])];
+    const coachLogs = c.importedProgress?.exerciseLogs || {};
 
     // Coach-managed cards (editable)
+    let autoFilled = false;
     nameMap.forEach((entry, key) => {
+      const best = bestLoggedByReps(entry.name, coachWeeks, coachLogs);
+      if (autoFillPRFromLogs(entry, best)) autoFilled = true;
       const inEdit = _prEditIds.has(entry.id) || !(entry.pr1 || entry.pr2 || entry.pr3);
-      container.appendChild(buildCoachPRCard(c, entry, inEdit, false, athleteBestMap.get(key)));
+      container.appendChild(buildCoachPRCard(c, entry, inEdit, false, athleteBestMap.get(key), best));
     });
+    if (autoFilled) saveTrainer();
 
     // Read-only athlete-only lifts (no coach entry for this name)
     athleteBestMap.forEach((p, key) => {
@@ -6224,14 +6323,14 @@
     }, 50);
   }
 
-  function buildCoachPRCard(c, entry, inEdit, isNew, athletePR) {
+  function buildCoachPRCard(c, entry, inEdit, isNew, athletePR, best) {
     const card = document.createElement("div");
     card.className = "pr-edit-card" + (isNew ? " is-editing" : " pr-shared-card");
 
     if (isNew) {
-      // Create-new-lift card: name + 3 values + Save (needs a name first).
+      // Create-new-lift card: name (picked from the library) + 3 values + Save.
       card.innerHTML = `
-        <div class="pr-edit-name-row"><input class="pr-name-input" placeholder="Exercise name…" value="${escapeHtml(entry.name || "")}"></div>
+        <div class="pr-edit-name-row"><input class="pr-name-input" list="${prExerciseDatalist("coach")}" autocomplete="off" placeholder="Pick an exercise…" value="${escapeHtml(entry.name || "")}"></div>
         <div class="pr-edit-fields">
           <div class="pr-field-group">
             <label class="pr-field-label">1 Rep PR (lb)</label>
@@ -6257,7 +6356,7 @@
         const pr2 = card.querySelector(".pr-2rm-input").value.trim();
         const pr3 = card.querySelector(".pr-3rm-input").value.trim();
         if (!newName) { toast("Enter a lift name"); return; }
-        if (!pr1 && !pr2 && !pr3) { toast("Enter at least one PR"); return; }
+        // No values is fine — they fill themselves from logged workouts.
         c.coachPRs.push({ id: uid(), name: newName, pr1, pr2, pr3 });
         _prNewLifts = _prNewLifts.filter(nl => nl.tempId !== entry.id);
         saveTrainer();
@@ -6279,6 +6378,7 @@
             <input class="pr-${n}rm-input" type="number" min="0" step="any" placeholder="${ph}" value="${escapeHtml(entry[`pr${n}`] || "")}" ${ro}>
             <input class="pr-${n}rm-date pr-date-input" type="text" inputmode="numeric" maxlength="8" placeholder="mm/dd/yy" title="Date achieved" value="${escapeHtml(entry[`pr${n}Date`] || "")}" ${ro}>
             <button class="pr-lock-btn${lk ? " is-locked" : ""}" data-slot="${n}" type="button" title="${lk ? "Locked — tap to edit" : "Lock in"}" aria-label="${lk ? "Locked — tap to edit" : "Lock in"}">${lk ? "🔒" : "🔓"}</button>
+            ${prLoggedChip(entry, n, best)}
           </div>`;
       };
       card.innerHTML = `
@@ -6312,6 +6412,7 @@
           renderCoachPRs();
         });
       });
+      wirePRLoggedChips(card, entry, best, () => { saveTrainer(); renderCoachPRs(); });
       card.querySelector(".pr-delete-btn").addEventListener("click", () => {
         if (!window.confirm(`Delete "${entry.name}" PR?`)) return;
         c.coachPRs = c.coachPRs.filter(p => p.id !== entry.id);
@@ -6370,6 +6471,49 @@
     if (d.length > 2) return `${d.slice(0, 2)}/${d.slice(2)}`;
     return d;
   }
+  // Push the shared PR list to the athlete's cloud row (athlete-side writes).
+  function pushAthleteCoachPRs() {
+    const prog = state.clientData.program; if (!prog) return;
+    saveClient();
+    if (window.Cloud?.enabled && prog.clientId) {
+      window.Cloud.debounce(`coachprs:${prog.clientId}`,
+        () => window.Cloud.updateAthleteCoachPRs(prog.clientId, prog.client.coachPRs), 1200);
+    }
+  }
+
+  // Athlete picks any lift to track — it becomes a shared 1/2/3-rep PR card
+  // on both sides, and fills itself in from logged workouts.
+  function openTrackLiftModal() {
+    const prog = state.clientData.program; if (!prog) return;
+    openModal({
+      title: "Track a lift",
+      body: `
+        <p class="muted" style="margin-bottom:0.75em">Pick any exercise. Your 1, 2, and 3 rep bests fill in automatically as you log workouts, and you or your coach can type or lock values any time.</p>
+        <label>Exercise
+          <input type="text" id="track-lift-name" list="${prExerciseDatalist("athlete")}" placeholder="e.g. Back Squat" autocomplete="off" />
+        </label>
+        <p id="track-lift-error" class="error hidden"></p>`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Track it", className: "btn btn-primary", onClick: () => {
+          const err = $("#track-lift-error");
+          const name = $("#track-lift-name").value.trim();
+          if (!name) { showErr(err, "Pick an exercise first."); return; }
+          if (!prog.client.coachPRs) prog.client.coachPRs = [];
+          if (prog.client.coachPRs.some((p) => exKey(p.name) === exKey(name))) {
+            showErr(err, "You're already tracking that lift."); return;
+          }
+          prog.client.coachPRs.push({ id: uid(), name, pr1: "", pr2: "", pr3: "" });
+          pushAthleteCoachPRs();
+          closeModal();
+          renderAthletePRs();
+          toast(`Now tracking ${name} 🏆`);
+        }},
+      ],
+    });
+    setTimeout(() => $("#track-lift-name")?.focus(), 50);
+  }
+
   function renderAthletePRs() {
     const container = $("#athlete-pr-container");
     const empty = $("#athlete-pr-empty");
@@ -6378,18 +6522,15 @@
     const athleteOwn = (state.clientData.progress.personalRecords || []).map((p) => ({ ...p, _author: "athlete" }));
     const coachPRs = (prog.client.coachPRs || []).filter(p => p.name);
     renderPRArchive($("#athlete-pr-archive"), state.clientData.progress.personalRecords || []);
-    if (!athleteOwn.length && !coachPRs.length) { show(empty); return; }
-    hide(empty);
+    if (!athleteOwn.length && !coachPRs.length) show(empty); else hide(empty);
 
     // Shared 1RM/2RM/3RM cards — same list the coach sees; either side can fill them in.
-    const pushCoachPRs = () => {
-      saveClient();
-      if (window.Cloud?.enabled && prog.clientId) {
-        window.Cloud.debounce(`coachprs:${prog.clientId}`,
-          () => window.Cloud.updateAthleteCoachPRs(prog.clientId, prog.client.coachPRs), 1200);
-      }
-    };
+    const pushCoachPRs = pushAthleteCoachPRs;
+    const athleteLogs = state.clientData.progress?.exerciseLogs || {};
+    let autoFilled = false;
     coachPRs.forEach(entry => {
+      const best = bestLoggedByReps(entry.name, prog.client.weeks, athleteLogs);
+      if (autoFillPRFromLogs(entry, best)) autoFilled = true;
       const card = document.createElement("div");
       card.className = "pr-edit-card pr-shared-card";
       // Each PR (1RM/2RM/3RM) has its own value + date + lock, so one can be
@@ -6403,6 +6544,7 @@
             <input class="pr-${n}rm-input" type="number" min="0" step="any" placeholder="${ph}" value="${escapeHtml(entry[`pr${n}`] || "")}" ${ro}>
             <input class="pr-${n}rm-date pr-date-input" type="text" inputmode="numeric" maxlength="8" placeholder="mm/dd/yy" title="Date achieved" value="${escapeHtml(entry[`pr${n}Date`] || "")}" ${ro}>
             <button class="pr-lock-btn${lk ? " is-locked" : ""}" data-slot="${n}" type="button" title="${lk ? "Locked — tap to edit" : "Lock in"}" aria-label="${lk ? "Locked — tap to edit" : "Lock in"}">${lk ? "🔒" : "🔓"}</button>
+            ${prLoggedChip(entry, n, best)}
           </div>`;
       };
       card.innerHTML = `
@@ -6430,8 +6572,18 @@
           renderAthletePRs();
         });
       });
+      wirePRLoggedChips(card, entry, best, () => { pushCoachPRs(); renderAthletePRs(); });
       container.appendChild(card);
     });
+    if (autoFilled) pushAthleteCoachPRs();
+
+    // Track any lift from the library — the athlete's door into the shared list.
+    const trackBtn = document.createElement("button");
+    trackBtn.className = "btn btn-ghost pr-add-lift-btn";
+    trackBtn.textContent = "＋ Track a lift";
+    trackBtn.title = "Pick any exercise to track 1, 2, and 3 rep PRs for it";
+    trackBtn.addEventListener("click", openTrackLiftModal);
+    container.appendChild(trackBtn);
 
     // Athlete's own PRs (weight × reps format)
     if (athleteOwn.length) {
@@ -6465,14 +6617,11 @@
   }
 
   function openAddPRModal(side) {
-    const suggestions = suggestExerciseNames(side);
-    const datalistOpts = suggestions.map((n) => `<option value="${escapeHtml(n)}">`).join("");
     openModal({
       title: "Add a PR",
       body: `
         <label>Exercise
-          <input type="text" id="pr-name" list="pr-name-list" placeholder="e.g. Back Squat" autofocus />
-          <datalist id="pr-name-list">${datalistOpts}</datalist>
+          <input type="text" id="pr-name" list="${prExerciseDatalist(side)}" autocomplete="off" placeholder="e.g. Back Squat" autofocus />
         </label>
         <div class="grid-2">
           <label>Weight (lb)

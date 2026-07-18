@@ -3311,6 +3311,21 @@ button.ov-stat:hover { background: var(--surface-2); }
   font-size: 0.72rem; font-weight: 700; color: var(--text-soft);
   text-transform: uppercase; letter-spacing: 0.05em;
 }
+/* Best-from-logged-workouts chip: tap to record it as the PR */
+.pr-logged-chip {
+  border: 1px solid rgba(var(--primary-rgb), 0.45);
+  background: var(--primary-soft);
+  color: var(--primary-bright);
+  border-radius: 6px;
+  padding: 0.22em 0.4em;
+  font-size: 0.64rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  align-self: center;
+}
+.pr-logged-chip:hover { border-color: var(--primary); }
 /* Per-PR date + lock */
 .pr-date-input { font-size: 0.58rem; padding: 0.34em 0.1em; text-align: center; letter-spacing: -0.02em; min-width: 0; }
 /* The mm/dd/yy example (placeholder) shrinks a bit more than typed values so
