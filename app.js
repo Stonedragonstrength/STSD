@@ -3621,13 +3621,20 @@
       mistakes: ["Flaring the elbows straight out to 90 degrees.", "Bouncing the bar off the chest to cheat the rep."],
       anchors: ["Bench Press", "Push-Up"],
       accessories: ["Incline Dumbbell Press", "Cable Fly", "Dips", "Machine Chest Press"] },
-    { id: "shoulders", name: "Shoulders", region: "both", pattern: "Push",
-      sub: "Anterior, lateral & posterior deltoids",
-      does: "Lifts and rotates your arms in every direction. Caps the shoulder and keeps it stable overhead.",
-      cues: ["Raise to shoulder height, not higher, on lateral raises.", "Keep the ribs down so the delts press, not the lower back."],
-      mistakes: ["Swinging heavy weight up with momentum.", "Shrugging the traps into every raise."],
-      anchors: ["Overhead Press", "Lateral Raise"],
-      accessories: ["Arnold Press", "Face Pull", "Rear Delt Fly", "Front Raise"] },
+    { id: "delts-front", name: "Front Delts", region: "front", pattern: "Push",
+      sub: "Anterior deltoid",
+      does: "Raises your arm to the front and drives the first inches of every overhead and bench press.",
+      cues: ["Press straight up with the ribs down, not arched.", "Let the front delt lead the press, then hand off to the chest."],
+      mistakes: ["Turning every shoulder day into front-raise volume.", "Arching the low back to fake more press height."],
+      anchors: ["Overhead Press", "Front Raise"],
+      accessories: ["Arnold Press", "Incline Press", "Landmine Press", "Barbell Front Raise"] },
+    { id: "delts-side", name: "Side Delts", region: "both", pattern: "Push",
+      sub: "Lateral deltoid",
+      does: "Lifts your arm out to the side and builds the width that caps a strong-looking shoulder.",
+      cues: ["Raise to shoulder height and lead with the elbow.", "Tip the pinky slightly up at the top, like pouring a bottle."],
+      mistakes: ["Swinging heavy dumbbells up with momentum.", "Shrugging the traps into every raise."],
+      anchors: ["Lateral Raise", "Overhead Press"],
+      accessories: ["Cable Lateral Raise", "Upright Row", "Machine Lateral Raise", "Leaning Lateral Raise"] },
     { id: "biceps", name: "Biceps", region: "front", pattern: "Pull",
       sub: "Biceps brachii, brachialis",
       does: "Bends your elbow and turns your palm up. The showpiece on the front of the arm.",
@@ -3677,15 +3684,29 @@
       mistakes: ["Bouncing reps with a tiny range of motion.", "Only training the standing calf, never the seated."],
       anchors: ["Standing Calf Raise", "Seated Calf Raise"],
       accessories: ["Leg Press Calf Raise", "Single-Leg Calf Raise", "Tibialis Raise", "Jump Rope"] },
-    { id: "back", name: "Back & Lats", region: "back", pattern: "Pull",
-      sub: "Latissimus dorsi, rhomboids, erectors",
-      does: "Pulls your arms down and back and holds you upright. The widest, strongest pulling muscles you own.",
-      cues: ["Think elbows to your back pockets, not hands to chest.", "Start each pull by pulling the shoulder blades down."],
-      mistakes: ["Yanking with the arms instead of the back.", "Rounding forward and losing the chest-up position."],
-      anchors: ["Pull-Up", "Row"],
-      accessories: ["Lat Pulldown", "Seated Cable Row", "Chest-Supported Row", "Straight-Arm Pulldown"] },
-    { id: "traps", name: "Trapezius", region: "back", pattern: "Pull",
-      sub: "Upper, mid & lower trapezius",
+    { id: "delts-rear", name: "Rear Delts", region: "back", pattern: "Pull",
+      sub: "Posterior deltoid",
+      does: "Pulls your arm back and out and balances all that pressing with healthy shoulders.",
+      cues: ["Pull with the elbows, wide and back.", "Keep it light and feel the back of the shoulder work."],
+      mistakes: ["Letting the mid-back take over the movement.", "Skipping them entirely and pressing all day."],
+      anchors: ["Face Pull", "Rear Delt Fly"],
+      accessories: ["Reverse Pec Deck", "Bent-Over Reverse Fly", "Cable Rear Delt", "Band Pull-Apart"] },
+    { id: "lats", name: "Lats", region: "back", pattern: "Pull",
+      sub: "Latissimus dorsi",
+      does: "Pulls your arms down and back and gives your back its width. The widest muscle you own.",
+      cues: ["Think elbows to your back pockets, not hands to chest.", "Start each pull by driving the shoulder blades down."],
+      mistakes: ["Yanking with the arms instead of the back.", "Cutting pull-ups short of a full hang and squeeze."],
+      anchors: ["Pull-Up", "Lat Pulldown"],
+      accessories: ["Straight-Arm Pulldown", "Single-Arm Row", "Pullover", "Seated Cable Row"] },
+    { id: "rhomboids", name: "Rhomboids & Mid-Back", region: "back", pattern: "Pull",
+      sub: "Rhomboids, mid-trapezius",
+      does: "Squeezes your shoulder blades together and sets a tall, proud upper back. The posture muscles.",
+      cues: ["Pinch the shoulder blades together and hold a beat.", "Lead rows by retracting the blades, not bending the arms."],
+      mistakes: ["Rushing rows and never fully squeezing.", "Rounding the upper back under the load."],
+      anchors: ["Row", "Face Pull"],
+      accessories: ["Seated Cable Row", "Chest-Supported Row", "Band Pull-Apart", "Reverse Fly"] },
+    { id: "traps", name: "Upper Traps", region: "back", pattern: "Pull",
+      sub: "Upper trapezius",
       does: "Shrugs, sets your shoulder blades, and supports your neck. Frames the whole upper back.",
       cues: ["Shrug straight up toward the ears, not forward.", "Hold the top squeeze for a beat."],
       mistakes: ["Rolling the shoulders in circles under load.", "Only training the upper traps, never the mid and lower."],
@@ -3734,78 +3755,71 @@
     back: ANATOMY_GROUPS.filter((g) => g.region === "back" || g.region === "both").map((g) => g.id),
   };
 
-  // Body-map shapes. Each zone is one muscle group drawn over a shared
-  // silhouette on a 220x470 canvas. `mir:true` auto-adds the mirrored
-  // shape across the vertical centre line so we only author one side.
+  // Body-map shapes. Each zone is one muscle group drawn as an anatomically
+  // shaped path over a shared human silhouette on a 220x470 canvas. `mir:true`
+  // draws a second, mirrored copy (via an SVG transform) so paired muscles
+  // only need authoring on one side of the body.
   const ANATOMY_FIG_W = 220;
+  const ANATOMY_MIRROR = `matrix(-1 0 0 1 ${ANATOMY_FIG_W} 0)`;
   const ANATOMY_ZONES = {
     front: [
-      { m: "shoulders", mir: true, s: [{ t: "e", cx: 82, cy: 72, rx: 13, ry: 11 }] },
-      { m: "chest",     mir: true, s: [{ t: "e", cx: 98, cy: 96, rx: 15, ry: 13 }] },
-      { m: "biceps",    mir: true, s: [{ t: "e", cx: 66, cy: 118, rx: 10, ry: 22 }] },
-      { m: "forearms",  mir: true, s: [{ t: "e", cx: 54, cy: 196, rx: 8, ry: 34 }] },
-      { m: "obliques",  mir: true, s: [{ t: "e", cx: 90, cy: 150, rx: 7, ry: 28 }] },
-      { m: "core",      mir: false, s: [{ t: "r", x: 100, y: 110, w: 20, h: 78, rx: 8 }] },
-      { m: "quads",     mir: true, s: [{ t: "e", cx: 100, cy: 290, rx: 15, ry: 52 }] },
-      { m: "adductors", mir: true, s: [{ t: "e", cx: 102, cy: 285, rx: 5, ry: 40 }] },
-      { m: "calves",    mir: true, s: [{ t: "e", cx: 98, cy: 404, rx: 11, ry: 46 }] },
+      { m: "delts-front", mir: true, s: [{ t: "pa", d: "M136,84 C146,82 156,90 156,104 C153,114 143,114 138,106 C134,96 132,88 136,84 Z" }] },
+      { m: "delts-side",  mir: true, s: [{ t: "pa", d: "M152,94 C160,96 162,110 159,122 C155,128 149,124 148,114 C148,104 149,98 152,94 Z" }] },
+      { m: "chest",       mir: true, s: [{ t: "pa", d: "M110,82 C124,80 136,86 138,100 C138,116 126,126 112,124 L110,120 Z" }] },
+      { m: "biceps",      mir: true, s: [{ t: "pa", d: "M140,110 C150,110 154,126 153,148 C152,164 148,172 143,170 C140,150 140,126 140,110 Z" }] },
+      { m: "forearms",    mir: true, s: [{ t: "pa", d: "M143,180 C150,182 151,205 148,232 C146,246 143,252 140,250 C139,225 140,198 143,180 Z" }] },
+      { m: "obliques",    mir: true, s: [{ t: "pa", d: "M122,138 C129,140 132,158 131,182 C130,194 126,200 122,196 C121,176 121,156 122,138 Z" }] },
+      { m: "core",        mir: false, s: [{ t: "pa", d: "M99,128 C105,126 115,126 121,128 C123,150 123,186 119,208 C113,214 107,214 101,208 C97,186 97,150 99,128 Z" }] },
+      { m: "quads",       mir: true, s: [{ t: "pa", d: "M124,258 C137,258 143,282 142,315 C141,342 133,358 126,356 C120,352 117,330 118,300 C119,280 120,262 124,258 Z" }] },
+      { m: "adductors",   mir: true, s: [{ t: "pa", d: "M117,262 C122,264 122,300 120,338 C118,348 113,347 112,338 C111,300 113,268 117,262 Z" }] },
+      { m: "calves",      mir: true, s: [{ t: "pa", d: "M124,378 C134,380 138,398 136,420 C134,438 129,448 125,446 C121,432 121,400 124,378 Z" }] },
     ],
     back: [
-      { m: "back",      mir: true, s: [{ t: "e", cx: 95, cy: 130, rx: 14, ry: 32 }] },
-      { m: "traps",     mir: false, s: [{ t: "p", pts: "110,58 138,74 128,106 110,114 92,106 82,74" }] },
-      { m: "shoulders", mir: true, s: [{ t: "e", cx: 82, cy: 74, rx: 12, ry: 10 }] },
-      { m: "triceps",   mir: true, s: [{ t: "e", cx: 66, cy: 118, rx: 10, ry: 22 }] },
-      { m: "lowerback", mir: false, s: [{ t: "r", x: 100, y: 165, w: 20, h: 34, rx: 6 }] },
-      { m: "glutes",    mir: true, s: [{ t: "e", cx: 99, cy: 222, rx: 15, ry: 17 }] },
-      { m: "abductors", mir: true, s: [{ t: "e", cx: 82, cy: 210, rx: 7, ry: 13 }] },
-      { m: "hamstrings", mir: true, s: [{ t: "e", cx: 100, cy: 308, rx: 15, ry: 50 }] },
-      { m: "calves",    mir: true, s: [{ t: "e", cx: 98, cy: 404, rx: 11, ry: 46 }] },
+      { m: "traps",       mir: false, s: [{ t: "pa", d: "M110,72 C124,74 138,82 142,96 C132,104 121,108 110,108 C99,108 88,104 78,96 C82,82 96,74 110,72 Z" }] },
+      { m: "delts-rear",  mir: true, s: [{ t: "pa", d: "M137,86 C147,84 157,92 157,106 C154,116 144,116 139,108 C135,98 133,90 137,86 Z" }] },
+      { m: "rhomboids",   mir: true, s: [{ t: "pa", d: "M110,106 C119,108 127,115 126,130 C124,139 117,141 110,139 L110,106 Z" }] },
+      { m: "lats",        mir: true, s: [{ t: "pa", d: "M112,154 C122,150 132,151 137,160 C138,172 135,187 127,197 C121,203 116,205 114,203 C112,188 111,170 112,154 Z" }] },
+      { m: "triceps",     mir: true, s: [{ t: "pa", d: "M140,110 C150,110 155,128 154,150 C153,165 148,172 143,170 C140,150 140,128 140,110 Z" }] },
+      { m: "forearms",    mir: true, s: [{ t: "pa", d: "M143,180 C150,182 151,205 148,232 C146,246 143,252 140,250 C139,225 140,198 143,180 Z" }] },
+      { m: "lowerback",   mir: true, s: [{ t: "pa", d: "M111,152 C117,152 119,166 119,186 C119,200 116,208 112,208 C110,192 110,168 111,152 Z" }] },
+      { m: "glutes",      mir: true, s: [{ t: "pa", d: "M110,212 C124,212 138,220 138,240 C137,256 125,262 115,258 C111,248 110,230 110,218 Z" }] },
+      { m: "abductors",   mir: true, s: [{ t: "pa", d: "M138,214 C147,216 151,228 149,242 C145,250 139,248 137,240 C136,228 136,218 138,214 Z" }] },
+      { m: "hamstrings",  mir: true, s: [{ t: "pa", d: "M124,260 C137,260 143,284 142,316 C141,344 133,360 126,358 C120,354 117,332 118,302 C119,282 120,264 124,260 Z" }] },
+      { m: "calves",      mir: true, s: [{ t: "pa", d: "M124,376 C135,378 139,398 137,420 C135,438 130,448 126,446 C121,430 121,398 124,376 Z" }] },
     ],
   };
-  // Neutral silhouette drawn behind the interactive zones (shared by both views).
-  const ANATOMY_BACKDROP = [
-    '<circle class="a-body" cx="110" cy="30" r="18"/>',
-    '<rect class="a-body" x="103" y="44" width="14" height="12" rx="4"/>',
-    '<path class="a-body" d="M82,60 L138,60 L132,150 L126,205 L94,205 L88,150 Z"/>',
-    '<path class="a-body" d="M92,200 L128,200 L130,238 L90,238 Z"/>',
-    '<ellipse class="a-body" cx="66" cy="112" rx="11" ry="48"/>',
-    '<ellipse class="a-body" cx="154" cy="112" rx="11" ry="48"/>',
-    '<ellipse class="a-body" cx="54" cy="196" rx="9" ry="44"/>',
-    '<ellipse class="a-body" cx="166" cy="196" rx="9" ry="44"/>',
-    '<circle class="a-body" cx="50" cy="244" r="8"/>',
-    '<circle class="a-body" cx="170" cy="244" r="8"/>',
-    '<ellipse class="a-body" cx="100" cy="300" rx="17" ry="58"/>',
-    '<ellipse class="a-body" cx="120" cy="300" rx="17" ry="58"/>',
-    '<ellipse class="a-body" cx="98" cy="406" rx="12" ry="54"/>',
-    '<ellipse class="a-body" cx="122" cy="406" rx="12" ry="54"/>',
-    '<ellipse class="a-body" cx="96" cy="454" rx="11" ry="8"/>',
-    '<ellipse class="a-body" cx="124" cy="454" rx="11" ry="8"/>',
+  // Human silhouette drawn behind the interactive zones (shared by both views).
+  // Centre parts are drawn once; each side limb is drawn once and mirrored.
+  const ANATOMY_BODY_CENTER = [
+    '<ellipse class="a-body" cx="110" cy="42" rx="18" ry="22"/>',
+    '<path class="a-body" d="M101,60 L119,60 L120,78 L100,78 Z"/>',
+    '<path class="a-body" d="M110,74 C122,74 132,78 138,86 C140,110 138,150 130,185 C136,205 140,220 140,236 C138,246 128,250 118,250 L110,252 L102,250 C92,250 82,246 80,236 C80,220 84,205 90,185 C82,150 80,110 82,86 C88,78 98,74 110,74 Z"/>',
   ].join("");
-
-  function anatomyMirrorShape(sh) {
-    const W = ANATOMY_FIG_W;
-    if (sh.t === "e") return { ...sh, cx: W - sh.cx };
-    if (sh.t === "r") return { ...sh, x: W - sh.x - sh.w };
-    if (sh.t === "p") return { ...sh, pts: sh.pts.split(" ").map((pt) => {
-      const [a, b] = pt.split(","); return `${W - Number(a)},${b}`;
-    }).join(" ") };
-    return sh;
+  const ANATOMY_BODY_SIDE = [
+    '<path class="a-body" d="M140,86 C150,86 158,94 159,110 C159,140 156,170 154,178 C152,205 149,232 148,252 C148,262 147,268 144,270 C140,270 138,267 138,258 C138,232 140,205 142,178 C140,150 138,120 136,108 C135,96 134,88 140,86 Z"/>',
+    '<path class="a-body" d="M110,250 L128,250 C138,262 140,290 137,320 C135,345 132,362 130,372 C132,398 128,428 125,448 C124,456 122,461 118,462 L111,462 Z"/>',
+    '<ellipse class="a-body" cx="117" cy="463" rx="9" ry="6"/>',
+  ].join("");
+  function anatomyBackdrop() {
+    return `<g class="a-backdrop">${ANATOMY_BODY_CENTER}${ANATOMY_BODY_SIDE}`
+      + `<g transform="${ANATOMY_MIRROR}">${ANATOMY_BODY_SIDE}</g></g>`;
   }
   function anatomyShapeSvg(sh, muscle) {
     const attr = `class="a-zone" data-muscle="${muscle}"`;
     if (sh.t === "e") return `<ellipse ${attr} cx="${sh.cx}" cy="${sh.cy}" rx="${sh.rx}" ry="${sh.ry}"/>`;
     if (sh.t === "r") return `<rect ${attr} x="${sh.x}" y="${sh.y}" width="${sh.w}" height="${sh.h}" rx="${sh.rx || 0}"/>`;
     if (sh.t === "p") return `<polygon ${attr} points="${sh.pts}"/>`;
+    if (sh.t === "pa") return `<path ${attr} d="${sh.d}"/>`;
     return "";
   }
   function anatomyFigureSvg(view) {
     const zones = ANATOMY_ZONES[view].map((z) => {
-      const shapes = z.mir ? z.s.concat(z.s.map(anatomyMirrorShape)) : z.s;
-      return shapes.map((sh) => anatomyShapeSvg(sh, z.m)).join("");
+      const s = z.s.map((sh) => anatomyShapeSvg(sh, z.m)).join("");
+      return z.mir ? s + `<g transform="${ANATOMY_MIRROR}">${s}</g>` : s;
     }).join("");
     return `<svg class="a-svg${view === "front" ? "" : " hidden"}" data-fig="${view}" viewBox="0 0 220 470" `
       + `role="img" aria-label="${view} muscle map">`
-      + `<g class="a-backdrop">${ANATOMY_BACKDROP}</g>`
+      + anatomyBackdrop()
       + `<g class="a-zones">${zones}</g></svg>`;
   }
   function anatomyDetailHtml(g) {
