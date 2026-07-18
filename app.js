@@ -11125,27 +11125,23 @@
     (p.cardioLogs || []).forEach((l) => consider(l.date));
     return last;
   }
+  // No dollar figures on the overview (2026-07-17, per Nathan) — just a quiet
+  // "who owes" chip so unpaid packages still surface somewhere.
   function renderMoneyStrip() {
     const host = $("#dash-money-strip"); if (!host) return;
-    const mk = todayISO().slice(0, 7);
-    let pendingTotal = 0, pendingCount = 0, monthCollected = 0;
     const owing = [];
+    let pendingCount = 0;
     (state.trainerData.clients || []).forEach((c) => {
       (c.sessionBank?.packages || []).forEach((p) => {
-        const price = Number(p.price) || 0;
         if (p.status === "pending" || p.status === "unpaid") {
-          pendingCount++; pendingTotal += price;
+          pendingCount++;
           if (!owing.includes(c.name)) owing.push(c.name);
-        } else if (p.status === "paid" && p.paidAt && dateISO(new Date(p.paidAt)).startsWith(mk)) {
-          monthCollected += price;
         }
       });
     });
-    if (!pendingCount && !monthCollected) { host.innerHTML = ""; return; }
+    if (!pendingCount) { host.innerHTML = ""; return; }
     host.innerHTML = `<div class="money-strip">
-      <div class="money-chip"><span class="money-num">$${monthCollected.toLocaleString()}</span><span class="money-lbl">collected this month</span></div>
-      <div class="money-chip${pendingTotal ? " warn" : ""}"><span class="money-num">$${pendingTotal.toLocaleString()}</span><span class="money-lbl">pending · ${pendingCount} package${pendingCount === 1 ? "" : "s"}</span></div>
-      ${owing.length ? `<div class="money-chip"><span class="money-num">${owing.length}</span><span class="money-lbl">owe${owing.length === 1 ? "s" : ""}: ${escapeHtml(owing.slice(0, 3).join(", "))}${owing.length > 3 ? "…" : ""}</span></div>` : ""}
+      <div class="money-chip warn"><span class="money-num">${pendingCount}</span><span class="money-lbl">unpaid package${pendingCount === 1 ? "" : "s"}: ${escapeHtml(owing.slice(0, 3).join(", "))}${owing.length > 3 ? "…" : ""}</span></div>
     </div>`;
   }
 
