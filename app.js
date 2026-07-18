@@ -405,6 +405,33 @@
     if (ex.dropset?.pcts?.length) parts.push(`⬇${ex.dropset.pcts.join("→")}%`);
     return parts.join("  ");
   }
+  // ── Pyramid sets ──
+  // Weight climbs each set by a chosen percent, compounding off the previous
+  // set's number and rounded to the nearest 5 lb plate. Reps can optionally
+  // step down per set (classic 12/10/8). Stored as
+  // ex.pyramid = { pct: "10", repDrop: 0 }. Weight ladder starts at
+  // ex.currentWeight; BW lifts have no ladder.
+  const PYRAMID_PCTS = ["5", "7.5", "10", "12.5", "15"];
+  function pyramidActive(ex) {
+    return !!(ex && ex.kind !== "mobility" && ex.pyramid && parseFloat(ex.pyramid.pct) > 0);
+  }
+  function roundPlate5(v) { return Math.max(5, Math.round(v / 5) * 5); }
+  function pyramidWeights(ex, numSets) {
+    if (!pyramidActive(ex) || !numSets) return null;
+    let cur = parseFloat(ex.currentWeight);
+    if (!isFinite(cur) || cur <= 0) return null;
+    const p = parseFloat(ex.pyramid.pct) / 100;
+    const out = [cur];
+    for (let i = 1; i < numSets; i++) { cur = roundPlate5(cur * (1 + p)); out.push(cur); }
+    return out;
+  }
+  function pyramidReps(ex, numSets) {
+    const base = parseInt(ex.currentReps, 10);
+    if (!isFinite(base) || !numSets) return null;
+    const drop = parseInt(ex.pyramid?.repDrop, 10) || 0;
+    return Array.from({ length: numSets }, (_, i) => Math.max(1, base - drop * i));
+  }
+
   // ── Warm-up sets (optional, up to 2) ──
   // Coach-prescribed explicit weight × reps, done before the working sets and
   // shown as W1/W2 on the athlete card. Stored as ex.warmups = [{weight,reps}].
@@ -693,6 +720,87 @@
     };
     render();
 
+    document.body.appendChild(pop);
+    requestAnimationFrame(() => _positionPop(pop, anchorBtn));
+    _attachOutsideClose(pop, anchorBtn);
+  }
+
+  function openPyramidPicker(ex, anchorBtn, onChange) {
+    document.querySelector(".pyr-pop")?.remove();
+    const pop = document.createElement("div");
+    pop.className = "grid-picker-pop prog-pop pyr-pop";
+    pop.style.cssText = "position:fixed;z-index:9999;visibility:hidden";
+
+    const saveChange = () => { saveTrainer(); onChange(); render(); };
+
+    function render() {
+      pop.innerHTML = "";
+      const head = document.createElement("div");
+      head.className = "prog-pop-head";
+      head.textContent = "🔺 Pyramid sets";
+      pop.appendChild(head);
+
+      const hint = document.createElement("p");
+      hint.className = "prog-pop-hint";
+      hint.textContent = "Weight climbs each set by this percent, compounding off the previous set and rounded to 5 lb plates.";
+      pop.appendChild(hint);
+
+      // % per set (10% is the classic; Off clears it)
+      const pctRow = document.createElement("div");
+      pctRow.className = "finisher-pct-row";
+      const offBtn = document.createElement("button");
+      offBtn.type = "button";
+      offBtn.className = "finisher-pct-btn" + (!ex.pyramid ? " on" : "");
+      offBtn.textContent = "Off";
+      offBtn.addEventListener("click", () => { delete ex.pyramid; saveChange(); });
+      pctRow.appendChild(offBtn);
+      PYRAMID_PCTS.forEach((p) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "finisher-pct-btn" + (ex.pyramid?.pct === p ? " on" : "");
+        b.textContent = "+" + p + "%";
+        b.addEventListener("click", () => {
+          ex.pyramid = { pct: p, repDrop: ex.pyramid?.repDrop || 0 };
+          saveChange();
+        });
+        pctRow.appendChild(b);
+      });
+      pop.appendChild(pctRow);
+
+      if (ex.pyramid) {
+        const dropLbl = document.createElement("div");
+        dropLbl.className = "finisher-slot-lbl";
+        dropLbl.textContent = "Reps each set";
+        pop.appendChild(dropLbl);
+        const dropRow = document.createElement("div");
+        dropRow.className = "finisher-pct-row";
+        [[0, "Same"], [1, "−1"], [2, "−2"], [3, "−3"]].forEach(([d, lbl]) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "finisher-pct-btn" + ((parseInt(ex.pyramid.repDrop, 10) || 0) === d ? " on" : "");
+          b.textContent = lbl;
+          b.addEventListener("click", () => { ex.pyramid.repDrop = d; saveChange(); });
+          dropRow.appendChild(b);
+        });
+        pop.appendChild(dropRow);
+
+        // Live preview of the ladder from the current sets/weight/reps
+        const n = parseInt(ex.sets, 10) || 0;
+        const w = pyramidWeights(ex, n);
+        const preview = document.createElement("p");
+        preview.className = "prog-pop-hint pyr-preview";
+        if (!w) {
+          preview.textContent = ex.currentWeight === "BW"
+            ? "Bodyweight lifts have no weight ladder — set a weight first."
+            : "Set a starting weight and sets to see the ladder.";
+        } else {
+          const r = pyramidReps(ex, n);
+          preview.textContent = w.map((wt, i) => `${wt}${r ? "×" + r[i] : ""}`).join(" · ");
+        }
+        pop.appendChild(preview);
+      }
+    }
+    render();
     document.body.appendChild(pop);
     requestAnimationFrame(() => _positionPop(pop, anchorBtn));
     _attachOutsideClose(pop, anchorBtn);
@@ -4899,11 +5007,24 @@
     finisherBtn.title = "Burnout / Dropset finisher";
     const refreshFinisherBtn = () => {
       const sum = finisherSummary(ex);
-      finisherBtn.textContent = sum || "＋ Fin";
+      finisherBtn.textContent = sum || "＋💥";
       finisherBtn.classList.toggle("empty", !sum);
     };
     refreshFinisherBtn();
     finisherBtn.addEventListener("click", (e) => { e.stopPropagation(); openFinisherPicker(ex, finisherBtn, refreshFinisherBtn); });
+
+    // Pyramid — weight climbs each set by a percent; sandy card when on.
+    const pyrBtn = document.createElement("button");
+    pyrBtn.className = "picker-btn picker-btn-sm ex-pyr-btn";
+    pyrBtn.title = "Pyramid: weight climbs each set by a percent (rounded to 5 lb plates)";
+    const refreshPyrBtn = () => {
+      const on = pyramidActive(ex);
+      pyrBtn.textContent = on ? `🔺+${ex.pyramid.pct}%` : "＋🔺";
+      pyrBtn.classList.toggle("empty", !on);
+      wrapper.classList.toggle("pyramid-tint", on);
+    };
+    refreshPyrBtn();
+    pyrBtn.addEventListener("click", (e) => { e.stopPropagation(); openPyramidPicker(ex, pyrBtn, refreshPyrBtn); });
 
     // Effort / intensity (heat ramp) — sits with the finisher.
     const effortBtn = document.createElement("button");
@@ -4964,6 +5085,7 @@
       finisherBtn.disabled = locked;
       effortBtn.disabled = locked;
       progBtn.disabled = locked;
+      pyrBtn.disabled = locked;
       handle.style.opacity = locked ? "0.3" : "";
       handle.style.pointerEvents = locked ? "none" : "";
       moveUpBtn.disabled = locked;
@@ -5035,6 +5157,7 @@
     if (!isMob) row.appendChild(warmupBtn); // warm-up/finisher don't apply to holds
     row.appendChild(metricsGroup);
     if (!isMob) row.appendChild(progBtn); // auto-progression rides the working sets
+    if (!isMob) row.appendChild(pyrBtn);  // pyramid weight ladder
     if (!isMob) row.appendChild(finisherBtn);
     if (isMob) row.appendChild(placeBtn); // warm-up ↔ finisher placement
     row.appendChild(expandBtn); row.appendChild(saveBtn); row.appendChild(editBtn); row.appendChild(ssBtn); row.appendChild(delBtn);
@@ -9149,12 +9272,17 @@
       }
       return candidates.sort((a, b) => String(b.date).localeCompare(String(a.date)))[0] || null;
     })();
+    // Pyramid ladder: per-set weight (and optional descending reps) targets.
+    // A pyramid overrides auto-progression — one scheme drives the card.
+    const pyrW = pyramidWeights(ex, parseInt(ex.sets, 10) || 0);
+    const pyrR = pyrW ? pyramidReps(ex, parseInt(ex.sets, 10) || 0) : null;
     // Auto-progression: effective target computed from prior weeks' locked
     // logs (chain of earned increments). Null when the exercise has no rule.
-    const prog = effectiveProgression(state.clientData.program?.client?.weeks, ex, state.clientData.progress?.exerciseLogs);
+    const prog = pyrW ? null : effectiveProgression(state.clientData.program?.client?.weeks, ex, state.clientData.progress?.exerciseLogs);
 
     const wrapper = document.createElement("div");
     wrapper.className = "cex-wrapper" + (isDone ? " logged" : "");
+    if (pyrW) wrapper.classList.add("pyramid-tint");
     wrapper.dataset.week = week.id;
     wrapper.dataset.day = day.id;
 
@@ -9183,7 +9311,12 @@
     rxEl.className = "cex-rx";
     const rxParts = [];
     if (ex.sets) rxParts.push(ex.sets + " sets");
-    if (prog) {
+    if (pyrW) {
+      // The whole ladder when it fits, first→last when it doesn't.
+      const s = usesDumbbellPair(ex) ? "s" : " lb";
+      rxParts.push((pyrW.length <= 4 ? pyrW.join("→") : `${pyrW[0]}→${pyrW[pyrW.length - 1]}`) + s);
+      if (pyrR) rxParts.push("× " + (pyrR[0] === pyrR[pyrR.length - 1] ? withT(String(pyrR[0])) : pyrR.join("/")));
+    } else if (prog) {
       // Effective target: computed weight + this week's rep target (climbs
       // toward the ceiling as prior weeks are hit; "+" = beat it if you can).
       // Bodyweight ladders have no weight leg — just BW and the moving reps.
@@ -9204,6 +9337,14 @@
         ? `Rep ladder ${prog.floor}→${prog.ceil}: hit every set at the target and next week asks for your worst set + 1, up to ${prog.ceil}. The weight stays at ${prog.weight} lb.`
         : `Double progression ${prog.floor}–${prog.ceil}: hit every set at the target to move up a rep next week; hit ${prog.ceil} on all sets and the weight goes up ${prog.inc} lb (reps drop to ${prog.reset}).`;
     rxEl.appendChild(rxMain);
+
+    if (pyrW) {
+      const chip = document.createElement("span");
+      chip.className = "cex-pyr-chip";
+      chip.textContent = `🔺 +${ex.pyramid.pct}%`;
+      chip.title = "Pyramid: the weight climbs each set. " + pyrW.map((w, i) => `${w}${pyrR ? "×" + pyrR[i] : ""}`).join(" → ");
+      rxEl.appendChild(chip);
+    }
 
     if (prog && prog.earned > 0) {
       const chip = document.createElement("span");
@@ -9310,6 +9451,10 @@
     // Prescribed reps/weight seed the per-field steppers when a field is empty.
     const prescribedReps = prog ? prog.reps : parseInt(ex.currentReps, 10);
     const weightBase = prog && !prog.bw ? prog.weight : parseFloat(ex.currentWeight);
+    // Per-set targets: pyramid columns each have their own number, everything
+    // else is flat across the sets.
+    const wSeedAt = (i) => (pyrW ? pyrW[i] : weightBase);
+    const rSeedAt = (i) => (pyrR ? pyrR[i] : prescribedReps);
 
     const setInputs = [];
     // Per-field steppers: tap ▼ / ▲ to nudge a set's weight (±2.5 lb) or reps
@@ -9442,13 +9587,13 @@
       lbl.textContent = `S${s + 1}`;
       lbl.title = "Tap to skip this set";
 
-      const wt = Object.assign(document.createElement("input"), { type: "number", step: "0.5", min: "0", placeholder: wtPh || "lb", readOnly: isLocked });
-      const rp = Object.assign(document.createElement("input"), { type: "number", min: "0", placeholder: repPh || (isTimed ? "sec" : "reps"), readOnly: isLocked });
+      const wt = Object.assign(document.createElement("input"), { type: "number", step: "0.5", min: "0", placeholder: pyrW ? pyrW[s] + pairS : (wtPh || "lb"), readOnly: isLocked });
+      const rp = Object.assign(document.createElement("input"), { type: "number", min: "0", placeholder: pyrR ? withT(String(pyrR[s])) : (repPh || (isTimed ? "sec" : "reps")), readOnly: isLocked });
       wt.className = "cex-input"; rp.className = "cex-input";
       wt.addEventListener("click", (e) => e.stopPropagation());
       rp.addEventListener("click", (e) => e.stopPropagation());
-      wt.addEventListener("input", () => { markEdited(wt); fillSibling(rp, prescribedReps); });
-      rp.addEventListener("input", () => { markEdited(rp); fillSibling(wt, weightBase); });
+      wt.addEventListener("input", () => { markEdited(wt); fillSibling(rp, rSeedAt(s)); });
+      rp.addEventListener("input", () => { markEdited(rp); fillSibling(wt, wSeedAt(s)); });
 
       const item = { wt, rp, skipped: false };
       item.applySkip = () => {
@@ -9467,9 +9612,9 @@
 
       col.appendChild(lbl);
       // Weight field, ±2.5 lb (bodyweight lifts log reps only — no weight arrows).
-      col.appendChild(mkStepField(wt, 2.5, weightBase, ex.currentWeight !== "BW", () => fillSibling(rp, prescribedReps)));
+      col.appendChild(mkStepField(wt, 2.5, wSeedAt(s), ex.currentWeight !== "BW", () => fillSibling(rp, rSeedAt(s))));
       // Reps field, ±1 (carries count seconds, ±5).
-      col.appendChild(mkStepField(rp, isTimed ? 5 : 1, prescribedReps, true, () => fillSibling(wt, weightBase)));
+      col.appendChild(mkStepField(rp, isTimed ? 5 : 1, rSeedAt(s), true, () => fillSibling(wt, wSeedAt(s))));
 
       setTable.appendChild(col);
       setInputs.push(item);
@@ -9645,11 +9790,12 @@
     lockBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       // Locking accepts the prescription: untouched fields fill from the
-      // written target, so "did exactly what was asked" is a single tap.
-      setInputs.forEach((it) => {
+      // written target (per-set for pyramids), so "did exactly what was
+      // asked" is a single tap.
+      setInputs.forEach((it, i) => {
         if (it.skipped) return;
-        if (it.rp.value === "" && Number.isFinite(prescribedReps)) { it.rp.value = String(prescribedReps); markEdited(it.rp); }
-        if (it.wt.value === "" && ex.currentWeight !== "BW" && Number.isFinite(weightBase)) { it.wt.value = String(weightBase); markEdited(it.wt); }
+        if (it.rp.value === "" && Number.isFinite(rSeedAt(i))) { it.rp.value = String(rSeedAt(i)); markEdited(it.rp); }
+        if (it.wt.value === "" && ex.currentWeight !== "BW" && Number.isFinite(wSeedAt(i))) { it.wt.value = String(wSeedAt(i)); markEdited(it.wt); }
       });
       const sets = setInputs.map(({ wt, rp, skipped }) => (skipped ? { weight: "", reps: "", skipped: true } : { weight: wt.value, reps: rp.value }));
       const complete = sets.every((s) => s.skipped || (s.reps && (s.weight || ex.currentWeight === "BW")));
