@@ -450,6 +450,23 @@ input[type="date"] { color-scheme: dark; }
 .header-name-btn.active .header-sub { color: var(--primary-bright); }
 .header-name-btn:hover .header-name-caret,
 .header-name-btn.active .header-name-caret { color: var(--primary-bright); }
+/* Sessions-remaining chip, right of the athlete's profile name */
+.header-sessions {
+  display: inline-flex; align-items: center; gap: 0.32em;
+  padding: 0.26em 0.62em;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font: inherit; font-weight: 800; font-size: 0.92rem;
+  line-height: 1; cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.header-sessions:hover { border-color: var(--border-strong); background: var(--surface-3); }
+.header-sessions.is-low { color: var(--warn); border-color: rgba(245, 158, 11, 0.4); }
+.header-sessions .hs-ico { font-size: 0.92em; }
+.header-sessions .hs-num { font-variant-numeric: tabular-nums; }
+
 .header-right { display: flex; gap: 0.4em; align-items: center; }
 
 /* Breadcrumb (shown when inside an athlete) */
@@ -2225,20 +2242,21 @@ input[type="date"] { color-scheme: dark; }
   display: flex;
   align-items: center;
   gap: 0.8rem;
-  background: linear-gradient(100deg, var(--hero-soft, var(--primary-soft)) -25%, var(--surface) 52%);
+  background: linear-gradient(100deg, var(--hero-soft, var(--primary-soft)) -30%, var(--surface) 48%);
   border: 1px solid var(--border);
   border-left: 3px solid var(--hero-color, var(--primary));
   border-radius: var(--radius);
-  padding: 0.55rem 0.9rem;
+  padding: 0.5rem 0.85rem;
   box-shadow: var(--shadow-sm);
   transition: box-shadow 0.15s, transform 0.15s;
 }
 .ov-hero.is-clickable { cursor: pointer; }
 .ov-hero.is-clickable:hover { box-shadow: 0 8px 22px rgba(var(--primary-rgb), 0.16); transform: translateY(-2px); }
-.ov-hero-body { flex: 1; min-width: 0; }
-.ov-hero-kicker { font-size: 0.58rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--hero-color, var(--text-soft)); line-height: 1.2; }
-.ov-hero-title { font-size: 1.05rem; font-weight: 800; line-height: 1.1; margin: 0.05em 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ov-hero-sub { font-size: 0.74rem; color: var(--muted); line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov-hero-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ov-hero-kicker { font-size: 0.56rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--hero-color, var(--text-soft)); line-height: 1.1; }
+.ov-hero-main { display: flex; align-items: baseline; gap: 0.5em; min-width: 0; }
+.ov-hero-title { font-size: 1rem; font-weight: 800; line-height: 1.15; flex-shrink: 0; white-space: nowrap; }
+.ov-hero-sub { font-size: 0.74rem; color: var(--muted); line-height: 1.15; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ov-hero-cta {
   flex-shrink: 0;
   background: linear-gradient(180deg, var(--primary-bright), var(--primary));
@@ -7318,7 +7336,7 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 /* Lifetime totals as a racing-game style slanted stats list */
 .ov-stats-list { display: flex; flex-direction: column; gap: 0.4rem; }
 .ov-stat-row {
-  transform: skewX(-11deg);
+  transform: skewX(-15deg);
   border-radius: 5px;
   border: 1px solid rgba(var(--primary-bright-rgb), 0.28);
   border-left: 3px solid var(--primary-bright);
@@ -7327,11 +7345,12 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
     linear-gradient(180deg, var(--surface-2), var(--surface));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
   overflow: hidden;
+  margin: 0 3px;
 }
 .ov-stat-row .sr-in {
-  transform: skewX(11deg);
+  transform: skewX(15deg);
   display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem;
-  padding: 0.5em 1.1em;
+  padding: 0.5em 1.25em;
 }
 .sr-lbl { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.09em; color: var(--text-soft); }
 .sr-when { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.02em; color: var(--muted); margin-left: 0.35em; }

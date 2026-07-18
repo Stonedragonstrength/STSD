@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=anatomybody10" />
+  <link rel="stylesheet" href="styles.css?v=anatomybody12" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -731,6 +731,9 @@
             <span class="header-name-caret">⚙</span>
           </button>
         </div>
+        <button class="header-sessions hidden" id="header-sessions" type="button" title="Sessions remaining">
+          <span class="hs-ico">🎟️</span><span class="hs-num"></span>
+        </button>
       </div>
       <div class="header-right">
         <button class="btn btn-ghost btn-sm tour-help-btn" id="btn-tour-client" title="Quick tour of the app">?</button>
@@ -1026,7 +1029,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=push1"></script>
   <script src="cloud.js?v=push1"></script>
-  <script src="app.js?v=anatomybody10"></script>
+  <script src="app.js?v=anatomybody12"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

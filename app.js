@@ -7331,6 +7331,7 @@
     const prog = state.clientData.program;
     if (!prog?.client) return;
     ensureSessionBank(prog.client);
+    renderClientHeaderSessions();
     if (!state.clientData.progress.packageRequests) state.clientData.progress.packageRequests = [];
 
     const sum = sessionBankSummary(prog.client);
@@ -8634,6 +8635,7 @@
     ensureProgressShape(state.clientData.progress);
     const prog = state.clientData.program;
     $("#client-portal-name").textContent = prog.client.name;
+    renderClientHeaderSessions();
     // Profile tab: editable details, invite code, theme picker
     renderAthleteProfileFields();
     const pInvite = $("#profile-invite");
@@ -8826,8 +8828,8 @@
           <div class="ov-stats-list">
             ${statRow("Workouts", lifeStats.workouts)}
             ${statRow("PRs", lifeStats.prs)}
-            ${statRow("Total lifted", formatTonnage(ton), "lb")}
             ${lastWk ? statRow("Last workout", formatTonnage(lastWk.volume), "lb", lastWkLabel) : ""}
+            ${statRow("Total lifted", formatTonnage(ton), "lb")}
           </div>
           <div id="ov-volchart-host"></div>
         </div>
@@ -8844,9 +8846,8 @@
       <div class="ov-greeting">Hey, ${firstName} 👋</div>
       <div class="ov-hero${hero.jump ? " is-clickable" : ""}" id="ov-hero" style="--hero-color:${hero.color || "var(--primary-bright)"};--hero-soft:${hero.soft || "var(--primary-soft)"}">
         <div class="ov-hero-body">
-          <div class="ov-hero-kicker">${hero.kicker}</div>
-          <div class="ov-hero-title">${hero.title}</div>
-          <div class="ov-hero-sub">${hero.sub}</div>
+          <span class="ov-hero-kicker">${hero.kicker}</span>
+          <div class="ov-hero-main"><span class="ov-hero-title">${hero.title}</span><span class="ov-hero-sub">${hero.sub}</span></div>
         </div>
         ${hero.cta ? `<span class="ov-hero-cta">${hero.cta} →</span>` : ""}
       </div>`;
@@ -8854,11 +8855,6 @@
       <div class="ov-strip">
         ${ringStat}
         ${streakStat}
-        <button class="ov-stat${low ? " is-low" : ""}" id="ov-stat-sessions" type="button">
-          <span class="ov-stat-ico">🎟️</span>
-          <span class="ov-stat-num">${remaining}</span>
-          <span class="ov-stat-lbl">sessions</span>
-        </button>
         ${bookingLabel ? `<div class="ov-stat">
           <span class="ov-stat-ico">📅</span>
           <span class="ov-stat-num ov-stat-sm">${escapeHtml(bookingLabel)}</span>
@@ -8870,10 +8866,23 @@
     if (trophyHost) trophyHost.innerHTML = trophyHtml;
 
     if (hero.jump) $("#ov-hero")?.addEventListener("click", () => jumpToWorkout(hero.jump, today));
-    $("#ov-stat-sessions")?.addEventListener("click", () => setClientTab("sessions"));
+    renderClientHeaderSessions();
     $("#btn-share-recap")?.addEventListener("click", () => shareLifetimeImage(lifeStats, c.name));
     $(".ov-liftstats")?.addEventListener("toggle", (e) => localStorage.setItem(KEY_LIFTSTATS_OPEN, e.target.open ? "1" : "0"));
     renderVolumeChart(progress);
+  }
+  // Sessions-remaining chip in the athlete header, right of the profile name.
+  function renderClientHeaderSessions() {
+    const chip = $("#header-sessions"); if (!chip) return;
+    const c = state.clientData.program?.client;
+    if (!c) { chip.classList.add("hidden"); return; }
+    ensureSessionBank(c);
+    const n = sessionBankSummary(c).remaining;
+    chip.classList.remove("hidden");
+    chip.classList.toggle("is-low", n <= 2);
+    const numEl = chip.querySelector(".hs-num"); if (numEl) numEl.textContent = n;
+    chip.title = `${n} session${n === 1 ? "" : "s"} left · tap to view`;
+    if (!chip.dataset.wired) { chip.dataset.wired = "1"; chip.addEventListener("click", () => setClientTab("sessions")); }
   }
   // -------- Athlete self-service profile (name / age / height / weight / goals) --------
   function renderAthleteProfileFields() {
