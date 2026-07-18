@@ -7836,26 +7836,30 @@ body.live-log-mode #screen-client .header-right { display: none; }
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 0.75rem;
+  display: flex;
+  justify-content: center;
 }
-.a-svg { display: block; width: 100%; height: auto; max-height: 62vh; }
+/* Figure is a tall, narrow muscle map (viewBox ~35x93); cap by width so it
+   stays a sensible size, and keep strokes hairline-thin regardless of scale. */
+.a-svg { display: block; width: 100%; max-width: 250px; height: auto; max-height: 74vh; }
 .a-svg.hidden { display: none; }
-.a-body { fill: var(--surface-3); stroke: var(--border-strong); stroke-width: 1.2; }
-.a-def { fill: none; stroke: var(--border-strong); stroke-width: 1; stroke-linecap: round; opacity: 0.85; pointer-events: none; }
+.a-body { fill: var(--surface-3); stroke: var(--border-strong); stroke-width: 0.9; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
 .a-zone {
   fill: var(--primary);
-  fill-opacity: 0.26;
+  fill-opacity: 0.24;
   stroke: var(--primary-bright);
   stroke-opacity: 0.5;
-  stroke-width: 0.8;
+  stroke-width: 0.9;
+  vector-effect: non-scaling-stroke;
   stroke-linejoin: round;
   cursor: pointer;
   transition: fill-opacity 0.15s, stroke-opacity 0.15s;
 }
-.a-zone:hover { fill-opacity: 0.55; stroke-opacity: 0.8; }
+.a-zone:hover { fill-opacity: 0.5; stroke-opacity: 0.85; }
 .a-zone.selected {
   fill-opacity: 0.85;
   stroke-opacity: 1;
-  stroke-width: 2;
+  stroke-width: 1.6;
   filter: drop-shadow(0 0 5px rgba(var(--primary-bright-rgb), 0.7));
 }
 
