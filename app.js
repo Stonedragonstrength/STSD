@@ -12120,7 +12120,6 @@
     setupExAddForm("ex-lib-sb-add");
     setupExAddForm("ex-lib-md-add");
 
-    $("#btn-athlete-add-pr").addEventListener("click", () => openAddPRModal("athlete"));
     $("#btn-add-package")?.addEventListener("click", openAddPackageModal);
     $("#btn-gift-session")?.addEventListener("click", openGiftSessionModal);
     $("#btn-post-open-slot")?.addEventListener("click", openPostSlotModal);
