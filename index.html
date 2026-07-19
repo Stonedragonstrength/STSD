@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=calstats3" />
+  <link rel="stylesheet" href="styles.css?v=nopagetitle1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -776,9 +776,6 @@
 
       <!-- Overview (athlete home — stats + calendar) -->
       <div class="tab-panel active" data-ctab-panel="overview">
-        <div class="program-head">
-          <h3>Overview</h3>
-        </div>
         <div id="overview-hero"></div>
         <div id="ov-messages" class="ov-messages"></div>
         <div id="overview-stats" class="overview-stats"></div>
@@ -806,7 +803,6 @@
         <div id="workout-picker" class="workout-picker">
           <div class="program-head">
             <div class="picker-heading">
-              <h3>Workout Program</h3>
               <p class="picker-sub">Tap a day to start logging your sets.</p>
             </div>
             <div class="picker-logged" title="Consecutive weeks with at least one completed workout">
@@ -893,9 +889,6 @@
 
       <!-- PRs (athlete) -->
       <div class="tab-panel" data-ctab-panel="prs">
-        <div class="program-head">
-          <h3>My Personal Records</h3>
-        </div>
         <p class="muted" style="margin-bottom:1em">Log your best lifts. The heaviest set per exercise is highlighted as your current PR.</p>
         <div id="athlete-strength-charts"></div>
         <div id="athlete-pr-archive"></div>
@@ -909,9 +902,6 @@
 
       <!-- Sessions + Calendar (athlete, merged) -->
       <div class="tab-panel" data-ctab-panel="sessions">
-        <div class="program-head">
-          <h3>Sessions</h3>
-        </div>
         <div id="athlete-balance-host"></div>
         <details class="session-manage" id="athlete-session-details">
           <summary>Package balance &amp; history</summary>
@@ -925,9 +915,6 @@
 
       <!-- Anatomy library (athlete reference) -->
       <div class="tab-panel" data-ctab-panel="anatomy">
-        <div class="program-head">
-          <h3>Anatomy Library</h3>
-        </div>
         <div data-anatomy-root></div>
       </div>
 
@@ -1027,7 +1014,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=push1"></script>
   <script src="cloud.js?v=push1"></script>
-  <script src="app.js?v=calstats3"></script>
+  <script src="app.js?v=nopagetitle1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
