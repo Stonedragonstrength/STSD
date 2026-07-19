@@ -8825,7 +8825,7 @@
     const statRow = (label, value, unit, when) =>
       `<div class="ov-stat-row"><div class="sr-in"><span class="sr-lbl">${label}${when ? ` <span class="sr-when">${escapeHtml(when)}</span>` : ""}</span><span class="sr-val">${value}${unit ? `<span class="sr-unit">${unit}</span>` : ""}</span></div></div>`;
     const statsHtml = (lifeStats.workouts || ton) ? `<details class="card ov-liftstats"${liftOpen ? " open" : ""}>
-        <summary><span class="ov-liftstats-title">🏋️ Lifting stats</span><span class="ov-liftstats-chev">▸</span></summary>
+        <summary><svg class="ov-liftstats-ico" viewBox="0 0 24 24" aria-hidden="true"><text class="lsi-d lsi-1" x="1" y="11">1</text><text class="lsi-d lsi-2" x="8" y="16">2</text><text class="lsi-d lsi-3" x="15" y="21">3</text></svg><span class="ov-liftstats-title">Lifting stats</span><span class="ov-liftstats-chev">▸</span></summary>
         <div class="ov-liftstats-body">
           <div class="ov-recap-head"><h4>Lifetime totals</h4><button class="btn btn-ghost btn-sm" id="btn-share-recap" type="button">📤 Share</button></div>
           <div class="ov-stats-list">

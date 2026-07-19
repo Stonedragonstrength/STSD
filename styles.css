@@ -7361,6 +7361,12 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   font-weight: 700; font-size: 1rem;
 }
 .ov-liftstats > summary::-webkit-details-marker { display: none; }
+/* Overlapping diagonal "123" mark for the lifting-stats header */
+.ov-liftstats-ico { width: 1.4em; height: 1.4em; flex: 0 0 auto; color: var(--primary-bright); overflow: visible; }
+.ov-liftstats-ico .lsi-d { font-family: inherit; font-weight: 900; font-size: 13px; fill: currentColor; }
+.ov-liftstats-ico .lsi-1 { opacity: 0.4; }
+.ov-liftstats-ico .lsi-2 { opacity: 0.68; }
+.ov-liftstats-ico .lsi-3 { opacity: 1; }
 .ov-liftstats-chev { margin-left: auto; color: var(--text-soft); transition: transform 0.15s ease; }
 .ov-liftstats[open] .ov-liftstats-chev { transform: rotate(90deg); }
 .ov-liftstats[open] > summary { margin-bottom: 0.85em; }
