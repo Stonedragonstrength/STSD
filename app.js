@@ -8795,18 +8795,20 @@
 
     // ---- Streak · ring · tonnage · recap · trophies ----
     const streakN = weeklyStreak(progress);
-    const CIRC = 2 * Math.PI * 18;
+    // Compact infographics that ride in the calendar header (right of Today) —
+    // no cards, just a small ring + streak count so the overview stays clean.
+    const CIRC = 2 * Math.PI * 16;
     const ringOff = CIRC * (1 - pct / 100);
-    const ringStat = totalDays ? `<div class="ov-stat ov-ring-stat" title="${doneDays} of ${totalDays} workouts done in ${escapeHtml(weekLabel)}">
-        <span class="ov-ring-wrap"><svg viewBox="0 0 44 44" class="ov-ring" aria-hidden="true">
-          <circle class="ov-ring-track" cx="22" cy="22" r="18"/>
-          <circle class="ov-ring-fill" cx="22" cy="22" r="18" style="stroke-dasharray:${CIRC.toFixed(1)};stroke-dashoffset:${ringOff.toFixed(1)}"/>
-        </svg><span class="ov-ring-txt">${doneDays}/${totalDays}</span></span>
-        <span class="ov-stat-lbl">this week</span>
-      </div>` : "";
-    const streakStat = `<div class="ov-stat" title="Consecutive weeks with at least one completed workout">
-        <span class="ov-stat-ico">🔥</span><span class="ov-stat-num">${streakN}</span><span class="ov-stat-lbl">week streak</span>
-      </div>`;
+    const calRing = totalDays ? `<span class="cal-stat cal-stat-ring" title="${doneDays} of ${totalDays} workouts done in ${escapeHtml(weekLabel)}">
+        <span class="cal-ring-wrap"><svg viewBox="0 0 36 36" class="cal-ring" aria-hidden="true">
+          <circle class="cal-ring-track" cx="18" cy="18" r="16"/>
+          <circle class="cal-ring-fill" cx="18" cy="18" r="16" style="stroke-dasharray:${CIRC.toFixed(1)};stroke-dashoffset:${ringOff.toFixed(1)}"/>
+        </svg><span class="cal-ring-txt">${doneDays}/${totalDays}</span></span>
+        <span class="cal-stat-lbl">this week</span>
+      </span>` : "";
+    const calStreak = `<span class="cal-stat" title="Consecutive weeks with at least one completed workout">
+        <span class="cal-stat-ico">🔥</span><span class="cal-stat-num">${streakN}</span><span class="cal-stat-lbl">streak</span>
+      </span>`;
     const ton = lifetimeTonnage(progress);
     const lastWk = lastWorkoutVolume(progress);
     const lastWkLabel = lastWk ? new Date(lastWk.date + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
@@ -8851,16 +8853,12 @@
         </div>
         ${hero.cta ? `<span class="ov-hero-cta">${hero.cta} →</span>` : ""}
       </div>`;
+    const calNext = bookingLabel ? `<span class="cal-stat" title="Your next booked session">
+        <span class="cal-stat-ico">📅</span><span class="cal-stat-num cal-stat-sm">${escapeHtml(bookingLabel)}</span><span class="cal-stat-lbl">next</span>
+      </span>` : "";
+    const calStatsEl = $("#ccal-stats");
+    if (calStatsEl) calStatsEl.innerHTML = calRing + calStreak + calNext;
     host.innerHTML = `
-      <div class="ov-strip">
-        ${ringStat}
-        ${streakStat}
-        ${bookingLabel ? `<div class="ov-stat">
-          <span class="ov-stat-ico">📅</span>
-          <span class="ov-stat-num ov-stat-sm">${escapeHtml(bookingLabel)}</span>
-          <span class="ov-stat-lbl">next session</span>
-        </div>` : ""}
-      </div>
       ${prHtml ? `<div class="ov-mini-row">${prHtml}</div>` : ""}
       ${statsHtml}`;
     if (trophyHost) trophyHost.innerHTML = trophyHtml;
