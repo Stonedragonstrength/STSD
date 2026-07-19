@@ -2220,16 +2220,18 @@ input[type="date"] { color-scheme: dark; }
   flex-wrap: wrap;
 }
 .cal-nav { display: flex; align-items: center; gap: 0.5em; }
-/* Compact overview infographics that ride at the right of the calendar header */
-.cal-head-right { display: flex; align-items: center; gap: 0.7em; flex-wrap: wrap; justify-content: flex-end; }
-.cal-stats { display: flex; align-items: center; gap: 0.85em; }
-.cal-stat { display: inline-flex; align-items: center; gap: 0.35em; line-height: 1; }
+/* Compact overview infographics that sit right of the Today button */
+.cal-head-right { display: flex; align-items: center; gap: 0.7em; }
+.cal-stats { display: flex; align-items: center; gap: 0.75em; }
+/* Each stat stacks its label under the icon/ring to stay narrow */
+.cal-stat { display: inline-flex; flex-direction: column; align-items: center; gap: 0.18em; line-height: 1; }
+.cal-stat-val { display: inline-flex; align-items: center; gap: 0.22em; }
 .cal-stat-ico { font-size: 0.95rem; line-height: 1; }
-.cal-stat-num { font-size: 1.1rem; font-weight: 900; color: var(--primary-bright); line-height: 1; font-variant-numeric: tabular-nums; }
-.cal-stat-num.cal-stat-sm { font-size: 0.8rem; font-weight: 800; color: var(--text); }
-.cal-stat-lbl { font-size: 0.56rem; color: var(--text-soft); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
-.cal-ring-wrap { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; }
-.cal-ring { width: 30px; height: 30px; transform: rotate(-90deg); }
+.cal-stat-num { font-size: 1.05rem; font-weight: 900; color: var(--primary-bright); line-height: 1; font-variant-numeric: tabular-nums; }
+.cal-stat-num.cal-stat-sm { font-size: 0.78rem; font-weight: 800; color: var(--text); }
+.cal-stat-lbl { font-size: 0.54rem; color: var(--text-soft); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+.cal-ring-wrap { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; }
+.cal-ring { width: 28px; height: 28px; transform: rotate(-90deg); }
 .cal-ring-track { fill: none; stroke: var(--border); stroke-width: 4; }
 .cal-ring-fill { fill: none; stroke: var(--primary-bright); stroke-width: 4; stroke-linecap: round; transition: stroke-dashoffset 0.6s ease; }
 .cal-ring-txt { position: absolute; font-size: 0.5rem; font-weight: 800; color: var(--text); }

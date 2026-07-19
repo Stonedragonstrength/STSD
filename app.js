@@ -8804,10 +8804,11 @@
           <circle class="cal-ring-track" cx="18" cy="18" r="16"/>
           <circle class="cal-ring-fill" cx="18" cy="18" r="16" style="stroke-dasharray:${CIRC.toFixed(1)};stroke-dashoffset:${ringOff.toFixed(1)}"/>
         </svg><span class="cal-ring-txt">${doneDays}/${totalDays}</span></span>
-        <span class="cal-stat-lbl">this week</span>
+        <span class="cal-stat-lbl">week</span>
       </span>` : "";
     const calStreak = `<span class="cal-stat" title="Consecutive weeks with at least one completed workout">
-        <span class="cal-stat-ico">🔥</span><span class="cal-stat-num">${streakN}</span><span class="cal-stat-lbl">streak</span>
+        <span class="cal-stat-val"><span class="cal-stat-ico">🔥</span><span class="cal-stat-num">${streakN}</span></span>
+        <span class="cal-stat-lbl">streak</span>
       </span>`;
     const ton = lifetimeTonnage(progress);
     const lastWk = lastWorkoutVolume(progress);
@@ -8854,7 +8855,8 @@
         ${hero.cta ? `<span class="ov-hero-cta">${hero.cta} →</span>` : ""}
       </div>`;
     const calNext = bookingLabel ? `<span class="cal-stat" title="Your next booked session">
-        <span class="cal-stat-ico">📅</span><span class="cal-stat-num cal-stat-sm">${escapeHtml(bookingLabel)}</span><span class="cal-stat-lbl">next</span>
+        <span class="cal-stat-val"><span class="cal-stat-ico">📅</span><span class="cal-stat-num cal-stat-sm">${escapeHtml(bookingLabel)}</span></span>
+        <span class="cal-stat-lbl">next</span>
       </span>` : "";
     const calStatsEl = $("#ccal-stats");
     if (calStatsEl) calStatsEl.innerHTML = calRing + calStreak + calNext;
