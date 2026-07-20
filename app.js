@@ -1387,6 +1387,34 @@
     setTimeout(() => el.classList.remove(className), durationMs);
   }
 
+  // One-shot celebration when an athlete finishes every exercise in a day:
+  // a badge plus a confetti burst that clears itself. Deliberately silent —
+  // no audio, since this fires in a gym. Overlay is pointer-events:none so it
+  // can never block a tap, and it removes itself rather than needing dismissal.
+  function celebrateDayComplete() {
+    if (document.querySelector(".day-celebrate")) return; // never stack bursts
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    const host = document.createElement("div");
+    host.className = "day-celebrate";
+    host.setAttribute("aria-hidden", "true"); // decorative; the toast carries the message
+    const COLORS = ["#22d3ee", "#10b981", "#f59e0b", "#ef4444", "#a78bfa", "#ec4899", "#facc15"];
+    let html = `<div class="dc-badge"><span class="dc-icon">🎉</span><span class="dc-text">Day complete!</span></div>`;
+    // Reduced-motion still gets the badge, just no falling pieces.
+    for (let i = 0; i < (reduce ? 0 : 90); i++) {
+      const w = 6 + Math.random() * 6;
+      html += `<span class="dc-bit" style="left:${(Math.random() * 100).toFixed(2)}%;`
+        + `--dc-c:${COLORS[i % COLORS.length]};`
+        + `--dc-rot:${Math.round(Math.random() * 360)}deg;`
+        + `--dc-drift:${((Math.random() * 2 - 1) * 16).toFixed(1)}vw;`
+        + `width:${w.toFixed(1)}px;height:${(w * 1.6).toFixed(1)}px;`
+        + `animation-delay:${(Math.random() * 0.35).toFixed(2)}s;`
+        + `animation-duration:${(2.2 + Math.random() * 1.4).toFixed(2)}s"></span>`;
+    }
+    host.innerHTML = html;
+    document.body.appendChild(host);
+    setTimeout(() => host.remove(), reduce ? 1800 : 4200);
+  }
+
   function toast(msg, ms = 1800) {
     const t = $("#toast");
     t.textContent = msg;
@@ -9070,14 +9098,30 @@
   }
   // Auto-marks a day complete on the calendar once every exercise in it is
   // locked in — the athlete shouldn't have to separately check it off.
+  // "<dayId>:<date>" for days already celebrated this session — see below.
+  const _celebratedDays = new Set();
   function autoSyncDayCompletion(day) {
     if (!day.exercises.length) return;
+    // hasAnyLog only counts locked entries, so this is genuinely "every
+    // exercise locked in", not "every exercise has a draft".
     const allDone = day.exercises.every((ex) => hasAnyLog(ex));
-    if (allDone === isDayChecked(day.id)) return;
+    if (allDone === isDayChecked(day.id)) return; // no transition — nothing to do
     ensureProgressShape(state.clientData.progress);
     state.clientData.progress.dayCompletions[day.id] = allDone ? [todayISO()] : [];
     saveClient();
     renderAthleteCalendar();
+    // Once per day per date: the not-done → done edge alone isn't enough,
+    // because correcting a number means unlock → relock, which crosses that
+    // edge again and would fire a second burst. Session-scoped rather than
+    // persisted — it's not worth a data-shape change and a cloud round trip
+    // to suppress a repeat that only happens after a page reload.
+    if (allDone) {
+      const key = `${day.id}:${todayISO()}`;
+      if (!_celebratedDays.has(key)) {
+        _celebratedDays.add(key);
+        celebrateDayComplete();
+      }
+    }
   }
   function findCompletedDayForDate(client, iso) {
     const dc = state.clientData.progress?.dayCompletions || {};
@@ -10858,6 +10902,10 @@
         if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
         saveClient();
         renderAthleteCalendar();
+        // Every set filled in → lock it here rather than making the athlete
+        // tap 🔒. Runs off the same 800ms debounce, so typing "1" on the way
+        // to "10" doesn't lock underneath them. ✎ Edit still unlocks.
+        if (!isLocked) lockIn({ silent: true });
       }, 800);
     };
     setInputs.forEach(({ wt, rp }) => {
@@ -10932,20 +10980,23 @@
       updateExBar();
     };
 
-    lockBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      // Locking accepts the prescription: untouched fields fill from the
-      // written target (per-set for pyramids), so "did exactly what was
-      // asked" is a single tap.
-      setInputs.forEach((it, i) => {
-        if (it.skipped) return;
-        if (it.rp.value === "" && Number.isFinite(rSeedAt(i))) { it.rp.value = String(rSeedAt(i)); markEdited(it.rp); }
-        if (it.wt.value === "" && ex.currentWeight !== "BW" && Number.isFinite(wSeedAt(i))) { it.wt.value = String(wSeedAt(i)); markEdited(it.wt); }
-      });
+    // Shared by the 🔒 button and the auto-lock below. `seedEmpty` is the
+    // manual-tap behaviour (accept the prescription for untouched fields);
+    // auto-lock never seeds — it must only fire on what the athlete actually
+    // entered, or touching one field would fill in and lock the rest.
+    // `silent` suppresses the "fill in all sets" nags for the auto path.
+    const lockIn = ({ seedEmpty = false, silent = false } = {}) => {
+      if (seedEmpty) {
+        setInputs.forEach((it, i) => {
+          if (it.skipped) return;
+          if (it.rp.value === "" && Number.isFinite(rSeedAt(i))) { it.rp.value = String(rSeedAt(i)); markEdited(it.rp); }
+          if (it.wt.value === "" && ex.currentWeight !== "BW" && Number.isFinite(wSeedAt(i))) { it.wt.value = String(wSeedAt(i)); markEdited(it.wt); }
+        });
+      }
       const sets = setInputs.map(({ wt, rp, skipped }) => (skipped ? { weight: "", reps: "", skipped: true } : { weight: wt.value, reps: rp.value }));
       const complete = sets.every((s) => s.skipped || (s.reps && (s.weight || ex.currentWeight === "BW")));
-      if (!complete) { toast("Fill in all sets before locking in."); return; }
-      if (!finisherComplete()) { toast("Fill in your burnout/dropset reps before locking in."); return; }
+      if (!complete) { if (!silent) toast("Fill in all sets before locking in."); return false; }
+      if (!finisherComplete()) { if (!silent) toast("Fill in your burnout/dropset reps before locking in."); return false; }
       clearTimeout(_ast);
       if (!state.clientData.progress.exerciseLogs[ex.id])
         state.clientData.progress.exerciseLogs[ex.id] = [];
@@ -10965,6 +11016,12 @@
       if (state.workoutView?.mode === "detail" && state.workoutView.dayId === day.id) {
         renderWorkoutDetailHeader(week, day);
       }
+      return true;
+    };
+
+    lockBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      lockIn({ seedEmpty: true });
     });
 
     editBtn.addEventListener("click", (e) => {
