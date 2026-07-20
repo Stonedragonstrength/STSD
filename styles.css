@@ -2222,40 +2222,7 @@ input[type="date"] { color-scheme: dark; }
 .cal-nav { display: flex; align-items: center; gap: 0.5em; }
 /* Compact overview infographics that sit right of the Today button */
 .cal-head-right { display: flex; align-items: center; gap: 0.7em; }
-/* Customizable stats: 4 across, then a horizontal snap-scroll strip with dots */
-.cal-stats { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
-.cal-stats-row { display: flex; align-items: center; gap: 0.4em; }
-.cal-stats-viewport { display: flex; align-items: center; gap: 0.75em; }
-.cal-stats-viewport.is-scroll {
-  max-width: 16.5rem; overflow-x: auto; scroll-snap-type: x mandatory;
-  scrollbar-width: none; -webkit-overflow-scrolling: touch;
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
-  mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
-}
-.cal-stats-viewport.is-scroll.at-start {
-  -webkit-mask-image: linear-gradient(to right, #000 88%, transparent);
-  mask-image: linear-gradient(to right, #000 88%, transparent);
-}
-.cal-stats-viewport.is-scroll.at-end {
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 12%);
-  mask-image: linear-gradient(to right, transparent, #000 12%);
-}
-.cal-stats-viewport.is-scroll::-webkit-scrollbar { display: none; }
-.cal-stats-viewport.is-scroll .cal-stat { scroll-snap-align: start; }
-.cal-stats-viewport .cal-stat { flex: 0 0 auto; }
-.cal-stats-edit {
-  flex: 0 0 auto; background: none; border: none; color: var(--text-soft);
-  font-size: 1.15rem; line-height: 1; cursor: pointer; padding: 0.15em 0.3em; border-radius: 6px;
-}
-.cal-stats-edit:hover { color: var(--text); background: var(--surface-2); }
-.cal-stats-dots { display: flex; gap: 4px; padding-right: 0.35em; }
-.cal-stats-dots .csd { width: 5px; height: 5px; border-radius: 999px; background: var(--border-strong); transition: background 0.15s; }
-.cal-stats-dots .csd.on { background: var(--primary-bright); }
-.cal-trend { font-size: 0.62rem; line-height: 1; margin-left: 0.04em; }
-.cal-trend.up { color: #34d399; }
-.cal-trend.down { color: var(--warn); }
-.cal-trend.neutral { color: var(--text-soft); }
-.cal-stat-empty { font-size: 0.7rem; }
+.cal-stats { display: flex; align-items: center; gap: 0.75em; }
 /* Each stat stacks its label under the icon/ring to stay narrow */
 .cal-stat { display: inline-flex; flex-direction: column; align-items: center; gap: 0.18em; line-height: 1; }
 .cal-stat-val { display: inline-flex; align-items: center; gap: 0.22em; }
@@ -7395,6 +7362,11 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 .sr-when { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.02em; color: var(--muted); margin-left: 0.35em; }
 .sr-val { font-size: 1.5rem; font-weight: 900; color: var(--primary-bright); line-height: 1; font-variant-numeric: tabular-nums; text-shadow: 0 0 12px rgba(var(--primary-bright-rgb), 0.35); }
 .sr-unit { font-size: 0.68rem; font-weight: 700; color: var(--text-soft); margin-left: 0.15em; }
+.sr-trend { font-size: 0.8rem; font-weight: 800; margin-left: 0.4em; vertical-align: middle; }
+.sr-trend.up { color: #34d399; }
+.sr-trend.down { color: var(--warn); }
+.sr-trend.neutral { color: var(--text-soft); }
+.ov-recap-actions { display: flex; align-items: center; gap: 0.3em; }
 
 /* Combined, collapsible lifting stats: lifetime totals + last workout + volume */
 .ov-liftstats { margin-top: 0.85rem; }

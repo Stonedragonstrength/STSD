@@ -8719,10 +8719,7 @@
     if (changed) saveClient();
   }
 
-  // -------- Customizable overview stats bar (calendar header) --------
-  // Each stat: { id, icon, label, build(ctx) -> tile HTML or null }. build gets
-  // a context of pre-computed values plus the raw progress/client so it can
-  // reach for any helper. Returning null hides the tile (no data yet).
+  // -------- Overview stats: fixed calendar-header tiles + customizable racing bar --------
   function ovStatTile({ icon, num, small, label, title, trend, trendNeutral }) {
     const arrow = trend === "up" ? "▲" : trend === "down" ? "▼" : "";
     const t = trend ? `<span class="cal-trend ${trend}${trendNeutral ? " neutral" : ""}">${arrow}</span>` : "";
@@ -8742,33 +8739,42 @@
         <span class="cal-stat-lbl">${escapeHtml(label)}</span>
       </span>`;
   }
-  const OV_STAT_LIB = [
-    { id: "week", icon: "◔", label: "This week", build: (x) =>
-        x.totalDays ? ovRingTile({ done: x.doneDays, total: x.totalDays, label: "week",
-          title: `${x.doneDays} of ${x.totalDays} workouts done in ${x.weekLabel}` }) : null },
-    { id: "streak", icon: "🔥", label: "Week streak", build: (x) =>
-        ovStatTile({ icon: "🔥", num: x.streakN, label: "streak",
-          title: "Consecutive weeks with at least one completed workout" }) },
-    { id: "volweek", icon: "📈", label: "Volume this week", build: (x) => {
+  // The calendar header keeps just the quick-glance tiles: week ring + streak
+  // (+ next session when booked). The customizable set lives in the racing bar.
+  function renderCalHeaderStats(ctx) {
+    const host = $("#ccal-stats"); if (!host) return;
+    const tiles = [];
+    if (ctx.totalDays) tiles.push(ovRingTile({ done: ctx.doneDays, total: ctx.totalDays, label: "week",
+      title: `${ctx.doneDays} of ${ctx.totalDays} workouts done in ${ctx.weekLabel}` }));
+    tiles.push(ovStatTile({ icon: "🔥", num: ctx.streakN, label: "streak",
+      title: "Consecutive weeks with at least one completed workout" }));
+    if (ctx.bookingLabel) tiles.push(ovStatTile({ icon: "📅", num: ctx.bookingLabel, small: true, label: "next",
+      title: "Your next booked session" }));
+    host.innerHTML = tiles.join("");
+  }
+
+  // -------- Customizable "racing" stats bar (slanted rows in the stats card) --------
+  // Each stat: { id, icon, label, get(ctx) -> { value, unit?, when?, trend?, trendNeutral? } | null }.
+  function racingRowHtml(label, d) {
+    const tr = d.trend ? `<span class="sr-trend ${d.trend}${d.trendNeutral ? " neutral" : ""}">${d.trend === "up" ? "▲" : "▼"}</span>` : "";
+    return `<div class="ov-stat-row"><div class="sr-in"><span class="sr-lbl">${escapeHtml(label)}${d.when ? ` <span class="sr-when">${escapeHtml(d.when)}</span>` : ""}</span><span class="sr-val">${escapeHtml(String(d.value))}${d.unit ? `<span class="sr-unit">${escapeHtml(d.unit)}</span>` : ""}${tr}</span></div></div>`;
+  }
+  const RACING_LIB = [
+    { id: "workouts", icon: "🏋️", label: "Workouts", get: (x) => ({ value: completionDateList(x.progress).length }) },
+    { id: "prs", icon: "🥇", label: "PRs", get: (x) => ({ value: (x.progress.personalRecords || []).length }) },
+    { id: "lastworkout", icon: "⏱️", label: "Last workout", get: (x) => x.lastWk ? ({ value: formatTonnage(x.lastWk.volume), unit: "lb", when: x.lastWkLabel }) : null },
+    { id: "tonnage", icon: "🧮", label: "Total lifted", get: (x) => x.ton ? ({ value: formatTonnage(x.ton), unit: "lb" }) : null },
+    { id: "volweek", icon: "📈", label: "Volume this week", get: (x) => {
         const b = volumeBuckets(x.progress, "week"); if (!b.length) return null;
         const cur = b[b.length - 1].v, prev = b.length > 1 ? b[b.length - 2].v : 0;
         const trend = prev ? (cur > prev ? "up" : cur < prev ? "down" : null) : null;
-        return ovStatTile({ icon: "📈", num: cur ? formatTonnage(cur) : "0", small: true, label: "vol/wk", trend,
-          title: `This week ${cur.toLocaleString()} lb${prev ? ` · last week ${prev.toLocaleString()} lb` : ""}` }); } },
-    { id: "total", icon: "🏋️", label: "Total workouts", build: (x) => {
-        const n = completionDateList(x.progress).length;
-        return ovStatTile({ icon: "🏋️", num: n, label: "workouts", title: `${n} workouts logged all-time` }); } },
-    { id: "month", icon: "📆", label: "Workouts this month", build: (x) => {
+        return { value: formatTonnage(cur), unit: "lb", trend }; } },
+    { id: "month", icon: "📆", label: "This month", get: (x) => {
         const ym = x.today.slice(0, 7);
-        const n = completionDateList(x.progress).filter((d) => d.slice(0, 7) === ym).length;
-        return ovStatTile({ icon: "📆", num: n, label: "this mo", title: `${n} workouts logged this month` }); } },
-    { id: "tonnage", icon: "🧮", label: "Total lifted", build: (x) => {
-        const t = lifetimeTonnage(x.progress); if (!t) return null;
-        return ovStatTile({ icon: "🧮", num: formatTonnage(t), small: true, label: "lifted", title: `${t.toLocaleString()} lb lifted all-time` }); } },
-    { id: "prs", icon: "🥇", label: "PRs set", build: (x) => {
-        const n = (x.progress.personalRecords || []).length;
-        return ovStatTile({ icon: "🥇", num: n, label: "PRs", title: `${n} personal record${n === 1 ? "" : "s"} logged` }); } },
-    { id: "bw", icon: "⚖️", label: "Bodyweight", build: (x) => {
+        return { value: completionDateList(x.progress).filter((d) => d.slice(0, 7) === ym).length }; } },
+    { id: "streak", icon: "🔥", label: "Week streak", get: (x) => ({ value: x.streakN }) },
+    { id: "thisweek", icon: "◔", label: "This week", get: (x) => x.totalDays ? ({ value: `${x.doneDays}/${x.totalDays}` }) : null },
+    { id: "bw", icon: "⚖️", label: "Bodyweight", get: (x) => {
         const log = [...(x.progress.bodyweightLog || [])].filter((e) => e.date && isFinite(parseFloat(e.weightLb))).sort((a, b) => a.date.localeCompare(b.date));
         if (!log.length) return null;
         const latest = log[log.length - 1], cur = parseFloat(latest.weightLb);
@@ -8777,86 +8783,31 @@
         const prev = ref ? parseFloat(ref.weightLb) : null;
         const diff = prev != null ? cur - prev : 0;
         const trend = Math.abs(diff) < 0.1 ? null : (diff > 0 ? "up" : "down");
-        return ovStatTile({ icon: "⚖️", num: Math.round(cur), label: "lb", trend, trendNeutral: true,
-          title: `Latest ${cur} lb${prev != null ? ` · ${diff >= 0 ? "+" : ""}${diff.toFixed(1)} lb in ~30 days` : ""}` }); } },
-    { id: "bigthree", icon: "💪", label: "Top lift", build: (x) => {
-        const b = bestBigThreeLift(x.progress, x.c); if (!b) return null;
-        return ovStatTile({ icon: "💪", num: b, small: true, label: "top lift", title: `Heaviest squat / bench / deadlift / pulldown: ${b} lb` }); } },
-    { id: "lastlift", icon: "💤", label: "Days since last lift", build: (x) => {
+        return { value: Math.round(cur), unit: "lb", trend, trendNeutral: true }; } },
+    { id: "bigthree", icon: "💪", label: "Top lift", get: (x) => { const b = bestBigThreeLift(x.progress, x.c); return b ? ({ value: b, unit: "lb" }) : null; } },
+    { id: "lastlift", icon: "💤", label: "Days since last lift", get: (x) => {
         const dates = completionDateList(x.progress); if (!dates.length) return null;
         const last = dates[dates.length - 1];
         const n = Math.max(0, Math.round((new Date(x.today + "T12:00:00") - new Date(last + "T12:00:00")) / 86400000));
-        return ovStatTile({ icon: "💤", num: n, label: n === 1 ? "day off" : "days off", title: `${n} day${n === 1 ? "" : "s"} since your last logged workout` }); } },
-    { id: "trophies", icon: "🏆", label: "Trophies earned", build: (x) => {
-        const badges = computeBadges(x.progress, x.c); const earned = badges.filter((b) => b.earned).length;
-        return ovStatTile({ icon: "🏆", num: `${earned}/${badges.length}`, small: true, label: "trophies", title: `${earned} of ${badges.length} trophies earned` }); } },
-    { id: "next", icon: "📅", label: "Next session", build: (x) =>
-        x.bookingLabel ? ovStatTile({ icon: "📅", num: x.bookingLabel, small: true, label: "next", title: "Your next booked session" }) : null },
+        return { value: n, unit: n === 1 ? "day" : "days" }; } },
+    { id: "trophies", icon: "🏆", label: "Trophies", get: (x) => { const badges = computeBadges(x.progress, x.c); return { value: `${badges.filter((b) => b.earned).length}/${badges.length}` }; } },
   ];
-  const OV_STATS_DEFAULT = ["week", "streak", "volweek", "bw"];
-  function getOverviewStatIds(progress) {
-    const ids = Array.isArray(progress?.overviewStats)
-      ? progress.overviewStats.filter((id) => OV_STAT_LIB.some((s) => s.id === id)) : null;
-    return ids && ids.length ? ids : OV_STATS_DEFAULT.slice();
+  const RACING_DEFAULT = ["workouts", "prs", "lastworkout", "tonnage"];
+  function getRacingStatIds(progress) {
+    const ids = Array.isArray(progress?.racingStats)
+      ? progress.racingStats.filter((id) => RACING_LIB.some((s) => s.id === id)) : null;
+    return ids && ids.length ? ids : RACING_DEFAULT.slice();
   }
-  // Renders the selected stats into the calendar header. Shows ~4; if there are
-  // more, the strip scrolls horizontally (snap) with page dots and an edge fade,
-  // plus a gentle auto-advance that pauses the moment you touch it.
-  let _ovStatsAuto = null;
-  function renderOverviewStatsBar(ctx) {
-    const host = $("#ccal-stats"); if (!host) return;
-    const ids = getOverviewStatIds(ctx.progress);
-    const tiles = ids.map((id) => OV_STAT_LIB.find((s) => s.id === id)).filter(Boolean)
-      .map((def) => def.build(ctx)).filter(Boolean);
-    const PAGE = 4;
-    const scrolls = tiles.length > PAGE;
-    const pages = Math.ceil(tiles.length / PAGE);
-    const dots = scrolls ? `<div class="cal-stats-dots">${Array.from({ length: pages }, (_, i) =>
-      `<span class="csd${i === 0 ? " on" : ""}"></span>`).join("")}</div>` : "";
-    host.innerHTML = `<div class="cal-stats-row">
-        <div class="cal-stats-viewport${scrolls ? " is-scroll" : ""}">${tiles.join("") || `<span class="cal-stat-empty muted">No stats</span>`}</div>
-        <button class="cal-stats-edit" type="button" title="Customize your stats" aria-label="Customize your stats">⋯</button>
-      </div>${dots}`;
-    host.querySelector(".cal-stats-edit")?.addEventListener("click", openStatsCustomizer);
-    const vp = host.querySelector(".cal-stats-viewport");
-    clearInterval(_ovStatsAuto); _ovStatsAuto = null;
-    if (scrolls && vp) {
-      const dotsEls = [...host.querySelectorAll(".cal-stats-dots .csd")];
-      const maxScroll = () => vp.scrollWidth - vp.clientWidth;
-      const goToPage = (p) => vp.scrollTo({ left: pages > 1 ? (p / (pages - 1)) * maxScroll() : 0, behavior: "smooth" });
-      vp.classList.add("at-start");
-      vp.addEventListener("scroll", () => {
-        const m = maxScroll();
-        const frac = m > 0 ? vp.scrollLeft / m : 0;
-        dotsEls.forEach((d, i) => d.classList.toggle("on", i === Math.round(frac * (pages - 1))));
-        vp.classList.toggle("at-start", frac <= 0.01);
-        vp.classList.toggle("at-end", frac >= 0.99);
-      }, { passive: true });
-      dotsEls.forEach((d, i) => d.addEventListener("click", () => goToPage(i)));
-
-      // Gentle auto-advance: page every 6s, pause on interaction, resume after a
-      // beat. Skipped entirely for reduced-motion or when the panel is hidden.
-      const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-      if (!reduce) {
-        let paused = false, resumeT = null;
-        const pause = () => { paused = true; clearTimeout(resumeT); };
-        const resumeSoon = () => { clearTimeout(resumeT); resumeT = setTimeout(() => { paused = false; }, 4500); };
-        ["pointerenter", "touchstart", "focusin"].forEach((ev) => vp.addEventListener(ev, pause, { passive: true }));
-        ["pointerleave", "touchend", "focusout"].forEach((ev) => vp.addEventListener(ev, resumeSoon, { passive: true }));
-        _ovStatsAuto = setInterval(() => {
-          if (paused || document.hidden || !vp.offsetParent) return;
-          const m = maxScroll();
-          const cur = m > 0 ? Math.round((vp.scrollLeft / m) * (pages - 1)) : 0;
-          goToPage(cur >= pages - 1 ? 0 : cur + 1);
-        }, 6000);
-      }
-    }
+  function renderRacingRows(ctx) {
+    return getRacingStatIds(ctx.progress)
+      .map((id) => RACING_LIB.find((s) => s.id === id)).filter(Boolean)
+      .map((def) => { const d = def.get(ctx); return d ? racingRowHtml(def.label, d) : ""; }).join("");
   }
-  // Athlete (or coach in a live session) picks which stats show and their order.
-  function openStatsCustomizer() {
+  // Athlete (or coach in a live session) picks which racing stats show and their order.
+  function openRacingStatsCustomizer() {
     const progress = state.clientData.progress; if (!progress) return;
-    const sel = getOverviewStatIds(progress);
-    const commit = () => { progress.overviewStats = sel.slice(); saveClient(); renderAthleteOverview(); };
+    const sel = getRacingStatIds(progress);
+    const commit = () => { progress.racingStats = sel.slice(); saveClient(); renderAthleteOverview(); };
     const rowHtml = (def, selected, i, total) => `<div class="stat-cust-row${selected ? " on" : ""}" data-id="${def.id}">
         <span class="stat-cust-name"><span class="stat-cust-ico">${def.icon}</span>${escapeHtml(def.label)}</span>
         <span class="stat-cust-ctrls">
@@ -8866,10 +8817,10 @@
         </span>
       </div>`;
     const draw = () => {
-      const selDefs = sel.map((id) => OV_STAT_LIB.find((s) => s.id === id)).filter(Boolean);
-      const poolDefs = OV_STAT_LIB.filter((s) => !sel.includes(s.id));
+      const selDefs = sel.map((id) => RACING_LIB.find((s) => s.id === id)).filter(Boolean);
+      const poolDefs = RACING_LIB.filter((s) => !sel.includes(s.id));
       $("#modal-body").innerHTML = `
-        <p class="muted stat-cust-intro">Choose the stats for your overview and reorder them with the arrows. Four show at a time. Add more and the bar scrolls.</p>
+        <p class="muted stat-cust-intro">Choose the stats for your stats bar and reorder them with the arrows.</p>
         <div class="stat-cust-list">${selDefs.map((d, i) => rowHtml(d, true, i, selDefs.length)).join("") || `<p class="muted" style="padding:0.3em 0">Nothing selected yet.</p>`}</div>
         ${poolDefs.length ? `<div class="stat-cust-sub">Add more</div><div class="stat-cust-list">${poolDefs.map((d) => rowHtml(d, false)).join("")}</div>` : ""}`;
       $("#modal-body").querySelectorAll(".stat-cust-row").forEach((row) => {
@@ -8975,18 +8926,12 @@
     // Combined, collapsible "Lifting stats": lifetime totals + last workout + volume chart.
     const KEY_LIFTSTATS_OPEN = "trainerpro_liftstats_open_v1";
     const liftOpen = localStorage.getItem(KEY_LIFTSTATS_OPEN) !== "0";
-    const statRow = (label, value, unit, when) =>
-      `<div class="ov-stat-row"><div class="sr-in"><span class="sr-lbl">${label}${when ? ` <span class="sr-when">${escapeHtml(when)}</span>` : ""}</span><span class="sr-val">${value}${unit ? `<span class="sr-unit">${unit}</span>` : ""}</span></div></div>`;
+    const racingCtx = { progress, c, today, lastWk, lastWkLabel, ton, streakN, doneDays, totalDays };
     const statsHtml = (lifeStats.workouts || ton) ? `<details class="card ov-liftstats"${liftOpen ? " open" : ""}>
         <summary><svg class="ov-liftstats-ico" viewBox="0 0 24 24" aria-hidden="true"><text class="lsi-d lsi-1" x="1" y="11">1</text><text class="lsi-d lsi-2" x="8" y="16">2</text><text class="lsi-d lsi-3" x="15" y="21">3</text></svg><span class="ov-liftstats-title">Lifting stats</span><span class="ov-liftstats-chev">▸</span></summary>
         <div class="ov-liftstats-body">
-          <div class="ov-recap-head"><h4>Lifetime totals</h4><button class="btn btn-ghost btn-sm" id="btn-share-recap" type="button">📤 Share</button></div>
-          <div class="ov-stats-list">
-            ${statRow("Workouts", lifeStats.workouts)}
-            ${statRow("PRs", lifeStats.prs)}
-            ${lastWk ? statRow("Last workout", formatTonnage(lastWk.volume), "lb", lastWkLabel) : ""}
-            ${statRow("Total lifted", formatTonnage(ton), "lb")}
-          </div>
+          <div class="ov-recap-head"><h4>Your stats</h4><div class="ov-recap-actions"><button class="btn btn-ghost btn-sm" id="btn-racing-customize" type="button" title="Customize these stats" aria-label="Customize these stats">⋯</button><button class="btn btn-ghost btn-sm" id="btn-share-recap" type="button">📤 Share</button></div></div>
+          <div class="ov-stats-list">${renderRacingRows(racingCtx)}</div>
           <div id="ov-volchart-host"></div>
         </div>
       </details>` : "";
@@ -9007,7 +8952,7 @@
         </div>
         ${hero.cta ? `<span class="ov-hero-cta">${hero.cta} →</span>` : ""}
       </div>`;
-    renderOverviewStatsBar({ progress, c, doneDays, totalDays, weekLabel, streakN, bookingLabel, today });
+    renderCalHeaderStats({ doneDays, totalDays, weekLabel, streakN, bookingLabel });
     host.innerHTML = `
       ${prHtml ? `<div class="ov-mini-row">${prHtml}</div>` : ""}
       ${statsHtml}`;
@@ -9016,6 +8961,7 @@
     if (hero.jump) $("#ov-hero")?.addEventListener("click", () => jumpToWorkout(hero.jump, today));
     renderClientHeaderSessions();
     $("#btn-share-recap")?.addEventListener("click", () => shareLifetimeImage(lifeStats, c.name));
+    $("#btn-racing-customize")?.addEventListener("click", openRacingStatsCustomizer);
     $(".ov-liftstats")?.addEventListener("toggle", (e) => localStorage.setItem(KEY_LIFTSTATS_OPEN, e.target.open ? "1" : "0"));
     renderVolumeChart(progress);
   }
