@@ -327,6 +327,35 @@
   // Hold (seconds) tags only apply alongside the Isometric tag.
   const HOLD_TAGS = ["1S", "2S", "3S", "4S", "5S"];
 
+  // Tags that contradict each other and can't be held at once, even inside a
+  // multi-select group like Equipment (where Cable + Rope etc. is legitimate).
+  // DB is one dumbbell, DBs is a pair — they drive usesDumbbellPair(), which
+  // decides whether the weight reads "50 lb" or "50s", so holding both is
+  // ambiguous. Add further pairs here rather than special-casing the picker.
+  const EXCLUSIVE_TAGS = [["DB", "DBs"]];
+  function conflictingTags(tag) {
+    const out = [];
+    EXCLUSIVE_TAGS.forEach((set) => {
+      if (set.includes(tag)) set.forEach((t) => { if (t !== tag) out.push(t); });
+    });
+    return out;
+  }
+  // Repairs an exercise saved before the rule existed (or synced from an older
+  // client): keeps whichever of the conflicting tags comes last in the list.
+  function dropConflictingTags(ex) {
+    const mods = ex && ex.modifiers;
+    if (!Array.isArray(mods)) return false;
+    let changed = false;
+    EXCLUSIVE_TAGS.forEach((set) => {
+      const held = set.filter((t) => mods.includes(t));
+      if (held.length < 2) return;
+      const keep = held[held.length - 1];
+      ex.modifiers = ex.modifiers.filter((m) => !set.includes(m) || m === keep);
+      changed = true;
+    });
+    return changed;
+  }
+
   // "DBs" = a pair of dumbbells — the weight reads plural gym-style ("50s").
   // "DB" = a single dumbbell — reads "50 lb". BW passes through untouched.
   // (Before the 2026-07-17 split there was one DB tag whose plurality was
@@ -1002,6 +1031,10 @@
   }
 
   function openModPicker(ex, anchorBtn, chipsBefore, chipsAfter, onTagsChange) {
+    // Exercises saved before the exclusivity rule (or synced from an older
+    // client) can still hold both — clean them up as the coach opens the picker
+    // so the buttons below never render in a contradictory state.
+    if (dropConflictingTags(ex)) { saveTrainer(); onTagsChange?.(); }
     document.querySelector(".mod-picker-pop")?.remove();
     const pop = document.createElement("div");
     pop.className = "mod-picker-pop";
@@ -1044,6 +1077,17 @@
             btn.style.removeProperty("--mc"); btn.style.removeProperty("--mb");
             if (tag === "Isometric") clearHoldTag();
           } else {
+            // Contradictory tags come off first, multi group or not — picking
+            // DBs clears DB and vice versa.
+            conflictingTags(tag).forEach((t) => {
+              if (!ex.modifiers.includes(t)) return;
+              ex.modifiers = ex.modifiers.filter((m) => m !== t);
+              const sibling = pop.querySelector(`[data-tag="${t}"]`);
+              if (sibling) {
+                sibling.classList.remove("on");
+                sibling.style.removeProperty("--mc"); sibling.style.removeProperty("--mb");
+              }
+            });
             // single-select groups: deselect any other tag in this group first.
             // multi groups (e.g. Equipment) let tags stack — Cable + Rope, etc.
             if (!multi) {
@@ -5736,6 +5780,10 @@
     wrapper.addEventListener("dragend", () => {
       wrapper.removeAttribute("draggable");
       wrapper.classList.remove("dragging", "drag-above", "drag-below");
+      // The gap lives on whichever row was hovered, not on the dragged one, so
+      // an abandoned drag (dropped outside the list, Esc) would leave it open.
+      wrapper.parentNode?.querySelectorAll(".drag-above, .drag-below")
+        .forEach((el) => el.classList.remove("drag-above", "drag-below"));
     });
     wrapper.addEventListener("dragstart", (e) => {
       if (!wrapper.getAttribute("draggable")) { e.preventDefault(); return; }
@@ -5746,18 +5794,26 @@
     wrapper.addEventListener("dragover", (e) => {
       if (!e.dataTransfer.types.includes("text/ex-reorder")) return;
       e.preventDefault();
-      const rect = wrapper.getBoundingClientRect();
-      wrapper.classList.remove("drag-above", "drag-below");
-      wrapper.classList.add(e.clientY < rect.top + rect.height / 2 ? "drag-above" : "drag-below");
+      // Measure the ROW, not the wrapper. The gap is padding on the wrapper, so
+      // testing against the wrapper's own box would move the midpoint the gap
+      // just created and flip the choice back under a stationary cursor. The
+      // row only moves for drag-above (padding-top pushes it down), which keeps
+      // each state self-consistent and adds a little hysteresis between them.
+      const rect = row.getBoundingClientRect();
+      const above = e.clientY < rect.top + rect.height / 2;
+      wrapper.classList.toggle("drag-above", above);
+      wrapper.classList.toggle("drag-below", !above);
     });
     wrapper.addEventListener("dragleave", () => wrapper.classList.remove("drag-above", "drag-below"));
     wrapper.addEventListener("drop", (e) => {
-      e.preventDefault(); wrapper.classList.remove("drag-above", "drag-below");
+      e.preventDefault();
+      // Go by the class the gap is showing, not a fresh measurement — the card
+      // must land exactly where the placeholder slot said it would.
+      const insertAfter = wrapper.classList.contains("drag-below");
+      wrapper.classList.remove("drag-above", "drag-below");
       try {
         const { exId, dayId } = JSON.parse(e.dataTransfer.getData("text/ex-reorder"));
         if (dayId !== day.id || exId === ex.id) return;
-        const rect = wrapper.getBoundingClientRect();
-        const insertAfter = e.clientY >= rect.top + rect.height / 2;
         const fromIdx = day.exercises.findIndex((e) => e.id === exId);
         const toIdx   = day.exercises.findIndex((e) => e.id === ex.id);
         if (fromIdx === -1 || toIdx === -1) return;

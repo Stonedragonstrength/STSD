@@ -6745,9 +6745,31 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   background: var(--surface-2);
   border-radius: var(--radius);
 }
-.ex-row-wrapper.drag-above { border-top: 2px solid var(--primary); }
-.ex-row-wrapper.drag-below { border-bottom: 2px solid var(--primary); }
+/* Reorder feedback: open a real gap with a placeholder slot where the card
+   will land. A 2px edge line read as "these two will trade places" — a gap
+   shows it's an insertion. The gap is padding on the wrapper so it pushes
+   neighbours apart; the drop handler goes by these classes, so where the slot
+   appears is exactly where the card lands. */
+.ex-row-wrapper { position: relative; transition: padding 0.12s ease; }
+.ex-row-wrapper.drag-above { padding-top: 42px; }
+.ex-row-wrapper.drag-below { padding-bottom: 42px; }
+.ex-row-wrapper.drag-above::before,
+.ex-row-wrapper.drag-below::after {
+  content: "";
+  position: absolute;
+  left: 8px; right: 8px;
+  height: 34px;
+  border: 2px dashed rgba(var(--primary-bright-rgb), 0.7);
+  border-radius: 8px;
+  background: rgba(var(--primary-rgb), 0.1);
+  pointer-events: none;
+}
+.ex-row-wrapper.drag-above::before { top: 4px; }
+.ex-row-wrapper.drag-below::after { bottom: 4px; }
 .ex-row-wrapper.dragging { opacity: 0.35; }
+@media (prefers-reduced-motion: reduce) {
+  .ex-row-wrapper { transition: none; }
+}
 
 .ex-row {
   display: flex;
