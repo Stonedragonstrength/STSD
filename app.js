@@ -2555,6 +2555,63 @@
     setTimeout(() => $("#program-editor-name").focus(), 80);
   }
 
+  // Promote an athlete's program up into the reusable Program Library. Archive
+  // only files a copy under that one athlete — this makes it assignable to
+  // anyone. The copy is deliberately INDEPENDENT: fresh ids throughout and no
+  // assignedProgramId link, so later edits to the template never rewrite this
+  // athlete's live program out from under them.
+  function saveClientProgramToLibrary() {
+    const c = currentClient(); if (!c) return;
+    if (!c.weeks || !c.weeks.length) { toast("This athlete has no program to save"); return; }
+    ensureProgramTemplates();
+    const weekCount = c.weeks.length;
+    const exCount = c.weeks.reduce((n, w) => n + (w.days || []).reduce((m, d) => m + (d.exercises || []).length, 0), 0);
+    const first = (c.name || "").trim().split(/\s+/)[0] || "Athlete";
+    const suggested = `${first}'s Program`;
+    const save = () => {
+      const name = $("#lib-save-name").value.trim() || suggested;
+      const tpl = {
+        id: uid(),
+        name,
+        description: $("#lib-save-desc").value.trim(),
+        // Saved from a program already in use, so it lands ready to assign
+        // rather than in the in-progress pile.
+        status: "ready",
+        weeks: JSON.parse(JSON.stringify(c.weeks)).map((w) => ({
+          ...w, id: uid(),
+          days: (w.days || []).map((d) => ({
+            ...d, id: uid(),
+            exercises: (d.exercises || []).map((e) => ({ ...e, id: uid() })),
+          })),
+        })),
+        createdAt: Date.now(),
+      };
+      state.trainerData.programTemplates.push(tpl);
+      saveTrainer();
+      closeModal();
+      toast(`"${name}" saved to your library ✓`);
+    };
+    openModal({
+      title: "Save to Library",
+      body: `
+        <p class="muted" style="margin-top:0">Saves a copy of ${escapeHtml(c.name || "this athlete")}'s program
+        (${weekCount} week${weekCount === 1 ? "" : "s"} · ${exCount} exercise${exCount === 1 ? "" : "s"})
+        to your Program Library so you can assign it to anyone.</p>
+        <label>Program name
+          <input type="text" id="lib-save-name" maxlength="80" placeholder="${escapeHtml(suggested)}" value="${escapeHtml(suggested)}" />
+        </label>
+        <label>Description (optional)
+          <input type="text" id="lib-save-desc" maxlength="120" placeholder="e.g. 8-week hypertrophy block" />
+        </label>
+        <p class="muted" style="font-size:0.78rem">This is an independent copy — editing it later won't change ${escapeHtml(c.name || "this athlete")}'s current program.</p>`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Save to Library", className: "btn btn-primary", onClick: save },
+      ],
+    });
+    setTimeout(() => $("#lib-save-name")?.select(), 60);
+  }
+
   function assignProgramPrompt(tplId) {
     const tpl = (state.trainerData.programTemplates || []).find((p) => p.id === tplId);
     if (!tpl) return;
@@ -12854,6 +12911,7 @@
     $("#btn-load-program").addEventListener("click", openLoadProgramModal);
     $("#btn-load-program-empty").addEventListener("click", openLoadProgramModal);
     $("#btn-archive-program").addEventListener("click", archiveCurrentProgram);
+    $("#btn-save-program-to-library")?.addEventListener("click", saveClientProgramToLibrary);
 
     // Exercise library
     $("#btn-close-library").addEventListener("click", closeExLibrary);
