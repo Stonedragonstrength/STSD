@@ -2813,17 +2813,40 @@ input[type="date"] { color-scheme: dark; }
 }
 
 /* Cardio log */
+/* Each entry carries its intensity color as a wash + left rail, so a list of
+   sessions reads as easy/moderate/hard at a glance. --cardio-rgb is set by the
+   intensity classes below; the fallback keeps it neutral if none is applied. */
 .cardio-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.7em;
-  padding: 0.6rem 0.4rem;
+  padding: 0.6rem 0.4rem 0.6rem 0.75rem;
   border-bottom: 1px solid var(--border);
   border-radius: var(--radius);
   cursor: pointer;
+  overflow: hidden;
+  background-image: linear-gradient(100deg, rgba(var(--cardio-rgb, 148, 163, 184), 0.13), transparent 62%);
   transition: background 0.12s;
 }
-.cardio-row:hover { background: var(--surface-2); }
+.cardio-row::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg,
+    rgb(var(--cardio-rgb, 148, 163, 184)),
+    rgba(var(--cardio-rgb, 148, 163, 184), 0.18));
+  pointer-events: none;
+}
+/* Set on the row by the same low/moderate/high value used for the chip. */
+.cardio-row:has(.cardio-intensity-low)      { --cardio-rgb: 16, 185, 129; }
+.cardio-row:has(.cardio-intensity-moderate) { --cardio-rgb: 245, 158, 11; }
+.cardio-row:has(.cardio-intensity-high)     { --cardio-rgb: 239, 68, 68; }
+.cardio-row:hover {
+  background-image: linear-gradient(100deg, rgba(var(--cardio-rgb, 148, 163, 184), 0.22), transparent 66%);
+  background-color: var(--surface-2);
+}
 .cardio-row:last-child { border-bottom: none; }
 .cardio-row-readonly { cursor: default; }
 .cardio-row-readonly:hover { background: transparent; }
@@ -3350,12 +3373,27 @@ input[type="date"] { color-scheme: dark; }
 }
 
 /* PR inline edit cards (coach side) */
+/* Themed wash + gradient rail, matching the day/athlete cards. Built from the
+   --primary vars so it follows whichever theme is active. */
 .pr-edit-card {
-  background: var(--surface);
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(95% 140% at 0% 0%, rgba(var(--primary-rgb), 0.13) 0%, transparent 58%),
+    linear-gradient(180deg, var(--surface-2), var(--surface) 65%);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 1rem 1.25rem;
   margin-bottom: 0.75rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.pr-edit-card::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg, var(--primary-bright), rgba(var(--primary-rgb), 0.15));
+  pointer-events: none;
 }
 .pr-edit-card.is-editing { border-color: var(--primary); }
 .pr-edit-card.pr-athlete-only { opacity: 0.75; }
@@ -3888,11 +3926,25 @@ input[type="date"] { color-scheme: dark; }
   .client-diet-targets { grid-template-columns: 1fr; }
 }
 .client-diet-target {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(110% 150% at 50% 0%, rgba(var(--primary-rgb), 0.16) 0%, transparent 62%),
+    linear-gradient(180deg, var(--surface-2), var(--surface) 70%);
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.24);
   border-radius: var(--radius);
   padding: 0.9em 1em;
   text-align: center;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+/* Lit top edge, so the tiles read as raised rather than flat panels. */
+.client-diet-target::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 18%; right: 18%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(var(--primary-bright-rgb), 0.7), transparent);
+  pointer-events: none;
 }
 .client-diet-target .target-num {
   font-size: 2rem;
@@ -7776,7 +7828,9 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 .roster-section-head:first-child { padding-top: 0; }
 
 /* Coach money strip (dashboard) */
-.money-strip { display: flex; gap: 0.55rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
+/* Sits at the very bottom of the coach Overview now, so it needs space above
+   it rather than below. */
+.money-strip { display: flex; gap: 0.55rem; flex-wrap: wrap; margin: 1.25rem 0 0.4rem; }
 .money-chip {
   display: flex; flex-direction: column; gap: 0.1em;
   padding: 0.5em 0.9em; border-radius: 10px;
@@ -8130,9 +8184,11 @@ body.live-log-mode #screen-client .header-right { display: none; }
 
 /* Legend chips */
 .anatomy-list { display: flex; flex-wrap: wrap; gap: 0.5rem; align-content: flex-start; }
+/* Themed pills — tinted at rest so they read as tappable, brighter on hover,
+   and clearly lit when selected. All from --primary vars, so they track theme. */
 .a-chip {
-  border: 1px solid var(--border);
-  background: var(--surface-2);
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.26);
+  background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.14), rgba(var(--primary-rgb), 0.04));
   color: var(--text);
   font-family: inherit;
   font-weight: 600;
@@ -8140,13 +8196,22 @@ body.live-log-mode #screen-client .header-right { display: none; }
   padding: 0.45em 0.85em;
   border-radius: 999px;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  transition: border-color 0.15s, background 0.15s, color 0.15s, box-shadow 0.15s, transform 0.15s;
 }
-.a-chip:hover { border-color: var(--border-strong); }
-.a-chip.selected {
-  background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.22), rgba(var(--primary-rgb), 0.08));
-  border-color: rgba(var(--primary-bright-rgb), 0.5);
+.a-chip:hover {
+  border-color: rgba(var(--primary-bright-rgb), 0.55);
+  background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.26), rgba(var(--primary-rgb), 0.1));
   color: var(--primary-bright);
+  transform: translateY(-1px);
+}
+.a-chip.selected {
+  background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.42), rgba(var(--primary-rgb), 0.16));
+  border-color: rgba(var(--primary-bright-rgb), 0.8);
+  color: var(--primary-bright);
+  box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.14);
+}
+@media (prefers-reduced-motion: reduce) {
+  .a-chip:hover { transform: none; }
 }
 
 /* Detail card */
