@@ -8800,7 +8800,9 @@
     return ids && ids.length ? ids : OV_STATS_DEFAULT.slice();
   }
   // Renders the selected stats into the calendar header. Shows ~4; if there are
-  // more, the strip scrolls horizontally (snap) with page dots and an edge fade.
+  // more, the strip scrolls horizontally (snap) with page dots and an edge fade,
+  // plus a gentle auto-advance that pauses the moment you touch it.
+  let _ovStatsAuto = null;
   function renderOverviewStatsBar(ctx) {
     const host = $("#ccal-stats"); if (!host) return;
     const ids = getOverviewStatIds(ctx.progress);
@@ -8817,9 +8819,11 @@
       </div>${dots}`;
     host.querySelector(".cal-stats-edit")?.addEventListener("click", openStatsCustomizer);
     const vp = host.querySelector(".cal-stats-viewport");
+    clearInterval(_ovStatsAuto); _ovStatsAuto = null;
     if (scrolls && vp) {
       const dotsEls = [...host.querySelectorAll(".cal-stats-dots .csd")];
       const maxScroll = () => vp.scrollWidth - vp.clientWidth;
+      const goToPage = (p) => vp.scrollTo({ left: pages > 1 ? (p / (pages - 1)) * maxScroll() : 0, behavior: "smooth" });
       vp.classList.add("at-start");
       vp.addEventListener("scroll", () => {
         const m = maxScroll();
@@ -8828,8 +8832,24 @@
         vp.classList.toggle("at-start", frac <= 0.01);
         vp.classList.toggle("at-end", frac >= 0.99);
       }, { passive: true });
-      dotsEls.forEach((d, i) => d.addEventListener("click", () =>
-        vp.scrollTo({ left: pages > 1 ? (i / (pages - 1)) * maxScroll() : 0, behavior: "smooth" })));
+      dotsEls.forEach((d, i) => d.addEventListener("click", () => goToPage(i)));
+
+      // Gentle auto-advance: page every 6s, pause on interaction, resume after a
+      // beat. Skipped entirely for reduced-motion or when the panel is hidden.
+      const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+      if (!reduce) {
+        let paused = false, resumeT = null;
+        const pause = () => { paused = true; clearTimeout(resumeT); };
+        const resumeSoon = () => { clearTimeout(resumeT); resumeT = setTimeout(() => { paused = false; }, 4500); };
+        ["pointerenter", "touchstart", "focusin"].forEach((ev) => vp.addEventListener(ev, pause, { passive: true }));
+        ["pointerleave", "touchend", "focusout"].forEach((ev) => vp.addEventListener(ev, resumeSoon, { passive: true }));
+        _ovStatsAuto = setInterval(() => {
+          if (paused || document.hidden || !vp.offsetParent) return;
+          const m = maxScroll();
+          const cur = m > 0 ? Math.round((vp.scrollLeft / m) * (pages - 1)) : 0;
+          goToPage(cur >= pages - 1 ? 0 : cur + 1);
+        }, 6000);
+      }
     }
   }
   // Athlete (or coach in a live session) picks which stats show and their order.
