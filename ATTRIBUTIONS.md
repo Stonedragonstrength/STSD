@@ -1,5 +1,19 @@
 # Third-party attributions
 
+## free-exercise-db (exercise demo photos)
+
+The "See how" exercise demos use photos and metadata from **free-exercise-db**.
+
+- Source: https://github.com/yuhonas/free-exercise-db
+- License: The Unlicense (public domain) — https://unlicense.org/
+
+The photos are loaded from the jsDelivr CDN
+(`https://cdn.jsdelivr.net/gh/yuhonas/free-exercise-db@main/exercises/<id>/<n>.jpg`)
+rather than vendored, to keep the repo small. Only the lookup metadata (id,
+name, image count, equipment, muscles, level, category) is vendored, in
+`exercise-demos.js`. Regenerate it from `dist/exercises.json` in that repo when
+the dataset updates.
+
 ## Body Muscles (anatomy muscle-map SVG paths)
 
 The Anatomy Library's front/back muscle-map figure uses SVG path data adapted

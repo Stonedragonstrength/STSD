@@ -8077,3 +8077,170 @@ body.live-log-mode #screen-client .header-right { display: none; }
   .a-cols { grid-template-columns: 1fr; gap: 0.75rem; }
   .a-facts { grid-template-columns: 1fr; }
 }
+
+/* ============================================================
+   Exercise demo photos (free-exercise-db stills)
+   ============================================================ */
+
+/* Athlete card: "See how" sits beside "Watch demo" */
+.cex-demo-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+.demo-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding-left: 0.3rem;
+}
+.demo-thumb {
+  width: 26px;
+  height: 26px;
+  object-fit: cover;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  flex: 0 0 auto;
+}
+
+/* Modal stage: start/finish stills cross-faded on a loop */
+.demo-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+.demo-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 320ms ease;
+}
+.demo-frame.on { opacity: 1; }
+.demo-hint {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 0.18rem 0.45rem;
+  border-radius: 999px;
+  pointer-events: none;
+  opacity: 0.75;
+}
+.demo-stage.is-paused .demo-hint { opacity: 1; }
+.demo-alias { font-size: 0.76rem; margin: 0.55rem 0 0; }
+.demo-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.6rem;
+}
+.demo-chip {
+  font-size: 0.7rem;
+  padding: 0.16rem 0.5rem;
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--text-soft);
+  border: 1px solid var(--border);
+  text-transform: capitalize;
+}
+.demo-credit { font-size: 0.66rem; margin: 0.7rem 0 0; opacity: 0.65; }
+
+/* Coach picker */
+.demo-pick-intro { font-size: 0.8rem; margin-bottom: 0.6rem; }
+#demo-pick-search { width: 100%; }
+.demo-pick-list {
+  margin-top: 0.6rem;
+  max-height: 46vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.demo-pick {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.demo-pick:hover { border-color: var(--primary); background: var(--surface-2); }
+.demo-pick img {
+  width: 42px;
+  height: 42px;
+  object-fit: cover;
+  border-radius: 5px;
+  flex: 0 0 auto;
+  background: var(--surface-2);
+}
+.demo-pick-name { flex: 1; font-size: 0.82rem; font-weight: 600; }
+.demo-pick-meta {
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-transform: capitalize;
+  flex: 0 0 auto;
+}
+
+/* Coach editor: matched-demo strip in the exercise detail panel */
+.ex-demo-row {
+  flex: 0 0 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.ex-demo-preview {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+  padding: 0.25rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.78rem;
+  cursor: pointer;
+  text-align: left;
+}
+.ex-demo-preview:hover { border-color: var(--primary); }
+.ex-demo-preview img {
+  width: 30px;
+  height: 30px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex: 0 0 auto;
+  background: var(--surface-2);
+}
+.ex-demo-preview span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ex-demo-preview em {
+  font-style: normal;
+  font-size: 0.68rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ex-demo-preview.is-empty { color: var(--muted); }

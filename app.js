@@ -5397,6 +5397,7 @@
     nameInput.placeholder = "Exercise name…";
     nameInput.value = ex.name || "";
     nameInput.addEventListener("input", () => { ex.name = nameInput.value; saveTrainer(); });
+    nameInput.addEventListener("change", () => { demoRow._repaintDemo?.(); });
 
     // Modifier chips AFTER name (Style)
     const chipsAfter = document.createElement("div");
@@ -5689,8 +5690,11 @@
     kindToggle.appendChild(kindCb);
     kindToggle.appendChild(document.createTextNode(" Hold for time (stretch / mobility)"));
 
+    const demoRow = buildCoachDemoRow(ex);
+
     detail.appendChild(notesTA);
     detail.appendChild(videoInput);
+    detail.appendChild(demoRow);
     detail.appendChild(kindToggle);
 
     if (ex.notes || ex.videoUrl) {
@@ -9825,8 +9829,9 @@
     row.appendChild(content);
     wrapper.appendChild(row);
 
-    // Coach note + video demo, if any.
-    if (ex.notes || ex.videoUrl) {
+    // Coach note + demos (video link and/or photos), if any.
+    const mobDemoBtn = demoButton(ex);
+    if (ex.notes || ex.videoUrl || mobDemoBtn) {
       const panel = document.createElement("div");
       panel.className = "cex-panel cex-mob-panel";
       if (ex.notes) {
@@ -9836,16 +9841,22 @@
         panel.appendChild(notesEl);
       }
       const ytId = getYouTubeId(ex.videoUrl);
-      if (ytId || ex.videoUrl) {
-        const vBtn = document.createElement("button");
-        vBtn.className = "btn btn-sm btn-ghost";
-        vBtn.textContent = "▶ Watch demo";
-        vBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          if (ytId) openVideoModal(ytId, ex.name || "Stretch");
-          else window.open(ex.videoUrl, "_blank", "noopener");
-        });
-        panel.appendChild(vBtn);
+      if (ytId || ex.videoUrl || mobDemoBtn) {
+        const demoRow = document.createElement("div");
+        demoRow.className = "cex-demo-row";
+        if (ytId || ex.videoUrl) {
+          const vBtn = document.createElement("button");
+          vBtn.className = "btn btn-sm btn-ghost";
+          vBtn.textContent = "▶ Watch demo";
+          vBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (ytId) openVideoModal(ytId, ex.name || "Stretch");
+            else window.open(ex.videoUrl, "_blank", "noopener");
+          });
+          demoRow.appendChild(vBtn);
+        }
+        if (mobDemoBtn) demoRow.appendChild(mobDemoBtn);
+        panel.appendChild(demoRow);
       }
       wrapper.appendChild(panel);
     }
@@ -10034,16 +10045,23 @@
     }
 
     const ytId = getYouTubeId(ex.videoUrl);
-    if (ytId || ex.videoUrl) {
-      const vBtn = document.createElement("button");
-      vBtn.className = "btn btn-sm btn-ghost";
-      vBtn.textContent = "▶ Watch demo";
-      vBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (ytId) openVideoModal(ytId, ex.name || "Exercise");
-        else window.open(ex.videoUrl, "_blank", "noopener");
-      });
-      panel.appendChild(vBtn);
+    const demoBtn = demoButton(ex);
+    if (ytId || ex.videoUrl || demoBtn) {
+      const demoRow = document.createElement("div");
+      demoRow.className = "cex-demo-row";
+      if (ytId || ex.videoUrl) {
+        const vBtn = document.createElement("button");
+        vBtn.className = "btn btn-sm btn-ghost";
+        vBtn.textContent = "▶ Watch demo";
+        vBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (ytId) openVideoModal(ytId, ex.name || "Exercise");
+          else window.open(ex.videoUrl, "_blank", "noopener");
+        });
+        demoRow.appendChild(vBtn);
+      }
+      if (demoBtn) demoRow.appendChild(demoBtn);
+      panel.appendChild(demoRow);
     }
 
     // Log form (logDate computed at the top of the function)
@@ -10566,6 +10584,323 @@
       registerDayProgress(exProgress);
     }
     return wrapper;
+  }
+
+  // -------- Exercise demo photos --------
+  // Stills come from the public-domain free-exercise-db (see ATTRIBUTIONS.md).
+  // exercise-demos.js vendors just the lookup metadata; the photos themselves
+  // stay on the CDN, so demos need a connection (everything else works offline).
+  const DEMO_CDN = "https://cdn.jsdelivr.net/gh/yuhonas/free-exercise-db@main/exercises/";
+  // Coach-typed shorthand → the words the dataset actually uses.
+  const DEMO_ABBREV = {
+    db: "dumbbell", bb: "barbell", kb: "kettlebell", ez: "e z curl bar",
+    ohp: "overhead press", rdl: "romanian deadlift", sldl: "stiff leg deadlift",
+    bor: "bent over row", bp: "bench press", ghr: "glute ham raise",
+    pullup: "pull up", pushup: "push up", chinup: "chin up", situp: "sit up",
+    stepup: "step up", legpress: "leg press", dip: "dips",
+  };
+  const DEMO_STOP = new Set(["the", "a", "an", "with", "and", "of", "for", "to", "on", "in",
+    "each", "side", "per", "alternating", "alt", "sec", "second", "rep", "set", "x"]);
+  // The staples, pinned by hand. Fuzzy matching does fine on the long tail but
+  // picks odd variations for the bread-and-butter lifts (plain "Deadlift" scored
+  // its way to "Axle Deadlift"), and those are the ones athletes see every week.
+  // Keys are demoTokens(name).join(" ") — already singular and expanded.
+  const DEMO_ALIAS = {
+    "squat": "Barbell_Squat",
+    "back squat": "Barbell_Squat",
+    "barbell squat": "Barbell_Squat",
+    "bench press": "Barbell_Bench_Press_-_Medium_Grip",
+    "barbell bench press": "Barbell_Bench_Press_-_Medium_Grip",
+    "flat bench press": "Barbell_Bench_Press_-_Medium_Grip",
+    "incline bench press": "Barbell_Incline_Bench_Press_-_Medium_Grip",
+    "deadlift": "Barbell_Deadlift",
+    "barbell deadlift": "Barbell_Deadlift",
+    "conventional deadlift": "Barbell_Deadlift",
+    "overhead press": "Standing_Military_Press",
+    "military press": "Standing_Military_Press",
+    "strict press": "Standing_Military_Press",
+    "shoulder press": "Barbell_Shoulder_Press",
+    "push press": "Push_Press",
+    "pull up": "Pullups",
+    "chin up": "Chin-Up",
+    "pulldown": "Wide-Grip_Lat_Pulldown",
+    "lat pulldown": "Wide-Grip_Lat_Pulldown",
+    "dumbbell row": "One-Arm_Dumbbell_Row",
+    "barbell row": "Bent_Over_Barbell_Row",
+    "bent over row": "Bent_Over_Barbell_Row",
+    "pendlay row": "Bent_Over_Barbell_Row",
+    "leg curl": "Lying_Leg_Curls",
+    "hamstring curl": "Lying_Leg_Curls",
+    "calf raise": "Standing_Calf_Raises",
+    "cable fly": "Cable_Crossover",
+    "chest fly": "Cable_Crossover",
+    "reverse fly": "Cable_Rear_Delt_Fly",
+    "rear delt fly": "Cable_Rear_Delt_Fly",
+    "dips": "Dips_-_Chest_Version",
+    "farmer carry": "Farmers_Walk",
+    "farmer walk": "Farmers_Walk",
+    "loaded carry": "Farmers_Walk",
+    "walking lunge": "Bodyweight_Walking_Lunge",
+    "lunge": "Barbell_Lunge",
+    "split squat": "Split_Squats",
+    "bulgarian split squat": "Split_Squats",
+    "hip thrust": "Barbell_Hip_Thrust",
+    "sit up": "Sit-Up",
+    "crunch": "Crunches",
+  };
+
+  function demoImgUrl(id, n) { return DEMO_CDN + encodeURIComponent(id) + "/" + n + ".jpg"; }
+
+  // Names are free text on both sides, so both the coach's name and the dataset
+  // name get reduced to the same bag of words before they're compared.
+  function demoTokens(name) {
+    const raw = String(name || "").toLowerCase()
+      .replace(/\([^)]*\)/g, " ")   // "(each side)" and friends aren't part of the movement
+      .replace(/[^a-z0-9]+/g, " ");
+    const out = [];
+    for (const piece of raw.split(" ")) {
+      if (!piece) continue;
+      let t = piece;
+      // Singularize before expanding, so "Pullups"/"pull-ups"/"Chin Ups" all
+      // land on the same tokens. Short words count ("ups" → "up").
+      if (t.length > 2 && t.endsWith("s") && !t.endsWith("ss")) t = t.slice(0, -1);
+      const expanded = DEMO_ABBREV[t] || t;
+      for (const word of expanded.split(" ")) {
+        if (!word || DEMO_STOP.has(word)) continue;
+        out.push(word);
+      }
+    }
+    return out;
+  }
+
+  let _demoIndex = null;
+  function demoIndex() {
+    if (_demoIndex) return _demoIndex;
+    const list = Array.isArray(window.EXERCISE_DEMOS) ? window.EXERCISE_DEMOS : [];
+    const byId = new Map(), exact = new Map(), sorted = new Map(), all = [];
+    for (const e of list) {
+      if (!e.m) continue; // no photos, nothing to show
+      byId.set(e.i, e);
+      const toks = demoTokens(e.n);
+      const key = toks.join(" ");
+      if (!exact.has(key)) exact.set(key, e);
+      const skey = toks.slice().sort().join(" ");
+      if (!sorted.has(skey)) sorted.set(skey, e);
+      all.push({ e, set: new Set(toks) });
+    }
+    _demoIndex = { byId, exact, sorted, all, cache: new Map() };
+    return _demoIndex;
+  }
+
+  function findDemoByName(name) {
+    const idx = demoIndex();
+    if (!idx.all.length) return null;
+    const toks = demoTokens(name);
+    if (!toks.length) return null;
+    const key = toks.join(" ");
+    if (idx.cache.has(key)) return idx.cache.get(key);
+    let hitEntry = (DEMO_ALIAS[key] && idx.byId.get(DEMO_ALIAS[key]))
+      || idx.exact.get(key)
+      || idx.sorted.get(toks.slice().sort().join(" "))
+      || null;
+    if (!hitEntry) {
+      // Fuzzy: mostly reward covering the coach's words, a little for not
+      // dragging in a pile of extra ones ("Dumbbell Row" → "Bent Over Two-Dumbbell Row").
+      const qset = new Set(toks);
+      let best = null, bestScore = 0;
+      for (const c of idx.all) {
+        let hit = 0;
+        for (const t of qset) if (c.set.has(t)) hit++;
+        if (!hit) continue;
+        const score = (hit / qset.size) * 0.8 + (hit / c.set.size) * 0.2;
+        if (score > bestScore) { bestScore = score; best = c.e; }
+      }
+      if (bestScore >= 0.7) hitEntry = best;
+    }
+    idx.cache.set(key, hitEntry);
+    return hitEntry;
+  }
+
+  // "none" = the coach explicitly turned the demo off for this exercise.
+  function demoForExercise(ex) {
+    if (!ex) return null;
+    if (ex.demoId === "none") return null;
+    if (ex.demoId) return demoIndex().byId.get(ex.demoId) || null;
+    return findDemoByName(ex.name);
+  }
+
+  function demoSearch(query, limit = 40) {
+    const idx = demoIndex();
+    const toks = demoTokens(query);
+    if (!toks.length) return idx.all.slice(0, limit).map((c) => c.e);
+    const scored = [];
+    for (const c of idx.all) {
+      let hit = 0;
+      for (const t of toks) if (c.set.has(t)) hit++;
+      // Partial words keep the list alive while the coach is still typing.
+      if (!hit) {
+        const joined = [...c.set].join(" ");
+        if (!toks.every((t) => joined.includes(t))) continue;
+        hit = toks.length * 0.6;
+      }
+      scored.push({ e: c.e, s: (hit / toks.length) * 0.8 + (hit / c.set.size) * 0.2 });
+    }
+    scored.sort((a, b) => b.s - a.s || a.e.n.length - b.e.n.length);
+    return scored.slice(0, limit).map((r) => r.e);
+  }
+
+  const DEMO_LEVEL_ICON = { beginner: "●", intermediate: "●●", expert: "●●●" };
+
+  function demoChipsHtml(entry) {
+    const chips = [];
+    if (entry.e && entry.e !== "other") chips.push(escapeHtml(entry.e));
+    if (entry.l) chips.push(`${DEMO_LEVEL_ICON[entry.l] || ""} ${escapeHtml(entry.l)}`.trim());
+    for (const m of (entry.p || [])) chips.push(escapeHtml(m));
+    if (!chips.length) return "";
+    return `<div class="demo-chips">${chips.map((c) => `<span class="demo-chip">${c}</span>`).join("")}</div>`;
+  }
+
+  // Two stills (start + finish) cross-faded on a loop, so a still photo reads
+  // as a movement. Tap the photo to freeze it on one position.
+  let _demoTimer = null;
+  function openDemoModal(entry, displayName) {
+    if (!entry) return;
+    const frames = Math.min(entry.m || 1, 4);
+    const imgs = [];
+    for (let i = 0; i < frames; i++) {
+      imgs.push(`<img class="demo-frame${i === 0 ? " on" : ""}" src="${demoImgUrl(entry.i, i)}" alt="${escapeHtml(entry.n)} position ${i + 1}" loading="lazy" />`);
+    }
+    const nameLine = displayName && demoTokens(displayName).join(" ") !== demoTokens(entry.n).join(" ")
+      ? `<p class="demo-alias muted">Shown: ${escapeHtml(entry.n)}</p>` : "";
+    openModal({
+      title: displayName || entry.n,
+      body: `
+        <div class="demo-stage" id="demo-stage">
+          ${imgs.join("")}
+          ${frames > 1 ? `<span class="demo-hint" id="demo-hint">tap to pause</span>` : ""}
+        </div>
+        ${nameLine}
+        ${demoChipsHtml(entry)}
+        <p class="demo-credit muted">Photo: free-exercise-db, public domain</p>`,
+      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeDemoModal }],
+    });
+    if (frames > 1) {
+      const stage = $("#demo-stage");
+      const els = Array.from(stage.querySelectorAll(".demo-frame"));
+      let at = 0, paused = false;
+      _demoTimer = setInterval(() => {
+        // The modal's own ✕ closes without going through closeDemoModal.
+        if (!document.body.contains(stage)) { clearInterval(_demoTimer); _demoTimer = null; return; }
+        if (paused) return;
+        els[at].classList.remove("on");
+        at = (at + 1) % els.length;
+        els[at].classList.add("on");
+      }, 1100);
+      stage.addEventListener("click", () => {
+        paused = !paused;
+        stage.classList.toggle("is-paused", paused);
+        const hint = $("#demo-hint");
+        if (hint) hint.textContent = paused ? "tap to play" : "tap to pause";
+      });
+    }
+  }
+  function closeDemoModal() {
+    if (_demoTimer) { clearInterval(_demoTimer); _demoTimer = null; }
+    closeModal();
+  }
+
+  // Shared "See how" button for the athlete's exercise cards.
+  function demoButton(ex, label = "See how") {
+    const entry = demoForExercise(ex);
+    if (!entry) return null;
+    const btn = document.createElement("button");
+    btn.className = "btn btn-sm btn-ghost demo-btn";
+    btn.innerHTML = `<img class="demo-thumb" src="${demoImgUrl(entry.i, 0)}" alt="" loading="lazy" /><span>${escapeHtml(label)}</span>`;
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openDemoModal(entry, ex.name);
+    });
+    return btn;
+  }
+
+  // Coach-side: confirm or override which demo an exercise is matched to.
+  // Auto-matching is name-based and free text, so there's always an escape hatch.
+  function openDemoPicker(ex, onDone) {
+    const auto = findDemoByName(ex.name);
+    const resultsHtml = (list) => list.length
+      ? list.map((e) => `
+          <button type="button" class="demo-pick" data-demo-id="${escapeHtml(e.i)}">
+            <img src="${demoImgUrl(e.i, 0)}" alt="" loading="lazy" />
+            <span class="demo-pick-name">${escapeHtml(e.n)}</span>
+            <span class="demo-pick-meta">${escapeHtml(e.e || "")}</span>
+          </button>`).join("")
+      : `<p class="muted">No demo matches that search.</p>`;
+
+    openModal({
+      title: "Exercise demo",
+      body: `
+        <p class="muted demo-pick-intro">${auto
+          ? `Auto-matched to <strong>${escapeHtml(auto.n)}</strong>. Pick a different one below if that's not the movement.`
+          : `No automatic match for "${escapeHtml(ex.name || "this exercise")}". Search for the closest movement.`}</p>
+        <input type="text" id="demo-pick-search" class="input" placeholder="Search demos…" value="${escapeHtml(ex.name || "")}" />
+        <div class="demo-pick-list" id="demo-pick-list">${resultsHtml(demoSearch(ex.name || ""))}</div>`,
+      actions: [
+        { label: "Use auto match", className: "btn btn-ghost", onClick: () => {
+          delete ex.demoId; saveTrainer(); closeModal(); onDone?.();
+        } },
+        { label: "No demo", className: "btn btn-ghost", onClick: () => {
+          ex.demoId = "none"; saveTrainer(); closeModal(); onDone?.();
+        } },
+        { label: "Close", className: "btn btn-ghost", onClick: closeModal },
+      ],
+    });
+
+    const search = $("#demo-pick-search");
+    const list = $("#demo-pick-list");
+    list.addEventListener("click", (e) => {
+      const btn = e.target.closest(".demo-pick");
+      if (!btn) return;
+      ex.demoId = btn.dataset.demoId;
+      saveTrainer();
+      closeModal();
+      onDone?.();
+    });
+    search.addEventListener("input", () => { list.innerHTML = resultsHtml(demoSearch(search.value)); });
+    search.focus();
+    search.select();
+  }
+
+  // The strip inside the coach's exercise detail panel: what the athlete will
+  // see, one tap to preview it, one to change it.
+  function buildCoachDemoRow(ex) {
+    const row = document.createElement("div");
+    row.className = "ex-demo-row";
+    const paint = () => {
+      row.innerHTML = "";
+      const entry = demoForExercise(ex);
+      const label = document.createElement("button");
+      label.type = "button";
+      label.className = "ex-demo-preview";
+      if (entry) {
+        label.innerHTML = `<img src="${demoImgUrl(entry.i, 0)}" alt="" loading="lazy" /><span>${escapeHtml(entry.n)}${ex.demoId && ex.demoId !== "none" ? "" : " <em>auto</em>"}</span>`;
+        label.title = "Preview the demo the athlete sees";
+        label.addEventListener("click", () => openDemoModal(entry, ex.name));
+      } else {
+        label.className += " is-empty";
+        label.innerHTML = `<span>${ex.demoId === "none" ? "Demo hidden" : "No demo matched"}</span>`;
+        label.addEventListener("click", () => openDemoPicker(ex, paint));
+      }
+      const change = document.createElement("button");
+      change.type = "button";
+      change.className = "btn btn-sm btn-ghost";
+      change.textContent = entry ? "Change" : "Pick one";
+      change.addEventListener("click", () => openDemoPicker(ex, paint));
+      row.appendChild(label);
+      row.appendChild(change);
+    };
+    paint();
+    row._repaintDemo = paint; // the name input re-matches as the coach types
+    return row;
   }
 
   function openVideoModal(ytId, name) {
