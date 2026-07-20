@@ -451,22 +451,40 @@ input[type="date"] { color-scheme: dark; }
 .header-name-btn:hover .header-name-caret,
 .header-name-btn.active .header-name-caret { color: var(--primary-bright); }
 /* Sessions-remaining chip, right of the athlete's profile name */
+/* Sessions-remaining chip, in the header next to the tour/Exit buttons. Tinted
+   rather than grey so it reads as a live number instead of a third button, and
+   sized to sit level with the .btn-sm ghosts beside it. */
 .header-sessions {
   position: relative;
-  display: inline-flex; align-items: center; gap: 0.32em;
-  padding: 0.26em 0.62em;
+  display: inline-flex; align-items: center; gap: 0.34em;
+  padding: 0.34em 0.7em;
   border-radius: 999px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.2), rgba(var(--primary-rgb), 0.07));
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.32);
   color: var(--text);
-  font: inherit; font-weight: 800; font-size: 0.92rem;
+  font: inherit; font-weight: 800; font-size: 0.86rem;
   line-height: 1; cursor: pointer;
-  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  flex-shrink: 0;
+  transition: border-color 0.15s, background 0.15s, color 0.15s, box-shadow 0.15s;
 }
-.header-sessions:hover { border-color: var(--border-strong); background: var(--surface-3); }
-.header-sessions.is-low { color: var(--warn); border-color: rgba(245, 158, 11, 0.4); }
-.header-sessions .hs-ico { font-size: 0.92em; }
-.header-sessions .hs-num { font-variant-numeric: tabular-nums; }
+.header-sessions:hover {
+  border-color: rgba(var(--primary-bright-rgb), 0.6);
+  background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.3), rgba(var(--primary-rgb), 0.12));
+  box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1);
+}
+.header-sessions .hs-ico { font-size: 0.9em; opacity: 0.85; }
+.header-sessions .hs-num { color: var(--primary-bright); font-variant-numeric: tabular-nums; }
+/* Running low — the whole chip flips to the warning color. */
+.header-sessions.is-low {
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.22), rgba(245, 158, 11, 0.08));
+  border-color: rgba(245, 158, 11, 0.45);
+}
+.header-sessions.is-low:hover {
+  border-color: rgba(245, 158, 11, 0.7);
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.32), rgba(245, 158, 11, 0.13));
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12);
+}
+.header-sessions.is-low .hs-num { color: var(--warn); }
 /* Open-slot count, moved off the old Sessions nav tab onto the header chip */
 #screen-client .header-sessions .hs-slot-badge {
   position: absolute; top: -5px; right: -5px; margin: 0;
@@ -5575,10 +5593,37 @@ input:focus, textarea:focus, select:focus {
 /* ===== Pyramid sets: sandy look ===== */
 /* Same sand wash on the coach editor row and the athlete logging card, so a
    pyramid reads at a glance in every theme. */
+/* Sand is a texture, not just a hue. An inline SVG turbulence filter supplies
+   the grain; feColorMatrix maps that noise to a SAND-COLORED speckle with
+   noise-driven alpha (last row), rather than grey noise blended over the top —
+   grey grain just desaturates the card and reads as static. Kept at alpha 0.12
+   so the row stays dark enough for the near-white text; anything past ~0.16
+   lightens it toward beige and the PYRAMID chip starts to disappear.
+   baseFrequency 0.6 gives coarse particles that read as sand at normal
+   distance. background-image (not the `background` shorthand) so the row's own
+   surface color still shows through. Data URI — no request, CSP-safe. */
+   Three layers, top to bottom: sand grain, a dune field, the warm wash.
+   Each dune is a long gentle windward rise (cubic) up to a sharp crest, then a
+   short steep slip face (straight L) — that asymmetry is what reads as a dune
+   instead of a wave.
+   The ridges are painted back-to-front with OPAQUE fills inside a <g opacity>,
+   not as individually-translucent paths: translucent ones let each ridge's lit
+   crest stroke show straight through the dunes in front of it, which killed
+   the depth. Opaque fills occlude properly, then the group blends as one
+   silhouette. Farther ridges are lighter (atmospheric haze).
+   The tile repeats at a fixed 400px rather than stretching to 100%, so dune
+   scale holds at any row width (stretching flattened them into long diagonals
+   on wide desktop rows); every ridge starts and ends at the same y, so the
+   repeat has no visible seam. */
 .cex-wrapper.pyramid-tint,
 .ex-row-wrapper.pyramid-tint {
-  background: linear-gradient(90deg, rgba(216, 178, 110, 0.16), rgba(216, 178, 110, 0.05) 55%, rgba(216, 178, 110, 0.02));
-  border-left: 3px solid rgba(216, 178, 110, 0.7);
+  background-image:
+    url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='sand'><feTurbulence type='fractalNoise' baseFrequency='0.6' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.86  0 0 0 0 0.70  0 0 0 0 0.45  0.12 0.12 0.12 0 0'/></filter><rect width='120' height='120' filter='url(%23sand)'/></svg>"),
+    url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='60' preserveAspectRatio='none'><g opacity='0.55'><path d='M0 40 C 70 37, 140 22, 205 12 L 232 38 C 290 39, 350 40, 400 40 L400 60 L0 60Z' fill='%236b5228'/><path d='M0 40 C 70 37, 140 22, 205 12 L 232 38 C 290 39, 350 40, 400 40' fill='none' stroke='%23fff3d8' stroke-opacity='0.55' stroke-width='1.2'/><path d='M0 52 C 80 50, 165 36, 250 26 L 276 52 C 330 52, 370 52, 400 52 L400 60 L0 60Z' fill='%2354401e'/><path d='M0 52 C 80 50, 165 36, 250 26 L 276 52 C 330 52, 370 52, 400 52' fill='none' stroke='%23ffe9c4' stroke-opacity='0.5' stroke-width='1.2'/><path d='M0 57 C 90 56, 180 50, 262 45 L 284 57 C 340 57, 372 57, 400 57 L400 60 L0 60Z' fill='%233d2e14'/></g></svg>"),
+    linear-gradient(100deg, rgba(198, 158, 92, 0.19), rgba(198, 158, 92, 0.12) 70%, rgba(198, 158, 92, 0.07));
+  background-repeat: repeat, repeat-x, no-repeat;
+  background-size: auto, 400px 100%, auto;
+  border-left: 3px solid rgba(230, 196, 130, 0.8);
 }
 .cex-pyr-chip {
   font-size: 0.64rem;
