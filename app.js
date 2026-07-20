@@ -8803,6 +8803,27 @@
       .map((id) => RACING_LIB.find((s) => s.id === id)).filter(Boolean)
       .map((def) => { const d = def.get(ctx); return d ? racingRowHtml(def.label, d) : ""; }).join("");
   }
+  // Soft cap: show RACING_CAP rows, scroll the rest inside a fixed-height window
+  // with a fade at whichever edge has more. Only sizes while the (collapsible)
+  // stats card is open, so it's re-run on toggle.
+  const RACING_CAP = 4;
+  function wireRacingCap() {
+    const vp = $("#racing-vp"); if (!vp) return;
+    vp.classList.remove("is-capped", "at-top", "at-bottom");
+    vp.style.maxHeight = "";
+    const rows = vp.children.length;
+    if (rows <= RACING_CAP || !vp.offsetParent) return;
+    const gap = parseFloat(getComputedStyle(vp).rowGap) || 0;
+    vp.style.maxHeight = (vp.children[RACING_CAP].offsetTop - gap) + "px";
+    vp.classList.add("is-capped", "at-top");
+    const update = () => {
+      const max = vp.scrollHeight - vp.clientHeight;
+      vp.classList.toggle("at-top", vp.scrollTop <= 1);
+      vp.classList.toggle("at-bottom", vp.scrollTop >= max - 1);
+    };
+    vp.addEventListener("scroll", update, { passive: true });
+    update();
+  }
   // Athlete (or coach in a live session) picks which racing stats show and their order.
   function openRacingStatsCustomizer() {
     const progress = state.clientData.progress; if (!progress) return;
@@ -8931,7 +8952,7 @@
         <summary><svg class="ov-liftstats-ico" viewBox="0 0 24 24" aria-hidden="true"><text class="lsi-d lsi-1" x="1" y="11">1</text><text class="lsi-d lsi-2" x="8" y="16">2</text><text class="lsi-d lsi-3" x="15" y="21">3</text></svg><span class="ov-liftstats-title">Lifting stats</span><span class="ov-liftstats-chev">▸</span></summary>
         <div class="ov-liftstats-body">
           <div class="ov-recap-head"><h4>Your stats</h4><div class="ov-recap-actions"><button class="btn btn-ghost btn-sm" id="btn-racing-customize" type="button" title="Customize these stats" aria-label="Customize these stats">⋯</button><button class="btn btn-ghost btn-sm" id="btn-share-recap" type="button">📤 Share</button></div></div>
-          <div class="ov-stats-list">${renderRacingRows(racingCtx)}</div>
+          <div class="ov-stats-list racing-vp" id="racing-vp">${renderRacingRows(racingCtx)}</div>
           <div id="ov-volchart-host"></div>
         </div>
       </details>` : "";
@@ -8962,7 +8983,11 @@
     renderClientHeaderSessions();
     $("#btn-share-recap")?.addEventListener("click", () => shareLifetimeImage(lifeStats, c.name));
     $("#btn-racing-customize")?.addEventListener("click", openRacingStatsCustomizer);
-    $(".ov-liftstats")?.addEventListener("toggle", (e) => localStorage.setItem(KEY_LIFTSTATS_OPEN, e.target.open ? "1" : "0"));
+    $(".ov-liftstats")?.addEventListener("toggle", (e) => {
+      localStorage.setItem(KEY_LIFTSTATS_OPEN, e.target.open ? "1" : "0");
+      if (e.target.open) wireRacingCap();
+    });
+    wireRacingCap();
     renderVolumeChart(progress);
   }
   // Sessions-remaining chip in the athlete header, right of the profile name.
@@ -9084,6 +9109,8 @@
   function setClientTab(name) {
     $$(".tab[data-ctab]").forEach((t) => t.classList.toggle("active", t.dataset.ctab === name));
     $$(".tab-panel[data-ctab-panel]").forEach((p) => p.classList.toggle("active", p.dataset.ctabPanel === name));
+    // The racing bar's soft cap can only measure once its panel is visible.
+    if (name === "overview") wireRacingCap();
     // Rest timer only floats over the workouts tab (and only in day detail)
     if (name !== "workouts") hideRestTimer();
     else if (state.workoutView?.mode === "detail") showRestTimer();

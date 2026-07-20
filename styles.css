@@ -7367,6 +7367,23 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 .sr-trend.down { color: var(--warn); }
 .sr-trend.neutral { color: var(--text-soft); }
 .ov-recap-actions { display: flex; align-items: center; gap: 0.3em; }
+/* Racing bar soft cap: show a few rows, scroll the rest with an edge fade */
+.racing-vp { position: relative; }
+.racing-vp .ov-stat-row { flex: 0 0 auto; }
+.racing-vp.is-capped {
+  overflow-y: auto; scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
+}
+.racing-vp.is-capped.at-top {
+  -webkit-mask-image: linear-gradient(to bottom, #000 88%, transparent);
+  mask-image: linear-gradient(to bottom, #000 88%, transparent);
+}
+.racing-vp.is-capped.at-bottom {
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12%);
+  mask-image: linear-gradient(to bottom, transparent, #000 12%);
+}
+.racing-vp.is-capped::-webkit-scrollbar { display: none; }
 
 /* Combined, collapsible lifting stats: lifetime totals + last workout + volume */
 .ov-liftstats { margin-top: 0.85rem; }
