@@ -682,6 +682,57 @@ input[type="date"] { color-scheme: dark; }
 .coach-profile-stat-lbl { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-top: 0.3em; }
 .coach-profile-section { margin: 0 0 0.4rem; font-size: 1.05rem; color: var(--text); }
 
+/* ---- Athlete Templates (folders) ---- */
+.tpl-folder-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 1rem;
+}
+.tpl-folder-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  padding: 0.42em 0.85em;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.26);
+  background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.14), rgba(var(--primary-rgb), 0.04));
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.tpl-folder-chip:hover {
+  border-color: rgba(var(--primary-bright-rgb), 0.55);
+  background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.26), rgba(var(--primary-rgb), 0.1));
+}
+.tpl-folder-chip.active {
+  background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.42), rgba(var(--primary-rgb), 0.16));
+  border-color: rgba(var(--primary-bright-rgb), 0.8);
+  color: var(--primary-bright);
+}
+.tpl-folder-count {
+  font-size: 0.72rem;
+  font-weight: 800;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+/* Which folder a template is filed under, shown on its row. */
+.tpl-folder-tag {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 0.2em 0.6em;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text-soft);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+
 /* ---- Backup / restore (coach profile) ---- */
 .backup-intro { font-size: 0.85rem; margin: 0 0 0.7rem; max-width: 46em; }
 .backup-actions { display: flex; gap: 0.55rem; flex-wrap: wrap; align-items: center; }

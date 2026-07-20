@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=seenfix1" />
+  <link rel="stylesheet" href="styles.css?v=templates1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -253,6 +253,10 @@
           <span class="coach-nav-icon">📋</span>
           <span class="coach-nav-label">Programs</span>
         </button>
+        <button class="coach-nav-item" data-coach-nav="templates" type="button">
+          <span class="coach-nav-icon">🗂</span>
+          <span class="coach-nav-label">Templates</span>
+        </button>
         <button class="coach-nav-item active" data-coach-nav="athletes" type="button">
           <span class="coach-nav-icon">🐉</span>
           <span class="coach-nav-label">Athletes</span>
@@ -376,6 +380,23 @@
       </div>
 
       <!-- Programs list -->
+      <!-- Athlete Templates — programs saved off an athlete, kept in folders -->
+      <div id="view-templates" class="view hidden">
+        <div class="view-head">
+          <div></div>
+          <div class="library-head-actions">
+            <button class="btn btn-ghost" id="btn-new-tpl-folder">+ New folder</button>
+          </div>
+        </div>
+        <div id="tpl-folder-bar" class="tpl-folder-bar"></div>
+        <div id="tpl-grid" class="tpl-grid"></div>
+        <div id="tpl-empty" class="empty-state hidden">
+          <div class="empty-emoji">🗂</div>
+          <h3>No saved templates yet</h3>
+          <p>Open an athlete's Program tab and tap <strong>💾 Save to Library</strong> to keep a copy here, sorted into folders.</p>
+        </div>
+      </div>
+
       <div id="view-programs" class="view hidden">
         <div class="view-head">
           <div></div>
@@ -1008,7 +1029,7 @@
   <script src="config.js?v=push1"></script>
   <script src="cloud.js?v=emdash1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=seenfix1"></script>
+  <script src="app.js?v=templates1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

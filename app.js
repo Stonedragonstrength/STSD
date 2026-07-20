@@ -159,6 +159,10 @@
           customExercises: state.trainerData.customExercises || [],
           hiddenExercises: state.trainerData.hiddenExercises || [],
           exCatOrder: state.trainerData.exCatOrder || [],
+          // Athlete Templates ride this existing jsonb blob rather than needing
+          // a new Supabase column — no migration to run against live data.
+          athleteTemplates: state.trainerData.athleteTemplates || [],
+          templateFolders: state.trainerData.templateFolders || [],
         });
         if (ok) localStorage.removeItem(KEY_LIBPREFS_DIRTY); // confirmed in the cloud
       });
@@ -1942,11 +1946,20 @@
     }
     // Exercise-library customizations, same dirty-flag protection as templates.
     // Missing keys (older rows, or the column not existing yet) keep local data.
+    const prefs = coach.library_prefs || {};
     if (!opts.keepLocalLibPrefs) {
-      const prefs = coach.library_prefs || {};
       if (Array.isArray(prefs.customExercises)) state.trainerData.customExercises = prefs.customExercises;
       if (Array.isArray(prefs.hiddenExercises)) state.trainerData.hiddenExercises = prefs.hiddenExercises;
       if (Array.isArray(prefs.exCatOrder)) state.trainerData.exCatOrder = prefs.exCatOrder;
+      if (Array.isArray(prefs.athleteTemplates)) state.trainerData.athleteTemplates = prefs.athleteTemplates;
+      if (Array.isArray(prefs.templateFolders)) state.trainerData.templateFolders = prefs.templateFolders;
+    } else {
+      // Unsynced local edits: merge by id like programTemplates, so a template
+      // saved on this device and one saved on another both survive.
+      state.trainerData.athleteTemplates =
+        mergeById(prefs.athleteTemplates, state.trainerData.athleteTemplates);
+      state.trainerData.templateFolders =
+        mergeById(prefs.templateFolders, state.trainerData.templateFolders);
     }
     state.trainerData.openSlots = coach.open_slots || [];
     // Athletes with unsynced local changes keep their local copy — the cloud
@@ -2059,6 +2072,7 @@
       anatomy:         "#view-anatomy",
       settings:        "#view-settings",
       programs:        "#view-programs",
+      templates:       "#view-templates",
       "program-editor": "#view-program-editor",
       "day-library":   "#view-day-library",
       "day-editor":    "#view-day-editor",
@@ -2542,6 +2556,197 @@
   }
   window.addEventListener("resize", () => requestAnimationFrame(fitClientRowNames));
 
+  // -------- Athlete Templates (own space, organised into folders) ----------
+  // Separate from programTemplates on purpose: these are snapshots saved off a
+  // real athlete, and the coach wanted somewhere to file them away long-term
+  // without cluttering the Programs build list. Each template sits in exactly
+  // one folder; folderId "" means Unsorted.
+  function ensureAthleteTemplates() {
+    const d = state.trainerData;
+    if (!Array.isArray(d.athleteTemplates)) d.athleteTemplates = [];
+    if (!Array.isArray(d.templateFolders)) d.templateFolders = [];
+    // A template pointing at a deleted folder falls back to Unsorted rather
+    // than disappearing from every view.
+    const ids = new Set(d.templateFolders.map((f) => f.id));
+    d.athleteTemplates.forEach((t) => { if (t.folderId && !ids.has(t.folderId)) t.folderId = ""; });
+  }
+  // Which folder the Templates view is filtered to. "" = Unsorted, null = All.
+  let _tplFolderFilter = null;
+
+  function tplFolderName(id) {
+    if (!id) return "Unsorted";
+    return (state.trainerData.templateFolders || []).find((f) => f.id === id)?.name || "Unsorted";
+  }
+
+  function renderTemplatesView() {
+    ensureAthleteTemplates();
+    _programEditorId = null;
+    state.currentClientId = null;
+    switchCoachView("templates");
+    updateHeaderBreadcrumb(null);
+    hideLibSidebar();
+    const bar = $("#tpl-folder-bar");
+    const grid = $("#tpl-grid");
+    const empty = $("#tpl-empty");
+    if (!bar || !grid) return;
+    const all = state.trainerData.athleteTemplates;
+    const folders = state.trainerData.templateFolders;
+
+    // ── Folder chips: All, each folder, then Unsorted when anything needs it ──
+    const count = (fid) => all.filter((t) => (t.folderId || "") === fid).length;
+    const chip = (id, label, n, active) =>
+      `<button type="button" class="tpl-folder-chip${active ? " active" : ""}" data-folder="${id === null ? "__all" : escapeHtml(id)}">`
+      + `${escapeHtml(label)}<span class="tpl-folder-count">${n}</span></button>`;
+    let chips = chip(null, "All", all.length, _tplFolderFilter === null);
+    folders.forEach((f) => { chips += chip(f.id, f.name, count(f.id), _tplFolderFilter === f.id); });
+    if (count("") || _tplFolderFilter === "") chips += chip("", "Unsorted", count(""), _tplFolderFilter === "");
+    bar.innerHTML = chips;
+    bar.querySelectorAll("[data-folder]").forEach((b) => b.addEventListener("click", () => {
+      const v = b.dataset.folder;
+      _tplFolderFilter = v === "__all" ? null : v;
+      renderTemplatesView();
+    }));
+
+    grid.innerHTML = "";
+    if (!all.length) { show(empty); hide(grid); return; }
+    hide(empty); show(grid);
+
+    const shown = _tplFolderFilter === null ? all : all.filter((t) => (t.folderId || "") === _tplFolderFilter);
+    if (!shown.length) {
+      grid.innerHTML = `<p class="muted" style="padding:0.6em 0">Nothing in this folder yet.</p>`;
+      return;
+    }
+    const inner = document.createElement("div");
+    inner.className = "coach-row-grid";
+    [...shown].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+      .forEach((t) => inner.appendChild(makeAthleteTemplateCard(t)));
+    grid.appendChild(inner);
+  }
+
+  function makeAthleteTemplateCard(tpl) {
+    const weeks = (tpl.weeks || []).length;
+    const days = (tpl.weeks || []).reduce((n, w) => n + (w.days || []).length, 0);
+    const exs = (tpl.weeks || []).reduce((n, w) => n + (w.days || []).reduce((m, d) => m + (d.exercises || []).length, 0), 0);
+    const row = document.createElement("div");
+    row.className = "coach-row tpl-row";
+    row.innerHTML = `
+      <div class="coach-row-icon">🗂</div>
+      <div class="coach-row-main">
+        <div class="coach-row-name">${escapeHtml(tpl.name || "Untitled")}</div>
+        <div class="coach-row-sub">${weeks} wk · ${days} day${days === 1 ? "" : "s"} · ${exs} ex`
+        + `${tpl.fromAthlete ? ` · from ${escapeHtml(tpl.fromAthlete)}` : ""}</div>
+      </div>
+      <span class="tpl-folder-tag">${escapeHtml(tplFolderName(tpl.folderId))}</span>
+      <div class="coach-row-actions">
+        <button class="btn btn-ghost btn-sm" data-act="move" type="button">Move…</button>
+        <button class="btn btn-primary btn-sm" data-act="assign" type="button">Assign</button>
+        <button class="btn-delete-mini" data-act="del" type="button" title="Delete template">×</button>
+      </div>`;
+    row.querySelector('[data-act="move"]').addEventListener("click", (e) => { e.stopPropagation(); openMoveTemplateModal(tpl); });
+    row.querySelector('[data-act="assign"]').addEventListener("click", (e) => { e.stopPropagation(); assignAthleteTemplate(tpl); });
+    row.querySelector('[data-act="del"]').addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!window.confirm(`Delete "${tpl.name || "this template"}"?`)) return;
+      state.trainerData.athleteTemplates = state.trainerData.athleteTemplates.filter((t) => t.id !== tpl.id);
+      saveTrainer(); renderTemplatesView();
+    });
+    return row;
+  }
+
+  function openNewTemplateFolder() {
+    ensureAthleteTemplates();
+    openModal({
+      title: "New folder",
+      body: `<label>Folder name
+        <input type="text" id="tpl-folder-name" maxlength="40" placeholder="e.g. Hypertrophy, Beginners, Rehab" />
+      </label>`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Create", className: "btn btn-primary", onClick: () => {
+          const name = $("#tpl-folder-name").value.trim();
+          if (!name) { toast("Give the folder a name"); return; }
+          state.trainerData.templateFolders.push({ id: uid(), name });
+          saveTrainer(); closeModal(); renderTemplatesView(); toast(`Folder "${name}" created ✓`);
+        }},
+      ],
+    });
+    setTimeout(() => $("#tpl-folder-name")?.focus(), 60);
+  }
+
+  // Move / rename / delete folders all live here — one place the coach can
+  // reorganise from, rather than scattering folder controls around the grid.
+  function openMoveTemplateModal(tpl) {
+    ensureAthleteTemplates();
+    const folders = state.trainerData.templateFolders;
+    const opt = (id, label) =>
+      `<option value="${escapeHtml(id)}"${(tpl.folderId || "") === id ? " selected" : ""}>${escapeHtml(label)}</option>`;
+    openModal({
+      title: `Move "${tpl.name || "template"}"`,
+      body: `<label>Folder
+          <select id="tpl-move-folder" class="msg-select">
+            ${opt("", "Unsorted")}${folders.map((f) => opt(f.id, f.name)).join("")}
+          </select>
+        </label>
+        <label>Rename template
+          <input type="text" id="tpl-move-name" maxlength="80" value="${escapeHtml(tpl.name || "")}" />
+        </label>`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Save", className: "btn btn-primary", onClick: () => {
+          tpl.folderId = $("#tpl-move-folder").value;
+          const nm = $("#tpl-move-name").value.trim();
+          if (nm) tpl.name = nm;
+          saveTrainer(); closeModal(); renderTemplatesView(); toast("Saved ✓");
+        }},
+      ],
+    });
+  }
+
+  // Same copy semantics as assigning a program template: fresh ids, and no
+  // live link — these are snapshots, not subscriptions.
+  function assignAthleteTemplate(tpl) {
+    const clients = state.trainerData.clients || [];
+    if (!clients.length) { toast("Add an athlete first"); return; }
+    let selectedId = null;
+    const cards = clients.map((c) => `<div class="assign-athlete-card" data-cid="${escapeHtml(c.id)}">
+        <div class="assign-athlete-name">${escapeHtml(c.name)}</div>
+        <div class="assign-athlete-sub">${(c.weeks || []).length ? `${c.weeks.length} week${c.weeks.length === 1 ? "" : "s"} currently` : "No program yet"}</div>
+      </div>`).join("");
+    const doAssign = () => {
+      const c = clients.find((x) => x.id === selectedId);
+      if (!c) { toast("Select an athlete first"); return; }
+      c.weeks = JSON.parse(JSON.stringify(tpl.weeks || [])).map((w) => ({
+        ...w, id: uid(),
+        days: (w.days || []).map((d) => ({
+          ...d, id: uid(),
+          exercises: (d.exercises || []).map((e) => ({ ...e, id: uid() })),
+        })),
+      }));
+      delete c.assignedProgramId; // snapshot, never a live link
+      delete c.tplShape;
+      state.currentClientId = c.id;
+      saveTrainer();
+      pushAthlete(c);
+      closeModal();
+      toast(`"${tpl.name || "Template"}" loaded onto ${c.name} ✓`);
+    };
+    openModal({
+      title: `Assign "${tpl.name || "Template"}"`,
+      body: `<p class="muted" style="margin-bottom:0.75em">Pick an athlete. This replaces their current program.</p>
+             <div class="assign-athlete-grid">${cards}</div>`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Assign →", className: "btn btn-primary", onClick: doAssign },
+      ],
+    });
+    $("#modal-body").querySelectorAll(".assign-athlete-card").forEach((card) => {
+      card.addEventListener("click", () => {
+        selectedId = card.dataset.cid;
+        $("#modal-body").querySelectorAll(".assign-athlete-card").forEach((c) => c.classList.toggle("selected", c === card));
+      });
+    });
+  }
+
   // -------- Program Templates --------
   function ensureProgramTemplates() {
     if (!Array.isArray(state.trainerData.programTemplates)) {
@@ -2796,20 +3001,20 @@
   function saveClientProgramToLibrary() {
     const c = currentClient(); if (!c) return;
     if (!c.weeks || !c.weeks.length) { toast("This athlete has no program to save"); return; }
-    ensureProgramTemplates();
+    ensureAthleteTemplates();
     const weekCount = c.weeks.length;
     const exCount = c.weeks.reduce((n, w) => n + (w.days || []).reduce((m, d) => m + (d.exercises || []).length, 0), 0);
     const first = (c.name || "").trim().split(/\s+/)[0] || "Athlete";
     const suggested = `${first}'s Program`;
+    const folders = state.trainerData.templateFolders;
     const save = () => {
       const name = $("#lib-save-name").value.trim() || suggested;
       const tpl = {
         id: uid(),
         name,
         description: $("#lib-save-desc").value.trim(),
-        // Saved from a program already in use, so it lands ready to assign
-        // rather than in the in-progress pile.
-        status: "ready",
+        folderId: $("#lib-save-folder")?.value || "",
+        fromAthlete: c.name || "",
         weeks: JSON.parse(JSON.stringify(c.weeks)).map((w) => ({
           ...w, id: uid(),
           days: (w.days || []).map((d) => ({
@@ -2819,19 +3024,25 @@
         })),
         createdAt: Date.now(),
       };
-      state.trainerData.programTemplates.push(tpl);
+      state.trainerData.athleteTemplates.push(tpl);
       saveTrainer();
       closeModal();
-      toast(`"${name}" saved to your library ✓`);
+      toast(`"${name}" saved to Templates ✓`);
     };
     openModal({
-      title: "Save to Library",
+      title: "Save to Templates",
       body: `
         <p class="muted" style="margin-top:0">Saves a copy of ${escapeHtml(c.name || "this athlete")}'s program
         (${weekCount} week${weekCount === 1 ? "" : "s"} · ${exCount} exercise${exCount === 1 ? "" : "s"})
-        to your Program Library so you can assign it to anyone.</p>
-        <label>Program name
+        into <strong>Templates</strong>, where you can file it in a folder and reuse it on anyone.</p>
+        <label>Template name
           <input type="text" id="lib-save-name" maxlength="80" placeholder="${escapeHtml(suggested)}" value="${escapeHtml(suggested)}" />
+        </label>
+        <label>Folder
+          <select id="lib-save-folder" class="msg-select">
+            <option value="">Unsorted</option>
+            ${folders.map((f) => `<option value="${escapeHtml(f.id)}">${escapeHtml(f.name)}</option>`).join("")}
+          </select>
         </label>
         <label>Description (optional)
           <input type="text" id="lib-save-desc" maxlength="120" placeholder="e.g. 8-week hypertrophy block" />
@@ -2839,7 +3050,7 @@
         <p class="muted" style="font-size:0.78rem">This is an independent copy — editing it later won't change ${escapeHtml(c.name || "this athlete")}'s current program.</p>`,
       actions: [
         { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
-        { label: "Save to Library", className: "btn btn-primary", onClick: save },
+        { label: "Save to Templates", className: "btn btn-primary", onClick: save },
       ],
     });
     setTimeout(() => $("#lib-save-name")?.select(), 60);
@@ -13081,6 +13292,8 @@
           _programEditorId = null;
           state.currentClientId = null;
           renderProgramsList();
+        } else if (target === "templates") {
+          renderTemplatesView();
         } else if (target === "overview") {
           showCoachOverview();
         } else if (target === "messages") {
@@ -13195,6 +13408,7 @@
     $("#btn-load-program-empty").addEventListener("click", openLoadProgramModal);
     $("#btn-archive-program").addEventListener("click", archiveCurrentProgram);
     $("#btn-save-program-to-library")?.addEventListener("click", saveClientProgramToLibrary);
+    $("#btn-new-tpl-folder")?.addEventListener("click", openNewTemplateFolder);
     $("#btn-export-data")?.addEventListener("click", exportAllData);
     $("#btn-import-data")?.addEventListener("click", () => $("#import-data-input")?.click());
     $("#import-data-input")?.addEventListener("change", (e) => {
