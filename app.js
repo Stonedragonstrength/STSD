@@ -10,6 +10,7 @@
   // to the cloud. Guards boot from overwriting unsynced local work with a stale
   // cloud copy (the cause of "my in-progress program disappeared").
   const KEY_TEMPLATES_DIRTY = "trainerpro_templates_dirty_v1";
+  const KEY_ATHLETES_DIRTY = "trainerpro_athletes_dirty_v1";
   // Same guard for the coach's exercise-library customizations (custom
   // exercises, hidden list, category order) — synced as one blob.
   const KEY_LIBPREFS_DIRTY = "trainerpro_libprefs_dirty_v1";
@@ -90,6 +91,40 @@
       return structuredClone(fallback);
     }
   }
+  // ── Unsynced-athlete protection ──
+  // Every coach boot refreshes athletes from the cloud and replaces the local
+  // list. Cloud writes fail silently by design (offline always works), so a
+  // push that never landed used to be reverted on the next open with no
+  // warning — a program assigned on flaky signal would simply vanish.
+  // Templates already had this guard via KEY_TEMPLATES_DIRTY; athletes didn't.
+  // An athlete stays marked dirty until the cloud confirms the write, and a
+  // dirty athlete's local copy survives the refresh. See populateCoachFromCloud.
+  function dirtyAthletes() {
+    try { return JSON.parse(localStorage.getItem(KEY_ATHLETES_DIRTY)) || {}; }
+    catch { return {}; }
+  }
+  function markAthleteDirty(id) {
+    if (!id) return;
+    const d = dirtyAthletes();
+    if (d[id]) return;
+    d[id] = true;
+    localStorage.setItem(KEY_ATHLETES_DIRTY, JSON.stringify(d));
+  }
+  function clearAthleteDirty(id) {
+    const d = dirtyAthletes();
+    if (!d[id]) return;
+    delete d[id];
+    localStorage.setItem(KEY_ATHLETES_DIRTY, JSON.stringify(d));
+  }
+  function pushAthlete(c) {
+    if (!window.Cloud?.enabled || !c) return;
+    markAthleteDirty(c.id);
+    window.Cloud.debounce(`athlete:${c.id}`, async () => {
+      const ok = await window.Cloud.upsertAthlete(c, state.trainerData.coachId);
+      if (ok) clearAthleteDirty(c.id); // confirmed in the cloud
+    });
+  }
+
   function saveTrainer() {
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
     // Editing a program template live-syncs every athlete it's assigned to.
@@ -97,21 +132,22 @@
     // Cloud: debounced push of the client we're currently editing.
     if (window.Cloud?.enabled && state.currentClientId) {
       const c = state.trainerData.clients.find((x) => x.id === state.currentClientId);
-      if (c) window.Cloud.debounce(`athlete:${c.id}`, () =>
-        window.Cloud.upsertAthlete(c, state.trainerData.coachId)
-      );
+      if (c) pushAthlete(c);
     }
     // Cloud: debounced push of the coach's program/workout template library,
     // so templates created on one device show up on every other device.
     if (window.Cloud?.enabled && state.trainerData.coachId) {
       localStorage.setItem(KEY_TEMPLATES_DIRTY, "1");
       window.Cloud.debounce(`coach-templates:${state.trainerData.coachId}`, async () => {
-        await window.Cloud.updateCoachTemplates(
+        const ok = await window.Cloud.updateCoachTemplates(
           state.trainerData.coachId,
           state.trainerData.programTemplates,
           state.trainerData.workoutTemplates
         );
-        localStorage.removeItem(KEY_TEMPLATES_DIRTY); // confirmed in the cloud
+        // Only on success. This used to clear unconditionally, so a failed push
+        // was recorded as synced and the next boot overwrote the local
+        // templates from the cloud — losing the program outright.
+        if (ok) localStorage.removeItem(KEY_TEMPLATES_DIRTY);
       });
     }
     // Cloud: debounced push of the coach's exercise-library customizations
@@ -1842,16 +1878,39 @@
     }
   }
 
+  // Union two lists of {id,...} — cloud entries first so their order is kept,
+  // local entries winning for shared ids (they hold the unsynced edit), and
+  // local-only entries appended so a template created here but not yet pushed
+  // survives the refresh.
+  function mergeById(cloudList, localList) {
+    const local = Array.isArray(localList) ? localList : [];
+    const cloud = Array.isArray(cloudList) ? cloudList : [];
+    const byId = new Map(local.map((t) => [t.id, t]));
+    const out = cloud.map((t) => byId.get(t.id) || t);
+    const seen = new Set(cloud.map((t) => t.id));
+    local.forEach((t) => { if (!seen.has(t.id)) out.push(t); });
+    return out;
+  }
+
   function populateCoachFromCloud(coach, athletes, opts = {}) {
     state.trainerData.trainer = { name: coach.display_name || "", email: coach.email || "" };
     state.trainerData.coachId = coach.id;
     state.trainerData.coachAuthId = coach.auth_user_id;
-    // Keep locally-edited-but-unsynced templates instead of clobbering them with a
-    // possibly-stale cloud copy. The caller (boot) sets this when the dirty flag
-    // is present; the local work is re-pushed by the saveTrainer() below.
+    // Templates are stored as one array per coach, so neither "cloud wins" nor
+    // "local wins" is safe: whichever side loses drops whatever the *other*
+    // device created. With unsynced local work present we MERGE by id — the
+    // cloud list is the base (so programs made on another device arrive here),
+    // local versions win for ids we hold unsynced edits to, and local-only
+    // templates are appended. Previously this kept the local array wholesale
+    // and re-pushed it, wiping other devices' programs from the cloud.
     if (!opts.keepLocalTemplates) {
       state.trainerData.programTemplates = coach.program_templates || [];
       state.trainerData.workoutTemplates = coach.workout_templates || [];
+    } else {
+      state.trainerData.programTemplates =
+        mergeById(coach.program_templates, state.trainerData.programTemplates);
+      state.trainerData.workoutTemplates =
+        mergeById(coach.workout_templates, state.trainerData.workoutTemplates);
     }
     // Exercise-library customizations, same dirty-flag protection as templates.
     // Missing keys (older rows, or the column not existing yet) keep local data.
@@ -1862,7 +1921,17 @@
       if (Array.isArray(prefs.exCatOrder)) state.trainerData.exCatOrder = prefs.exCatOrder;
     }
     state.trainerData.openSlots = coach.open_slots || [];
-    state.trainerData.clients = (athletes || []).map((a) => {
+    // Athletes with unsynced local changes keep their local copy — the cloud
+    // row may predate a write that never landed. Same protection templates get.
+    const dirty = dirtyAthletes();
+    const localById = new Map((state.trainerData.clients || []).map((c) => [c.id, c]));
+    const merged = (athletes || []).map((a) => (dirty[a.id] && localById.get(a.id)) || a);
+    // An athlete created locally that the cloud hasn't got yet isn't in the
+    // incoming list at all, so it would otherwise disappear entirely.
+    localById.forEach((c, id) => {
+      if (dirty[id] && !merged.some((a) => a.id === id)) merged.push(c);
+    });
+    state.trainerData.clients = merged.map((a) => {
       if (!a.schedule) a.schedule = {};
       if (!a.coachPRs) a.coachPRs = [];
       ensureSessionBank(a);
@@ -2699,7 +2768,7 @@
             // cloud (and their device).
             state.currentClientId = client.id;
             saveTrainer();
-            if (window.Cloud?.enabled) window.Cloud.upsertAthlete(client, state.trainerData.coachId);
+            pushAthlete(client); // tracked: stays dirty until the cloud confirms
             closeModal();
             toast(archiveFirst
               ? `Archived old program & assigned "${tpl.name || "Program"}" to ${client.name} ✓`
@@ -2811,7 +2880,7 @@
           delete c.assignedProgramId;
           delete c.tplShape;
           saveTrainer();
-          if (window.Cloud?.enabled) window.Cloud.upsertAthlete(c, state.trainerData.coachId);
+          pushAthlete(c); // tracked: stays dirty until the cloud confirms
           closeModal();
           renderWeeks(); renderDiet(); renderCoachCalendar();
           toast(archiveFirst
@@ -13138,6 +13207,12 @@
               if (fresh) populateCoachFromCloud(fresh.coach, fresh.athletes, { keepLocalTemplates: templatesDirty, keepLocalLibPrefs: libPrefsDirty });
             } catch (e) { console.warn("[Boot] Coach refresh failed, using cached data", e); }
             if (templatesDirty || libPrefsDirty) saveTrainer(); // reconcile unsynced local work up to the cloud
+            // Retry athlete writes that never reached the cloud, so they stop
+            // being at risk of the next refresh reverting them.
+            Object.keys(dirtyAthletes()).forEach((id) => {
+              const c = state.trainerData.clients.find((x) => x.id === id);
+              if (c) pushAthlete(c);
+            });
             signIntoTrainer(); return;
           }
           if (state.clientData.program && state.clientData.profile?.email === session.user.email) {
