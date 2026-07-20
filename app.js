@@ -8513,10 +8513,20 @@
   }
 
   // Prune keys that have aged out of the window so the map can't grow forever.
-  function pruneSeenActivity(seen, live) {
+  // Prune by DATE, never by "is it in the list right now".
+  //
+  // This used to drop any seen key missing from the currently-loaded items,
+  // which made already-read activity reappear: renderOverviewActivity runs at
+  // coach entry BEFORE refreshAllAthletePackages has pulled each athlete's
+  // importedProgress, so on that first pass the list is short, the prune wiped
+  // those marks, and when the cloud data landed the same items rendered as new.
+  // Keys are "<clientId>:<dayId>:<YYYY-MM-DD>" and uid() never emits a colon,
+  // so the date is whatever follows the last one.
+  function pruneSeenActivity(seen, cutoffISO) {
     let changed = false;
     Object.keys(seen).forEach((k) => {
-      if (!live.has(k)) { delete seen[k]; changed = true; }
+      const date = k.slice(k.lastIndexOf(":") + 1);
+      if (date < cutoffISO) { delete seen[k]; changed = true; }
     });
     return changed;
   }
@@ -8540,7 +8550,6 @@
     if (!host) return;
     host.innerHTML = "";
     const items = activityFeedItems();
-    const live = new Set(items.map((it) => it.key));
 
     // First run on this device: adopt everything as already-seen so upgrading
     // doesn't greet the coach with two weeks of back-dated "new" activity.
@@ -8550,7 +8559,7 @@
       return;
     }
     const seen = state.trainerData.seenActivity;
-    if (pruneSeenActivity(seen, live)) saveSeenActivity();
+    if (pruneSeenActivity(seen, addDaysISO(todayISO(), -ACTIVITY_WINDOW_DAYS))) saveSeenActivity();
 
     const fresh = items.filter((it) => !seen[it.key]);
     if (!fresh.length) return;
