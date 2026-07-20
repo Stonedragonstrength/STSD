@@ -5680,7 +5680,8 @@ input:focus, textarea:focus, select:focus {
    lightens it toward beige and the PYRAMID chip starts to disappear.
    baseFrequency 0.6 gives coarse particles that read as sand at normal
    distance. background-image (not the `background` shorthand) so the row's own
-   surface color still shows through. Data URI — no request, CSP-safe. */
+   surface color still shows through. Data URI — no request, CSP-safe.
+
    Three layers, top to bottom: sand grain, a dune field, the warm wash.
    Each dune is a long gentle windward rise (cubic) up to a sharp crest, then a
    short steep slip face (straight L) — that asymmetry is what reads as a dune
