@@ -1335,8 +1335,11 @@ input[type="date"] { color-scheme: dark; }
   touch-action: none;
 }
 .ex-drag-handle:active { cursor: grabbing; }
-.ex-move-btn { display: none; } /* shown in place of the drag handle on mobile — see mobile ex-row rules */
-/* To-top / to-bottom jumps show everywhere — drag is painful across a long day */
+/* Reorder arrows (⤒ ▲ ▼ ⤓) are touch-only: on desktop the rows are drag-and-
+   drop, so the whole group is hidden. The coarse-pointer block below turns it
+   into a vertical rail on the right edge of the row. */
+.ex-move-group { display: none; }
+.ex-move-btn { display: none; }
 .ex-move-edge-btn { display: inline-flex; }
 .exercise-card.dragging { opacity: 0.35; }
 .exercise-card.drag-above { border-top: 2px solid var(--primary) !important; }
@@ -2330,6 +2333,9 @@ input[type="date"] { color-scheme: dark; }
 }
 .ovmsg-head { display: flex; align-items: center; gap: 0.4rem; font-weight: 700; font-size: 0.9rem; color: var(--text); }
 .ovmsg-icon { font-size: 1.05rem; }
+/* The 📌 renders visually larger than the 📣 at the same font-size — scope it
+   down here so the messages card keeps its sizing. */
+.ovmsg-bulletin .ovmsg-icon { font-size: 0.85rem; }
 .ovmsg-item { border-top: 1px solid var(--border); padding-top: 0.55rem; }
 .ovmsg-item:first-of-type { border-top: none; padding-top: 0; }
 .ovmsg-text { color: var(--text); font-size: 0.92rem; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
@@ -2482,6 +2488,35 @@ input[type="date"] { color-scheme: dark; }
   font-weight: 800;
   vertical-align: middle;
 }
+
+/* "New activity" feed — same shape as the requests inbox, green rail so it
+   reads as news rather than a to-do. Empty container renders nothing. */
+.overview-activity:empty { display: none; }
+.overview-activity { margin-bottom: 1.25rem; }
+.overview-activity-card { border-left: 3px solid var(--accent); }
+.overview-activity-card .overview-req-count { background: var(--accent); color: #04211a; }
+.activity-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.45rem 0.2rem;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.activity-row:hover { background: var(--surface-2); }
+.activity-name { font-weight: 700; color: var(--text); font-size: 0.88rem; flex-shrink: 0; }
+.activity-day {
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.activity-when { color: var(--muted); font-size: 0.72rem; flex-shrink: 0; }
+.activity-more { font-size: 0.75rem; margin: 0.5em 0 0; }
 .bulletin-item {
   display: flex;
   align-items: flex-start;
@@ -5008,17 +5043,6 @@ input:focus, textarea:focus, select:focus {
   color: var(--text-soft);
   font-size: 0.85rem;
 }
-.picker-logged {
-  color: var(--text-soft);
-  font-size: 0.85rem;
-  white-space: nowrap;
-  padding-top: 0.2em;
-}
-.picker-logged strong {
-  color: var(--primary-bright);
-  font-weight: 800;
-}
-
 /* ---- Week chip selector ---- */
 /* One segmented bar instead of separate floating pills. */
 .week-chips {
@@ -5089,18 +5113,36 @@ input:focus, textarea:focus, select:focus {
   align-items: center;
   gap: 0.9rem;
   text-align: left;
-  background: var(--surface);
+  /* Three stacked layers: a day-tinted wash bleeding in from the left edge, a
+     faint top sheen, then a vertical surface gradient. The day color is set
+     inline per card, so every day reads as its own hue without extra classes. */
+  background:
+    radial-gradient(120% 150% at 0% 0%, var(--day-color-soft, transparent) 0%, transparent 55%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, transparent 38%),
+    linear-gradient(158deg, var(--surface-2) 0%, var(--surface) 62%);
   border: 1px solid var(--border);
-  border-left: 4px solid var(--day-color, var(--border));
-  border-radius: 14px;
-  padding: 0.95rem 1rem;
+  border-radius: 16px;
+  padding: 1rem 1rem 1rem 1.2rem;
   cursor: pointer;
   font-family: inherit;
   color: var(--text);
   transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1),
               border-color 0.15s, box-shadow 0.2s, background 0.15s;
   overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), var(--shadow-sm);
   animation: workoutCardIn 0.45s cubic-bezier(0.22, 0.85, 0.34, 1) both;
+}
+/* The flat 4px border-left is now a gradient rail that fades down the card. */
+.workout-card::after {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg,
+    var(--day-color, var(--border-strong)) 0%,
+    var(--day-color, var(--border-strong)) 35%,
+    rgba(var(--primary-bright-rgb), 0.1) 100%);
+  pointer-events: none;
 }
 @keyframes workoutCardIn {
   0%   { opacity: 0; transform: translateY(12px) scale(0.96); }
@@ -5118,35 +5160,38 @@ input:focus, textarea:focus, select:focus {
 .workout-card:hover {
   transform: translateY(-3px);
   border-color: var(--primary);
-  box-shadow: 0 16px 30px rgba(var(--primary-rgb), 0.22), 0 0 0 1px rgba(var(--primary-bright-rgb), 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08),
+              0 16px 30px rgba(var(--primary-rgb), 0.22),
+              0 0 0 1px rgba(var(--primary-bright-rgb), 0.35);
 }
 .workout-card:hover::before { transform: translateX(120%); }
 .workout-card:active { transform: translateY(-1px) scale(0.98); }
+/* In-progress and complete restate the rail + wash in their own color. */
 .workout-card.is-partial {
   border-color: rgba(var(--primary-bright-rgb), 0.4);
+  background:
+    radial-gradient(120% 150% at 0% 0%, rgba(var(--primary-bright-rgb), 0.16) 0%, transparent 55%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, transparent 38%),
+    linear-gradient(158deg, var(--surface-2) 0%, var(--surface) 62%);
 }
 .workout-card.is-partial::after {
-  content: "";
-  position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 3px;
-  background: var(--primary-bright);
+  background: linear-gradient(180deg, var(--primary-bright) 0%, rgba(var(--primary-bright-rgb), 0.25) 100%);
   box-shadow: 0 0 12px var(--primary-bright);
 }
 .workout-card.is-done {
-  border-color: var(--accent);
-  background: linear-gradient(135deg, var(--accent-soft) 0%, var(--surface) 70%);
+  border-color: rgba(16, 185, 129, 0.55);
+  background:
+    radial-gradient(120% 150% at 0% 0%, var(--accent-soft) 0%, transparent 58%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, transparent 38%),
+    linear-gradient(158deg, var(--surface-2) 0%, var(--surface) 62%);
 }
 .workout-card.is-done::after {
-  content: "";
-  position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 3px;
-  background: var(--accent);
+  background: linear-gradient(180deg, var(--accent) 0%, rgba(16, 185, 129, 0.25) 100%);
   box-shadow: 0 0 14px var(--accent);
 }
-/* Unboxed branded line icon, tinted the day's color (no filled tile). */
+/* Unboxed branded line icon on a soft day-colored halo (no hard filled tile). */
 .workout-card-icon {
+  position: relative;
   font-size: 2.1rem;
   width: 44px;
   height: 44px;
@@ -5156,6 +5201,14 @@ input:focus, textarea:focus, select:focus {
   color: var(--day-color, var(--text-soft));
   flex-shrink: 0;
   transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.workout-card-icon::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--day-color-soft, transparent) 0%, transparent 70%);
+  z-index: -1;
 }
 .workout-card:hover .workout-card-icon { transform: scale(1.1); }
 .workout-card-body { flex: 1; min-width: 0; }
@@ -7036,6 +7089,28 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   /* Reorder: tap ▲/▼, not drag. */
   .ex-drag-handle { display: none; }
   .ex-move-btn { display: inline-flex; }
+  /* The four arrows form a 2x2 pad pinned to the row's right edge — a single
+     vertical stack would push every row past 110px tall. DOM order lands the
+     upward jumps (⤒ ▲) on the top row and the downward ones (▼ ⤓) below.
+     The row reserves padding-right so the pad never sits on the ✕/✎ buttons. */
+  .ex-row { position: relative; padding-right: 62px; }
+  .ex-move-group {
+    display: grid;
+    grid-template-columns: repeat(2, auto);
+    gap: 1px;
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  /* Compact overrides the 32px .btn-icon-mini touch target below — four of
+     those would make the pad oversized. Still a 28px target. */
+  .ex-move-group .btn-icon-mini {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 0;
+    font-size: 0.8rem;
+  }
   /* "Drag exercises here" hints are dead weight on touch. */
   .ex-list-empty-drop,
   .ex-list-drop-hint { display: none; }
@@ -7715,6 +7790,36 @@ body.live-log-mode #screen-client .header-right { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .client-row, .client-row:hover { transform: none; }
+}
+
+/* Per-athlete color: a soft wash from the avatar corner plus a gradient left
+   rail, so a long roster is scannable at a glance. --athlete-rgb is set inline
+   per card from the athlete's id hash; the fallback keeps the neutral look if
+   it's ever missing. Must sit after the block above, which sets .client-row's
+   background and would otherwise wipe the wash. */
+.client-row {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 160% at 0% 0%, rgba(var(--athlete-rgb, 148, 163, 184), 0.16) 0%, transparent 58%),
+    linear-gradient(180deg, var(--surface-2), var(--surface) 62%);
+}
+.client-row::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg,
+    rgb(var(--athlete-rgb, 148, 163, 184)) 0%,
+    rgba(var(--athlete-rgb, 148, 163, 184), 0.15) 100%);
+  pointer-events: none;
+}
+.client-row:hover {
+  background:
+    radial-gradient(120% 160% at 0% 0%, rgba(var(--athlete-rgb, 148, 163, 184), 0.26) 0%, transparent 60%),
+    linear-gradient(180deg, var(--surface-3), var(--surface-2) 70%);
+  border-color: rgba(var(--athlete-rgb, 148, 163, 184), 0.55);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(var(--athlete-rgb, 148, 163, 184), 0.18);
 }
 
 /* -------- 2 · Hairlines that fade instead of rules that slice ------------ */

@@ -1866,6 +1866,7 @@
     refreshCoachOpenSlots();
     renderBulletinBoard();
     renderOverviewRequests();
+    renderOverviewActivity();
   }
 
   function signIntoTrainer() {
@@ -1950,9 +1951,21 @@
   }
 
   const AVATAR_COLORS = ["#06b6d4","#10b981","#8b5cf6","#f59e0b","#ef4444","#ec4899","#3b82f6","#f97316"];
+  // Same eight hues as "r, g, b" so they can drive rgba() gradients/rails.
+  const AVATAR_RGB = ["6, 182, 212","16, 185, 129","139, 92, 246","245, 158, 11","239, 68, 68","236, 72, 153","59, 130, 246","249, 115, 22"];
   function avatarColor(name) {
     const code = (name || "?").toUpperCase().charCodeAt(0);
     return AVATAR_COLORS[code % AVATAR_COLORS.length];
+  }
+  // Per-athlete accent index. Hashes the whole id (falling back to the name)
+  // rather than avatarColor's first-letter-only rule, so a roster of Jake /
+  // Jenna / Jordan doesn't come out three identical colors. Keyed on the id so
+  // an athlete keeps their color through a rename.
+  function athleteColorIdx(c) {
+    const key = String(c?.id || c?.name || "?");
+    let h = 5381;
+    for (let i = 0; i < key.length; i++) h = ((h << 5) + h + key.charCodeAt(i)) | 0;
+    return Math.abs(h) % AVATAR_COLORS.length;
   }
   function clientInitials(name) {
     return (name || "?").split(" ").map(p => p[0] || "").join("").slice(0, 2).toUpperCase();
@@ -2160,10 +2173,14 @@
       // Compact horizontal row: avatar · name+details · progress.
       const card = document.createElement("div");
       card.className = "client-row";
+      // Per-athlete accent — drives the card's gradient wash and left rail as
+      // well as the avatar, so the two always agree. See .client-row in styles.css.
+      const colorIdx = athleteColorIdx(c);
+      card.style.setProperty("--athlete-rgb", AVATAR_RGB[colorIdx]);
 
       const avatar = document.createElement("div");
       avatar.className = "client-avatar";
-      avatar.style.background = avatarColor(c.name);
+      avatar.style.background = AVATAR_COLORS[colorIdx];
       avatar.textContent = nameInitials(c.name);
 
       const main = document.createElement("div");
@@ -5630,11 +5647,15 @@
       metricsGroup.appendChild(x1); metricsGroup.appendChild(crBtn);
     }
 
+    // All four reorder arrows travel together: hidden entirely on desktop
+    // (drag-and-drop covers it there) and stacked into a rail on touch, where
+    // HTML5 drag doesn't fire. Appended at the end of the row so the rail sits
+    // on the right — see .ex-move-group in styles.css.
+    const moveGroup = document.createElement("div");
+    moveGroup.className = "ex-move-group";
+    moveGroup.append(moveTopBtn, moveUpBtn, moveDownBtn, moveBottomBtn);
+
     row.appendChild(handle);
-    row.appendChild(moveTopBtn);
-    row.appendChild(moveUpBtn);
-    row.appendChild(moveDownBtn);
-    row.appendChild(moveBottomBtn);
     // Effort/heat stays pinned on the left; tag chips render after it so adding
     // tags never shifts the effort button around. Intensity doesn't apply to
     // mobility/stretching holds.
@@ -5650,6 +5671,7 @@
     if (!isMob) row.appendChild(finisherBtn);
     if (isMob) row.appendChild(placeBtn); // warm-up ↔ finisher placement
     row.appendChild(expandBtn); row.appendChild(saveBtn); row.appendChild(editBtn); row.appendChild(ssBtn); row.appendChild(delBtn);
+    row.appendChild(moveGroup);
 
     // Detail panel (notes + video), hidden by default
     const detail = document.createElement("div");
@@ -6698,7 +6720,7 @@
           <span class="cardio-row-icon">${cardioIcon(log.type)}</span>
           <div class="cardio-row-info">
             <strong>${escapeHtml(log.type || "Cardio")}</strong>
-            <span class="muted">${escapeHtml(log.date || "")}</span>
+            <span class="muted">${escapeHtml(log.date || "")}${log.miles ? ` · ${escapeHtml(String(log.miles))} mi` : ""}</span>
           </div>
           <span class="cardio-min">${escapeHtml(String(log.minutes || 0))} min</span>
           <span class="cardio-intensity cardio-intensity-${escapeHtml((log.intensity || "moderate").toLowerCase())}">${escapeHtml(log.intensity || "Moderate")}</span>`;
@@ -8095,6 +8117,112 @@
     host.appendChild(card);
   }
 
+  // -------- "Since you were last here" activity feed (coach Overview) --------
+  // dayCompletions only records a DATE (no clock time), so "new" can't be a
+  // timestamp comparison. Instead each completion has a stable key —
+  // clientId:dayId:date — and the coach's device remembers which keys it has
+  // already shown, the same way the athlete side tracks seenMessages.
+  const ACTIVITY_WINDOW_DAYS = 14;
+  const ACTIVITY_MAX_ROWS = 8;
+
+  function activityFeedItems() {
+    const cutoff = addDaysISO(todayISO(), -ACTIVITY_WINDOW_DAYS);
+    const out = [];
+    (state.trainerData.clients || []).forEach((c) => {
+      const dc = c.importedProgress?.dayCompletions || {};
+      // dayId → day name, so a completion reads as "Push Day" not an opaque id.
+      const dayNames = {};
+      (c.weeks || []).forEach((w) => (w.days || []).forEach((d) => { dayNames[d.id] = d.name; }));
+      Object.entries(dc).forEach(([dayId, dates]) => {
+        (Array.isArray(dates) ? dates : []).forEach((date) => {
+          if (!date || date < cutoff) return;
+          out.push({
+            key: `${c.id}:${dayId}:${date}`,
+            clientId: c.id,
+            name: c.name,
+            // Days from an archived program are no longer in c.weeks.
+            dayName: dayNames[dayId] || "a workout",
+            date,
+          });
+        });
+      });
+    });
+    out.sort((a, b) => b.date.localeCompare(a.date) || a.name.localeCompare(b.name));
+    return out;
+  }
+
+  function saveSeenActivity() {
+    // Coach-device-local UI state — straight to localStorage, no cloud push.
+    localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+  }
+
+  // Prune keys that have aged out of the window so the map can't grow forever.
+  function pruneSeenActivity(seen, live) {
+    let changed = false;
+    Object.keys(seen).forEach((k) => {
+      if (!live.has(k)) { delete seen[k]; changed = true; }
+    });
+    return changed;
+  }
+
+  function markActivitySeen(items) {
+    const seen = state.trainerData.seenActivity || (state.trainerData.seenActivity = {});
+    items.forEach((it) => { seen[it.key] = true; });
+    saveSeenActivity();
+  }
+
+  function activityWhen(date) {
+    const days = Math.round((new Date(todayISO() + "T12:00:00") - new Date(date + "T12:00:00")) / 86400000);
+    if (days <= 0) return "today";
+    if (days === 1) return "yesterday";
+    if (days < 7) return `${days} days ago`;
+    return new Date(date + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  function renderOverviewActivity() {
+    const host = $("#overview-activity");
+    if (!host) return;
+    host.innerHTML = "";
+    const items = activityFeedItems();
+    const live = new Set(items.map((it) => it.key));
+
+    // First run on this device: adopt everything as already-seen so upgrading
+    // doesn't greet the coach with two weeks of back-dated "new" activity.
+    if (!state.trainerData.seenActivity) {
+      state.trainerData.seenActivity = {};
+      markActivitySeen(items);
+      return;
+    }
+    const seen = state.trainerData.seenActivity;
+    if (pruneSeenActivity(seen, live)) saveSeenActivity();
+
+    const fresh = items.filter((it) => !seen[it.key]);
+    if (!fresh.length) return;
+
+    const card = document.createElement("div");
+    card.className = "card overview-activity-card";
+    const shown = fresh.slice(0, ACTIVITY_MAX_ROWS);
+    card.innerHTML = `<div class="program-head">
+        <h3 style="margin:0">🏋️ New activity <span class="overview-req-count">${fresh.length}</span></h3>
+        <button class="btn btn-ghost btn-sm" id="btn-activity-seen" type="button">Mark all read</button>
+      </div>
+      ${shown.map((it) => `<div class="activity-row" data-client="${escapeHtml(it.clientId)}">
+        <span class="activity-name">${escapeHtml(it.name)}</span>
+        <span class="activity-day">${escapeHtml(it.dayName)}</span>
+        <span class="activity-when">${escapeHtml(activityWhen(it.date))}</span>
+      </div>`).join("")}
+      ${fresh.length > shown.length ? `<p class="muted activity-more">+${fresh.length - shown.length} more</p>` : ""}`;
+
+    card.querySelectorAll(".activity-row").forEach((row) => {
+      row.addEventListener("click", () => openClient(row.dataset.client));
+    });
+    card.querySelector("#btn-activity-seen").addEventListener("click", () => {
+      markActivitySeen(fresh);
+      renderOverviewActivity();
+    });
+    host.appendChild(card);
+  }
+
   // -------- Packages tracker (all athletes) --------
   // A request is open until a package row references its id (approve = paid
   // row, decline = cancelled placeholder).
@@ -8125,8 +8253,13 @@
       _packagesRefreshing = false;
     }
     // Update the athlete-card chips / Overview inbox if either is on screen.
+    // This pull is also what brings in fresh dayCompletions, so the activity
+    // feed re-runs here — that's where "someone logged a workout" surfaces.
     if (!$("#view-dashboard").classList.contains("hidden")) renderClientGrid();
-    if (!$("#view-overview").classList.contains("hidden")) renderOverviewRequests();
+    if (!$("#view-overview").classList.contains("hidden")) {
+      renderOverviewRequests();
+      renderOverviewActivity();
+    }
   }
 
   // ---- Coach → athlete announcements (Messages view) ---------------------
@@ -8508,7 +8641,7 @@
           <span class="cardio-row-icon">${cardioIcon(log.type)}</span>
           <div class="cardio-row-info">
             <strong>${escapeHtml(log.type || "Cardio")}</strong>
-            <span class="muted">${escapeHtml(log.date || "")}</span>
+            <span class="muted">${escapeHtml(log.date || "")}${log.miles ? ` · ${escapeHtml(String(log.miles))} mi` : ""}</span>
           </div>
           <span class="cardio-min">${escapeHtml(String(log.minutes || 0))} min</span>
           <span class="cardio-intensity cardio-intensity-${escapeHtml((log.intensity || "moderate").toLowerCase())}">${escapeHtml(log.intensity || "Moderate")}</span>`;
@@ -8547,10 +8680,17 @@
       const err = $("#cardio-error");
       if (!type) { showErr(err, "Pick a cardio type."); return; }
       if (!minutes || minutes < 1 || minutes > 600) { showErr(err, "Enter the minutes (1–600)."); return; }
+      // Distance is optional — blank stays blank rather than becoming 0.
+      const rawMiles = $("#cardio-miles").value.trim();
+      const parsedMiles = rawMiles === "" ? null : parseFloat(rawMiles);
+      if (parsedMiles !== null && (!isFinite(parsedMiles) || parsedMiles < 0 || parsedMiles > 200)) {
+        showErr(err, "Distance must be between 0 and 200 miles."); return;
+      }
+      const miles = parsedMiles === null || parsedMiles === 0 ? "" : parsedMiles;
       if (existing) {
-        Object.assign(existing, { type, minutes, intensity, date });
+        Object.assign(existing, { type, minutes, intensity, date, miles });
       } else {
-        logs.push({ id: uid(), type, minutes, intensity, date });
+        logs.push({ id: uid(), type, minutes, intensity, date, miles });
       }
       saveClient();
       renderAthleteCardio();
@@ -8565,6 +8705,9 @@
         <div class="cardio-int-row">${intensityChips}</div>
         <label>Time (minutes)
           <input type="number" id="cardio-minutes" min="1" max="600" placeholder="e.g. 30" value="${existing ? escapeHtml(String(existing.minutes)) : ""}" />
+        </label>
+        <label>Distance (miles) <span class="muted">— optional</span>
+          <input type="number" id="cardio-miles" min="0" max="200" step="0.01" inputmode="decimal" placeholder="e.g. 3.1" value="${existing?.miles ? escapeHtml(String(existing.miles)) : ""}" />
         </label>
         <label>Date
           <input type="date" id="cardio-date" value="${escapeHtml(existing?.date || todayISO())}" />
@@ -8795,6 +8938,40 @@
         const n = Math.max(0, Math.round((new Date(x.today + "T12:00:00") - new Date(last + "T12:00:00")) / 86400000));
         return { value: n, unit: n === 1 ? "day" : "days" }; } },
     { id: "trophies", icon: "🏆", label: "Trophies", get: (x) => { const badges = computeBadges(x.progress, x.c); return { value: `${badges.filter((b) => b.earned).length}/${badges.length}` }; } },
+    { id: "cardiomin", icon: "🏃", label: "Cardio time", get: (x) => {
+        const m = cardioMinutes(x.progress); if (!m) return null;
+        return { value: formatMinutes(m), unit: m < 60 ? "min" : "" }; } },
+    { id: "cardioweek", icon: "🫁", label: "Cardio this week", get: (x) => {
+        const thisWk = weekStartISO(x.today), lastWk = addDaysISO(thisWk, -7);
+        const cur = cardioMinutes(x.progress, thisWk);
+        const prev = cardioMinutes(x.progress, lastWk) - cur;
+        if (!cur && !prev) return null;
+        const trend = prev ? (cur > prev ? "up" : cur < prev ? "down" : null) : null;
+        return { value: formatMinutes(cur), unit: cur < 60 ? "min" : "", trend }; } },
+    { id: "cardiomiles", icon: "🛣️", label: "Distance", get: (x) => {
+        const mi = cardioMiles(x.progress); if (!mi) return null;
+        return { value: mi < 100 ? mi.toFixed(1) : Math.round(mi).toLocaleString(), unit: "mi" }; } },
+    { id: "cardiosessions", icon: "👟", label: "Cardio sessions", get: (x) => {
+        const n = cardioLogList(x.progress).length;
+        return n ? { value: n } : null; } },
+    { id: "pushups", icon: "🤸", label: "Push-ups", get: (x) => {
+        const n = totalRepsMatching(x.progress, x.c, /push.?up/i);
+        return n ? { value: n.toLocaleString() } : null; } },
+    { id: "pullups", icon: "🧗", label: "Pull-ups", get: (x) => {
+        const n = totalRepsMatching(x.progress, x.c, /(pull.?up|chin.?up)/i);
+        return n ? { value: n.toLocaleString() } : null; } },
+    { id: "situps", icon: "🌀", label: "Sit-ups", get: (x) => {
+        const n = totalRepsMatching(x.progress, x.c, /(sit.?up|crunch)/i);
+        return n ? { value: n.toLocaleString() } : null; } },
+    { id: "squatreps", icon: "🦵", label: "Squat reps", get: (x) => {
+        const n = totalRepsMatching(x.progress, x.c, /squat/i);
+        return n ? { value: n.toLocaleString() } : null; } },
+    { id: "lungereps", icon: "🚶", label: "Lunge reps", get: (x) => {
+        const n = totalRepsMatching(x.progress, x.c, /lunge/i);
+        return n ? { value: n.toLocaleString() } : null; } },
+    { id: "totalreps", icon: "🔢", label: "Total reps", get: (x) => {
+        const n = totalRepsAll(x.progress);
+        return n ? { value: n.toLocaleString() } : null; } },
   ];
   const RACING_DEFAULT = ["workouts", "prs", "lastworkout", "tonnage"];
   function getRacingStatIds(progress) {
@@ -9415,10 +9592,6 @@
     if (!clipboardWeeks.some((w) => w.id === state.workoutView.weekId)) {
       state.workoutView.weekId = clipboardWeeks[0]?.id || null;
     }
-
-    // Weekly streak — consecutive weeks with at least one completed workout
-    const streakEl = $("#streak-count");
-    if (streakEl) streakEl.textContent = weeklyStreak(state.clientData.progress);
 
     // Week chips
     chips.innerHTML = "";
@@ -10784,18 +10957,28 @@
         <p class="demo-credit muted">Photo: free-exercise-db, public domain</p>`,
       actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeDemoModal }],
     });
+    // Never leave a previous demo's timer running — only one demo is ever open,
+    // and a stale one would fight the new modal for _demoTimer.
+    if (_demoTimer) { clearInterval(_demoTimer); _demoTimer = null; }
     if (frames > 1) {
       const stage = $("#demo-stage");
       const els = Array.from(stage.querySelectorAll(".demo-frame"));
       let at = 0, paused = false;
-      _demoTimer = setInterval(() => {
+      // `mine` so a stale tick cancels its own interval rather than whichever
+      // one _demoTimer happens to point at now.
+      const mine = setInterval(() => {
         // The modal's own ✕ closes without going through closeDemoModal.
-        if (!document.body.contains(stage)) { clearInterval(_demoTimer); _demoTimer = null; return; }
+        if (!document.body.contains(stage)) {
+          clearInterval(mine);
+          if (_demoTimer === mine) _demoTimer = null;
+          return;
+        }
         if (paused) return;
         els[at].classList.remove("on");
         at = (at + 1) % els.length;
         els[at].classList.add("on");
       }, 1100);
+      _demoTimer = mine;
       stage.addEventListener("click", () => {
         paused = !paused;
         stage.classList.toggle("is-paused", paused);
@@ -11605,6 +11788,55 @@
     });
     return best;
   }
+  // -------- Cardio + rep-count totals (feed the racing stats bar) --------
+  // Cardio logs are standalone entries: { type, minutes, intensity, date, miles? }.
+  // `miles` is optional and only present on entries logged since distance was added.
+  function cardioLogList(progress) {
+    return (progress?.cardioLogs || []).filter((l) => l && l.date);
+  }
+  function cardioMinutes(progress, sinceISO) {
+    return cardioLogList(progress).reduce((t, l) => {
+      if (sinceISO && l.date < sinceISO) return t;
+      return t + (parseInt(l.minutes) || 0);
+    }, 0);
+  }
+  function cardioMiles(progress) {
+    return cardioLogList(progress).reduce((t, l) => {
+      const m = parseFloat(l.miles);
+      return isFinite(m) && m > 0 ? t + m : t;
+    }, 0);
+  }
+  // Minutes as "3h 20m" once past an hour — a four-digit minute count reads as noise.
+  function formatMinutes(min) {
+    if (min < 60) return `${min}`;
+    const h = Math.floor(min / 60), m = min % 60;
+    return m ? `${h}h ${m}m` : `${h}h`;
+  }
+  // Every rep ever logged for exercises whose name matches `rx`. Walks the
+  // program to map exercise ids → names, the same way bestPullupReps does.
+  // Passing no regex counts every logged rep.
+  function totalRepsMatching(progress, client, rx) {
+    const logs = progress?.exerciseLogs || {};
+    let total = 0;
+    const counted = new Set();
+    (client?.weeks || []).forEach((w) => (w.days || []).forEach((d) => (d.exercises || []).forEach((ex) => {
+      if (rx && !rx.test(ex.name || "")) return;
+      if (counted.has(ex.id)) return; // same exercise can appear in several weeks
+      counted.add(ex.id);
+      (logs[ex.id] || []).forEach((l) => (l.sets || []).forEach((s) => {
+        total += parseInt(s.reps) || 0;
+      }));
+    })));
+    return total;
+  }
+  function totalRepsAll(progress) {
+    let total = 0;
+    Object.values(progress?.exerciseLogs || {}).forEach((ls) => (ls || []).forEach((l) => {
+      (l.sets || []).forEach((s) => { total += parseInt(s.reps) || 0; });
+    }));
+    return total;
+  }
+
   function computeBadges(progress, client) {
     const dates = completionDateList(progress);
     const workouts = dates.length;

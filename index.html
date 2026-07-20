@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=demos1" />
+  <link rel="stylesheet" href="styles.css?v=activity1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -295,6 +295,7 @@
       <!-- Overview (dashboard calendar) -->
       <div id="view-overview" class="view hidden">
         <div id="overview-requests" class="overview-requests"></div>
+        <div id="overview-activity" class="overview-activity"></div>
         <div id="dash-money-strip"></div>
         <div class="cal-nav" style="margin-bottom:0.6rem">
           <button class="btn btn-ghost btn-sm" id="dash-cal-prev">‹</button>
@@ -785,9 +786,6 @@
             <div class="picker-heading">
               <p class="picker-sub">Tap a day to start logging your sets.</p>
             </div>
-            <div class="picker-logged" title="Consecutive weeks with at least one completed workout">
-              🔥 <strong id="streak-count">0</strong> week streak
-            </div>
           </div>
           <div class="week-chips" id="workout-week-chips" role="tablist"></div>
           <div class="workout-grid" id="workout-day-grid"></div>
@@ -995,7 +993,7 @@
   <script src="config.js?v=push1"></script>
   <script src="cloud.js?v=emdash1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=demos1"></script>
+  <script src="app.js?v=activity1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
