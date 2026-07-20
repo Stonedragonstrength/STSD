@@ -2460,14 +2460,29 @@
   }
 
   // ── Template → assigned-athlete live sync ──
-  // Assigning a program stamps client.assignedProgramId. From then on, edits
-  // in the Programs editor rewrite each linked athlete's copy (exercises are
-  // matched by name within the same day so logged history stays attached)
-  // and push them to the cloud. Direct edits to an athlete's own copy stay
-  // until the next template edit, when the template wins again.
+  // "Assign to athlete" stamps client.assignedProgramId. From then on, edits in
+  // the Programs editor rewrite each linked athlete's copy (exercises matched
+  // by name within the same day so logged history stays attached).
+  //
+  // The coach's direct edits to an athlete win. Previously the template
+  // clobbered them on its next save, silently deleting days and exercises the
+  // coach had added for that athlete alone. Now each sync records the shape it
+  // wrote; if the athlete's program no longer matches that shape, the coach has
+  // edited them directly, so they're unlinked and left alone instead.
   let _tplSyncTimer = null;
   function linkedClientsFor(tplId) {
     return state.trainerData.clients.filter((c) => c.assignedProgramId === tplId);
+  }
+  // Structural fingerprint: day names + exercise names, per week. Deliberately
+  // ignores sets/weights/reps — tweaking a load isn't "taking ownership", but
+  // adding or removing a day or exercise is.
+  function programShape(weeks) {
+    return (weeks || []).map((w) =>
+      (w.days || []).map((d) =>
+        `${String(d.name || "").trim().toLowerCase()}:` +
+        (d.exercises || []).map((e) => String(e.name || "").trim().toLowerCase()).join("|")
+      ).join(">")
+    ).join("#");
   }
   function scheduleTemplateSync(tplId) {
     clearTimeout(_tplSyncTimer);
@@ -2476,12 +2491,26 @@
       if (!tpl) return;
       const linked = linkedClientsFor(tplId);
       if (!linked.length) return;
+      const unlinked = [];
       linked.forEach((c) => {
+        // tplShape is what the last sync wrote. A mismatch means the coach has
+        // since edited this athlete directly — hand the program over to them.
+        if (c.tplShape && programShape(c.weeks) !== c.tplShape) {
+          delete c.assignedProgramId;
+          delete c.tplShape;
+          unlinked.push(c.name);
+          return;
+        }
         syncWeeksFromTemplate(c, tpl);
+        c.tplShape = programShape(c.weeks);
         if (window.Cloud?.enabled) window.Cloud.debounce(`athlete:${c.id}`, () =>
           window.Cloud.upsertAthlete(c, state.trainerData.coachId));
       });
       localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+      if (unlinked.length) {
+        toast(`${unlinked.join(", ")} ${unlinked.length === 1 ? "has" : "have"} custom edits — kept as-is, no longer following this program`);
+        refreshProgramEditorLinked(tpl);
+      }
     }, 800);
   }
   function syncWeeksFromTemplate(client, tpl) {
@@ -2659,6 +2688,10 @@
               })),
             }));
             client.assignedProgramId = tpl.id; // template edits live-sync here
+            // Baseline for divergence detection — see scheduleTemplateSync.
+            // Without it the first template edit would read as "coach edited
+            // this athlete" and immediately unlink them.
+            client.tplShape = programShape(client.weeks);
             // Target this athlete for the cloud push. saveTrainer() only syncs
             // state.currentClientId, which may be a different athlete (or none)
             // when assigning from the Programs tab — so point it here first and
@@ -2770,7 +2803,13 @@
               exercises: d.exercises.map((e) => ({ ...e, id: uid() })),
             })),
           }));
-          c.assignedProgramId = p.id; // template edits live-sync here
+          // Load Program is a one-time copy, like Save to Library in reverse:
+          // it deliberately does NOT set assignedProgramId. Linking here meant
+          // any later template edit silently rewrote this athlete's program,
+          // deleting days/exercises the coach had added just for them. Use
+          // "Assign to athlete" when a live link is actually wanted.
+          delete c.assignedProgramId;
+          delete c.tplShape;
           saveTrainer();
           if (window.Cloud?.enabled) window.Cloud.upsertAthlete(c, state.trainerData.coachId);
           closeModal();
