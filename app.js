@@ -641,7 +641,7 @@
       const hint = document.createElement("p");
       hint.className = "prog-pop-hint";
       hint.textContent = !floor
-        ? "Set prescribed reps first — they become the rep floor."
+        ? "Set prescribed reps first. They become the rep floor."
         : isBW
           ? `Reps climb from ${floor} each week they hit the target (worst set + 1), and hold at the cap. No weight is added.`
           : p.repsOnly
@@ -791,7 +791,7 @@
         preview.className = "prog-pop-hint pyr-preview";
         if (!w) {
           preview.textContent = ex.currentWeight === "BW"
-            ? "Bodyweight lifts have no weight ladder — set a weight first."
+            ? "Bodyweight lifts have no weight ladder. Set a weight first."
             : "Set a starting weight and sets to see the ladder.";
         } else {
           const r = pyramidReps(ex, n);
@@ -992,7 +992,7 @@
       chip.style.setProperty("--mc", color);
       chip.style.setProperty("--mb", bg);
       if (openPicker) {
-        chip.title = `${g.group} — open tags to edit`;
+        chip.title = `${g.group} · open tags to edit`;
         chip.addEventListener("click", (e) => { e.stopPropagation(); openPicker(); });
       } else {
         chip.title = g.group;
@@ -1024,7 +1024,7 @@
       grp.dataset.group = group;
       const lbl = document.createElement("div");
       lbl.className = "mod-picker-lbl";
-      lbl.textContent = group === "Hold" ? "Hold (seconds) — Isometric only" : group;
+      lbl.textContent = group === "Hold" ? "Hold (seconds) · Isometric only" : group;
       grp.appendChild(lbl);
       const row = document.createElement("div");
       row.className = "mod-picker-row";
@@ -1464,7 +1464,7 @@
       err.classList.add("hidden");
       playLoginFlash();
       enterClientPortal();
-      toast(`Profile saved — welcome, ${name.split(/\s+/)[0]}!`);
+      toast(`Profile saved. Welcome, ${name.split(/\s+/)[0]}!`);
     } catch (e) {
       showErr(err, e.message || "Failed to create account.");
     } finally {
@@ -1629,7 +1629,7 @@
     if (!c.length) return { ok: false, message: `Password must be at least ${PASSWORD_MIN} characters.` };
     if (!c.upper || !c.lower) return { ok: false, message: "Password needs both uppercase and lowercase letters." };
     if (!c.number) return { ok: false, message: "Password needs at least one number." };
-    if (!c.common) return { ok: false, message: "That password is too common — choose something harder to guess." };
+    if (!c.common) return { ok: false, message: "That password is too common. Choose something harder to guess." };
     return { ok: true, message: "" };
   }
   // Live requirement checklist rendered under a password field.
@@ -1708,7 +1708,7 @@
           return;
         }
         if (signUpErr.message?.toLowerCase().includes("already registered") || signUpErr.message?.toLowerCase().includes("already")) {
-          showErr(err, "An account with this email already exists — sign in instead.");
+          showErr(err, "An account with this email already exists. Sign in instead.");
           btn.disabled = false; btn.textContent = "Create account";
           return;
         }
@@ -1731,7 +1731,7 @@
       err.classList.add("hidden");
       playLoginFlash();
       signIntoTrainer();
-      toast(isMigration ? "Account upgraded — welcome!" : `Welcome, ${name.split(/\s+/)[0]}!`);
+      toast(isMigration ? "Account upgraded. Welcome!" : `Welcome, ${name.split(/\s+/)[0]}!`);
     } catch (e) {
       showErr(err, e.message || "Failed to create account.");
     } finally {
@@ -2394,7 +2394,7 @@
       return sec;
     };
 
-    grid.appendChild(section("🟡 In progress", "Nothing in progress — new programs land here.", inProgress));
+    grid.appendChild(section("🟡 In progress", "Nothing in progress. New programs land here.", inProgress));
     grid.appendChild(section("🟢 Ready to assign", "No finished programs yet. Mark one complete when it's ready.", ready));
   }
 
@@ -2478,7 +2478,7 @@
     const ready = tpl.status === "ready";
     btn.textContent = ready ? "✓ Ready · reopen" : "Mark complete ✓";
     btn.classList.toggle("is-ready", ready);
-    btn.title = ready ? "This program is ready to assign — click to move back to in progress" : "Mark this program complete and ready to assign";
+    btn.title = ready ? "This program is ready to assign. Click to move back to in progress" : "Mark this program complete and ready to assign";
   }
 
   function newProgram() {
@@ -2498,7 +2498,7 @@
     const tpl = (state.trainerData.programTemplates || []).find((p) => p.id === tplId);
     if (!tpl) return;
     const clients = state.trainerData.clients;
-    if (!clients.length) { toast("No athletes yet — add one first."); return; }
+    if (!clients.length) { toast("No athletes yet. Add one first."); return; }
 
     let selectedId = null;
 
@@ -2527,7 +2527,7 @@
               const d = new Date();
               client.archivedPrograms.unshift({
                 id: uid(),
-                label: "Archived — " + d.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+                label: "Archived: " + d.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
                 archivedAt: d.toISOString(),
                 weeks: JSON.parse(JSON.stringify(client.weeks)),
                 schedule: JSON.parse(JSON.stringify(client.schedule || {})),
@@ -2639,7 +2639,7 @@
             const d = new Date();
             c.archivedPrograms.unshift({
               id: uid(),
-              label: "Archived — " + d.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+              label: "Archived: " + d.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
               archivedAt: d.toISOString(),
               weeks: JSON.parse(JSON.stringify(c.weeks)),
               schedule: JSON.parse(JSON.stringify(c.schedule || {})),
@@ -2823,7 +2823,7 @@
     const sel = $("#prof-membership"); if (!sel) return;
     ensureSessionBank(c);
     const current = c.sessionBank?.membership || "";
-    let html = `<option value="">— No membership set —</option>`;
+    let html = `<option value="">No membership set</option>`;
     let lastCat = null;
     MEMBERSHIPS.forEach((m) => {
       if (m.cat !== lastCat) {
@@ -2864,7 +2864,7 @@
     c.sessionBank.packages.push({
       id: uid(), size: m.sessions, status: "paid", price: m.price,
       addedAt: Date.now(), paidAt: Date.now(),
-      note: `Membership — ${membershipTitle(m)} · ${monthLabel}`,
+      note: `Membership: ${membershipTitle(m)} · ${monthLabel}`,
       membershipGrant: monthKey,
     });
     saveTrainer();
@@ -2898,7 +2898,7 @@
   }
   function regenerateInviteCode() {
     const c = currentClient(); if (!c) return;
-    if (!window.confirm("Regenerate this athlete's invite code? Any old code stops working. If they've already signed in, this resets their access — they'll re-enter the new code to reconnect.")) return;
+    if (!window.confirm("Regenerate this athlete's invite code? Any old code stops working. If they've already signed in, this resets their access. They'll re-enter the new code to reconnect.")) return;
     c.inviteCode = makeInviteCode();
     saveTrainer();
     // Clear the auth link so the row is unclaimed and can be claimed fresh with
@@ -2910,7 +2910,7 @@
   async function copyInviteCode() {
     const c = currentClient(); if (!c) return;
     try { await navigator.clipboard.writeText(c.inviteCode); toast("Code copied"); }
-    catch { toast("Couldn't copy — code: " + c.inviteCode, 4000); }
+    catch { toast("Couldn't copy. Code: " + c.inviteCode, 4000); }
   }
   // Opens the coach's mail app with a prefilled invite: a deep link that lands
   // the athlete on the invite screen with their code already entered.
@@ -2923,7 +2923,7 @@
     const body = [
       `Hi${first ? " " + first : ""},`,
       "",
-      "Here's your invite to the Stone Dragon Strength training app — your programs, workout logging, and progress tracking all live there.",
+      "Here's your invite to the Stone Dragon Strength training app. Your programs, workout logging, and progress tracking all live there.",
       "",
       "Tap this link to get set up (your invite code fills in automatically):",
       link,
@@ -2948,7 +2948,7 @@
       c.sessionBank.autoRenew = e.target.checked;
       saveTrainer();
       toast(e.target.checked
-        ? "🔁 Auto-renew on — each month grants a package sized to their bookings"
+        ? "🔁 Auto-renew on: each month grants a package sized to their bookings"
         : "Auto-renew off");
     });
   }
@@ -3252,11 +3252,11 @@
       if (activeCat === SURPRISE) {
         if (!surprisePicks.length) rollSurprise();
         cards = surprisePicks.map((d, i) => genCardHtml(d, i)).join("");
-        hint = `5 freshly generated workouts — tap <strong>+ Add</strong> on any, or <button class="rec-reroll" type="button">🎲 Reroll</button> for a whole new batch.
+        hint = `5 freshly generated workouts. Tap <strong>+ Add</strong> on any, or <button class="rec-reroll" type="button">🎲 Reroll</button> for a whole new batch.
           <div class="rec-surprise-actions"><button class="rec-add-all" type="button">➕ Add all 5 to library</button></div>`;
       } else {
         cards = RECOMMENDED_TEMPLATES[activeCat].map((t, i) => cardHtml(t, activeCat, i)).join("");
-        hint = `Tap <strong>+ Add</strong> to copy a workout into your library — edit it from there anytime.`;
+        hint = `Tap <strong>+ Add</strong> to copy a workout into your library. Edit it from there anytime.`;
       }
       return `
         <p class="muted" style="margin-top:-0.3em">${hint}</p>
@@ -3443,7 +3443,7 @@
   function openLoadTemplateModal(week, day) {
     const templates = state.trainerData.workoutTemplates || [];
     if (!templates.length) {
-      toast("No templates yet — create one in Workout Library");
+      toast("No templates yet. Create one in Workout Library");
       return;
     }
     const list = templates
@@ -3455,7 +3455,7 @@
           <button class="video-pick-btn" data-tpl="${t.id}" type="button">
             <span class="video-pick-icon">${icon}</span>
             <strong>${escapeHtml(t.name)}</strong>
-            ${t.focus ? `<span class="muted" style="margin-left:0.4em">— ${escapeHtml(t.focus)}</span>` : ""}
+            ${t.focus ? `<span class="muted" style="margin-left:0.4em">· ${escapeHtml(t.focus)}</span>` : ""}
             <span class="meta-pill" style="margin-left:auto">${t.exercises.length} ex</span>
           </button>`;
       })
@@ -3494,7 +3494,7 @@
   function openImportDayModal(week, rerenderFn) {
     const templates = state.trainerData.workoutTemplates || [];
     if (!templates.length) {
-      toast("No day templates yet — build one in Workout Library");
+      toast("No day templates yet. Build one in Workout Library");
       return;
     }
     const list = templates
@@ -3506,7 +3506,7 @@
           <button class="video-pick-btn" data-tpl="${t.id}" type="button">
             <span class="video-pick-icon">${icon}</span>
             <strong>${escapeHtml(t.name)}</strong>
-            ${t.focus ? `<span class="muted" style="margin-left:0.4em">— ${escapeHtml(t.focus)}</span>` : ""}
+            ${t.focus ? `<span class="muted" style="margin-left:0.4em">· ${escapeHtml(t.focus)}</span>` : ""}
             <span class="meta-pill" style="margin-left:auto">${(t.exercises || []).length} ex</span>
           </button>`;
       })
@@ -4160,7 +4160,7 @@
     if (clash) {
       const hidden = state.trainerData.hiddenExercises || [];
       toast(hidden.some((h) => h.toLowerCase() === name.toLowerCase())
-        ? "Already in the library — check the Hidden tab"
+        ? "Already in the library. Check the Hidden tab"
         : "That exercise is already in the library");
       return false;
     }
@@ -4870,7 +4870,7 @@
         const p = document.createElement("p");
         p.className = "muted";
         p.style.cssText = "text-align:center; padding:2.25rem 1.25rem;";
-        p.textContent = "No training days yet — click + Day to add one, or 📥 Library to import a saved day.";
+        p.textContent = "No training days yet. Click + Day to add one, or 📥 Library to import a saved day.";
         dayContent.appendChild(p); return;
       }
       const dayIdx = Math.min(week._activeDayIdx, week.days.length - 1);
@@ -4893,7 +4893,7 @@
     const label = d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
     c.archivedPrograms.unshift({
       id: uid(),
-      label: "Archived — " + label,
+      label: "Archived: " + label,
       archivedAt: d.toISOString(),
       weeks: JSON.parse(JSON.stringify(c.weeks)),
       schedule: JSON.parse(JSON.stringify(c.schedule || {})),
@@ -4966,7 +4966,7 @@
     const head = document.createElement("div");
     head.className = "archive-week-head";
     head.innerHTML = `
-      <span class="archive-week-label">${week.phaseLabel ? `<span class="phase-badge">${escapeHtml(week.phaseLabel)}</span> ` : ""}${escapeHtml(week.label)}${week.focus ? " — " + escapeHtml(week.focus) : ""}</span>
+      <span class="archive-week-label">${week.phaseLabel ? `<span class="phase-badge">${escapeHtml(week.phaseLabel)}</span> ` : ""}${escapeHtml(week.label)}${week.focus ? " · " + escapeHtml(week.focus) : ""}</span>
       <span class="archive-week-meta">${week.days.length} day${week.days.length === 1 ? "" : "s"} · ${exTotal} exercise${exTotal === 1 ? "" : "s"}</span>`;
     card.appendChild(head);
     week.days.forEach((day) => {
@@ -5088,7 +5088,7 @@
       if (!week.days.length) {
         const p = document.createElement("p");
         p.className = "muted"; p.style.padding = "1rem 0";
-        p.textContent = "No training days yet — click + Day to add one.";
+        p.textContent = "No training days yet. Click + Day to add one.";
         dayContent.appendChild(p);
         return;
       }
@@ -5811,7 +5811,7 @@
       const sweep = (p.kcal / totalKcal) * Math.PI * 2;
       const a0 = a + gap / 2, a1 = a + sweep - gap / 2;
       if (a1 > a0) {
-        paths += `<path d="${donutArcPath(cx, cy, rO, rI, a0, a1)}" fill="${p.color}"><title>${p.label} — ${p.grams} g · ${p.kcal.toLocaleString()} kcal · ${p.pct}%</title></path>`;
+        paths += `<path d="${donutArcPath(cx, cy, rO, rI, a0, a1)}" fill="${p.color}"><title>${p.label}: ${p.grams} g · ${p.kcal.toLocaleString()} kcal · ${p.pct}%</title></path>`;
       }
       a += sweep;
     });
@@ -5822,7 +5822,7 @@
         <span class="macro-detail">${p.grams} g · ${p.kcal.toLocaleString()} kcal · ${p.pct}%</span>
       </div>`).join("");
     const mismatch = calTarget && Math.abs(totalKcal - calTarget) > 50
-      ? `<p class="muted macro-mismatch">Macros add up to ${totalKcal.toLocaleString()} kcal — the calorie target says ${calTarget.toLocaleString()}.</p>`
+      ? `<p class="muted macro-mismatch">Macros add up to ${totalKcal.toLocaleString()} kcal. The calorie target says ${calTarget.toLocaleString()}.</p>`
       : "";
     return `
       <div class="macro-chart">
@@ -6008,7 +6008,7 @@
       bwCard.appendChild(list);
     } else {
       bwCard.insertAdjacentHTML("beforeend",
-        `<p class="muted" style="margin:0.2em 0 0">No weight entries yet — ${escapeHtml(c.name)} hasn't logged any body weight.</p>`);
+        `<p class="muted" style="margin:0.2em 0 0">No weight entries yet. ${escapeHtml(c.name)} hasn't logged any body weight.</p>`);
     }
     container.appendChild(bwCard);
   }
@@ -6060,11 +6060,11 @@
     const items = [
       ...reds.map((r) => `<li>${r.note ? escapeHtml(r.note) : `<span class="muted">No note</span>`}</li>`),
       ...missed.map((m) => m.type === "closecall"
-        ? `<li>🤝 Close call — free missed session (monthly freebie, no charge)</li>`
-        : `<li>✕ Missed session — charged</li>`),
+        ? `<li>🤝 Close call: free missed session (monthly freebie, no charge)</li>`
+        : `<li>✕ Missed session: charged</li>`),
     ].join("");
     openModal({
-      title: `${reds.length ? "🎟" : "🤝"} Session — ${iso}`,
+      title: `${reds.length ? "🎟" : "🤝"} Session · ${iso}`,
       body: `
         <p class="muted" style="margin-top:-0.4em">What happened on this day:</p>
         <ul class="redemption-note-list">${items}</ul>`,
@@ -6089,8 +6089,8 @@
   }
   function missedPillHtml(list) {
     return list.map((m) => m.type === "closecall"
-      ? `<div class="cal-day-pill cal-day-pill-closecall" title="Close call — free missed session">🤝 Close call</div>`
-      : `<div class="cal-day-pill cal-day-pill-missed" title="Missed session — charged">✕ Missed</div>`).join("");
+      ? `<div class="cal-day-pill cal-day-pill-closecall" title="Close call: free missed session">🤝 Close call</div>`
+      : `<div class="cal-day-pill cal-day-pill-missed" title="Missed session: charged">✕ Missed</div>`).join("");
   }
   function closeCallUsedInMonth(c, monthKey) {
     return (c.sessionBank.missedSessions || []).some((m) =>
@@ -6115,18 +6115,18 @@
       // Charged: make sure the token is spent even if auto-redeem hasn't run
       // yet, and label it so the athlete sees why.
       const existing = c.sessionBank.redemptions.find((r) => e.uid && r.setmoreUid === e.uid);
-      if (existing) existing.note = `Missed session — charged · ${fmtSetmoreTime(e.startAt)}`;
+      if (existing) existing.note = `Missed session: charged · ${fmtSetmoreTime(e.startAt)}`;
       else c.sessionBank.redemptions.push({
         id: uid(), date,
-        note: `Missed session — charged · ${fmtSetmoreTime(e.startAt)}`,
+        note: `Missed session: charged · ${fmtSetmoreTime(e.startAt)}`,
         setmoreUid: e.uid || "",
       });
     }
     c.sessionBank.missedSessions.push({ id: uid(), date, setmoreUid: e.uid || "", type, at: Date.now() });
     pushAthleteBank(c);
     toast(type === "closecall"
-      ? `🤝 Close call — ${c.name}'s monthly freebie used`
-      : `✕ Marked missed — session still charged`);
+      ? `🤝 Close call: ${c.name}'s monthly freebie used`
+      : `✕ Marked missed. Session still charged`);
     closeModal();
     renderDashboardCalendar();
   }
@@ -6183,7 +6183,7 @@
       if (window.Cloud?.enabled) window.Cloud.debounce(`athlete:${c.id}`, () =>
         window.Cloud.upsertAthlete(c, state.trainerData.coachId));
     });
-    toast(`🔁 Auto-renew: ${renewed.map((c) => c.name).join(", ")} — ${monthLabel} package${renewed.length === 1 ? "" : "s"} added (pending payment)`, 4000);
+    toast(`🔁 Auto-renew: ${renewed.map((c) => c.name).join(", ")} · ${monthLabel} package${renewed.length === 1 ? "" : "s"} added (pending payment)`, 4000);
   }
 
   // -------- Dashboard overview calendar --------
@@ -6271,7 +6271,7 @@
         window.Cloud.upsertAthlete(c, state.trainerData.coachId)
       ));
     }
-    toast(`🎟 Session token spent — ${spent.map((c) => c.name).join(", ")}`);
+    toast(`🎟 Session token spent: ${spent.map((c) => c.name).join(", ")}`);
     if (state.currentClientId && spent.some((c) => c.id === state.currentClientId)) {
       renderCoachSessions();
       renderCoachCalendar();
@@ -6423,8 +6423,8 @@
         (c.sessionBank?.missedSessions || []).forEach((m) => {
           if (m.date !== iso) return;
           html += m.type === "closecall"
-            ? `<div class="dash-cal-pill cal-day-pill-closecall" title="${escapeHtml(c.name)} — close call (free)">🤝 ${escapeHtml(clientInitials(c.name))}</div>`
-            : `<div class="dash-cal-pill cal-day-pill-missed" title="${escapeHtml(c.name)} — missed, charged">✕ ${escapeHtml(clientInitials(c.name))}</div>`;
+            ? `<div class="dash-cal-pill cal-day-pill-closecall" title="${escapeHtml(c.name)}: close call (free)">🤝 ${escapeHtml(clientInitials(c.name))}</div>`
+            : `<div class="dash-cal-pill cal-day-pill-missed" title="${escapeHtml(c.name)}: missed, charged">✕ ${escapeHtml(clientInitials(c.name))}</div>`;
         });
       });
       // Mobile shows a compact count badge instead of pills (CSS swaps them)
@@ -6462,8 +6462,8 @@
           const missedUi = mark
             ? `<span class="missed-chip ${mark.type === "closecall" ? "closecall" : "charged"}">${mark.type === "closecall" ? "🤝 Close call" : "✕ Missed · charged"}</span>
                <button class="btn-missed-mark" type="button" data-unmark-missed="${i}" title="Remove this mark">↺</button>`
-            : `<button class="btn-missed-mark cc" type="button" data-miss-cc="${i}" title="Close call — use their free missed session for this month (no charge)">🤝</button>
-               <button class="btn-missed-mark chg" type="button" data-miss-charge="${i}" title="Missed — session is still charged">✕</button>`;
+            : `<button class="btn-missed-mark cc" type="button" data-miss-cc="${i}" title="Close call: use their free missed session for this month (no charge)">🤝</button>
+               <button class="btn-missed-mark chg" type="button" data-miss-charge="${i}" title="Missed: session is still charged">✕</button>`;
           body += `<div class="breakdown-ex dash-booked-row dash-booked-linked" data-open-athlete="${escapeHtml(athlete.id)}">
             <div class="breakdown-ex-name">${escapeHtml(athlete.name)}
               <span class="booked-balance-chip${sum.remaining <= 0 ? " low" : ""}">🎟 ${sum.remaining} left</span>
@@ -6566,7 +6566,7 @@
     const n = normSetmoreName(bookingName);
     const viaAlias = Array.isArray(c.setmoreAliases) && c.setmoreAliases.includes(n);
     if (!viaAlias) {
-      toast(`"${bookingName}" matches ${c.name}'s own name — rename the athlete or the Setmore booking to unlink.`);
+      toast(`"${bookingName}" matches ${c.name}'s own name. Rename the athlete or the Setmore booking to unlink.`);
       return;
     }
     if (!window.confirm(`Unlink "${bookingName}" from ${c.name}? Future bookings under this name won't match ${c.name} (and won't auto-spend a session).`)) return;
@@ -6666,7 +6666,7 @@
     const dayNote = c.importedProgress?.dayNotes?.[day.id];
     if (dayNote) bodyHtml += `<div class="breakdown-note"><span class="breakdown-note-label">Session note</span><p>${escapeHtml(dayNote)}</p></div>`;
     openModal({
-      title: `${escapeHtml(day.name)} — ${iso}`,
+      title: `${escapeHtml(day.name)} · ${iso}`,
       body: bodyHtml,
       actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
     });
@@ -6988,7 +6988,7 @@
             <label class="pr-field-label">${label}</label>
             <input class="pr-${n}rm-input" type="number" min="0" step="any" placeholder="${ph}" value="${escapeHtml(entry[`pr${n}`] || "")}" ${ro}>
             <input class="pr-${n}rm-date pr-date-input" type="text" inputmode="numeric" maxlength="8" placeholder="mm/dd/yy" title="Date achieved" value="${escapeHtml(entry[`pr${n}Date`] || "")}" ${ro}>
-            <button class="pr-lock-btn${lk ? " is-locked" : ""}" data-slot="${n}" type="button" title="${lk ? "Locked — tap to edit" : "Lock in"}" aria-label="${lk ? "Locked — tap to edit" : "Lock in"}">${lk ? "🔒" : "🔓"}</button>
+            <button class="pr-lock-btn${lk ? " is-locked" : ""}" data-slot="${n}" type="button" title="${lk ? "Locked. Tap to edit" : "Lock in"}" aria-label="${lk ? "Locked. Tap to edit" : "Lock in"}">${lk ? "🔒" : "🔓"}</button>
             ${prLoggedChip(entry, n, best)}
           </div>`;
       };
@@ -7154,7 +7154,7 @@
             <label class="pr-field-label">${label}</label>
             <input class="pr-${n}rm-input" type="number" min="0" step="any" placeholder="${ph}" value="${escapeHtml(entry[`pr${n}`] || "")}" ${ro}>
             <input class="pr-${n}rm-date pr-date-input" type="text" inputmode="numeric" maxlength="8" placeholder="mm/dd/yy" title="Date achieved" value="${escapeHtml(entry[`pr${n}Date`] || "")}" ${ro}>
-            <button class="pr-lock-btn${lk ? " is-locked" : ""}" data-slot="${n}" type="button" title="${lk ? "Locked — tap to edit" : "Lock in"}" aria-label="${lk ? "Locked — tap to edit" : "Lock in"}">${lk ? "🔒" : "🔓"}</button>
+            <button class="pr-lock-btn${lk ? " is-locked" : ""}" data-slot="${n}" type="button" title="${lk ? "Locked. Tap to edit" : "Lock in"}" aria-label="${lk ? "Locked. Tap to edit" : "Lock in"}">${lk ? "🔒" : "🔓"}</button>
             ${prLoggedChip(entry, n, best)}
           </div>`;
       };
@@ -7321,7 +7321,7 @@
     const res = await window.Cloud.claimOpenSlot(id);
     if (res?.ok) toast("Slot claimed! Your coach will confirm. 🎉");
     else if (res?.reason === "taken") toast(`Just taken${res.claimedByName ? ` by ${res.claimedByName}` : ""}.`);
-    else toast("Couldn't claim — try again.");
+    else toast("Couldn't claim. Try again.");
     await refreshAthleteOpenSlots();
   }
 
@@ -7380,7 +7380,7 @@
         const osCard = document.createElement("div");
         osCard.className = "card open-slots-athlete-card";
         osCard.innerHTML = `<h4 style="margin-top:0">📣 Open slots</h4>
-          <p class="muted" style="font-size:0.85rem">Grab one first-come — your coach confirms and books it.</p>`;
+          <p class="muted" style="font-size:0.85rem">Grab one first-come. Your coach confirms and books it.</p>`;
         [...visible].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).forEach((s) => {
           const mine = s.status === "claimed" && s.claimedBy === myId;
           const taken = s.status === "claimed" && !mine;
@@ -7432,7 +7432,7 @@
       const reqCard = document.createElement("div");
       reqCard.className = "card";
       reqCard.innerHTML = `<h4 style="margin-top:0">Your pending requests</h4>
-        <p class="muted" style="font-size:0.85rem">Your coach has been notified — they'll add the sessions once payment is settled.</p>`;
+        <p class="muted" style="font-size:0.85rem">Your coach has been notified. They'll add the sessions once payment is settled.</p>`;
       pending.forEach((req) => {
         const row = document.createElement("div");
         row.className = "pending-request-row";
@@ -7465,7 +7465,7 @@
       })),
       ...closeCalls.map((m) => ({
         date: m.date || "",
-        html: `<div><strong>${escapeHtml(m.date || "")}</strong> · <span class="closecall-history">🤝 Close call — free missed session</span></div>`,
+        html: `<div><strong>${escapeHtml(m.date || "")}</strong> · <span class="closecall-history">🤝 Close call: free missed session</span></div>`,
       })),
     ];
     const redCard = document.createElement("div");
@@ -7933,7 +7933,7 @@
           const time = $("#slot-time").value;
           if (!date || !time) { toast("Pick a date and time for the slot"); return; }
           const startAt = new Date(`${date}T${time}`).toISOString();
-          if (isNaN(new Date(startAt).getTime())) { toast("That date/time didn't parse — try again"); return; }
+          if (isNaN(new Date(startAt).getTime())) { toast("That date/time didn't parse. Try again"); return; }
           const cutoffHours = parseInt($("#slot-cutoff").value, 10) || 0;
           const note = $("#slot-note").value.trim();
           const label = formatSlotLabel(startAt);
@@ -7958,7 +7958,7 @@
           <input type="number" id="gift-size-input" min="1" max="50" placeholder="e.g. 3" style="font-size:1.5rem;text-align:center;" autofocus />
         </label>
         <label>Message / note (optional)
-          <input type="text" id="gift-note" placeholder="e.g. On the house — great work this month!" />
+          <input type="text" id="gift-note" placeholder="e.g. On the house, great work this month!" />
         </label>`,
       actions: [
         { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
@@ -8138,7 +8138,7 @@
     [..._msgSelected].forEach((id) => { if (!ids.has(id)) _msgSelected.delete(id); });
 
     if (!clients.length) {
-      host.innerHTML = `<p class="muted" style="padding:0.4rem">Add an athlete first — then you can message them here.</p>`;
+      host.innerHTML = `<p class="muted" style="padding:0.4rem">Add an athlete first. Then you can message them here.</p>`;
     } else {
       host.innerHTML = clients.map((c) => {
         const on = _msgSelected.has(c.id);
@@ -8767,7 +8767,7 @@
     }
     if (!hero) {
       if (daysLeft > 0 && nextDay) hero = dayHero(week.id, nextDay, "UP NEXT");
-      else hero = { icon: "🎉", kicker: "THIS WEEK", title: "All caught up!", sub: `${escapeHtml(weekLabel)} complete — nice work.` };
+      else hero = { icon: "🎉", kicker: "THIS WEEK", title: "All caught up!", sub: `${escapeHtml(weekLabel)} complete. Nice work.` };
     }
 
     // ---- Sessions + next booking ----
@@ -8968,7 +8968,7 @@
     if (!banner) return;
     banner.classList.add("live");
     $(".preview-banner-msg").innerHTML =
-      `🏋️ Live session — logging <strong>${escapeHtml(c.name)}</strong>'s workout, saves to their account`;
+      `🏋️ Live session: logging <strong>${escapeHtml(c.name)}</strong>'s workout, saves to their account`;
   }
   function exitPreview() {
     if (!state.previewMode) return;
@@ -9481,7 +9481,7 @@
         const entry = (logsMap[ex.id] || []).find((l) => l.date === date);
         return entry && !isLogEntryLocked(entry, ex, parseInt(ex.sets, 10) || 0);
       });
-      if (!targets.length) { toast("Nothing to clear — locked exercises stay (✎ Edit them first)."); return; }
+      if (!targets.length) { toast("Nothing to clear. Locked exercises stay (✎ Edit them first)."); return; }
       if (!window.confirm(`Clear this day's unlocked numbers (${targets.length} exercise${targets.length === 1 ? "" : "s"})?`)) return;
       targets.forEach((ex) => {
         const rest = logsMap[ex.id].filter((l) => l.date !== date);
@@ -9934,7 +9934,7 @@
     let exBar = null, exProgress = null, updateExBar = () => {};
 
     if (!numSets) {
-      setTable.innerHTML = `<p class="cex-no-sets">Sets not prescribed yet — your coach will fill this in.</p>`;
+      setTable.innerHTML = `<p class="cex-no-sets">Sets not prescribed yet. Your coach will fill this in.</p>`;
       logForm.appendChild(setTable);
     } else {
     const todayLog = logs.find(l => l.date === logDate);
@@ -10094,7 +10094,7 @@
       item.applySkip = () => {
         col.classList.toggle("skipped", item.skipped);
         lbl.textContent = item.skipped ? `S${s + 1}⊘` : `S${s + 1}`;
-        lbl.title = item.skipped ? "Skipped — tap to un-skip" : "Tap to skip this set";
+        lbl.title = item.skipped ? "Skipped. Tap to un-skip" : "Tap to skip this set";
         wt.disabled = item.skipped; rp.disabled = item.skipped;
       };
       lbl.addEventListener("click", (e) => {
@@ -10439,7 +10439,7 @@
 
   function openVideoModal(ytId, name) {
     openModal({
-      title: name ? `Demo — ${name}` : "Exercise demo",
+      title: name ? `Demo: ${name}` : "Exercise demo",
       body: `
         <div class="video-frame-wrap">
           <iframe class="video-frame"
@@ -10532,7 +10532,7 @@
     const toggleLabel = (open) => `${open ? "▾" : "▸"} ${metrics.length} metric${metrics.length === 1 ? "" : "s"}`;
     el.innerHTML = `
       <div class="bw-entry">
-        <span><span class="date">${escapeHtml(when)}</span> — <strong>${escapeHtml(b.weightLb)} lb</strong>${metrics.length ? ` <button class="bw-toggle" type="button">${toggleLabel(false)}</button>` : ""}</span>
+        <span><span class="date">${escapeHtml(when)}</span> · <strong>${escapeHtml(b.weightLb)} lb</strong>${metrics.length ? ` <button class="bw-toggle" type="button">${toggleLabel(false)}</button>` : ""}</span>
         ${deletable ? `<button class="delete-bw" title="Delete">×</button>` : ""}
       </div>
       ${metrics.length ? `<div class="bw-metrics hidden">${metrics.map((m) => `<div class="bw-metric"><span>${escapeHtml(m.label)}</span><strong>${escapeHtml(String(m.value))}${m.unit ? " " + escapeHtml(m.unit) : ""}</strong></div>`).join("")}</div>` : ""}`;
@@ -10618,7 +10618,7 @@
       if (weightIdx < 0 && /^weight/.test(n)) weightIdx = i;
     });
     if (dateIdx < 0 || weightIdx < 0) {
-      return { entries: [], error: "Couldn't find Date and Weight columns — is this a Renpho export?" };
+      return { entries: [], error: "Couldn't find Date and Weight columns. Is this a Renpho export?" };
     }
     const weightIsKg = /kg/i.test(headerParts(headers[weightIdx]).unit);
     const entries = [];
@@ -10673,7 +10673,7 @@
       });
       saveClient();
       renderBwHistory();
-      toast(added ? `Imported ${added} weigh-in${added === 1 ? "" : "s"} ✓` : "Already up to date — nothing new.");
+      toast(added ? `Imported ${added} weigh-in${added === 1 ? "" : "s"} ✓` : "Already up to date. Nothing new.");
     };
     reader.onerror = () => toast("Couldn't read that file.");
     reader.readAsText(file);
@@ -11168,10 +11168,10 @@
     const bigLift = bestBigThreeLift(progress, client);
     const ratioPct = bw && bigLift ? Math.round((bigLift / bw) * 100) : 0;
     const bwHint = (pct) => bw
-      ? `Put ${pct}% of your bodyweight on the bar — squat, bench, deadlift, or pulldown. Best so far: ${ratioPct}%`
-      : `Put ${pct}% of your bodyweight on the bar — squat, bench, deadlift, or pulldown. Log your bodyweight first!`;
+      ? `Put ${pct}% of your bodyweight on the bar: squat, bench, deadlift, or pulldown. Best so far: ${ratioPct}%`
+      : `Put ${pct}% of your bodyweight on the bar: squat, bench, deadlift, or pulldown. Log your bodyweight first!`;
     const pullups = bestPullupReps(progress, client);
-    const puHint = (n) => `Do ${n} pull-up${n === 1 ? "" : "s"} in one set${pullups ? ` — best so far: ${pullups}` : ""}`;
+    const puHint = (n) => `Do ${n} pull-up${n === 1 ? "" : "s"} in one set${pullups ? `. Best so far: ${pullups}` : ""}`;
     return [
       { icon: "🥇", name: "First workout", hint: "Complete your first workout", earned: workouts >= 1 },
       { icon: "🔟", name: "10 workouts", hint: "Complete 10 workouts", earned: workouts >= 10 },
@@ -11216,7 +11216,7 @@
     x.fillStyle = "#22d3ee"; x.font = "800 46px system-ui, sans-serif";
     x.fillText("STONE DRAGON STRENGTH", 540, 116);
     x.fillStyle = "#94a3b8"; x.font = "600 40px system-ui, sans-serif";
-    x.fillText(`Lifetime stats — ${(name || "athlete").trim().split(/\s+/)[0]}`, 540, 186);
+    x.fillText(`Lifetime stats: ${(name || "athlete").trim().split(/\s+/)[0]}`, 540, 186);
     const stats = [
       [String(stats0.workouts), "WORKOUTS"],
       [String(stats0.prs), "PERSONAL RECORDS"],
@@ -11304,7 +11304,7 @@
     if (prs.some((p) => exKey(p.name) === key && p.date === entry.date && String(p.weight) === String(cur.weight) && String(p.reps) === String(cur.reps))) return;
     prs.push(makePR({ name, weight: cur.weight, reps: String(cur.reps), date: entry.date, notes: "Auto-detected during workout 🎉", auto: true }));
     if (cardEl) celebrateElement(cardEl, "pr-celebrate");
-    toast(`🎉 New PR — ${name}: ${bw ? cur.reps + " reps" : cur.weight + " lb × " + cur.reps}!`, 3500);
+    toast(`🎉 New PR · ${name}: ${bw ? cur.reps + " reps" : cur.weight + " lb × " + cur.reps}!`, 3500);
   }
 
   // -------- Guided tour (spotlight walkthrough) --------
@@ -11427,7 +11427,7 @@
           id: "__tour_wk", label: "Sample week", focus: "Full body", phaseLabel: "Demo", diet: {},
           days: [{
             id: "__tour_day", name: "Sample Day", exercises: [
-              { id: "__tour_ex1", name: "Goblet Squat", sets: "3", currentWeight: "40", currentReps: "10", progression: { ceil: 12, inc: 5 }, notes: "Just a sample — this day disappears when the tour ends.", videoUrl: "" },
+              { id: "__tour_ex1", name: "Goblet Squat", sets: "3", currentWeight: "40", currentReps: "10", progression: { ceil: 12, inc: 5 }, notes: "Just a sample. This day disappears when the tour ends.", videoUrl: "" },
               { id: "__tour_ex2", name: "Push-Up", sets: "3", currentWeight: "BW", currentReps: "10", notes: "", videoUrl: "" },
               { id: "__tour_ex3", name: "Dumbbell Row", sets: "3", currentWeight: "35", currentReps: "12", notes: "", videoUrl: "" },
             ],
@@ -11728,7 +11728,7 @@
     if (!supported) {
       inner = `<p class="muted">This browser doesn't support notifications.</p>`;
     } else if (blocked) {
-      inner = `<p class="muted">Notifications are blocked for this site — allow them in your browser settings, then come back.</p>`;
+      inner = `<p class="muted">Notifications are blocked for this site. Allow them in your browser settings, then come back.</p>`;
     } else {
       inner = `
         <p class="muted" style="font-size:0.85rem">Get a ping when your coach posts a bulletin or sends you a message.</p>
@@ -11747,8 +11747,8 @@
         toast(ok
           ? "Notifications on 🔔"
           : (Notification.permission === "denied"
-            ? "Blocked — allow notifications in your browser settings"
-            : "Couldn't enable — check your connection"), 3000);
+            ? "Blocked. Allow notifications in your browser settings"
+            : "Couldn't enable. Check your connection"), 3000);
       }
       renderAthleteNotifyCard();
     });
@@ -11770,7 +11770,7 @@
           const res = await window.Cloud?.sendPush?.([c.id], "Stone Dragon Strength", text, "./");
           toast(res?.sent
             ? `Nudge sent to ${c.name} ✓`
-            : `No devices reached — has ${c.name} enabled notifications?`, 3500);
+            : `No devices reached. Has ${c.name} enabled notifications?`, 3500);
         } },
       ],
     });
@@ -11824,11 +11824,11 @@
     openModal({
       title: "Install the app",
       body: `
-        <p class="muted" style="margin-top:-0.3em">Install Stone Dragon so it opens like an app — and works offline.</p>
+        <p class="muted" style="margin-top:-0.3em">Install Stone Dragon so it opens like an app, and works offline.</p>
         <ol class="install-steps">
           <li>Tap the <strong>⋮ menu</strong> in the top-right of your browser.</li>
           <li>Tap <strong>Install app</strong> (or <strong>Add to Home screen</strong>).</li>
-          <li>Confirm — Stone Dragon lands on your home screen.</li>
+          <li>Confirm, and Stone Dragon lands on your home screen.</li>
         </ol>
         <p class="muted">Then open it from your home screen, just like any other app.</p>
       `,
@@ -11839,9 +11839,9 @@
     openModal({
       title: "Add to Home Screen",
       body: `
-        <p class="muted" style="margin-top:-0.3em">Install Stone Dragon so it opens like an app — and works offline.</p>
+        <p class="muted" style="margin-top:-0.3em">Install Stone Dragon so it opens like an app, and works offline.</p>
         <ol class="install-steps">
-          <li>Tap the <strong>Share</strong> button — the square with an arrow pointing up, at the bottom of Safari.</li>
+          <li>Tap the <strong>Share</strong> button, the square with an arrow pointing up, at the bottom of Safari.</li>
           <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
           <li>Tap <strong>Add</strong> in the top-right corner.</li>
         </ol>

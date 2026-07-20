@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=nopagetitle2" />
+  <link rel="stylesheet" href="styles.css?v=emdash1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -81,7 +81,7 @@
         <h2>Create coach account</h2>
         <p class="muted">Set up your account to manage athletes and programs across devices.</p>
         <div id="login-migrate-notice" class="migrate-notice hidden">
-          <strong>Upgrade your account</strong> — add email + password to enable cross-device access. Your existing athletes will be preserved.
+          <strong>Upgrade your account:</strong> add email + password to enable cross-device access. Your existing athletes will be preserved.
         </div>
         <form id="form-coach-setup" autocomplete="on" onsubmit="return false">
           <label>Your name
@@ -272,9 +272,7 @@
       <!-- Dashboard -->
       <div id="view-dashboard" class="view">
         <div class="view-head">
-          <div>
-            <h2>Athletes</h2>
-          </div>
+          <div></div>
           <button class="btn btn-primary" id="btn-add-client">+ Add athlete</button>
         </div>
         <div class="roster-controls hidden" id="roster-controls">
@@ -296,11 +294,6 @@
 
       <!-- Overview (dashboard calendar) -->
       <div id="view-overview" class="view hidden">
-        <div class="view-head">
-          <div>
-            <h2>Training Overview</h2>
-          </div>
-        </div>
         <div id="overview-requests" class="overview-requests"></div>
         <div id="dash-money-strip"></div>
         <div class="cal-nav" style="margin-bottom:0.6rem">
@@ -342,7 +335,7 @@
               <h3 style="margin:0">📣 Open Slots</h3>
               <button class="btn btn-primary btn-sm" id="btn-post-open-slot">+ Post open slot</button>
             </div>
-            <p class="muted" style="font-size:0.85rem">Post an opening — athletes can claim it first-come from their side. You confirm and book it in Setmore.</p>
+            <p class="muted" style="font-size:0.85rem">Post an opening. Athletes can claim it first-come from their side. You confirm and book it in Setmore.</p>
             <div id="open-slots-container"></div>
           </div>
         </div>
@@ -350,12 +343,6 @@
 
       <!-- Athlete messaging -->
       <div id="view-messages" class="view hidden">
-        <div class="view-head">
-          <div>
-            <h2>Messages</h2>
-          </div>
-        </div>
-
         <div class="msg-compose">
           <div class="msg-compose-field">
             <label class="msg-label">To</label>
@@ -381,20 +368,13 @@
 
       <!-- Anatomy library (coach reference) -->
       <div id="view-anatomy" class="view hidden">
-        <div class="view-head">
-          <div>
-            <h2>Anatomy Library</h2>
-          </div>
-        </div>
         <div data-anatomy-root></div>
       </div>
 
       <!-- Programs list -->
       <div id="view-programs" class="view hidden">
         <div class="view-head">
-          <div>
-            <h2>Programs</h2>
-          </div>
+          <div></div>
           <div class="library-head-actions">
             <button class="btn btn-ghost" id="btn-programs-day-library">📚 Day Library</button>
             <button class="btn btn-primary" id="btn-new-program">+ New program</button>
@@ -449,7 +429,7 @@
         <div id="day-lib-empty" class="empty-state hidden">
           <div class="empty-emoji">🗓️</div>
           <h3>No day templates yet</h3>
-          <p>Create a reusable day — like "Heavy Push" or "Leg Day" — and drop it into any program.</p>
+          <p>Create a reusable day (like "Heavy Push" or "Leg Day") and drop it into any program.</p>
           <button class="btn btn-primary" style="margin-top:0.75em" id="btn-daylib-new-empty">+ New day</button>
         </div>
       </div>
@@ -627,7 +607,7 @@
           </div>
           <details class="session-manage" id="coach-session-details">
             <summary>Manage packages &amp; history</summary>
-            <p class="muted session-manage-note">Track sessions your athlete has paid for. The app doesn't collect payment — confirm payment outside the app (Venmo, cash, Stripe link, etc.), then add the package here.</p>
+            <p class="muted session-manage-note">Track sessions your athlete has paid for. The app doesn't collect payment: confirm payment outside the app (Venmo, cash, Stripe link, etc.), then add the package here.</p>
             <div class="session-manage-actions">
               <button class="btn btn-ghost btn-sm" id="btn-export-sessions" title="Download payment &amp; use history (opens in Excel)">⬇ Export</button>
             </div>
@@ -743,7 +723,7 @@
     </header>
 
     <div id="preview-banner" class="preview-banner hidden">
-      <span class="preview-banner-msg">🏋️ Live session — <strong id="preview-athlete-name"></strong></span>
+      <span class="preview-banner-msg">🏋️ Live session: <strong id="preview-athlete-name"></strong></span>
       <div class="preview-banner-actions">
         <button class="btn btn-sm" id="btn-preview-edit-day">✏️ Edit this day</button>
         <button class="btn btn-sm" id="btn-exit-preview">← Back to coach view</button>
@@ -877,13 +857,13 @@
           <h3>Cardio</h3>
           <button class="btn btn-primary" id="btn-add-cardio">+ Log cardio</button>
         </div>
-        <p class="muted" style="margin-bottom:1em">Track runs, rides, swims — anything that gets the heart rate up. Tap an entry to edit it.</p>
+        <p class="muted" style="margin-bottom:1em">Track runs, rides, swims: anything that gets the heart rate up. Tap an entry to edit it.</p>
         <div id="cardio-list-container"></div>
 
         <div class="card">
           <h3>Notes for my coach</h3>
           <textarea id="client-feedback" rows="4" placeholder="How are things going? Any aches, schedule conflicts, food cravings…"></textarea>
-          <p class="muted">Synced automatically — your coach will see it.</p>
+          <p class="muted">Synced automatically. Your coach will see it.</p>
         </div>
       </div>
 
@@ -905,7 +885,7 @@
         <div id="athlete-balance-host"></div>
         <details class="session-manage" id="athlete-session-details">
           <summary>Package balance &amp; history</summary>
-          <p class="muted session-manage-note">Your training package balance. Buying a package sends a purchase request to your coach — settle payment with them outside the app, and they'll mark it paid to add the sessions.</p>
+          <p class="muted session-manage-note">Your training package balance. Buying a package sends a purchase request to your coach. Settle payment with them outside the app, and they'll mark it paid to add the sessions.</p>
           <div class="session-manage-actions">
             <button class="btn btn-ghost btn-sm" id="btn-athlete-export-sessions" title="Download payment &amp; use history (opens in Excel)">⬇ Export</button>
           </div>
@@ -929,7 +909,7 @@
             <h3 id="profile-name">My details</h3>
             <span class="saved-flag" id="athlete-prof-saved">Saved ✓</span>
           </div>
-          <p class="muted" style="margin:-0.3em 0 0.9em">Your coach can see this too — keep it up to date.</p>
+          <p class="muted" style="margin:-0.3em 0 0.9em">Your coach can see this too. Keep it up to date.</p>
           <div class="profile-grid">
             <label class="profile-field-name">Name
               <input type="text" id="ath-prof-name" autocomplete="name" />
@@ -1013,8 +993,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=push1"></script>
-  <script src="cloud.js?v=push1"></script>
-  <script src="app.js?v=nopagetitle2"></script>
+  <script src="cloud.js?v=emdash1"></script>
+  <script src="app.js?v=emdash1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

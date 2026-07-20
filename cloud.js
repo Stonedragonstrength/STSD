@@ -34,7 +34,7 @@
     if (data.user && !data.session) {
       throw new Error("EMAIL_CONFIRMATION_REQUIRED");
     }
-    if (!data.user) throw new Error("Sign-up failed — try again or sign in if you already have an account.");
+    if (!data.user) throw new Error("Sign-up failed. Try again or sign in if you already have an account.");
     return data.user;
   }
   async function signIn(email, password) {
