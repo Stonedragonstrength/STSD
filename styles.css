@@ -682,6 +682,33 @@ input[type="date"] { color-scheme: dark; }
 .coach-profile-stat-lbl { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-top: 0.3em; }
 .coach-profile-section { margin: 0 0 0.4rem; font-size: 1.05rem; color: var(--text); }
 
+/* ---- Backup / restore (coach profile) ---- */
+.backup-intro { font-size: 0.85rem; margin: 0 0 0.7rem; max-width: 46em; }
+.backup-actions { display: flex; gap: 0.55rem; flex-wrap: wrap; align-items: center; }
+.backup-note { font-size: 0.78rem; margin: 0.6rem 0 0; }
+.backup-table {
+  width: 100%;
+  max-width: 26em;
+  border-collapse: collapse;
+  margin: 0.6em 0 0.9em;
+  font-size: 0.88rem;
+}
+.backup-table th,
+.backup-table td { padding: 0.35em 0.5em; border-bottom: 1px solid var(--border); text-align: left; }
+.backup-table th { color: var(--text-soft); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; }
+.backup-table .bk-num { text-align: right; font-variant-numeric: tabular-nums; }
+/* Highlight where the backup differs from what's on the device right now. */
+.backup-table .bk-diff { color: var(--primary-bright); font-weight: 800; }
+.error-soft {
+  font-size: 0.82rem;
+  color: var(--warn);
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: var(--radius);
+  padding: 0.55em 0.7em;
+  margin: 0;
+}
+
 /* ============ Effort / intensity (heat ramp) ============ */
 /* Warm left-anchored gradient layered over the card's own surface — strongest
    at the left edge, faded out by ~55% so text stays readable. */

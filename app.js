@@ -2061,6 +2061,113 @@
     const cnt = $("#coach-profile-clients");
     if (cnt) cnt.textContent = String(state.trainerData.clients?.length || 0);
     renderThemePicker($("#coach-theme-picker"), "coach");
+    renderBackupNote();
+  }
+
+  // -------- Backup / restore --------
+  // Cloud writes fail silently so the app keeps working offline, which means a
+  // bad sync can cost real work. This is the escape hatch: one self-contained
+  // file holding everything, restorable onto any device.
+  const KEY_LAST_BACKUP = "trainerpro_last_backup_v1";
+  const BACKUP_FORMAT = 1;
+
+  function renderBackupNote() {
+    const el = $("#backup-last"); if (!el) return;
+    const ts = localStorage.getItem(KEY_LAST_BACKUP);
+    el.textContent = ts
+      ? `Last backup ${new Date(Number(ts)).toLocaleString()}`
+      : "No backup downloaded yet.";
+  }
+
+  function backupCounts(data) {
+    const clients = data.clients || [];
+    return {
+      athletes: clients.length,
+      programs: (data.programTemplates || []).length,
+      days: (data.workoutTemplates || []).length,
+      weeks: clients.reduce((n, c) => n + (c.weeks || []).length, 0),
+      logged: clients.reduce((n, c) =>
+        n + Object.keys(c.importedProgress?.exerciseLogs || {}).length, 0),
+    };
+  }
+
+  function exportAllData() {
+    const data = state.trainerData || {};
+    const payload = {
+      format: BACKUP_FORMAT,
+      app: "Stone Dragon Strength Training",
+      exportedAt: new Date().toISOString(),
+      counts: backupCounts(data),
+      trainerData: data,
+    };
+    const stamp = todayISO();
+    downloadFile(`stone-dragon-backup-${stamp}.json`, JSON.stringify(payload, null, 2), "application/json");
+    localStorage.setItem(KEY_LAST_BACKUP, String(Date.now()));
+    renderBackupNote();
+    const c = payload.counts;
+    toast(`Backup downloaded — ${c.athletes} athlete${c.athletes === 1 ? "" : "s"}, ${c.programs} program${c.programs === 1 ? "" : "s"} ✓`);
+  }
+
+  // Restore is destructive and pushes to the cloud, so it always shows what's
+  // in the file next to what's here now, and never proceeds without a click.
+  function importAllData(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      let payload;
+      try { payload = JSON.parse(String(reader.result)); }
+      catch { toast("That file isn't a valid backup"); return; }
+      const incoming = payload?.trainerData || (payload?.clients ? payload : null);
+      if (!incoming || !Array.isArray(incoming.clients)) {
+        toast("That file isn't a Stone Dragon backup"); return;
+      }
+      const from = backupCounts(incoming);
+      const now = backupCounts(state.trainerData || {});
+      const when = payload.exportedAt
+        ? new Date(payload.exportedAt).toLocaleString() : "unknown date";
+      const row = (label, a, b) =>
+        `<tr><td>${label}</td><td class="bk-num">${a}</td><td class="bk-num${b !== a ? " bk-diff" : ""}">${b}</td></tr>`;
+      openModal({
+        title: "Restore from backup",
+        body: `
+          <p class="muted" style="margin-top:0">Backup taken <strong>${escapeHtml(when)}</strong>.</p>
+          <table class="backup-table">
+            <thead><tr><th></th><th class="bk-num">Now</th><th class="bk-num">Backup</th></tr></thead>
+            <tbody>
+              ${row("Athletes", now.athletes, from.athletes)}
+              ${row("Programs", now.programs, from.programs)}
+              ${row("Saved days", now.days, from.days)}
+              ${row("Program weeks", now.weeks, from.weeks)}
+              ${row("Exercises with logs", now.logged, from.logged)}
+            </tbody>
+          </table>
+          <p class="error-soft">This replaces everything currently on this device and pushes it to the cloud, overwriting your other devices. It cannot be undone.</p>`,
+        actions: [
+          { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+          { label: "Replace everything", className: "btn btn-danger", onClick: () => {
+            // Keep this device's identity — the backup may predate it, and
+            // swapping coachId/auth would orphan every cloud row.
+            const keep = {
+              coachId: state.trainerData.coachId,
+              coachAuthId: state.trainerData.coachAuthId,
+              trainer: state.trainerData.trainer,
+            };
+            state.trainerData = { ...incoming, ...keep };
+            localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+            // Mark everything unsynced so the restored data is pushed up and
+            // protected from being reverted by a stale cloud read on reload.
+            localStorage.setItem(KEY_TEMPLATES_DIRTY, "1");
+            (state.trainerData.clients || []).forEach((c) => markAthleteDirty(c.id));
+            saveTrainer();
+            (state.trainerData.clients || []).forEach((c) => pushAthlete(c));
+            closeModal();
+            toast(`Restored ${from.athletes} athlete${from.athletes === 1 ? "" : "s"} — syncing to the cloud`);
+            renderDashboard();
+          }},
+        ],
+      });
+    };
+    reader.onerror = () => toast("Couldn't read that file");
+    reader.readAsText(file);
   }
 
   const AVATAR_COLORS = ["#06b6d4","#10b981","#8b5cf6","#f59e0b","#ef4444","#ec4899","#3b82f6","#f97316"];
@@ -13020,6 +13127,13 @@
     $("#btn-load-program-empty").addEventListener("click", openLoadProgramModal);
     $("#btn-archive-program").addEventListener("click", archiveCurrentProgram);
     $("#btn-save-program-to-library")?.addEventListener("click", saveClientProgramToLibrary);
+    $("#btn-export-data")?.addEventListener("click", exportAllData);
+    $("#btn-import-data")?.addEventListener("click", () => $("#import-data-input")?.click());
+    $("#import-data-input")?.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      if (file) importAllData(file);
+      e.target.value = ""; // let the same file be picked again
+    });
 
     // Exercise library
     $("#btn-close-library").addEventListener("click", closeExLibrary);
