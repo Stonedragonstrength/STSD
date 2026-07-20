@@ -8840,11 +8840,17 @@
     const draw = () => {
       const selDefs = sel.map((id) => RACING_LIB.find((s) => s.id === id)).filter(Boolean);
       const poolDefs = RACING_LIB.filter((s) => !sel.includes(s.id));
+      const chartOn = progress.showVolChart !== false;
       $("#modal-body").innerHTML = `
         <p class="muted stat-cust-intro">Choose the stats for your stats bar and reorder them with the arrows.</p>
         <div class="stat-cust-list">${selDefs.map((d, i) => rowHtml(d, true, i, selDefs.length)).join("") || `<p class="muted" style="padding:0.3em 0">Nothing selected yet.</p>`}</div>
-        ${poolDefs.length ? `<div class="stat-cust-sub">Add more</div><div class="stat-cust-list">${poolDefs.map((d) => rowHtml(d, false)).join("")}</div>` : ""}`;
-      $("#modal-body").querySelectorAll(".stat-cust-row").forEach((row) => {
+        ${poolDefs.length ? `<div class="stat-cust-sub">Add more</div><div class="stat-cust-list">${poolDefs.map((d) => rowHtml(d, false)).join("")}</div>` : ""}
+        <div class="stat-cust-sub">Chart</div>
+        <div class="stat-cust-list"><div class="stat-cust-row${chartOn ? " on" : ""}">
+          <span class="stat-cust-name"><span class="stat-cust-ico">📊</span>Volume chart</span>
+          <span class="stat-cust-ctrls"><button class="btn ${chartOn ? "btn-ghost" : "btn-primary"} btn-sm" data-chart>${chartOn ? "Remove" : "Add"}</button></span>
+        </div></div>`;
+      $("#modal-body").querySelectorAll(".stat-cust-row[data-id]").forEach((row) => {
         const id = row.dataset.id;
         row.querySelectorAll("[data-act]").forEach((btn) => btn.addEventListener("click", () => {
           const idx = sel.indexOf(id);
@@ -8853,6 +8859,9 @@
           else if (btn.dataset.act === "down" && idx >= 0 && idx < sel.length - 1) { [sel[idx + 1], sel[idx]] = [sel[idx], sel[idx + 1]]; }
           commit(); draw();
         }));
+      });
+      $("#modal-body").querySelector("[data-chart]")?.addEventListener("click", () => {
+        progress.showVolChart = !chartOn; saveClient(); renderAthleteOverview(); draw();
       });
     };
     openModal({ title: "Customize stats", body: "", actions: [{ label: "Done", className: "btn btn-primary", onClick: closeModal }] });
@@ -8988,7 +8997,8 @@
       if (e.target.open) wireRacingCap();
     });
     wireRacingCap();
-    renderVolumeChart(progress);
+    if (progress.showVolChart === false) { const vh = $("#ov-volchart-host"); if (vh) vh.innerHTML = ""; }
+    else renderVolumeChart(progress);
   }
   // Sessions-remaining chip in the athlete header, right of the profile name.
   function renderClientHeaderSessions() {
