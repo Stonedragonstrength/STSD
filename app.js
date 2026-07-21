@@ -3391,6 +3391,9 @@
     const now = new Date();
     state.coachCal = { year: now.getFullYear(), month: now.getMonth() };
     renderCoachCalendar();
+    // Opening an athlete starts at the top — on mobile the dashboard's scroll
+    // position otherwise carries over and lands mid-page.
+    window.scrollTo(0, 0);
     // Pull the latest athlete progress from the cloud (non-blocking).
     if (window.Cloud?.enabled) pullProgressFromCloud(c);
   }
@@ -11124,9 +11127,16 @@
     // Card fill line: fraction of working sets filled in (or skipped).
     // Locked cards read full.
     const setDoneNow = (it) => it.skipped || (it.rp.value && (it.wt.value || repsOnlyLog));
-    exProgress = () => (isLocked
-      ? { done: numSets, total: numSets }
-      : { done: setInputs.filter(setDoneNow).length, total: numSets });
+    // Warm-ups count toward the fill line too — they're required to lock, so
+    // the bar shouldn't read full while they're still empty. (warmupInputs is
+    // declared below but only read at call time, after the card is built.)
+    exProgress = () => {
+      const wTotal = warmupInputs.length;
+      if (isLocked) return { done: numSets + wTotal, total: numSets + wTotal };
+      const wDone = warmupInputs.filter((it, i) =>
+        it.rp.value && (it.wt.value || repsOnlyLog || warmups[i]?.weight === "BW")).length;
+      return { done: setInputs.filter(setDoneNow).length + wDone, total: numSets + wTotal };
+    };
     exBar = document.createElement("div");
     exBar.className = "cex-progress-line";
     const exBarFill = document.createElement("div");
@@ -11205,7 +11215,8 @@
     };
 
     // Warm-up columns (optional, up to 2) render before the working sets, tinted
-    // and labeled W1/W2. Loggable but never required to lock the exercise.
+    // and labeled W1/W2. When present they're part of completing the card —
+    // required to lock, same as working sets.
     const warmupInputs = []; // { wt, rp }
     const warmups = (ex.warmups || []).slice(0, 2);
     warmups.forEach((w, i) => {
@@ -11341,6 +11352,10 @@
     const finisherHasData = () => finisherInputs.some((f) => f.rp.value);
     const finisherComplete = () => finisherInputs.every((f) => f.rp.value);
     const warmupHasData = () => warmupInputs.some(({ wt, rp }) => wt.value || rp.value);
+    // A warm-up slot is done once reps are in (weight too, unless the lift is
+    // reps-only or the slot is prescribed as BW).
+    const warmupComplete = () => warmupInputs.every(({ wt, rp }, i) =>
+      rp.value && (wt.value || repsOnlyLog || warmups[i]?.weight === "BW"));
     const collectWarmups = () => {
       const arr = warmupInputs.map(({ wt, rp }) => ({ weight: wt.value, reps: rp.value }));
       return arr.some((w) => w.weight || w.reps) ? { warmups: arr } : {};
@@ -11349,10 +11364,21 @@
     // Auto-save: debounced 800ms after last keystroke, saves a draft entry.
     // Drafts never lock in the green checkmark — only the Lock button does.
     let _ast = null;
+    // Auto-lock runs on its own, slower fuse (below) so there's time to fix a
+    // number on the last set before the card closes up.
+    let _alt = null;
+    const AUTOLOCK_MS = 4000;
+    // Once the athlete unlocks with ✎ Edit, auto-lock stays off for this
+    // card — relocking is theirs to do with 🔒.
+    let manualUnlock = false;
     const autoSave = () => {
       refreshClearBtn(); // values are already current — keep ⌫ in sync live
       updateExBar();     // ...and the card/day progress fills too
       clearTimeout(_ast);
+      clearTimeout(_alt);
+      if (!isLocked && !manualUnlock) {
+        _alt = setTimeout(() => { if (!isLocked && !manualUnlock) lockIn({ silent: true }); }, AUTOLOCK_MS);
+      }
       _ast = setTimeout(() => {
         const sets = setInputs.map(({ wt, rp, skipped }) => (skipped ? { weight: "", reps: "", skipped: true } : { weight: wt.value, reps: rp.value }))
                               .filter(s => s.skipped || s.weight || s.reps);
@@ -11373,10 +11399,6 @@
         if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
         saveClient();
         renderAthleteCalendar();
-        // Every set filled in → lock it here rather than making the athlete
-        // tap 🔒. Runs off the same 800ms debounce, so typing "1" on the way
-        // to "10" doesn't lock underneath them. ✎ Edit still unlocks.
-        if (!isLocked) lockIn({ silent: true });
       }, 800);
     };
     setInputs.forEach(({ wt, rp }) => {
@@ -11463,12 +11485,22 @@
           if (it.rp.value === "" && Number.isFinite(rSeedAt(i))) { it.rp.value = String(rSeedAt(i)); markEdited(it.rp); }
           if (it.wt.value === "" && !repsOnlyLog && Number.isFinite(wSeedAt(i))) { it.wt.value = String(wSeedAt(i)); markEdited(it.wt); }
         });
+        // Warm-ups seed from their prescription too, so 🔒 stays one tap
+        // when the athlete did exactly what was written.
+        warmupInputs.forEach(({ wt, rp }, i) => {
+          const ws = parseFloat(warmups[i]?.weight), rs = parseInt(warmups[i]?.reps, 10);
+          if (rp.value === "" && Number.isFinite(rs)) { rp.value = String(rs); markEdited(rp); }
+          if (wt.value === "" && !repsOnlyLog && Number.isFinite(ws)) { wt.value = String(ws); markEdited(wt); }
+        });
       }
       const sets = setInputs.map(({ wt, rp, skipped }) => (skipped ? { weight: "", reps: "", skipped: true } : { weight: wt.value, reps: rp.value }));
       const complete = sets.every((s) => s.skipped || (s.reps && (s.weight || repsOnlyLog)));
       if (!complete) { if (!silent) toast("Fill in all sets before locking in."); return false; }
+      if (!warmupComplete()) { if (!silent) toast("Fill in your warm-up sets before locking in."); return false; }
       if (!finisherComplete()) { if (!silent) toast("Fill in your burnout/dropset reps before locking in."); return false; }
       clearTimeout(_ast);
+      clearTimeout(_alt);
+      manualUnlock = false;
       if (!state.clientData.progress.exerciseLogs[ex.id])
         state.clientData.progress.exerciseLogs[ex.id] = [];
       const exLogs = state.clientData.progress.exerciseLogs[ex.id];
@@ -11510,6 +11542,8 @@
       if (entry) { entry.locked = false; delete entry.skipped; }
       saveClient();
       isLocked = false;
+      manualUnlock = true; // deliberate unlock — 🔒 is manual from here on
+      clearTimeout(_alt);
       refreshLockUI();
       applySkippedUI(false);
       doneCircle.classList.remove("done"); doneCircle.textContent = "";
@@ -11525,6 +11559,7 @@
       const hasData = setInputs.some((it) => !it.skipped && (it.wt.value || it.rp.value)) || warmupHasData() || finisherHasData();
       if (hasData && !window.confirm("Discard the entered numbers and mark this exercise skipped?")) return;
       clearTimeout(_ast);
+      clearTimeout(_alt);
       if (!state.clientData.progress.exerciseLogs[ex.id])
         state.clientData.progress.exerciseLogs[ex.id] = [];
       const exLogs = state.clientData.progress.exerciseLogs[ex.id];
@@ -11545,6 +11580,7 @@
       e.stopPropagation();
       if (!window.confirm("Clear today's numbers for this exercise?")) return;
       clearTimeout(_ast);
+      clearTimeout(_alt);
       const exLogs = state.clientData.progress.exerciseLogs[ex.id];
       if (exLogs) {
         const rest = exLogs.filter((l) => l.date !== logDate);

@@ -3592,6 +3592,7 @@ input[type="date"] { color-scheme: dark; }
   background: var(--surface-2); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 0.5em 0.6em;
   color: var(--text); font-size: 1rem; width: 100%;
+  text-align: center;
 }
 .pr-1rm-input:focus, .pr-2rm-input:focus, .pr-3rm-input:focus { outline: none; border-color: var(--primary); }
 #pr-weight, #pr-reps { text-align: center; }
