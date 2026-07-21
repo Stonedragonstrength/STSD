@@ -6337,6 +6337,8 @@ button.cex-set-lbl:hover { color: var(--warn); }
 .coach-week-tab.active .coach-week-tab-dup { opacity: 1; }
 .coach-week-tab-del:hover { color: var(--danger) !important; }
 .coach-week-tab-dup:hover { color: var(--primary) !important; }
+.coach-week-tab-dragging { opacity: 0.45; }
+.coach-week-tab-dragover { border-bottom-color: var(--primary); background: var(--surface-2); }
 
 .coach-week-tab-add {
   font-size: 1rem;
@@ -8459,6 +8461,19 @@ body.live-log-mode #screen-client .header-right { display: none; }
   color: var(--primary-bright);
   background: rgba(var(--primary-rgb), 0.12);
   border-color: rgba(var(--primary-bright-rgb), 0.35);
+}
+
+/* "Muscles in this group": the anatomical breakdown as theme-tinted pills */
+.a-muscles h4 { margin: 0 0 0.5em; font-size: 0.85rem; color: var(--text-soft); }
+.a-muscle-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.a-muscle-list li {
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.35em 0.7em;
+  border-radius: var(--radius);
+  background: rgba(var(--primary-rgb), 0.08);
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.28);
+  color: var(--text);
 }
 
 /* Tablets and below: stack the figure above the legend + detail */

@@ -4552,6 +4552,29 @@
       why: "Keeps knees tracking and hips stable when you cut and land." },
   ];
   const ANATOMY_BY_ID = Object.fromEntries(ANATOMY_GROUPS.map((g) => [g.id, g]));
+  // The individual muscles that make up each group (the anatomical breakdown
+  // behind each group's short `sub` line), rendered as a list in the detail card.
+  const ANATOMY_MUSCLES = {
+    chest: ["Pectoralis major", "Pectoralis minor", "Serratus anterior"],
+    "delts-front": ["Anterior deltoid (front head)"],
+    "delts-side": ["Lateral deltoid (side head)"],
+    biceps: ["Biceps brachii — long head", "Biceps brachii — short head", "Brachialis", "Coracobrachialis"],
+    forearms: ["Brachioradialis", "Flexor carpi radialis", "Flexor carpi ulnaris", "Extensor carpi radialis", "Extensor carpi ulnaris", "Flexor digitorum", "Extensor digitorum", "Pronator teres", "Supinator"],
+    core: ["Rectus abdominis", "Transverse abdominis"],
+    obliques: ["External oblique", "Internal oblique"],
+    quads: ["Rectus femoris", "Vastus lateralis", "Vastus medialis", "Vastus intermedius"],
+    adductors: ["Adductor magnus", "Adductor longus", "Adductor brevis", "Gracilis", "Pectineus"],
+    calves: ["Gastrocnemius — medial head", "Gastrocnemius — lateral head", "Soleus", "Tibialis anterior", "Tibialis posterior", "Fibularis (peroneus)"],
+    "delts-rear": ["Posterior deltoid (rear head)"],
+    lats: ["Latissimus dorsi", "Teres major"],
+    rhomboids: ["Rhomboid major", "Rhomboid minor", "Trapezius — middle fibers", "Trapezius — lower fibers"],
+    traps: ["Trapezius — upper fibers", "Levator scapulae"],
+    triceps: ["Triceps brachii — long head", "Triceps brachii — lateral head", "Triceps brachii — medial head", "Anconeus"],
+    lowerback: ["Erector spinae — iliocostalis", "Erector spinae — longissimus", "Erector spinae — spinalis", "Multifidus", "Quadratus lumborum"],
+    glutes: ["Gluteus maximus", "Gluteus medius", "Gluteus minimus", "Tensor fasciae latae"],
+    hamstrings: ["Biceps femoris — long head", "Biceps femoris — short head", "Semitendinosus", "Semimembranosus"],
+    abductors: ["Gluteus medius", "Gluteus minimus", "Tensor fasciae latae"],
+  };
   // Which groups list in each view's legend (region "both" shows in both).
   const ANATOMY_VIEW_GROUPS = {
     front: ANATOMY_GROUPS.filter((g) => g.region === "front" || g.region === "both").map((g) => g.id),
@@ -4689,6 +4712,10 @@
       <p class="a-sub">${escapeHtml(g.sub)}</p>
       <p class="a-does">${escapeHtml(g.does)}</p>
       ${g.why ? `<p class="a-why">${escapeHtml(g.why)}</p>` : ""}
+      ${(ANATOMY_MUSCLES[g.id] && ANATOMY_MUSCLES[g.id].length) ? `<div class="a-muscles">
+        <h4>Muscles in this group</h4>
+        <ul class="a-muscle-list">${ANATOMY_MUSCLES[g.id].map((m) => `<li>${escapeHtml(m)}</li>`).join("")}</ul>
+      </div>` : ""}
       <div class="a-cols">
         <div class="a-col a-cues"><h4>Coaching cues</h4><ul>${g.cues.map(li).join("")}</ul></div>
         <div class="a-col a-miss"><h4>Common mistakes</h4><ul>${g.mistakes.map(li).join("")}</ul></div>
@@ -5400,9 +5427,12 @@
     const strip = document.createElement("div");
     strip.className = "coach-week-tab-strip";
 
+    let weekDragFrom = null; // drag-to-reorder weeks (mirrors the day-tab pattern)
+
     weeks.forEach((week, wIdx) => {
       const tab = document.createElement("button");
       tab.className = "coach-week-tab" + (wIdx === _coachActiveWeekIdx ? " active" : "");
+      tab.title = "Drag to reorder";
       const lbl = document.createElement("span");
       lbl.className = "coach-week-tab-lbl";
       lbl.textContent = week.phaseLabel ? `${week.phaseLabel} ${week.label}` : week.label;
@@ -5463,6 +5493,45 @@
         _coachActiveWeekIdx = wIdx;
         renderWeeks();
       });
+
+      // Drag to reorder weeks within the program.
+      tab.draggable = true;
+      tab.addEventListener("dragstart", (e) => {
+        weekDragFrom = wIdx;
+        tab.classList.add("coach-week-tab-dragging");
+        e.dataTransfer.effectAllowed = "move";
+        try { e.dataTransfer.setData("text/plain", String(wIdx)); } catch (_) {}
+      });
+      tab.addEventListener("dragend", () => {
+        weekDragFrom = null;
+        strip.querySelectorAll(".coach-week-tab").forEach((t) => t.classList.remove("coach-week-tab-dragover", "coach-week-tab-dragging"));
+      });
+      tab.addEventListener("dragover", (e) => {
+        if (weekDragFrom === null || weekDragFrom === wIdx) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        tab.classList.add("coach-week-tab-dragover");
+      });
+      tab.addEventListener("dragleave", () => tab.classList.remove("coach-week-tab-dragover"));
+      tab.addEventListener("drop", (e) => {
+        e.preventDefault();
+        if (weekDragFrom === null || weekDragFrom === wIdx) return;
+        const list = _programEditorId ? currentProgramTemplate()?.weeks : currentClient()?.weeks;
+        if (!list) return;
+        // Keep the same week active after the shuffle by tracking its id.
+        const activeId = list[_coachActiveWeekIdx] && list[_coachActiveWeekIdx].id;
+        const [moved] = list.splice(weekDragFrom, 1);
+        list.splice(wIdx, 0, moved);
+        // Default "Week N" labels follow position; custom/phase labels are left alone.
+        list.forEach((w, i) => { if (/^Week \d+$/.test(w.label)) w.label = `Week ${i + 1}`; });
+        const newActive = list.findIndex((w) => w.id === activeId);
+        _coachActiveWeekIdx = newActive >= 0 ? newActive : wIdx;
+        weekDragFrom = null;
+        saveTrainer();
+        renderWeeks();
+        if (!_programEditorId) { renderDiet(); renderCoachCalendar(); }
+      });
+
       strip.appendChild(tab);
     });
 
