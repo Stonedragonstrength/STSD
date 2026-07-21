@@ -8706,3 +8706,33 @@ body.live-log-mode #screen-client .header-right { display: none; }
 .oneoff-workout-card { border-color: rgba(245, 158, 11, 0.35); }
 .oneoff-workout-card:hover { border-color: rgba(245, 158, 11, 0.6); }
 .oneoff-workout-card .workout-card-icon { color: #fbbf24; }
+
+/* ============ Bug reports ============ */
+#bug-desc { width: 100%; margin-top: 0.6rem; }
+.bug-report {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 0.75rem 0.85rem; margin-bottom: 0.7rem;
+}
+.bug-report-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 0.5rem; margin-bottom: 0.35rem;
+}
+.bug-report-head .muted { margin-left: 0.4rem; font-size: 0.82rem; }
+.bug-report-desc { margin: 0 0 0.4rem; white-space: pre-wrap; }
+.bug-report-details summary {
+  cursor: pointer; color: var(--text-soft); font-size: 0.85rem;
+  user-select: none;
+}
+.bug-report-details[open] summary { margin-bottom: 0.45rem; }
+.bug-diag-meta { color: var(--muted); font-size: 0.8rem; margin-bottom: 0.3rem; overflow-wrap: anywhere; }
+.bug-diag-sec { margin-top: 0.55rem; }
+.bug-diag-lbl {
+  display: block; font-size: 0.72rem; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--text-soft); margin-bottom: 0.25rem;
+}
+.bug-diag-sec pre {
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 0.5rem 0.6rem; margin: 0;
+  font-size: 0.74rem; line-height: 1.45; white-space: pre-wrap;
+  overflow-wrap: anywhere; max-height: 240px; overflow-y: auto;
+}

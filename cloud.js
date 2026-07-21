@@ -438,6 +438,40 @@
     } catch (e) { console.warn(e); return false; }
   }
 
+  // -------- Bug reports --------
+  // Insert is open (login-screen bugs happen pre-auth); reads are coach-only.
+  async function submitBugReport(report) {
+    try {
+      const { error } = await sb.from("bug_reports").insert({
+        reporter_role: report.role || "",
+        reporter_name: report.name || "",
+        athlete_id: report.athleteId || null,
+        description: report.description || "",
+        diagnostics: report.diagnostics || {},
+      });
+      if (error) { console.warn("[Cloud] submitBugReport", error.message); return false; }
+      return true;
+    } catch (e) { console.warn("[Cloud] submitBugReport", e); return false; }
+  }
+  async function getBugReports(limit = 50) {
+    try {
+      const { data, error } = await sb.from("bug_reports")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(limit);
+      if (error) { console.warn("[Cloud] getBugReports", error.message); return null; }
+      return data || [];
+    } catch (e) { console.warn("[Cloud] getBugReports", e); return null; }
+  }
+  async function deleteBugReport(id) {
+    if (!id) return false;
+    try {
+      const { error } = await sb.from("bug_reports").delete().eq("id", id);
+      if (error) { console.warn("[Cloud] deleteBugReport", error.message); return false; }
+      return true;
+    } catch (e) { console.warn("[Cloud] deleteBugReport", e); return false; }
+  }
+
   // -------- Setmore calendar sync --------
   function rowToSetmoreEvent(r) {
     return {
@@ -539,6 +573,10 @@
     // Setmore sync
     getSetmoreEvents,
     refreshSetmoreSync,
+    // Bug reports
+    submitBugReport,
+    getBugReports,
+    deleteBugReport,
     // Utils
     debounce,
     flush,

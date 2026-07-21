@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=halo14" />
+  <link rel="stylesheet" href="styles.css?v=bug1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -696,6 +696,13 @@
           <input type="file" id="import-data-input" accept="application/json,.json" hidden />
         </div>
         <p class="muted backup-note" id="backup-last"></p>
+
+        <h3 class="coach-profile-section">Bug reports</h3>
+        <p class="muted backup-intro">Reports filed from the athlete app (or by you) land here, each with a snapshot of recent errors and taps.</p>
+        <div class="backup-actions">
+          <button class="btn btn-primary" id="btn-view-bug-reports" type="button">🐞 View reports</button>
+          <button class="btn btn-ghost" id="btn-coach-bug-report" type="button">Report a problem</button>
+        </div>
       </div>
 
       </main>
@@ -975,6 +982,11 @@
           <p class="muted" style="margin-bottom:0.8em">Pick a color scheme for your app.</p>
           <div class="theme-picker" id="athlete-theme-picker"></div>
         </div>
+        <div class="card">
+          <h3>Something not working?</h3>
+          <p class="muted" style="margin-bottom:0.8em">Send a bug report. It attaches a snapshot of what the app was doing so it can get fixed fast.</p>
+          <button class="btn btn-ghost" id="btn-athlete-bug-report" type="button">🐞 Report a problem</button>
+        </div>
       </div>
     </main>
   </section>
@@ -1024,10 +1036,11 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="bugreport.js?v=bug1"></script>
   <script src="config.js?v=push1"></script>
-  <script src="cloud.js?v=emdash1"></script>
+  <script src="cloud.js?v=bug1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=halo14"></script>
+  <script src="app.js?v=bug1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

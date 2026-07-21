@@ -13476,6 +13476,166 @@
   }
   function closeModal() { hide($("#modal")); }
 
+  // -------- Bug reports --------
+  // bugreport.js silently records diagnostics (errors, console, taps); this is
+  // the submit UI on both sides plus the coach-side viewer. Reports filed
+  // offline queue in localStorage and send on the next online open.
+  const KEY_BUG_QUEUE = "trainerpro_bug_queue_v1";
+
+  function bugReportIdentity() {
+    if (state.mode === "trainer") {
+      const t = state.trainerData?.trainer || {};
+      return { role: "coach", name: t.name || "Coach", athleteId: null };
+    }
+    const c = state.clientData?.program?.client;
+    if (c) return { role: "athlete", name: c.name || "", athleteId: c.id || null };
+    return { role: "login", name: "", athleteId: null };
+  }
+
+  async function sendBugReport(report) {
+    if (window.Cloud?.enabled && navigator.onLine) {
+      if (await Cloud.submitBugReport(report)) return true;
+    }
+    try {
+      const q = JSON.parse(localStorage.getItem(KEY_BUG_QUEUE) || "[]");
+      q.push(report);
+      localStorage.setItem(KEY_BUG_QUEUE, JSON.stringify(q.slice(-5)));
+    } catch (e) { /* storage full — the toast already says it may not send */ }
+    return false;
+  }
+
+  async function flushBugQueue() {
+    if (!window.Cloud?.enabled || !navigator.onLine) return;
+    let q = [];
+    try { q = JSON.parse(localStorage.getItem(KEY_BUG_QUEUE) || "[]"); } catch (e) {}
+    if (!q.length) return;
+    localStorage.removeItem(KEY_BUG_QUEUE);
+    const failed = [];
+    for (const r of q) if (!(await Cloud.submitBugReport(r))) failed.push(r);
+    if (failed.length) {
+      try { localStorage.setItem(KEY_BUG_QUEUE, JSON.stringify(failed)); } catch (e) {}
+    }
+  }
+
+  function openBugReportModal() {
+    const diag = window.BugReport ? window.BugReport.snapshot() : {};
+    const errCount = (diag.errors || []).length;
+    openModal({
+      title: "Report a problem",
+      body: `
+        <p class="muted">Say what you were doing and what went wrong. A snapshot of recent app activity${errCount ? ` (${errCount} error${errCount === 1 ? "" : "s"} caught)` : ""} is attached automatically. Nothing you typed is included.</p>
+        <textarea id="bug-desc" rows="5" placeholder="e.g. Tapped Log set on bench press and the button did nothing"></textarea>`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        {
+          label: "Send report", className: "btn btn-primary",
+          onClick: async () => {
+            const description = ($("#bug-desc")?.value || "").trim();
+            if (!description) { toast("Add a line about what happened first"); return; }
+            const report = { ...bugReportIdentity(), description: description.slice(0, 5000), diagnostics: diag };
+            closeModal();
+            const sent = await sendBugReport(report);
+            toast(sent ? "Report sent. Thank you! 🐞" : "Saved. It will send next time you're online.", 2600);
+          },
+        },
+      ],
+    });
+    $("#bug-desc")?.focus();
+  }
+
+  function bugWhen(iso) {
+    const d = new Date(iso);
+    const min = Math.round((Date.now() - d.getTime()) / 60000);
+    if (min < 1) return "just now";
+    if (min < 60) return `${min}m ago`;
+    if (min < 60 * 24) return `${Math.round(min / 60)}h ago`;
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
+      " " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+
+  function bugDiagHtml(d) {
+    if (!d || typeof d !== "object") return "";
+    const lines = (arr, fmt) => (arr || []).map((x) => escapeHtml(fmt(x))).join("\n");
+    const errs = lines(d.errors, (e) => `${e.t || ""} [${e.kind || "error"}] ${e.msg || ""}${e.src ? ` (${e.src})` : ""}${e.stack ? `\n    ${e.stack}` : ""}`);
+    const prev = d.prevSessionErrors?.errors?.length
+      ? lines(d.prevSessionErrors.errors, (e) => `${e.t || ""} ${e.msg || ""}`)
+      : "";
+    const cons = lines(d.console, (c) => `${c.t || ""} ${c.level || ""}: ${c.msg || ""}`);
+    const tapsTxt = lines(d.taps, (t) => `${t.t || ""} ${t.on || ""} → ${t.el || ""}`);
+    const meta = [
+      d.version && `v ${d.version}`,
+      d.screen,
+      d.standalone ? "installed PWA" : "browser",
+      d.online === false ? "was offline" : "",
+      d.visibleScreen && `on ${d.visibleScreen} screen`,
+      d.sessionAgeSec != null && `app open ${Math.max(1, Math.round(d.sessionAgeSec / 60))}m`,
+    ].filter(Boolean).join(" · ");
+    const sec = (label, txt) => txt
+      ? `<div class="bug-diag-sec"><span class="bug-diag-lbl">${label}</span><pre>${txt}</pre></div>`
+      : "";
+    return `
+      <div class="bug-diag-meta">${escapeHtml(meta)}</div>
+      <div class="bug-diag-meta">${escapeHtml(d.userAgent || "")}</div>
+      ${sec(`Errors (${(d.errors || []).length})`, errs)}
+      ${prev ? sec("Errors from the previous session, before a reload", prev) : ""}
+      ${sec("Console warnings", cons)}
+      ${sec("Last taps", tapsTxt)}`;
+  }
+
+  async function openBugReportsViewer() {
+    openModal({
+      title: "Bug reports",
+      body: `<div id="bug-reports-list"><p class="muted">Loading…</p></div>`,
+      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
+    });
+    const host = $("#bug-reports-list");
+    if (!window.Cloud?.enabled) {
+      host.innerHTML = `<p class="muted">Cloud sync is off, so reports can't be fetched.</p>`;
+      return;
+    }
+    const reports = await Cloud.getBugReports();
+    if (!reports) {
+      host.innerHTML = `<p class="muted">Couldn't load reports. Check your connection and try again.</p>`;
+      return;
+    }
+    renderBugReports(host, reports);
+  }
+
+  function renderBugReports(host, reports) {
+    if (!reports.length) {
+      host.innerHTML = `<p class="muted">No reports. Quiet is good. 🐉</p>`;
+      return;
+    }
+    host.innerHTML = reports.map((r) => {
+      const errN = (r.diagnostics?.errors || []).length;
+      return `
+      <div class="bug-report" data-bug-id="${escapeHtml(r.id)}">
+        <div class="bug-report-head">
+          <div>
+            <strong>${escapeHtml(r.reporter_name || "Unknown")}</strong>
+            <span class="muted">${escapeHtml(r.reporter_role || "")} · ${escapeHtml(bugWhen(r.created_at))}${errN ? ` · ${errN} error${errN === 1 ? "" : "s"}` : ""}</span>
+          </div>
+          <button class="icon-btn" data-bug-del title="Delete report">×</button>
+        </div>
+        <p class="bug-report-desc">${escapeHtml(r.description || "")}</p>
+        <details class="bug-report-details"><summary>Diagnostics</summary>${bugDiagHtml(r.diagnostics)}</details>
+      </div>`;
+    }).join("");
+    host.querySelectorAll("[data-bug-del]").forEach((btn) => btn.addEventListener("click", async () => {
+      const wrap = btn.closest(".bug-report");
+      const id = wrap?.dataset.bugId;
+      if (!id) return;
+      btn.disabled = true;
+      if (await Cloud.deleteBugReport(id)) {
+        wrap.remove();
+        if (!host.querySelector(".bug-report")) renderBugReports(host, []);
+      } else {
+        btn.disabled = false;
+        toast("Couldn't delete. Try again.");
+      }
+    }));
+  }
+
   // -------- Web push (athlete notifications) --------
   // The athlete opts in from Profile → 🔔. Their browser subscription is
   // stored per-device in Supabase (push_subscriptions, RLS: athlete-owned);
@@ -13783,6 +13943,11 @@
 
     $("#btn-logout").addEventListener("click", () => { Nav.reset(); signOutTrainer(); });
     $("#btn-coach-profile")?.addEventListener("click", openCoachProfile);
+    $("#btn-coach-bug-report")?.addEventListener("click", openBugReportModal);
+    $("#btn-view-bug-reports")?.addEventListener("click", openBugReportsViewer);
+    $("#btn-athlete-bug-report")?.addEventListener("click", openBugReportModal);
+    window.addEventListener("online", flushBugQueue);
+    flushBugQueue();
     $("#btn-add-client").addEventListener("click", addClientPrompt);
     // Roster grouping tabs (A to Z / Membership / Activity / Program)
     $$("#roster-controls [data-roster-group]").forEach((b) =>
