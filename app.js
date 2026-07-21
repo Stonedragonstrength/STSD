@@ -7507,11 +7507,18 @@
   function prSortKey(p) {
     return prIsRepOnly(p) ? (parseInt(p.reps, 10) || 0) : epley1RM(p.weight, p.reps);
   }
-  // "225 lb × 5", or "5 reps" for bodyweight / weightless entries.
+  // Dumbbell lifts read as a pair: "80s" means two 80 lb dumbbells.
+  function isDumbbellLift(name) { return /\b(dbs?|dumbbells?)\b/i.test(String(name || "")); }
+  // HTML-safe weight label for a lift: "80s" for dumbbell lifts, "225 lb" otherwise.
+  function prWeightLabel(name, w) {
+    if (!w) return "— lb";
+    return isDumbbellLift(name) ? `${escapeHtml(w)}s` : `${escapeHtml(w)} lb`;
+  }
+  // "225 lb × 5" ("80s × 5" for dumbbells), or "5 reps" for bodyweight entries.
   function prValueLabel(p) {
     return prIsRepOnly(p)
       ? `${escapeHtml(p.reps || "?")} reps`
-      : `${escapeHtml(p.weight)} lb × ${escapeHtml(p.reps || "?")}`;
+      : `${prWeightLabel(p.name, p.weight)} × ${escapeHtml(p.reps || "?")}`;
   }
   function renderPRGroup(group) {
     const sorted = [...group.entries].sort((a, b) => prSortKey(b) - prSortKey(a));
@@ -7536,7 +7543,7 @@
         const row = document.createElement("div");
         row.className = "pr-row" + (idx === 0 ? " is-best" : "");
         row.innerHTML = `
-          <div><span class="pr-weight">${prIsRepOnly(p) ? (p.weight === "BW" ? "BW" : "—") : escapeHtml(p.weight) + " lb"}</span> <span class="pr-reps">× ${escapeHtml(p.reps || "—")} reps</span>${p.auto ? `<span class="pr-auto" title="Auto-detected from your logged sets">auto</span>` : ""}</div>
+          <div><span class="pr-weight">${prIsRepOnly(p) ? (p.weight === "BW" ? "BW" : "—") : prWeightLabel(p.name, p.weight)}</span> <span class="pr-reps">× ${escapeHtml(p.reps || "—")} reps</span>${p.auto ? `<span class="pr-auto" title="Auto-detected from your logged sets">auto</span>` : ""}</div>
           <div class="pr-date">${escapeHtml(p.date || "")}</div>
           <span class="pr-author ${p._author || "coach"}">${(p._author || "coach")}</span>
           <button class="pr-delete" data-id="${p.id}" data-author="${p._author || ""}" title="Delete">×</button>
@@ -7603,7 +7610,7 @@
     if (isFinite(cur) && cur >= b.weight) return "";
     const dt = shortFromISO(b.date);
     return `<button class="pr-logged-chip" data-slot="${n}" type="button"
-      title="Best from logged workouts. Tap to record it.">🏋️ ${b.weight}${dt ? " · " + dt : ""}</button>`;
+      title="Best from logged workouts. Tap to record it.">🏋️ ${b.weight}${isDumbbellLift(entry.name) ? "s" : ""}${dt ? " · " + dt : ""}</button>`;
   }
   function wirePRLoggedChips(card, entry, best, onApply) {
     card.querySelectorAll(".pr-logged-chip").forEach((chip) => {
@@ -7792,7 +7799,7 @@
         ${athletePR ? `
           <div class="pr-athlete-row">
             <span class="pr-author athlete">athlete</span>
-            <span>${escapeHtml(athletePR.weight || "—")} lb × ${escapeHtml(athletePR.reps || "—")} reps</span>
+            <span>${prWeightLabel(entry.name, athletePR.weight)} × ${escapeHtml(athletePR.reps || "—")} reps</span>
           </div>` : ""}`;
 
       [1, 2, 3].forEach((n) => {
@@ -9927,7 +9934,7 @@
     const prWithVal = (c.coachPRs || []).filter((p) => p.name && p.pr1);
     if (prWithVal.length) {
       const top = prWithVal.slice().sort((a, b) => Number(b.pr1) - Number(a.pr1))[0];
-      prHtml = `<div class="ov-mini"><div class="ov-mini-top"><span class="ov-mini-val">${escapeHtml(top.pr1)} lb</span></div><div class="ov-mini-lbl">${escapeHtml(top.name)} 1RM</div></div>`;
+      prHtml = `<div class="ov-mini"><div class="ov-mini-top"><span class="ov-mini-val">${prWeightLabel(top.name, top.pr1)}</span></div><div class="ov-mini-lbl">${escapeHtml(top.name)} 1RM</div></div>`;
     }
 
     const firstName = escapeHtml((c.name || "").trim().split(/\s+/)[0] || "athlete");
@@ -10879,6 +10886,8 @@
     // Carries log weight × time — the reps column reads as seconds ("40s").
     const isTimed = exIsTimed(ex);
     const tS = isTimed ? "s" : "";
+    // Dumbbell weights read as a pair ("80s"); everything else keeps " lb".
+    const dbS = isDumbbellLift(ex.name) ? "s" : "";
     const withT = (v) => (isTimed && /^\d+(\.\d+)?$/.test(String(v)) ? v + "s" : v);
     const logs = state.clientData.progress?.exerciseLogs?.[ex.id] || [];
     const isDone = hasAnyLog(ex);
@@ -11006,10 +11015,10 @@
         // mixed weights → "135×9 · 130×8".
         const wts = [...new Set(lastLog.sets.map((s) => s.weight || "BW"))];
         ll.textContent = wts.length === 1
-          ? `Last: ${wts[0] === "BW" ? "BW" : wts[0] + " lb"} × ${lastLog.sets.map((s) => (s.reps ? s.reps + tS : "?")).join(", ")}`
-          : `Last: ${lastLog.sets.map((s) => `${s.weight || "BW"}×${s.reps ? s.reps + tS : "?"}`).join(" · ")}`;
+          ? `Last: ${wts[0] === "BW" ? "BW" : wts[0] + (dbS || " lb")} × ${lastLog.sets.map((s) => (s.reps ? s.reps + tS : "?")).join(", ")}`
+          : `Last: ${lastLog.sets.map((s) => `${s.weight ? s.weight + dbS : "BW"}×${s.reps ? s.reps + tS : "?"}`).join(" · ")}`;
       } else {
-        ll.textContent = `Last: ${lastLog.weight ? lastLog.weight + " lb" : "BW"} × ${lastLog.reps ? lastLog.reps + tS : "?"}`;
+        ll.textContent = `Last: ${lastLog.weight ? lastLog.weight + (dbS || " lb") : "BW"} × ${lastLog.reps ? lastLog.reps + tS : "?"}`;
       }
       ll.title = `Previous session (${lastLog.date})`;
       rxEl.appendChild(ll);
@@ -11574,8 +11583,8 @@
           : l.sets?.length
           ? l.sets.map((s, i) => s.skipped
               ? `<span class="cex-hist-set cex-hist-skip"><em>S${i+1}</em> ⊘</span>`
-              : `<span class="cex-hist-set"><em>S${i+1}</em> ${escapeHtml(s.weight || "BW")} × ${escapeHtml(s.reps ? s.reps + tS : "?")}</span>`).join("")
-          : `<span class="cex-hist-set">${escapeHtml(l.weight || "BW")} lb × ${escapeHtml(l.reps || "?")} ${isTimed ? "sec" : "reps"}</span>`;
+              : `<span class="cex-hist-set"><em>S${i+1}</em> ${s.weight ? escapeHtml(s.weight) + dbS : "BW"} × ${escapeHtml(s.reps ? s.reps + tS : "?")}</span>`).join("")
+          : `<span class="cex-hist-set">${l.weight ? escapeHtml(l.weight) + (dbS || " lb") : "BW"} × ${escapeHtml(l.reps || "?")} ${isTimed ? "sec" : "reps"}</span>`;
         const dateHtml = l.date === logDate ? "" : `<span class="cex-hist-date">${escapeHtml(l.date)}</span>`;
         item.innerHTML = `${dateHtml}
           <span class="cex-hist-sets">${setStr}</span>
@@ -12851,7 +12860,7 @@
     if (prs.some((p) => exKey(p.name) === key && p.date === entry.date && String(p.weight) === String(cur.weight) && String(p.reps) === String(cur.reps))) return;
     prs.push(makePR({ name, weight: cur.weight, reps: String(cur.reps), date: entry.date, notes: "Auto-detected during workout 🎉", auto: true }));
     if (cardEl) celebrateElement(cardEl, "pr-celebrate");
-    toast(`🎉 New PR · ${name}: ${bw ? cur.reps + " reps" : cur.weight + " lb × " + cur.reps}!`, 3500);
+    toast(`🎉 New PR · ${name}: ${bw ? cur.reps + " reps" : cur.weight + (isDumbbellLift(name) ? "s × " : " lb × ") + cur.reps}!`, 3500);
   }
 
   // -------- Guided tour (spotlight walkthrough) --------
