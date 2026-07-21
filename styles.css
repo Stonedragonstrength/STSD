@@ -663,7 +663,7 @@ input[type="date"] { color-scheme: dark; }
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 1.1rem 1.25rem;
-  margin-bottom: 1.6rem;
+  margin-bottom: 2rem;
 }
 .coach-profile-id { display: flex; align-items: center; gap: 0.9rem; flex: 1; min-width: 0; }
 .coach-profile-avatar {
@@ -680,7 +680,15 @@ input[type="date"] { color-scheme: dark; }
 }
 .coach-profile-stat-num { font-size: 1.7rem; font-weight: 800; color: var(--primary-bright); line-height: 1; }
 .coach-profile-stat-lbl { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-top: 0.3em; }
-.coach-profile-section { margin: 0 0 0.4rem; font-size: 1.05rem; color: var(--text); }
+/* Each section (Appearance / Backup / Bug reports) gets a divider and real
+   breathing room so headings don't sit on top of the previous section. */
+.coach-profile-section {
+  margin: 2.4rem 0 0.9rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  font-size: 1.05rem;
+  color: var(--text);
+}
 
 /* ---- Athlete Templates (folders) ---- */
 .tpl-folder-bar {
@@ -734,9 +742,9 @@ input[type="date"] { color-scheme: dark; }
 }
 
 /* ---- Backup / restore (coach profile) ---- */
-.backup-intro { font-size: 0.85rem; margin: 0 0 0.7rem; max-width: 46em; }
-.backup-actions { display: flex; gap: 0.55rem; flex-wrap: wrap; align-items: center; }
-.backup-note { font-size: 0.78rem; margin: 0.6rem 0 0; }
+.backup-intro { font-size: 0.85rem; margin: 0 0 1rem; max-width: 46em; }
+.backup-actions { display: flex; gap: 0.7rem; flex-wrap: wrap; align-items: center; }
+.backup-note { font-size: 0.78rem; margin: 0.8rem 0 0; }
 .backup-table {
   width: 100%;
   max-width: 26em;
@@ -1041,7 +1049,7 @@ input[type="date"] { color-scheme: dark; }
 .profile-grid {
   display: grid;
   grid-template-columns: 1.4fr 0.7fr 1fr 1fr;
-  gap: 0 1em;
+  gap: 0.35em 1.1em;
 }
 .profile-grid > label { min-width: 0; } /* grid items don't shrink below content's intrinsic width by default — without this, the Name/Height inputs overflow their column and spill past the card edge on mobile's narrower 2-column layout */
 @media (max-width: 700px) {
@@ -1064,7 +1072,7 @@ input[type="date"] { color-scheme: dark; }
 .profile-notes-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0 1em;
+  gap: 0.35em 1.1em;
 }
 .profile-notes-grid > label { min-width: 0; }
 .profile-notes-grid textarea { min-height: 56px; }
