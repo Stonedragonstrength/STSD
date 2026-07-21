@@ -4437,13 +4437,18 @@ body::before {
   0%, 100% { filter: drop-shadow(0 8px 24px rgba(var(--primary-rgb), 0.35)); transform: translateY(0) scale(1); }
   50%      { filter: drop-shadow(0 14px 36px rgba(var(--primary-bright-rgb), 0.7)); transform: translateY(-3px) scale(1.02); }
 }
-@keyframes ringPulse {
-  0%   { transform: translate(-50%, -50%) scale(0.6); opacity: 0.9; }
-  100% { transform: translate(-50%, -50%) scale(2.3); opacity: 0; }
+/* Soft halo behind the logo. Replaces the old hard solid + 1px-dashed rings:
+   dashed borders on a scaling, radius-clipped circle rendered as an uneven
+   "segmented ring" on mobile/tablet, and both rings faded to nothing, leaving
+   no lasting glow. These are gradient glows instead — smooth at every DPR. */
+@keyframes haloPulse {
+  0%, 100% { transform: translate(-50%, -50%) scale(1);    opacity: 0.8; }
+  50%      { transform: translate(-50%, -50%) scale(1.09); opacity: 1; }
 }
-@keyframes scanRing {
-  0%   { transform: translate(-50%, -50%) scale(0.9) rotate(0deg); opacity: 0.85; }
-  100% { transform: translate(-50%, -50%) scale(1.7) rotate(180deg); opacity: 0; }
+@keyframes haloSweep {
+  0%   { transform: translate(-50%, -50%) scale(0.72); opacity: 0; }
+  30%  { opacity: 0.85; }
+  100% { transform: translate(-50%, -50%) scale(1.9);  opacity: 0; }
 }
 
 #screen-login .brand { position: relative; }
@@ -4457,18 +4462,32 @@ body::before {
   content: "";
   position: absolute;
   top: 50%; left: 50%;
-  width: 100%; height: 100%;
   border-radius: 50%;
   pointer-events: none;
-  transform: translate(-50%, -50%) scale(1);
+  z-index: -1; /* sit behind the logo art */
+  transform: translate(-50%, -50%);
 }
+/* Lasting halo — a soft glow that gently breathes, so the effect stays after
+   the entrance instead of vanishing. Rides the theme's primary color. */
 #screen-login .brand-mark::before {
-  border: 2px solid var(--primary-bright);
-  animation: ringPulse 1.6s ease-out 0.4s both;
+  width: 172%; height: 172%;
+  background: radial-gradient(circle,
+    rgba(var(--primary-bright-rgb), 0.30) 0%,
+    rgba(var(--primary-rgb), 0.12) 40%,
+    transparent 68%);
+  filter: blur(10px);
+  animation: haloPulse 5s ease-in-out 1.4s infinite;
 }
+/* One-shot soft light ring that sweeps outward on load — a gradient ring, not
+   a hard/dashed border, so there are no segments to render unevenly. */
 #screen-login .brand-mark::after {
-  border: 1px dashed var(--primary);
-  animation: scanRing 2.4s linear 0.9s both;
+  width: 108%; height: 108%;
+  background: radial-gradient(circle,
+    transparent 52%,
+    rgba(var(--primary-bright-rgb), 0.55) 61%,
+    transparent 72%);
+  filter: blur(2px);
+  animation: haloSweep 1.9s ease-out 0.5s both;
 }
 
 /* Brand text reveal */
