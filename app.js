@@ -570,8 +570,17 @@
     if (!floor) return null; // needs a rep floor
     const ceil = parseInt(p.ceil, 10);
     if (!ceil || ceil <= floor) return null;
-    // Bodyweight: pure rep ladder — no weight leg, holds at the cap.
-    if (ex.currentWeight === "BW") return { floor, ceil, inc: 0, bw: true };
+    // Bodyweight: rep ladder. Without an increment it holds at the cap forever.
+    // With an increment (and a real cap) it *graduates*: at the cap it starts
+    // adding weight and reps reset, then climbs as a normal double-progression.
+    if (ex.currentWeight === "BW") {
+      const bwInc = parseFloat(p.inc);
+      if (bwInc && ceil !== PROG_NO_CAP) {
+        const bwReset = parseInt(p.reset, 10);
+        return { floor, ceil, inc: bwInc, reset: bwReset >= 1 && bwReset < ceil ? bwReset : floor, bw: true, graduate: true };
+      }
+      return { floor, ceil, inc: 0, bw: true };
+    }
     const base = parseFloat(ex.currentWeight);
     if (!isFinite(base)) return null;
     // Reps-only (weighted): the weight stays as written — reps climb to the
@@ -621,10 +630,14 @@
     const name = String(ex.name || "").trim().toLowerCase();
     if (!name) return null;
     if (rule.bw) {
-      // Bodyweight rep ladder: worst set + 1 on a hit, hold at the cap (no
-      // weight to jump to). A hand-edited written REPS value re-bases it,
-      // mirroring the weighted chain's re-base on a written-weight edit.
-      let reps = rule.floor, prevFloor = null;
+      // Bodyweight rep ladder: worst set + 1 on a hit. Without graduation it
+      // holds at the cap (no weight to jump to). With graduation, hitting the
+      // cap on every set adds `inc` lb of load and resets reps, after which the
+      // ladder climbs weight like the weighted chain below — while every week's
+      // written weight stays "BW". A hand-edited written REPS value re-bases the
+      // rep floor (only before graduating), mirroring the weighted chain's
+      // re-base on a written-weight edit.
+      let reps = rule.floor, weight = 0, earned = 0, prevFloor = null;
       for (const w of weeks || []) {
         for (const d of w.days || []) {
           for (const e of d.exercises || []) {
@@ -632,12 +645,17 @@
             if (e.currentWeight !== "BW") continue; // ladder only chains BW copies
             const f = parseInt(e.currentReps, 10);
             if (!f) continue;
-            if (prevFloor === null || f !== prevFloor) reps = f;
+            if (weight === 0 && (prevFloor === null || f !== prevFloor)) reps = f;
             prevFloor = f;
-            if (e.id === ex.id) return { weight: null, reps, earned: 0, ...rule };
-            const min = progressionMinReps(e, 0, logsMap);
+            if (e.id === ex.id) {
+              return weight > 0
+                ? { weight: Math.round(weight * 100) / 100, reps, earned, ...rule, bw: false }
+                : { weight: null, reps, earned, ...rule };
+            }
+            const min = progressionMinReps(e, weight, logsMap);
             if (min == null || min < reps) continue; // miss / no log → hold
-            reps = Math.min(min + 1, rule.ceil);
+            if (rule.graduate && min >= rule.ceil) { weight += rule.inc; reps = rule.reset; earned += 1; }
+            else reps = Math.min(min + 1, rule.ceil);
           }
         }
       }
@@ -722,7 +740,9 @@
       hint.textContent = !floor
         ? "Set prescribed reps first. They become the rep floor."
         : isBW
-          ? `Reps climb from ${floor} each week they hit the target (worst set + 1), and hold at the cap. No weight is added.`
+          ? (p.inc && parseInt(p.ceil, 10) !== PROG_NO_CAP
+              ? `Reps climb from ${floor} to ${p.ceil || "the cap"}. When every set hits the cap, next block adds ${p.inc} lb and reps reset to ${p.reset || floor} — bodyweight graduates to weighted, then keeps climbing.`
+              : `Reps climb from ${floor} each week they hit the target (worst set + 1), and hold at the cap. No weight is added — stays bodyweight.`)
           : p.repsOnly
             ? `Reps climb from ${floor} each week they hit the target (worst set + 1), and hold at the ceiling. The weight stays as written.`
             : `Reps climb from ${floor}. When every set hits the ceiling, next week adds weight and reps reset to ${floor}. Misses hold steady.`;
@@ -748,11 +768,52 @@
       };
 
       if (isBW) {
-        // Rep cap only — no weight leg. PROG_NO_CAP = climb forever ("∞").
+        // Rep cap. PROG_NO_CAP = climb forever ("∞"); a finite cap can graduate.
         section("Rep cap", [...PROG_BW_CEIL_VALUES.filter((v) => v > floor), PROG_NO_CAP],
           parseInt(p.ceil, 10) || null,
           (v) => (v === PROG_NO_CAP ? "∞ no cap" : `${floor || "?"}→${v}`),
-          (v) => { ex.progression = { ceil: v }; saveTrainer(); onChange(); render(); });
+          (v) => {
+            // ∞ can't graduate; a finite cap keeps any chosen weight increment.
+            ex.progression = v === PROG_NO_CAP
+              ? { ceil: v }
+              : { ceil: v, ...(p.inc ? { inc: p.inc, ...(p.reset ? { reset: p.reset } : {}) } : {}) };
+            saveTrainer(); onChange(); render();
+          });
+        // "Then add weight" — off = bodyweight forever; a weight = graduate at the
+        // cap. Picking a weight with no finite cap yet defaults one from the list.
+        section("Then add weight", [PROG_REPS_ONLY, ...PROG_INC_VALUES],
+          p.inc && parseInt(p.ceil, 10) !== PROG_NO_CAP ? parseFloat(p.inc) : PROG_REPS_ONLY,
+          (v) => (v === PROG_REPS_ONLY ? "Stay BW" : `+${v} lb`),
+          (v) => {
+            let ceil = parseInt(p.ceil, 10);
+            if (!ceil || ceil === PROG_NO_CAP) ceil = PROG_BW_CEIL_VALUES.find((c) => c > floor) || floor + 7;
+            ex.progression = v === PROG_REPS_ONLY
+              ? { ceil }
+              : { ceil, inc: v, ...(p.reset && p.reset < ceil ? { reset: p.reset } : {}) };
+            saveTrainer(); onChange(); render();
+          });
+        // Optional: reps after the weight jump (defaults to the floor). Only
+        // meaningful once graduation is on.
+        const bwRLbl = document.createElement("div");
+        bwRLbl.className = "prog-pop-lbl";
+        bwRLbl.textContent = "Reps after the jump (optional)";
+        pop.appendChild(bwRLbl);
+        const bwRInp = document.createElement("input");
+        bwRInp.type = "number";
+        bwRInp.min = "1";
+        bwRInp.className = "prog-reset-input";
+        bwRInp.placeholder = floor ? String(floor) : "—";
+        bwRInp.value = p.reset || "";
+        bwRInp.disabled = !floor || !p.inc || parseInt(p.ceil, 10) === PROG_NO_CAP;
+        bwRInp.addEventListener("click", (e) => e.stopPropagation());
+        bwRInp.addEventListener("change", () => {
+          if (!ex.progression) return;
+          const v = parseInt(bwRInp.value, 10);
+          if (v >= 1 && v < (parseInt(ex.progression.ceil, 10) || Infinity)) ex.progression.reset = v;
+          else { delete ex.progression.reset; bwRInp.value = ""; }
+          saveTrainer(); onChange();
+        });
+        pop.appendChild(bwRInp);
       } else {
         section("Rep ceiling", PROG_CEIL_VALUES.filter((v) => v > floor), parseInt(p.ceil, 10) || null,
           (v) => `${floor || "?"}–${v}`,
@@ -3673,6 +3734,11 @@
   const GEN_FLAVORS = ["Iron","Apex","Prime","Savage","Peak","Forge","Titan","Blitz","Storm","Granite","Vault","Summit","Rogue","Atlas","Vertex","Fury","Onyx","Rampart","Nova","Bedrock","Phantom","Kodiak","Havoc","Crux","Ember","Valor","Grit","Maverick","Tempest","Anvil"];
   const GEN_SUFFIX  = ["Day","Session","Builder","Blitz","Burn","Grind","Blast","Surge","Protocol","Circuit"];
   const GEN_COMPOUND_KW = /squat|deadlift|bench|press|\brow\b|pull-up|pull up|chin|hip thrust|lunge|clean|overhead|dip|thrust|swing|good morning|rack pull/i;
+  // Bodyweight moves that can later be loaded (weighted vests/belts/dumbbells).
+  // The generator starts these at bodyweight with a graduating rep ladder so a
+  // beginner earns their way onto added weight. See makeExercise / progressionRule.
+  const GEN_BW_GRADUATE_KW = /pull-up|chin-up|\bdips?\b|push-up|inverted row|pike push/i;
+  const GEN_BW_GRADUATE = { floor: "8", ceil: 15, inc: 5, reset: 8 };
 
   function _rand(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
   function _pickRange(r) { return String(r[0] + Math.floor(Math.random() * (r[1] - r[0] + 1))); }
@@ -3750,7 +3816,17 @@
       let reps = _repsFor(e.name, e.cat, scheme);
       if (unilateral && /^\d+$/.test(reps)) reps += " each"; // only on plain rep counts
       const out = { name: e.name, sets: _pickRange(scheme.sets), reps, modifiers: mods };
-      if (!isPrimary && !isCore) _maybeFinisher(out, e.name); // occasional burnout/dropset
+      // Weightable bodyweight moves start at BW with a graduating rep ladder
+      // (BW → cap → add weight). Clear equipment/position tags that clash with
+      // a plain bodyweight rep, and pin reps to the ladder floor.
+      if (!isCore && GEN_BW_GRADUATE_KW.test(e.name)) {
+        out.currentWeight = "BW";
+        out.reps = GEN_BW_GRADUATE.floor;
+        out.modifiers = [];
+        out.progression = { ceil: GEN_BW_GRADUATE.ceil, inc: GEN_BW_GRADUATE.inc, reset: GEN_BW_GRADUATE.reset };
+      } else if (!isPrimary && !isCore) {
+        _maybeFinisher(out, e.name); // occasional burnout/dropset
+      }
       return out;
     });
     // Occasionally superset two adjacent accessory lifts (not the primary or core).
@@ -3888,6 +3964,8 @@
       // Generated cards (Surprise me): pull the day object from surprisePicks.
       const genExercises = (day) => day.exercises.map((e) => ({
         name: e.name, sets: e.sets, currentReps: e.reps, notes: day.focus, modifiers: [...(e.modifiers || [])],
+        ...(e.currentWeight ? { currentWeight: e.currentWeight } : {}),
+        ...(e.progression ? { progression: { ...e.progression } } : {}),
         ...(e.burnout ? { burnout: e.burnout } : {}),
         ...(e.dropset ? { dropset: e.dropset } : {}),
         ...(e.supersetId ? { supersetId: e.supersetId } : {}),
@@ -6159,7 +6237,7 @@
     const refreshProgBtn = () => {
       const r = progressionRule(ex);
       progBtn.textContent = !r ? "＋📈"
-        : r.bw ? `📈${r.floor}→${r.ceil === PROG_NO_CAP ? "∞" : r.ceil}`
+        : r.bw ? `📈${r.floor}→${r.ceil === PROG_NO_CAP ? "∞" : r.ceil}${r.graduate ? ` +${r.inc}` : ""}`
         : r.repsOnly ? `📈${r.floor}→${r.ceil} reps`
         : `📈${r.floor}–${r.ceil} +${r.inc}${r.reset !== r.floor ? "→" + r.reset : ""}`;
       progBtn.classList.toggle("empty", !r);
@@ -10771,6 +10849,10 @@
     // Auto-progression: effective target computed from prior weeks' locked
     // logs (chain of earned increments). Null when the exercise has no rule.
     const prog = pyrW ? null : effectiveProgression(state.clientData.program?.client?.weeks, ex, state.clientData.progress?.exerciseLogs);
+    // True when this exercise logs reps only (no weight): a plain BW lift, or a
+    // BW-graduating lift still in its bodyweight phase. Once it graduates
+    // (prog.bw === false) the athlete logs real weight, so steppers/seeds return.
+    const repsOnlyLog = prog ? !!prog.bw : ex.currentWeight === "BW";
 
     const wrapper = document.createElement("div");
     wrapper.className = "cex-wrapper" + (isDone ? " logged" : "");
@@ -10812,7 +10894,7 @@
       // Effective target: computed weight + this week's rep target (climbs
       // toward the ceiling as prior weeks are hit; "+" = beat it if you can).
       // Bodyweight ladders have no weight leg — just BW and the moving reps.
-      rxParts.push(prog.bw ? "BW" : exWeightLabel(ex, String(prog.weight)));
+      rxParts.push(prog.bw ? "BW" : (prog.graduate ? "+" : "") + exWeightLabel(ex, String(prog.weight)));
       rxParts.push(`× ${prog.reps}${tS}+`);
     } else {
       // Single prescribed weight (the old upper/range display was retired
@@ -10824,7 +10906,9 @@
     rxMain.className = "cex-rx-main";
     rxMain.textContent = rxParts.join(" · ") || "—";
     if (prog) rxMain.title = prog.bw
-      ? `Rep ladder: hit every set at the target and next week asks for your worst set + 1${prog.ceil === PROG_NO_CAP ? "" : `, up to ${prog.ceil}`}. No weight added.`
+      ? (prog.graduate
+          ? `Bodyweight rep ladder: hit every set at the target and next week asks for your worst set + 1, up to ${prog.ceil}. Hit ${prog.ceil} on all sets and it graduates — add ${prog.inc} lb, reps reset to ${prog.reset}.`
+          : `Rep ladder: hit every set at the target and next week asks for your worst set + 1${prog.ceil === PROG_NO_CAP ? "" : `, up to ${prog.ceil}`}. No weight added.`)
       : prog.repsOnly
         ? `Rep ladder ${prog.floor}→${prog.ceil}: hit every set at the target and next week asks for your worst set + 1, up to ${prog.ceil}. The weight stays at ${prog.weight} lb.`
         : `Double progression ${prog.floor}–${prog.ceil}: hit every set at the target to move up a rep next week; hit ${prog.ceil} on all sets and the weight goes up ${prog.inc} lb (reps drop to ${prog.reset}).`;
@@ -10962,7 +11046,7 @@
     const setSteppers = [];
     // Card fill line: fraction of working sets filled in (or skipped).
     // Locked cards read full.
-    const setDoneNow = (it) => it.skipped || (it.rp.value && (it.wt.value || ex.currentWeight === "BW"));
+    const setDoneNow = (it) => it.skipped || (it.rp.value && (it.wt.value || repsOnlyLog));
     exProgress = () => (isLocked
       ? { done: numSets, total: numSets }
       : { done: setInputs.filter(setDoneNow).length, total: numSets });
@@ -11111,7 +11195,7 @@
 
       col.appendChild(lbl);
       // Weight field, ±2.5 lb (bodyweight lifts log reps only — no weight arrows).
-      col.appendChild(mkStepField(wt, 2.5, wSeedAt(s), ex.currentWeight !== "BW", () => fillSibling(rp, rSeedAt(s))));
+      col.appendChild(mkStepField(wt, 2.5, wSeedAt(s), !repsOnlyLog, () => fillSibling(rp, rSeedAt(s))));
       // Reps field, ±1 (carries count seconds, ±5).
       col.appendChild(mkStepField(rp, isTimed ? 5 : 1, rSeedAt(s), true, () => fillSibling(wt, wSeedAt(s))));
 
@@ -11300,11 +11384,11 @@
         setInputs.forEach((it, i) => {
           if (it.skipped) return;
           if (it.rp.value === "" && Number.isFinite(rSeedAt(i))) { it.rp.value = String(rSeedAt(i)); markEdited(it.rp); }
-          if (it.wt.value === "" && ex.currentWeight !== "BW" && Number.isFinite(wSeedAt(i))) { it.wt.value = String(wSeedAt(i)); markEdited(it.wt); }
+          if (it.wt.value === "" && !repsOnlyLog && Number.isFinite(wSeedAt(i))) { it.wt.value = String(wSeedAt(i)); markEdited(it.wt); }
         });
       }
       const sets = setInputs.map(({ wt, rp, skipped }) => (skipped ? { weight: "", reps: "", skipped: true } : { weight: wt.value, reps: rp.value }));
-      const complete = sets.every((s) => s.skipped || (s.reps && (s.weight || ex.currentWeight === "BW")));
+      const complete = sets.every((s) => s.skipped || (s.reps && (s.weight || repsOnlyLog)));
       if (!complete) { if (!silent) toast("Fill in all sets before locking in."); return false; }
       if (!finisherComplete()) { if (!silent) toast("Fill in your burnout/dropset reps before locking in."); return false; }
       clearTimeout(_ast);
@@ -12654,9 +12738,11 @@
     // Timed carries are excluded — seconds would read as reps in e1RM math.
     if (!name || ex.kind === "mobility" || exIsTimed(ex)) return;
     const key = exKey(name);
-    const bw = ex.currentWeight === "BW";
     const logs = state.clientData.progress.exerciseLogs || {};
     const workingSets = (l) => (l.sets || []).filter((s) => !s.skipped);
+    // Written "BW", but once a BW lift graduates the athlete logs real weight —
+    // judge those by e1RM (weighted), not reps. Any loaded working set = weighted.
+    const bw = ex.currentWeight === "BW" && !workingSets(entry).some((s) => (parseFloat(s.weight) || 0) > 0);
 
     // Best of today's working sets — score = e1RM (weighted) or reps (BW).
     let cur = null; // { score, weight, reps }
