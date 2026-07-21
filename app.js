@@ -150,23 +150,33 @@
         if (ok) localStorage.removeItem(KEY_TEMPLATES_DIRTY);
       });
     }
-    // Cloud: debounced push of the coach's exercise-library customizations
-    // (custom exercises, hidden exercises, category order).
-    if (window.Cloud?.enabled && state.trainerData.coachId) {
-      localStorage.setItem(KEY_LIBPREFS_DIRTY, "1");
-      window.Cloud.debounce(`coach-libprefs:${state.trainerData.coachId}`, async () => {
-        const ok = await window.Cloud.updateCoachLibraryPrefs(state.trainerData.coachId, {
-          customExercises: state.trainerData.customExercises || [],
-          hiddenExercises: state.trainerData.hiddenExercises || [],
-          exCatOrder: state.trainerData.exCatOrder || [],
-          // Athlete Templates ride this existing jsonb blob rather than needing
-          // a new Supabase column — no migration to run against live data.
-          athleteTemplates: state.trainerData.athleteTemplates || [],
-          templateFolders: state.trainerData.templateFolders || [],
-        });
-        if (ok) localStorage.removeItem(KEY_LIBPREFS_DIRTY); // confirmed in the cloud
+    // Cloud: debounced push of the coach's exercise-library customizations.
+    pushCoachLibPrefs();
+  }
+
+  // Push the coach's per-account preferences jsonb blob (exercise-library
+  // customizations, athlete templates, and the read-activity marks). Rides one
+  // Supabase column so there's no per-field migration. Called both from
+  // saveTrainer and from saveSeenActivity, since dismissing an athlete's
+  // workout activity must reach the coach's other devices too.
+  function pushCoachLibPrefs() {
+    if (!window.Cloud?.enabled || !state.trainerData.coachId) return;
+    localStorage.setItem(KEY_LIBPREFS_DIRTY, "1");
+    window.Cloud.debounce(`coach-libprefs:${state.trainerData.coachId}`, async () => {
+      const ok = await window.Cloud.updateCoachLibraryPrefs(state.trainerData.coachId, {
+        customExercises: state.trainerData.customExercises || [],
+        hiddenExercises: state.trainerData.hiddenExercises || [],
+        exCatOrder: state.trainerData.exCatOrder || [],
+        // Athlete Templates ride this existing jsonb blob rather than needing
+        // a new Supabase column — no migration to run against live data.
+        athleteTemplates: state.trainerData.athleteTemplates || [],
+        templateFolders: state.trainerData.templateFolders || [],
+        // Which athlete-activity rows this coach has marked read. Synced so a
+        // dismissal on one device clears the "New activity" card on all of them.
+        seenActivity: state.trainerData.seenActivity || {},
       });
-    }
+      if (ok) localStorage.removeItem(KEY_LIBPREFS_DIRTY); // confirmed in the cloud
+    });
   }
   function saveClient() {
     if (state.tourDemo) return; // demo program during the tour — never persist
@@ -1961,6 +1971,17 @@
       state.trainerData.templateFolders =
         mergeById(prefs.templateFolders, state.trainerData.templateFolders);
     }
+    // Read-activity marks are a monotonic set (you never un-see a row), so
+    // always UNION cloud with local regardless of the keepLocal flag — neither
+    // side's dismissals should be lost. Leaving it undefined here (older rows
+    // with no seenActivity key) lets renderOverviewActivity's first-run branch
+    // adopt current activity as seen, exactly as before cloud sync existed.
+    if (prefs.seenActivity || state.trainerData.seenActivity) {
+      state.trainerData.seenActivity = {
+        ...(prefs.seenActivity || {}),
+        ...(state.trainerData.seenActivity || {}),
+      };
+    }
     state.trainerData.openSlots = coach.open_slots || [];
     // Athletes with unsynced local changes keep their local copy — the cloud
     // row may predate a write that never landed. Same protection templates get.
@@ -2080,7 +2101,7 @@
     };
     Object.values(map).forEach((sel) => { const el = $(sel); if (el) hide(el); });
     show($(map[name] || map.athletes));
-    const navKey = { client: "athletes", "program-editor": "programs", "day-library": "programs", "day-editor": "programs" }[name] || name;
+    const navKey = { client: "athletes", "program-editor": "programs", "day-library": "programs", "day-editor": "programs", templates: "programs" }[name] || name;
     document.querySelectorAll('#coach-nav [data-coach-nav]').forEach((b) => {
       b.classList.toggle("active", b.dataset.coachNav === navKey);
     });
@@ -3034,7 +3055,7 @@
       body: `
         <p class="muted" style="margin-top:0">Saves a copy of ${escapeHtml(c.name || "this athlete")}'s program
         (${weekCount} week${weekCount === 1 ? "" : "s"} · ${exCount} exercise${exCount === 1 ? "" : "s"})
-        into <strong>Templates</strong>, where you can file it in a folder and reuse it on anyone.</p>
+        into <strong>Programs → Templates</strong>, where you can file it in a folder and reuse it on anyone.</p>
         <label>Template name
           <input type="text" id="lib-save-name" maxlength="80" placeholder="${escapeHtml(suggested)}" value="${escapeHtml(suggested)}" />
         </label>
@@ -8719,8 +8740,10 @@
   }
 
   function saveSeenActivity() {
-    // Coach-device-local UI state — straight to localStorage, no cloud push.
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+    // Sync the read marks so a dismissal here clears the card on the coach's
+    // other devices too. Rides the library-prefs blob (see pushCoachLibPrefs).
+    pushCoachLibPrefs();
   }
 
   // Prune keys that have aged out of the window so the map can't grow forever.
@@ -13292,8 +13315,6 @@
           _programEditorId = null;
           state.currentClientId = null;
           renderProgramsList();
-        } else if (target === "templates") {
-          renderTemplatesView();
         } else if (target === "overview") {
           showCoachOverview();
         } else if (target === "messages") {
@@ -13334,8 +13355,10 @@
     $("#btn-new-program-empty")?.addEventListener("click", newProgram);
     $("#btn-back-to-programs")?.addEventListener("click", () => { _programEditorId = null; renderProgramsList(); });
     $("#btn-editor-add-week-empty")?.addEventListener("click", addWeek);
-    // Day Library (reachable from the Programs page)
+    // Day Library + Templates (both reachable from the Programs page)
     $("#btn-programs-day-library")?.addEventListener("click", () => { _programEditorId = null; renderDayLibrary(); });
+    $("#btn-programs-templates")?.addEventListener("click", () => { _programEditorId = null; renderTemplatesView(); });
+    $("#btn-templates-back")?.addEventListener("click", () => { _programEditorId = null; renderProgramsList(); });
     $("#btn-daylib-back")?.addEventListener("click", () => { _programEditorId = null; renderProgramsList(); });
     $("#btn-daylib-new")?.addEventListener("click", () => openDayEditor(null));
     $("#btn-daylib-new-empty")?.addEventListener("click", () => openDayEditor(null));

@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=templates1" />
+  <link rel="stylesheet" href="styles.css?v=templates2" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -253,10 +253,6 @@
           <span class="coach-nav-icon">📋</span>
           <span class="coach-nav-label">Programs</span>
         </button>
-        <button class="coach-nav-item" data-coach-nav="templates" type="button">
-          <span class="coach-nav-icon">🗂</span>
-          <span class="coach-nav-label">Templates</span>
-        </button>
         <button class="coach-nav-item active" data-coach-nav="athletes" type="button">
           <span class="coach-nav-icon">🐉</span>
           <span class="coach-nav-label">Athletes</span>
@@ -382,8 +378,11 @@
       <!-- Programs list -->
       <!-- Athlete Templates — programs saved off an athlete, kept in folders -->
       <div id="view-templates" class="view hidden">
+        <button class="btn-link back-link" id="btn-templates-back">← Programs</button>
         <div class="view-head">
-          <div></div>
+          <div>
+            <h2>Templates</h2>
+          </div>
           <div class="library-head-actions">
             <button class="btn btn-ghost" id="btn-new-tpl-folder">+ New folder</button>
           </div>
@@ -401,8 +400,9 @@
         <div class="view-head">
           <div></div>
           <div class="library-head-actions">
-            <button class="btn btn-ghost" id="btn-programs-day-library">📚 Day Library</button>
             <button class="btn btn-primary" id="btn-new-program">+ New program</button>
+            <button class="btn btn-ghost" id="btn-programs-templates">🗂 Templates</button>
+            <button class="btn btn-ghost" id="btn-programs-day-library">📚 Day Library</button>
           </div>
         </div>
         <div id="program-template-grid" class="program-template-grid"></div>
@@ -1029,7 +1029,7 @@
   <script src="config.js?v=push1"></script>
   <script src="cloud.js?v=emdash1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=templates1"></script>
+  <script src="app.js?v=templates2"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
