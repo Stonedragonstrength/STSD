@@ -3590,7 +3590,8 @@
         html += `<optgroup label="${escapeHtml(m.cat)}">`;
         lastCat = m.cat;
       }
-      html += `<option value="${m.id}">${m.perWeek}× / week · ${m.sessions} sessions/mo · $${m.price.toLocaleString()}</option>`;
+      const label = m.optLabel || `${m.perWeek}× / week · ${m.sessions} sessions/mo · $${m.price.toLocaleString()}`;
+      html += `<option value="${m.id}">${label}</option>`;
     });
     if (lastCat !== null) html += `</optgroup>`;
     sel.innerHTML = html;
@@ -3602,8 +3603,8 @@
   function refreshGrantBtn() {
     const btn = $("#btn-grant-month"); if (!btn) return;
     const m = membershipById($("#prof-membership")?.value);
-    btn.disabled = !m;
-    btn.textContent = m
+    btn.disabled = !m || !m.sessions;
+    btn.textContent = m && m.sessions
       ? `＋ Grant this month's ${m.sessions} sessions`
       : `＋ Grant this month's sessions`;
   }
@@ -3613,6 +3614,7 @@
     const c = currentClient(); if (!c) return;
     const m = membershipById($("#prof-membership")?.value);
     if (!m) { toast("Pick a membership first"); return; }
+    if (!m.sessions) { toast("This membership has no sessions to grant"); return; }
     ensureSessionBank(c);
     const monthKey = new Date().toISOString().slice(0, 7); // YYYY-MM
     const monthLabel = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
@@ -7195,7 +7197,7 @@
       ).length;
       if (!count) return;
       const m = membershipById(c.sessionBank.membership);
-      const perSession = m ? Math.round(m.price / m.sessions) : 0;
+      const perSession = m && m.price && m.sessions ? Math.round(m.price / m.sessions) : 0;
       c.sessionBank.packages.push({
         id: uid(), size: count, status: "pending",
         addedAt: Date.now(),
@@ -8674,10 +8676,18 @@
     { id: "couples-1", cat: "Couples Sessions", perWeek: 1, sessions: 4,  price: 550  },
     { id: "couples-2", cat: "Couples Sessions", perWeek: 2, sessions: 8,  price: 1040 },
     { id: "couples-3", cat: "Couples Sessions", perWeek: 3, sessions: 12, price: 1500 },
+    // Standalone monthly tiers for client categorization. No perWeek/price
+    // framing, so they carry their own title/sub/option labels.
+    { id: "monthly-2",  cat: "Monthly Memberships", sessions: 2, title: "2 Session Monthly Membership", short: "2 sessions / month", optLabel: "2 sessions / month" },
+    { id: "no-session", cat: "Monthly Memberships", sessions: 0, title: "No Session Membership",       short: "Program only · no sessions", optLabel: "No sessions (program only)" },
   ];
   function membershipById(id) { return MEMBERSHIPS.find((m) => m.id === id) || null; }
-  function membershipTitle(m) { return `${m.cat} · ${m.perWeek}× / week`; }
-  function membershipSub(m) { return `${m.sessions} sessions / month · $${m.price.toLocaleString()}/mo`; }
+  function membershipTitle(m) { return m.title || `${m.cat} · ${m.perWeek}× / week`; }
+  function membershipSub(m) {
+    if (m.short) return m.short;
+    const base = `${m.sessions} sessions / month`;
+    return m.price ? `${base} · $${m.price.toLocaleString()}/mo` : base;
+  }
 
   function renderCoachSessions() {
     const c = currentClient(); if (!c) return;
