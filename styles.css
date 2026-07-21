@@ -4441,14 +4441,17 @@ body::before {
    dashed borders on a scaling, radius-clipped circle rendered as an uneven
    "segmented ring" on mobile/tablet, and both rings faded to nothing, leaving
    no lasting glow. These are gradient glows instead — smooth at every DPR. */
-@keyframes haloPulse {
-  0%, 100% { transform: translate(-50%, -50%) scale(1);    opacity: 0.8; }
-  50%      { transform: translate(-50%, -50%) scale(1.09); opacity: 1; }
+/* Flare up bright once on load, then hand off to a slow, smooth breathe. The
+   flare settles to the same opacity/scale the breathe starts from, so there's
+   no jump between them — a continuous glow, not a strobe. */
+@keyframes haloFlare {
+  0%   { opacity: 0;    transform: translate(-50%, -50%) scale(0.82); }
+  45%  { opacity: 1;    transform: translate(-50%, -50%) scale(1.12); }
+  100% { opacity: 0.6;  transform: translate(-50%, -50%) scale(1); }
 }
-@keyframes haloSweep {
-  0%   { transform: translate(-50%, -50%) scale(0.72); opacity: 0; }
-  30%  { opacity: 0.85; }
-  100% { transform: translate(-50%, -50%) scale(1.9);  opacity: 0; }
+@keyframes haloBreathe {
+  0%, 100% { opacity: 0.6;  transform: translate(-50%, -50%) scale(1); }
+  50%      { opacity: 0.85; transform: translate(-50%, -50%) scale(1.06); }
 }
 
 #screen-login .brand { position: relative; }
@@ -4457,37 +4460,26 @@ body::before {
              logoBreathe 4s ease-in-out 1.5s infinite;
   position: relative;
 }
-#screen-login .brand-mark::before,
-#screen-login .brand-mark::after {
+/* Single soft halo behind the logo: flare up once, then a slow smooth breathe.
+   No blur filter — the gradient's transparent falloff is already soft, and a
+   blurred negative-z layer flickered (read as flashing) while the logo's own
+   filter animated. The two animations are sequenced by delay; the breathe
+   picks up exactly where the flare settles, so the pulse never snaps. */
+#screen-login .brand-mark::before {
   content: "";
   position: absolute;
   top: 50%; left: 50%;
+  width: 172%; height: 172%;
+  transform: translate(-50%, -50%);
   border-radius: 50%;
   pointer-events: none;
-  z-index: -1; /* sit behind the logo art */
-  transform: translate(-50%, -50%);
-}
-/* Lasting halo — a soft glow that gently breathes, so the effect stays after
-   the entrance instead of vanishing. Rides the theme's primary color. */
-#screen-login .brand-mark::before {
-  width: 172%; height: 172%;
+  z-index: -1; /* behind the logo art */
   background: radial-gradient(circle,
-    rgba(var(--primary-bright-rgb), 0.30) 0%,
-    rgba(var(--primary-rgb), 0.12) 40%,
+    rgba(var(--primary-bright-rgb), 0.32) 0%,
+    rgba(var(--primary-rgb), 0.13) 42%,
     transparent 68%);
-  filter: blur(10px);
-  animation: haloPulse 5s ease-in-out 1.4s infinite;
-}
-/* One-shot soft light ring that sweeps outward on load — a gradient ring, not
-   a hard/dashed border, so there are no segments to render unevenly. */
-#screen-login .brand-mark::after {
-  width: 108%; height: 108%;
-  background: radial-gradient(circle,
-    transparent 52%,
-    rgba(var(--primary-bright-rgb), 0.55) 61%,
-    transparent 72%);
-  filter: blur(2px);
-  animation: haloSweep 1.9s ease-out 0.5s both;
+  animation: haloFlare 1.6s ease-out 0.4s both,
+             haloBreathe 5s ease-in-out 2s infinite;
 }
 
 /* Brand text reveal */
