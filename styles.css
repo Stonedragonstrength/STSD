@@ -7710,7 +7710,7 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 .ov-recap, .ov-trophies { margin-top: 0.85rem; }
 
 /* Lifetime totals as a racing-game style slanted stats list */
-.ov-stats-list { display: flex; flex-direction: column; gap: 0.4rem; }
+.ov-stats-list { display: flex; flex-direction: column; gap: 0.3rem; }
 .ov-stat-row {
   transform: skewX(-15deg);
   border-radius: 5px;
@@ -7726,13 +7726,13 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 .ov-stat-row .sr-in {
   transform: skewX(15deg);
   display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem;
-  padding: 0.5em 1.25em;
+  padding: 0.3em 1.1em;
 }
-.sr-lbl { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.09em; color: var(--text-soft); }
-.sr-when { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.02em; color: var(--muted); margin-left: 0.35em; }
-.sr-val { font-size: 1.5rem; font-weight: 900; color: var(--primary-bright); line-height: 1; font-variant-numeric: tabular-nums; text-shadow: 0 0 12px rgba(var(--primary-bright-rgb), 0.35); }
-.sr-unit { font-size: 0.68rem; font-weight: 700; color: var(--text-soft); margin-left: 0.15em; }
-.sr-trend { font-size: 0.8rem; font-weight: 800; margin-left: 0.4em; vertical-align: middle; }
+.sr-lbl { font-size: 0.66rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-soft); }
+.sr-when { font-size: 0.58rem; font-weight: 700; letter-spacing: 0.02em; color: var(--muted); margin-left: 0.3em; }
+.sr-val { font-size: 1.15rem; font-weight: 900; color: var(--primary-bright); line-height: 1; font-variant-numeric: tabular-nums; text-shadow: 0 0 12px rgba(var(--primary-bright-rgb), 0.35); }
+.sr-unit { font-size: 0.62rem; font-weight: 700; color: var(--text-soft); margin-left: 0.15em; }
+.sr-trend { font-size: 0.72rem; font-weight: 800; margin-left: 0.35em; vertical-align: middle; }
 .sr-trend.up { color: #34d399; }
 .sr-trend.down { color: var(--warn); }
 .sr-trend.neutral { color: var(--text-soft); }
