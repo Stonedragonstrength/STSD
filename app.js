@@ -368,8 +368,8 @@
   const EXERCISE_MODIFIERS = [
     { group: "Unilateral",  tags: ["1A", "1L"] },
     { group: "Alternation", tags: ["Alternating", "Non-Alternating"] },
-    { group: "Equipment",   tags: ["BB", "DB", "DBs", "KB", "EZ Bar", "Cable", "Rope", "Wide Bar", "Band", "Machine", "Landmine"], multi: true },
-    { group: "Position",    tags: ["Incline", "Decline", "Elevated", "Seated", "Standing", "Kneeling", "Raised"] },
+    { group: "Equipment",   tags: ["BB", "DB", "DBs", "KB", "EZ Bar", "Cable", "Rope", "Wide Bar", "Band", "Machine", "Landmine", "Bench"], multi: true },
+    { group: "Position",    tags: ["Incline", "Decline", "Elevated", "Seated", "Standing", "Kneeling", "Raised", "Supported"] },
     { group: "Grip",        tags: ["Supinated", "Neutral", "Pronated"] },
     { group: "Style",       tags: ["Pause", "Tempo", "Explosive", "Isometric"] },
     { group: "Hold",        tags: ["1S", "2S", "3S", "4S", "5S"] },
