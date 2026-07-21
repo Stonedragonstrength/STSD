@@ -10219,24 +10219,24 @@
     container.appendChild(section);
   }
 
-  // Clipboard only surfaces the first N weeks; deeper weeks live under "See all weeks".
-  const CLIPBOARD_WEEK_LIMIT = 4;
-
   function renderWorkoutPickerUI() {
     const prog = state.clientData.program;
     if (!prog?.client?.weeks?.length) return;
     const chips = $("#workout-week-chips");
     const grid = $("#workout-day-grid");
 
-    const clipboardWeeks = prog.client.weeks.slice(0, CLIPBOARD_WEEK_LIMIT);
+    // Every week gets a chip — the row wraps (.week-chips is flex-wrap). A cap
+    // used to hide weeks past the 4th behind a "See all weeks" panel that no
+    // longer exists, which stranded weeks 5+ of longer programs entirely.
+    const pickerWeeks = prog.client.weeks;
     // Clamp the active week to the visible set so chips and day grid stay in sync.
-    if (!clipboardWeeks.some((w) => w.id === state.workoutView.weekId)) {
-      state.workoutView.weekId = clipboardWeeks[0]?.id || null;
+    if (!pickerWeeks.some((w) => w.id === state.workoutView.weekId)) {
+      state.workoutView.weekId = pickerWeeks[0]?.id || null;
     }
 
     // Week chips
     chips.innerHTML = "";
-    clipboardWeeks.forEach((week) => {
+    pickerWeeks.forEach((week) => {
       const chip = document.createElement("button");
       chip.className = "week-chip";
       if (week.id === state.workoutView.weekId) chip.classList.add("active");
