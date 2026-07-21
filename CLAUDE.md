@@ -38,7 +38,8 @@ Single `state` object loaded from localStorage at boot:
 
 ### Data shapes
 ```
-client → { id, name, inviteCode, weeks[], schedule{}, coachPRs[], sessionBank{packages[], redemptions[]}, importedProgress }
+client → { id, name, inviteCode, weeks[], oneOffDays[], schedule{}, coachPRs[], sessionBank{packages[], redemptions[]}, importedProgress }
+oneOffDay → { id, date, name, icon, exercises[] } — dated coach-session day outside the program (own `one_off_days` column; excluded from progression/week nav, included in PR walkers)
 week   → { id, label, focus, phaseLabel, days[], diet{calories, protein, notes} }
 day    → { id, name, exercises[] }
 exercise → { id, name, sets, currentWeight, currentReps, goalWeight, goalReps, notes, videoUrl }

@@ -2825,6 +2825,12 @@ input[type="date"] { color-scheme: dark; }
   background: var(--primary-soft);
   color: var(--primary-bright);
 }
+/* One-off coach session pill — 🐉 scheduled (or ✓ done) day with the coach */
+.cal-oneoff-pill {
+  border-color: rgba(245, 158, 11, 0.55);
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
+}
 /* Session-token pill — a paid session was redeemed that day */
 .cal-day-pill-token {
   border-color: rgba(245, 158, 11, 0.55);
@@ -8646,3 +8652,57 @@ body.live-log-mode #screen-client .header-right { display: none; }
   letter-spacing: 0.04em;
 }
 .ex-demo-preview.is-empty { color: var(--muted); }
+
+/* ============ One-off coach sessions ============ */
+/* Coach side: builder section on the athlete's Program tab */
+.oneoff-section { margin-top: 1.75rem; }
+.oneoff-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.75rem;
+}
+.oneoff-head-text h3 { margin: 0 0 0.2em; }
+.oneoff-hint { font-size: 0.85rem; margin: 0; max-width: 46em; }
+.oneoff-head-actions { display: flex; gap: 0.5em; flex-shrink: 0; }
+.oneoff-empty { margin: 0.25rem 0 0; font-size: 0.9rem; }
+.oneoff-card {
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  margin-top: 0.6rem;
+  overflow: hidden;
+}
+.oneoff-card[open] { border-color: rgba(245, 158, 11, 0.45); }
+.oneoff-summary {
+  display: flex; align-items: center; gap: 0.7em; flex-wrap: wrap;
+  padding: 0.65em 0.9em; cursor: pointer; list-style: none;
+  user-select: none;
+}
+.oneoff-summary::-webkit-details-marker { display: none; }
+.oneoff-summary:hover { background: rgba(245, 158, 11, 0.06); }
+.oneoff-date {
+  font-weight: 700; font-size: 0.85rem; color: #fbbf24;
+  letter-spacing: 0.02em; white-space: nowrap;
+}
+.oneoff-name { font-weight: 600; }
+.oneoff-meta { color: var(--muted); font-size: 0.82rem; margin-left: auto; }
+.oneoff-logged { color: var(--success, #34d399); font-weight: 600; }
+.oneoff-body { padding: 0.35rem 0.9rem 0.9rem; border-top: 1px solid var(--border); }
+.oneoff-meta-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.6em; margin: 0.6em 0 0.4em; flex-wrap: wrap;
+}
+.oneoff-date-input {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius); color: var(--text);
+  padding: 0.35em 0.55em; font-size: 0.9rem;
+}
+
+/* Athlete side: "Sessions with Coach" cards under the day picker */
+.oneoff-athlete-section { margin-top: 1.5rem; }
+.oneoff-athlete-head {
+  font-size: 0.78rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; color: #fbbf24; margin-bottom: 0.6rem;
+}
+.oneoff-workout-card { border-color: rgba(245, 158, 11, 0.35); }
+.oneoff-workout-card:hover { border-color: rgba(245, 158, 11, 0.6); }
+.oneoff-workout-card .workout-card-icon { color: #fbbf24; }
