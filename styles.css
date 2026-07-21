@@ -4491,8 +4491,8 @@ body::before {
     rgba(var(--primary-bright-rgb), 0.32) 0%,
     rgba(var(--primary-rgb), 0.13) 42%,
     transparent 68%);
-  animation: haloFlare 1.6s ease-out 0.4s both,
-             haloBreathe 5s ease-in-out 2s infinite;
+  animation: haloFlare 2.8s ease-out 0.4s both,
+             haloBreathe 5s ease-in-out 3.2s infinite;
 }
 
 /* Brand text reveal */
