@@ -344,7 +344,7 @@
     // Mobility/stretching items are prescribed as rounds × hold-seconds. We reuse
     // `sets` for rounds and `currentReps` for the hold duration (in seconds) so no
     // new persisted fields are needed. `kind` is derived from the library name.
-    const kind = seed?.kind || (seed?.name && isMobilityName(seed.name) ? "mobility" : "strength");
+    const kind = seed?.kind || (seed?.name && isHoldName(seed.name) ? "mobility" : "strength");
     const isMob = kind === "mobility";
     // Carries persist timed:true so athlete devices (which can't see the
     // coach's custom-exercise categories) still render them as weight × time.
@@ -4163,6 +4163,7 @@
     { cat: "Carries",    ex: ["Farmer's Carry","Suitcase Carry","Overhead Carry","Rack Carry","Zercher Carry","Trap Bar Carry","Bear Hug Carry","Bottoms-Up Carry","Waiter Walk","Sandbag Carry","Yoke Walk","Front Rack Carry"] },
     { cat: "Cardio",     ex: ["Treadmill Run","Stationary Bike","Rowing","Jump Rope","Sled Push","Battle Ropes","Farmer's Walk","Assault Bike","Stair Climber","Sprint Intervals","Incline Walk","Ski Erg","Box Jump","Burpee","High Knees"] },
     { cat: "Bodyweight", ex: ["Superman"] },
+    { cat: "Speed/Agility", ex: ["Ladder Two-Feet Run","Ladder Icky Shuffle","Ladder In-In-Out-Out","Ladder Lateral Shuffle","Ladder Ali Shuffle","Ladder Crossover","Ladder Hopscotch","Ladder Single-Leg Hop","Ladder Snake","A-Skip","B-Skip","Carioca","5-10-5 Pro Agility","T-Drill","Box Drill","L-Drill","Cone Weave","Shuttle Run","Lateral Bound","Skater Bound","Broad Jump Series","Dot Drill","Mini-Hurdle Hops","Wall Drive","Falling Start","Acceleration Sprint","Flying Sprint","Backpedal Drill","Resisted Sprint Drill","Reaction Sprint"] },
     { cat: "Mobility & Stretching", ex: ["Couch Stretch","90/90 Hip Stretch","World's Greatest Stretch","Cat-Cow","Hip Flexor Stretch","Hamstring Stretch","Pigeon Stretch","Thoracic Rotation","Child's Pose","Downward Dog","Ankle Dorsiflexion","Shoulder Dislocates","Doorway Pec Stretch","Deep Squat Hold","Cossack Stretch","Seated Forward Fold","Butterfly Stretch","Standing Quad Stretch","Wrist Flexor Stretch","Neck Stretch"] },
   ];
   // Categories whose exercises are prescribed as holds-for-time (sets × seconds),
@@ -4176,6 +4177,23 @@
     // Custom exercises filed under a mobility category are holds too.
     return customExerciseList().some((c) => c.name === name && MOBILITY_CATS.includes(c.cat));
   }
+  // Speed/agility drills (ladder work, sprints, cone drills) are prescribed the
+  // same way — rounds × seconds, no weight — so they reuse the kind:"mobility"
+  // card machinery, but render in their own ⚡ section (not under Stretching).
+  const SPEED_CATS = ["Speed/Agility"];
+  const SPEED_NAMES = new Set(
+    EXERCISE_LIBRARY.filter((c) => SPEED_CATS.includes(c.cat)).flatMap((c) => c.ex)
+  );
+  function isSpeedName(name) {
+    if (SPEED_NAMES.has(name)) return true;
+    return customExerciseList().some((c) => c.name === name && SPEED_CATS.includes(c.cat));
+  }
+  // Either flavour of hold-for-time card (stretch or drill): sets × seconds, no
+  // weight. Both carry kind:"mobility" so all the no-weight/PR-exclusion
+  // plumbing applies; use this wherever that card behaviour is what matters.
+  function isHoldName(name) { return isMobilityName(name) || isSpeedName(name); }
+  const HOLD_CATS = MOBILITY_CATS.concat(SPEED_CATS);
+  const HOLD_NAMES = new Set([...MOBILITY_NAMES, ...SPEED_NAMES]);
   // Hold-duration options (seconds) for the coach's mobility prescription picker.
   const HOLD_SEC_VALUES = ["10", "15", "20", "30", "45", "60", "90", "120"];
   // Categories whose exercises are weight × time (seconds) — see exIsTimed().
@@ -5852,12 +5870,21 @@
     // Mobility/stretching sits in its own collapsible section (click to open):
     // warm-up holds pin to the top of the day, finisher holds to the bottom.
     const rowRenderer = (ex) => renderExerciseRow(day, ex, rerenderFn);
-    const mobTop = day.exercises.filter((e) => e.kind === "mobility" && e.mobPlacement !== "bottom");
-    const mobBottom = day.exercises.filter((e) => e.kind === "mobility" && e.mobPlacement === "bottom");
+    // Hold-for-time items (kind:"mobility") split by flavour: speed/agility drills
+    // get their own ⚡ section, stretches keep the 🧘 one. Manually-toggled holds
+    // (no library category) fall through to the stretch section as before.
+    const isSpeedEx = (e) => e.kind === "mobility" && isSpeedName(e.name);
+    const isStretchEx = (e) => e.kind === "mobility" && !isSpeedName(e.name);
+    const speedTop = day.exercises.filter((e) => isSpeedEx(e) && e.mobPlacement !== "bottom");
+    const speedBottom = day.exercises.filter((e) => isSpeedEx(e) && e.mobPlacement === "bottom");
+    const mobTop = day.exercises.filter((e) => isStretchEx(e) && e.mobPlacement !== "bottom");
+    const mobBottom = day.exercises.filter((e) => isStretchEx(e) && e.mobPlacement === "bottom");
     const mainEx = day.exercises.filter((e) => e.kind !== "mobility");
+    if (speedTop.length) list.appendChild(coachMobilitySection(day.id, "speed-top", "⚡ Speed & Agility", speedTop, rowRenderer));
     if (mobTop.length) list.appendChild(coachMobilitySection(day.id, "top", "🧘 Mobility & Stretching", mobTop, rowRenderer));
     appendExerciseGroups(list, { exercises: mainEx }, rowRenderer, false);
     if (mobBottom.length) list.appendChild(coachMobilitySection(day.id, "bottom", "🧘 Finisher Stretches", mobBottom, rowRenderer));
+    if (speedBottom.length) list.appendChild(coachMobilitySection(day.id, "speed-bottom", "⚡ Speed & Agility Finisher", speedBottom, rowRenderer));
 
     // Always show a drop zone — big when empty, slim hint when exercises exist
     const dropHint = document.createElement("div");
@@ -6286,7 +6313,7 @@
       rerenderFn();
     });
     kindToggle.appendChild(kindCb);
-    kindToggle.appendChild(document.createTextNode(" Hold for time (stretch / mobility)"));
+    kindToggle.appendChild(document.createTextNode(" Hold for time (stretch / drill)"));
 
     const demoRow = buildCoachDemoRow(ex);
 
@@ -7457,9 +7484,9 @@
       dl.id = "pr-ex-datalist";
       document.body.appendChild(dl);
     }
-    const names = new Set(ALL_EXERCISE_NAMES.filter((n) => !MOBILITY_NAMES.has(n)));
-    customExerciseList().forEach((cx) => { if (!MOBILITY_CATS.includes(cx.cat)) names.add(cx.name); });
-    suggestExerciseNames(side).forEach((n) => { if (!isMobilityName(n)) names.add(n); });
+    const names = new Set(ALL_EXERCISE_NAMES.filter((n) => !HOLD_NAMES.has(n)));
+    customExerciseList().forEach((cx) => { if (!HOLD_CATS.includes(cx.cat)) names.add(cx.name); });
+    suggestExerciseNames(side).forEach((n) => { if (!isHoldName(n)) names.add(n); });
     dl.innerHTML = [...names].sort((a, b) => a.localeCompare(b))
       .map((n) => `<option value="${escapeHtml(n)}"></option>`).join("");
     return "pr-ex-datalist";
@@ -10463,9 +10490,18 @@
       list.innerHTML = `<div class="empty-state"><div class="empty-emoji">💤</div><p>No exercises for this day.</p></div>`;
     } else {
       const renderer = (ex) => renderClientExercise(week, day, ex, null);
-      const mobTop = day.exercises.filter((e) => e.kind === "mobility" && e.mobPlacement !== "bottom");
-      const mobBottom = day.exercises.filter((e) => e.kind === "mobility" && e.mobPlacement === "bottom");
+      const isSpeedEx = (e) => e.kind === "mobility" && isSpeedName(e.name);
+      const isStretchEx = (e) => e.kind === "mobility" && !isSpeedName(e.name);
+      const speedTop = day.exercises.filter((e) => isSpeedEx(e) && e.mobPlacement !== "bottom");
+      const speedBottom = day.exercises.filter((e) => isSpeedEx(e) && e.mobPlacement === "bottom");
+      const mobTop = day.exercises.filter((e) => isStretchEx(e) && e.mobPlacement !== "bottom");
+      const mobBottom = day.exercises.filter((e) => isStretchEx(e) && e.mobPlacement === "bottom");
       const main = day.exercises.filter((e) => e.kind !== "mobility");
+      if (speedTop.length) {
+        const sec = mobilitySection("⚡ Speed & Agility");
+        appendExerciseGroups(sec, { exercises: speedTop }, renderer, true);
+        list.appendChild(sec);
+      }
       if (mobTop.length) {
         const sec = mobilitySection("🧘 Mobility & Stretching");
         appendExerciseGroups(sec, { exercises: mobTop }, renderer, true);
@@ -10475,6 +10511,11 @@
       if (mobBottom.length) {
         const sec = mobilitySection("🧘 Finisher Stretches");
         appendExerciseGroups(sec, { exercises: mobBottom }, renderer, true);
+        list.appendChild(sec);
+      }
+      if (speedBottom.length) {
+        const sec = mobilitySection("⚡ Speed & Agility Finisher");
+        appendExerciseGroups(sec, { exercises: speedBottom }, renderer, true);
         list.appendChild(sec);
       }
     }
