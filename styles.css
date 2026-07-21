@@ -8744,3 +8744,11 @@ body.live-log-mode #screen-client .header-right { display: none; }
   font-size: 0.74rem; line-height: 1.45; white-space: pre-wrap;
   overflow-wrap: anywhere; max-height: 240px; overflow-y: auto;
 }
+
+/* ============ Partner link (couples shared session bank) ============ */
+.partner-link-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.9rem; flex-wrap: wrap;
+}
+.partner-link-note { font-size: 0.85rem; margin-top: 0.25em; max-width: 40em; }
+.partner-chip { cursor: default; }

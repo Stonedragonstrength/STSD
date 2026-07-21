@@ -84,6 +84,7 @@
       setmore_aliases: c.setmoreAliases || [],
       nutrition: c.nutrition || { current: null, history: [] },
       hide_open_slots: !!c.hideOpenSlots,
+      partner_id: c.partnerId || null,
       updated_at: new Date().toISOString(),
     };
   }
@@ -106,6 +107,7 @@
       setmoreAliases: r.setmore_aliases || [],
       nutrition: r.nutrition || { current: null, history: [] },
       hideOpenSlots: !!r.hide_open_slots,
+      partnerId: r.partner_id || null,
       importedProgress: null,
       createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
       _coachId: r.coach_id || null,

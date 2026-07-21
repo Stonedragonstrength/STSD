@@ -302,6 +302,96 @@
     const pendingCount = c.sessionBank.packages.filter((p) => p.status === "pending").length;
     return { granted, used, remaining: granted - used, pendingCount };
   }
+
+  // -------- Partner link (couples share one session bank) --------
+  // Linked partners (partnerId set both ways) carry identical copies of the
+  // bank's money fields, so either athlete's app shows the shared balance with
+  // no athlete-side changes — each athlete can still only read their own row.
+  // bankMutated(c) is the one choke point: call it after ANY money mutation and
+  // it clones those fields onto the partner and cloud-pushes their row.
+  // messages/bulletins/upcomingBookings stay per-athlete (bookings get a
+  // partner union in syncUpcomingBookingsToAthletes instead, so the couple's
+  // shared slot shows on both calendars). The mirrored membership/autoRenew +
+  // the mirrored monthKey grant guard keep auto-renew from double-granting.
+  function partnerOf(c) {
+    if (!c?.partnerId) return null;
+    return (state.trainerData.clients || []).find((x) => x.id === c.partnerId) || null;
+  }
+  function bankMutated(c) {
+    const p = partnerOf(c);
+    if (!p) return;
+    ensureSessionBank(c); ensureSessionBank(p);
+    p.sessionBank.packages = structuredClone(c.sessionBank.packages);
+    p.sessionBank.redemptions = structuredClone(c.sessionBank.redemptions);
+    p.sessionBank.missedSessions = structuredClone(c.sessionBank.missedSessions);
+    p.sessionBank.membership = c.sessionBank.membership;
+    p.sessionBank.autoRenew = c.sessionBank.autoRenew;
+    if (window.Cloud?.enabled) window.Cloud.debounce(`athlete:${p.id}`, () =>
+      window.Cloud.upsertAthlete(p, state.trainerData.coachId));
+  }
+  function linkPartners(a, b) {
+    ensureSessionBank(a); ensureSessionBank(b);
+    // Merge both histories into one shared bank (id-less legacy rows kept).
+    const dedupe = (arr) => {
+      const seen = new Set();
+      return arr.filter((x) => {
+        if (!x) return false;
+        if (!x.id) return true;
+        if (seen.has(x.id)) return false;
+        seen.add(x.id); return true;
+      });
+    };
+    a.sessionBank.packages = dedupe([...a.sessionBank.packages, ...b.sessionBank.packages]);
+    a.sessionBank.redemptions = dedupe([...a.sessionBank.redemptions, ...b.sessionBank.redemptions]);
+    a.sessionBank.missedSessions = dedupe([...a.sessionBank.missedSessions, ...b.sessionBank.missedSessions]);
+    a.sessionBank.membership = a.sessionBank.membership || b.sessionBank.membership;
+    a.sessionBank.autoRenew = !!(a.sessionBank.autoRenew || b.sessionBank.autoRenew);
+    a.partnerId = b.id;
+    b.partnerId = a.id;
+    bankMutated(a); // clones the merged bank onto b and pushes b's row
+    saveTrainer();
+    toast(`💞 ${a.name} & ${b.name} now share one session bank`);
+  }
+  function unlinkPartner(c) {
+    const p = partnerOf(c);
+    if (!window.confirm(`Unlink ${c.name}${p ? ` and ${p.name}` : ""}? Both keep a copy of the current balance and history, then they're tracked separately.`)) return;
+    c.partnerId = null;
+    if (p) {
+      p.partnerId = null;
+      if (window.Cloud?.enabled) window.Cloud.debounce(`athlete:${p.id}`, () =>
+        window.Cloud.upsertAthlete(p, state.trainerData.coachId));
+    }
+    saveTrainer();
+    renderCoachSessions();
+    toast("Partner link removed");
+  }
+  function openLinkPartnerModal(c) {
+    const candidates = (state.trainerData.clients || [])
+      .filter((x) => x.id !== c.id && !x.partnerId)
+      .sort((x, y) => (x.name || "").localeCompare(y.name || ""));
+    if (!candidates.length) { toast("No unlinked athletes to pair with"); return; }
+    openModal({
+      title: "Link a partner",
+      body: `
+        <p class="muted" style="margin-top:-0.4em">Their session banks merge into one shared balance: every package, redemption, and the monthly close call applies to both. A booking they share spends one session. Programs are not affected.</p>
+        <label>Partner
+          <select id="partner-select">${candidates.map((x) => `<option value="${escapeHtml(x.id)}">${escapeHtml(x.name || "(unnamed)")}</option>`).join("")}</select>
+        </label>`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        {
+          label: "Link 💞", className: "btn btn-primary",
+          onClick: () => {
+            const p = (state.trainerData.clients || []).find((x) => x.id === $("#partner-select").value);
+            if (!p) return;
+            closeModal();
+            linkPartners(c, p);
+            renderCoachSessions();
+          },
+        },
+      ],
+    });
+  }
   function makePR(seed) {
     return {
       id: uid(),
@@ -2553,6 +2643,14 @@
           nameEl.appendChild(q);
         }
       }
+      const cPartner = partnerOf(c);
+      if (cPartner) {
+        const pc = document.createElement("span");
+        pc.className = "quiet-chip partner-chip";
+        pc.title = `Shares a session bank with ${cPartner.name || "partner"}`;
+        pc.textContent = "💞";
+        nameEl.appendChild(pc);
+      }
       main.appendChild(nameEl);
       main.appendChild(subEl);
 
@@ -3528,6 +3626,7 @@
       note: `Membership: ${membershipTitle(m)} · ${monthLabel}`,
       membershipGrant: monthKey,
     });
+    bankMutated(c);
     saveTrainer();
     toast(`Granted ${m.sessions} sessions for ${monthLabel} ✓`);
   }
@@ -3543,6 +3642,7 @@
     c.heightIn = (ft * 12 + inch) || "";
     ensureSessionBank(c);
     c.sessionBank.membership = $("#prof-membership")?.value || "";
+    bankMutated(c);
     saveTrainer();
     $("#client-name-display").textContent = c.name || "(unnamed)";
     $("#client-meta-display").textContent = clientMetaText(c);
@@ -3607,6 +3707,7 @@
       const c = currentClient(); if (!c) return;
       ensureSessionBank(c);
       c.sessionBank.autoRenew = e.target.checked;
+      bankMutated(c);
       saveTrainer();
       toast(e.target.checked
         ? "🔁 Auto-renew on: each month grants a package sized to their bookings"
@@ -7024,6 +7125,7 @@
   }
   // Persist + cloud-push one athlete's trainer-side data (session bank edits).
   function pushAthleteBank(c) {
+    bankMutated(c);
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
     if (window.Cloud?.enabled) window.Cloud.debounce(`athlete:${c.id}`, () =>
       window.Cloud.upsertAthlete(c, state.trainerData.coachId));
@@ -7102,6 +7204,8 @@
         autoRenewGrant: monthKey,
       });
       renewed.push(c);
+      // Mirror now so the partner's own pass sees the grant and skips it.
+      bankMutated(c);
     });
     if (!renewed.length) return;
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
@@ -7188,6 +7292,7 @@
         setmoreUid: e.uid,
       });
       spent.push(c);
+      bankMutated(c);
     });
     if (!spent.length) return;
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
@@ -7223,6 +7328,16 @@
       if (!c) return;
       (byAthlete[c.id] = byAthlete[c.id] || []).push({
         uid: e.uid, date: dateISO(new Date(e.startAt)), time: fmtSetmoreTime(e.startAt), startAt: e.startAt,
+      });
+    });
+    // Linked partners share bookings: the couple's slot is booked under one
+    // name, but it belongs on both athletes' calendars.
+    clients.forEach((c) => {
+      const p = partnerOf(c);
+      if (!p || !(byAthlete[p.id] || []).length) return;
+      const mine = (byAthlete[c.id] = byAthlete[c.id] || []);
+      byAthlete[p.id].forEach((b) => {
+        if (!mine.some((x) => x.uid === b.uid)) mine.push(b);
       });
     });
     let anyChanged = false;
@@ -8591,6 +8706,34 @@
     const balHost = $("#session-balance-host");
     if (balHost) balHost.replaceChildren(balance); else container.appendChild(balance);
 
+    // Partner link (couples): one shared bank between two athletes.
+    const partner = partnerOf(c);
+    const linkCard = document.createElement("div");
+    linkCard.className = "card partner-link-card";
+    if (partner) {
+      linkCard.innerHTML = `
+        <div class="partner-link-row">
+          <div>
+            <strong>💞 Shares sessions with ${escapeHtml(partner.name || "(unnamed)")}</strong>
+            <div class="muted partner-link-note">One bank for the couple: packages, redemptions, and the monthly close call apply to both. Their shared booking spends one session.</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="btn-unlink-partner" type="button">Unlink</button>
+        </div>`;
+      linkCard.querySelector("#btn-unlink-partner").addEventListener("click", () => unlinkPartner(c));
+      container.appendChild(linkCard);
+    } else if ((state.trainerData.clients || []).some((x) => x.id !== c.id && !x.partnerId)) {
+      linkCard.innerHTML = `
+        <div class="partner-link-row">
+          <div>
+            <strong>💞 Training as a couple?</strong>
+            <div class="muted partner-link-note">Link a partner to share one session bank. One person pays, both spend from it. Programs stay separate.</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="btn-link-partner" type="button">Link partner…</button>
+        </div>`;
+      linkCard.querySelector("#btn-link-partner").addEventListener("click", () => openLinkPartnerModal(c));
+      container.appendChild(linkCard);
+    }
+
     // Pending athlete requests (from imported progress)
     if (importedRequests.length) {
       const reqCard = document.createElement("div");
@@ -8664,6 +8807,7 @@
       btn.addEventListener("click", () => {
         if (!window.confirm("Remove this package? Redemptions are kept.")) return;
         c.sessionBank.packages = c.sessionBank.packages.filter((p) => p.id !== btn.dataset.del);
+        bankMutated(c);
         saveTrainer(); renderCoachSessions();
       });
     });
@@ -8690,6 +8834,7 @@
       btn.addEventListener("click", () => {
         if (!window.confirm("Undo this redemption?")) return;
         c.sessionBank.redemptions = c.sessionBank.redemptions.filter((r) => r.id !== btn.dataset.del);
+        bankMutated(c);
         saveTrainer(); renderCoachSessions(); renderCoachCalendar();
       });
     });
@@ -8716,6 +8861,7 @@
           const pkg = { id: uid(), size, status: "paid", addedAt: Date.now(), paidAt: Date.now(), note };
           ensureSessionBank(c);
           c.sessionBank.packages.push(pkg);
+          bankMutated(c);
           saveTrainer();
           renderCoachSessions();
           closeModal();
@@ -8902,6 +9048,7 @@
           const note = $("#gift-note").value.trim();
           ensureSessionBank(c);
           c.sessionBank.packages.push({ id: uid(), size, status: "paid", gift: true, price: 0, addedAt: Date.now(), paidAt: Date.now(), note });
+          bankMutated(c);
           saveTrainer();
           renderCoachSessions();
           closeModal();
@@ -8930,6 +9077,7 @@
             const date = $("#redeem-date").value || todayISO();
             const note = $("#redeem-note").value.trim();
             c.sessionBank.redemptions.push({ id: uid(), date, note });
+            bankMutated(c);
             saveTrainer();
             renderCoachSessions();
             renderCoachCalendar();
@@ -8973,6 +9121,7 @@
   // Persist + push the athlete (they may not be the open client) and refresh
   // whichever surfaces are showing package state.
   function afterPackageRequestAction(c) {
+    bankMutated(c);
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
     if (window.Cloud?.enabled) {
       window.Cloud.debounce(`athlete:${c.id}`, () =>
