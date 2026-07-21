@@ -4441,39 +4441,52 @@ body::before {
    dashed borders on a scaling, radius-clipped circle rendered as an uneven
    "segmented ring" on mobile/tablet, and both rings faded to nothing, leaving
    no lasting glow. These are gradient glows instead — smooth at every DPR. */
-/* Flare up bright once on load, then hand off to a slow, smooth breathe. The
-   flare settles to the same opacity/scale the breathe starts from, so there's
-   no jump between them — a continuous glow, not a strobe. */
+/* Flare up bright once on load, then hand off to a slow, smooth breathe.
+   OPACITY ONLY — no transform in these keyframes. Animating the halo's scale
+   re-rasterized the gradient every frame and, stacked with the logo's own
+   filter animation, strobed on mobile. Opacity is compositor-only, so the
+   pulse stays smooth. The static transform (translate + translateZ) lives on
+   the element and never changes. */
 @keyframes haloFlare {
-  0%   { opacity: 0;    transform: translate(-50%, -50%) scale(0.82); }
-  45%  { opacity: 1;    transform: translate(-50%, -50%) scale(1.12); }
-  100% { opacity: 0.6;  transform: translate(-50%, -50%) scale(1); }
+  0%   { opacity: 0; }
+  45%  { opacity: 1; }
+  100% { opacity: 0.6; }
 }
 @keyframes haloBreathe {
-  0%, 100% { opacity: 0.6;  transform: translate(-50%, -50%) scale(1); }
-  50%      { opacity: 0.85; transform: translate(-50%, -50%) scale(1.06); }
+  0%, 100% { opacity: 0.6; }
+  50%      { opacity: 0.85; }
 }
 
 #screen-login .brand { position: relative; }
 #screen-login .brand-mark {
+  position: relative;
+  /* The entrance + breathe animation lives on the <img>, not this box, so the
+     halo behind it isn't re-rasterized by an animating filter every frame —
+     that was the mobile flicker. Keep this box a plain, static, unfiltered
+     layer; the glow rides the img. */
+  filter: none;
+}
+#screen-login .brand-mark img {
+  position: relative;
+  z-index: 1; /* logo art sits above the halo */
   animation: logoZoom 1.3s cubic-bezier(0.34, 1.56, 0.64, 1) 0.05s both,
              logoBreathe 4s ease-in-out 1.5s infinite;
-  position: relative;
 }
 /* Single soft halo behind the logo: flare up once, then a slow smooth breathe.
-   No blur filter — the gradient's transparent falloff is already soft, and a
-   blurred negative-z layer flickered (read as flashing) while the logo's own
-   filter animated. The two animations are sequenced by delay; the breathe
-   picks up exactly where the flare settles, so the pulse never snaps. */
+   Kept flicker-free by construction: no blur filter (the gradient falloff is
+   already soft); a non-negative z-index (negative-z pseudos flickered on
+   mobile); its own GPU layer via translateZ + will-change; opacity-only
+   animation; and a static, unfiltered parent so nothing re-rasterizes it. */
 #screen-login .brand-mark::before {
   content: "";
   position: absolute;
   top: 50%; left: 50%;
   width: 172%; height: 172%;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) translateZ(0);
+  will-change: opacity;
   border-radius: 50%;
   pointer-events: none;
-  z-index: -1; /* behind the logo art */
+  z-index: 0; /* behind the img (z-index:1), but not negative */
   background: radial-gradient(circle,
     rgba(var(--primary-bright-rgb), 0.32) 0%,
     rgba(var(--primary-rgb), 0.13) 42%,
