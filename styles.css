@@ -7991,16 +7991,6 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 /* Coach money strip (dashboard) */
 /* Sits at the very bottom of the coach Overview now, so it needs space above
    it rather than below. */
-.money-strip { display: flex; gap: 0.55rem; flex-wrap: wrap; margin: 1.25rem 0 0.4rem; }
-.money-chip {
-  display: flex; flex-direction: column; gap: 0.1em;
-  padding: 0.5em 0.9em; border-radius: 10px;
-  background: var(--surface); border: 1px solid var(--border);
-}
-.money-chip .money-num { font-size: 1.1rem; font-weight: 800; color: var(--primary-bright); }
-.money-chip.warn .money-num { color: var(--warn); }
-.money-chip .money-lbl { font-size: 0.72rem; color: var(--text-soft); }
-
 /* Quiet-athlete flag on dashboard cards */
 .quiet-chip {
   display: inline-block; margin-left: 0.35em; padding: 0.05em 0.45em;

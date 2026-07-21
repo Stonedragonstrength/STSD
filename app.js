@@ -7159,7 +7159,6 @@
       loadDashCalSetmoreEvents(year, month);
     }
     $("#dash-cal-title").textContent = `${MONTH_NAMES[month]} ${year}`;
-    renderMoneyStrip();
     const grid = $("#dash-cal-grid");
     grid.innerHTML = "";
     DOW_LABELS.forEach(d => {
@@ -13172,24 +13171,6 @@
   }
   // No dollar figures on the overview (2026-07-17, per Nathan) — just a quiet
   // "who owes" chip so unpaid packages still surface somewhere.
-  function renderMoneyStrip() {
-    const host = $("#dash-money-strip"); if (!host) return;
-    const owing = [];
-    let pendingCount = 0;
-    (state.trainerData.clients || []).forEach((c) => {
-      (c.sessionBank?.packages || []).forEach((p) => {
-        if (p.status === "pending" || p.status === "unpaid") {
-          pendingCount++;
-          if (!owing.includes(c.name)) owing.push(c.name);
-        }
-      });
-    });
-    if (!pendingCount) { host.innerHTML = ""; return; }
-    host.innerHTML = `<div class="money-strip">
-      <div class="money-chip warn"><span class="money-num">${pendingCount}</span><span class="money-lbl">unpaid package${pendingCount === 1 ? "" : "s"}: ${escapeHtml(owing.slice(0, 3).join(", "))}${owing.length > 3 ? "…" : ""}</span></div>
-    </div>`;
-  }
-
   // -------- Modal --------
   function openModal({ title, body, actions = [] }) {
     $("#modal-title").textContent = title;
