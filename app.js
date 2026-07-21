@@ -254,7 +254,7 @@
   }
 
   // -------- Data factories --------
-  const DEFAULT_PR_LIFTS = ["Barbell Squat", "Deadlift", "Bench Press", "Overhead BB Press", "Strict Curl"];
+  const DEFAULT_PR_LIFTS = ["Barbell Squat", "Deadlift", "Bench Press", "DB Bench Press", "Overhead BB Press", "Strict Curl"];
   function makeClient(name) {
     return {
       id: uid(), name: name || "New Athlete",
