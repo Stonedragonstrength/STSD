@@ -8727,6 +8727,7 @@
           out.push({
             key: `${c.id}:${dayId}:${date}`,
             clientId: c.id,
+            dayId,
             name: c.name,
             // Days from an archived program are no longer in c.weeks.
             dayName: dayNames[dayId] || "a workout",
@@ -8805,7 +8806,7 @@
         <h3 style="margin:0">🏋️ New activity <span class="overview-req-count">${fresh.length}</span></h3>
         <button class="btn btn-ghost btn-sm" id="btn-activity-seen" type="button">Mark all read</button>
       </div>
-      ${shown.map((it) => `<div class="activity-row" data-client="${escapeHtml(it.clientId)}">
+      ${shown.map((it) => `<div class="activity-row" data-client="${escapeHtml(it.clientId)}" data-day="${escapeHtml(it.dayId)}" data-date="${escapeHtml(it.date)}">
         <span class="activity-name">${escapeHtml(it.name)}</span>
         <span class="activity-day">${escapeHtml(it.dayName)}</span>
         <span class="activity-when">${escapeHtml(activityWhen(it.date))}</span>
@@ -8813,13 +8814,33 @@
       ${fresh.length > shown.length ? `<p class="muted activity-more">+${fresh.length - shown.length} more</p>` : ""}`;
 
     card.querySelectorAll(".activity-row").forEach((row) => {
-      row.addEventListener("click", () => openClient(row.dataset.client));
+      row.addEventListener("click", () =>
+        openCompletedWorkout(row.dataset.client, row.dataset.day, row.dataset.date));
     });
     card.querySelector("#btn-activity-seen").addEventListener("click", () => {
       markActivitySeen(fresh);
       renderOverviewActivity();
     });
     host.appendChild(card);
+  }
+
+  // Tapping an activity row drops the coach straight into that athlete's live
+  // session on the exact day they completed, with the completion date set so
+  // the logged sets they entered show. If the day is gone (archived program),
+  // fall back to opening the athlete's page — the workout no longer exists to
+  // land on.
+  function openCompletedWorkout(clientId, dayId, date) {
+    const c = state.trainerData.clients.find((x) => x.id === clientId);
+    if (!c) return renderDashboard();
+    const week = (c.weeks || []).find((w) => (w.days || []).some((d) => d.id === dayId));
+    if (!week) {
+      openClient(clientId);
+      toast("That workout was archived — opening their program instead", 3000);
+      return;
+    }
+    state.currentClientId = clientId;
+    Nav.push(exitPreview); // Back leaves the live session, same as the 🏋️ card button
+    previewAsAthlete({ weekId: week.id, dayId, date });
   }
 
   // -------- Packages tracker (all athletes) --------
@@ -9861,7 +9882,10 @@
   // and weights the athlete just completed. (The read-only preview variant was
   // retired 2026-07-17; state.previewMode still gates the save/persist paths.)
   let _previewReturn = null;
-  async function previewAsAthlete() {
+  // target (optional): { weekId, dayId, date } to land on a specific completed
+  // workout — used when the coach taps an activity notification. Omitted, it
+  // lands on the athlete's current day, ready to log.
+  async function previewAsAthlete(target) {
     const c = currentClient();
     if (!c) return;
     ensureSessionBank(c);
@@ -9879,11 +9903,13 @@
     enterClientPortal();
     updatePreviewBanner(c);
     show($("#preview-banner"));
-    // Land directly on the day they're on, ready to log.
-    const pos = athleteCurrentDay(c);
+    // Land on the requested completed day (from a notification) or, by default,
+    // the day they're currently on. The date drives which logged sets show, so
+    // a past completion surfaces what they actually logged that day.
+    const pos = (target && target.dayId) ? target : athleteCurrentDay(c);
     if (pos) {
       setClientTab("workouts");
-      state.workoutView = { mode: "detail", weekId: pos.weekId, dayId: pos.dayId, date: todayISO() };
+      state.workoutView = { mode: "detail", weekId: pos.weekId, dayId: pos.dayId, date: pos.date || todayISO() };
       Nav.push(backToWorkoutPicker);
       renderWorkoutDetailUI();
     }
