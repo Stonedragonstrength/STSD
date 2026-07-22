@@ -8572,6 +8572,80 @@ body.live-log-mode #screen-client .header-right { display: none; }
   color: var(--text);
 }
 
+/* ---- Strength Science: tap-to-open concept cards below the muscle map ---- */
+.a-concepts {
+  display: flex; flex-direction: column; gap: 1.4rem;
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--border);
+}
+.a-concepts-head h3 { margin: 0 0 0.35em; font-size: 1.35rem; }
+.a-concepts-head p { margin: 0; color: var(--text-soft); font-size: 0.92rem; line-height: 1.5; max-width: 62ch; }
+.a-cgroup { display: flex; flex-direction: column; gap: 0.6rem; }
+.a-cgroup-title {
+  display: flex; align-items: center; gap: 0.6rem;
+  margin: 0; font-size: 0.78rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-soft);
+}
+.a-cgroup-tag {
+  font-size: 0.62rem; font-weight: 800; letter-spacing: 0.06em;
+  padding: 0.25em 0.6em; border-radius: 999px;
+  color: var(--primary-bright);
+  background: rgba(var(--primary-rgb), 0.12);
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.3);
+}
+.a-cgrid { display: flex; flex-direction: column; gap: 0.55rem; }
+.a-concept {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+  transition: border-color 0.15s, background 0.15s;
+}
+.a-concept[open] { border-color: rgba(var(--primary-bright-rgb), 0.4); }
+.a-concept-sum {
+  list-style: none; cursor: pointer;
+  display: flex; align-items: center; gap: 0.9rem;
+  padding: 0.9rem 1.1rem;
+}
+.a-concept-sum::-webkit-details-marker { display: none; }
+.a-concept:hover { background: var(--surface-2); }
+.a-concept-text { display: flex; flex-direction: column; gap: 0.15em; min-width: 0; flex: 1; }
+.a-concept-term { font-size: 1rem; font-weight: 700; color: var(--text); }
+.a-concept-short { font-size: 0.84rem; color: var(--muted); line-height: 1.3; }
+.a-concept-chev {
+  flex: none; position: relative; width: 16px; height: 16px;
+  color: var(--primary-bright);
+}
+/* + mark drawn from two bars, rotates into an x when open */
+.a-concept-chev::before, .a-concept-chev::after {
+  content: ""; position: absolute; left: 50%; top: 50%;
+  background: currentColor; border-radius: 2px;
+  transform: translate(-50%, -50%);
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.a-concept-chev::before { width: 14px; height: 2px; }
+.a-concept-chev::after { width: 2px; height: 14px; }
+.a-concept[open] .a-concept-chev::after { transform: translate(-50%, -50%) rotate(90deg); opacity: 0; }
+.a-concept[open] .a-concept-chev::before { transform: translate(-50%, -50%) rotate(180deg); }
+.a-concept-body {
+  padding: 0 1.1rem 1.05rem;
+  display: flex; flex-direction: column; gap: 0.7rem;
+}
+.a-concept-def { margin: 0; font-size: 0.92rem; line-height: 1.55; color: var(--text); }
+.a-concept-str {
+  margin: 0; font-size: 0.9rem; line-height: 1.5; color: var(--primary-bright);
+  border-left: 3px solid rgba(var(--primary-bright-rgb), 0.5);
+  padding-left: 0.75em;
+}
+.a-concept-str-label {
+  display: block; font-size: 0.66rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--text-soft); margin-bottom: 0.25em;
+}
+@media (prefers-reduced-motion: reduce) {
+  .a-concept-chev::before, .a-concept-chev::after { transition: none; }
+}
+
 /* Tablets and below: stack the figure above the legend + detail */
 @media (max-width: 880px) {
   .anatomy-layout { grid-template-columns: 1fr; }

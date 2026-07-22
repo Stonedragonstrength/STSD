@@ -4847,6 +4847,78 @@
     </div>`;
   }
 
+  // Strength Science: plain-language explainers for the ideas behind why
+  // training makes you stronger. Rendered as tap-to-open cards below the muscle
+  // explorer on the Anatomy page (coach + athlete). Static reference content.
+  const STRENGTH_CONCEPTS = [
+    { group: "The nervous system", tag: "Neural", items: [
+      { term: "Motor unit recruitment", short: "How many muscle fibers you switch on.",
+        def: "A motor unit is a single nerve plus all the muscle fibers it controls. Your body switches them on smallest first, saving the big, high-force units for when they are truly needed (the size principle). Easy efforts only wake the small ones.",
+        strength: "To train your strongest fibers you have to give them a reason to show up: heavy loads, or lighter loads moved with maximum intent. Cruising through easy sets leaves your biggest engines parked." },
+      { term: "Rate coding", short: "How fast those fibers fire, not just how many.",
+        def: "Once a motor unit is switched on, the nervous system squeezes more force out of it by firing the nerve faster, sending impulses in a quicker, tighter train. At near-maximal efforts, when there are no more units left to recruit, faster firing is your main remaining way to make more force.",
+        strength: "Rate coding is a big reason you get stronger before you get bigger: the same muscle makes more force because you taught it to fire faster. Heavy lifting and pushing every rep with real speed and intent develop it, so even a grinder should try to move the bar fast." },
+      { term: "Neural gains vs. growth", short: "Why early strength jumps without new muscle.",
+        def: "The first several weeks of a new program deliver quick strength gains that are mostly neural: better recruitment, faster rate coding, cleaner coordination, and less protective braking. Actual new muscle takes longer to build.",
+        strength: "This is beginner gains. It also explains why advanced lifters chase strength with heavy, low-rep work: near a plateau, the nervous system, not just muscle size, is where fresh strength comes from." },
+      { term: "Strength is a skill", short: "Your body learns the lift, not just the muscle.",
+        def: "A heavy lift is a coordinated act: the prime movers fire hard, the stabilizers time up, and the opposing muscles relax out of the way. The nervous system gets better at this pattern with practice, the way any skill improves.",
+        strength: "Part of getting stronger at squat or bench is simply getting better at that exact movement. It is why practicing the main lifts beats only training around them." },
+      { term: "The safety brake", short: "Autogenic inhibition, and how training eases it.",
+        def: "Sensors in your tendons can dial force down to protect the joint when tension spikes, a built-in brake. Consistent heavy training raises that brake's threshold, letting you reach more of the strength you already own.",
+        strength: "Some of your max strength gain is not new force at all, it is permission to use what was there. Gradual, heavy exposure is what turns the brake down safely." },
+    ] },
+    { group: "Muscle and growth", tag: "Muscle", items: [
+      { term: "Muscle fiber types", short: "Slow-twitch endurance vs. fast-twitch force.",
+        def: "Type I (slow-twitch) fibers resist fatigue and are built for endurance. Type II (fast-twitch) fibers make much more force, contract faster, and tire quickly. Most muscles are a mix, and your training biases which qualities develop.",
+        strength: "Strength and power lean on fast-twitch fibers. Heavy loads and explosive efforts recruit and develop them; endless light reps mostly train endurance." },
+      { term: "Mechanical tension", short: "The main signal that tells muscle to grow.",
+        def: "High tension held across a muscle through a full range of motion, produced by heavy load or hard effort taken close to failure, is the primary driver of muscle growth.",
+        strength: "More muscle means more contractile tissue and a higher strength ceiling. Tension is the shared currency: it drives both size and, alongside neural work, force." },
+      { term: "Progressive overload", short: "Give the body a reason to keep adapting.",
+        def: "Gradually increasing the demand over time, whether load, reps, sets, range, or better control, forces your body to keep adapting. Repeat the exact same workout forever and progress stalls.",
+        strength: "This is the master principle under everything else. No progressive overload, no lasting strength." },
+      { term: "Stretch-shortening cycle", short: "Load the spring, then fire.",
+        def: "When a muscle is quickly stretched (the lowering phase) then immediately reverses into shortening (the lifting phase), it stores and releases elastic energy like a loaded spring. The dip before a jump and the bounce out of the bottom of a bench both use it.",
+        strength: "It is the root of power and explosive lifts. Controlled tempo work and plyometrics such as jumps and throws sharpen it." },
+    ] },
+    { group: "Training language", tag: "Programming", items: [
+      { term: "1RM and rep maxes", short: "The vocabulary of intensity.",
+        def: "Your 1RM is the most you can lift once. A rep max (RM) is the most reps you can do at a given weight: a 5RM is a weight you can lift five times and no more. Programs often set loads as a percentage of your 1RM.",
+        strength: "Knowing your maxes lets a program target the right intensity for the goal: heavy and low-rep for strength, moderate for size." },
+      { term: "RPE and RIR", short: "Auto-adjusting effort to the day.",
+        def: "RPE (rate of perceived exertion) rates how hard a set felt, usually on a 1 to 10 scale. RIR (reps in reserve) is the flip side: how many good reps you had left. An RPE 8 or 2 RIR set means you stopped about two reps shy of failure.",
+        strength: "These let you hit the right effort on a good or bad day instead of blindly chasing a number, so you manage fatigue while still pushing." },
+      { term: "Specificity (SAID)", short: "You get good at exactly what you do.",
+        def: "SAID stands for Specific Adaptations to Imposed Demands: your body adapts to the precise demand you place on it, meaning the movement, speed, range, and load.",
+        strength: "To get strong at a lift, train that lift and that quality. Carryover from other exercises helps, but nothing replaces practicing the thing itself." },
+    ] },
+  ];
+
+  function strengthConceptsHtml() {
+    return `<section class="a-concepts">
+      <div class="a-concepts-head">
+        <h3>Strength Science</h3>
+        <p>Plain-language explainers for the ideas behind how training makes you stronger. Tap any card to open it.</p>
+      </div>
+      ${STRENGTH_CONCEPTS.map((grp) => `<div class="a-cgroup">
+        <h4 class="a-cgroup-title">${escapeHtml(grp.group)}<span class="a-cgroup-tag">${escapeHtml(grp.tag)}</span></h4>
+        <div class="a-cgrid">
+          ${grp.items.map((c) => `<details class="a-concept">
+            <summary class="a-concept-sum">
+              <span class="a-concept-text"><span class="a-concept-term">${escapeHtml(c.term)}</span><span class="a-concept-short">${escapeHtml(c.short)}</span></span>
+              <span class="a-concept-chev" aria-hidden="true"></span>
+            </summary>
+            <div class="a-concept-body">
+              <p class="a-concept-def">${escapeHtml(c.def)}</p>
+              <p class="a-concept-str"><span class="a-concept-str-label">Why it helps strength</span>${escapeHtml(c.strength)}</p>
+            </div>
+          </details>`).join("")}
+        </div>
+      </div>`).join("")}
+    </section>`;
+  }
+
   // Build the anatomy UI into one container. Static, built once per node.
   function buildAnatomy(root) {
     if (root.dataset.anatomyBuilt) return;
@@ -4866,7 +4938,8 @@
             <div class="anatomy-detail-empty">Select a muscle group to see the details.</div>
           </div>
         </div>
-      </div>`;
+      </div>
+      ${strengthConceptsHtml()}`;
 
     const listEl = root.querySelector("[data-anatomy-list]");
     const detailEl = root.querySelector("[data-anatomy-detail]");
