@@ -456,8 +456,8 @@ input[type="date"] { color-scheme: dark; }
    sized to sit level with the .btn-sm ghosts beside it. */
 .header-sessions {
   position: relative;
-  display: inline-flex; align-items: center; gap: 0.34em;
-  padding: 0.34em 0.7em;
+  display: inline-flex; flex-direction: column; align-items: center; gap: 1px;
+  padding: 0.28em 0.75em;
   border-radius: 999px;
   background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.2), rgba(var(--primary-rgb), 0.07));
   border: 1px solid rgba(var(--primary-bright-rgb), 0.32);
@@ -473,8 +473,8 @@ input[type="date"] { color-scheme: dark; }
   box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1);
 }
 .header-sessions .hs-ico { font-size: 0.9em; opacity: 0.85; }
-/* Number over a tiny "Sessions" caption, stacked beside the ticket icon. */
-.header-sessions .hs-col { display: flex; flex-direction: column; align-items: center; gap: 1px; line-height: 1; }
+/* Ticket + number on top, a tiny "Sessions" caption centered underneath both. */
+.header-sessions .hs-top { display: inline-flex; align-items: center; gap: 0.34em; line-height: 1; }
 .header-sessions .hs-num { color: var(--primary-bright); font-variant-numeric: tabular-nums; line-height: 1; }
 .header-sessions .hs-lbl { font-size: 0.48rem; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-soft); line-height: 1; }
 /* Running low — the whole chip flips to the warning color. */
