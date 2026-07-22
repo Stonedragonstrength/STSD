@@ -2386,7 +2386,7 @@ input[type="date"] { color-scheme: dark; }
   border: 1px solid var(--border);
   border-left: 3px solid var(--hero-color, var(--primary));
   border-radius: var(--radius);
-  padding: 0.5rem 0.85rem;
+  padding: 0.35rem 0.8rem;
   box-shadow: var(--shadow-sm);
   transition: box-shadow 0.15s, transform 0.15s;
 }
@@ -2395,13 +2395,13 @@ input[type="date"] { color-scheme: dark; }
 .ov-hero-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .ov-hero-kicker { font-size: 0.56rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--hero-color, var(--text-soft)); line-height: 1.1; }
 .ov-hero-main { display: flex; align-items: baseline; gap: 0.5em; min-width: 0; }
-.ov-hero-title { font-size: 1rem; font-weight: 800; line-height: 1.15; flex-shrink: 0; white-space: nowrap; }
+.ov-hero-title { font-size: 0.92rem; font-weight: 800; line-height: 1.1; flex-shrink: 0; white-space: nowrap; }
 .ov-hero-sub { font-size: 0.74rem; color: var(--muted); line-height: 1.15; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ov-hero-cta {
   flex-shrink: 0;
   background: linear-gradient(180deg, var(--primary-bright), var(--primary));
-  color: #062131; font-weight: 800; font-size: 0.64rem;
-  padding: 0.26em 0.6em; border-radius: 999px;
+  color: #062131; font-weight: 800; font-size: 0.7rem;
+  padding: 0.3em 0.65em; border-radius: 999px;
   box-shadow: 0 2px 6px rgba(var(--primary-rgb), 0.25);
 }
 
