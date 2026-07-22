@@ -4872,8 +4872,19 @@
       { term: "Strength is a skill", short: "Your body learns the lift, not just the muscle.",
         def: "A heavy lift is a coordinated act: the prime movers fire hard, the stabilizers time up, and the opposing muscles relax out of the way. The nervous system gets better at this pattern with practice, the way any skill improves.",
         strength: "Part of getting stronger at squat or bench is simply getting better at that exact movement. It is why practicing the main lifts beats only training around them." },
+    ] },
+    { group: "Sensors and reflexes", tag: "Proprioception", items: [
+      { term: "Muscle spindles", short: "The stretch sensors woven into the muscle.",
+        def: "Muscle spindles are tiny sensory organs threaded among your muscle fibers that track how far and how fast the muscle is being stretched. Sense a quick stretch and they signal the spinal cord, which fires the muscle to contract and resist being pulled any further.",
+        strength: "They are the trigger behind the bounce out of the bottom of a squat and the dip before a jump. Tempo work and plyometrics teach you to use that spring, while slow, relaxed stretching quiets the spindles so your range can genuinely open up." },
+      { term: "The stretch reflex", short: "A fast stretch fires a protective contraction.",
+        def: "The signal a muscle spindle sends is the stretch reflex, or myotatic reflex: stretch a muscle quickly and it fires to contract, guarding it against being pulled too far. It is why you ease into a stretch rather than bounce into it.",
+        strength: "That same reflex feeds the spring in explosive lifts. For flexibility, slow and relaxed stretching lets the reflex settle so your range can genuinely improve." },
+      { term: "Golgi tendon organs", short: "The tension sensors guarding your tendons.",
+        def: "Golgi tendon organs sit where muscle meets tendon and measure how much force is passing through. When tension climbs toward a level they read as risky, they signal the muscle to ease off, a protective response called autogenic inhibition.",
+        strength: "They are the sensor behind your body's safety brake. Because the load is read at the tendon, gradual heavy exposure, not sudden max efforts, is what safely widens what you can handle." },
       { term: "The safety brake", short: "Autogenic inhibition, and how training eases it.",
-        def: "Sensors in your tendons can dial force down to protect the joint when tension spikes, a built-in brake. Consistent heavy training raises that brake's threshold, letting you reach more of the strength you already own.",
+        def: "Acting on the Golgi tendon signal, your body can dial force down to protect the joint when tension spikes, a built-in brake. Consistent heavy training raises that brake's threshold, letting you reach more of the strength you already own.",
         strength: "Some of your max strength gain is not new force at all, it is permission to use what was there. Gradual, heavy exposure is what turns the brake down safely." },
     ] },
     { group: "Muscle and growth", tag: "Muscle", items: [
@@ -4920,9 +4931,6 @@
       { term: "Range of motion", short: "Full ROM usually beats partial.",
         def: "Taking a lift through its complete range trains the muscle at every length it works through, and generally builds more size and usable strength than short, partial reps. Targeted partials still have a place on top of that.",
         strength: "Do not trade honest range for a heavier number. Full-range strength carries over to real life and to your other lifts far better than a shortened one." },
-      { term: "The stretch reflex", short: "A fast stretch fires a protective contraction.",
-        def: "Stretch a muscle quickly and a built-in reflex fires it to contract, guarding it against being pulled too far, the myotatic reflex. It is why you ease into a stretch rather than bounce into it.",
-        strength: "That same reflex feeds the spring in explosive lifts. For flexibility, slow and relaxed stretching lets the reflex settle so your range can genuinely improve." },
     ] },
     { group: "Training language", tag: "Programming", items: [
       { term: "1RM and rep maxes", short: "The vocabulary of intensity.",
@@ -4941,10 +4949,17 @@
     return `<section class="a-concepts">
       <div class="a-concepts-head">
         <h3>Strength Science</h3>
-        <p>Plain-language explainers for the ideas behind how training makes you stronger. Tap any card to open it.</p>
+        <p>Plain-language explainers for the ideas behind how training makes you stronger. Pick a topic, then tap any card to open it.</p>
       </div>
-      ${STRENGTH_CONCEPTS.map((grp) => `<div class="a-cgroup">
-        <h4 class="a-cgroup-title">${escapeHtml(grp.group)}<span class="a-cgroup-tag">${escapeHtml(grp.tag)}</span></h4>
+      ${STRENGTH_CONCEPTS.map((grp) => `<details class="a-cgroup">
+        <summary class="a-cgroup-sum">
+          <span class="a-cgroup-title">${escapeHtml(grp.group)}</span>
+          <span class="a-cgroup-meta">
+            <span class="a-cgroup-tag">${escapeHtml(grp.tag)}</span>
+            <span class="a-cgroup-count">${grp.items.length}</span>
+            <span class="a-cgroup-chev" aria-hidden="true"></span>
+          </span>
+        </summary>
         <div class="a-cgrid">
           ${grp.items.map((c) => `<details class="a-concept">
             <summary class="a-concept-sum">
@@ -4957,7 +4972,7 @@
             </div>
           </details>`).join("")}
         </div>
-      </div>`).join("")}
+      </details>`).join("")}
     </section>`;
   }
 

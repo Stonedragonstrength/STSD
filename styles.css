@@ -8721,12 +8721,26 @@ body.live-log-mode #screen-client .header-right { display: none; }
 }
 .a-concepts-head h3 { margin: 0 0 0.3em; font-size: 1.35rem; }
 .a-concepts-head p { margin: 0; color: var(--text-soft); font-size: 0.92rem; line-height: 1.5; max-width: 62ch; }
-.a-cgroup { display: flex; flex-direction: column; gap: 0.5rem; }
-.a-cgroup-title {
-  display: flex; align-items: center; gap: 0.6rem;
-  margin: 0; font-size: 0.78rem; font-weight: 800;
-  text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-soft);
+.a-cgroup {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+  transition: border-color 0.15s, background 0.15s;
 }
+.a-cgroup[open] { border-color: rgba(var(--primary-bright-rgb), 0.4); }
+.a-cgroup-sum {
+  list-style: none; cursor: pointer;
+  display: flex; align-items: center; gap: 0.85rem;
+  padding: 0.85rem 1rem;
+}
+.a-cgroup-sum::-webkit-details-marker { display: none; }
+.a-cgroup-sum:hover { background: var(--surface-2); }
+.a-cgroup-title {
+  flex: 1; min-width: 0; margin: 0;
+  font-size: 1.02rem; font-weight: 800; letter-spacing: -0.01em; color: var(--text);
+}
+.a-cgroup-meta { flex: none; display: flex; align-items: center; gap: 0.55rem; }
 .a-cgroup-tag {
   font-size: 0.62rem; font-weight: 800; letter-spacing: 0.06em;
   padding: 0.25em 0.6em; border-radius: 999px;
@@ -8734,11 +8748,26 @@ body.live-log-mode #screen-client .header-right { display: none; }
   background: rgba(var(--primary-rgb), 0.12);
   border: 1px solid rgba(var(--primary-bright-rgb), 0.3);
 }
+.a-cgroup-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 1.5em; height: 1.5em; padding: 0 0.35em;
+  font-size: 0.72rem; font-weight: 800; border-radius: 999px;
+  color: var(--text-soft); background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.a-cgroup-chev {
+  flex: none; width: 9px; height: 9px; margin-left: 0.1rem;
+  border-right: 2px solid var(--text-soft); border-bottom: 2px solid var(--text-soft);
+  border-radius: 1px; transform: rotate(45deg); transform-origin: 55% 55%;
+  transition: transform 0.2s ease, border-color 0.15s;
+}
+.a-cgroup[open] .a-cgroup-chev { transform: rotate(225deg); border-color: var(--primary-bright); }
 .a-cgrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
   gap: 0.5rem;
   align-items: start;
+  padding: 0 0.6rem 0.7rem;
 }
 .a-concept {
   border: 1px solid var(--border);
@@ -8789,7 +8818,7 @@ body.live-log-mode #screen-client .header-right { display: none; }
   color: var(--text-soft); margin-bottom: 0.25em;
 }
 @media (prefers-reduced-motion: reduce) {
-  .a-concept-chev::before, .a-concept-chev::after { transition: none; }
+  .a-concept-chev::before, .a-concept-chev::after, .a-cgroup-chev { transition: none; }
 }
 
 /* Tablets and below: stack the figure above the legend + detail */
