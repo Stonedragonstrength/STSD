@@ -5531,8 +5531,20 @@
     hide(empty);
     _coachActiveWeekIdx = Math.min(_coachActiveWeekIdx, c.weeks.length - 1);
     renderCoachWeekTabs(c.weeks, container);
+    renderMoodRollupBanner(c, container);
     renderArchiveSection(c);
     renderOneOffSection(c);
+  }
+  // Compact "how they've been feeling" roll-up above the athlete's program.
+  function renderMoodRollupBanner(c, container) {
+    if (!container) return;
+    const roll = moodRollup(c);
+    if (!roll.length) return;
+    const banner = document.createElement("div");
+    banner.className = "mood-rollup";
+    banner.innerHTML = `<span class="mood-rollup-lbl">🫀 Program mood</span>` +
+      roll.map((m) => `<span class="mood-rollup-item" title="${escapeHtml(m.label)}"><span class="mood-emo">${m.emoji}</span><span class="mood-rollup-n">${m.n}</span></span>`).join("");
+    container.insertBefore(banner, container.firstChild);
   }
 
   // -------- One-off coach sessions (coach side) --------
@@ -5806,10 +5818,12 @@
     let dayDragFrom = null;
     function renderDayTabs() {
       tabStrip.innerHTML = "";
+      const moodClient = _programEditorId ? null : currentClient();
       week.days.forEach((day, dIdx) => {
         const tab = document.createElement("button");
         tab.className = "day-tab" + (dIdx === week._activeDayIdx ? " active" : "");
-        tab.textContent = day.name || `Day ${dIdx + 1}`;
+        const dm = moodClient ? dayMoods(moodClient.importedProgress, day.id) : [];
+        tab.innerHTML = `<span class="day-tab-name">${escapeHtml(day.name || `Day ${dIdx + 1}`)}</span>${dm.length ? moodChipsHtml(dm, true) : ""}`;
         tab.addEventListener("click", () => { week._activeDayIdx = dIdx; renderDayTabs(); renderActiveDayContent(); });
         // Drag to reorder days within the week
         tab.draggable = true;
@@ -6060,10 +6074,12 @@
 
     function renderDayTabs() {
       tabStrip.innerHTML = "";
+      const moodClient = _programEditorId ? null : currentClient();
       week.days.forEach((day, dIdx) => {
         const tab = document.createElement("button");
         tab.className = "day-tab" + (dIdx === week._activeDayIdx ? " active" : "");
-        tab.textContent = day.name || `Day ${dIdx + 1}`;
+        const dm = moodClient ? dayMoods(moodClient.importedProgress, day.id) : [];
+        tab.innerHTML = `<span class="day-tab-name">${escapeHtml(day.name || `Day ${dIdx + 1}`)}</span>${dm.length ? moodChipsHtml(dm, true) : ""}`;
         tab.addEventListener("click", () => {
           week._activeDayIdx = dIdx;
           renderDayTabs();
@@ -9699,7 +9715,7 @@
       err.classList.remove("hidden");
     }
   }
-  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {}, totalWorkoutMs: 0 }; }
+  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {}, totalWorkoutMs: 0, workoutMoods: {} }; }
   function ensureProgressShape(p) {
     if (!p.exerciseLogs) p.exerciseLogs = {};
     if (!p.bodyweightLog) p.bodyweightLog = [];
@@ -9712,6 +9728,7 @@
     if (!p.dismissedBulletins) p.dismissedBulletins = {};
     if (!p.seenMessages) p.seenMessages = {};
     if (typeof p.totalWorkoutMs !== "number" || !isFinite(p.totalWorkoutMs)) p.totalWorkoutMs = 0;
+    if (!p.workoutMoods || typeof p.workoutMoods !== "object") p.workoutMoods = {};
     return p;
   }
 
@@ -9842,6 +9859,92 @@
     saveClient();
     renderClientWorkouts();
   }
+  // -------- Post-workout mood check-in ("How was your workout?") --------
+  // Athlete taps up to 2 feelings when they finish a day; the picks show on
+  // that day's card and feed the coach's per-day chips + program roll-up.
+  const WORKOUT_MOODS = [
+    { id: "energized",  emoji: "⚡", label: "Energized" },
+    { id: "tired",      emoji: "🥱", label: "Tired" },
+    { id: "strong",     emoji: "💪", label: "Strong" },
+    { id: "weak",       emoji: "🫠", label: "Weak" },
+    { id: "brutalized", emoji: "💥", label: "Brutalized" },
+    { id: "wantmore",   emoji: "🔥", label: "Wanting more" },
+    { id: "sick",       emoji: "🤢", label: "Sick" },
+    { id: "dead",       emoji: "💀", label: "Dead" },
+  ];
+  const MAX_MOODS = 2;
+  const moodById = (id) => WORKOUT_MOODS.find((m) => m.id === id) || null;
+  // Latest mood pick list for a day, from any progress object (athlete-local or
+  // the coach's mirrored importedProgress).
+  function dayMoods(progress, dayId) {
+    const rec = progress?.workoutMoods?.[dayId];
+    return Array.isArray(rec?.moods) ? rec.moods : [];
+  }
+  // Small emoji-chip row for a day's moods; "" when none. `compact` drops labels.
+  function moodChipsHtml(moods, compact) {
+    const ids = (moods || []).map(moodById).filter(Boolean);
+    if (!ids.length) return "";
+    return `<span class="mood-chips${compact ? " compact" : ""}">${ids.map((m) =>
+      `<span class="mood-chip" title="${escapeHtml(m.label)}"><span class="mood-emo">${m.emoji}</span>${compact ? "" : `<span class="mood-txt">${escapeHtml(m.label)}</span>`}</span>`).join("")}</span>`;
+  }
+  // Aggregate mood counts across a client's current program (+ one-off days),
+  // newest-heaviest-first, for the coach roll-up. Returns [{ id, emoji, label, n }].
+  function moodRollup(client, progress) {
+    const p = progress || client?.importedProgress; if (!p?.workoutMoods) return [];
+    const counts = {};
+    const dayIds = new Set();
+    (client?.weeks || []).forEach((w) => (w.days || []).forEach((d) => dayIds.add(d.id)));
+    (client?.oneOffDays || []).forEach((d) => dayIds.add(d.id));
+    Object.entries(p.workoutMoods).forEach(([dayId, rec]) => {
+      if (dayIds.size && !dayIds.has(dayId)) return; // scope to current program
+      (rec?.moods || []).forEach((id) => { counts[id] = (counts[id] || 0) + 1; });
+    });
+    return WORKOUT_MOODS.map((m) => ({ ...m, n: counts[m.id] || 0 }))
+      .filter((m) => m.n > 0).sort((a, b) => b.n - a.n);
+  }
+  // Save (athlete-side) the mood picks for a day, latest-wins. Empty clears it.
+  function setDayMoods(dayId, moods) {
+    const p = state.clientData.progress; if (!p) return;
+    ensureProgressShape(p);
+    const clean = (moods || []).filter(moodById).slice(0, MAX_MOODS);
+    if (!clean.length) delete p.workoutMoods[dayId];
+    else p.workoutMoods[dayId] = { date: todayISO(), moods: clean };
+    saveClient();
+  }
+  // The "How was your workout?" sheet. Athlete-only; up to 2 picks.
+  function openWorkoutMoodSheet(day) {
+    if (!day || state.mode !== "client") return;
+    const p = state.clientData.progress; if (!p) return;
+    let sel = dayMoods(p, day.id).slice();
+    const draw = () => {
+      const body = $("#modal-body"); if (!body) return;
+      body.innerHTML = `
+        <p class="mood-sheet-sub">Tap up to ${MAX_MOODS}.</p>
+        <div class="mood-grid">
+          ${WORKOUT_MOODS.map((m) => `<button type="button" class="mood-opt${sel.includes(m.id) ? " on" : ""}" data-mood="${m.id}">
+              <span class="mood-opt-emo">${m.emoji}</span><span class="mood-opt-lbl">${escapeHtml(m.label)}</span>
+            </button>`).join("")}
+        </div>`;
+      body.querySelectorAll("[data-mood]").forEach((btn) => btn.addEventListener("click", () => {
+        const id = btn.dataset.mood;
+        if (sel.includes(id)) sel = sel.filter((x) => x !== id);
+        else if (sel.length < MAX_MOODS) sel.push(id);
+        else { toast(`Pick up to ${MAX_MOODS}`); return; }
+        draw();
+      }));
+    };
+    const commit = () => { setDayMoods(day.id, sel); closeModal(); renderClientWorkouts(); renderAthleteCalendar(); };
+    openModal({
+      title: "How was your workout?",
+      body: "",
+      actions: [
+        { label: "Clear", className: "btn btn-ghost", onClick: () => { sel = []; commit(); } },
+        { label: "Save", className: "btn btn-primary", onClick: commit },
+      ],
+    });
+    draw();
+  }
+
   // Auto-marks a day complete on the calendar once every exercise in it is
   // locked in — the athlete shouldn't have to separately check it off.
   // "<dayId>:<date>" for days already celebrated this session — see below.
@@ -9866,6 +9969,10 @@
       if (!_celebratedDays.has(key)) {
         _celebratedDays.add(key);
         celebrateDayComplete();
+        // After the confetti, ask how it felt (once) — unless they already rated.
+        if (!dayMoods(state.clientData.progress, day.id).length) {
+          setTimeout(() => openWorkoutMoodSheet(day), 750);
+        }
       }
     }
   }
@@ -10825,11 +10932,13 @@
         : doneEx > 0
           ? `<span class="wc-status progress">${doneEx}/${totalEx} logged</span>`
           : `<span class="wc-status todo">Tap to start</span>`;
+      const moods = dayMoods(state.clientData.progress, day.id);
       card.innerHTML = `
         <div class="workout-card-icon">${dayIconHtml(icon)}</div>
         <div class="workout-card-body">
           <h4 class="workout-card-title">${escapeHtml(day.name)}</h4>
           <div class="workout-card-meta">${totalEx} exercise${totalEx === 1 ? "" : "s"} · ${status}</div>
+          ${moods.length ? moodChipsHtml(moods) : ""}
         </div>
         <div class="workout-card-chevron">›</div>
       `;
@@ -11012,9 +11121,11 @@
         <input type="date" class="detail-log-date" id="detail-log-date" value="${escapeHtml(state.workoutView.date)}" title="Date these logs are for" />
       </div>
       <div class="detail-head-stats">${totalEx} exercise${totalEx === 1 ? "" : "s"}${doneEx > 0 ? ` · <span class="wc-status progress">${doneEx}/${totalEx} logged</span>` : ""}${checked ? ` · <span class="wc-status done">Day done ✓</span>` : ""}
+        <button type="button" class="detail-mood-btn" id="detail-mood-btn" title="How was your workout?">${dayMoods(state.clientData.progress, day.id).length ? moodChipsHtml(dayMoods(state.clientData.progress, day.id), true) : "🫀 How was it?"}</button>
         <button type="button" class="detail-clear-day" id="detail-clear-day" title="Clear this day's unlocked numbers">⌫ Clear day</button>
       </div>
     `;
+    head.querySelector("#detail-mood-btn").addEventListener("click", () => openWorkoutMoodSheet(day));
     head.querySelector("#detail-toggle").addEventListener("click", () => {
       toggleDayComplete(day.id);
       toast(checked ? "Unchecked" : "Day complete ✓");

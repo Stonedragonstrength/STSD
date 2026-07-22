@@ -6049,6 +6049,57 @@ button.cex-set-lbl:hover { color: var(--warn); }
   white-space: nowrap;
 }
 .detail-clear-day:hover { border-color: var(--danger); color: var(--danger); }
+
+/* ---- Post-workout mood check-in ("How was your workout?") ---- */
+.detail-mood-btn {
+  background: none; border: 1px solid var(--border); color: var(--text-soft);
+  border-radius: 999px; padding: 0.2em 0.6em; font-size: 0.72rem; font-weight: 700;
+  cursor: pointer; font-family: inherit; margin-left: 0.6em; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 0.3em;
+}
+.detail-mood-btn:hover { border-color: var(--primary); color: var(--text); }
+/* Chips shown on athlete day cards, the detail button, and coach day tabs */
+.mood-chips { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.3em; margin-top: 0.35em; }
+.mood-chips.compact { margin-top: 0; gap: 0.2em; }
+.mood-chip {
+  display: inline-flex; align-items: center; gap: 0.28em;
+  background: rgba(var(--primary-rgb), 0.12);
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.28);
+  border-radius: 999px; padding: 0.12em 0.5em;
+  font-size: 0.62rem; font-weight: 800; color: var(--text-soft);
+}
+.mood-chips.compact .mood-chip { padding: 0; border: none; background: none; font-size: 0.9em; }
+.mood-emo { line-height: 1; }
+.mood-txt { text-transform: uppercase; letter-spacing: 0.04em; }
+/* The mood picker sheet */
+.mood-sheet-sub { margin: 0 0 0.8em; color: var(--muted); font-size: 0.85rem; }
+.mood-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.55rem; }
+.mood-opt {
+  display: flex; align-items: center; gap: 0.55em;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 0.65em 0.8em; cursor: pointer; font-family: inherit;
+  color: var(--text); font-weight: 700; font-size: 0.9rem; text-align: left;
+  transition: border-color 0.12s, background 0.12s;
+}
+.mood-opt:hover { border-color: rgba(var(--primary-bright-rgb), 0.5); }
+.mood-opt.on {
+  border-color: var(--primary-bright);
+  background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.28), rgba(var(--primary-rgb), 0.1));
+  box-shadow: inset 0 0 0 1px rgba(var(--primary-bright-rgb), 0.4);
+}
+.mood-opt-emo { font-size: 1.3rem; line-height: 1; }
+.mood-opt-lbl { flex: 1; }
+/* Coach day tab: day name + tiny mood emojis */
+.day-tab .mood-chips.compact { margin-left: 0.35em; }
+/* Coach program-mood roll-up banner (top of an athlete's program) */
+.mood-rollup {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 0.45em 0.75em;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 0.55em 0.9em; margin-bottom: 0.9rem;
+}
+.mood-rollup-lbl { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-soft); }
+.mood-rollup-item { display: inline-flex; align-items: center; gap: 0.25em; font-weight: 800; font-size: 0.9rem; color: var(--text); }
+.mood-rollup-n { color: var(--primary-bright); font-variant-numeric: tabular-nums; }
 /* The ▲ / ▼ buttons above and below each weight/reps box (weight ±2.5 lb,
    reps ±1). Full width of the field, short height. */
 .cex-step {
