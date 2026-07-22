@@ -2371,36 +2371,51 @@ input[type="date"] { color-scheme: dark; }
 /* Greeting pins to the very top; bulletin follows, then the hero. Trophy case sits at the very bottom */
 #overview-greeting { margin-bottom: 0.9rem; }
 #overview-greeting:empty { display: none; }
-#overview-hero { display: flex; flex-direction: column; gap: 0.9rem; margin-bottom: 1.4rem; }
+/* Holds the bottom-pinned "up next" badge (position: fixed), so it reserves
+   no in-flow space of its own. */
+#overview-hero { margin: 0; }
 #overview-hero:empty { display: none; }
+/* Keep the last overview content clear of the floating badge. */
+.tab-panel[data-ctab-panel="overview"] { padding-bottom: 4.5rem; }
 #overview-trophies { margin-bottom: 1.4rem; }
 #overview-trophies:empty { display: none; }
 .ov-greeting { font-size: 1.15rem; font-weight: 800; letter-spacing: 0.01em; }
-/* Greeting on the left, the "up next" badge floating to its right (wraps under
-   on narrow screens). */
-.ov-greeting-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem 1rem; flex-wrap: wrap; }
 
-/* Adaptive "up next" as a compact floating badge (Today / Up next / Rest /
-   All caught up). The whole pill is the tap target on startable states. */
+/* Adaptive "up next" as a floating badge pinned to the bottom-center of the
+   overview (day name on top, kicker under it, circular arrow on startable
+   states). The whole pill is the tap target. Sits out of flow so its host
+   (#overview-hero) reserves no space. */
 .ov-hero {
+  position: fixed;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 55;
   display: inline-flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  max-width: 100%;
+  align-items: center;
+  gap: 0.7rem;
+  max-width: calc(100% - 24px);
   background: linear-gradient(100deg, var(--hero-soft, var(--primary-soft)) -10%, var(--surface) 95%);
   border: 1px solid var(--border);
   border-left: 3px solid var(--hero-color, var(--primary));
   border-radius: 999px;
-  padding: 0.34rem 0.9rem;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+  padding: 0.4rem 0.5rem 0.4rem 1rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
   transition: box-shadow 0.15s, transform 0.15s;
 }
 .ov-hero.is-clickable { cursor: pointer; }
-.ov-hero.is-clickable:hover { box-shadow: 0 10px 22px rgba(var(--primary-rgb), 0.22); transform: translateY(-2px); }
-.ov-hero-kicker { font-size: 0.54rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--hero-color, var(--text-soft)); line-height: 1; flex-shrink: 0; }
-.ov-hero-title { font-size: 0.9rem; font-weight: 800; line-height: 1.1; flex-shrink: 0; white-space: nowrap; }
-.ov-hero-sub { font-size: 0.72rem; color: var(--muted); line-height: 1.15; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ov-hero-arrow { font-size: 0.95rem; font-weight: 900; color: var(--hero-color, var(--primary-bright)); flex-shrink: 0; align-self: center; }
+.ov-hero.is-clickable:hover { box-shadow: 0 12px 30px rgba(var(--primary-rgb), 0.28); transform: translateX(-50%) translateY(-2px); }
+.ov-hero-textcol { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ov-hero-title { font-size: 0.92rem; font-weight: 800; line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov-hero-kicker { font-size: 0.54rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--hero-color, var(--text-soft)); line-height: 1; }
+.ov-hero-arrow {
+  flex-shrink: 0;
+  width: 1.9em; height: 1.9em;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(180deg, var(--primary-bright), var(--primary));
+  color: #062131; font-weight: 900; font-size: 0.95rem;
+}
 
 /* Slim horizontal stat strip */
 /* Info strip: a row of equal-height, vertically-centred KPI cards */

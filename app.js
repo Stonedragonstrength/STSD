@@ -10294,18 +10294,19 @@
         <div class="trophy-grid">${badges.map((b) => `<div class="trophy${b.earned ? " earned" : ""}" title="${escapeHtml(b.hint)}"><span class="trophy-icon">${b.icon}</span><span class="trophy-name">${escapeHtml(b.name)}</span></div>`).join("")}</div>
       </details>` : "";
 
-    // "Up next" now reads as a compact floating badge sitting to the right of
-    // the greeting (same row); the badge itself is the tap target (no separate
-    // Start button). The heroHost below the greeting is left empty.
+    // "Up next" reads as a compact floating badge pinned to the bottom-center
+    // of the overview (day name on top, kicker under it). The whole badge is
+    // the tap target on startable states, so there's no separate Start button.
     const greetHost = $("#overview-greeting");
-    const heroBadge = `<div class="ov-hero${hero.jump ? " is-clickable" : ""}" id="ov-hero" style="--hero-color:${hero.color || "var(--primary-bright)"};--hero-soft:${hero.soft || "var(--primary-soft)"}">
-        <span class="ov-hero-kicker">${hero.kicker}</span>
-        <span class="ov-hero-title">${hero.title}</span>
-        ${hero.sub ? `<span class="ov-hero-sub">${hero.sub}</span>` : ""}
+    if (greetHost) greetHost.innerHTML = `<div class="ov-greeting">Hey, ${firstName} 👋</div>`;
+    if (heroHost) heroHost.innerHTML = `
+      <div class="ov-hero${hero.jump ? " is-clickable" : ""}" id="ov-hero" style="--hero-color:${hero.color || "var(--primary-bright)"};--hero-soft:${hero.soft || "var(--primary-soft)"}">
+        <div class="ov-hero-textcol">
+          <span class="ov-hero-title">${hero.title}</span>
+          <span class="ov-hero-kicker">${hero.kicker}</span>
+        </div>
         ${hero.cta ? `<span class="ov-hero-arrow" aria-hidden="true">→</span>` : ""}
       </div>`;
-    if (greetHost) greetHost.innerHTML = `<div class="ov-greeting-row"><div class="ov-greeting">Hey, ${firstName} 👋</div>${heroBadge}</div>`;
-    if (heroHost) heroHost.innerHTML = "";
     renderCalHeaderStats({ doneDays, totalDays, weekLabel, streakN, bookingLabel });
     host.innerHTML = `
       ${prHtml ? `<div class="ov-mini-row">${prHtml}</div>` : ""}
