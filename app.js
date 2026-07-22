@@ -10221,9 +10221,8 @@
     const dayHero = (wkId, day, kicker) => {
       const list = (weeks.find((w) => w.id === wkId)?.days) || [];
       const col = getDayColor(Math.max(0, list.findIndex((d) => d.id === day.id)));
-      const n = day.exercises.length;
       return { icon: day.icon || workoutIconFor(day.name), kicker, title: escapeHtml(day.name),
-        sub: `${n} exercise${n === 1 ? "" : "s"} · ${escapeHtml(weekLabel)}`, color: col.color, soft: col.soft,
+        sub: "", color: col.color, soft: col.soft,
         jump: { weekId: wkId, dayId: day.id }, cta: "Start" };
     };
     const selfToday = progress.selfSchedule?.[today];
@@ -10295,16 +10294,18 @@
         <div class="trophy-grid">${badges.map((b) => `<div class="trophy${b.earned ? " earned" : ""}" title="${escapeHtml(b.hint)}"><span class="trophy-icon">${b.icon}</span><span class="trophy-name">${escapeHtml(b.name)}</span></div>`).join("")}</div>
       </details>` : "";
 
+    // "Up next" now reads as a compact floating badge sitting to the right of
+    // the greeting (same row); the badge itself is the tap target (no separate
+    // Start button). The heroHost below the greeting is left empty.
     const greetHost = $("#overview-greeting");
-    if (greetHost) greetHost.innerHTML = `<div class="ov-greeting">Hey, ${firstName} 👋</div>`;
-    if (heroHost) heroHost.innerHTML = `
-      <div class="ov-hero${hero.jump ? " is-clickable" : ""}" id="ov-hero" style="--hero-color:${hero.color || "var(--primary-bright)"};--hero-soft:${hero.soft || "var(--primary-soft)"}">
-        <div class="ov-hero-body">
-          <span class="ov-hero-kicker">${hero.kicker}</span>
-          <div class="ov-hero-main"><span class="ov-hero-title">${hero.title}</span><span class="ov-hero-sub">${hero.sub}</span></div>
-        </div>
-        ${hero.cta ? `<span class="ov-hero-cta">${hero.cta} →</span>` : ""}
+    const heroBadge = `<div class="ov-hero${hero.jump ? " is-clickable" : ""}" id="ov-hero" style="--hero-color:${hero.color || "var(--primary-bright)"};--hero-soft:${hero.soft || "var(--primary-soft)"}">
+        <span class="ov-hero-kicker">${hero.kicker}</span>
+        <span class="ov-hero-title">${hero.title}</span>
+        ${hero.sub ? `<span class="ov-hero-sub">${hero.sub}</span>` : ""}
+        ${hero.cta ? `<span class="ov-hero-arrow" aria-hidden="true">→</span>` : ""}
       </div>`;
+    if (greetHost) greetHost.innerHTML = `<div class="ov-greeting-row"><div class="ov-greeting">Hey, ${firstName} 👋</div>${heroBadge}</div>`;
+    if (heroHost) heroHost.innerHTML = "";
     renderCalHeaderStats({ doneDays, totalDays, weekLabel, streakN, bookingLabel });
     host.innerHTML = `
       ${prHtml ? `<div class="ov-mini-row">${prHtml}</div>` : ""}

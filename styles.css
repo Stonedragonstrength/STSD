@@ -2376,34 +2376,31 @@ input[type="date"] { color-scheme: dark; }
 #overview-trophies { margin-bottom: 1.4rem; }
 #overview-trophies:empty { display: none; }
 .ov-greeting { font-size: 1.15rem; font-weight: 800; letter-spacing: 0.01em; }
+/* Greeting on the left, the "up next" badge floating to its right (wraps under
+   on narrow screens). */
+.ov-greeting-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem 1rem; flex-wrap: wrap; }
 
-/* Adaptive "up next" hero card (Today / Up next / Rest / All caught up) */
+/* Adaptive "up next" as a compact floating badge (Today / Up next / Rest /
+   All caught up). The whole pill is the tap target on startable states. */
 .ov-hero {
-  display: flex;
-  align-items: center;
-  gap: 0.8rem;
-  background: linear-gradient(100deg, var(--hero-soft, var(--primary-soft)) -30%, var(--surface) 48%);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  max-width: 100%;
+  background: linear-gradient(100deg, var(--hero-soft, var(--primary-soft)) -10%, var(--surface) 95%);
   border: 1px solid var(--border);
   border-left: 3px solid var(--hero-color, var(--primary));
-  border-radius: var(--radius);
-  padding: 0.35rem 0.8rem;
-  box-shadow: var(--shadow-sm);
+  border-radius: 999px;
+  padding: 0.34rem 0.9rem;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
   transition: box-shadow 0.15s, transform 0.15s;
 }
 .ov-hero.is-clickable { cursor: pointer; }
-.ov-hero.is-clickable:hover { box-shadow: 0 8px 22px rgba(var(--primary-rgb), 0.16); transform: translateY(-2px); }
-.ov-hero-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.ov-hero-kicker { font-size: 0.56rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--hero-color, var(--text-soft)); line-height: 1.1; }
-.ov-hero-main { display: flex; align-items: baseline; gap: 0.5em; min-width: 0; }
-.ov-hero-title { font-size: 0.92rem; font-weight: 800; line-height: 1.1; flex-shrink: 0; white-space: nowrap; }
-.ov-hero-sub { font-size: 0.74rem; color: var(--muted); line-height: 1.15; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ov-hero-cta {
-  flex-shrink: 0;
-  background: linear-gradient(180deg, var(--primary-bright), var(--primary));
-  color: #062131; font-weight: 800; font-size: 0.7rem;
-  padding: 0.3em 0.65em; border-radius: 999px;
-  box-shadow: 0 2px 6px rgba(var(--primary-rgb), 0.25);
-}
+.ov-hero.is-clickable:hover { box-shadow: 0 10px 22px rgba(var(--primary-rgb), 0.22); transform: translateY(-2px); }
+.ov-hero-kicker { font-size: 0.54rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--hero-color, var(--text-soft)); line-height: 1; flex-shrink: 0; }
+.ov-hero-title { font-size: 0.9rem; font-weight: 800; line-height: 1.1; flex-shrink: 0; white-space: nowrap; }
+.ov-hero-sub { font-size: 0.72rem; color: var(--muted); line-height: 1.15; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov-hero-arrow { font-size: 0.95rem; font-weight: 900; color: var(--hero-color, var(--primary-bright)); flex-shrink: 0; align-self: center; }
 
 /* Slim horizontal stat strip */
 /* Info strip: a row of equal-height, vertically-centred KPI cards */
