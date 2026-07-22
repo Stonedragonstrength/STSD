@@ -2436,6 +2436,7 @@ input[type="date"] { color-scheme: dark; }
   gap: 0.55rem;
 }
 .ovmsg-head { display: flex; align-items: center; gap: 0.4rem; font-weight: 700; font-size: 0.9rem; color: var(--text); }
+.ovmsg-clear { margin-left: auto; font-size: 0.72rem; padding: 0.15em 0.6em; color: var(--text-soft); }
 .ovmsg-icon { font-size: 1.05rem; }
 /* The 📌 renders visually larger than the 📣 at the same font-size — scope it
    down here so the messages card keeps its sizing. */

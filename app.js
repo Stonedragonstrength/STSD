@@ -9935,43 +9935,66 @@
   // remembers which the athlete has seen via a local set so nothing flashes
   // as "new" forever.
   function renderAthleteCoachMessages(c) {
+    const bulletinHost = $("#ov-bulletin");
     const host = $("#ov-messages");
-    if (!host) return;
     const now = Date.now();
-    // Active (non-expired) bulletins, pinned above targeted messages.
-    const bulletins = (c ? (c.sessionBank?.bulletins || []) : [])
-      .filter((b) => b && (!b.expiresAt || new Date(b.expiresAt).getTime() > now))
-      .sort((a, b) => (b.postedAt || "").localeCompare(a.postedAt || ""));
+
+    // ---- Bulletin board: pinned at the very top, athlete-clearable ----
+    // The coach's board mirrors onto every athlete's sessionBank.bulletins.
+    // Clearing is athlete-local (dismissedBulletins on progress) so it never
+    // deletes the coach's post or affects other athletes; new posts reappear.
+    if (bulletinHost) {
+      const dismissed = state.clientData.progress?.dismissedBulletins || {};
+      const allBulletins = (c ? (c.sessionBank?.bulletins || []) : [])
+        .filter((b) => b && (!b.expiresAt || new Date(b.expiresAt).getTime() > now));
+      const bulletins = allBulletins
+        .filter((b) => !dismissed[b.id])
+        .sort((a, b) => (b.postedAt || "").localeCompare(a.postedAt || ""));
+      // Prune dismissed ids for bulletins that no longer exist so the map can't grow forever.
+      if (state.clientData.progress?.dismissedBulletins) {
+        const live = new Set(allBulletins.map((b) => b.id));
+        let pruned = false;
+        Object.keys(dismissed).forEach((id) => { if (!live.has(id)) { delete dismissed[id]; pruned = true; } });
+        if (pruned) saveClient();
+      }
+      if (!bulletins.length) {
+        bulletinHost.innerHTML = "";
+      } else {
+        const bitems = bulletins.map((b) => `<div class="ovmsg-item">
+          <div class="ovmsg-text">${escapeHtml(b.text)}</div>
+        </div>`).join("");
+        bulletinHost.innerHTML = `<div class="ovmsg-card ovmsg-bulletin">
+          <div class="ovmsg-head"><span class="ovmsg-icon">📌</span><span>Bulletin board</span><button class="btn btn-ghost btn-sm ovmsg-clear" id="btn-clear-bulletins" type="button">Clear</button></div>
+          ${bitems}
+        </div>`;
+        $("#btn-clear-bulletins")?.addEventListener("click", () => {
+          if (!state.clientData.progress) state.clientData.progress = {};
+          const d = state.clientData.progress.dismissedBulletins || (state.clientData.progress.dismissedBulletins = {});
+          bulletins.forEach((b) => { d[b.id] = true; });
+          saveClient();
+          renderAthleteCoachMessages(c);
+        });
+      }
+    }
+
+    // ---- Targeted coach messages ----
+    if (!host) return;
     const msgs = c ? [...(c.sessionBank?.messages || [])] : [];
-    if (!bulletins.length && !msgs.length) { host.innerHTML = ""; return; }
+    if (!msgs.length) { host.innerHTML = ""; return; }
     msgs.sort((a, b) => (b.sentAt || "").localeCompare(a.sentAt || ""));
     const seen = state.clientData.progress?.seenMessages || {};
 
-    let html = "";
-    if (bulletins.length) {
-      const bitems = bulletins.map((b) => `<div class="ovmsg-item">
-        <div class="ovmsg-text">${escapeHtml(b.text)}</div>
-      </div>`).join("");
-      html += `<div class="ovmsg-card ovmsg-bulletin">
-        <div class="ovmsg-head"><span class="ovmsg-icon">📌</span><span>Bulletin board</span></div>
-        ${bitems}
+    const items = msgs.slice(0, 8).map((m) => {
+      const fresh = !seen[m.id];
+      return `<div class="ovmsg-item${fresh ? " is-new" : ""}">
+        <div class="ovmsg-text">${escapeHtml(m.text)}</div>
+        <div class="ovmsg-meta">${fresh ? `<span class="ovmsg-new">New</span>` : ""}${escapeHtml(msgWhen(m.sentAt))}</div>
       </div>`;
-    }
-    if (msgs.length) {
-      const items = msgs.slice(0, 8).map((m) => {
-        const fresh = !seen[m.id];
-        return `<div class="ovmsg-item${fresh ? " is-new" : ""}">
-          <div class="ovmsg-text">${escapeHtml(m.text)}</div>
-          <div class="ovmsg-meta">${fresh ? `<span class="ovmsg-new">New</span>` : ""}${escapeHtml(msgWhen(m.sentAt))}</div>
-        </div>`;
-      }).join("");
-      html += `<div class="ovmsg-card">
-        <div class="ovmsg-head"><span class="ovmsg-icon">📣</span><span>From your coach</span></div>
-        ${items}
-      </div>`;
-    }
-    host.innerHTML = html;
-    if (!msgs.length) return;
+    }).join("");
+    host.innerHTML = `<div class="ovmsg-card">
+      <div class="ovmsg-head"><span class="ovmsg-icon">📣</span><span>From your coach</span></div>
+      ${items}
+    </div>`;
     // Mark all currently-shown messages as seen (persist locally).
     if (!state.clientData.progress) state.clientData.progress = {};
     if (!state.clientData.progress.seenMessages) state.clientData.progress.seenMessages = {};
