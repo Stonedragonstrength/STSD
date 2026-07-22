@@ -10197,7 +10197,7 @@
     if (!host) return;
     const prog = state.clientData.program;
     const c = prog?.client;
-    if (!c) { host.innerHTML = ""; if (heroHost) heroHost.innerHTML = ""; if (trophyHost) trophyHost.innerHTML = ""; renderAthleteCoachMessages(null); return; }
+    if (!c) { host.innerHTML = ""; if (heroHost) heroHost.innerHTML = ""; $("#overview-greeting") && ($("#overview-greeting").innerHTML = ""); if (trophyHost) trophyHost.innerHTML = ""; renderAthleteCoachMessages(null); return; }
     ensureSessionBank(c);
     renderAthleteCoachMessages(c);
     const progress = state.clientData.progress || {};
@@ -10295,8 +10295,9 @@
         <div class="trophy-grid">${badges.map((b) => `<div class="trophy${b.earned ? " earned" : ""}" title="${escapeHtml(b.hint)}"><span class="trophy-icon">${b.icon}</span><span class="trophy-name">${escapeHtml(b.name)}</span></div>`).join("")}</div>
       </details>` : "";
 
+    const greetHost = $("#overview-greeting");
+    if (greetHost) greetHost.innerHTML = `<div class="ov-greeting">Hey, ${firstName} 👋</div>`;
     if (heroHost) heroHost.innerHTML = `
-      <div class="ov-greeting">Hey, ${firstName} 👋</div>
       <div class="ov-hero${hero.jump ? " is-clickable" : ""}" id="ov-hero" style="--hero-color:${hero.color || "var(--primary-bright)"};--hero-soft:${hero.soft || "var(--primary-soft)"}">
         <div class="ov-hero-body">
           <span class="ov-hero-kicker">${hero.kicker}</span>

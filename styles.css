@@ -2363,13 +2363,15 @@ input[type="date"] { color-scheme: dark; }
 .stat-cust-ctrls .btn { min-width: 0; padding: 0.3em 0.55em; }
 
 /* ---- Merged Sessions + Calendar tab ---- */
-.session-calendar { margin-top: 0.4rem; }
+.session-calendar { margin-top: 0.4rem; margin-bottom: 1.4rem; }
 .cal-caption { margin: 0; font-size: 0.8rem; }
 
 /* ===== Athlete Overview dashboard ===== */
 .overview-stats { display: flex; flex-direction: column; gap: 0.9rem; margin-bottom: 1.4rem; }
-/* Greeting + hero live above the bulletin; trophy case sits at the very bottom */
-#overview-hero { display: flex; flex-direction: column; gap: 0.9rem; margin-bottom: 0.9rem; }
+/* Greeting pins to the very top; bulletin follows, then the hero. Trophy case sits at the very bottom */
+#overview-greeting { margin-bottom: 0.9rem; }
+#overview-greeting:empty { display: none; }
+#overview-hero { display: flex; flex-direction: column; gap: 0.9rem; margin-bottom: 1.4rem; }
 #overview-hero:empty { display: none; }
 #overview-trophies { margin-bottom: 1.4rem; }
 #overview-trophies:empty { display: none; }
@@ -2398,8 +2400,8 @@ input[type="date"] { color-scheme: dark; }
 .ov-hero-cta {
   flex-shrink: 0;
   background: linear-gradient(180deg, var(--primary-bright), var(--primary));
-  color: #062131; font-weight: 800; font-size: 0.7rem;
-  padding: 0.3em 0.65em; border-radius: 999px;
+  color: #062131; font-weight: 800; font-size: 0.64rem;
+  padding: 0.26em 0.6em; border-radius: 999px;
   box-shadow: 0 2px 6px rgba(var(--primary-rgb), 0.25);
 }
 
