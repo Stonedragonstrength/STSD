@@ -4933,6 +4933,14 @@ input:focus, textarea:focus, select:focus {
 /* Inline body-silhouette icon (Anatomy nav / tab), sized to match sibling emoji */
 .coach-nav-icon .nav-fig-icon,
 .tab-icon .nav-fig-icon { width: 1.05em; height: 1.05em; display: block; }
+/* Lucide line-icon nav set (stroke = currentColor, so it turns soft grey when
+   idle and glows --primary-bright when active, adapting to every theme). */
+.coach-nav-icon .nav-ico,
+.tab-icon .nav-ico {
+  width: 1.2em; height: 1.2em; display: block;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
 .coach-main {
   flex: 1;
   min-width: 0;
