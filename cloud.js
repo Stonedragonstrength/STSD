@@ -127,6 +127,7 @@
       seen_messages: p.seenMessages || {},
       total_workout_ms: Math.round(p.totalWorkoutMs || 0),
       workout_moods: p.workoutMoods || {},
+      added_exercises: p.addedExercises || {},
       synced_at: new Date().toISOString(),
     };
   }
@@ -144,6 +145,7 @@
       seenMessages: r.seen_messages || {},
       totalWorkoutMs: Number(r.total_workout_ms) || 0,
       workoutMoods: r.workout_moods || {},
+      addedExercises: r.added_exercises || {},
       syncedAt: r.synced_at,
     };
   }

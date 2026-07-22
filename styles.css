@@ -6120,6 +6120,51 @@ input:focus, textarea:focus, select:focus {
 .cex-tools-clear:hover { color: var(--danger); }
 .cex-tools-item:disabled { opacity: 0.4; cursor: default; }
 .cex-tools-item:disabled:hover { background: none; color: var(--text); }
+
+/* ---- Athlete "added on the fly" exercises + add button ---- */
+.added-ex-section {
+  margin-top: 0.6rem;
+  padding-top: 0.85rem;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.added-ex-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.6rem;
+}
+.added-ex-head-title {
+  font-size: 0.8rem; font-weight: 800; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--primary-bright);
+}
+.added-ex-head-count {
+  font-size: 0.72rem; font-weight: 700; color: var(--text-soft);
+  font-variant-numeric: tabular-nums;
+}
+/* Remove control rides the bottom of an added exercise card. */
+.added-ex-remove {
+  display: block; margin: -0.15rem 0 0 auto;
+  background: none; border: none; cursor: pointer;
+  color: var(--text-soft); font-family: inherit;
+  font-size: 0.72rem; font-weight: 700;
+  padding: 0.3em 0.6em;
+}
+.added-ex-remove:hover { color: var(--danger); }
+.added-ex-addwrap { margin-top: 0.7rem; }
+.added-ex-addbtn {
+  width: 100%;
+  border-style: dashed;
+  font-weight: 700;
+}
+.added-ex-cap {
+  margin: 0; text-align: center;
+  font-size: 0.82rem; color: var(--text-soft);
+}
+/* Athlete drawer: hide the coach-only bits (custom-exercise builder + the
+   category reorder arrows that write to the coach's library prefs). */
+#ex-library-overlay.athlete-mode .ex-lib-add,
+#ex-library-overlay.athlete-mode .ex-cat-move { display: none; }
 /* Day-level clear — quiet, rides the header's stats line */
 .detail-clear-day {
   background: none;

@@ -244,7 +244,10 @@
   let _programEditorId = null;
   let _coachActiveWeekIdx = 0;
   let _prEditIds = new Set();
-  let _exLibraryTarget = null; // { day, rerenderFn } — set by openExLibrary(), used for tap-to-add
+  let _exLibraryTarget = null; // { day, rerenderFn } (coach) or { onAdd } (athlete) — set by openExLibrary()/openAthleteExLibrary(), used for tap-to-add
+  // Athletes can add their own exercises to a day on the fly (stored in progress
+  // so they survive coach re-syncs and reach the coach), capped to prevent abuse.
+  const MAX_ADDED_PER_DAY = 8;
   let _focusQuickAddDayId = null; // day id whose type-to-add input should refocus after a rerender
   const _coachMobOpen = new Set(); // day ids whose coach-side mobility section is expanded
   let _prNewLifts = [];
@@ -5183,11 +5186,51 @@
 
   function openExLibrary(day, rerenderFn) {
     _exLibraryTarget = day ? { day, rerenderFn } : null;
+    $("#ex-library-overlay").classList.remove("athlete-mode");
     show($("#ex-library-overlay"));
     renderExLibrary($("#ex-library-search").value || "");
     setTimeout(() => $("#ex-library-search").focus(), 100);
   }
   function closeExLibrary() { hide($("#ex-library-overlay")); _exLibraryTarget = null; }
+
+  // Athlete "add an exercise on the fly" — same library drawer, but picks land
+  // in the athlete's progress (addedExercises) instead of the coach's program.
+  function openAthleteExLibrary(day) {
+    _exLibraryTarget = { onAdd: (name) => addAthleteExercise(day, name) };
+    $("#ex-library-overlay").classList.add("athlete-mode"); // hides coach-only "custom exercise"
+    show($("#ex-library-overlay"));
+    renderExLibrary($("#ex-library-search").value || "");
+    setTimeout(() => $("#ex-library-search").focus(), 100);
+  }
+  function addAthleteExercise(day, name) {
+    const p = state.clientData.progress;
+    if (!p.addedExercises) p.addedExercises = {};
+    const list = p.addedExercises[day.id] || (p.addedExercises[day.id] = []);
+    if (list.length >= MAX_ADDED_PER_DAY) {
+      toast(`You can add up to ${MAX_ADDED_PER_DAY} extra exercises per day.`);
+      return;
+    }
+    const ex = makeExercise({ name });
+    ex.addedByAthlete = true;
+    ex.addedAt = Date.now();
+    list.push(ex);
+    saveClient();
+    toast(`Added ${name}`);
+    if (list.length >= MAX_ADDED_PER_DAY) closeExLibrary();
+    renderWorkoutDetailUI();
+  }
+  function removeAthleteExercise(day, ex) {
+    const p = state.clientData.progress;
+    const list = p.addedExercises?.[day.id];
+    if (!list) return;
+    const hasLog = p.exerciseLogs?.[ex.id]?.length;
+    if (hasLog && !window.confirm(`Remove "${ex.name}" and the sets you logged for it?`)) return;
+    p.addedExercises[day.id] = list.filter((e) => e.id !== ex.id);
+    if (!p.addedExercises[day.id].length) delete p.addedExercises[day.id];
+    if (p.exerciseLogs?.[ex.id]) delete p.exerciseLogs[ex.id]; // drop its orphaned log
+    saveClient();
+    renderWorkoutDetailUI();
+  }
   function renderExLibrary(filter) {
     const q = filter.toLowerCase().trim();
     const body = $("#ex-library-body");
@@ -5233,6 +5276,8 @@
       // instead of the persistent sidebar).
       item.addEventListener("click", () => {
         if (!_exLibraryTarget) return;
+        // Athlete flow: hand the name off to the caller (adds to their progress).
+        if (_exLibraryTarget.onAdd) { _exLibraryTarget.onAdd(item.dataset.exname); return; }
         const { day, rerenderFn } = _exLibraryTarget;
         day.exercises.push(makeExercise({ name: item.dataset.exname }));
         saveTrainer();
@@ -9872,7 +9917,7 @@
       err.classList.remove("hidden");
     }
   }
-  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {}, totalWorkoutMs: 0, workoutMoods: {} }; }
+  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {}, totalWorkoutMs: 0, workoutMoods: {}, addedExercises: {} }; }
   function ensureProgressShape(p) {
     if (!p.exerciseLogs) p.exerciseLogs = {};
     if (!p.bodyweightLog) p.bodyweightLog = [];
@@ -11363,9 +11408,10 @@
     resetDayProgress(); // cards rendered below re-register their set counts
     const list = $("#workout-detail-list");
     list.innerHTML = "";
-    if (!day.exercises.length) {
+    const addedList = (state.clientData.progress?.addedExercises?.[day.id]) || [];
+    if (!day.exercises.length && !addedList.length) {
       list.innerHTML = `<div class="empty-state"><div class="empty-emoji">💤</div><p>No exercises for this day.</p></div>`;
-    } else {
+    } else if (day.exercises.length) {
       const renderer = (ex) => renderClientExercise(week, day, ex, null);
       const isSpeedEx = (e) => e.kind === "mobility" && isSpeedName(e.name);
       const isStretchEx = (e) => e.kind === "mobility" && !isSpeedName(e.name);
@@ -11396,6 +11442,46 @@
         list.appendChild(sec);
       }
     }
+
+    // Exercises the athlete added on the fly — their own section, each with a
+    // remove control. Same logger as programmed lifts, so logs still feed PRs.
+    if (addedList.length) {
+      const sec = document.createElement("div");
+      sec.className = "added-ex-section";
+      const head = document.createElement("div");
+      head.className = "added-ex-head";
+      head.innerHTML = `<span class="added-ex-head-title">➕ Added by you</span><span class="added-ex-head-count">${addedList.length}/${MAX_ADDED_PER_DAY}</span>`;
+      sec.appendChild(head);
+      addedList.forEach((ex) => {
+        const card = renderClientExercise(week, day, ex, null);
+        const rm = document.createElement("button");
+        rm.type = "button";
+        rm.className = "added-ex-remove";
+        rm.innerHTML = "✕ Remove";
+        rm.title = "Remove this exercise you added";
+        rm.addEventListener("click", (e) => { e.stopPropagation(); removeAthleteExercise(day, ex); });
+        card.appendChild(rm);
+        sec.appendChild(card);
+      });
+      list.appendChild(sec);
+    }
+
+    // "+ Add an exercise" — opens the library drawer; capped per day.
+    const addWrap = document.createElement("div");
+    addWrap.className = "added-ex-addwrap";
+    if (addedList.length >= MAX_ADDED_PER_DAY) {
+      addWrap.innerHTML = `<p class="added-ex-cap">You've added the max of ${MAX_ADDED_PER_DAY} extra exercises for this day.</p>`;
+    } else {
+      const addBtn = document.createElement("button");
+      addBtn.type = "button";
+      addBtn.className = "btn btn-ghost added-ex-addbtn";
+      addBtn.innerHTML = "＋ Add an exercise";
+      addBtn.title = "Add an exercise from the library if you did more today";
+      addBtn.addEventListener("click", () => openAthleteExLibrary(day));
+      addWrap.appendChild(addBtn);
+    }
+    list.appendChild(addWrap);
+
     list.appendChild(renderDayNoteBlock(day.id));
 
     hide($("#workout-picker"));
