@@ -994,7 +994,7 @@ input[type="date"] { color-scheme: dark; }
 #screen-client .tab::after { display: none; } /* remove the underline indicator */
 #screen-client .tab:hover { background: var(--surface-2); color: var(--text); }
 #screen-client .tab-icon { font-size: 1.25em; line-height: 1; }
-#screen-client .tab-label { font-size: 0.6rem; white-space: normal; text-align: center; line-height: 1.1; overflow-wrap: break-word; }
+#screen-client .tab-label { font-size: 0.6rem; white-space: normal; text-align: center; line-height: 1.25; overflow-wrap: break-word; padding-bottom: 1px; }
 /* Sleek active state — matches .coach-nav-item.active exactly. */
 #screen-client .tab.active {
   background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.2), rgba(var(--primary-rgb), 0.07));
@@ -4951,6 +4951,7 @@ input:focus, textarea:focus, select:focus {
   width: 1.2em; height: 1.2em; display: block;
   fill: none; stroke: currentColor; stroke-width: 2;
   stroke-linecap: round; stroke-linejoin: round;
+  transform: translateY(-1px); /* lift a hair off the label so nothing crowds the descender */
 }
 .coach-main {
   flex: 1;
@@ -5031,7 +5032,9 @@ input:focus, textarea:focus, select:focus {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    line-height: 1;
+    /* Was 1 — too tight, which clipped descenders (the "g" in Programs). */
+    line-height: 1.25;
+    padding-bottom: 1px;
   }
   /* Badge floats in the corner so it doesn't widen the cell. */
   .coach-nav-badge { position: absolute; top: 3px; right: calc(50% - 1.5em); min-width: 1.25em; height: 1.25em; }
