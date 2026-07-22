@@ -5976,17 +5976,14 @@ input:focus, textarea:focus, select:focus {
   letter-spacing: 0.06em;
   color: var(--text-soft);
   text-align: center;
-  /* Working-set labels are <button>s (tap = skip that set) — neutralize the
-     native button chrome so they look identical to the warm-up <span>s. */
-  background: none;
-  border: none;
+  /* Plain S1/S2… marker (gains an ⊘ when skipped from the Tools menu). */
   padding: 0;
   font-family: inherit;
 }
-button.cex-set-lbl { cursor: pointer; }
-button.cex-set-lbl:hover { color: var(--warn); }
 /* Skipped set — amber ⊘ column, inputs muted, steppers inert. */
 .cex-set-col.skipped .cex-set-lbl { color: var(--warn); }
+/* The ⊘ marker reads a touch bigger than the S# label it trails. */
+.cex-skip-mark { font-size: 1.35em; line-height: 1; vertical-align: -0.08em; margin-left: 0.04em; }
 .cex-set-col.skipped .cex-input { opacity: 0.35; }
 .cex-set-col.skipped .cex-step { opacity: 0.35; pointer-events: none; }
 /* Values actually filled in (typed / stepped / accepted / saved draft) read
@@ -6041,8 +6038,14 @@ button.cex-set-lbl:hover { color: var(--warn); }
   gap: 0.45rem;
 }
 .cex-lock-btn { padding: 0.35em 0.6em; font-size: 0.9rem; line-height: 1; }
-/* Skip-whole-exercise: quiet outline button beside the lock. */
-.cex-skip-btn {
+/* Tools menu: one quiet outline button in the title slot opens a popover with
+   the escape hatches (skip last N sets, skip the exercise, clear numbers).
+   Replaces the old standalone ⊘ Skip / ⌫ Clear buttons. */
+.cex-tools-wrap { display: inline-flex; }
+.cex-tools-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34em;
   background: none;
   border: 1px solid var(--border);
   color: var(--text-soft);
@@ -6054,8 +6057,69 @@ button.cex-set-lbl:hover { color: var(--warn); }
   font-family: inherit;
   white-space: nowrap;
 }
-.cex-skip-btn:hover { border-color: var(--warn); color: var(--warn); }
-.cex-clear-btn:hover { border-color: var(--danger); color: var(--danger); }
+.cex-tools-ico { width: 14px; height: 14px; flex: none; }
+.cex-tools-btn:hover,
+.cex-tools-btn[aria-expanded="true"] { border-color: var(--primary); color: var(--primary); }
+
+/* Popover — rendered to <body> (position:fixed) so the card's overflow:hidden
+   can't clip it; anchored under the button on open. */
+.cex-tools-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 212px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.cex-tools-menu.hidden { display: none; }
+.cex-tools-skiprow {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.15rem 0.2rem 0.4rem;
+}
+.cex-tools-skiplbl { font-size: 0.8rem; color: var(--text); font-weight: 600; }
+.cex-tools-skipunit { font-size: 0.78rem; color: var(--text-soft); }
+.cex-tools-step {
+  flex: none;
+  width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  font-size: 1rem; line-height: 1;
+  cursor: pointer;
+  font-family: inherit;
+}
+.cex-tools-step:hover { border-color: var(--primary); color: var(--primary); }
+.cex-tools-count {
+  min-width: 1.4em; text-align: center;
+  font-size: 0.9rem; font-weight: 800; color: var(--warn);
+  font-variant-numeric: tabular-nums;
+}
+.cex-tools-div { height: 1px; background: var(--border); margin: 0.15rem 0; }
+.cex-tools-item {
+  display: block; width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.82rem; font-weight: 600;
+  padding: 0.5em 0.55em;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.cex-tools-item:hover { background: var(--surface); color: var(--warn); }
+.cex-tools-clear:hover { color: var(--danger); }
+.cex-tools-item:disabled { opacity: 0.4; cursor: default; }
+.cex-tools-item:disabled:hover { background: none; color: var(--text); }
 /* Day-level clear — quiet, rides the header's stats line */
 .detail-clear-day {
   background: none;

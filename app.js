@@ -11977,14 +11977,12 @@
       const col = document.createElement("div");
       col.className = "cex-set-col";
 
-      // Set label doubles as the per-set skip toggle: tap S2 → that set is
-      // recorded as skipped (counts for locking, reads as a miss for
-      // progression) instead of faking it with zeros.
-      const lbl = document.createElement("button");
-      lbl.type = "button";
+      // Set label. Skipping is handled from the Tools menu ("Skip last N sets"),
+      // not by tapping the label — this is just the S1/S2… marker, which gains
+      // an ⊘ when its set is skipped.
+      const lbl = document.createElement("span");
       lbl.className = "cex-set-lbl";
       lbl.textContent = `S${s + 1}`;
-      lbl.title = "Tap to skip this set";
 
       const wt = Object.assign(document.createElement("input"), { type: "number", step: "0.5", min: "0", placeholder: pyrW ? pyrW[s] + pairS : (wtPh || "lb"), readOnly: isLocked });
       const rp = Object.assign(document.createElement("input"), { type: "number", min: "0", placeholder: pyrR ? withT(String(pyrR[s])) : (repPh || (isTimed ? "sec" : "reps")), readOnly: isLocked });
@@ -11997,17 +11995,10 @@
       const item = { wt, rp, skipped: false };
       item.applySkip = () => {
         col.classList.toggle("skipped", item.skipped);
-        lbl.textContent = item.skipped ? `S${s + 1}⊘` : `S${s + 1}`;
-        lbl.title = item.skipped ? "Skipped. Tap to un-skip" : "Tap to skip this set";
+        lbl.innerHTML = item.skipped ? `S${s + 1}<span class="cex-skip-mark">⊘</span>` : `S${s + 1}`;
+        lbl.title = item.skipped ? "Skipped" : "";
         wt.disabled = item.skipped; rp.disabled = item.skipped;
       };
-      lbl.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (isLocked) return;
-        item.skipped = !item.skipped;
-        item.applySkip();
-        autoSave();
-      });
 
       col.appendChild(lbl);
       // Weight field, ±2.5 lb (bodyweight lifts log reps only — no weight arrows).
@@ -12100,7 +12091,7 @@
     // card — relocking is theirs to do with 🔒.
     let manualUnlock = false;
     const autoSave = () => {
-      refreshClearBtn(); // values are already current — keep ⌫ in sync live
+      refreshToolsState(); // values are already current — keep ⌫ Clear in sync live
       updateExBar();     // ...and the card/day progress fills too
       clearTimeout(_ast);
       clearTimeout(_alt);
@@ -12153,26 +12144,120 @@
     editBtn.className = "cex-edit-btn";
     editBtn.textContent = "✎ Edit";
 
-    // Skip the whole exercise — logs a locked "skipped" entry (so the day can
-    // still complete) instead of zeros. Undo via ✎ Edit.
-    const skipBtn = document.createElement("button");
-    skipBtn.type = "button";
-    skipBtn.className = "cex-skip-btn";
-    skipBtn.textContent = "⊘ Skip";
-    skipBtn.title = "Skip this exercise today";
-
-    // Clear today's draft — the escape hatch for tapped-by-accident numbers.
-    // Only shown while unlocked AND something is filled in.
-    const clearBtn = document.createElement("button");
-    clearBtn.type = "button";
-    clearBtn.className = "cex-skip-btn cex-clear-btn";
-    clearBtn.textContent = "⌫ Clear";
-    clearBtn.title = "Clear today's numbers for this exercise";
+    // ── Tools menu ── one quiet title-area button gathering the escape hatches:
+    // skip the last N sets, skip the whole exercise, or clear today's numbers.
+    // Replaces the old standalone ⊘ Skip / ⌫ Clear buttons. The popover is
+    // rendered to <body> (position:fixed) so the card's overflow:hidden can't
+    // clip it, and is anchored to the button on open.
     const draftHasData = () =>
       setInputs.some((it) => it.skipped || it.wt.value || it.rp.value) || warmupHasData() || finisherHasData();
-    const refreshClearBtn = () => {
-      if (isLocked || !draftHasData()) hide(clearBtn); else show(clearBtn);
+
+    const toolsWrap = document.createElement("div");
+    toolsWrap.className = "cex-tools-wrap";
+    const toolsBtn = document.createElement("button");
+    toolsBtn.type = "button";
+    toolsBtn.className = "cex-tools-btn";
+    // Lucide "wrench" (same inlined line-icon set as the nav / day-icon picker).
+    toolsBtn.innerHTML = '<svg class="cex-tools-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg><span>Tools</span>';
+    toolsBtn.title = "Skip sets, skip the exercise, or clear your numbers";
+    toolsBtn.setAttribute("aria-haspopup", "true");
+    toolsBtn.setAttribute("aria-expanded", "false");
+    toolsWrap.appendChild(toolsBtn);
+
+    const toolsMenu = document.createElement("div");
+    toolsMenu.className = "cex-tools-menu hidden";
+
+    // Skip last N sets: X's out the highest-numbered sets. Governs the trailing
+    // block only, so a per-set label tap in the middle is left untouched.
+    let bulkN = 0;
+    const setSkip = (item, val) => { if (item.skipped !== val) { item.skipped = val; item.applySkip(); } };
+    const trailingSkipCount = () => {
+      let n = 0;
+      for (let i = numSets - 1; i >= 0 && setInputs[i].skipped; i--) n++;
+      return n;
     };
+    const skipCount = document.createElement("span");
+    skipCount.className = "cex-tools-count";
+    skipCount.textContent = "0";
+    const applyBulkSkip = (n) => {
+      n = Math.max(0, Math.min(numSets, n));
+      for (let i = 0; i < numSets; i++) {
+        if (i >= numSets - n) setSkip(setInputs[i], true);
+        else if (i >= numSets - bulkN) setSkip(setInputs[i], false); // released as N shrank
+      }
+      bulkN = n;
+      skipCount.textContent = String(n);
+      updateExBar();
+      autoSave();
+      refreshToolsState();
+    };
+    const mkSkipStep = (glyph, delta) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "cex-tools-step";
+      b.textContent = glyph;
+      b.addEventListener("click", (e) => { e.stopPropagation(); applyBulkSkip(bulkN + delta); });
+      return b;
+    };
+    const skipRow = document.createElement("div");
+    skipRow.className = "cex-tools-skiprow";
+    const skipLbl = document.createElement("span");
+    skipLbl.className = "cex-tools-skiplbl";
+    skipLbl.textContent = "Skip last";
+    const skipUnit = document.createElement("span");
+    skipUnit.className = "cex-tools-skipunit";
+    skipUnit.textContent = "sets";
+    skipRow.append(skipLbl, mkSkipStep("−", -1), skipCount, mkSkipStep("+", 1), skipUnit);
+
+    const toolsDiv = document.createElement("div");
+    toolsDiv.className = "cex-tools-div";
+    const skipExItem = document.createElement("button");
+    skipExItem.type = "button";
+    skipExItem.className = "cex-tools-item";
+    skipExItem.textContent = "⊘ Skip whole exercise";
+    const clearItem = document.createElement("button");
+    clearItem.type = "button";
+    clearItem.className = "cex-tools-item cex-tools-clear";
+    clearItem.textContent = "⌫ Clear my numbers";
+    toolsMenu.append(skipRow, toolsDiv, skipExItem, clearItem);
+
+    const refreshToolsState = () => { clearItem.disabled = !draftHasData(); };
+
+    function onToolsAway(e) {
+      if (e.type === "scroll" || (!toolsMenu.contains(e.target) && !toolsWrap.contains(e.target))) closeToolsMenu();
+    }
+    const closeToolsMenu = () => {
+      if (toolsMenu.classList.contains("hidden")) return;
+      toolsMenu.classList.add("hidden");
+      toolsMenu.remove();
+      toolsBtn.setAttribute("aria-expanded", "false");
+      document.removeEventListener("click", onToolsAway, true);
+      window.removeEventListener("scroll", onToolsAway, true);
+      window.removeEventListener("resize", onToolsAway, true);
+    };
+    const openToolsMenu = () => {
+      bulkN = trailingSkipCount();
+      skipCount.textContent = String(bulkN);
+      refreshToolsState();
+      document.body.appendChild(toolsMenu);
+      toolsMenu.classList.remove("hidden");
+      toolsBtn.setAttribute("aria-expanded", "true");
+      // Anchor under the button, right-aligned, clamped to the viewport.
+      const r = toolsBtn.getBoundingClientRect();
+      const mw = toolsMenu.offsetWidth, mh = toolsMenu.offsetHeight;
+      let left = Math.min(r.right - mw, window.innerWidth - mw - 8);
+      left = Math.max(8, left);
+      const top = Math.min(r.bottom + 6, window.innerHeight - mh - 8);
+      toolsMenu.style.left = left + "px";
+      toolsMenu.style.top = Math.max(8, top) + "px";
+      document.addEventListener("click", onToolsAway, true);
+      window.addEventListener("scroll", onToolsAway, true);
+      window.addEventListener("resize", onToolsAway, true);
+    };
+    toolsBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (toolsMenu.classList.contains("hidden")) openToolsMenu(); else closeToolsMenu();
+    });
 
     const applySkippedUI = (on) => {
       wrapper.classList.toggle("skipped", on);
@@ -12195,8 +12280,8 @@
     const refreshLockUI = () => {
       hide(isLocked ? lockBtn : editBtn);
       show(isLocked ? editBtn : lockBtn);
-      if (isLocked) hide(skipBtn); else show(skipBtn);
-      refreshClearBtn();
+      if (isLocked) { hide(toolsWrap); closeToolsMenu(); } else show(toolsWrap);
+      refreshToolsState();
       setFieldsReadonly(isLocked);
       updateExBar();
     };
@@ -12282,8 +12367,8 @@
       }
     });
 
-    skipBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
+    const doSkipExercise = () => {
+      closeToolsMenu();
       const hasData = setInputs.some((it) => !it.skipped && (it.wt.value || it.rp.value)) || warmupHasData() || finisherHasData();
       if (hasData && !window.confirm("Discard the entered numbers and mark this exercise skipped?")) return;
       clearTimeout(_ast);
@@ -12302,10 +12387,11 @@
       if (state.workoutView?.mode === "detail" && state.workoutView.dayId === day.id) {
         renderWorkoutDetailHeader(week, day);
       }
-    });
+    };
+    skipExItem.addEventListener("click", (e) => { e.stopPropagation(); doSkipExercise(); });
 
-    clearBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
+    const doClearDraft = () => {
+      closeToolsMenu();
       if (!window.confirm("Clear today's numbers for this exercise?")) return;
       clearTimeout(_ast);
       clearTimeout(_alt);
@@ -12320,10 +12406,10 @@
       if (state.workoutView?.mode === "detail") renderWorkoutDetailUI();
       else renderClientWorkouts();
       renderAthleteCalendar();
-    });
+    };
+    clearItem.addEventListener("click", (e) => { e.stopPropagation(); doClearDraft(); });
 
-    lockSlot.appendChild(clearBtn);
-    lockSlot.appendChild(skipBtn);
+    lockSlot.appendChild(toolsWrap);
     lockSlot.appendChild(lockBtn);
     lockSlot.appendChild(editBtn);
 
