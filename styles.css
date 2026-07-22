@@ -473,7 +473,10 @@ input[type="date"] { color-scheme: dark; }
   box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1);
 }
 .header-sessions .hs-ico { font-size: 0.9em; opacity: 0.85; }
-.header-sessions .hs-num { color: var(--primary-bright); font-variant-numeric: tabular-nums; }
+/* Number over a tiny "Sessions" caption, stacked beside the ticket icon. */
+.header-sessions .hs-col { display: flex; flex-direction: column; align-items: center; gap: 1px; line-height: 1; }
+.header-sessions .hs-num { color: var(--primary-bright); font-variant-numeric: tabular-nums; line-height: 1; }
+.header-sessions .hs-lbl { font-size: 0.48rem; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-soft); line-height: 1; }
 /* Running low — the whole chip flips to the warning color. */
 .header-sessions.is-low {
   background: linear-gradient(180deg, rgba(245, 158, 11, 0.22), rgba(245, 158, 11, 0.08));
