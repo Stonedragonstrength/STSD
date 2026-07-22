@@ -512,9 +512,14 @@
   function exIsTimed(ex) {
     return !!ex && (ex.timed === true || isCarryName(ex.name));
   }
+  // "BAR" is a weight sentinel for the empty Olympic barbell: it displays as
+  // "BAR" everywhere but counts as 45 lb wherever weight becomes a number.
+  const BAR_LB = 45;
+  function weightToLb(v) { return v === "BAR" ? BAR_LB : parseFloat(v); }
   function exWeightLabel(ex, v) {
     if (!v) return null;
     if (v === "BW") return "BW";
+    if (v === "BAR") return "BAR";
     return usesDumbbellPair(ex) ? v + "s" : v + " lb";
   }
 
@@ -565,7 +570,7 @@
   // the exercise's prescribed weight; the athlete logs the reps they hit.
   const FINISHER_PCTS = ["25", "50", "75"];
   function finisherDropWeight(prescribedWeight, pct) {
-    const base = parseFloat(prescribedWeight);
+    const base = weightToLb(prescribedWeight); // "BAR" → 45
     if (!isFinite(base)) return null; // BW or unset — no computed number
     return Math.round((base * (parseInt(pct, 10) / 100)));
   }
@@ -602,14 +607,14 @@
     return Array.from({ length: numSets }, (_, i) => Math.max(1, base - drop * i));
   }
 
-  // ── Warm-up sets (optional, up to 2) ──
+  // ── Warm-up sets (optional, up to 3) ──
   // Coach-prescribed explicit weight × reps, done before the working sets and
-  // shown as W1/W2 on the athlete card. Stored as ex.warmups = [{weight,reps}].
+  // shown as W1/W2/W3 on the athlete card. Stored as ex.warmups = [{weight,reps}].
   function warmupSummary(ex) {
     if (!ex.warmups?.length) return "";
     const s = usesDumbbellPair(ex) ? "s" : ""; // DB pair reads plural ("45s")
     return "W " + ex.warmups
-      .map((w) => (w.weight ? (w.weight === "BW" ? "BW" : w.weight + s) : "?"))
+      .map((w) => (w.weight ? (w.weight === "BW" ? "BW" : w.weight === "BAR" ? "BAR" : w.weight + s) : "?"))
       .join("·");
   }
 
@@ -1104,7 +1109,7 @@
     _attachOutsideClose(pop, anchorBtn);
   }
 
-  // Warm-up editor: 0/1/2 slots, each an explicit weight × reps picker. Its own
+  // Warm-up editor: 0/1/2/3 slots, each an explicit weight × reps picker. Its own
   // popover class (not .grid-picker-pop) so the nested weight/reps pickers don't
   // wipe it; the outside-close ignores clicks landing inside those pickers.
   function openWarmupPicker(ex, anchorBtn, onChange) {
@@ -1138,7 +1143,7 @@
 
       const seg = document.createElement("div");
       seg.className = "warmup-seg";
-      [["None", 0], ["1", 1], ["2", 2]].forEach(([lbl, n]) => {
+      [["None", 0], ["1", 1], ["2", 2], ["3", 3]].forEach(([lbl, n]) => {
         const b = document.createElement("button");
         b.type = "button";
         b.className = "warmup-seg-btn" + (count === n ? " on" : "");
@@ -5384,7 +5389,7 @@
   const REPS_VALUES   = [...Array.from({ length: 30 }, (_, i) => String(i + 1)), "AMAP"];
   const SETS_VALUES   = ["1","2","3","4","5","6"];
   const WEIGHT_RANGES = [
-    { label: "BW",      values: ["BW"] },
+    { label: "BW · Bar", values: ["BW", "BAR"] },
     { label: "5–100",   values: Array.from({length:20}, (_,i) => String((i+1)*5)) },
     { label: "105–200", values: Array.from({length:20}, (_,i) => String(105+i*5)) },
     { label: "205–300", values: Array.from({length:20}, (_,i) => String(205+i*5)) },
@@ -5619,7 +5624,7 @@
     grid.style.gridTemplateColumns = "repeat(5, 1fr)";
 
     let activeRange = 0;
-    if (currentVal && currentVal !== "BW") {
+    if (currentVal && currentVal !== "BW" && currentVal !== "BAR") {
       const n = parseInt(currentVal, 10);
       if (n > 400) activeRange = 5;
       else if (n > 300) activeRange = 4;
@@ -5636,7 +5641,7 @@
       values.forEach(v => {
         const btn = document.createElement("button");
         btn.className = "grid-picker-cell" + (String(v) === String(currentVal) ? " active" : "");
-        btn.textContent = v === "BW" ? "BW" : v + " lb";
+        btn.textContent = v === "BW" ? "BW" : v === "BAR" ? "BAR" : v + " lb";
         btn.type = "button";
         btn.addEventListener("click", () => { pop.remove(); cb(String(v)); });
         grid.appendChild(btn);
@@ -11841,7 +11846,7 @@
 
     // Prescribed reps/weight seed the per-field steppers when a field is empty.
     const prescribedReps = prog ? prog.reps : parseInt(ex.currentReps, 10);
-    const weightBase = prog && !prog.bw ? prog.weight : parseFloat(ex.currentWeight);
+    const weightBase = prog && !prog.bw ? prog.weight : weightToLb(ex.currentWeight); // "BAR" → 45
     // Per-set targets: pyramid columns each have their own number, everything
     // else is flat across the sets.
     const wSeedAt = (i) => (pyrW ? pyrW[i] : weightBase);
@@ -11946,7 +11951,7 @@
     // and labeled W1/W2. When present they're part of completing the card —
     // required to lock, same as working sets.
     const warmupInputs = []; // { wt, rp }
-    const warmups = (ex.warmups || []).slice(0, 2);
+    const warmups = (ex.warmups || []).slice(0, 3);
     warmups.forEach((w, i) => {
       const col = document.createElement("div");
       col.className = "cex-set-col cex-warm-col" + (i === warmups.length - 1 ? " cex-warm-last" : "");
@@ -11955,9 +11960,10 @@
       lbl.className = "cex-set-lbl";
       lbl.textContent = `W${i + 1}`;
 
-      const wSeed = parseFloat(w.weight);
+      const wSeed = weightToLb(w.weight); // "BAR" → 45
       const rSeed = parseInt(w.reps, 10);
-      const wt = Object.assign(document.createElement("input"), { type: "number", step: "0.5", min: "0", placeholder: (w.weight && w.weight !== "BW") ? w.weight + pairS : "lb", readOnly: isLocked });
+      const wPh = w.weight === "BAR" ? "BAR" : (w.weight && w.weight !== "BW") ? w.weight + pairS : "lb";
+      const wt = Object.assign(document.createElement("input"), { type: "number", step: "0.5", min: "0", placeholder: wPh, readOnly: isLocked });
       const rp = Object.assign(document.createElement("input"), { type: "number", min: "0", placeholder: w.reps ? withT(w.reps) : (isTimed ? "sec" : "reps"), readOnly: isLocked });
       wt.className = "cex-input"; rp.className = "cex-input";
       wt.addEventListener("click", (e) => e.stopPropagation());
@@ -12301,7 +12307,7 @@
         // Warm-ups seed from their prescription too, so 🔒 stays one tap
         // when the athlete did exactly what was written.
         warmupInputs.forEach(({ wt, rp }, i) => {
-          const ws = parseFloat(warmups[i]?.weight), rs = parseInt(warmups[i]?.reps, 10);
+          const ws = weightToLb(warmups[i]?.weight), rs = parseInt(warmups[i]?.reps, 10); // "BAR" → 45
           if (rp.value === "" && Number.isFinite(rs)) { rp.value = String(rs); markEdited(rp); }
           if (wt.value === "" && !repsOnlyLog && Number.isFinite(ws)) { wt.value = String(ws); markEdited(wt); }
         });
