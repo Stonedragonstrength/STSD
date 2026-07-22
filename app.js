@@ -9699,7 +9699,7 @@
       err.classList.remove("hidden");
     }
   }
-  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {} }; }
+  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {} }; }
   function ensureProgressShape(p) {
     if (!p.exerciseLogs) p.exerciseLogs = {};
     if (!p.bodyweightLog) p.bodyweightLog = [];
@@ -9709,6 +9709,8 @@
     if (!p.packageRequests) p.packageRequests = [];
     if (!p.dayNotes) p.dayNotes = {};
     if (!Array.isArray(p.cardioLogs)) p.cardioLogs = [];
+    if (!p.dismissedBulletins) p.dismissedBulletins = {};
+    if (!p.seenMessages) p.seenMessages = {};
     return p;
   }
 

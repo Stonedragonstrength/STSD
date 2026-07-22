@@ -123,6 +123,8 @@
       package_requests: p.packageRequests || [],
       cardio_logs: p.cardioLogs || [],
       feedback: p.feedback || "",
+      dismissed_bulletins: p.dismissedBulletins || {},
+      seen_messages: p.seenMessages || {},
       synced_at: new Date().toISOString(),
     };
   }
@@ -136,6 +138,8 @@
       packageRequests: r.package_requests || [],
       cardioLogs: r.cardio_logs || [],
       feedback: r.feedback || "",
+      dismissedBulletins: r.dismissed_bulletins || {},
+      seenMessages: r.seen_messages || {},
       syncedAt: r.synced_at,
     };
   }
