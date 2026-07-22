@@ -5615,8 +5615,9 @@ input:focus, textarea:focus, select:focus {
   text-overflow: ellipsis;
   min-width: 0;
 }
+/* Exercise-count pill sits in the kicker now; it + the date group to the right. */
+.detail-head-top .dh-progress { margin-left: auto; }
 .detail-head-top .detail-log-date {
-  margin-left: auto;
   flex: none;
   width: auto;
   background: var(--surface-2);

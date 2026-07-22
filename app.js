@@ -11323,12 +11323,12 @@
       <div class="detail-head-top">
         ${week.phaseLabel ? `<span class="phase-badge">${escapeHtml(week.phaseLabel)}</span>` : ""}
         <span class="dh-week">${escapeHtml(week.label)}${week.focus ? " · " + escapeHtml(week.focus) : ""}</span>
+        ${progHtml}
         <input type="date" class="detail-log-date" id="detail-log-date" value="${escapeHtml(state.workoutView.date)}" title="Date these logs are for" />
       </div>
       <div class="detail-head-main">
         <button class="day-check-toggle ${checked ? "checked" : ""}" id="detail-toggle" aria-label="Mark whole day complete">${checked ? "✓" : ""}</button>
         <h2>${escapeHtml(day.name)}</h2>
-        ${progHtml}
         <button type="button" class="detail-mood-btn ${moods.length ? "has-mood" : ""}" id="detail-mood-btn" title="How was your workout?" aria-label="How was your workout?">${moods.length ? moodChipsHtml(moods, true) : "🫀"}</button>
       </div>
     `;
