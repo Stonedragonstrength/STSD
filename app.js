@@ -9699,7 +9699,7 @@
       err.classList.remove("hidden");
     }
   }
-  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {} }; }
+  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {}, totalWorkoutMs: 0 }; }
   function ensureProgressShape(p) {
     if (!p.exerciseLogs) p.exerciseLogs = {};
     if (!p.bodyweightLog) p.bodyweightLog = [];
@@ -9711,6 +9711,7 @@
     if (!Array.isArray(p.cardioLogs)) p.cardioLogs = [];
     if (!p.dismissedBulletins) p.dismissedBulletins = {};
     if (!p.seenMessages) p.seenMessages = {};
+    if (typeof p.totalWorkoutMs !== "number" || !isFinite(p.totalWorkoutMs)) p.totalWorkoutMs = 0;
     return p;
   }
 
@@ -10052,6 +10053,13 @@
   const RACING_LIB = [
     { id: "workouts", icon: "🏋️", label: "Workouts", get: (x) => ({ value: completionDateList(x.progress).length }) },
     { id: "prs", icon: "🥇", label: "PRs", get: (x) => ({ value: (x.progress.personalRecords || []).length }) },
+    { id: "highestpr", icon: "🏅", label: "Highest PR", get: (x) => {
+        const top = highestPR(x.c, x.progress); if (!top) return null;
+        const db = isDumbbellLift(top.name);
+        return { value: db ? `${top.weight}` : top.weight, unit: db ? "s" : "lb", when: top.name || undefined }; } },
+    { id: "timetrained", icon: "⏳", label: "Time trained", get: (x) => {
+        const ms = x.progress.totalWorkoutMs || 0; if (!ms) return null;
+        return { value: formatWorkoutTime(ms) }; } },
     { id: "lastworkout", icon: "⏱️", label: "Last workout", get: (x) => x.lastWk ? ({ value: formatTonnage(x.lastWk.volume), unit: "lb", when: x.lastWkLabel }) : null },
     { id: "tonnage", icon: "🧮", label: "Total lifted", get: (x) => x.ton ? ({ value: formatTonnage(x.ton), unit: "lb" }) : null },
     { id: "volweek", icon: "📈", label: "Volume this week", get: (x) => {
@@ -10116,7 +10124,7 @@
         const n = totalRepsAll(x.progress);
         return n ? { value: n.toLocaleString() } : null; } },
   ];
-  const RACING_DEFAULT = ["workouts", "prs", "lastworkout", "tonnage"];
+  const RACING_DEFAULT = ["workouts", "highestpr", "timetrained", "tonnage"];
   function getRacingStatIds(progress) {
     const ids = Array.isArray(progress?.racingStats)
       ? progress.racingStats.filter((id) => RACING_LIB.some((s) => s.id === id)) : null;
@@ -10454,7 +10462,7 @@
     // The racing bar's soft cap can only measure once its panel is visible.
     if (name === "overview") wireRacingCap();
     // Rest timer only floats over the workouts tab (and only in day detail)
-    if (name !== "workouts") hideRestTimer();
+    if (name !== "workouts") { hideRestTimer(); WorkoutClock.leave(); }
     else if (state.workoutView?.mode === "detail") showRestTimer();
     // Profile has no tab button — it's reached via the header name link.
     const profLink = $("#btn-client-profile");
@@ -11038,6 +11046,35 @@
     });
   }
 
+  // -------- Active workout-time clock (feeds the "Time trained" lifetime stat) --------
+  // Accumulates real training time while a real athlete is inside a day's workout
+  // detail. Counts gaps between interactions up to a 5-minute idle cutoff (so
+  // normal between-set rests and locked screens still count) but drops longer
+  // gaps as "walked away". Commits are chunked (on tab change / backgrounding)
+  // so nothing is lost if the app is killed. Never runs coach-side.
+  const WorkoutClock = (() => {
+    const IDLE_MS = 5 * 60 * 1000;         // gaps longer than this don't count
+    const COMMIT_CAP_MS = 3 * 60 * 60 * 1000; // sanity cap per committed chunk
+    let active = false, accum = 0, lastActive = 0;
+    const eligible = () => state.mode === "client" && !state.previewMode;
+    function flush(now) { if (!active) return; const gap = now - lastActive; if (gap > 0 && gap <= IDLE_MS) accum += gap; lastActive = now; }
+    function commit() {
+      const add = Math.min(accum, COMMIT_CAP_MS); accum = 0;
+      if (add < 1000) return;
+      const p = state.clientData.progress; if (!p) return;
+      p.totalWorkoutMs = (p.totalWorkoutMs || 0) + add;
+      saveClient();
+    }
+    return {
+      enter() { if (!eligible()) return; const now = Date.now(); if (active) { flush(now); return; } active = true; accum = 0; lastActive = now; },
+      touch() { if (active) flush(Date.now()); },
+      leave() { if (!active) return; flush(Date.now()); active = false; commit(); },
+      // Backgrounding: bank what we have but keep the session open for return.
+      onHidden() { if (!active) return; flush(Date.now()); commit(); },
+      onVisible() { if (active) lastActive = Date.now(); },
+    };
+  })();
+
   function renderWorkoutDetailUI() {
     const prog = state.clientData.program;
     let week = prog?.client?.weeks?.find((w) => w.id === state.workoutView.weekId);
@@ -11095,6 +11132,7 @@
 
     hide($("#workout-picker"));
     show($("#workout-detail"));
+    WorkoutClock.enter(); // idempotent; also registers the interaction on re-render
     showRestTimer();
     // Keep the picker grid count fresh in case user comes back.
     renderWorkoutPickerUI();
@@ -11103,6 +11141,7 @@
   }
 
   function backToWorkoutPicker() {
+    WorkoutClock.leave();
     Nav.reset(); // athlete workouts root — the day list
     state.workoutView.mode = "picker";
     state.workoutView.dayId = null;
@@ -13132,6 +13171,25 @@
     const h = Math.floor(min / 60), m = min % 60;
     return m ? `${h}h ${m}m` : `${h}h`;
   }
+  // Lifetime active-workout time (ms) → "45m" / "42h 10m".
+  function formatWorkoutTime(ms) {
+    const totalMin = Math.round((ms || 0) / 60000);
+    if (totalMin < 60) return `${totalMin}m`;
+    const h = Math.floor(totalMin / 60), m = totalMin % 60;
+    return m ? `${h}h ${m}m` : `${h}h`;
+  }
+  // Heaviest single PR across coach-set PRs (pr1) and the athlete's logged PRs.
+  function highestPR(client, progress) {
+    let best = null; // { name, weight }
+    const consider = (name, w) => {
+      const n = parseFloat(w);
+      if (!isFinite(n) || n <= 0) return;
+      if (!best || n > best.weight) best = { name: name || "", weight: n };
+    };
+    (client?.coachPRs || []).forEach((p) => consider(p.name, p.pr1));
+    (progress?.personalRecords || []).forEach((p) => consider(p.name, p.weight));
+    return best;
+  }
   // Every rep ever logged for exercises whose name matches `rx`. Walks the
   // program to map exercise ids → names, the same way bestPullupReps does.
   // Passing no regex counts every logged rep.
@@ -14422,9 +14480,13 @@
     // Safety net: when the tab is hidden or closed, immediately flush any pending
     // debounced cloud pushes so stepping away can't lose recent edits.
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "hidden") window.Cloud?.flush?.();
+      if (document.visibilityState === "hidden") { WorkoutClock.onHidden(); window.Cloud?.flush?.(); }
+      else WorkoutClock.onVisible();
     });
-    window.addEventListener("pagehide", () => { window.Cloud?.flush?.(); });
+    window.addEventListener("pagehide", () => { WorkoutClock.leave(); window.Cloud?.flush?.(); });
+
+    // Register in-workout interactions so the active clock doesn't idle out mid-set.
+    $("#workout-detail-list")?.addEventListener("click", () => WorkoutClock.touch());
 
     // Keep --header-h equal to each screen's real header height so the sticky
     // coach nav / athlete tabs pin exactly where they rest (no slide-under on

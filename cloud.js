@@ -125,6 +125,7 @@
       feedback: p.feedback || "",
       dismissed_bulletins: p.dismissedBulletins || {},
       seen_messages: p.seenMessages || {},
+      total_workout_ms: Math.round(p.totalWorkoutMs || 0),
       synced_at: new Date().toISOString(),
     };
   }
@@ -140,6 +141,7 @@
       feedback: r.feedback || "",
       dismissedBulletins: r.dismissed_bulletins || {},
       seenMessages: r.seen_messages || {},
+      totalWorkoutMs: Number(r.total_workout_ms) || 0,
       syncedAt: r.synced_at,
     };
   }
