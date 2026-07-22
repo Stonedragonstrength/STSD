@@ -20,7 +20,7 @@
  * Because navigations are network-first, a fresh deploy is picked up on the
  * next online open automatically — no user prompt.
  */
-const CACHE = "stonedragon-v3";
+const CACHE = "stonedragon-v4";
 
 // Stable, un-versioned URLs worth precaching up front. The versioned css/js
 // (styles.css?v=…, app.js?v=…) are cached at runtime on first online load —
@@ -34,6 +34,15 @@ const CORE = [
   "./logo-512.png",
   "./icon-192.svg",
   "./icon-512.svg",
+  // Barlow weights (stable filenames, no ?v= — rename the file if one ever
+  // changes). Precached so an athlete who goes offline gets the real font, not
+  // the fallback. Also runtime cache-first via the same-origin handler below.
+  "./fonts/barlow-400.woff2",
+  "./fonts/barlow-500.woff2",
+  "./fonts/barlow-600.woff2",
+  "./fonts/barlow-700.woff2",
+  "./fonts/barlow-800.woff2",
+  "./fonts/barlow-900.woff2",
   "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2",
 ];
 
