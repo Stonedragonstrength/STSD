@@ -5575,11 +5575,13 @@ input:focus, textarea:focus, select:focus {
 .workout-detail .back-link {
   margin-bottom: 1rem;
 }
+/* Sleek 2-row day header: kicker (week · focus · date) + main (toggle · name ·
+   progress · mood). Redundant day-level "Clear day" was retired. */
 .workout-detail-head {
   background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 0.75rem 1rem;
+  padding: 0.55rem 0.85rem 0.6rem;
   margin-bottom: 0.65rem;
   box-shadow: var(--shadow-sm);
   position: relative;
@@ -5589,46 +5591,83 @@ input:focus, textarea:focus, select:focus {
   content: "";
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at 100% 0%, var(--primary-soft) 0%, transparent 40%);
+  background: radial-gradient(circle at 100% 0%, var(--primary-soft) 0%, transparent 55%);
+  opacity: 0.6;
   pointer-events: none;
 }
 .workout-detail-head > * { position: relative; z-index: 1; }
+/* Kicker row — small uppercase week label, date pushed to the right. */
 .detail-head-top {
   display: flex;
-  gap: 0.55em;
+  gap: 0.5em;
   align-items: center;
-  margin-bottom: 0.6em;
-  flex-wrap: wrap;
-  font-size: 0.85rem;
+  margin-bottom: 0.4em;
+  min-width: 0;
 }
-.detail-head-main {
-  display: flex;
-  align-items: center;
-  gap: 0.85em;
-  margin-bottom: 0.6em;
-}
-.detail-head-main h2 {
-  margin: 0;
-  font-size: 1.3rem;
+.dh-week {
+  font-size: 0.68rem;
   font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
-.detail-head-main .detail-log-date {
+.detail-head-top .detail-log-date {
+  margin-left: auto;
+  flex: none;
   width: auto;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 8px;
   color: var(--text-soft);
-  font-size: 0.8rem;
-  font-weight: 600;
-  padding: 0.3em 0.5em;
-  margin-top: 0;
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.2em 0.45em;
+  cursor: pointer;
   color-scheme: dark;
 }
-.detail-head-stats {
-  font-size: 0.76rem;
-  font-weight: 600;
+/* Main row — toggle + name grow, progress pill + mood sit on the right. */
+.detail-head-main {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  margin-bottom: 0;
+}
+.detail-head-main h2 {
+  margin: 0 auto 0 0; /* grow: pushes progress + mood to the right edge */
+  font-size: 1.25rem;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.dh-progress {
+  flex: none;
+  font-size: 0.7rem;
+  font-weight: 800;
   letter-spacing: 0.03em;
   color: var(--text-soft);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.28em 0.7em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.dh-progress.going {
+  color: var(--primary-bright);
+  background: rgba(var(--primary-rgb), 0.12);
+  border-color: rgba(var(--primary-bright-rgb), 0.35);
+}
+.dh-progress.done {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb, 16, 185, 129), 0.14);
+  border-color: var(--accent);
 }
 
 .workout-detail-list {
@@ -6166,28 +6205,17 @@ input:focus, textarea:focus, select:focus {
 #ex-library-overlay.athlete-mode .ex-lib-add,
 #ex-library-overlay.athlete-mode .ex-cat-move { display: none; }
 /* Day-level clear — quiet, rides the header's stats line */
-.detail-clear-day {
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--text-soft);
-  border-radius: 8px;
-  padding: 0.25em 0.6em;
-  font-size: 0.72rem;
-  font-weight: 600;
-  cursor: pointer;
-  font-family: inherit;
-  margin-left: 0.6em;
-  white-space: nowrap;
-}
-.detail-clear-day:hover { border-color: var(--danger); color: var(--danger); }
-
 /* ---- Post-workout mood check-in ("How was your workout?") ---- */
+/* Compact icon-style button in the sleek day header: bare 🫀 until moods are
+   picked, then it shows the chips. */
 .detail-mood-btn {
+  flex: none;
   background: none; border: 1px solid var(--border); color: var(--text-soft);
-  border-radius: 999px; padding: 0.2em 0.6em; font-size: 0.72rem; font-weight: 700;
-  cursor: pointer; font-family: inherit; margin-left: 0.6em; white-space: nowrap;
+  border-radius: 999px; padding: 0.26em 0.55em; font-size: 0.9rem; font-weight: 700;
+  cursor: pointer; font-family: inherit; white-space: nowrap; line-height: 1;
   display: inline-flex; align-items: center; gap: 0.3em;
 }
+.detail-mood-btn.has-mood { font-size: 0.72rem; }
 .detail-mood-btn:hover { border-color: var(--primary); color: var(--text); }
 /* Chips shown on athlete day cards, the detail button, and coach day tabs */
 .mood-chips { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.3em; margin-top: 0.35em; }
@@ -6476,8 +6504,11 @@ input:focus, textarea:focus, select:focus {
   .meta-pill { font-size: 0.6rem; padding: 0.18em 0.5em; }
   .workout-card-meta { font-size: 0.7rem; }
   .week-chip { padding: 0.45em 0.75em; font-size: 0.72rem; }
-  .detail-head-main h2 { font-size: 1.15rem; }
-  .workout-detail-head { padding: 0.9rem 1rem; border-radius: 12px; }
+  .detail-head-main h2 { font-size: 1.1rem; }
+  .workout-detail-head { padding: 0.6rem 0.8rem 0.65rem; border-radius: 12px; }
+  /* Keep the header on two tidy rows even on narrow phones. */
+  .detail-head-main { gap: 0.45em; }
+  .dh-progress { font-size: 0.66rem; padding: 0.26em 0.6em; }
   .cex-panel { padding: 0.65rem 0.85rem 0.85rem; }
 }
 

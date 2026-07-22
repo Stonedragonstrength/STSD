@@ -11312,19 +11312,24 @@
     const totalEx = day.exercises.length;
     const doneEx = day.exercises.filter((ex) => hasAnyLog(ex)).length;
     const checked = isDayChecked(day.id);
+    const moods = dayMoods(state.clientData.progress, day.id);
+    // One compact progress pill: done → count-of-total → plain count.
+    const progHtml = checked
+      ? `<span class="dh-progress done">Done ✓</span>`
+      : doneEx > 0
+        ? `<span class="dh-progress going">${doneEx}/${totalEx} logged</span>`
+        : `<span class="dh-progress">${totalEx} exercise${totalEx === 1 ? "" : "s"}</span>`;
     head.innerHTML = `
       <div class="detail-head-top">
         ${week.phaseLabel ? `<span class="phase-badge">${escapeHtml(week.phaseLabel)}</span>` : ""}
-        <span class="muted">${escapeHtml(week.label)}${week.focus ? " · " + escapeHtml(week.focus) : ""}</span>
+        <span class="dh-week">${escapeHtml(week.label)}${week.focus ? " · " + escapeHtml(week.focus) : ""}</span>
+        <input type="date" class="detail-log-date" id="detail-log-date" value="${escapeHtml(state.workoutView.date)}" title="Date these logs are for" />
       </div>
       <div class="detail-head-main">
         <button class="day-check-toggle ${checked ? "checked" : ""}" id="detail-toggle" aria-label="Mark whole day complete">${checked ? "✓" : ""}</button>
         <h2>${escapeHtml(day.name)}</h2>
-        <input type="date" class="detail-log-date" id="detail-log-date" value="${escapeHtml(state.workoutView.date)}" title="Date these logs are for" />
-      </div>
-      <div class="detail-head-stats">${totalEx} exercise${totalEx === 1 ? "" : "s"}${doneEx > 0 ? ` · <span class="wc-status progress">${doneEx}/${totalEx} logged</span>` : ""}${checked ? ` · <span class="wc-status done">Day done ✓</span>` : ""}
-        <button type="button" class="detail-mood-btn" id="detail-mood-btn" title="How was your workout?">${dayMoods(state.clientData.progress, day.id).length ? moodChipsHtml(dayMoods(state.clientData.progress, day.id), true) : "🫀 How was it?"}</button>
-        <button type="button" class="detail-clear-day" id="detail-clear-day" title="Clear this day's unlocked numbers">⌫ Clear day</button>
+        ${progHtml}
+        <button type="button" class="detail-mood-btn ${moods.length ? "has-mood" : ""}" id="detail-mood-btn" title="How was your workout?" aria-label="How was your workout?">${moods.length ? moodChipsHtml(moods, true) : "🫀"}</button>
       </div>
     `;
     head.querySelector("#detail-mood-btn").addEventListener("click", () => openWorkoutMoodSheet(day));
@@ -11337,26 +11342,8 @@
       state.workoutView.date = e.target.value || todayISO();
       renderWorkoutDetailUI();
     });
-    // Clear the day's UNLOCKED drafts in one go (tapped-around-by-accident
-    // rescue). Locked exercises are deliberate — they stay until un-locked.
-    head.querySelector("#detail-clear-day").addEventListener("click", () => {
-      const date = state.workoutView.date || todayISO();
-      const logsMap = state.clientData.progress?.exerciseLogs || {};
-      const targets = day.exercises.filter((ex) => {
-        const entry = (logsMap[ex.id] || []).find((l) => l.date === date);
-        return entry && !isLogEntryLocked(entry, ex, parseInt(ex.sets, 10) || 0);
-      });
-      if (!targets.length) { toast("Nothing to clear. Locked exercises stay (✎ Edit them first)."); return; }
-      if (!window.confirm(`Clear this day's unlocked numbers (${targets.length} exercise${targets.length === 1 ? "" : "s"})?`)) return;
-      targets.forEach((ex) => {
-        const rest = logsMap[ex.id].filter((l) => l.date !== date);
-        if (rest.length) logsMap[ex.id] = rest; else delete logsMap[ex.id];
-      });
-      saveClient();
-      renderAthleteCalendar();
-      renderWorkoutDetailUI();
-      toast("Cleared ✓");
-    });
+    // Day-level "Clear day" was retired 2026-07-22 — each exercise's Tools menu
+    // now owns clearing its own numbers, so the day-wide button was redundant.
   }
 
   // -------- Active workout-time clock (feeds the "Time trained" lifetime stat) --------
