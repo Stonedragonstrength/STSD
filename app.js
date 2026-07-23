@@ -4998,13 +4998,131 @@
     ] },
   ];
 
-  function strengthConceptsHtml() {
-    return `<section class="a-concepts">
-      <div class="a-concepts-head">
-        <h3>Strength and Hypertrophy Science</h3>
-        <p>Plain-language explainers for the ideas behind how training makes you stronger. Pick a topic, then tap any card to open it.</p>
-      </div>
-      ${STRENGTH_CONCEPTS.map((grp) => `<details class="a-cgroup">
+  // Nutrition and body-composition explainers. Same card shape as the strength
+  // concepts, but the takeaway field is `apply` (rendered under "How to use it").
+  const NUTRITION_CONCEPTS = [
+    { group: "Energy and calories", tag: "Basics", items: [
+      { term: "Calorie", short: "The unit your body runs on.",
+        def: "A calorie is simply a unit of energy. Food delivers energy, and your body spends it to move, think, digest, and stay alive. Almost everything about gaining or losing weight traces back to how the energy you eat compares to the energy you burn.",
+        apply: "No single food needs to be feared. What moves the needle is your total energy over days and weeks, so judge your diet by the big picture, not one meal." },
+      { term: "Energy balance", short: "Calories in versus calories out.",
+        def: "Energy balance is the running total of the calories you eat against the calories you burn. Eat more than you burn and you are in a surplus. Eat less and you are in a deficit. Match them and you hold steady.",
+        apply: "This is the master switch for body weight. Whatever a diet is called, it works by nudging this balance in one direction." },
+      { term: "Maintenance calories", short: "The intake that holds you steady.",
+        def: "Your maintenance level is the calorie intake that keeps your weight stable, because it matches your total daily burn. Eat here and you neither gain nor lose over time. It is the anchor every goal is measured from.",
+        apply: "Find maintenance by tracking intake and weight for two or three weeks. Once you know it, a deficit or surplus is just a deliberate step away from that anchor." },
+    ] },
+    { group: "Your metabolism", tag: "TDEE", items: [
+      { term: "TDEE", short: "Everything you burn in a day.",
+        def: "TDEE stands for total daily energy expenditure: every calorie you burn in 24 hours added up. It is the number your intake is really competing against, and it shifts day to day with your activity.",
+        apply: "Estimate your TDEE, then eat below it to lose, above it to gain, or at it to maintain. Treat the estimate as a starting point and adjust from what the scale actually does." },
+      { term: "BMR and RMR", short: "The cost of just being alive.",
+        def: "Your basal or resting metabolic rate is the energy your body uses at complete rest to keep your heart, lungs, brain, and cells running. For most people it is the largest single slice of daily burn, often around 60 to 70 percent.",
+        apply: "Bigger, more muscular bodies have a higher resting burn, one quiet reason building muscle helps your body composition over the long run." },
+      { term: "The four parts of your burn", short: "Where daily calories go.",
+        def: "Your total burn is your resting rate (staying alive) plus the thermic effect of food (digesting it) plus exercise plus NEAT (all your non-exercise movement). Exercise is usually the smallest of the four, which surprises most people.",
+        apply: "Because training is a small slice, you cannot reliably out-train a poor diet. Daily movement and food intake matter more than any single workout." },
+      { term: "NEAT", short: "The calories you burn just living.",
+        def: "NEAT is non-exercise activity thermogenesis: everything you burn that is not a workout, from walking and chores to fidgeting and standing. It varies enormously between people and can swing hundreds of calories a day.",
+        apply: "When you diet, your body quietly cuts NEAT to save energy, which stalls fat loss. Holding a daily step target protects it and keeps the deficit working." },
+      { term: "Thermic effect of food", short: "The cost of digesting a meal.",
+        def: "The thermic effect of food is the energy your body spends breaking down and absorbing what you eat. Protein has by far the highest cost, burning roughly a quarter of its own calories in digestion, while carbs and fat cost much less.",
+        apply: "A higher-protein diet burns a little more just being processed, one more reason protein earns its place at every meal." },
+      { term: "Metabolic adaptation", short: "Why your burn falls as you diet.",
+        def: "As you lose weight your TDEE drops: a smaller body costs less to run, and your body trims NEAT and resting burn to defend its fat stores. This is why a deficit that once worked eventually stalls.",
+        apply: "Expect to lower calories or add activity as you get leaner. A stall is not failure, it is the target moving, so adjust and keep going." },
+    ] },
+    { group: "Losing fat", tag: "Fat loss", items: [
+      { term: "Calorie deficit", short: "Eating less than you burn.",
+        def: "A calorie deficit means taking in fewer calories than your body spends. It is the one requirement for fat loss. Every effective fat-loss diet, by any name, creates this in the end.",
+        apply: "Aim for a moderate deficit you can hold, not the steepest one possible. Crash diets cost you muscle and rarely last." },
+      { term: "How fat loss works", short: "Tapping your stored energy.",
+        def: "When you run a deficit, your body makes up the shortfall by pulling energy from storage, mostly body fat. The fat cells release their contents to be burned, so the cells shrink. That shrinking is what shows up as fat loss.",
+        apply: "You cannot spot-reduce: where fat comes off is set by genetics, not by which muscle you train. Train everything, hold the deficit, and be patient." },
+      { term: "A sustainable rate", short: "How fast fat should come off.",
+        def: "Losing roughly 0.5 to 1 percent of your bodyweight per week is a pace most people can sustain while keeping muscle and strength. Faster than that and you increasingly burn muscle and feel drained.",
+        apply: "Pick a rate you can live with for months, not days. Slow and steady almost always beats fast and fragile." },
+      { term: "Keeping muscle while cutting", short: "Protect what you built.",
+        def: "In a deficit your body will burn muscle along with fat unless you give it strong reasons not to. Two reasons dominate: enough protein, and continued hard resistance training that signals the muscle is still needed.",
+        apply: "Keep lifting heavy and keep protein high while dieting. Do not switch to light weights and endless cardio, that is how you shrink instead of getting lean." },
+    ] },
+    { group: "Gaining muscle and weight", tag: "Muscle gain", items: [
+      { term: "Calorie surplus", short: "Eating more than you burn.",
+        def: "A surplus is taking in more calories than you spend. It gives your body spare energy to build new tissue. Some surplus makes gaining muscle easier, but any excess beyond what you can use is stored as fat.",
+        apply: "For gaining, a small surplus is enough. Piling on calories does not build muscle faster, it just adds fat you will have to diet off later." },
+      { term: "How muscle gain works", short: "Build outpaces breakdown.",
+        def: "Muscle grows when muscle protein synthesis outpaces breakdown over time. Hard training is the signal that tells the body to build, protein supplies the raw material, and enough total energy funds the work. Remove any one and growth stalls.",
+        apply: "You need all three: train close to failure, eat enough protein, and do not sit in too deep a deficit. Muscle is built over months of that stack repeating." },
+      { term: "How fat gain works", short: "Storing the leftovers.",
+        def: "When you eat more energy than you can use or store as muscle and glycogen, the surplus is stored as body fat. It is the body banking spare energy for later, and a large surplus fills that bank quickly.",
+        apply: "The bigger and longer the surplus, the more of your gain is fat. Keeping the surplus small biases the scale toward muscle instead of fat." },
+      { term: "Lean bulking", short: "Gaining with the brakes on.",
+        def: "A lean bulk is a small, controlled surplus, often around 100 to 300 calories over maintenance, aimed at gaining mostly muscle with minimal fat. It trades some speed for a leaner result.",
+        apply: "Aim to gain a slow trickle, on the order of half a pound a week for many people. If the scale is jumping, you are gaining more fat than you need to." },
+      { term: "Body recomposition", short: "Losing fat and gaining muscle at once.",
+        def: "Recomposition is building muscle while losing fat at the same time, so your weight barely changes but your shape does. It is most achievable for beginners, people returning after a break, and those carrying more body fat.",
+        apply: "If you are new or coming back, eat near maintenance, train hard, and keep protein high, and let the mirror rather than the scale track progress." },
+      { term: "P-ratio", short: "How a surplus or deficit splits.",
+        def: "Your partitioning ratio is how gained or lost energy divides between muscle and fat. In a surplus it is how much becomes muscle versus fat. In a deficit it is how much lost is fat versus muscle. Training, protein, and sleep all tilt it.",
+        apply: "You cannot fully control your p-ratio, but lifting hard, eating enough protein, and sleeping well push it toward more muscle and less fat in either direction." },
+    ] },
+    { group: "Losing muscle", tag: "Muscle loss", items: [
+      { term: "Anabolism vs. catabolism", short: "Building up versus breaking down.",
+        def: "Anabolism is your body building tissue, including muscle. Catabolism is breaking tissue down for energy. Both run constantly, and which one wins over time decides whether you gain or lose muscle.",
+        apply: "The word catabolic is nothing to fear. The goal is for building to outweigh breakdown across the week, not to avoid breakdown at every moment." },
+      { term: "How muscle loss works", short: "Breakdown wins over time.",
+        def: "Muscle is lost when breakdown outpaces synthesis for a sustained stretch. The usual causes are a large calorie deficit, too little protein, and no training signal telling the body the muscle is worth keeping.",
+        apply: "Avoid all three at once. Even in a deficit, hard lifting plus enough protein keeps most of your muscle while the fat comes off." },
+      { term: "Disuse atrophy", short: "Use it or lose it.",
+        def: "Stop training a muscle and it gradually shrinks, a process called disuse atrophy or detraining. The body sees no reason to maintain tissue it is not using, so it lets it waste to save energy.",
+        apply: "During time off, even a little work, a few hard sets a week, preserves far more muscle than doing nothing at all." },
+      { term: "Muscle memory", short: "Regaining is faster than building.",
+        def: "Muscle you once built comes back much faster than it took to build the first time. Your muscle fibers keep extra nuclei gained from past training, giving them a head start when you return.",
+        apply: "A layoff is not the disaster it feels like. Expect lost size and strength to return in weeks, not the months it originally took." },
+    ] },
+    { group: "Macros and food quality", tag: "Macros", items: [
+      { term: "Protein", short: "The building-block macro.",
+        def: "Protein supplies the amino acids your body uses to repair and build muscle. It is the most important macro for body composition, the most filling, and the most costly to digest. Common targets land around 0.7 to 1 gram per pound of bodyweight.",
+        apply: "Hit your protein first every day, spread across a few meals. Whether cutting or bulking, it is the macro that protects and builds muscle." },
+      { term: "Carbohydrates", short: "Your main training fuel.",
+        def: "Carbs are your body's preferred fuel for hard training. They are stored in muscle as glycogen and burned to power intense sets. They are not required to survive, but they make lifting feel and perform better.",
+        apply: "Put carbs around your workouts to train harder. Cutting them can help control calories, but going too low often drains gym performance." },
+      { term: "Dietary fat", short: "For hormones and health.",
+        def: "Dietary fat supports hormone production, brain function, and the absorption of some vitamins. Some fat is essential, meaning your body cannot make it and must get it from food. It is also calorie-dense, so it adds up fast.",
+        apply: "Keep fat at a sensible minimum for health, often around 0.3 grams per pound, then let carbs and fat fill whatever calories are left after protein." },
+      { term: "Fiber and micronutrients", short: "The quality layer.",
+        def: "Fiber, vitamins, and minerals add little energy but keep digestion, recovery, and overall health running. They come mostly from vegetables, fruit, whole grains, and other minimally processed foods.",
+        apply: "Build meals around whole foods so the micronutrients take care of themselves. It also keeps you fuller on fewer calories." },
+      { term: "Alcohol", short: "The fourth energy source.",
+        def: "Alcohol carries 7 calories per gram, nearly as many as fat, and offers no nutritional benefit. It also blunts muscle protein synthesis and disrupts sleep, both of which work against recovery.",
+        apply: "You do not have to be perfect, but heavy drinking fights your training and diet on several fronts. Count its calories and keep it modest." },
+      { term: "Hydration", short: "Water drives performance.",
+        def: "Water makes up most of your muscle and is needed for nearly every process, including force production and recovery. Even mild dehydration can dent strength, focus, and how full your muscles feel.",
+        apply: "Drink through the day, not just at the gym. Water with each meal and during training covers most people." },
+    ] },
+    { group: "Putting it to work", tag: "Strategy", items: [
+      { term: "Setting your target", short: "From maintenance to a plan.",
+        def: "Once you know your maintenance calories, a goal is simple math: subtract roughly 15 to 25 percent for fat loss, or add a small amount for lean gaining. Set protein first, then fill the rest with carbs and fat to taste.",
+        apply: "Start from your real maintenance, not a generic online number, and adjust every few weeks based on what the scale and mirror show." },
+      { term: "Tracking and adherence", short: "Consistency beats perfection.",
+        def: "Tracking your food, whether by weighing it or by consistent habits, tells you what you are actually eating, which is usually different from what you think. The best diet is the one you can stick to across months.",
+        apply: "Pick a method you will actually keep up. A slightly imperfect plan you follow beats a perfect one you quit in a week." },
+      { term: "Diet breaks and refeeds", short: "Planned pauses that help you last.",
+        def: "A diet break is a stretch at maintenance during a long cut. A refeed is a shorter bump in calories, mostly from carbs. Both ease the physical and mental toll of dieting and can blunt some metabolic adaptation.",
+        apply: "On a long cut, schedule short breaks at maintenance. They refill glycogen, lift mood and performance, and make the whole diet easier to finish." },
+      { term: "Sleep and body composition", short: "Recovery is built at night.",
+        def: "Sleep is when most recovery and hormone regulation happen. Short sleep raises hunger, lowers training quality, and tilts a deficit toward losing muscle and a surplus toward gaining fat.",
+        apply: "Treat sleep as part of your program, not an afterthought. Seven to nine hours does more for body composition than any supplement." },
+      { term: "Cardio's role", short: "A tool, not a requirement.",
+        def: "Cardio burns extra calories and improves heart health, but it is not required for fat loss, since diet creates the deficit. Too much cardio can also eat into your recovery from lifting.",
+        apply: "Use cardio to widen your deficit or for health, not as the main event. Let food do most of the work and keep lifting the priority." },
+    ] },
+  ];
+
+  // Shared renderer for a collapsible concept library (Strength, Nutrition, …).
+  // `key` picks which field holds the practical takeaway; `label` names it.
+  function conceptGroupsHtml(groups, key, label) {
+    return groups.map((grp) => `<details class="a-cgroup">
         <summary class="a-cgroup-sum">
           <span class="a-cgroup-title">${escapeHtml(grp.group)}</span>
           <span class="a-cgroup-meta">
@@ -5021,11 +5139,30 @@
             </summary>
             <div class="a-concept-body">
               <p class="a-concept-def">${escapeHtml(c.def)}</p>
-              <p class="a-concept-str"><span class="a-concept-str-label">Why it helps strength</span>${escapeHtml(c.strength)}</p>
+              <p class="a-concept-str"><span class="a-concept-str-label">${escapeHtml(label)}</span>${escapeHtml(c[key])}</p>
             </div>
           </details>`).join("")}
         </div>
-      </details>`).join("")}
+      </details>`).join("");
+  }
+
+  function strengthConceptsHtml() {
+    return `<section class="a-concepts">
+      <div class="a-concepts-head">
+        <h3>Strength and Hypertrophy Science</h3>
+        <p>Plain-language explainers for the ideas behind how training makes you stronger. Pick a topic, then tap any card to open it.</p>
+      </div>
+      ${conceptGroupsHtml(STRENGTH_CONCEPTS, "strength", "Why it helps strength")}
+    </section>`;
+  }
+
+  function nutritionConceptsHtml() {
+    return `<section class="a-concepts">
+      <div class="a-concepts-head">
+        <h3>Nutrition and Body Composition</h3>
+        <p>How food turns into fat loss, muscle, and everything in between. Pick a topic, then tap any card to open it.</p>
+      </div>
+      ${conceptGroupsHtml(NUTRITION_CONCEPTS, "apply", "How to use it")}
     </section>`;
   }
 
@@ -5049,7 +5186,8 @@
           </div>
         </div>
       </div>
-      ${strengthConceptsHtml()}`;
+      ${strengthConceptsHtml()}
+      ${nutritionConceptsHtml()}`;
 
     const listEl = root.querySelector("[data-anatomy-list]");
     const detailEl = root.querySelector("[data-anatomy-detail]");
