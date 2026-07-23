@@ -5049,7 +5049,7 @@
   function strengthConceptsHtml() {
     return `<section class="a-concepts">
       <div class="a-concepts-head">
-        <h3>Strength Science</h3>
+        <h3>Strength and Hypertrophy Science</h3>
         <p>Plain-language explainers for the ideas behind how training makes you stronger. Pick a topic, then tap any card to open it.</p>
       </div>
       ${STRENGTH_CONCEPTS.map((grp) => `<details class="a-cgroup">
