@@ -8929,6 +8929,58 @@ body.live-log-mode #screen-client .header-right { display: none; }
   .a-concept-chev::before, .a-concept-chev::after, .a-cgroup-chev { transition: none; }
 }
 
+/* ---- Coach edits to the Anatomy / Science page ---- */
+.a-edit-btn {
+  border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text-soft); border-radius: 999px;
+  padding: 0.25em 0.7em; font-size: 0.74rem; font-weight: 700;
+  cursor: pointer; transition: border-color 0.15s, color 0.15s;
+}
+.a-edit-btn:hover { border-color: var(--primary); color: var(--primary-bright); }
+.a-edit-row { margin-top: 0.6rem; display: flex; justify-content: flex-end; }
+.a-edit-muscle { margin-left: auto; }
+.a-add-card {
+  grid-column: 1 / -1;
+  border: 1px dashed rgba(var(--primary-bright-rgb), 0.5);
+  background: transparent; color: var(--primary-bright);
+  border-radius: var(--radius-lg); padding: 0.6em 1em;
+  font-size: 0.86rem; font-weight: 700; cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.a-add-card:hover { background: rgba(var(--primary-rgb), 0.08); border-color: var(--primary); }
+.a-concept.is-edited { border-left: 3px solid rgba(var(--primary-bright-rgb), 0.55); }
+.a-concept.is-added { border-left: 3px solid var(--primary); }
+.a-card.is-edited { border-color: rgba(var(--primary-bright-rgb), 0.4); }
+.a-note {
+  margin: 0.1rem 0 0.4rem;
+  background: rgba(var(--primary-rgb), 0.1);
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.3);
+  border-radius: var(--radius); padding: 0.6em 0.8em;
+}
+.a-note-label {
+  display: block; font-size: 0.66rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--primary-bright); margin-bottom: 0.25em;
+}
+.a-note p { margin: 0; font-size: 0.9rem; line-height: 1.5; color: var(--text); }
+
+/* Editor modal form (concept cards + muscles) */
+.a-editor { display: flex; flex-direction: column; gap: 0.85rem; }
+.a-editor-lead { margin: 0; font-size: 0.88rem; color: var(--text-soft); }
+.a-editor label {
+  display: flex; flex-direction: column; gap: 0.3em;
+  font-size: 0.78rem; font-weight: 700; color: var(--text-soft);
+}
+.a-editor-hint { font-weight: 500; color: var(--muted); text-transform: none; letter-spacing: 0; }
+.a-editor input, .a-editor textarea {
+  width: 100%; box-sizing: border-box;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); color: var(--text);
+  font-family: inherit; font-size: 0.9rem; font-weight: 400;
+  padding: 0.55em 0.7em; line-height: 1.5; resize: vertical;
+}
+.a-editor input:focus, .a-editor textarea:focus { outline: none; border-color: var(--primary); }
+
 /* Tablets and below: stack the figure above the legend + detail */
 @media (max-width: 880px) {
   .anatomy-layout { grid-template-columns: 1fr; }

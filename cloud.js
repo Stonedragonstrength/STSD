@@ -207,6 +207,24 @@
     } catch (e) { console.warn("[Cloud] updateCoachLibraryPrefs", e); return false; }
   }
 
+  // -------- Anatomy edits (coach curates the Anatomy/Science page) --------
+  // Coach writes their own row; athletes read via SECURITY DEFINER RPC.
+  async function updateCoachAnatomyEdits(coachId, edits) {
+    if (!coachId) return false;
+    try {
+      const { error } = await sb.from("coaches").update({ anatomy_edits: edits || {} }).eq("id", coachId);
+      if (error) console.warn("[Cloud] updateCoachAnatomyEdits error", error.message);
+      return !error;
+    } catch (e) { console.warn("[Cloud] updateCoachAnatomyEdits", e); return false; }
+  }
+  async function getAnatomyEditsForAthlete() {
+    try {
+      const { data, error } = await sb.rpc("anatomy_edits_for_athlete");
+      if (error) { console.warn("[Cloud] getAnatomyEditsForAthlete", error.message); return null; }
+      return data && typeof data === "object" ? data : {};
+    } catch (e) { console.warn(e); return null; }
+  }
+
   // -------- Open slots (coach broadcasts appointment openings) --------
   async function updateCoachOpenSlots(coachId, openSlots) {
     if (!coachId) return false;
@@ -594,6 +612,8 @@
     getCoachByAuthUserId,
     updateCoachTemplates,
     updateCoachLibraryPrefs,
+    updateCoachAnatomyEdits,
+    getAnatomyEditsForAthlete,
     // Open slots
     updateCoachOpenSlots,
     getCoachOpenSlots,

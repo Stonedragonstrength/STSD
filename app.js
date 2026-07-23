@@ -2188,6 +2188,9 @@
       };
     }
     state.trainerData.openSlots = coach.open_slots || [];
+    if (coach.anatomy_edits && typeof coach.anatomy_edits === "object") {
+      state.trainerData.anatomyEdits = coach.anatomy_edits;
+    }
     // Athletes with unsynced local changes keep their local copy — the cloud
     // row may predate a write that never landed. Same protection templates get.
     const dirty = dirtyAthletes();
@@ -4871,18 +4874,20 @@
       + `<g class="a-zones">${zones}</g></svg>`;
   }
 
-  function anatomyDetailHtml(g) {
+  function anatomyDetailHtml(g, editable) {
     const li = (t) => `<li>${escapeHtml(t)}</li>`;
     const chip = (n, anchor) => `<span class="a-ex-chip${anchor ? " anchor" : ""}">${escapeHtml(n)}</span>`;
     const fact = (label, val) => val ? `<div class="a-fact"><span class="a-fact-label">${label}</span><span class="a-fact-val">${escapeHtml(val)}</span></div>` : "";
-    return `<div class="a-card">
+    return `<div class="a-card${g._edited ? " is-edited" : ""}">
       <div class="a-card-head">
         <h3>${escapeHtml(g.name)}</h3>
         <span class="a-pattern" data-pattern="${g.pattern.toLowerCase()}">${escapeHtml(g.pattern)}</span>
+        ${editable ? `<button type="button" class="a-edit-btn a-edit-muscle" data-edit-muscle="${escapeHtml(g.id)}">✏️ Edit</button>` : ""}
       </div>
       <p class="a-sub">${escapeHtml(g.sub)}</p>
       <p class="a-does">${escapeHtml(g.does)}</p>
       ${g.why ? `<p class="a-why">${escapeHtml(g.why)}</p>` : ""}
+      ${g._note ? `<div class="a-note"><span class="a-note-label">Coach note</span><p>${escapeHtml(g._note)}</p></div>` : ""}
       ${(ANATOMY_MUSCLES[g.id] && ANATOMY_MUSCLES[g.id].length) ? `<div class="a-muscles">
         <h4>Muscles in this group</h4>
         <ul class="a-muscle-list">${ANATOMY_MUSCLES[g.id].map((m) => `<li>${escapeHtml(m)}</li>`).join("")}</ul>
@@ -5119,9 +5124,83 @@
     ] },
   ];
 
+  // ---- Coach edits to the Anatomy / Science page (overrides + added cards) ----
+  // The coach can rewrite any built-in muscle/concept content and add their own
+  // cards; athletes see the coach's curated version. Edits are one jsonb blob on
+  // the coach row, synced to athletes via the anatomy_edits_for_athlete RPC.
+  function anatomySlug(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""); }
+  function conceptSectionId(kind, groupName) { return kind + ":" + anatomySlug(groupName); }
+  function conceptCardId(sid, term) { return sid + "/" + anatomySlug(term); }
+  function pickDefined(obj, keys) { const o = {}; keys.forEach((k) => { if (obj[k] != null && obj[k] !== "") o[k] = obj[k]; }); return o; }
+
+  // Which edit blob applies: the coach edits their own; athletes read the copy
+  // pulled from their coach. `editable` is true only on the coach-screen mount.
+  function getAnatomyEdits(editable) {
+    if (editable) return state.trainerData?.anatomyEdits || {};
+    return state.clientData?.coachAnatomyEdits || state.trainerData?.anatomyEdits || {};
+  }
+  function conceptDefaults(kind) { return kind === "nut" ? NUTRITION_CONCEPTS : STRENGTH_CONCEPTS; }
+
+  // Apply overrides + added cards to a concept library, returning render-ready
+  // groups whose items carry a stable id and a normalized `take` takeaway.
+  function mergedConceptGroups(kind, edits) {
+    const cOv = edits.concepts || {};
+    const cAdd = edits.conceptAdds || {};
+    return conceptDefaults(kind).map((grp) => {
+      const sid = conceptSectionId(kind, grp.group);
+      const items = [];
+      grp.items.forEach((it) => {
+        const cid = conceptCardId(sid, it.term);
+        const ov = cOv[cid];
+        if (ov && ov.hidden) return;
+        const base = { id: cid, term: it.term, short: it.short, def: it.def, take: kind === "nut" ? it.apply : it.strength };
+        items.push(ov ? { ...base, ...pickDefined(ov, ["term", "short", "def", "take"]), _edited: true } : base);
+      });
+      (Array.isArray(cAdd[sid]) ? cAdd[sid] : []).forEach((a) =>
+        items.push({ id: a.id, term: a.term || "", short: a.short || "", def: a.def || "", take: a.take || "", _added: true }));
+      return { id: sid, group: grp.group, tag: grp.tag, items };
+    });
+  }
+  // The unedited default card, for the "reset to default" / diff-on-save path.
+  function defaultConceptCard(kind, sid, cid) {
+    for (const grp of conceptDefaults(kind)) {
+      if (conceptSectionId(kind, grp.group) !== sid) continue;
+      for (const it of grp.items) {
+        if (conceptCardId(sid, it.term) === cid)
+          return { term: it.term, short: it.short, def: it.def, take: kind === "nut" ? it.apply : it.strength };
+      }
+    }
+    return null;
+  }
+  function mergedMuscle(g, edits) {
+    const ov = (edits.muscles || {})[g.id] || {};
+    const out = { ...g };
+    ["does", "why", "warmup", "pairs", "frequency"].forEach((f) => { if (ov[f] != null) out[f] = ov[f]; });
+    ["cues", "mistakes", "stretches", "injuries", "anchors", "accessories"].forEach((f) => { if (Array.isArray(ov[f])) out[f] = ov[f]; });
+    out._note = ov.note || "";
+    out._edited = Object.keys(ov).length > 0;
+    return out;
+  }
+
+  // All live anatomy mounts (coach view + athlete tab), so edits re-render both.
+  const _anatomyRoots = new Set();
+  function refreshAnatomy() {
+    _anatomyRoots.forEach((root) => { if (root._anatomyRefresh) { try { root._anatomyRefresh(); } catch (e) {} } });
+  }
+  function saveAnatomyEdits() {
+    const t = state.trainerData; if (!t) return;
+    t.anatomyEdits = t.anatomyEdits || {};
+    localStorage.setItem(KEY_TRAINER, JSON.stringify(t));
+    if (window.Cloud?.enabled && t.coachId) {
+      window.Cloud.debounce(`coach-anatomy:${t.coachId}`, () => window.Cloud.updateCoachAnatomyEdits(t.coachId, t.anatomyEdits));
+    }
+    refreshAnatomy();
+  }
+
   // Shared renderer for a collapsible concept library (Strength, Nutrition, …).
-  // `key` picks which field holds the practical takeaway; `label` names it.
-  function conceptGroupsHtml(groups, key, label) {
+  // Groups are already merged (items carry id/term/short/def/take). `editable`
+  // adds the coach's per-card Edit and per-group Add controls.
+  function conceptGroupsHtml(groups, label, editable) {
     return groups.map((grp) => `<details class="a-cgroup">
         <summary class="a-cgroup-sum">
           <span class="a-cgroup-title">${escapeHtml(grp.group)}</span>
@@ -5132,37 +5211,39 @@
           </span>
         </summary>
         <div class="a-cgrid">
-          ${grp.items.map((c) => `<details class="a-concept">
+          ${grp.items.map((c) => `<details class="a-concept${c._added ? " is-added" : (c._edited ? " is-edited" : "")}">
             <summary class="a-concept-sum">
               <span class="a-concept-text"><span class="a-concept-term">${escapeHtml(c.term)}</span><span class="a-concept-short">${escapeHtml(c.short)}</span></span>
               <span class="a-concept-chev" aria-hidden="true"></span>
             </summary>
             <div class="a-concept-body">
               <p class="a-concept-def">${escapeHtml(c.def)}</p>
-              <p class="a-concept-str"><span class="a-concept-str-label">${escapeHtml(label)}</span>${escapeHtml(c[key])}</p>
+              <p class="a-concept-str"><span class="a-concept-str-label">${escapeHtml(label)}</span>${escapeHtml(c.take)}</p>
+              ${editable ? `<div class="a-edit-row"><button type="button" class="a-edit-btn" data-edit-card="${escapeHtml(grp.id)}|${escapeHtml(c.id)}">✏️ Edit</button></div>` : ""}
             </div>
           </details>`).join("")}
+          ${editable ? `<button type="button" class="a-add-card" data-add-card="${escapeHtml(grp.id)}">＋ Add a card</button>` : ""}
         </div>
       </details>`).join("");
   }
 
-  function strengthConceptsHtml() {
+  function strengthConceptsHtml(editable) {
     return `<section class="a-concepts">
       <div class="a-concepts-head">
         <h3>Strength and Hypertrophy Science</h3>
         <p>Plain-language explainers for the ideas behind how training makes you stronger. Pick a topic, then tap any card to open it.</p>
       </div>
-      ${conceptGroupsHtml(STRENGTH_CONCEPTS, "strength", "Why it helps strength")}
+      ${conceptGroupsHtml(mergedConceptGroups("str", getAnatomyEdits(editable)), "Why it helps strength", editable)}
     </section>`;
   }
 
-  function nutritionConceptsHtml() {
+  function nutritionConceptsHtml(editable) {
     return `<section class="a-concepts">
       <div class="a-concepts-head">
         <h3>Nutrition and Body Composition</h3>
         <p>How food turns into fat loss, muscle, and everything in between. Pick a topic, then tap any card to open it.</p>
       </div>
-      ${conceptGroupsHtml(NUTRITION_CONCEPTS, "apply", "How to use it")}
+      ${conceptGroupsHtml(mergedConceptGroups("nut", getAnatomyEdits(editable)), "How to use it", editable)}
     </section>`;
   }
 
@@ -5171,8 +5252,10 @@
     if (root.dataset.anatomyBuilt) return;
     root.dataset.anatomyBuilt = "1";
     root.classList.add("anatomy"); // enables the column layout + section spacing
+    // Only the coach-screen mount is editable; the athlete tab is read-only.
+    const editable = !!root.closest("#screen-app");
     root.innerHTML = `
-      <p class="anatomy-intro">Tap a muscle on the body or in the list to see what it does, how to train it, and example lifts.</p>
+      <p class="anatomy-intro">Tap a muscle on the body or in the list to see what it does, how to train it, and example lifts.${editable ? " Tap ✏️ Edit on any card to rewrite it or add your own." : ""}</p>
       <div class="anatomy-toggle" role="tablist">
         <button type="button" class="a-view-btn active" data-view="front">Front</button>
         <button type="button" class="a-view-btn" data-view="back">Back</button>
@@ -5186,14 +5269,17 @@
           </div>
         </div>
       </div>
-      ${strengthConceptsHtml()}
-      ${nutritionConceptsHtml()}`;
+      <div data-anatomy-concepts></div>`;
 
     const listEl = root.querySelector("[data-anatomy-list]");
     const detailEl = root.querySelector("[data-anatomy-detail]");
+    const conceptsEl = root.querySelector("[data-anatomy-concepts]");
     let view = "front";
     let selected = null;
 
+    function renderConcepts() {
+      conceptsEl.innerHTML = strengthConceptsHtml(editable) + nutritionConceptsHtml(editable);
+    }
     function renderList() {
       listEl.innerHTML = ANATOMY_VIEW_GROUPS[view].map((id) => {
         const g = ANATOMY_BY_ID[id];
@@ -5206,11 +5292,15 @@
       root.querySelectorAll(`.a-svg[data-fig="${view}"] .a-zone[data-muscle="${selected}"], .a-chip[data-muscle="${selected}"]`)
         .forEach((el) => el.classList.add("selected"));
     }
+    function renderDetail() {
+      if (!selected) return;
+      const g = ANATOMY_BY_ID[selected];
+      if (g) detailEl.innerHTML = anatomyDetailHtml(mergedMuscle(g, getAnatomyEdits(editable)), editable);
+    }
     function select(id) {
-      const g = ANATOMY_BY_ID[id];
-      if (!g) return;
+      if (!ANATOMY_BY_ID[id]) return;
       selected = id;
-      detailEl.innerHTML = anatomyDetailHtml(g);
+      renderDetail();
       highlight();
     }
     function setView(next) {
@@ -5230,14 +5320,155 @@
     root.querySelectorAll(".a-view-btn").forEach((b) =>
       b.addEventListener("click", () => setView(b.dataset.view)));
     root.addEventListener("click", (e) => {
+      const editCard = e.target.closest("[data-edit-card]");
+      if (editCard && root.contains(editCard)) { const [sid, cid] = editCard.dataset.editCard.split("|"); openConceptCardEditor(sid, cid); return; }
+      const addCard = e.target.closest("[data-add-card]");
+      if (addCard && root.contains(addCard)) { openAddConceptCard(addCard.dataset.addCard); return; }
+      const editMus = e.target.closest("[data-edit-muscle]");
+      if (editMus && root.contains(editMus)) { openMuscleEditor(editMus.dataset.editMuscle); return; }
       const zone = e.target.closest(".a-zone, .a-chip");
       if (zone && root.contains(zone)) select(zone.dataset.muscle);
     });
+
+    // Let coach edits re-render this mount's concepts + open muscle in place.
+    root._anatomyRefresh = () => { renderConcepts(); renderDetail(); };
+    _anatomyRoots.add(root);
+    renderConcepts();
     renderList();
   }
   // Build every anatomy mount point once at boot (coach view + athlete tab).
   function initAnatomyLibrary() {
     document.querySelectorAll("[data-anatomy-root]").forEach(buildAnatomy);
+  }
+
+  // -------- Coach anatomy/concept editors (coach-screen only) --------
+  function conceptKindOf(sid) { return sid.startsWith("nut:") ? "nut" : "str"; }
+  function findMergedCard(sid, cid) {
+    const kind = conceptKindOf(sid);
+    const grp = mergedConceptGroups(kind, state.trainerData?.anatomyEdits || {}).find((g) => g.id === sid);
+    return { kind, card: grp && grp.items.find((c) => c.id === cid) };
+  }
+  function conceptEditorBody(card, takeLabel) {
+    return `<div class="a-editor">
+      <label>Title<input type="text" id="ace-term" value="${escapeHtml(card.term || "")}" placeholder="e.g. Progressive overload" /></label>
+      <label>One-line summary<input type="text" id="ace-short" value="${escapeHtml(card.short || "")}" placeholder="The short version, shown on the closed card" /></label>
+      <label>Explanation<textarea id="ace-def" rows="5" placeholder="The main explanation.">${escapeHtml(card.def || "")}</textarea></label>
+      <label>${escapeHtml(takeLabel)}<textarea id="ace-take" rows="4" placeholder="The practical takeaway.">${escapeHtml(card.take || "")}</textarea></label>
+    </div>`;
+  }
+  function readConceptEditor() {
+    return {
+      term: $("#ace-term").value.trim(), short: $("#ace-short").value.trim(),
+      def: $("#ace-def").value.trim(), take: $("#ace-take").value.trim(),
+    };
+  }
+  function openConceptCardEditor(sid, cid) {
+    const { kind, card } = findMergedCard(sid, cid);
+    if (!card) return;
+    const takeLabel = kind === "nut" ? "How to use it" : "Why it helps strength";
+    const actions = [{ label: "Save", className: "btn btn-primary", onClick: () => {
+      const v = readConceptEditor();
+      if (!v.term) { toast("Give the card a title."); return; }
+      const t = state.trainerData; t.anatomyEdits = t.anatomyEdits || {};
+      if (card._added) {
+        const e = ((t.anatomyEdits.conceptAdds || {})[sid] || []).find((x) => x.id === cid);
+        if (e) Object.assign(e, v);
+      } else {
+        const d = defaultConceptCard(kind, sid, cid) || {};
+        const ov = {};
+        ["term", "short", "def", "take"].forEach((k) => { if (v[k] !== (d[k] || "")) ov[k] = v[k]; });
+        t.anatomyEdits.concepts = t.anatomyEdits.concepts || {};
+        if (Object.keys(ov).length) t.anatomyEdits.concepts[cid] = ov;
+        else delete t.anatomyEdits.concepts[cid];
+      }
+      saveAnatomyEdits(); closeModal(); toast("Saved");
+    } }];
+    if (card._added) {
+      actions.push({ label: "Delete card", className: "btn btn-ghost", onClick: () => {
+        const t = state.trainerData, arr = (t.anatomyEdits.conceptAdds || {})[sid];
+        if (arr) { t.anatomyEdits.conceptAdds[sid] = arr.filter((x) => x.id !== cid); if (!t.anatomyEdits.conceptAdds[sid].length) delete t.anatomyEdits.conceptAdds[sid]; }
+        saveAnatomyEdits(); closeModal(); toast("Card deleted");
+      } });
+    } else if (card._edited) {
+      actions.push({ label: "Reset to default", className: "btn btn-ghost", onClick: () => {
+        const t = state.trainerData; if (t.anatomyEdits.concepts) delete t.anatomyEdits.concepts[cid];
+        saveAnatomyEdits(); closeModal(); toast("Reset to default");
+      } });
+    }
+    actions.push({ label: "Cancel", className: "btn btn-ghost", onClick: closeModal });
+    openModal({ title: "Edit card", body: conceptEditorBody(card, takeLabel), actions });
+  }
+  function openAddConceptCard(sid) {
+    const kind = conceptKindOf(sid);
+    const takeLabel = kind === "nut" ? "How to use it" : "Why it helps strength";
+    openModal({
+      title: "Add a card",
+      body: conceptEditorBody({}, takeLabel),
+      actions: [
+        { label: "Add card", className: "btn btn-primary", onClick: () => {
+          const v = readConceptEditor();
+          if (!v.term) { toast("Give the card a title."); return; }
+          const t = state.trainerData; t.anatomyEdits = t.anatomyEdits || {};
+          t.anatomyEdits.conceptAdds = t.anatomyEdits.conceptAdds || {};
+          (t.anatomyEdits.conceptAdds[sid] || (t.anatomyEdits.conceptAdds[sid] = [])).push({ id: "add-" + uid(), ...v });
+          saveAnatomyEdits(); closeModal(); toast("Card added");
+        } },
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+      ],
+    });
+  }
+
+  const MUSCLE_TEXT_FIELDS = [
+    ["does", "What it does", "textarea"],
+    ["why", "Why it matters", "textarea"],
+    ["warmup", "Warm-up", "input"],
+    ["pairs", "Pairs with", "input"],
+    ["frequency", "Frequency", "input"],
+  ];
+  const MUSCLE_LIST_FIELDS = [
+    ["cues", "Coaching cues"],
+    ["mistakes", "Common mistakes"],
+    ["stretches", "Stretches"],
+    ["injuries", "Common injuries"],
+    ["anchors", "Example lifts (main)"],
+    ["accessories", "Example lifts (accessory)"],
+  ];
+  function openMuscleEditor(muscleId) {
+    const g0 = ANATOMY_BY_ID[muscleId]; if (!g0) return;
+    const m = mergedMuscle(g0, state.trainerData?.anatomyEdits || {});
+    const textHtml = MUSCLE_TEXT_FIELDS.map(([f, label, kind]) => `<label>${escapeHtml(label)}${
+      kind === "input"
+        ? `<input type="text" id="ame-${f}" value="${escapeHtml(m[f] || "")}" />`
+        : `<textarea id="ame-${f}" rows="3">${escapeHtml(m[f] || "")}</textarea>`
+    }</label>`).join("");
+    const listHtml = MUSCLE_LIST_FIELDS.map(([f, label]) => `<label>${escapeHtml(label)} <span class="a-editor-hint">one per line</span><textarea id="ame-${f}" rows="3">${escapeHtml((m[f] || []).join("\n"))}</textarea></label>`).join("");
+    const body = `<div class="a-editor">
+      <p class="a-editor-lead">Editing <strong>${escapeHtml(g0.name)}</strong>. Leave a field as-is to keep the built-in text.</p>
+      ${textHtml}
+      ${listHtml}
+      <label>Coach note <span class="a-editor-hint">shown to athletes, in addition to the above</span><textarea id="ame-note" rows="3" placeholder="Anything extra you want your athletes to see here.">${escapeHtml(m._note || "")}</textarea></label>
+    </div>`;
+    const actions = [{ label: "Save", className: "btn btn-primary", onClick: () => {
+      const ov = {};
+      MUSCLE_TEXT_FIELDS.forEach(([f]) => { const v = $(`#ame-${f}`).value.trim(); if (v !== (g0[f] || "")) ov[f] = v; });
+      MUSCLE_LIST_FIELDS.forEach(([f]) => {
+        const arr = $(`#ame-${f}`).value.split("\n").map((s) => s.trim()).filter(Boolean);
+        if (JSON.stringify(arr) !== JSON.stringify(g0[f] || [])) ov[f] = arr;
+      });
+      const note = $("#ame-note").value.trim(); if (note) ov.note = note;
+      const t = state.trainerData; t.anatomyEdits = t.anatomyEdits || {}; t.anatomyEdits.muscles = t.anatomyEdits.muscles || {};
+      if (Object.keys(ov).length) t.anatomyEdits.muscles[muscleId] = ov;
+      else delete t.anatomyEdits.muscles[muscleId];
+      saveAnatomyEdits(); closeModal(); toast("Saved");
+    } }];
+    if (m._edited) {
+      actions.push({ label: "Reset to default", className: "btn btn-ghost", onClick: () => {
+        const t = state.trainerData; if (t.anatomyEdits.muscles) delete t.anatomyEdits.muscles[muscleId];
+        saveAnatomyEdits(); closeModal(); toast("Reset to default");
+      } });
+    }
+    actions.push({ label: "Cancel", className: "btn btn-ghost", onClick: closeModal });
+    openModal({ title: "Edit muscle", body, actions });
   }
 
   // Rebuild a single shared <datalist> (respecting the coach's hidden list) and
@@ -8914,6 +9145,18 @@
     updateOpenSlotBadge();
     renderAthleteSessions();
   }
+  // ---- Athlete: coach's Anatomy/Science edits (read-only) ----
+  async function refreshAthleteAnatomyEdits() {
+    // In a coach live session the anatomy uses the coach's own trainerData
+    // edits (same device), so only fetch for a real athlete session.
+    if (state.previewMode || !window.Cloud?.enabled) return;
+    const edits = await window.Cloud.getAnatomyEditsForAthlete();
+    if (edits && typeof edits === "object") {
+      state.clientData.coachAnatomyEdits = edits;
+      try { localStorage.setItem(KEY_CLIENT, JSON.stringify(state.clientData)); } catch (e) {}
+      refreshAnatomy();
+    }
+  }
   function updateOpenSlotBadge() {
     const badge = $("#ctab-sessions-badge");
     if (!badge) return;
@@ -10572,6 +10815,7 @@
     renderAthleteSessions();
     renderAthleteOverview();
     refreshAthleteOpenSlots();
+    refreshAthleteAnatomyEdits();
     renderAthleteNotifyCard();
     refreshPushSubscription();
     // First time on this device: one guided lap (never during a coach live
