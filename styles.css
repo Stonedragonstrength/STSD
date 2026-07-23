@@ -6491,6 +6491,91 @@ input:focus, textarea:focus, select:focus {
 }
 .day-note-ta:focus { outline: none; border-color: var(--primary); }
 
+/* ===== Form-check videos (athlete side) ===== */
+.form-check-block { margin: 0.5rem 0 0.2rem; }
+.form-check-list { display: flex; flex-direction: column; gap: 0.4rem; }
+.form-check-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5em 0.6em;
+}
+.fc-play, .fc-del {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  width: 2em;
+  height: 2em;
+  cursor: pointer;
+  font-size: 0.85rem;
+  display: grid;
+  place-items: center;
+}
+.fc-play { background: var(--primary); color: #fff; }
+.fc-del { background: transparent; color: var(--muted); font-size: 0.9rem; }
+.fc-del:hover { color: var(--danger, #e5484d); }
+.fc-row-info { flex: 1; display: flex; flex-direction: column; gap: 0.15em; min-width: 0; }
+.fc-row-date { font-size: 0.72rem; color: var(--muted); }
+.fc-status { font-size: 0.78rem; font-weight: 600; }
+.fc-status.watched { color: var(--primary-bright); }
+.fc-status.pending { color: var(--muted); }
+.fc-reply {
+  font-size: 0.8rem;
+  color: var(--text-soft);
+  background: var(--primary-soft);
+  border-radius: 8px;
+  padding: 0.3em 0.5em;
+  margin-top: 0.15em;
+}
+.fc-reply-label { font-weight: 700; color: var(--primary-bright); }
+.form-check-add { margin-top: 0.4rem; }
+.form-check-btn { width: 100%; }
+.form-check-tip { font-size: 0.72rem; color: var(--muted); margin: 0.35em 0 0; text-align: center; }
+.form-check-cap { font-size: 0.78rem; color: var(--muted); text-align: center; margin: 0.3em 0; }
+
+/* ===== Form-check videos (coach review) ===== */
+.fc-coach-sec {
+  margin-top: 0.9rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--border);
+}
+.fc-coach-head {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 0.5em;
+}
+.fc-coach-clip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+  padding: 0.6em;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 0.6em;
+}
+.fc-coach-row { display: flex; align-items: center; gap: 0.6em; }
+.fc-coach-reply {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 0.5em 0.6em;
+  resize: vertical;
+}
+.fc-coach-reply:focus { outline: none; border-color: var(--primary); }
+.fc-dash-row { display: flex; flex-wrap: wrap; gap: 0.4em; margin-top: 0.3em; }
+
 /* ===== Day note coach view ===== */
 .day-note-coach-row {
   padding: 0.55rem 0;

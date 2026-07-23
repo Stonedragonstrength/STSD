@@ -7963,10 +7963,27 @@
       });
       const dayNote = c.importedProgress?.dayNotes?.[day.id];
       if (dayNote) body += `<div class="breakdown-note"><span class="breakdown-note-label">Session note</span><p>${escapeHtml(dayNote)}</p></div>`;
+      const fcClips = formChecksForDay(c.importedProgress, day.id);
+      if (fcClips.length) {
+        body += `<div class="breakdown-note"><span class="breakdown-note-label">🎥 Form videos</span><div class="fc-dash-row">`;
+        fcClips.forEach((clip, i) => {
+          body += `<button type="button" class="btn btn-ghost btn-sm" data-fc-dash="${escapeHtml(c.id)}|${escapeHtml(day.id)}|${i}">▶ Watch${clip.reviewed ? " ✓" : ""}</button>`;
+        });
+        body += `</div></div>`;
+      }
       body += `</div>`;
     });
     if (!body) body = `<p class="muted">Nothing scheduled or logged for this date.</p>`;
     openModal({ title: iso, body, actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }] });
+    // Form-check clip → play via signed URL
+    $$("[data-fc-dash]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const [cid, did, idxS] = String(btn.dataset.fcDash).split("|");
+        const cc = state.trainerData.clients.find((x) => x.id === cid);
+        const clip = formChecksForDay(cc?.importedProgress, did)[Number(idxS)];
+        if (clip) playFormCheck(clip.path);
+      });
+    });
     // Matched booking → jump to that athlete's profile
     $$("[data-open-athlete]").forEach((row) => {
       row.addEventListener("click", () => {
@@ -8077,6 +8094,58 @@
     });
   }
 
+  // Persist a coach-side edit to an athlete's progress (e.g. a form-check reply).
+  // RLS lets a coach write their own athletes' progress row.
+  function saveAthleteProgressFromCoach(c) {
+    localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+    if (window.Cloud?.enabled && c?.id && c.importedProgress) {
+      window.Cloud.debounce(`progress:${c.id}`, () => window.Cloud.upsertProgress(c.id, c.importedProgress));
+    }
+  }
+
+  // Coach-side review block for a day's form videos: watch, reply, notify.
+  function coachFormCheckSectionHtml(c, day) {
+    const clips = formChecksForDay(c.importedProgress, day.id);
+    if (!clips.length) return "";
+    let h = `<div class="fc-coach-sec"><div class="fc-coach-head">🎥 Form videos (${clips.length})</div>`;
+    clips.forEach((clip, i) => {
+      h += `<div class="fc-coach-clip">
+        <div class="fc-coach-row">
+          <button type="button" class="btn btn-ghost btn-sm" data-fc-play="${i}">▶ Watch</button>
+          <span class="muted" style="font-size:0.8rem">${escapeHtml(dateISO(new Date(clip.uploadedAt)))}${clip.reviewed ? " · watched ✓" : ""}</span>
+        </div>
+        <textarea class="fc-coach-reply" data-fc-reply="${i}" rows="2" placeholder="Reply to ${escapeHtml(c.name || "athlete")}…">${escapeHtml(clip.coachReply || "")}</textarea>
+        <button type="button" class="btn btn-sm" data-fc-save="${i}">${clip.reviewed ? "Update reply" : "Mark watched & notify"}</button>
+      </div>`;
+    });
+    return h + `</div>`;
+  }
+  function wireCoachFormChecks(c, day) {
+    const body = $("#modal-body"); if (!body) return;
+    body.querySelectorAll("[data-fc-play]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const clip = formChecksForDay(c.importedProgress, day.id)[Number(b.dataset.fcPlay)];
+        if (clip) playFormCheck(clip.path);
+      });
+    });
+    body.querySelectorAll("[data-fc-save]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const idx = Number(b.dataset.fcSave);
+        const clip = formChecksForDay(c.importedProgress, day.id)[idx];
+        if (!clip) return;
+        const ta = body.querySelector(`[data-fc-reply="${idx}"]`);
+        clip.coachReply = ta ? ta.value.trim() : (clip.coachReply || "");
+        clip.reviewed = true;
+        clip.reviewedAt = Date.now();
+        saveAthleteProgressFromCoach(c);
+        window.Cloud?.sendPush?.([c.id], "🎥 Your form check is back",
+          clip.coachReply ? "Your coach replied to your form video." : "Your coach watched your form video.", "./");
+        toast("Sent to " + (c.name || "athlete"));
+        b.textContent = "Update reply";
+      });
+    });
+  }
+
   function openCoachDayBreakdown(iso, c) {
     const entry = c.importedProgress?.selfSchedule?.[iso]; if (!entry || !entry.weekId) return;
     const wd = findWeekDay(c, entry.weekId, entry.dayId);
@@ -8112,11 +8181,13 @@
     }
     const dayNote = c.importedProgress?.dayNotes?.[day.id];
     if (dayNote) bodyHtml += `<div class="breakdown-note"><span class="breakdown-note-label">Session note</span><p>${escapeHtml(dayNote)}</p></div>`;
+    bodyHtml += coachFormCheckSectionHtml(c, day);
     openModal({
       title: `${escapeHtml(day.name)} · ${iso}`,
       body: bodyHtml,
       actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
     });
+    wireCoachFormChecks(c, day);
   }
 
   // -------- Coach Cardio view (athlete's logged cardio only) --------
@@ -10104,7 +10175,7 @@
       err.classList.remove("hidden");
     }
   }
-  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {}, totalWorkoutMs: 0, workoutMoods: {}, addedExercises: {} }; }
+  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {}, totalWorkoutMs: 0, workoutMoods: {}, addedExercises: {}, formChecks: {} }; }
   function ensureProgressShape(p) {
     if (!p.exerciseLogs) p.exerciseLogs = {};
     if (!p.bodyweightLog) p.bodyweightLog = [];
@@ -10118,6 +10189,7 @@
     if (!p.seenMessages) p.seenMessages = {};
     if (typeof p.totalWorkoutMs !== "number" || !isFinite(p.totalWorkoutMs)) p.totalWorkoutMs = 0;
     if (!p.workoutMoods || typeof p.workoutMoods !== "object") p.workoutMoods = {};
+    if (!p.formChecks || typeof p.formChecks !== "object") p.formChecks = {};
     return p;
   }
 
@@ -11462,6 +11534,205 @@
     return block;
   }
 
+  // -------- Form-check videos (athlete records a set, coach reviews) --------
+  // Metadata lives on progress.formChecks keyed by dayId (same shape family as
+  // dayNotes/workoutMoods) so it syncs both ways through the progress path. The
+  // video files live in the private `form-checks` Storage bucket. Clips
+  // auto-delete after 30 days server-side (prune-form-checks cron).
+  const FORM_CHECK_MAX_PER_DAY = 3;
+  const FORM_CHECK_RETENTION_DAYS = 30;
+  const FORM_CHECK_MAX_BYTES = 50 * 1024 * 1024; // matches the bucket's hard cap
+  const FORM_CHECK_TARGET_H = 720; // downscale target (720p30)
+  const FORM_CHECK_TARGET_FPS = 30;
+
+  function formChecksForDay(progress, dayId) {
+    const rec = progress?.formChecks?.[dayId];
+    return Array.isArray(rec) ? rec : [];
+  }
+  function fileExt(file) {
+    const m = /\.([a-z0-9]+)$/i.exec(file?.name || "");
+    return (m ? m[1] : "mp4").toLowerCase();
+  }
+
+  // Re-encode a phone video down to 720p30 (video only — form review doesn't
+  // need audio, and dropping it roughly halves size and dodges codec issues).
+  // Returns a webm Blob, or null if the browser can't do a canvas capture pass
+  // (older Safari) so the caller falls back to the raw file under the size cap.
+  function downscaleVideo(file) {
+    return new Promise((resolve) => {
+      const canCapture = typeof HTMLCanvasElement !== "undefined" &&
+        HTMLCanvasElement.prototype.captureStream && typeof MediaRecorder !== "undefined";
+      if (!canCapture) return resolve(null);
+      const video = document.createElement("video");
+      video.muted = true; video.playsInline = true; video.preload = "auto";
+      const url = URL.createObjectURL(file);
+      let settled = false;
+      const done = (blob) => { if (settled) return; settled = true; URL.revokeObjectURL(url); resolve(blob); };
+      video.onerror = () => done(null);
+      video.onloadedmetadata = () => {
+        const vw = video.videoWidth, vh = video.videoHeight;
+        if (!vw || !vh) return done(null);
+        const scale = Math.min(1, FORM_CHECK_TARGET_H / Math.min(vw, vh));
+        const cw = Math.round(vw * scale / 2) * 2;
+        const ch = Math.round(vh * scale / 2) * 2;
+        const canvas = document.createElement("canvas");
+        canvas.width = cw; canvas.height = ch;
+        const ctx = canvas.getContext("2d");
+        let mime = "video/webm;codecs=vp9";
+        if (!MediaRecorder.isTypeSupported(mime)) mime = "video/webm;codecs=vp8";
+        if (!MediaRecorder.isTypeSupported(mime)) mime = "video/webm";
+        if (!MediaRecorder.isTypeSupported(mime)) return done(null);
+        let stream;
+        try { stream = canvas.captureStream(FORM_CHECK_TARGET_FPS); } catch (e) { return done(null); }
+        const chunks = [];
+        let rec;
+        try { rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2_500_000 }); }
+        catch (e) { return done(null); }
+        rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+        rec.onstop = () => {
+          try { video.pause(); } catch (e) {}
+          const blob = new Blob(chunks, { type: "video/webm" });
+          done(blob.size ? blob : null);
+        };
+        const drawWith = (cb) => { ctx.drawImage(video, 0, 0, cw, ch); cb(); };
+        const useRVFC = typeof video.requestVideoFrameCallback === "function";
+        const pump = () => {
+          if (video.ended || video.paused) return;
+          drawWith(() => {});
+          if (useRVFC) video.requestVideoFrameCallback(pump);
+        };
+        video.onended = () => { try { rec.stop(); } catch (e) {} };
+        video.play().then(() => {
+          rec.start(250);
+          if (useRVFC) video.requestVideoFrameCallback(pump);
+          else { const iv = setInterval(() => { if (video.ended || video.paused) { clearInterval(iv); } else drawWith(() => {}); }, 1000 / FORM_CHECK_TARGET_FPS); }
+        }).catch(() => done(null));
+        // Safety net: never hang forever on a stuck decode.
+        setTimeout(() => { if (!settled) { try { rec.stop(); } catch (e) {} } }, 4 * 60 * 1000);
+      };
+      video.src = url;
+    });
+  }
+
+  async function uploadFormCheckFlow(day, file, onDone) {
+    const athleteId = state.clientData.program?.clientId;
+    if (!athleteId || !window.Cloud?.enabled) { toast("Sign in online to send form videos."); return; }
+    if (!file || !/^video\//.test(file.type || "")) { toast("Pick a video file."); return; }
+    const p = state.clientData.progress; ensureProgressShape(p);
+    if (formChecksForDay(p, day.id).length >= FORM_CHECK_MAX_PER_DAY) {
+      toast(`Max ${FORM_CHECK_MAX_PER_DAY} clips per day.`); return;
+    }
+    let blob = file, downscaled = false, ext = fileExt(file), ctype = file.type || "video/mp4";
+    toast("Preparing video…", 4000);
+    try {
+      const out = await downscaleVideo(file);
+      if (out) { blob = out; downscaled = true; ext = "webm"; ctype = "video/webm"; }
+    } catch (e) { console.warn("[formcheck] downscale failed", e); }
+    if (blob.size > FORM_CHECK_MAX_BYTES) {
+      toast("That clip is too big even after shrinking. Record a shorter set."); return;
+    }
+    toast("Uploading…", 6000);
+    const path = await window.Cloud.uploadFormCheck(athleteId, day.id, blob, ext, ctype);
+    if (!path) { toast("Upload failed. Try again on wifi."); return; }
+    (p.formChecks[day.id] || (p.formChecks[day.id] = [])).push({
+      id: uid(), path, uploadedAt: Date.now(), note: "",
+      reviewed: false, reviewedAt: null, coachReply: "",
+      sizeBytes: blob.size, downscaled,
+    });
+    saveClient();
+    toast("Sent to your coach ✓");
+    onDone && onDone();
+  }
+
+  // Open a clip in a modal player via a short-lived signed URL (private bucket).
+  async function playFormCheck(path) {
+    if (!window.Cloud?.signedFormCheckUrl) return;
+    openModal({ title: "Form video", body: `<p class="muted">Loading…</p>`, actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }] });
+    const url = await window.Cloud.signedFormCheckUrl(path);
+    const body = $("#modal-body"); if (!body) return;
+    if (!url) { body.innerHTML = `<p class="muted">This clip is no longer available. Form videos auto-delete after ${FORM_CHECK_RETENTION_DAYS} days.</p>`; return; }
+    body.innerHTML = `<video src="${escapeHtml(url)}" controls playsinline style="width:100%;max-height:70vh;border-radius:12px;background:#000"></video>`;
+  }
+
+  // Athlete-side block appended under a workout day: send + track form clips.
+  function renderFormCheckBlock(day) {
+    const block = document.createElement("div");
+    block.className = "form-check-block";
+
+    const listWrap = document.createElement("div");
+    listWrap.className = "form-check-list";
+
+    const renderList = () => {
+      const clips = formChecksForDay(state.clientData.progress, day.id);
+      listWrap.innerHTML = "";
+      clips.forEach((clip) => {
+        const row = document.createElement("div");
+        row.className = "form-check-row";
+        const status = clip.reviewed
+          ? `<span class="fc-status watched">Coach watched ✓</span>`
+          : `<span class="fc-status pending">Waiting for review</span>`;
+        const reply = clip.coachReply
+          ? `<div class="fc-reply"><span class="fc-reply-label">Coach:</span> ${escapeHtml(clip.coachReply)}</div>`
+          : "";
+        row.innerHTML = `
+          <button type="button" class="fc-play" title="Play clip">▶</button>
+          <div class="fc-row-info">
+            <span class="fc-row-date">${escapeHtml(dateISO(new Date(clip.uploadedAt)))}</span>
+            ${status}${reply}
+          </div>
+          <button type="button" class="fc-del" title="Delete clip" aria-label="Delete clip">✕</button>`;
+        row.querySelector(".fc-play").addEventListener("click", () => playFormCheck(clip.path));
+        row.querySelector(".fc-del").addEventListener("click", async () => {
+          if (!confirm("Delete this form video?")) return;
+          await window.Cloud?.deleteFormCheck?.(clip.path);
+          const p = state.clientData.progress;
+          p.formChecks[day.id] = formChecksForDay(p, day.id).filter((x) => x.id !== clip.id);
+          if (!p.formChecks[day.id].length) delete p.formChecks[day.id];
+          saveClient();
+          renderAll();
+        });
+        listWrap.appendChild(row);
+      });
+    };
+
+    const addWrap = document.createElement("div");
+    addWrap.className = "form-check-add";
+
+    const renderAll = () => {
+      renderList();
+      const clips = formChecksForDay(state.clientData.progress, day.id);
+      addWrap.innerHTML = "";
+      if (clips.length >= FORM_CHECK_MAX_PER_DAY) {
+        addWrap.innerHTML = `<p class="form-check-cap">You've sent the max of ${FORM_CHECK_MAX_PER_DAY} form videos for this day.</p>`;
+        return;
+      }
+      const input = document.createElement("input");
+      input.type = "file"; input.accept = "video/*"; input.capture = "environment";
+      input.className = "hidden";
+      input.addEventListener("change", () => {
+        const f = input.files && input.files[0];
+        input.value = "";
+        if (f) uploadFormCheckFlow(day, f, renderAll);
+      });
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn btn-ghost form-check-btn";
+      btn.innerHTML = "🎥 Send your coach a form video";
+      btn.addEventListener("click", () => input.click());
+      const tip = document.createElement("p");
+      tip.className = "form-check-tip";
+      tip.textContent = "Landscape, from the side, one full working set. Clips auto-delete after 30 days.";
+      addWrap.appendChild(btn);
+      addWrap.appendChild(input);
+      addWrap.appendChild(tip);
+    };
+
+    renderAll();
+    block.appendChild(listWrap);
+    block.appendChild(addWrap);
+    return block;
+  }
+
   // -------- Day progress (floating bottom bar + per-card fill lines) --------
   // Every exercise card rendered in the open day registers a getter that
   // reports { done, total } in set units (working sets for lifts, rounds for
@@ -11657,6 +11928,7 @@
     list.appendChild(addWrap);
 
     list.appendChild(renderDayNoteBlock(day.id));
+    list.appendChild(renderFormCheckBlock(day));
 
     hide($("#workout-picker"));
     show($("#workout-detail"));

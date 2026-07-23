@@ -413,6 +413,13 @@ enabled = true
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
 
+[functions.prune-form-checks]
+enabled = true
+# Called only by pg_cron with the service-role JWT; the function also
+# re-checks the bearer against the service key before doing anything.
+verify_jwt = true
+entrypoint = "./functions/prune-form-checks/index.ts"
+
 [functions.sync-setmore]
 enabled = true
 verify_jwt = false

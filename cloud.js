@@ -128,6 +128,7 @@
       total_workout_ms: Math.round(p.totalWorkoutMs || 0),
       workout_moods: p.workoutMoods || {},
       added_exercises: p.addedExercises || {},
+      form_checks: p.formChecks || {},
       synced_at: new Date().toISOString(),
     };
   }
@@ -146,6 +147,7 @@
       totalWorkoutMs: Number(r.total_workout_ms) || 0,
       workoutMoods: r.workout_moods || {},
       addedExercises: r.added_exercises || {},
+      formChecks: r.form_checks || {},
       syncedAt: r.synced_at,
     };
   }
@@ -413,6 +415,41 @@
     } catch (e) { console.warn("[Cloud] sendPush", e); return null; }
   }
 
+  // -------- Form-check videos (private Storage bucket) --------
+  // Layout: <athleteId>/<dayId>/<uid>.<ext>. RLS lets the owning athlete write
+  // and read their own folder, and lets that athlete's coach read/delete it.
+  const FORM_CHECK_BUCKET = "form-checks";
+  async function uploadFormCheck(athleteId, dayId, blob, ext = "webm", contentType = "video/webm") {
+    if (!athleteId || !dayId || !blob) return null;
+    const path = `${athleteId}/${dayId}/${uidLike()}.${ext}`;
+    try {
+      const { error } = await sb.storage.from(FORM_CHECK_BUCKET).upload(path, blob, {
+        contentType,
+        upsert: false,
+      });
+      if (error) { console.warn("[Cloud] uploadFormCheck", error.message); return null; }
+      return path;
+    } catch (e) { console.warn("[Cloud] uploadFormCheck", e); return null; }
+  }
+  // Short-lived signed URL for playback (bucket is private).
+  async function signedFormCheckUrl(path, expiresSec = 3600) {
+    if (!path) return null;
+    try {
+      const { data, error } = await sb.storage.from(FORM_CHECK_BUCKET).createSignedUrl(path, expiresSec);
+      if (error) { console.warn("[Cloud] signedFormCheckUrl", error.message); return null; }
+      return data?.signedUrl || null;
+    } catch (e) { console.warn("[Cloud] signedFormCheckUrl", e); return null; }
+  }
+  async function deleteFormCheck(path) {
+    if (!path) return false;
+    try {
+      const { error } = await sb.storage.from(FORM_CHECK_BUCKET).remove([path]);
+      if (error) { console.warn("[Cloud] deleteFormCheck", error.message); return false; }
+      return true;
+    } catch (e) { console.warn("[Cloud] deleteFormCheck", e); return false; }
+  }
+  function uidLike() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+
   // -------- Progress methods --------
   async function upsertProgress(athleteId, progress) {
     if (!athleteId) return false;
@@ -578,6 +615,10 @@
     upsertProgress,
     getProgress,
     upsertAthleteProfile,
+    // Form-check videos
+    uploadFormCheck,
+    signedFormCheckUrl,
+    deleteFormCheck,
     // Web push
     savePushSubscription,
     deletePushSubscription,
