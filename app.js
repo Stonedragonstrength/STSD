@@ -665,14 +665,21 @@
   // never mutated — the effective target is computed from weeks + logs.
   // Ceiling sentinel for bodyweight rep ladders with no cap ("∞").
   const PROG_NO_CAP = 999;
+  // Timed exercises run the SAME double progression, but the ladder rung is
+  // seconds, not reps — so the auto-target climbs by this many seconds per
+  // successful week instead of +1. (Reps always climb by 1.)
+  const PROG_TIME_STEP = 5;
 
   function progressionRule(ex) {
     const p = ex && ex.progression;
     if (!p || !p.ceil) return null;
     const floor = parseInt(ex.currentReps, 10);
-    if (!floor) return null; // needs a rep floor
+    if (!floor) return null; // needs a rep (or time) floor
     const ceil = parseInt(p.ceil, 10);
     if (!ceil || ceil <= floor) return null;
+    // Timed exercises climb the ladder in seconds — same chain, bigger rung.
+    const timed = exIsTimed(ex);
+    const step = timed ? PROG_TIME_STEP : 1;
     // Bodyweight: rep ladder. Without an increment it holds at the cap forever.
     // With an increment (and a real cap) it *graduates*: at the cap it starts
     // adding weight and reps reset, then climbs as a normal double-progression.
@@ -680,21 +687,21 @@
       const bwInc = parseFloat(p.inc);
       if (bwInc && ceil !== PROG_NO_CAP) {
         const bwReset = parseInt(p.reset, 10);
-        return { floor, ceil, inc: bwInc, reset: bwReset >= 1 && bwReset < ceil ? bwReset : floor, bw: true, graduate: true };
+        return { floor, ceil, inc: bwInc, reset: bwReset >= 1 && bwReset < ceil ? bwReset : floor, bw: true, graduate: true, step, timed };
       }
-      return { floor, ceil, inc: 0, bw: true };
+      return { floor, ceil, inc: 0, bw: true, step, timed };
     }
     const base = parseFloat(ex.currentWeight);
     if (!isFinite(base)) return null;
     // Reps-only (weighted): the weight stays as written — reps climb to the
     // ceiling and hold there. Same ladder as bodyweight, but with a bar.
-    if (p.repsOnly) return { floor, ceil, inc: 0, repsOnly: true };
+    if (p.repsOnly) return { floor, ceil, inc: 0, repsOnly: true, step, timed };
     const inc = parseFloat(p.inc);
     if (!inc) return null; // weighted needs a base + increment
     // Optional custom rep target after a weight jump ("sometimes the reps
     // need to drop when going up in weight") — defaults to the floor.
     const reset = parseInt(p.reset, 10);
-    return { floor, ceil, inc, reset: reset >= 1 && reset < ceil ? reset : floor };
+    return { floor, ceil, inc, reset: reset >= 1 && reset < ceil ? reset : floor, step, timed };
   }
 
   // The athlete's most recent locked log for this exercise copy, evaluated at
@@ -758,7 +765,7 @@
             const min = progressionMinReps(e, weight, logsMap);
             if (min == null || min < reps) continue; // miss / no log → hold
             if (rule.graduate && min >= rule.ceil) { weight += rule.inc; reps = rule.reset; earned += 1; }
-            else reps = Math.min(min + 1, rule.ceil);
+            else reps = Math.min(min + rule.step, rule.ceil);
           }
         }
       }
@@ -778,7 +785,7 @@
           if (min == null || min < reps) continue; // miss / no log → hold
           // Reps-only rules never jump weight — the ladder just tops out.
           if (min >= rule.ceil && !rule.repsOnly) { eff += rule.inc; reps = rule.reset; earned += 1; }
-          else reps = Math.min(min + 1, rule.ceil);
+          else reps = Math.min(min + rule.step, rule.ceil);
         }
       }
     }
@@ -818,6 +825,8 @@
   }
 
   const PROG_CEIL_VALUES = [6, 8, 10, 12, 15, 18, 20];
+  // Ceiling options (seconds) for the timed-exercise progression ladder.
+  const PROG_TIME_CEIL_VALUES = [20, 30, 40, 45, 60, 75, 90, 120];
   const PROG_REPS_ONLY = 0; // "Then add" sentinel: no weight leg, reps climb and hold at the ceiling
   const PROG_BW_CEIL_VALUES = [10, 12, 15, 20, 25, 30, 40, 50];
   const PROG_INC_VALUES = [2.5, 5, 10];
@@ -829,26 +838,31 @@
     pop.style.cssText = "position:fixed;z-index:9999;visibility:hidden";
 
     const floor = parseInt(ex.currentReps, 10) || 0;
+    const isTimed = exIsTimed(ex);
     const isBW = ex.currentWeight === "BW";
     const render = () => {
       pop.innerHTML = "";
       const p = ex.progression || {};
       const head = document.createElement("div");
       head.className = "prog-pop-head";
-      head.textContent = isBW ? "📈 Rep ladder (bodyweight)" : "📈 Auto-progression";
+      head.textContent = isTimed ? "⏱ Time progression" : isBW ? "📈 Rep ladder (bodyweight)" : "📈 Auto-progression";
       pop.appendChild(head);
 
       const hint = document.createElement("p");
       hint.className = "prog-pop-hint";
       hint.textContent = !floor
-        ? "Set prescribed reps first. They become the rep floor."
-        : isBW
-          ? (p.inc && parseInt(p.ceil, 10) !== PROG_NO_CAP
-              ? `Reps climb from ${floor} to ${p.ceil || "the cap"}. When every set hits the cap, next block adds ${p.inc} lb and reps reset to ${p.reset || floor} — bodyweight graduates to weighted, then keeps climbing.`
-              : `Reps climb from ${floor} each week they hit the target (worst set + 1), and hold at the cap. No weight is added — stays bodyweight.`)
-          : p.repsOnly
-            ? `Reps climb from ${floor} each week they hit the target (worst set + 1), and hold at the ceiling. The weight stays as written.`
-            : `Reps climb from ${floor}. When every set hits the ceiling, next week adds weight and reps reset to ${floor}. Misses hold steady.`;
+        ? (isTimed ? "Set prescribed time first. It becomes the time floor." : "Set prescribed reps first. They become the rep floor.")
+        : isTimed
+          ? (p.repsOnly
+              ? `Time climbs from ${floor}s by ${PROG_TIME_STEP}s each week they hit the target, and holds at the ceiling. The weight stays as written.`
+              : `Time climbs from ${floor}s by ${PROG_TIME_STEP}s. When every set holds the ceiling, next week adds weight and time resets to ${p.reset || floor}s. Misses hold steady.`)
+          : isBW
+            ? (p.inc && parseInt(p.ceil, 10) !== PROG_NO_CAP
+                ? `Reps climb from ${floor} to ${p.ceil || "the cap"}. When every set hits the cap, next block adds ${p.inc} lb and reps reset to ${p.reset || floor} — bodyweight graduates to weighted, then keeps climbing.`
+                : `Reps climb from ${floor} each week they hit the target (worst set + 1), and hold at the cap. No weight is added — stays bodyweight.`)
+            : p.repsOnly
+              ? `Reps climb from ${floor} each week they hit the target (worst set + 1), and hold at the ceiling. The weight stays as written.`
+              : `Reps climb from ${floor}. When every set hits the ceiling, next week adds weight and reps reset to ${floor}. Misses hold steady.`;
       pop.appendChild(hint);
 
       const section = (label, values, cur, fmt, onPick) => {
@@ -870,7 +884,44 @@
         pop.appendChild(row);
       };
 
-      if (isBW) {
+      if (isTimed) {
+        // Time ladder: the ceiling is in seconds, otherwise identical to the
+        // weighted double progression below. "Time only" holds the weight and
+        // just climbs the hold. Written weight (BW or a number) decides whether
+        // the "add weight" leg fires — progressionRule() sorts that out.
+        section("Time ceiling", PROG_TIME_CEIL_VALUES.filter((v) => v > floor), parseInt(p.ceil, 10) || null,
+          (v) => `${floor || "?"}→${v}s`,
+          (v) => { ex.progression = p.repsOnly ? { ceil: v, repsOnly: true } : { ceil: v, inc: parseFloat(p.inc) || 5 }; saveTrainer(); onChange(); render(); });
+        section("Then add", [...PROG_INC_VALUES, PROG_REPS_ONLY], p.repsOnly ? PROG_REPS_ONLY : (parseFloat(p.inc) || null),
+          (v) => (v === PROG_REPS_ONLY ? "Time only" : `+${v} lb`),
+          (v) => {
+            const ceil = parseInt(p.ceil, 10) || PROG_TIME_CEIL_VALUES.find((c) => c > floor) || (floor + 15);
+            ex.progression = v === PROG_REPS_ONLY ? { ceil, repsOnly: true } : { ceil, inc: v, ...(p.reset ? { reset: p.reset } : {}) };
+            saveTrainer(); onChange(); render();
+          });
+        // Optional: custom hold target (seconds) after a weight jump — defaults
+        // to the floor. Lets a heavier week start with a shorter hold.
+        const tLbl = document.createElement("div");
+        tLbl.className = "prog-pop-lbl";
+        tLbl.textContent = "Time after the jump (optional)";
+        pop.appendChild(tLbl);
+        const tInp = document.createElement("input");
+        tInp.type = "number";
+        tInp.min = "1";
+        tInp.className = "prog-reset-input";
+        tInp.placeholder = floor ? String(floor) : "—";
+        tInp.value = p.reset || "";
+        tInp.disabled = !floor || !p.ceil || !!p.repsOnly; // no jump → no reset time
+        tInp.addEventListener("click", (e) => e.stopPropagation());
+        tInp.addEventListener("change", () => {
+          if (!ex.progression) return;
+          const v = parseInt(tInp.value, 10);
+          if (v >= 1 && v < (parseInt(ex.progression.ceil, 10) || Infinity)) ex.progression.reset = v;
+          else { delete ex.progression.reset; tInp.value = ""; }
+          saveTrainer(); onChange();
+        });
+        pop.appendChild(tInp);
+      } else if (isBW) {
         // Rep cap. PROG_NO_CAP = climb forever ("∞"); a finite cap can graduate.
         section("Rep cap", [...PROG_BW_CEIL_VALUES.filter((v) => v > floor), PROG_NO_CAP],
           parseInt(p.ceil, 10) || null,
@@ -6832,15 +6883,18 @@
     refreshEffortBtn();
     effortBtn.addEventListener("click", (e) => { e.stopPropagation(); openEffortPicker(ex, effortBtn, refreshEffortBtn); });
 
-    // Auto-progression (double progression) — reps climb to a ceiling, then
-    // the athlete's next-week target adds weight. Computed display, see
-    // effectiveProgression(); doesn't apply to holds or BW lifts.
+    // Auto-progression (double progression) — reps (or seconds, for timed
+    // exercises) climb to a ceiling, then the athlete's next-week target adds
+    // weight. Computed display, see effectiveProgression(); not on mobility holds.
     const progBtn = document.createElement("button");
     progBtn.className = "picker-btn picker-btn-sm ex-prog-btn";
-    progBtn.title = "Auto-progression: when every set hits the rep ceiling, next week's target adds weight";
+    progBtn.title = isTimed
+      ? "Auto-progression: when every set holds the time ceiling, next week's target adds weight and time resets"
+      : "Auto-progression: when every set hits the rep ceiling, next week's target adds weight";
     const refreshProgBtn = () => {
       const r = progressionRule(ex);
       progBtn.textContent = !r ? "＋📈"
+        : r.timed ? `⏱${r.floor}→${r.ceil}s${r.repsOnly ? "" : ` +${r.inc}${r.reset !== r.floor ? "→" + r.reset + "s" : ""}`}`
         : r.bw ? `📈${r.floor}→${r.ceil === PROG_NO_CAP ? "∞" : r.ceil}${r.graduate ? ` +${r.inc}` : ""}`
         : r.repsOnly ? `📈${r.floor}→${r.ceil} reps`
         : `📈${r.floor}–${r.ceil} +${r.inc}${r.reset !== r.floor ? "→" + r.reset : ""}`;
@@ -11867,7 +11921,11 @@
     const rxMain = document.createElement("span");
     rxMain.className = "cex-rx-main";
     rxMain.textContent = rxParts.join(" · ") || "—";
-    if (prog) rxMain.title = prog.bw
+    if (prog) rxMain.title = prog.timed
+      ? ((prog.repsOnly || (prog.bw && !prog.graduate))
+          ? `Time ladder ${prog.floor}→${prog.ceil}s: hold the target on every set and next week adds ${prog.step}s, up to ${prog.ceil}s. No weight added.`
+          : `Timed double progression ${prog.floor}→${prog.ceil}s: hold the target on every set to add ${prog.step}s next week; hold ${prog.ceil}s on all sets and the weight goes up ${prog.inc} lb (time resets to ${prog.reset}s).`)
+      : prog.bw
       ? (prog.graduate
           ? `Bodyweight rep ladder: hit every set at the target and next week asks for your worst set + 1, up to ${prog.ceil}. Hit ${prog.ceil} on all sets and it graduates — add ${prog.inc} lb, reps reset to ${prog.reset}.`
           : `Rep ladder: hit every set at the target and next week asks for your worst set + 1${prog.ceil === PROG_NO_CAP ? "" : `, up to ${prog.ceil}`}. No weight added.`)
