@@ -661,6 +661,12 @@ input[type="date"] { color-scheme: dark; }
   display: flex; align-items: center; justify-content: center; font-size: 1.05rem;
   background: var(--surface-3);
 }
+.coach-row-icon svg { width: 1.05em; height: 1.05em; display: inline-block; vertical-align: middle; }
+button.coach-row-icon-btn {
+  border: 1px solid transparent; color: var(--text); cursor: pointer; padding: 0;
+  transition: border-color 0.12s, background 0.12s;
+}
+button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(--surface-2); }
 .coach-row-main { flex: 1; min-width: 0; }
 .coach-row-name { font-size: 0.92rem; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .coach-row-sub { font-size: 0.76rem; color: var(--text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.1em; }

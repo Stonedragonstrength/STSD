@@ -3069,9 +3069,19 @@
     const row = document.createElement("div");
     row.className = "coach-row";
 
-    const icon = document.createElement("div");
-    icon.className = "coach-row-icon";
-    icon.textContent = "📋";
+    const icon = document.createElement("button");
+    icon.type = "button";
+    icon.className = "coach-row-icon coach-row-icon-btn";
+    icon.title = "Choose an icon for this program";
+    setDayIcon(icon, tpl.icon || "📋");
+    icon.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openIconPicker(tpl.icon || "📋", (ic) => {
+        tpl.icon = ic;
+        setDayIcon(icon, ic);
+        saveTrainer();
+      }, icon);
+    });
 
     const main = document.createElement("div");
     main.className = "coach-row-main";
