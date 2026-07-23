@@ -4344,7 +4344,7 @@
 
   // -------- Exercise Library --------
   const EXERCISE_LIBRARY = [
-    { cat: "Chest",      ex: ["Bench Press","Incline Bench Press","Decline Bench Press","Fly","Cable Fly","Push-Up","Dips","Pec Deck","Pullover","Machine Chest Press","Incline Dumbbell Press","Floor Press","Landmine Press","Svend Press"] },
+    { cat: "Chest",      ex: ["Bench Press","Incline Bench Press","Decline Bench Press","Fly","Cable Fly","Push-Up","Dips","Pec Deck","Pullover","Machine Chest Press","Incline Dumbbell Press","Floor Press","Svend Press"] },
     { cat: "Back",       ex: ["Pull-Up","Chin-Up","Row","Pendlay Row","Lat Pulldown","T-Bar Row","Chest-Supported Row","Straight-Arm Pulldown","Seated Cable Row","Single-Arm Row","Meadows Row","Rack Pull","Inverted Row","Wide-Grip Pulldown","Back Extension"] },
     { cat: "Quads",      ex: ["Back Squat","Front Squat","Leg Press","Hack Squat","Trap Bar Deadlift","Bulgarian Split Squat","Split Squat","Lunge","Walking Lunge","Leg Extension","Step-Up","Goblet Squat","Box Squat","Reverse Lunge","Sissy Squat","Pause Squat","Pendulum Squat","Zercher Squat"] },
     { cat: "Hamstrings", ex: ["Deadlift","Romanian Deadlift","Stiff-Leg Deadlift","Lying Leg Curl","Seated Leg Curl","Leg Curl","Nordic Curl","Good Morning","Glute-Ham Raise","Single-Leg RDL","Cable Pull-Through","Kettlebell Swing"] },
@@ -4353,7 +4353,7 @@
     { cat: "Abductors",  ex: ["Hip Abduction"] },
     { cat: "Shoulders",  ex: ["Overhead Press","Overhead Raise","Lateral Raise","Front Raise","Rear Delt Fly","Arnold Press","Upright Row","Face Pull","Shrug","Seated Dumbbell Press","Cable Lateral Raise","Reverse Pec Deck","Push Press","Z Press","Landmine Press"] },
     { cat: "Biceps",     ex: ["Curl","Hammer Curl","Preacher Curl","Concentration Curl","EZ-Bar Curl","Spider Curl","Incline Curl","Cable Curl","Bayesian Curl","Reverse Curl","Zottman Curl","Drag Curl"] },
-    { cat: "Triceps",    ex: ["Tricep Pushdown","Skull Crusher","Close-Grip Bench Press","Overhead Tricep Extension","Tricep Dips","Diamond Push-Up","Kickback","Rope Pushdown","JM Press","Tate Press","Cable Overhead Extension"] },
+    { cat: "Triceps",    ex: ["Tricep Pushdown","Skull Crusher","Close-Grip Bench Press","Overhead Tricep Extension","Tricep Dips","Diamond Push-Up","Rope Pushdown","JM Press","Tate Press","Cable Overhead Extension"] },
     { cat: "Core",       ex: ["Plank","Side Plank","Crunch","Cable Crunch","Bicycle Crunch","Russian Twist","Leg Raise","Hanging Leg Raise","Ab Wheel Rollout","Dead Bug","Pallof Press","Dragon Flag","Hollow Hold","V-Up","Toes-to-Bar","Reverse Crunch","Sit-Up","Windshield Wiper","Bear Crawl","Crab Crawl","Leopard Crawl","Lizard Crawl","Spiderman Crawl","Inchworm"] },
     { cat: "Calves",     ex: ["Calf Raise","Donkey Calf Raise","Leg Press Calf Raise","Seated Calf Raise","Standing Calf Raise","Single-Leg Calf Raise","Tibialis Raise"] },
     { cat: "Carries",    ex: ["Farmer's Carry","Suitcase Carry","Overhead Carry","Rack Carry","Zercher Carry","Trap Bar Carry","Bear Hug Carry","Bottoms-Up Carry","Waiter Walk","Sandbag Carry","Yoke Walk","Front Rack Carry"] },
@@ -12727,7 +12727,6 @@
     "Machine Chest Press": null,
     "Incline Dumbbell Press": "Incline_Dumbbell_Press",
     "Floor Press": "Alternating_Floor_Press",
-    "Landmine Press": null,
     "Svend Press": "Svend_Press",
     // Back
     "Pull-Up": "Pullups",
@@ -12815,6 +12814,7 @@
     "Reverse Pec Deck": "Reverse_Machine_Flyes",
     "Push Press": "Push_Press",
     "Z Press": null,
+    "Landmine Press": null,
     // Biceps
     "Curl": "Barbell_Curl",
     "Hammer Curl": "Hammer_Curls",
@@ -12835,7 +12835,6 @@
     "Overhead Tricep Extension": "Standing_Dumbbell_Triceps_Extension",
     "Tricep Dips": "Dips_-_Triceps_Version",
     "Diamond Push-Up": "Push-Ups_-_Close_Triceps_Position",
-    "Kickback": "Glute_Kickback",
     "Rope Pushdown": "Triceps_Pushdown_-_Rope_Attachment",
     "JM Press": "JM_Press",
     "Tate Press": "Tate_Press",
