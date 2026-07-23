@@ -2649,8 +2649,6 @@
       grid.appendChild(head);
     }
     for (const c of group.clients) {
-      const weekCount = c.weeks.length;
-      const exerciseCount = c.weeks.reduce((n, w) => n + w.days.reduce((m, d) => m + d.exercises.length, 0), 0);
       const totalDays = c.weeks.reduce((n, w) => n + w.days.length, 0);
       const dc = c.importedProgress?.dayCompletions || {};
       const completedDays = c.weeks.reduce((n, w) =>
@@ -9063,70 +9061,6 @@
       if (e.name) names.add(e.name.trim());
     })));
     return Array.from(names).sort();
-  }
-
-  function openAddPRModal(side) {
-    openModal({
-      title: "Add a PR",
-      body: `
-        <label>Exercise
-          <input type="text" id="pr-name" list="${prExerciseDatalist(side)}" autocomplete="off" placeholder="e.g. Back Squat" autofocus />
-        </label>
-        <div class="grid-2">
-          <label>Weight (lb)
-            <input type="number" id="pr-weight" min="0" step="0.5" placeholder="lb" />
-          </label>
-          <label>Reps
-            <input type="number" id="pr-reps" min="0" placeholder="reps" />
-          </label>
-        </div>
-        <label>Date
-          <input type="date" id="pr-date" />
-        </label>
-        <label>Notes (optional)
-          <input type="text" id="pr-notes" placeholder="e.g. clean reps, no spotter" />
-        </label>
-        <p id="pr-error" class="error hidden"></p>`,
-      actions: [
-        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
-        { label: "Save PR", className: "btn btn-primary", onClick: () => {
-            const err = $("#pr-error");
-            const name = $("#pr-name").value.trim();
-            const weight = $("#pr-weight").value.trim();
-            const reps = $("#pr-reps").value.trim();
-            const date = $("#pr-date").value || todayISO();
-            const notes = $("#pr-notes").value.trim();
-            if (!name) { showErr(err, "Exercise name is required."); return; }
-            if (!weight && !reps) { showErr(err, "Enter at least a weight or reps."); return; }
-            const pr = makePR({ name, weight, reps, date, notes });
-            if (side === "coach") {
-              const c = currentClient();
-              if (!c.coachPRs) c.coachPRs = [];
-              ensureSessionBank(c);
-              c.coachPRs.push(pr);
-              saveTrainer();
-              closeModal();
-              renderCoachPRs();
-              const grp = $("#coach-pr-container .pr-exercise-group");
-              if (grp) celebrateElement(grp);
-            } else {
-              if (!state.clientData.progress.personalRecords) state.clientData.progress.personalRecords = [];
-              state.clientData.progress.personalRecords.push(pr);
-              saveClient();
-              closeModal();
-              renderAthletePRs();
-              const grp = $("#athlete-pr-container .pr-exercise-group");
-              if (grp) celebrateElement(grp);
-            }
-            toast("PR saved 🏆");
-          },
-        },
-      ],
-    });
-    setTimeout(() => {
-      $("#pr-date").value = todayISO();
-      $("#pr-name")?.focus();
-    }, 50);
   }
 
   // -------- Session bank (athlete side) --------

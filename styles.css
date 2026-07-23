@@ -128,9 +128,7 @@
    Repaint the bars light and flip on-primary text to white. */
 :root[data-theme="white"] .app-header { background: rgba(255, 255, 255, 0.9); }
 :root[data-theme="white"] .coach-nav { background: rgba(255, 255, 255, 0.85); }
-:root[data-theme="white"] .btn-primary,
-:root[data-theme="white"] .ov-hero-cta,
-:root[data-theme="white"] .tab-badge { color: #fff; }
+:root[data-theme="white"] .btn-primary, :root[data-theme="white"] .tab-badge { color: #fff; }
 /* (Active nav/tab pills dropped from the #fff list 2026-07-15: they're now a
    light tint with --primary-bright text, which is already dark on White.) */
 
@@ -806,7 +804,6 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   border: 1px solid rgba(var(--effort-rgb), 0.5);
   padding: 0.12em 0.45em; border-radius: 999px; white-space: nowrap; line-height: 1.4;
 }
-.effort-tag-flames { font-size: 0.9em; }
 /* Left rail on athlete exercise rows: flames stacked above the done-check. */
 .cex-left { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; flex-shrink: 0; }
 .effort-tag.flames-only { padding: 0.08em 0.32em; font-size: 0.6rem; letter-spacing: 0; gap: 0; line-height: 1; }
@@ -1035,8 +1032,6 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   margin-bottom: 1.5rem;
   box-shadow: var(--shadow-sm);
 }
-
-.row-end { display: flex; justify-content: flex-end; align-items: center; }
 .saved-flag {
   color: var(--accent);
   font-size: 0.85rem;
@@ -1160,123 +1155,14 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   margin-right: 0.5em;
 }
 .week-head-right { display: flex; align-items: center; gap: 0.5em; }
-.week-toggle { color: var(--text-soft); transition: transform 0.2s; font-size: 0.9rem; }
 .week-card.open .week-toggle { transform: rotate(180deg); }
 
 .week-body { padding: 1.2rem; display: none; }
 .week-card.open .week-body { display: block; }
-
-.week-focus-label {
-  font-weight: 600;
-  display: block;
-  font-size: 0.85rem;
-  color: var(--text-soft);
-  margin-bottom: 0.3em;
-}
-.week-focus-input { margin-bottom: 1rem; }
-
-.days-container { display: flex; flex-direction: column; gap: 0.8rem; }
-
-.day-card {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1rem;
-}
-.day-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.8rem;
-  gap: 0.5em;
-  flex-wrap: wrap;
-}
-.day-head-left { display: flex; align-items: center; gap: 0.5em; flex: 1; min-width: 200px; }
-.day-name-input {
-  font-weight: 700;
-  border: 1px solid transparent !important;
-  background: transparent !important;
-  margin: 0 !important;
-  padding: 0.3em 0.5em !important;
-  font-size: 1rem !important;
-  text-transform: none !important;
-  letter-spacing: normal !important;
-}
-.day-name-input:hover { border-color: var(--border) !important; background: var(--surface-3) !important; }
-.day-name-input:focus { border-color: var(--primary) !important; background: var(--surface-3) !important; }
-.day-head-right { display: flex; gap: 0.4em; }
-
-.exercises-list { display: flex; flex-direction: column; gap: 0.7rem; }
-
-.exercise-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1rem;
-}
-.exercise-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.7rem;
-  gap: 0.5em;
-}
-.exercise-name-input {
-  flex: 1;
-  font-weight: 700 !important;
-  font-size: 1rem !important;
-  margin: 0 !important;
-  border: 1px solid transparent !important;
-  background: transparent !important;
-  padding: 0.3em 0.5em !important;
-  text-transform: none !important;
-  letter-spacing: normal !important;
-}
-.exercise-name-input:hover { border-color: var(--border) !important; }
-.exercise-name-input:focus { border-color: var(--primary) !important; }
-
-.exercise-stats-row {
-  display: grid;
-  grid-template-columns: 1fr 1.4fr 1.4fr;
-  gap: 0.6em;
-  margin-bottom: 0.8rem;
-}
-.exercise-stats-row .stat-block {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.5em 0.7em;
-}
-.exercise-stats-row .stat-block legend {
-  display: block;
-  font-size: 0.7rem;
-  color: var(--text-soft);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-bottom: 0.3em;
-}
-.exercise-stats-row .stat-inputs {
-  display: flex;
-  align-items: center;
-  gap: 0.3em;
-}
-.exercise-stats-row .stat-inputs input {
-  margin: 0 !important;
-  padding: 0.35em 0.5em !important;
-  font-size: 0.9rem !important;
-}
 .exercise-stats-row .stat-inputs .x,
 .exercise-stats-row .stat-inputs .unit { color: var(--text-soft); font-weight: 600; font-size: 0.85rem; }
 
 @media (max-width: 600px) {
-  .exercise-stats-row { grid-template-columns: 1fr; }
-}
-
-.exercise-notes label { margin: 0; }
-.exercise-notes textarea {
-  min-height: 70px;
-  font-size: 0.9rem;
 }
 
 /* ===== Exercise Library Drawer ===== */
@@ -1654,22 +1540,6 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   border-radius: 8px; padding: 0.25em 0.7em;
 }
 
-/* Add buttons */
-.add-inline-btn {
-  background: transparent;
-  border: 1px dashed var(--border-strong);
-  color: var(--primary-bright);
-  border-radius: var(--radius);
-  padding: 0.6em 1em;
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-  width: 100%;
-  font-family: inherit;
-  transition: background 0.15s, border-color 0.15s;
-}
-.add-inline-btn:hover { background: var(--primary-soft); border-color: var(--primary); }
-
 .btn-delete-mini {
   background: transparent;
   border: 1px solid transparent;
@@ -1681,45 +1551,7 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   font-family: inherit;
 }
 .btn-delete-mini:hover { background: var(--danger-soft); color: #fca5a5; border-color: rgba(239, 68, 68, 0.4); }
-
-/* ============ Diet ============ */
-.diet-week-body { padding: 1.2rem; display: none; }
 .week-card.open .diet-week-body { display: block; }
-.diet-days {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 0.8rem;
-  margin-bottom: 1rem;
-}
-.diet-day-card {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.9rem;
-}
-.diet-day-card h5 { margin: 0 0 0.6em; font-size: 0.95rem; color: var(--primary-bright); font-weight: 700; }
-.diet-day-card .diet-inputs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.4em 0.6em;
-}
-.diet-day-card .diet-inputs label { margin: 0; font-size: 0.7rem; }
-.diet-day-card .diet-inputs input { margin-top: 0.2em; padding: 0.4em 0.6em; font-size: 0.9rem; }
-
-.diet-notes label { margin: 0; }
-
-.diet-week-totals {
-  display: flex;
-  gap: 1.5em;
-  flex-wrap: wrap;
-  padding: 0.8em 1em;
-  background: var(--primary-soft);
-  border-radius: var(--radius);
-  margin-top: 0.5em;
-  font-size: 0.9rem;
-}
-.diet-week-totals .total-label { color: var(--text-soft); }
-.diet-week-totals strong { color: var(--primary-bright); margin-left: 0.3em; font-weight: 800; }
 
 /* ============ Modal ============ */
 .modal {
@@ -1852,12 +1684,6 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   font-weight: 800;
   text-transform: uppercase;
 }
-.coach-access-footer {
-  margin-top: 1.5rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border);
-  text-align: center;
-}
 
 .login-footer-links {
   margin-top: 1.5rem;
@@ -1938,31 +1764,6 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
 .install-hint-text strong { font-size: 0.92rem; }
 .install-hint-sub { font-size: 0.76rem; color: var(--text-soft); }
 .install-hint-arrow { color: var(--primary-bright); font-weight: 800; flex-shrink: 0; font-size: 1.05rem; }
-.coach-access-link {
-  background: none;
-  border: none;
-  color: var(--muted);
-  cursor: pointer;
-  padding: 0.4em 0.6em;
-  font-size: 0.75rem;
-  font-family: inherit;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  opacity: 0.55;
-  transition: opacity 0.15s, color 0.15s;
-}
-.coach-access-link:hover {
-  opacity: 1;
-  color: var(--primary-bright);
-}
-.coach-access-link:focus-visible {
-  opacity: 1;
-  color: var(--primary-bright);
-  outline: 1px dashed var(--border-strong);
-  outline-offset: 4px;
-  border-radius: 4px;
-}
 
 .back-to-role {
   display: inline-block;
@@ -2011,38 +1812,6 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   word-break: break-all;
 }
 
-/* ============ Client portal — workout cards ============ */
-.client-day-card {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  margin-bottom: 0.8rem;
-  overflow: visible;
-}
-.client-day-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.75rem 1rem;
-  gap: 0.5em;
-  flex-wrap: wrap;
-}
-.client-day-head h4 { margin: 0; font-weight: 700; }
-.day-complete-badge {
-  background: var(--accent);
-  color: #062a1f;
-  padding: 0.25em 0.6em;
-  border-radius: 999px;
-  font-size: 0.7rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-.cex-list {
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-}
-
 .client-instructions {
   background: var(--surface-2);
   padding: 0.7em 0.9em;
@@ -2055,63 +1824,6 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   line-height: 1.5;
 }
 .client-instructions:empty { display: none; }
-
-.client-log-form {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.8em;
-}
-.client-log-form-title {
-  font-size: 0.75rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--primary-bright);
-  margin-bottom: 0.6em;
-}
-.client-log-row {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.5em;
-  margin-bottom: 0.5em;
-}
-.client-log-row label { margin: 0; font-size: 0.7rem; }
-.client-log-row input { margin-top: 0.2em; padding: 0.4em 0.6em; font-size: 0.9rem; }
-.client-log-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5em;
-  margin-top: 0.5em;
-}
-
-.client-log-history {
-  margin-top: 0.6em;
-  font-size: 0.85rem;
-  color: var(--text-soft);
-}
-.client-log-history summary {
-  cursor: pointer;
-  color: var(--primary-bright);
-  font-weight: 600;
-  padding: 0.3em 0;
-}
-.client-log-history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3em;
-  margin-top: 0.4em;
-}
-.client-log-history-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.5em;
-  background: var(--surface-2);
-  padding: 0.4em 0.7em;
-  border-radius: var(--radius);
-  font-size: 0.85rem;
-}
 .client-log-history-item .date { color: var(--muted); }
 
 /* Bodyweight form */
@@ -2188,15 +1900,6 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
 }
 .bw-metric { display: flex; justify-content: space-between; gap: 0.5em; }
 .bw-metric span { color: var(--text-soft); }
-
-/* Link to the website FAQ from the buy-sessions card / modal */
-.session-faq-link { margin: 0.9em 0 0; font-size: 0.82rem; text-align: center; }
-.session-faq-link a {
-  color: var(--primary-bright);
-  text-decoration: none;
-  font-weight: 600;
-}
-.session-faq-link a:hover { text-decoration: underline; }
 
 /* Body-composition trend charts (SVG small multiples, shared coach + athlete) */
 .bw-charts-head {
@@ -2282,19 +1985,6 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 .bw-chart-tip span { color: var(--muted); }
-
-/* Diet on client side */
-.client-diet-day {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.7em 0.9em;
-  display: grid;
-  grid-template-columns: 60px 1fr 1fr;
-  gap: 0.5em;
-  align-items: center;
-}
-.client-diet-day .day-name { font-weight: 700; color: var(--primary-bright); }
 .client-diet-day .target { color: var(--text-soft); font-size: 0.9rem; }
 .client-diet-day .target strong { color: var(--text); font-weight: 700; }
 
@@ -2306,45 +1996,8 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   padding: 1.2rem;
   margin-bottom: 1rem;
 }
-.log-exercise {
-  border-top: 1px solid var(--border);
-  padding-top: 0.8em;
-  margin-top: 0.8em;
-}
-.log-exercise:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
-.log-exercise h5 { margin: 0 0 0.4em; font-size: 0.95rem; }
-.log-table {
-  display: grid;
-  grid-template-columns: 1fr 80px 80px 80px;
-  gap: 0.3em 0.8em;
-  font-size: 0.85rem;
-  margin-top: 0.3em;
-}
-.log-table .lh {
-  font-weight: 700; color: var(--primary-bright); font-size: 0.7rem;
-  text-transform: uppercase; letter-spacing: 0.08em;
-}
 .log-table .date { color: var(--text-soft); }
 @media (max-width: 600px) {
-  .log-table { grid-template-columns: 1fr 1fr 1fr 1fr; font-size: 0.8rem; }
-}
-
-.client-feedback-block {
-  background: var(--primary-soft);
-  border: 1px solid rgba(var(--primary-rgb), 0.3);
-  border-radius: var(--radius);
-  padding: 0.9em 1em;
-  margin-bottom: 1rem;
-  white-space: pre-wrap;
-  font-size: 0.9rem;
-}
-.client-feedback-block .feedback-label {
-  font-size: 0.7rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--primary-bright);
-  margin-bottom: 0.5em;
 }
 
 /* ============ Calendar ============ */
@@ -2447,13 +2100,6 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   color: #062131; font-weight: 900; font-size: 0.95rem;
 }
 
-/* Slim horizontal stat strip */
-/* Info strip: a row of equal-height, vertically-centred KPI cards */
-/* Weekly progress bar */
-.ov-progress-top { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-soft); font-weight: 600; margin-bottom: 0.3em; }
-.ov-progress-track { height: 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; }
-.ov-progress-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--primary), var(--primary-bright)); transition: width 0.4s ease; }
-
 /* Mini widgets (bodyweight / top PR) */
 .ov-mini-row { display: flex; gap: 0.7rem; }
 .ov-mini {
@@ -2463,7 +2109,6 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
 }
 .ov-mini-top { display: flex; align-items: baseline; gap: 0.3em; }
 .ov-mini-val { font-size: 1.1rem; font-weight: 800; }
-.ov-mini-trend { font-weight: 800; color: var(--primary-bright); }
 .ov-mini-lbl { font-size: 0.66rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-top: 0.15em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---- Athlete overview: coach announcements inbox ---- */
@@ -2737,13 +2382,6 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
 .session-manage-actions { padding: 0 1em 0.4em; display: flex; gap: 0.5em; flex-wrap: wrap; }
 .session-manage > #session-bank-container,
 .session-manage > #athlete-session-container { display: block; padding: 0 1em 1em; }
-.cal-legend {
-  display: flex;
-  gap: 0.8em;
-  font-size: 0.75rem;
-  color: var(--text-soft);
-  flex-wrap: wrap;
-}
 .cal-legend .swatch {
   display: inline-block;
   width: 10px; height: 10px;
@@ -2751,13 +2389,6 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   margin-right: 0.3em;
   vertical-align: middle;
 }
-.cal-legend .sw-sched { background: var(--primary); }
-.cal-legend .sw-done { background: var(--accent); }
-.cal-legend .sw-missed { background: var(--danger); }
-.cal-legend .sw-partial {
-  background: linear-gradient(90deg, var(--primary) 50%, var(--surface-3) 50%);
-}
-.cal-legend .sw-rest { background: var(--surface-3); border: 1px solid var(--border-strong); }
 
 .cal-grid {
   display: grid;
@@ -2810,25 +2441,6 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
 }
 .cal-day.today .cal-date-num {
   color: var(--primary-bright);
-}
-.cal-day-label {
-  font-size: 0.7rem;
-  font-weight: 700;
-  color: var(--primary-bright);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  line-height: 1.2;
-  margin-bottom: 0.2em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.cal-day-status {
-  font-size: 0.7rem;
-  margin-top: auto;
-  display: flex;
-  align-items: center;
-  gap: 0.2em;
-  font-weight: 700;
 }
 .cal-day.done {
   background: var(--accent-soft);
@@ -2909,21 +2521,6 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
 /* Redemption details modal */
 .redemption-note-list { margin: 0.6em 0 0; padding-left: 1.2em; }
 .redemption-note-list li { margin-bottom: 0.35em; font-size: 0.9rem; }
-
-/* Packages tracker (per-athlete Sessions tab) */
-.pkg-track-row {
-  display: flex;
-  align-items: center;
-  gap: 0.7em;
-  padding: 0.65rem 0.5rem;
-  border-bottom: 1px solid var(--border);
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: background 0.12s;
-}
-.pkg-track-row:hover { background: var(--surface-2); }
-.pkg-track-row:last-child { border-bottom: none; }
-.pkg-track-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
 .pkg-track-info .muted { font-size: 0.78rem; }
 .pkg-track-pending {
   font-size: 0.7rem;
@@ -3244,34 +2841,6 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
 @media (max-width: 600px) {
   .cal-day { min-height: 60px; padding: 0.3em; font-size: 0.7rem; }
   .cal-date-num { font-size: 0.8rem; }
-  .cal-day-label { font-size: 0.65rem; }
-  .cal-day-status { font-size: 0.6rem; }
-}
-
-/* ============ Video / YouTube ============ */
-.exercise-video { margin-top: 0.7em; }
-.exercise-video label { margin: 0; }
-.video-url-input {
-  font-family: ui-monospace, "SF Mono", Consolas, monospace;
-  font-size: 0.85rem;
-}
-.video-status { margin-top: 0.4em; }
-.video-preview-btn {
-  text-decoration: none;
-}
-.video-warn { color: var(--warn); font-size: 0.8rem; font-weight: 500; }
-
-.client-video-row { margin-bottom: 0.7em; }
-.video-btn {
-  background: linear-gradient(180deg, var(--primary-bright), var(--primary));
-  border-color: var(--primary-hover);
-  color: #062131;
-  text-decoration: none;
-  font-weight: 700;
-}
-.video-btn:hover {
-  background: linear-gradient(180deg, var(--primary), var(--primary-hover));
-  box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
 .video-pick-list { display: flex; flex-direction: column; gap: 0.4em; }
@@ -3297,72 +2866,15 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   margin-right: 0.4em;
   font-weight: 800;
 }
-
-/* ============ Weekly progress bar ============ */
-.week-progress {
-  display: flex;
-  align-items: center;
-  gap: 0.8em;
-  margin-bottom: 1em;
-  padding: 0.7em 0.9em;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
 .week-progress.complete {
   background: var(--accent-soft);
   border-color: var(--accent);
 }
-.week-progress-label {
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: var(--text);
-  white-space: nowrap;
-  min-width: 110px;
-}
 .week-progress.complete .week-progress-label { color: var(--accent); }
-.week-progress-track {
-  flex: 1;
-  height: 10px;
-  background: var(--surface-3);
-  border-radius: 999px;
-  overflow: hidden;
-  position: relative;
-  border: 1px solid var(--border);
-}
-.week-progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--primary-bright), var(--accent));
-  transition: width 0.4s ease;
-  border-radius: 999px;
-  box-shadow: 0 0 8px var(--primary-glow);
-}
 .week-progress.complete .week-progress-fill {
   background: linear-gradient(90deg, #34d399, var(--accent));
 }
-.week-progress-pct {
-  font-size: 0.85rem;
-  font-weight: 800;
-  color: var(--primary-bright);
-  min-width: 36px;
-  text-align: right;
-}
 .week-progress.complete .week-progress-pct { color: var(--accent); }
-
-/* ============ Day check toggle ============ */
-.day-head-left-flex {
-  display: flex;
-  align-items: center;
-  gap: 0.7em;
-  flex: 1;
-  min-width: 200px;
-}
-.day-head-stats {
-  display: flex;
-  align-items: center;
-  gap: 0.6em;
-  flex-wrap: wrap;
-}
 .day-check-toggle {
   display: inline-flex;
   align-items: center;
@@ -3389,28 +2901,6 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   background: var(--accent);
   border-color: var(--accent);
   color: #062a1f;
-}
-.client-day-card.day-checked {
-  border-color: var(--accent);
-  background: linear-gradient(135deg, var(--accent-soft), var(--surface-2));
-}
-
-/* Coach side: per-week completion summary */
-.log-week-row {
-  display: flex;
-  align-items: center;
-  gap: 0.8em;
-  padding: 0.6em 0;
-  border-top: 1px solid var(--border);
-  flex-wrap: wrap;
-}
-.log-week-row:first-of-type { border-top: 0; }
-.log-week-row-label {
-  display: flex;
-  align-items: center;
-  gap: 0.5em;
-  flex-wrap: wrap;
-  min-width: 200px;
 }
 
 /* ============ Personal Records ============ */
@@ -3730,22 +3220,6 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   padding: 0.3em 0;
 }
 .long-code-fallback summary:hover { text-decoration: underline; }
-
-/* Athlete portal: invite code chip */
-.athlete-invite-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5em;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  padding: 0.3em 0.7em;
-  border-radius: 999px;
-  font-size: 0.8rem;
-  font-family: ui-monospace, "SF Mono", Consolas, monospace;
-  font-weight: 700;
-  color: var(--primary-bright);
-  letter-spacing: 0.1em;
-}
 .athlete-invite-chip .label {
   font-family: "Barlow", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   color: var(--text-soft);
@@ -3911,58 +3385,9 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   font-size: 0.7rem; color: var(--text-soft); font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.06em;
 }
-
-.pkg-size-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.6em;
-  margin: 0.6em 0 0.9em;
-}
-.pkg-size-btn {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.2em;
-  padding: 1.1em 0.6em;
-  background: var(--surface-2);
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius-lg);
-  cursor: pointer;
-  color: var(--text);
-  font-family: inherit;
-  transition: border-color 0.15s, background 0.15s, transform 0.1s, box-shadow 0.15s;
-}
-.pkg-size-btn:hover {
-  border-color: var(--primary);
-  background: var(--surface-3);
-  box-shadow: 0 4px 16px var(--primary-glow);
-  transform: translateY(-2px);
-}
-.pkg-size-btn:active { transform: scale(0.97); }
 .pkg-size-btn.selected {
   border-color: var(--primary);
   background: var(--primary-soft);
-}
-.pkg-size-num {
-  font-size: 2rem;
-  font-weight: 900;
-  color: var(--primary-bright);
-  line-height: 1;
-}
-.pkg-size-lbl {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-soft);
-}
-.pkg-size-price {
-  font-size: 0.95rem;
-  font-weight: 800;
-  color: var(--accent);
-  margin-top: 0.2em;
 }
 
 .pending-request-row,
@@ -4044,16 +3469,7 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
 /* Athlete gift-sessions card — subtle accent so it reads as a nice surprise */
 .gift-card { border-color: rgba(236, 72, 153, 0.35); }
 .gift-card h4 { color: #f472b6; }
-
-/* Single-value diet (coach edit + athlete display) */
-.diet-single {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.7em 1em;
-  margin-bottom: 1em;
-}
 @media (max-width: 480px) {
-  .diet-single { grid-template-columns: 1fr; }
 }
 .client-diet-targets {
   display: grid;
@@ -4185,13 +3601,7 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   .macro-chart { justify-content: center; }
   .macro-detail { margin-left: 0.6em; }
 }
-
-/* ============ Mobile/desktop visibility utilities ============ */
-.mobile-only { display: none; }
-.desktop-only { display: inline; }
 @media (max-width: 720px) {
-  .mobile-only { display: inline; }
-  .desktop-only { display: none; }
 }
 
 /* ============ Mobile-friendly defaults (all sizes) ============ */
@@ -4256,8 +3666,6 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
     white-space: nowrap;
     min-height: 36px;
   }
-  /* Invite chip shows in profile/progress tab instead of header on mobile */
-  .athlete-invite-chip { display: none; }
 
   /* Main content padding */
   .app-main {
@@ -4303,7 +3711,6 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
   .client-row-prog { width: 54px; }
   .client-row-prog-top .days { display: none; }
   .client-row-view { width: 30px; height: 30px; font-size: 0.9rem; }
-  .template-grid { grid-template-columns: 1fr; gap: 0.7rem; }
   .library-head-actions { width: 100%; }
   .library-head-actions .btn { flex: 1; }
   .coach-main { padding: 1rem 0.85rem 4rem; }
@@ -4342,8 +3749,6 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
   .week-info { font-size: 0.78rem; }
   .week-body { padding: 0.9rem; }
   .phase-badge { font-size: 0.6rem; padding: 0.15em 0.55em; }
-
-  .client-day-head h4, .day-head .day-name-input { font-size: 0.95rem; }
   .cex-row { padding: 0.45rem 0.75rem; min-height: 44px; }
 
   /* Day check toggle — easier to tap */
@@ -4369,17 +3774,9 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
   .cal-date-num { font-size: 0.74rem; margin-bottom: 0.1em; align-self: flex-start; }
   .cal-day .cal-day-pill { font-size: 0.5rem; padding: 0.1em 0.32em; margin-top: 0.1em; align-self: center; text-align: center; }
   .cal-day .cal-day-pill-token { font-size: 0.72rem; border: none; background: none; padding: 0; }
-  .cal-day-label { font-size: 0.55rem; line-height: 1.15; }
-  .cal-day-status { font-size: 0.55rem; }
   .cal-dow { font-size: 0.6rem; padding: 0.25em 0; letter-spacing: 0.04em; }
   .cal-title { font-size: 0.95rem; min-width: 0; flex: 1; text-align: center; }
   .cal-nav .btn { min-height: 34px; padding: 0.3em 0.65em; }
-  .cal-legend {
-    width: 100%;
-    font-size: 0.65rem;
-    gap: 0.5em;
-    justify-content: flex-start;
-  }
   .cal-legend .swatch { width: 9px; height: 9px; }
 
   /* PR list */
@@ -4390,12 +3787,7 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
   .pr-row { font-size: 0.85rem; }
 
   /* Bodyweight + diet rows */
-  .bw-entry, .client-diet-day { font-size: 0.85rem; }
-  .client-diet-day {
-    grid-template-columns: 48px 1fr 1fr;
-    padding: 0.55em 0.7em;
-    gap: 0.4em;
-  }
+  .bw-entry { font-size: 0.85rem; }
 
   /* Modal — near-full-screen sheet */
   .modal { padding: 0.5rem; align-items: flex-end; }
@@ -4430,16 +3822,6 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
     text-align: center;
   }
 
-  /* Weekly progress bar */
-  .week-progress {
-    padding: 0.6em 0.7em;
-    gap: 0.6em;
-    flex-wrap: wrap;
-  }
-  .week-progress-label { min-width: 0; font-size: 0.8rem; }
-  .week-progress-pct { font-size: 0.8rem; }
-  .week-progress-track { order: 3; width: 100%; flex-basis: 100%; }
-
   /* Log table on coach side stays 4-col responsive (already handled) */
 
 }
@@ -4447,8 +3829,6 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
 /* ============ Very small phones (≤ 340px) ============ */
 @media (max-width: 340px) {
   .cal-day { min-height: 48px; }
-  .cal-day-label { font-size: 0.5rem; }
-  .cal-legend { font-size: 0.6rem; gap: 0.4em; }
   .tab { padding: 0.65em 0.7em; font-size: 0.7rem; }
 }
 
@@ -4920,20 +4300,6 @@ input:focus, textarea:focus, select:focus {
   transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s, box-shadow 0.2s;
 }
 .coach-nav-item:hover { color: var(--text); background: var(--surface-2); }
-.coach-nav-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.5em;
-  height: 1.5em;
-  padding: 0 0.35em;
-  border-radius: 999px;
-  background: var(--danger);
-  color: #fff;
-  font-size: 0.68rem;
-  font-weight: 800;
-  line-height: 1;
-}
 .coach-nav-item:active { transform: scale(0.97); }
 /* Sleek active state: tinted ghost pill + glowing indicator (left rail on the
    desktop sidebar, underline bar on the horizontal/mobile nav) instead of the
@@ -4974,10 +4340,6 @@ input:focus, textarea:focus, select:focus {
   min-width: 0;
   width: 100%; /* mobile: .coach-layout is column-direction, so this is the cross-axis size — without it, wide descendants (e.g. unwrapped rows) stretch this wider than the viewport instead of being constrained and wrapping */
   padding: 1.2rem max(0.85rem, env(safe-area-inset-left)) 3rem max(0.85rem, env(safe-area-inset-right));
-}
-.view-sub {
-  margin: 0;
-  font-size: 0.9rem;
 }
 .view-head > div:first-child { min-width: 0; flex: 1; }
 
@@ -5052,8 +4414,6 @@ input:focus, textarea:focus, select:focus {
     line-height: 1.25;
     padding-bottom: 1px;
   }
-  /* Badge floats in the corner so it doesn't widen the cell. */
-  .coach-nav-badge { position: absolute; top: 3px; right: calc(50% - 1.5em); min-width: 1.25em; height: 1.25em; }
 }
 
 /* Tablets: the nav is still a horizontal row (not yet the sidebar) and the few
@@ -5182,151 +4542,8 @@ input:focus, textarea:focus, select:focus {
   line-height: 1.5;
 }
 .rec-card .rec-ex-list strong { color: var(--text); font-weight: 600; }
-
-.template-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 1rem;
-}
-.template-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 1.1rem;
-  cursor: pointer;
-  position: relative;
-  overflow: hidden;
-  transition: border-color 0.15s, transform 0.15s, box-shadow 0.2s;
-  animation: workoutCardIn 0.45s cubic-bezier(0.22, 0.85, 0.34, 1) both;
-}
-.template-card::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(115deg, transparent 35%, rgba(var(--primary-bright-rgb), 0.13) 50%, transparent 65%);
-  transform: translateX(-110%);
-  transition: transform 0.7s cubic-bezier(0.22, 0.85, 0.34, 1);
-  pointer-events: none;
-}
-.template-card:hover {
-  border-color: var(--primary);
-  transform: translateY(-3px);
-  box-shadow: 0 14px 28px rgba(var(--primary-rgb), 0.22), 0 0 0 1px rgba(var(--primary-bright-rgb), 0.3);
-}
-.template-card:hover::before { transform: translateX(120%); }
-.template-card-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.7em;
-  margin-bottom: 0.5em;
-}
-.template-card-icon {
-  font-size: 1.7rem;
-  width: 44px; height: 44px;
-  display: inline-flex; align-items: center; justify-content: center;
-  border-radius: 12px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.template-card h3 {
-  margin: 0;
-  font-size: 1.05rem;
-  font-weight: 800;
-}
-.template-card .template-focus {
-  color: var(--text-soft);
-  font-size: 0.85rem;
-  margin: 0.15em 0 0;
-}
-.template-card .template-pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35em;
-  margin-top: 0.85em;
-  padding-top: 0.85em;
-  border-top: 1px solid var(--border);
-}
-.template-card .template-actions {
-  display: flex;
-  gap: 0.4em;
-  margin-top: 0.75em;
-  flex-wrap: wrap;
-}
 .template-card .template-actions .btn { flex: 1; min-width: 0; }
-
-/* Template editor modal */
-.template-editor-section { margin-bottom: 1rem; }
-.template-editor-section h4 {
-  margin: 0 0 0.5em;
-  font-size: 0.75rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--primary-bright);
-}
-.template-exercises {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-.template-ex-row {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.7em;
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.4em;
-}
-.template-ex-row .row-grid {
-  display: grid;
-  grid-template-columns: 60px 80px 100px auto;
-  gap: 0.4em;
-  align-items: center;
-}
-.template-ex-row .row-grid input { padding: 0.4em 0.55em; font-size: 0.85rem; margin: 0; }
-.template-ex-row label { margin: 0; font-size: 0.7rem; }
-.template-ex-row .row-name input { font-weight: 700; }
-.template-ex-row .row-delete {
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--muted);
-  cursor: pointer;
-  padding: 0.35em 0.55em;
-  border-radius: var(--radius);
-  font-family: inherit;
-  justify-self: end;
-}
-.template-ex-row .row-delete:hover { background: var(--danger-soft); color: #fca5a5; }
 @media (max-width: 600px) {
-  .template-ex-row .row-grid { grid-template-columns: 1fr; }
-}
-
-/* Day-card load-template button on coach program editor */
-.day-tools {
-  display: flex;
-  gap: 0.4em;
-  flex-wrap: wrap;
-  margin-bottom: 0.7em;
-}
-.btn-load-template {
-  background: var(--primary-soft);
-  border: 1px solid rgba(var(--primary-bright-rgb), 0.35);
-  color: var(--primary-bright);
-  padding: 0.35em 0.7em;
-  border-radius: 999px;
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  cursor: pointer;
-  font-family: inherit;
-  transition: background 0.15s, color 0.15s;
-}
-.btn-load-template:hover {
-  background: rgba(var(--primary-bright-rgb), 0.2);
-  color: var(--primary-bright);
 }
 
 /* ============================================================
@@ -5544,9 +4761,6 @@ input:focus, textarea:focus, select:focus {
   border: 1px solid var(--border);
   white-space: nowrap;
 }
-.meta-done   { background: var(--accent-soft); color: var(--accent); border-color: rgba(16, 185, 129, 0.4); }
-.meta-progress { background: var(--primary-soft); color: var(--primary-bright); border-color: rgba(var(--primary-bright-rgb), 0.35); }
-.meta-todo   { background: rgba(245, 158, 11, 0.13); color: var(--warn); border-color: rgba(245, 158, 11, 0.3); }
 .workout-card-chevron {
   font-size: 1.6rem;
   color: var(--muted);
@@ -5557,30 +4771,6 @@ input:focus, textarea:focus, select:focus {
   color: var(--primary-bright);
   transform: translateX(4px);
 }
-
-/* "See all weeks" fallback collapsed by default — keeps existing UI accessible */
-.all-weeks-fallback {
-  margin-top: 1.5rem;
-  border-top: 1px dashed var(--border-strong);
-  padding-top: 1rem;
-}
-.all-weeks-fallback > summary {
-  list-style: none;
-  cursor: pointer;
-  color: var(--text-soft);
-  font-size: 0.85rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 0.5em 0;
-}
-.all-weeks-fallback > summary::-webkit-details-marker { display: none; }
-.all-weeks-fallback > summary::before {
-  content: "▸ ";
-  display: inline-block;
-  transition: transform 0.2s;
-}
-.all-weeks-fallback[open] > summary::before { content: "▾ "; }
 
 /* ---- Workout detail view ---- */
 .workout-detail { animation: detailIn 0.35s cubic-bezier(0.22, 0.85, 0.34, 1); }
@@ -5970,12 +5160,6 @@ input:focus, textarea:focus, select:focus {
   gap: 0.45rem;
 }
 
-.cex-goal {
-  font-size: 0.75rem;
-  color: var(--accent);
-  font-weight: 600;
-}
-
 .cex-coach-note {
   font-size: 0.78rem;
   color: var(--text-soft);
@@ -6333,27 +5517,6 @@ input:focus, textarea:focus, select:focus {
   .week-body { padding: 0.6rem; }
   .client-day-card .cex-set-col { width: 36px; }
 }
-.cex-log-bottom {
-  display: flex;
-  align-items: flex-end;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-.cex-log-bottom .cex-field { flex: 1; }
-.cex-log-btn { flex-shrink: 0; white-space: nowrap; }
-
-.cex-field {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.cex-field > span {
-  font-size: 0.6rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--muted);
-}
 .cex-set-col .cex-input {
   width: 100%;
   background: var(--surface);
@@ -6566,26 +5729,6 @@ input:focus, textarea:focus, select:focus {
 }
 .fc-coach-reply:focus { outline: none; border-color: var(--primary); }
 .fc-dash-row { display: flex; flex-wrap: wrap; gap: 0.4em; margin-top: 0.3em; }
-
-/* ===== Day note coach view ===== */
-.day-note-coach-row {
-  padding: 0.55rem 0;
-  border-bottom: 1px solid var(--border);
-}
-.day-note-coach-row:last-child { border-bottom: none; }
-.day-note-coach-day {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
-  margin-bottom: 0.2em;
-}
-.day-note-coach-text {
-  font-size: 0.88rem;
-  color: var(--text);
-  white-space: pre-wrap;
-}
 
 /* Mobile tweaks */
 @media (max-width: 720px) {
@@ -6923,41 +6066,6 @@ input:focus, textarea:focus, select:focus {
   flex-direction: column;
   gap: 0.55rem;
 }
-.program-tpl-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--warn); /* in-progress accent; ready overrides to green */
-  border-radius: var(--radius-lg);
-  padding: 1.1rem 1.3rem;
-  display: flex;
-  align-items: center;
-  gap: 1.1rem;
-  box-shadow: var(--shadow-sm);
-  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
-}
-.program-tpl-card:hover {
-  border-top-color: var(--border-strong);
-  border-right-color: var(--border-strong);
-  border-bottom-color: var(--border-strong);
-  box-shadow: 0 8px 24px rgba(var(--primary-rgb), 0.16);
-  transform: translateY(-2px);
-}
-.program-tpl-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-.program-tpl-card h3 {
-  margin: 0;
-  font-size: 1.05rem;
-  font-weight: 800;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .program-tpl-card .desc {
   color: var(--text-soft);
   font-size: 0.82rem;
@@ -6966,54 +6074,12 @@ input:focus, textarea:focus, select:focus {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.program-tpl-meta { display: flex; flex-wrap: wrap; gap: 0.4em; margin-top: 0.1rem; }
-.tpl-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3em;
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: var(--text-soft);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0.2em 0.62em;
-}
-.program-tpl-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.45em;
-  flex-shrink: 0;
-}
 .program-tpl-actions .btn { font-size: 0.78rem; padding: 0.5em 0.9em; }
 @media (max-width: 600px) {
-  /* Stack the card so the program name reads in full up top, then the meta
-     chips, then the action buttons along the bottom. */
-  .program-tpl-card {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.8rem;
-    padding: 1rem 1.05rem;
-  }
-  .program-tpl-card h3 {
-    white-space: normal;
-    overflow: visible;
-    text-overflow: clip;
-    font-size: 1.05rem;
-    line-height: 1.25;
-  }
   .program-tpl-card .desc {
     white-space: normal;
     overflow: visible;
     text-overflow: clip;
-  }
-  .program-tpl-actions {
-    width: 100%;
-    flex-wrap: wrap;
-    justify-content: flex-start;
-    gap: 0.5em;
-    padding-top: 0.15rem;
-    border-top: 1px solid var(--border);
   }
   .program-tpl-actions .btn { flex: 1 1 auto; padding: 0.6em 0.7em; font-size: 0.8rem; }
   .program-tpl-actions .btn-delete-mini { flex: 0 0 auto; }
@@ -7040,7 +6106,6 @@ input:focus, textarea:focus, select:focus {
   padding: 0.05em 0.55em;
 }
 .program-section-empty { font-size: 0.8rem; padding: 0.2rem 0 0.4rem; }
-.program-template-grid-inner { display: flex; flex-direction: column; gap: 0.8rem; }
 /* Ready programs get a green left accent so the two buckets read at a glance */
 .program-tpl-card.is-ready { border-left-color: #22c55e; }
 #btn-toggle-program-status.is-ready { color: #22c55e; border-color: rgba(34,197,94,0.5); }
@@ -7134,21 +6199,6 @@ input:focus, textarea:focus, select:focus {
   transition: color 0.15s, background 0.15s;
 }
 .btn-icon-mini:hover { color: var(--danger); background: rgba(239,68,68,0.1); }
-
-/* Focus bar */
-.week-focus-bar { padding: 0.5rem 1.2rem; border-bottom: 1px solid var(--border); }
-.week-focus-compact {
-  width: 100%;
-  background: transparent;
-  border: none;
-  color: var(--text-soft);
-  font-size: 0.83rem;
-  font-family: inherit;
-  padding: 0;
-  outline: none;
-}
-.week-focus-compact::placeholder { color: var(--muted); }
-.week-focus-compact:focus { color: var(--text); }
 
 /* Day tab strip */
 .day-tab-strip {
@@ -7372,7 +6422,6 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   flex-shrink: 0;
   user-select: none;
 }
-.ex-arrow { font-size: 0.85rem; color: var(--primary); opacity: 0.7; }
 
 .ex-expand-btn, .ex-del-btn {
   flex-shrink: 0;
@@ -7428,10 +6477,6 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   user-select: none;
 }
 .ex-kind-toggle input { accent-color: var(--primary); cursor: pointer; }
-.add-ex-btn {
-  margin: 0.5rem 1rem;
-  align-self: flex-start;
-}
 
 .ex-metrics-group {
   display: flex;
@@ -7957,15 +7002,6 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   color: var(--primary);
 }
 
-.library-section-title {
-  font-size: 0.75rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--muted);
-  margin: 0 0 0.75rem;
-}
-
 /* Slim drop hint shown below existing exercises */
 .ex-list-drop-hint {
   padding: 0.45rem 1rem;
@@ -8037,11 +7073,9 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 /* Monthly recap */
 .ov-recap-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6em; margin-bottom: 0.6em; }
 .ov-recap-head h4 { margin: 0; }
-.ov-recap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 0.5rem; }
-.ov-recap-stat { display: flex; flex-direction: column; align-items: center; padding: 0.5em 0.2em; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
 .ov-recap-stat .num { font-size: 1.25rem; font-weight: 800; color: var(--primary-bright); }
 .ov-recap-stat .lbl { font-size: 0.68rem; color: var(--text-soft); }
-.ov-recap, .ov-trophies { margin-top: 0.85rem; }
+.ov-trophies { margin-top: 0.85rem; }
 
 /* Lifetime totals as a racing-game style slanted stats list */
 .ov-stats-list { display: flex; flex-direction: column; gap: 0.3rem; }
@@ -8496,15 +7530,12 @@ body.live-log-mode #screen-client .header-right { display: none; }
 .bulletin-item { padding-left: calc(0.75rem + 3px); }
 
 /* -------- 4 · Progress: plate-segment meters + gradient numerals --------- */
-.week-progress-track,
 .client-row-prog .progress-track {
   border-radius: 4px;
   -webkit-mask: repeating-linear-gradient(90deg, #000 0, #000 calc(10% - 3px), transparent calc(10% - 3px), transparent 10%);
   mask: repeating-linear-gradient(90deg, #000 0, #000 calc(10% - 3px), transparent calc(10% - 3px), transparent 10%);
 }
-.week-progress-track { height: 12px; }
 .client-row-prog .progress-track { height: 6px; }
-.week-progress-fill,
 .client-row-prog .progress-fill {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
