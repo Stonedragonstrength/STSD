@@ -5267,9 +5267,13 @@
           <button type="button" class="ex-cat-move-btn" data-move="1" data-cat="${escapeHtml(cat)}" title="Move category down"${idx === cats.length - 1 ? " disabled" : ""}>↓</button>
         </span>`}
       </div>`;
-      if (open) html += items.map((name) =>
-        `<div class="ex-lib-item" draggable="true" data-exname="${escapeHtml(name)}">${escapeHtml(name)}</div>`
-      ).join("");
+      if (open) html += items.map((name) => {
+        const entry = demoEntryForName(name);
+        const thumb = entry
+          ? `<img class="ex-lib-thumb" src="${demoImgUrl(entry.i, 0)}" alt="" loading="lazy" draggable="false" />`
+          : `<span class="ex-lib-thumb ex-lib-thumb-none">💪</span>`;
+        return `<div class="ex-lib-item" draggable="true" data-exname="${escapeHtml(name)}">${thumb}<span class="ex-lib-item-name">${escapeHtml(name)}</span></div>`;
+      }).join("");
     });
     body.innerHTML = html || '<div class="ex-lib-empty">No exercises found.</div>';
     body.querySelectorAll(".ex-cat-header").forEach((h) => {
@@ -5384,6 +5388,13 @@
       items.forEach((name) => {
         const item = document.createElement("div");
         item.className = "ex-lib-sb-item" + (showingHidden ? " is-hidden-row" : "");
+
+        const entry = demoEntryForName(name);
+        const thumb = document.createElement(entry ? "img" : "span");
+        thumb.className = "ex-lib-thumb" + (entry ? "" : " ex-lib-thumb-none");
+        if (entry) { thumb.src = demoImgUrl(entry.i, 0); thumb.loading = "lazy"; thumb.alt = ""; thumb.draggable = false; }
+        else thumb.textContent = "💪";
+        item.appendChild(thumb);
 
         const label = document.createElement("span");
         label.className = "ex-lib-sb-item-name";
@@ -12694,12 +12705,276 @@
     return hitEntry;
   }
 
+  // Curated name -> demo id for every built-in library exercise. Generated once
+  // by running findDemoByName over the whole library, then hand-audited: wrong
+  // fuzzy picks were repointed and no-matches that exist under a different
+  // dataset name were recovered. A `null` value means "checked, the dataset has
+  // no good demo" — so we show nothing rather than let the fuzzy matcher guess a
+  // wrong one. Names NOT in here (athlete customs, one-offs) still fall through
+  // to findDemoByName. Keys are the exact library names; edit a line to fix a
+  // match. Regenerate with tools/genmap (see scratchpad notes in the PR).
+  const LIBRARY_DEMO_MAP = {
+    // Chest
+    "Bench Press": "Barbell_Bench_Press_-_Medium_Grip",
+    "Incline Bench Press": "Barbell_Incline_Bench_Press_-_Medium_Grip",
+    "Decline Bench Press": "Decline_Barbell_Bench_Press",
+    "Fly": "Dumbbell_Flyes",
+    "Cable Fly": "Cable_Crossover",
+    "Push-Up": "Pushups",
+    "Dips": "Dips_-_Chest_Version",
+    "Pec Deck": "Butterfly",
+    "Pullover": "Straight-Arm_Dumbbell_Pullover",
+    "Machine Chest Press": null,
+    "Incline Dumbbell Press": "Incline_Dumbbell_Press",
+    "Floor Press": "Alternating_Floor_Press",
+    "Landmine Press": null,
+    "Svend Press": "Svend_Press",
+    // Back
+    "Pull-Up": "Pullups",
+    "Chin-Up": "Chin-Up",
+    "Row": "Bent_Over_Barbell_Row",
+    "Pendlay Row": "Bent_Over_Barbell_Row",
+    "Lat Pulldown": "Wide-Grip_Lat_Pulldown",
+    "T-Bar Row": "Lying_T-Bar_Row",
+    "Chest-Supported Row": null,
+    "Straight-Arm Pulldown": "Straight-Arm_Pulldown",
+    "Seated Cable Row": "Seated_Cable_Rows",
+    "Single-Arm Row": "One-Arm_Dumbbell_Row",
+    "Meadows Row": null,
+    "Rack Pull": "Rack_Pulls",
+    "Inverted Row": "Inverted_Row",
+    "Wide-Grip Pulldown": "Wide-Grip_Lat_Pulldown",
+    "Back Extension": "Hyperextensions_Back_Extensions",
+    // Quads
+    "Back Squat": "Barbell_Squat",
+    "Front Squat": "Front_Squat_Clean_Grip",
+    "Leg Press": "Leg_Press",
+    "Hack Squat": "Hack_Squat",
+    "Trap Bar Deadlift": "Trap_Bar_Deadlift",
+    "Bulgarian Split Squat": "Split_Squats",
+    "Split Squat": "Split_Squats",
+    "Lunge": "Barbell_Lunge",
+    "Walking Lunge": "Bodyweight_Walking_Lunge",
+    "Leg Extension": "Leg_Extensions",
+    "Step-Up": "Barbell_Step_Ups",
+    "Goblet Squat": "Goblet_Squat",
+    "Box Squat": "Box_Squat",
+    "Reverse Lunge": "Crossover_Reverse_Lunge",
+    "Sissy Squat": "Weighted_Sissy_Squat",
+    "Pause Squat": "Barbell_Squat",
+    "Pendulum Squat": null,
+    "Zercher Squat": "Zercher_Squats",
+    // Hamstrings
+    "Deadlift": "Barbell_Deadlift",
+    "Romanian Deadlift": "Romanian_Deadlift",
+    "Stiff-Leg Deadlift": "Stiff-Legged_Barbell_Deadlift",
+    "Lying Leg Curl": "Lying_Leg_Curls",
+    "Seated Leg Curl": "Seated_Leg_Curl",
+    "Leg Curl": "Lying_Leg_Curls",
+    "Nordic Curl": null,
+    "Good Morning": "Good_Morning",
+    "Glute-Ham Raise": "Glute_Ham_Raise",
+    "Single-Leg RDL": null,
+    "Cable Pull-Through": "Pull_Through",
+    "Kettlebell Swing": "One-Arm_Kettlebell_Swings",
+    // Glutes
+    "Hip Thrust": "Barbell_Hip_Thrust",
+    "Glute Bridge": "Barbell_Glute_Bridge",
+    "Kickback": "Glute_Kickback",
+    "Sumo Deadlift": "Sumo_Deadlift",
+    "Abductor": "Thigh_Abductor",
+    "Lateral Walk": null,
+    "Donkey Kick": null,
+    "Pull-Through": "Pull_Through",
+    "Frog Pump": null,
+    "B-Stance Hip Thrust": "Barbell_Hip_Thrust",
+    "Curtsy Lunge": null,
+    "Cable Kickback": "One-Legged_Cable_Kickback",
+    // Adductors
+    "Hip Adduction": "Band_Hip_Adductions",
+    "Copenhagen Plank": null,
+    "Lateral Lunge": null,
+    "Cossack Squat": null,
+    "Sumo Squat": null,
+    "Side-Lying Adduction": null,
+    "Adductor Machine": "Thigh_Adductor",
+    // Abductors
+    "Hip Abduction": "Thigh_Abductor",
+    // Shoulders
+    "Overhead Press": "Standing_Military_Press",
+    "Overhead Raise": null,
+    "Lateral Raise": "Side_Lateral_Raise",
+    "Front Raise": "Front_Cable_Raise",
+    "Rear Delt Fly": "Cable_Rear_Delt_Fly",
+    "Arnold Press": "Arnold_Dumbbell_Press",
+    "Upright Row": "Upright_Barbell_Row",
+    "Face Pull": "Face_Pull",
+    "Shrug": "Barbell_Shrug",
+    "Seated Dumbbell Press": "Seated_Dumbbell_Press",
+    "Cable Lateral Raise": "Cable_Seated_Lateral_Raise",
+    "Reverse Pec Deck": "Reverse_Machine_Flyes",
+    "Push Press": "Push_Press",
+    "Z Press": null,
+    // Biceps
+    "Curl": "Barbell_Curl",
+    "Hammer Curl": "Hammer_Curls",
+    "Preacher Curl": "Preacher_Curl",
+    "Concentration Curl": "Concentration_Curls",
+    "EZ-Bar Curl": "EZ-Bar_Curl",
+    "Spider Curl": "Spider_Curl",
+    "Incline Curl": "Incline_Dumbbell_Curl",
+    "Cable Curl": "Cable_Preacher_Curl",
+    "Bayesian Curl": null,
+    "Reverse Curl": "Reverse_Barbell_Curl",
+    "Zottman Curl": "Zottman_Curl",
+    "Drag Curl": "Drag_Curl",
+    // Triceps
+    "Tricep Pushdown": "Triceps_Pushdown",
+    "Skull Crusher": "Band_Skull_Crusher",
+    "Close-Grip Bench Press": "Close-Grip_Barbell_Bench_Press",
+    "Overhead Tricep Extension": "Standing_Dumbbell_Triceps_Extension",
+    "Tricep Dips": "Dips_-_Triceps_Version",
+    "Diamond Push-Up": "Push-Ups_-_Close_Triceps_Position",
+    "Kickback": "Glute_Kickback",
+    "Rope Pushdown": "Triceps_Pushdown_-_Rope_Attachment",
+    "JM Press": "JM_Press",
+    "Tate Press": "Tate_Press",
+    "Cable Overhead Extension": "Cable_Rope_Overhead_Triceps_Extension",
+    // Core
+    "Plank": "Plank",
+    "Side Plank": "Plank",
+    "Crunch": "Crunches",
+    "Cable Crunch": "Cable_Crunch",
+    "Bicycle Crunch": "Air_Bike",
+    "Russian Twist": "Russian_Twist",
+    "Leg Raise": "Side_Leg_Raises",
+    "Hanging Leg Raise": "Hanging_Leg_Raise",
+    "Ab Wheel Rollout": "Ab_Roller",
+    "Dead Bug": "Dead_Bug",
+    "Pallof Press": "Pallof_Press",
+    "Dragon Flag": null,
+    "Hollow Hold": null,
+    "V-Up": null,
+    "Toes-to-Bar": null,
+    "Reverse Crunch": "Reverse_Crunch",
+    "Sit-Up": "Sit-Up",
+    "Windshield Wiper": null,
+    "Bear Crawl": null,
+    "Crab Crawl": null,
+    "Leopard Crawl": null,
+    "Lizard Crawl": null,
+    "Spiderman Crawl": "Spider_Crawl",
+    "Inchworm": "Inchworm",
+    // Calves
+    "Calf Raise": "Standing_Calf_Raises",
+    "Donkey Calf Raise": "Donkey_Calf_Raises",
+    "Leg Press Calf Raise": "Calf_Press_On_The_Leg_Press_Machine",
+    "Seated Calf Raise": "Seated_Calf_Raise",
+    "Standing Calf Raise": "Standing_Calf_Raises",
+    "Single-Leg Calf Raise": "Dumbbell_Seated_One-Leg_Calf_Raise",
+    "Tibialis Raise": null,
+    // Carries
+    "Farmer's Carry": "Farmers_Walk",
+    "Suitcase Carry": null,
+    "Overhead Carry": null,
+    "Rack Carry": null,
+    "Zercher Carry": null,
+    "Trap Bar Carry": null,
+    "Bear Hug Carry": null,
+    "Bottoms-Up Carry": null,
+    "Waiter Walk": null,
+    "Sandbag Carry": null,
+    "Yoke Walk": "Yoke_Walk",
+    "Front Rack Carry": null,
+    // Cardio
+    "Treadmill Run": "Running_Treadmill",
+    "Stationary Bike": "Recumbent_Bike",
+    "Rowing": "Rowing_Stationary",
+    "Jump Rope": "Rope_Jumping",
+    "Sled Push": "Sled_Push",
+    "Battle Ropes": null,
+    "Farmer's Walk": "Farmers_Walk",
+    "Assault Bike": "Air_Bike",
+    "Stair Climber": "Stairmaster",
+    "Sprint Intervals": null,
+    "Incline Walk": "Walking_Treadmill",
+    "Ski Erg": null,
+    "Box Jump": "Box_Jump_Multiple_Response",
+    "Burpee": null,
+    "High Knees": null,
+    // Bodyweight
+    "Superman": "Superman",
+    // Speed/Agility
+    "Ladder Two-Feet Run": null,
+    "Ladder Icky Shuffle": null,
+    "Ladder In-In-Out-Out": null,
+    "Ladder Lateral Shuffle": null,
+    "Ladder Ali Shuffle": null,
+    "Ladder Crossover": null,
+    "Ladder Hopscotch": null,
+    "Ladder Single-Leg Hop": "Single-Leg_Hop_Progression",
+    "Ladder Snake": null,
+    "A-Skip": null,
+    "B-Skip": null,
+    "Carioca": "Carioca_Quick_Step",
+    "5-10-5 Pro Agility": null,
+    "T-Drill": null,
+    "Box Drill": null,
+    "L-Drill": null,
+    "Cone Weave": null,
+    "Shuttle Run": null,
+    "Lateral Bound": "Lateral_Bound",
+    "Skater Bound": null,
+    "Broad Jump Series": null,
+    "Dot Drill": null,
+    "Mini-Hurdle Hops": "Hurdle_Hops",
+    "Wall Drive": null,
+    "Falling Start": null,
+    "Acceleration Sprint": null,
+    "Flying Sprint": null,
+    "Backpedal Drill": null,
+    "Resisted Sprint Drill": null,
+    "Reaction Sprint": null,
+    // Mobility & Stretching
+    "Couch Stretch": null,
+    "90/90 Hip Stretch": null,
+    "World's Greatest Stretch": "Worlds_Greatest_Stretch",
+    "Cat-Cow": "Cat_Stretch",
+    "Hip Flexor Stretch": "Intermediate_Hip_Flexor_and_Quad_Stretch",
+    "Hamstring Stretch": "Hamstring_Stretch",
+    "Pigeon Stretch": null,
+    "Thoracic Rotation": null,
+    "Child's Pose": "Childs_Pose",
+    "Downward Dog": null,
+    "Ankle Dorsiflexion": null,
+    "Shoulder Dislocates": null,
+    "Doorway Pec Stretch": null,
+    "Deep Squat Hold": null,
+    "Cossack Stretch": null,
+    "Seated Forward Fold": null,
+    "Butterfly Stretch": null,
+    "Standing Quad Stretch": "Standing_Elevated_Quad_Stretch",
+    "Wrist Flexor Stretch": null,
+    "Neck Stretch": "Side_Neck_Stretch",
+  };
+
+  // Curated lookup by exercise name: the map is authoritative for built-in
+  // library lifts (including an explicit "no demo" as null); anything else
+  // falls through to the fuzzy matcher.
+  function demoEntryForName(name) {
+    if (Object.prototype.hasOwnProperty.call(LIBRARY_DEMO_MAP, name)) {
+      const id = LIBRARY_DEMO_MAP[name];
+      return id ? (demoIndex().byId.get(id) || null) : null;
+    }
+    return findDemoByName(name);
+  }
+
   // "none" = the coach explicitly turned the demo off for this exercise.
   function demoForExercise(ex) {
     if (!ex) return null;
     if (ex.demoId === "none") return null;
     if (ex.demoId) return demoIndex().byId.get(ex.demoId) || null;
-    return findDemoByName(ex.name);
+    return demoEntryForName(ex.name);
   }
 
   function demoSearch(query, limit = 40) {
@@ -12809,7 +13084,7 @@
   // Coach-side: confirm or override which demo an exercise is matched to.
   // Auto-matching is name-based and free text, so there's always an escape hatch.
   function openDemoPicker(ex, onDone) {
-    const auto = findDemoByName(ex.name);
+    const auto = demoEntryForName(ex.name);
     const resultsHtml = (list) => list.length
       ? list.map((e) => `
           <button type="button" class="demo-pick" data-demo-id="${escapeHtml(e.i)}">

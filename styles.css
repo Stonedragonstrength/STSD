@@ -1424,6 +1424,25 @@ input[type="date"] { color-scheme: dark; }
 .ex-lib-item:hover { background: var(--surface-2); }
 .ex-lib-item:active { cursor: grabbing; background: var(--surface-3); }
 .ex-lib-item::before { content: "⠿"; color: var(--muted); font-size: 0.75rem; flex-shrink: 0; }
+.ex-lib-item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Demo still shown next to a library exercise (both the modal and sidebar picker). */
+.ex-lib-thumb {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.ex-lib-thumb-none {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  opacity: 0.4;
+  filter: grayscale(1);
+}
 .ex-lib-empty { padding: 1.5rem 1rem; color: var(--muted); font-size: 0.9rem; text-align: center; }
 .ex-library-hint {
   padding: 0.6rem 1rem;
@@ -7488,6 +7507,7 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.ex-lib-sb-item .ex-lib-thumb { width: 26px; height: 26px; border-radius: 5px; }
 .ex-lib-sb-item:hover { background: var(--primary-soft); color: var(--text); }
 .ex-lib-sb-item:active { cursor: grabbing; }
 .ex-lib-sb-item.dragging-active { opacity: 0.4; }
