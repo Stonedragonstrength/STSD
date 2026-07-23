@@ -462,8 +462,8 @@
   const EXERCISE_MODIFIERS = [
     { group: "Unilateral",  tags: ["1A", "1L"] },
     { group: "Alternation", tags: ["Alternating", "Non-Alternating"] },
-    { group: "Equipment",   tags: ["BB", "DB", "DBs", "KB", "EZ Bar", "Cable", "Rope", "Wide Bar", "Band", "Machine", "Landmine", "Bench"], multi: true },
-    { group: "Position",    tags: ["Incline", "Decline", "Elevated", "Seated", "Standing", "Kneeling", "Raised", "Supported"] },
+    { group: "Equipment",   tags: ["BB", "DB", "DBs", "KB", "EZ Bar", "Cable", "Rope", "Wide Bar", "Band", "Machine", "Landmine", "Bench", "Bench Assisted"], multi: true },
+    { group: "Position",    tags: ["Incline", "Decline", "Elevated", "Seated", "Standing", "Kneeling", "Raised", "Supported", "Wide", "Lying"] },
     { group: "Grip",        tags: ["Supinated", "Neutral", "Pronated"] },
     { group: "Style",       tags: ["Pause", "Tempo", "Explosive", "Isometric"] },
     { group: "Hold",        tags: ["1S", "2S", "3S", "4S", "5S"] },
@@ -542,6 +542,7 @@
     "Band":      { color: "#4ade80", bg: "rgba(74,222,128,0.18)"  },
     "Machine":   { color: "#facc15", bg: "rgba(250,204,21,0.18)"  },
     "Landmine":  { color: "#d97706", bg: "rgba(217,119,6,0.18)"   },
+    "Bench Assisted": { color: "#7dd3fc", bg: "rgba(125,211,252,0.18)" },
     "Incline":   { color: "#fbbf24", bg: "rgba(251,191,36,0.18)"  },
     "Decline":   { color: "#f97316", bg: "rgba(249,115,22,0.18)"  },
     "Elevated":  { color: "#22d3ee", bg: "rgba(34,211,238,0.18)"  },
@@ -549,6 +550,8 @@
     "Standing":  { color: "#e879f9", bg: "rgba(232,121,249,0.18)" },
     "Kneeling":  { color: "#f43f5e", bg: "rgba(244,63,94,0.18)"   },
     "Raised":    { color: "#f472b6", bg: "rgba(244,114,182,0.18)" },
+    "Wide":      { color: "#2dd4bf", bg: "rgba(45,212,191,0.18)"  },
+    "Lying":     { color: "#c4b5fd", bg: "rgba(196,181,253,0.18)" },
     "Supinated": { color: "#5eead4", bg: "rgba(94,234,212,0.18)"  },
     "Neutral":   { color: "#cbd5e1", bg: "rgba(203,213,225,0.18)" },
     "Pronated":  { color: "#fda4af", bg: "rgba(253,164,175,0.18)" },
@@ -561,6 +564,7 @@
     "3S":        { color: "#38bdf8", bg: "rgba(56,189,248,0.18)"  },
     "4S":        { color: "#38bdf8", bg: "rgba(56,189,248,0.18)"  },
     "5S":        { color: "#38bdf8", bg: "rgba(56,189,248,0.18)"  },
+    "Timed":     { color: "#f59e0b", bg: "rgba(245,158,11,0.18)"  },
   };
   function tagColor(tag) { return TAG_COLORS[tag] || { color: "#94a3b8", bg: "rgba(148,163,184,0.18)" }; }
 
@@ -1218,6 +1222,19 @@
     // Chips are display-only — clicking one opens the tag picker (if provided)
     // where it can be unclicked. Tags are never removed by tapping the chip.
     container.innerHTML = "";
+    // "Timed" isn't a stored modifier tag — it's backed by ex.timed — so render
+    // its clock chip by hand, leading the "before" cluster.
+    if (position === "before" && exIsTimed(ex)) {
+      const { color, bg } = tagColor("Timed");
+      const chip = document.createElement("span");
+      chip.className = "mod-chip mod-chip-timed";
+      chip.textContent = "⏱";
+      chip.style.setProperty("--mc", color);
+      chip.style.setProperty("--mb", bg);
+      chip.title = "Timed (weight × seconds)" + (openPicker ? " · open tags to edit" : "");
+      if (openPicker) chip.addEventListener("click", (e) => { e.stopPropagation(); openPicker(); });
+      container.appendChild(chip);
+    }
     const groups = position === "before"
       ? EXERCISE_MODIFIERS.filter((g) => g.group !== "Style" && g.group !== "Hold")
       : EXERCISE_MODIFIERS.filter((g) => g.group === "Style" || g.group === "Hold");
@@ -1240,7 +1257,7 @@
     });
   }
 
-  function openModPicker(ex, anchorBtn, chipsBefore, chipsAfter, onTagsChange) {
+  function openModPicker(ex, anchorBtn, chipsBefore, chipsAfter, onTagsChange, onFormatChange) {
     // Exercises saved before the exclusivity rule (or synced from an older
     // client) can still hold both — clean them up as the coach opens the picker
     // so the buttons below never render in a contradictory state.
@@ -1248,6 +1265,39 @@
     document.querySelector(".mod-picker-pop")?.remove();
     const pop = document.createElement("div");
     pop.className = "mod-picker-pop";
+
+    // Format: a clock toggle that turns any (non-mobility) exercise into a
+    // weight × time prescription, the way carries work. Backed by ex.timed, not
+    // a modifier string, so flipping it re-renders the whole row (reps ↔ sec).
+    if (ex.kind !== "mobility") {
+      const grp = document.createElement("div");
+      grp.className = "mod-picker-grp";
+      grp.dataset.group = "Format";
+      const lbl = document.createElement("div");
+      lbl.className = "mod-picker-lbl";
+      lbl.textContent = "Format";
+      grp.appendChild(lbl);
+      const row = document.createElement("div");
+      row.className = "mod-picker-row";
+      const on = exIsTimed(ex);
+      const { color, bg } = tagColor("Timed");
+      const btn = document.createElement("button");
+      btn.className = "mod-picker-btn" + (on ? " on" : "");
+      btn.textContent = "⏱ Timed";
+      if (on) { btn.style.setProperty("--mc", color); btn.style.setProperty("--mb", bg); }
+      // Carries are timed by name, so the toggle can't turn them off.
+      if (isCarryName(ex.name)) { btn.disabled = true; btn.title = "Carries are always timed"; }
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        ex.timed = !exIsTimed(ex);
+        saveTrainer();
+        pop.remove();
+        onFormatChange?.();
+      });
+      row.appendChild(btn);
+      grp.appendChild(row);
+      pop.appendChild(grp);
+    }
 
     const clearHoldTag = () => {
       ex.modifiers = (ex.modifiers || []).filter((m) => !HOLD_TAGS.includes(m));
@@ -1322,7 +1372,7 @@
             setHoldRowOpen(false);
           }
           saveTrainer();
-          const reopen = () => openModPicker(ex, anchorBtn, chipsBefore, chipsAfter, onTagsChange);
+          const reopen = () => openModPicker(ex, anchorBtn, chipsBefore, chipsAfter, onTagsChange, onFormatChange);
           renderModChips(chipsBefore, ex, "before", reopen);
           renderModChips(chipsAfter, ex, "after", reopen);
           onTagsChange?.();
@@ -6635,7 +6685,7 @@
     // removed by unclicking them inside the popup (never by tapping the chip).
     // refreshCwLabel keeps the weight label's singular/plural (DB pair) form
     // in sync as tags toggle — defined further down, resolved at click time.
-    const openPicker = () => openModPicker(ex, modBtn, chipsBefore, chipsAfter, () => { refreshCwLabel(); refreshWarmupBtn(); });
+    const openPicker = () => openModPicker(ex, modBtn, chipsBefore, chipsAfter, () => { refreshCwLabel(); refreshWarmupBtn(); }, rerenderFn);
 
     // Modifier chips BEFORE name (Unilateral, Equipment, Position)
     const chipsBefore = document.createElement("div");
