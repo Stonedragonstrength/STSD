@@ -2004,15 +2004,6 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   color: var(--muted);
 }
 .auth-links .btn-link:hover { color: var(--primary-bright); }
-.migrate-notice {
-  background: var(--primary-soft);
-  border: 1px solid var(--primary);
-  border-radius: var(--radius);
-  padding: 0.65em 0.9em;
-  font-size: 0.88rem;
-  margin-bottom: 1em;
-  line-height: 1.45;
-}
 
 #client-code {
   font-family: ui-monospace, "SF Mono", Consolas, monospace;

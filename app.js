@@ -1715,7 +1715,7 @@
     show($("#screen-login"));
     hide($("#screen-app"));
     hide($("#screen-client"));
-    ["#login-role", "#login-setup", "#login-signin", "#login-client-import",
+    ["#login-role", "#login-signin", "#login-client-import",
      "#login-athlete-setup", "#login-athlete-signin",
      "#login-forgot-password", "#login-reset-password"]
       .forEach((s) => { const el = $(s); if (el) hide(el); });
@@ -1742,7 +1742,7 @@
 
   function pickRole(role) {
     if (role === "trainer") {
-      // Always show sign-in first — new coaches click "Create account" from there
+      // Coach is email + password sign-in only (no self-serve account creation).
       showCoachSignin();
     } else {
       // Athlete sign in — always the email+password form. New athletes use the
@@ -2067,63 +2067,6 @@
   }
 
   // -------- Coach auth --------
-  async function setupCoachAccount() {
-    const name = $("#setup-name").value.trim();
-    const email = $("#setup-email").value.trim();
-    const pw = $("#setup-pw").value;
-    const conf = $("#setup-pw-confirm").value;
-    const err = $("#setup-error");
-    if (!name) return showErr(err, "Please enter your name.");
-    if (!email) return showErr(err, "Please enter your email.");
-    const pwCheck = validatePassword(pw);
-    if (!pwCheck.ok) return showErr(err, pwCheck.message);
-    if (pw !== conf) return showErr(err, "Passwords don't match.");
-    if (!window.Cloud?.enabled) return showErr(err, "Cloud not available. Check your connection.");
-
-    const btn = $("#btn-setup");
-    btn.disabled = true; btn.textContent = "Creating account…";
-    try {
-      let user;
-      try {
-        user = await window.Cloud.signUp(email, pw);
-      } catch (signUpErr) {
-        if (signUpErr.message === "EMAIL_CONFIRMATION_REQUIRED") {
-          showErr(err, "Almost there! Check your email for a confirmation link, then come back and sign in.");
-          btn.disabled = false; btn.textContent = "Create account";
-          return;
-        }
-        if (signUpErr.message?.toLowerCase().includes("already registered") || signUpErr.message?.toLowerCase().includes("already")) {
-          showErr(err, "An account with this email already exists. Sign in instead.");
-          btn.disabled = false; btn.textContent = "Create account";
-          return;
-        }
-        throw signUpErr;
-      }
-
-      const isMigration = !!state.trainerData.trainer;
-      state.trainerData.trainer = { name, email };
-      if (!state.trainerData.coachId) state.trainerData.coachId = uid();
-      state.trainerData.coachAuthId = user.id;
-      saveTrainer();
-      await window.Cloud.upsertCoach(state.trainerData.coachId, name, email, user.id);
-      if (isMigration) {
-        for (const c of state.trainerData.clients) {
-          await window.Cloud.upsertAthlete(c, state.trainerData.coachId);
-        }
-      }
-      setRememberMe(true); // default remember for new account
-      rememberEmail("coach", email, true);
-      err.classList.add("hidden");
-      playLoginFlash();
-      signIntoTrainer();
-      toast(isMigration ? "Account upgraded. Welcome!" : `Welcome, ${name.split(/\s+/)[0]}!`);
-    } catch (e) {
-      showErr(err, e.message || "Failed to create account.");
-    } finally {
-      btn.disabled = false; btn.textContent = "Create account";
-    }
-  }
-
   async function signInCoach() {
     const email = $("#login-email").value.trim();
     const pw = $("#login-pw").value;
@@ -2174,8 +2117,7 @@
       }
 
       await window.Cloud.signOut();
-      showErr(err, "No coach account found for this email. Create a new account.");
-      setTimeout(() => showLoginScreen("#login-setup"), 1800);
+      showErr(err, "No coach account found for this email. Check the address and try again.");
     } catch (e) {
       showErr(err, e.message || "Sign in failed.");
     } finally {
@@ -15276,35 +15218,12 @@
     // Coach sign-in
     $("#btn-signin").addEventListener("click", signInCoach);
     $("#login-pw").addEventListener("keydown", (e) => { if (e.key === "Enter") signInCoach(); });
-    // Coach setup
-    $("#btn-setup").addEventListener("click", setupCoachAccount);
-    $("#setup-pw-confirm").addEventListener("keydown", (e) => { if (e.key === "Enter") setupCoachAccount(); });
     // Live password-requirement checklists
-    attachPwReqs("setup-pw", "setup-pw-reqs");
     attachPwReqs("athlete-setup-pw", "athlete-setup-pw-reqs");
     attachPwReqs("reset-pw-new", "reset-pw-reqs");
     // Add-to-Home-Screen buttons (login screen + athlete portal)
     document.querySelectorAll(".install-app-btn").forEach((b) => b.addEventListener("click", promptInstall));
     refreshInstallUI();
-    // Coach panel nav
-    $("#btn-coach-to-setup")?.addEventListener("click", () => {
-      showLoginScreen("#login-setup");
-      const trainer = state.trainerData.trainer;
-      if (trainer) {
-        show($("#login-migrate-notice"));
-        $("#setup-name").value = trainer.name || "";
-        $("#setup-email").value = trainer.email || "";
-      } else {
-        hide($("#login-migrate-notice"));
-        $("#setup-name").value = "";
-        $("#setup-email").value = "";
-      }
-      $("#setup-pw").value = "";
-      $("#setup-pw-confirm").value = "";
-      $("#setup-error").classList.add("hidden");
-      setTimeout(() => ($("#setup-email").value ? $("#setup-pw") : $("#setup-name")).focus(), 50);
-    });
-    $("#btn-setup-to-signin")?.addEventListener("click", showCoachSignin);
     // Coach forgot password / reset
     $("#btn-coach-forgot-pw")?.addEventListener("click", () => showForgotPassword("#login-signin"));
     $("#btn-reset").addEventListener("click", resetTrainerAccount);

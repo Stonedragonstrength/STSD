@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=formcheck1" />
+  <link rel="stylesheet" href="styles.css?v=formcheck2" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -70,38 +70,7 @@
         <p id="login-error" class="error hidden"></p>
         <div class="auth-links">
           <button class="btn-link" id="btn-coach-forgot-pw">Forgot password?</button>
-          <button class="btn-link" id="btn-coach-to-setup">New coach? Create account →</button>
           <button class="btn-link" id="btn-reset">Reset local data</button>
-        </div>
-      </div>
-
-      <!-- Coach: create account -->
-      <div id="login-setup" class="hidden">
-        <button class="btn-link back-to-role">← Back</button>
-        <h2>Create coach account</h2>
-        <p class="muted">Set up your account to manage athletes and programs across devices.</p>
-        <div id="login-migrate-notice" class="migrate-notice hidden">
-          <strong>Upgrade your account:</strong> add email + password to enable cross-device access. Your existing athletes will be preserved.
-        </div>
-        <form id="form-coach-setup" autocomplete="on" onsubmit="return false">
-          <label>Your name
-            <input type="text" id="setup-name" placeholder="e.g. Coach Drake" autocomplete="name" />
-          </label>
-          <label>Email
-            <input type="email" id="setup-email" placeholder="your@email.com" autocomplete="email" />
-          </label>
-          <label>Password
-            <input type="password" id="setup-pw" placeholder="••••••••••" autocomplete="new-password" />
-          </label>
-          <ul class="pw-req-list" id="setup-pw-reqs"></ul>
-          <label>Confirm password
-            <input type="password" id="setup-pw-confirm" placeholder="••••••••••" autocomplete="new-password" />
-          </label>
-          <button class="btn btn-primary btn-block" type="submit" id="btn-setup">Create account</button>
-        </form>
-        <p id="setup-error" class="error hidden"></p>
-        <div class="auth-links" style="justify-content:center; margin-top:0.8em">
-          <button class="btn-link" id="btn-setup-to-signin">Already have an account? Sign in →</button>
         </div>
       </div>
 
@@ -1042,7 +1011,7 @@
   <script src="config.js?v=push1"></script>
   <script src="cloud.js?v=formcheck1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=formcheck1"></script>
+  <script src="app.js?v=formcheck2"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
