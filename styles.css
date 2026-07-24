@@ -542,6 +542,14 @@ input[type="date"] { color-scheme: dark; }
   flex-wrap: wrap;
   gap: 0.5em;
 }
+/* Slim pill so lone/grouped view-head buttons don't read as oversized banners */
+.slim-btn {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 0.4em 0.95em;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
 
 .back-link {
   display: inline-block;
@@ -2781,7 +2789,40 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   align-items: start;
 }
 .overview-bottom > .card { margin: 0; }
+.notif-log-card { grid-column: 1 / -1; }
 @media (max-width: 720px) { .overview-bottom { grid-template-columns: 1fr; } }
+
+/* Permanent notification log — small scrolling box, ~3 rows visible at once */
+.notif-log-scroll {
+  max-height: 7.5rem;
+  overflow-y: auto;
+  margin-top: 0.4rem;
+  border-top: 1px solid var(--border);
+  -webkit-overflow-scrolling: touch;
+}
+.notif-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  padding: 0.5rem 0.2rem;
+  border-bottom: 1px solid var(--border);
+}
+.notif-row:last-child { border-bottom: none; }
+.notif-row.is-clickable { cursor: pointer; transition: background 0.12s; }
+.notif-row.is-clickable:hover { background: var(--surface-2); }
+.notif-icon { flex-shrink: 0; font-size: 0.95rem; line-height: 1.3; }
+.notif-body {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.85rem;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.notif-name { font-weight: 700; color: var(--text); }
+.notif-text { color: var(--text-soft); }
+.notif-when { flex-shrink: 0; color: var(--muted); font-size: 0.72rem; }
 
 /* Mobile: the whole month fits on screen — every cell an equal square with
    just the date and a client/booking count badge (pills hide, badge shows) */

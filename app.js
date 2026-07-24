@@ -2251,6 +2251,7 @@
     renderBulletinBoard();
     renderOverviewRequests();
     renderOverviewActivity();
+    renderNotificationLog();
   }
 
   function signIntoTrainer() {
@@ -10036,6 +10037,88 @@
     host.appendChild(card);
   }
 
+  // -------- Permanent notification log (coach Overview, bottom) --------
+  // Unlike the "New activity" card (unseen-only, self-dismissing), this is a
+  // durable archive of everything athletes have done — workouts logged, form
+  // videos sent, purchase requests — so a missed pop-up isn't lost. Newest
+  // first, capped so rendering stays cheap; scrolls inside its own box.
+  const NOTIF_LOG_MAX = 60;
+
+  function notificationLogItems() {
+    const out = [];
+    (state.trainerData.clients || []).forEach((c) => {
+      const ip = c.importedProgress || {};
+      // dayId → day name (current program + one-offs); archived days fall back.
+      const dayNames = {};
+      (c.weeks || []).forEach((w) => (w.days || []).forEach((d) => { dayNames[d.id] = d.name; }));
+      (c.oneOffDays || []).forEach((d) => { dayNames[d.id] = d.name; });
+
+      // Logged workouts (date only — anchor the sort at noon that day).
+      Object.entries(ip.dayCompletions || {}).forEach(([dayId, dates]) => {
+        (Array.isArray(dates) ? dates : []).forEach((date) => {
+          if (!date) return;
+          out.push({
+            type: "workout", icon: "🏋️",
+            ts: new Date(date + "T12:00:00").getTime(),
+            name: c.name, text: `logged ${dayNames[dayId] || "a workout"}`,
+            clientId: c.id, dayId, date,
+          });
+        });
+      });
+
+      // Form-check videos sent for review.
+      Object.entries(ip.formChecks || {}).forEach(([dayId, clips]) => {
+        (Array.isArray(clips) ? clips : []).forEach((clip) => {
+          if (!clip || !clip.uploadedAt) return;
+          out.push({
+            type: "formcheck", icon: "🎥",
+            ts: clip.uploadedAt,
+            name: c.name, text: `sent a form video · ${dayNames[dayId] || "a workout"}`,
+            clientId: c.id, dayId, date: dateISO(new Date(clip.uploadedAt)),
+          });
+        });
+      });
+    });
+    out.sort((a, b) => b.ts - a.ts);
+    return out.slice(0, NOTIF_LOG_MAX);
+  }
+
+  function notifWhen(ts) {
+    if (!ts) return "";
+    const d = new Date(ts);
+    if (isNaN(d)) return "";
+    const days = Math.round((new Date(todayISO() + "T12:00:00") - new Date(dateISO(d) + "T12:00:00")) / 86400000);
+    if (days <= 0) return "today";
+    if (days === 1) return "yesterday";
+    if (days < 7) return `${days} days ago`;
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  function renderNotificationLog() {
+    const host = $("#notif-log-scroll");
+    if (!host) return;
+    const items = notificationLogItems();
+    const countEl = $("#notif-log-count");
+    if (countEl) countEl.textContent = items.length ? String(items.length) : "";
+    if (!items.length) {
+      host.innerHTML = `<p class="muted" style="margin:0;padding:0.4rem 0.2rem;font-size:0.85rem">No activity yet. This fills in as your athletes train.</p>`;
+      return;
+    }
+    host.innerHTML = items.map((it) => {
+      const clickable = it.type === "workout" || it.type === "formcheck";
+      return `<div class="notif-row${clickable ? " is-clickable" : ""}"${clickable
+        ? ` data-client="${escapeHtml(it.clientId)}" data-day="${escapeHtml(it.dayId)}" data-date="${escapeHtml(it.date)}"` : ""}>
+        <span class="notif-icon" aria-hidden="true">${it.icon}</span>
+        <span class="notif-body"><span class="notif-name">${escapeHtml(it.name)}</span> <span class="notif-text">${escapeHtml(it.text)}</span></span>
+        <span class="notif-when">${escapeHtml(notifWhen(it.ts))}</span>
+      </div>`;
+    }).join("");
+    host.querySelectorAll(".notif-row.is-clickable").forEach((row) => {
+      row.addEventListener("click", () =>
+        openCompletedWorkout(row.dataset.client, row.dataset.day, row.dataset.date));
+    });
+  }
+
   // Tapping an activity row drops the coach straight into that athlete's live
   // session on the exact day they completed, with the completion date set so
   // the logged sets they entered show. If the day is gone (archived program),
@@ -10091,6 +10174,7 @@
     if (!$("#view-overview").classList.contains("hidden")) {
       renderOverviewRequests();
       renderOverviewActivity();
+      renderNotificationLog();
     }
   }
 

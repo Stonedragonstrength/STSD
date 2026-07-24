@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=science-cards1" />
+  <link rel="stylesheet" href="styles.css?v=notiflog2" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -242,7 +242,7 @@
       <div id="view-dashboard" class="view">
         <div class="view-head">
           <div></div>
-          <button class="btn btn-primary" id="btn-add-client">+ Add athlete</button>
+          <button class="btn btn-primary btn-sm slim-btn" id="btn-add-client">+ Add athlete</button>
         </div>
         <div class="roster-controls hidden" id="roster-controls">
           <span class="roster-controls-lbl">Group by</span>
@@ -275,6 +275,14 @@
         <div id="dash-cal-grid" class="cal-grid dash-cal-grid"></div>
 
         <div class="overview-bottom">
+          <div class="card notif-log-card">
+            <div class="program-head">
+              <h3 style="margin:0">🔔 Notifications <span class="overview-req-count" id="notif-log-count"></span></h3>
+            </div>
+            <p class="muted" style="font-size:0.85rem">Everything your athletes have done recently, kept here so you never miss it. Scroll for more.</p>
+            <div id="notif-log-scroll" class="notif-log-scroll"></div>
+          </div>
+
           <div class="card">
             <div class="program-head">
               <h3 style="margin:0">📌 Bulletin Board</h3>
@@ -365,9 +373,9 @@
         <div class="view-head">
           <div></div>
           <div class="library-head-actions">
-            <button class="btn btn-primary" id="btn-new-program">+ New program</button>
-            <button class="btn btn-ghost" id="btn-programs-templates">🗂 Templates</button>
-            <button class="btn btn-ghost" id="btn-programs-day-library">📚 Day Library</button>
+            <button class="btn btn-primary btn-sm slim-btn" id="btn-new-program">+ New program</button>
+            <button class="btn btn-ghost btn-sm slim-btn" id="btn-programs-templates">🗂 Templates</button>
+            <button class="btn btn-ghost btn-sm slim-btn" id="btn-programs-day-library">📚 Day Library</button>
           </div>
         </div>
         <div id="program-template-grid" class="program-template-grid"></div>
@@ -1011,7 +1019,7 @@
   <script src="config.js?v=push1"></script>
   <script src="cloud.js?v=anatomyedit1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=deadcode1"></script>
+  <script src="app.js?v=notiflog1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
