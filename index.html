@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=trials2" />
+  <link rel="stylesheet" href="styles.css?v=crest2" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -720,9 +720,19 @@
   <section id="screen-client" class="screen hidden">
     <header class="app-header">
       <div class="header-left">
-        <div class="brand-mark sm"><img src="logo.png" alt="" onerror="this.onerror=null; this.src='icon-192.svg';" /></div>
+        <!-- The logo doubles as the rank crest: a gold arc tracks progress to
+             the next rank and the badge sits as a corner medallion. Both are
+             filled in by renderClientHeaderRank(). -->
+        <div class="brand-mark sm rank-crest" id="client-rank-crest">
+          <svg class="rank-ring" viewBox="0 0 48 48" aria-hidden="true">
+            <rect class="rank-ring-bg" x="2.5" y="2.5" width="43" height="43" rx="12" />
+            <rect class="rank-ring-fill" x="2.5" y="2.5" width="43" height="43" rx="12" />
+          </svg>
+          <img src="logo.png" alt="" onerror="this.onerror=null; this.src='icon-192.svg';" />
+          <span class="rank-medallion hidden" id="client-rank-medallion"></span>
+        </div>
         <div>
-          <div class="header-title">Stone Dragon</div>
+          <div class="header-title" id="client-header-title">Stone Dragon</div>
           <button class="header-name-btn" id="btn-client-profile" type="button" title="View & edit your profile">
             <span class="header-sub" id="client-portal-name"></span>
             <span class="header-name-caret">⚙</span>
@@ -1014,10 +1024,10 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="bugreport.js?v=bug1"></script>
-  <script src="config.js?v=trials2"></script>
-  <script src="cloud.js?v=trials2"></script>
+  <script src="config.js?v=crest2"></script>
+  <script src="cloud.js?v=crest2"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=trials2"></script>
+  <script src="app.js?v=crest2"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

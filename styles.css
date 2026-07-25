@@ -449,6 +449,82 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
   background-clip: text;
   color: transparent;
 }
+/* ===== Rank crest: the header logo doubles as the Hoard rank =====
+   A gold arc tracks progress to the next rank and the badge sits as a corner
+   medallion. The ring is a rounded rect, not a circle: a circle wide enough to
+   clear the logo's rounded-square corners would be ~1.4x its width and push
+   the whole header out. */
+.rank-crest { position: relative; overflow: visible; }
+.rank-ring {
+  position: absolute;
+  inset: -4px;
+  width: calc(100% + 8px);
+  height: calc(100% + 8px);
+  pointer-events: none;
+  /* Start the sweep at the top-left corner and run clockwise. */
+  transform: rotate(0deg);
+}
+.rank-ring-bg,
+.rank-ring-fill { fill: none; stroke-width: 2.5; }
+.rank-ring-bg { stroke: var(--surface-3); }
+.rank-ring-fill {
+  stroke: var(--gold);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.5s ease;
+}
+/* No rank yet — hide the ring entirely rather than show an empty track. */
+.rank-crest:not(.has-rank) .rank-ring { display: none; }
+.rank-medallion {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 1px solid rgba(var(--gold-rgb), 0.55);
+  font-size: 9px;
+  line-height: 1;
+  pointer-events: none;
+}
+/* Past HOARD the crest earns its glow. */
+.rank-crest.is-max .rank-medallion { box-shadow: 0 0 7px rgba(var(--gold-rgb), 0.65); }
+
+/* The brand line, once it's carrying a rank instead of "Stone Dragon". */
+.header-title.is-rank {
+  background: none;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+  color: var(--gold);
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+}
+
+/* Athlete's rank beside their name in the coach breadcrumb. */
+.breadcrumb-rank {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  margin-left: 0.5em;
+  padding: 0.1em 0.5em;
+  border-radius: 999px;
+  background: rgba(var(--gold-rgb), 0.12);
+  border: 1px solid rgba(var(--gold-rgb), 0.3);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.bcr-ico { font-size: 0.72rem; line-height: 1; }
+.bcr-name {
+  font-size: 0.66rem; font-weight: 800; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--gold);
+  /* A prestige name like "Dragonsteel HOARD VIII" would otherwise shove the
+     chip out past the header. */
+  max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 .header-sub { font-size: 0.8rem; color: var(--text-soft); }
 /* Athlete name in the top-left doubles as the Profile link (the Profile tab
    was removed). The ⚙ caret signals it's tappable. */
@@ -3815,7 +3891,16 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
     padding-left: max(0.85rem, env(safe-area-inset-left));
   }
   /* Hide brand title on mobile — logo + user name is enough */
+  /* The brand line is dead weight on a phone next to the logo — but a rank
+     isn't, so it earns the slot back. Kept small enough that rank + name still
+     stack inside the 34px logo, so the header doesn't get taller. */
   .app-header .header-title { display: none; }
+  .app-header .header-title.is-rank {
+    display: block;
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+    line-height: 1.2;
+  }
   .app-header .header-sub {
     font-size: 0.9rem;
     font-weight: 700;
@@ -3823,6 +3908,12 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
     letter-spacing: 0;
     text-transform: none;
   }
+  /* No room for a rank name beside a truncated athlete name at this width, so
+     the breadcrumb keeps the badge as the glance indicator and the full rank
+     stays in the chip's tooltip. The athlete's own header still names it. */
+  .breadcrumb-rank .bcr-name { display: none; }
+  .breadcrumb-rank { padding: 0.1em 0.35em; }
+
   .brand-mark.sm { width: 34px; height: 34px; border-radius: 9px; }
   .header-left { gap: 0.55em; }
   .header-right { gap: 0.3em; }

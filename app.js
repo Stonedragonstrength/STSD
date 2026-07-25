@@ -2688,7 +2688,22 @@
     if (client) {
       show(bc);
       hide(brand);
-      $("#breadcrumb-athlete-name").textContent = client.name;
+      const nameEl = $("#breadcrumb-athlete-name");
+      nameEl.textContent = client.name;
+      // Their rank rides alongside the name — an at-a-glance read on how much
+      // work they've actually put in, on every page of their profile. Read
+      // straight off their synced total; nothing is scored or saved here.
+      const lb = Number(client.importedProgress?.hoard?.lb) || 0;
+      const old = bc.querySelector(".breadcrumb-rank");
+      if (old) old.remove();
+      if (lb) {
+        const rank = hoardRankForLevel(hoardLevelFromLb(lb).level);
+        const chip = document.createElement("span");
+        chip.className = "breadcrumb-rank";
+        chip.innerHTML = `<span class="bcr-ico">${rank.icon}</span><span class="bcr-name">${escapeHtml(rank.name)}</span>`;
+        chip.title = `${rank.name} · ${hoardLbLabel(lb)} moved`;
+        nameEl.insertAdjacentElement("afterend", chip);
+      }
     } else {
       hide(bc);
       show(brand);
@@ -9762,6 +9777,7 @@
     if (!prog?.client) return;
     ensureSessionBank(prog.client);
     renderClientHeaderSessions();
+    renderClientHeaderRank();
     if (!state.clientData.progress.packageRequests) state.clientData.progress.packageRequests = [];
 
     const sum = sessionBankSummary(prog.client);
@@ -11505,6 +11521,7 @@
     const prog = state.clientData.program;
     $("#client-portal-name").textContent = prog.client.name;
     renderClientHeaderSessions();
+    renderClientHeaderRank();
     // Profile tab: editable details, invite code, theme picker
     renderAthleteProfileFields();
     const pInvite = $("#profile-invite");
@@ -11952,6 +11969,7 @@
 
     if (hero.jump) $("#ov-hero")?.addEventListener("click", () => jumpToWorkout(hero.jump, today));
     renderClientHeaderSessions();
+    renderClientHeaderRank();
     $("#btn-share-recap")?.addEventListener("click", () => shareLifetimeImage(lifeStats, c.name));
     $("#btn-racing-customize")?.addEventListener("click", openRacingStatsCustomizer);
     $(".ov-liftstats")?.addEventListener("toggle", (e) => {
@@ -11963,6 +11981,56 @@
     else renderVolumeChart(progress);
   }
   // Sessions-remaining chip in the athlete header, right of the profile name.
+  // The rank in the app header. The logo becomes the crest: a gold arc for
+  // progress to the next rank plus the badge as a corner medallion, and the
+  // rank name takes over the brand line — "Stone Dragon" was redundant sitting
+  // next to the Stone Dragon logo, and this costs no extra header width. It
+  // also survives live-log mode, which hides the whole right-hand cluster.
+  function renderClientHeaderRank() {
+    const crest = $("#client-rank-crest");
+    const title = $("#client-header-title");
+    const med = $("#client-rank-medallion");
+    if (!crest || !title || !med) return;
+    const c = state.clientData.program?.client;
+    const progress = state.clientData.progress;
+    const lb = Number(progress?.hoard?.lb) || 0;
+    // Nothing earned yet: leave the plain brand mark rather than showing an
+    // empty ring and a rank they haven't started.
+    if (!c || !lb) {
+      crest.classList.remove("has-rank", "is-max");
+      med.classList.add("hidden");
+      title.textContent = "Stone Dragon";
+      title.classList.remove("is-rank");
+      crest.removeAttribute("title");
+      return;
+    }
+    const lvl = hoardLevelFromLb(lb);
+    const rank = hoardRankForLevel(lvl.level);
+    const next = hoardRankForLevel(lvl.level + 1);
+    const pct = lvl.need > 0 ? Math.max(0, Math.min(1, lvl.into / lvl.need)) : 0;
+
+    crest.classList.add("has-rank");
+    crest.classList.toggle("is-max", !!rank.isMax);
+    med.classList.remove("hidden");
+    med.textContent = rank.icon;
+    title.textContent = rank.name;
+    title.classList.add("is-rank");
+    crest.title = `${rank.name} · ${hoardLbLabel(lb)} moved · ${Math.round(lvl.into).toLocaleString()} of ${lvl.need.toLocaleString()} lb to ${next.name}`;
+
+    // Sweep the arc by dash offset. The ring is a rounded rect hugging the
+    // logo, not a circle — a circle big enough to clear a rounded square's
+    // corners would be half again as wide and push the header out.
+    // getTotalLength measures that path exactly; the fallback is its perimeter.
+    const fill = crest.querySelector(".rank-ring-fill");
+    if (fill) {
+      let len = 0;
+      try { len = fill.getTotalLength(); } catch (e) {}
+      if (!len || !isFinite(len)) len = 2 * (43 + 43) - 8 * 12 + 2 * Math.PI * 12;
+      fill.style.strokeDasharray = `${len}`;
+      fill.style.strokeDashoffset = `${len * (1 - pct)}`;
+    }
+  }
+
   function renderClientHeaderSessions() {
     const chip = $("#header-sessions"); if (!chip) return;
     const c = state.clientData.program?.client;
