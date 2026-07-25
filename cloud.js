@@ -133,6 +133,7 @@
       food_log: p.foodLog || {},
       custom_foods: p.customFoods || [],
       saved_meals: p.savedMeals || [],
+      nutrition_game: p.nutritionGame || {},
       synced_at: new Date().toISOString(),
     };
   }
@@ -156,6 +157,7 @@
       foodLog: r.food_log || {},
       customFoods: r.custom_foods || [],
       savedMeals: r.saved_meals || [],
+      nutritionGame: r.nutrition_game || {},
       syncedAt: r.synced_at,
     };
   }

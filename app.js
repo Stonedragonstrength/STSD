@@ -10928,7 +10928,7 @@
       err.classList.remove("hidden");
     }
   }
-  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {}, totalWorkoutMs: 0, workoutMoods: {}, addedExercises: {}, formChecks: {}, nutritionTargets: {}, foodLog: {}, customFoods: [], savedMeals: [] }; }
+  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {}, totalWorkoutMs: 0, workoutMoods: {}, addedExercises: {}, formChecks: {}, nutritionTargets: {}, foodLog: {}, customFoods: [], savedMeals: [], nutritionGame: {} }; }
   function ensureProgressShape(p) {
     if (!p.exerciseLogs) p.exerciseLogs = {};
     if (!p.bodyweightLog) p.bodyweightLog = [];
@@ -10947,6 +10947,7 @@
     if (!p.foodLog || typeof p.foodLog !== "object") p.foodLog = {};
     if (!Array.isArray(p.customFoods)) p.customFoods = [];
     if (!Array.isArray(p.savedMeals)) p.savedMeals = [];
+    if (!p.nutritionGame || typeof p.nutritionGame !== "object") p.nutritionGame = {};
     return p;
   }
 
@@ -14513,9 +14514,155 @@
     return [...tally.values()].sort((a, b) => b.n - a.n).slice(0, limit).map((x) => x.entry);
   }
 
+  // ---- The game layer ----
+  // Everything here is derived from foodLog on the fly. The only thing that
+  // gets stored is lifetime XP, because the log prunes at 180 days and a
+  // lifetime total must never fall when old days age out.
+  //
+  // Scoring bands, per macro, as a share of target:
+  //   calories  ±10% is perfect, tapering to 0 at ±50%
+  //   protein   90%+ is perfect (going over protein is not a miss), 0 at zero
+  //   carbs/fat ±20% is perfect, tapering to 0 at ±60%
+  const SCORE_WEIGHTS = { calories: 0.35, protein: 0.4, carbs: 0.125, fat: 0.125 };
+
+  function bandScore(eaten, target, perfect, zero) {
+    if (!(target > 0)) return null;
+    const off = Math.abs(eaten - target) / target;
+    if (off <= perfect) return 100;
+    if (off >= zero) return 0;
+    return Math.round(100 * (1 - (off - perfect) / (zero - perfect)));
+  }
+  function proteinScore(eaten, target) {
+    if (!(target > 0)) return null;
+    const ratio = eaten / target;
+    if (ratio >= 0.9) return 100;
+    return Math.round(Math.max(ratio / 0.9, 0) * 100);
+  }
+
+  // { score, parts:{key:0-100|null}, perfect, logged, totals }
+  function dayScore(progress, plan, dateKey) {
+    const entries = foodDayEntries(progress, dateKey);
+    const totals = foodDayTotals(entries);
+    const parts = {
+      calories: bandScore(totals.kcal, Number(plan?.calories), 0.1, 0.5),
+      protein: proteinScore(totals.protein, Number(plan?.protein)),
+      carbs: bandScore(totals.carbs, Number(plan?.carbs), 0.2, 0.6),
+      fat: bandScore(totals.fat, Number(plan?.fat), 0.2, 0.6),
+    };
+    const logged = entries.length > 0;
+    let sum = 0, weight = 0;
+    for (const [k, w] of Object.entries(SCORE_WEIGHTS)) {
+      if (parts[k] == null) continue;
+      sum += parts[k] * w; weight += w;
+    }
+    const scored = weight > 0 && logged;
+    const graded = Object.values(parts).filter((v) => v != null);
+    return {
+      score: scored ? Math.round(sum / weight) : null,
+      parts,
+      perfect: scored && graded.length === 4 && graded.every((v) => v === 100),
+      logged,
+      totals,
+      entries,
+    };
+  }
+
+  // A day only holds the streak if they actually ate on the record, not if they
+  // logged a single apple to keep the flame alive.
+  function streakDay(progress, plan, dateKey) {
+    const t = foodDayTotals(foodDayEntries(progress, dateKey));
+    const target = Number(plan?.calories) || 0;
+    if (!t.kcal) return false;
+    return target > 0 ? t.kcal >= target * 0.5 : t.kcal >= 800;
+  }
+  // Counts back from today. Today not being logged yet doesn't break a streak
+  // (it's still early), it just doesn't extend it.
+  function foodStreak(progress, plan) {
+    let n = 0;
+    const today = todayISO();
+    if (!streakDay(progress, plan, today)) {
+      if (!streakDay(progress, plan, addDaysISO(today, -1))) return 0;
+    }
+    for (let i = streakDay(progress, plan, today) ? 0 : 1; i < FOOD_LOG_DAYS; i++) {
+      if (!streakDay(progress, plan, addDaysISO(today, -i))) break;
+      n++;
+    }
+    return n;
+  }
+
+  // XP for one day: showing up, how close it landed, a perfect-day bonus and a
+  // streak kicker that caps so a long streak can't run away with it.
+  function dayXp(d, streakAtDay) {
+    if (!d.logged) return 0;
+    let xp = 10;
+    if (d.score != null) xp += Math.round(d.score * 0.6);
+    if (d.perfect) xp += 30;
+    xp += Math.min(streakAtDay, 7) * 2;
+    return xp;
+  }
+
+  // Level curve: 250 XP for the first level-up, +50 for each one after. Level
+  // 10 lands around 45 solid days.
+  function levelFromXp(xp) {
+    let level = 1, need = 250, spent = 0;
+    while (xp - spent >= need) { spent += need; level++; need += 50; }
+    return { level, into: xp - spent, need, floor: spent };
+  }
+
+  function ensureNutritionGame(progress) {
+    if (!progress) return null;
+    if (!progress.nutritionGame || typeof progress.nutritionGame !== "object") {
+      progress.nutritionGame = {};
+    }
+    const g = progress.nutritionGame;
+    if (typeof g.xp !== "number" || !isFinite(g.xp)) g.xp = 0;
+    if (!g.awarded || typeof g.awarded !== "object") g.awarded = {};
+    if (typeof g.bestStreak !== "number") g.bestStreak = 0;
+    return g;
+  }
+
+  // Re-banks XP for every day still inside the log window. Because it diffs
+  // against what was already awarded, today's XP climbs live as food goes in
+  // and a deleted entry takes its XP back, with no double-counting.
+  function syncNutritionGame(client, progress) {
+    const g = ensureNutritionGame(progress);
+    const plan = effectiveTargets(client, progress).plan;
+    const streak = foodStreak(progress, plan);
+    const today = todayISO();
+    const cutoff = addDaysISO(today, -FOOD_LOG_DAYS);
+    let changed = false;
+
+    // Old days falling out of the window keep their XP but drop their receipt.
+    for (const k of Object.keys(g.awarded)) {
+      if (k < cutoff) { delete g.awarded[k]; changed = true; }
+    }
+    // Only days that exist matter: a blank day scores nothing and breaks the
+    // run, so walking all 180 on every render would be 180 no-ops.
+    const dates = [...new Set([
+      ...Object.keys(progress.foodLog || {}),
+      ...Object.keys(g.awarded),
+    ])].filter((d) => d >= cutoff && d <= today).sort();
+
+    let run = 0, prev = null;
+    for (const date of dates) {
+      const holds = streakDay(progress, plan, date);
+      run = holds ? (prev && addDaysISO(prev, 1) === date ? run + 1 : 1) : 0;
+      if (holds) prev = date;
+      const want = dayXp(dayScore(progress, plan, date), run);
+      const had = Number(g.awarded[date]) || 0;
+      if (want === had) continue;
+      g.xp = Math.max(0, g.xp + (want - had));
+      if (want) g.awarded[date] = want; else delete g.awarded[date];
+      changed = true;
+    }
+    if (streak > g.bestStreak) { g.bestStreak = streak; changed = true; }
+    if (changed) saveClient();
+    return { ...levelFromXp(g.xp), xp: g.xp, streak, bestStreak: g.bestStreak, plan };
+  }
+
   // ---- Rendering ----
   let _foodDate = null;
-  let _myFoodsOpen = false;
+  let _foodMeal = null;
 
   function renderClientDiet() {
     const container = $("#client-diet-container");
@@ -14525,12 +14672,18 @@
     if (!client || !progress) return;
     ensureFoodLog(progress);
     _foodDate = todayISO();
+    _foodMeal = defaultMealKey();
     container.insertAdjacentHTML("beforeend", `<div class="card food-day-card" id="food-day-card"></div>`);
-    container.insertAdjacentHTML("beforeend", `<div class="card myfoods-card hidden" id="my-foods-card" style="margin-top:1.75rem"></div>`);
-    container.insertAdjacentHTML("beforeend", `<div class="card" id="client-targets-card" style="margin-top:1.75rem"></div>`);
     renderFoodDay();
-    renderMyFoods();
-    renderClientTargets();
+  }
+
+  // Open the meal it's plausibly time for, so the common case is one tap.
+  function defaultMealKey() {
+    const h = new Date().getHours();
+    if (h < 10.5) return "breakfast";
+    if (h < 15) return "lunch";
+    if (h < 21) return "dinner";
+    return "snack";
   }
 
   // People think in fractions for cups and spoons, so every amount box accepts
@@ -14552,42 +14705,73 @@
     return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
   }
 
-  // Calorie ring. Over-target fills the track in the warn color rather than
-  // wrapping around, so "past your number" reads at a glance.
-  function calorieRingHtml(eaten, target) {
-    const R = 52, C = 2 * Math.PI * R;
+  // Calorie ring. The ±10% target band draws as a brighter notch on the track,
+  // so there's a zone to land in rather than just a line to stay under. Land in
+  // it and the whole ring goes gold. Over the top fills in the warn color
+  // rather than wrapping around, so "past your number" still reads at a glance.
+  function calorieRingHtml(eaten, target, inZone) {
+    const R = 46, C = 2 * Math.PI * R;
     const has = Number(target) > 0;
     const ratio = has ? eaten / target : 0;
-    const over = ratio > 1;
+    const over = ratio > 1.1;
     const dash = has ? Math.min(ratio, 1) * C : 0;
-    const color = over ? "var(--warn)" : "var(--primary)";
+    const color = over ? "var(--warn)" : inZone ? "var(--gold)" : "var(--primary)";
     const left = has ? Math.round(target - eaten) : 0;
-    return `<div class="kcal-ring">
-      <svg viewBox="0 0 130 130" role="img" aria-label="${Math.round(eaten)} of ${has ? Math.round(target) : "no"} calorie target">
-        <circle cx="65" cy="65" r="${R}" class="kcal-ring-track" />
-        <circle cx="65" cy="65" r="${R}" class="kcal-ring-fill" stroke="${color}"
+    // The band runs 0.9→1.0 of the track; the fill covers it once you're inside.
+    const bandStart = 0.9 * C, bandLen = 0.1 * C;
+    return `<button type="button" class="kcal-ring ${inZone ? "is-zone" : ""}" id="food-ring"
+        aria-label="Calories: ${Math.round(eaten)} of ${has ? Math.round(target) : "no"} target. Tap to edit targets.">
+      <svg viewBox="0 0 116 116" aria-hidden="true">
+        <circle cx="58" cy="58" r="${R}" class="kcal-ring-track" />
+        ${has ? `<circle cx="58" cy="58" r="${R}" class="kcal-ring-band"
+          stroke-dasharray="${bandLen.toFixed(1)} ${(C - bandLen).toFixed(1)}"
+          stroke-dashoffset="${(-bandStart).toFixed(1)}" />` : ""}
+        <circle cx="58" cy="58" r="${R}" class="kcal-ring-fill" stroke="${color}"
           stroke-dasharray="${dash.toFixed(1)} ${(C - dash).toFixed(1)}" />
-        <text x="65" y="61" text-anchor="middle" class="kcal-ring-num">${Math.round(eaten).toLocaleString()}</text>
-        <text x="65" y="80" text-anchor="middle" class="kcal-ring-lbl">${has ? "of " + Math.round(target).toLocaleString() : "kcal"}</text>
+        <text x="58" y="55" text-anchor="middle" class="kcal-ring-num">${Math.round(eaten).toLocaleString()}</text>
+        <text x="58" y="71" text-anchor="middle" class="kcal-ring-lbl">${has ? "of " + Math.round(target).toLocaleString() : "kcal"}</text>
       </svg>
-      ${has ? `<div class="kcal-ring-left ${over ? "is-over" : ""}">${over
-        ? `${Math.abs(left).toLocaleString()} over`
-        : `${left.toLocaleString()} left`}</div>` : ""}
-    </div>`;
+      <span class="kcal-ring-left ${over ? "is-over" : ""}">${!has ? "Set targets"
+        : inZone ? "In the zone" : over ? `${Math.abs(left).toLocaleString()} over`
+        : `${left.toLocaleString()} left`}</span>
+    </button>`;
   }
 
-  function macroBarsHtml(totals, plan) {
+  // Macro bars as segmented XP meters: ten notches each, gold and checked once
+  // the macro lands in its band. Protein leads because it's the one that moves
+  // the needle, and it's the one they should chase first.
+  function macroBarsHtml(totals, plan, parts) {
     return MACROS.map((m) => {
       const eaten = totals[m.key] || 0;
       const target = Number(plan?.[m.key]) || 0;
       const pct = target > 0 ? Math.min(eaten / target, 1) * 100 : 0;
-      const over = target > 0 && eaten > target * 1.05;
-      return `<div class="macro-bar-row">
-        <span class="macro-bar-name"><span class="macro-dot" style="background:${m.color}"></span>${m.label}</span>
-        <span class="macro-bar-track"><span class="macro-bar-fill" style="width:${pct.toFixed(1)}%;background:${m.color}"></span></span>
-        <span class="macro-bar-val ${over ? "is-over" : ""}">${Math.round(eaten)}${target ? ` / ${Math.round(target)}` : ""} g</span>
+      const done = parts?.[m.key] === 100;
+      const over = target > 0 && eaten > target * (m.key === "protein" ? 1.35 : 1.2);
+      const color = done ? "var(--gold)" : m.color;
+      return `<div class="macro-bar-row ${done ? "is-done" : ""}">
+        <span class="macro-bar-name">${m.label.slice(0, 3).toUpperCase()}</span>
+        <span class="macro-bar-track">
+          <span class="macro-bar-fill" style="width:${pct.toFixed(1)}%;background:${color}"></span>
+          <span class="macro-bar-notches" aria-hidden="true"></span>
+        </span>
+        <span class="macro-bar-val ${over ? "is-over" : ""}">${done ? "✓ " : ""}${Math.round(eaten)}${target ? `/${Math.round(target)}` : ""}</span>
       </div>`;
     }).join("");
+  }
+
+  // Seven dots, oldest to today: filled for a perfect day, half for logged,
+  // empty for a blank. The week at a glance in about 90px of width.
+  function weekDotsHtml(progress, plan) {
+    const today = todayISO();
+    const dots = [];
+    for (let i = 6; i >= 0; i--) {
+      const date = addDaysISO(today, -i);
+      const d = dayScore(progress, plan, date);
+      const cls = d.perfect ? "is-perfect" : d.logged ? "is-logged" : "";
+      const label = d.perfect ? "perfect day" : d.logged ? `${d.score ?? "?"} out of 100` : "nothing logged";
+      dots.push(`<span class="food-week-dot ${cls}" title="${escapeHtml(foodDateLabel(date))}: ${label}"></span>`);
+    }
+    return `<div class="food-week-dots" role="img" aria-label="Last seven days">${dots.join("")}</div>`;
   }
 
   function foodEntryRowHtml(e) {
@@ -14608,6 +14792,10 @@
     </div>`;
   }
 
+  // The whole tab is one screen: day nav, the HUD (ring + macro meters + level),
+  // a row of meal tiles, and only the open meal's entries. Everything that used
+  // to sit in its own card below (targets, my foods) is a tap away instead,
+  // because both were re-drawing numbers the HUD already shows.
   function renderFoodDay() {
     const el = $("#food-day-card"); if (!el) return;
     const client = state.clientData.program?.client;
@@ -14617,21 +14805,26 @@
     const entries = foodDayEntries(progress, _foodDate);
     const totals = foodDayTotals(entries);
     const isToday = _foodDate === todayISO();
+    const day = dayScore(progress, plan, _foodDate);
+    const game = syncNutritionGame(client, progress);
+    const inZone = day.parts.calories === 100;
+    const mealKey = _foodMeal || (_foodMeal = defaultMealKey());
+    const meal = MEALS.find((m) => m.key === mealKey) || MEALS[0];
+    const mine = entries.filter((e) => e.meal === meal.key);
+    const savedCount = (progress.customFoods || []).length + (progress.savedMeals || []).length;
 
-    const mealsHtml = MEALS.map((m) => {
+    const tiles = MEALS.map((m) => {
       const list = entries.filter((e) => e.meal === m.key);
       const kcal = Math.round(foodDayTotals(list).kcal);
-      return `<div class="food-meal">
-        <div class="food-meal-head">
-          <span class="food-meal-name">${m.icon} ${m.label}</span>
-          <span class="food-meal-right">
-            ${list.length ? `<button class="food-meal-save" data-savemeal="${m.key}">Save as meal</button>` : ""}
-            <span class="food-meal-kcal">${kcal ? kcal.toLocaleString() : "—"}</span>
-          </span>
-        </div>
-        ${list.map(foodEntryRowHtml).join("")}
-        <button class="food-add-btn" data-addmeal="${m.key}">+ Add food</button>
-      </div>`;
+      return `<button type="button" class="food-tile ${m.key === meal.key ? "is-open" : ""} ${list.length ? "is-logged" : ""}"
+          data-meal="${m.key}" aria-pressed="${m.key === meal.key}">
+        <span class="food-tile-icon">${m.icon}</span>
+        <span class="food-tile-kcal">${kcal ? kcal.toLocaleString() : "—"}</span>
+        <span class="food-tile-dots">${list.length
+          ? Array.from({ length: Math.min(list.length, 4) }, () => "<i></i>").join("") +
+            (list.length > 4 ? `<b>+${list.length - 4}</b>` : "")
+          : "<u>+</u>"}</span>
+      </button>`;
     }).join("");
 
     el.innerHTML = `
@@ -14643,14 +14836,48 @@
         </div>
         <button class="food-nav" id="food-next" aria-label="Next day" ${isToday ? "disabled" : ""}>›</button>
       </div>
-      <div class="food-totals">
-        ${calorieRingHtml(totals.kcal, plan?.calories)}
-        <div class="macro-bars">${macroBarsHtml(totals, plan)}</div>
+
+      <div class="food-hud">
+        ${calorieRingHtml(totals.kcal, plan?.calories, day.perfect || inZone)}
+        <div class="food-hud-side">
+          <div class="macro-bars">${macroBarsHtml(totals, plan, day.parts)}</div>
+          <div class="food-hud-foot">
+            ${weekDotsHtml(progress, plan)}
+            ${day.perfect
+              ? `<span class="food-score is-perfect">★ Perfect</span>`
+              : `<span class="food-score">${day.score == null ? "—" : day.score}<i>/100</i></span>`}
+          </div>
+        </div>
       </div>
-      ${plan ? "" : `<p class="muted food-no-target">No targets set yet. Set them below and this fills in.</p>`}
-      <div class="food-meals">${mealsHtml}</div>
-      <div class="food-day-foot">
-        <button class="btn btn-ghost btn-sm slim-btn" id="food-copy-yesterday">Copy yesterday</button>
+
+      <div class="food-lvl">
+        <span class="food-lvl-badge">LV ${game.level}</span>
+        <span class="food-lvl-track"><span class="food-lvl-fill"
+          style="width:${((game.into / game.need) * 100).toFixed(1)}%"></span></span>
+        <span class="food-lvl-xp">${game.into}<i>/${game.need}</i></span>
+        ${game.streak ? `<span class="food-streak" title="${game.streak} day streak. Best: ${game.bestStreak}">🔥${game.streak}</span>` : ""}
+      </div>
+
+      ${plan ? "" : `<p class="muted food-no-target">No targets yet. Tap the ring to set them and this all fills in.</p>`}
+
+      <div class="food-tiles">${tiles}</div>
+
+      <div class="food-active">
+        <div class="food-meal-head">
+          <span class="food-meal-name">${meal.icon} ${meal.label}</span>
+          <span class="food-meal-right">
+            ${mine.length ? `<button class="food-meal-save" data-savemeal="${meal.key}">Save as meal</button>` : ""}
+            <span class="food-meal-kcal">${Math.round(foodDayTotals(mine).kcal).toLocaleString()}</span>
+          </span>
+        </div>
+        ${mine.map(foodEntryRowHtml).join("")}
+        <button class="food-add-btn" data-addmeal="${meal.key}">+ Add food</button>
+      </div>
+
+      <div class="food-more">
+        <button type="button" id="food-targets-btn">Targets</button>
+        ${savedCount ? `<button type="button" id="food-myfoods-btn">My foods <span class="myfoods-count">${savedCount}</span></button>` : ""}
+        <button type="button" id="food-copy-yesterday">Copy yesterday</button>
       </div>`;
 
     $("#food-prev").addEventListener("click", () => { _foodDate = addDaysISO(_foodDate, -1); renderFoodDay(); });
@@ -14658,6 +14885,9 @@
     if (!isToday) next.addEventListener("click", () => { _foodDate = addDaysISO(_foodDate, 1); renderFoodDay(); });
     const todayBtn = $("#food-today");
     if (todayBtn) todayBtn.addEventListener("click", () => { _foodDate = todayISO(); renderFoodDay(); });
+    el.querySelectorAll("[data-meal]").forEach((b) => {
+      b.addEventListener("click", () => { _foodMeal = b.dataset.meal; renderFoodDay(); });
+    });
     el.querySelectorAll("[data-addmeal]").forEach((b) => {
       b.addEventListener("click", () => openAddFoodModal(b.dataset.addmeal));
     });
@@ -14667,6 +14897,10 @@
     el.querySelectorAll("[data-savemeal]").forEach((b) => {
       b.addEventListener("click", () => openSaveMealModal(b.dataset.savemeal));
     });
+    $("#food-ring").addEventListener("click", openTargetsSheet);
+    $("#food-targets-btn").addEventListener("click", openTargetsSheet);
+    const mf = $("#food-myfoods-btn");
+    if (mf) mf.addEventListener("click", openMyFoodsSheet);
     $("#food-copy-yesterday").addEventListener("click", copyYesterday);
   }
 
@@ -15032,6 +15266,7 @@
             });
             saveFoodLog();
             closeModal();
+            renderMyFoods();   // brings the "My foods" count on the food screen up to date
             toast("Meal saved ✓");
           } },
       ],
@@ -15558,21 +15793,29 @@
   // -------- My foods and recipes --------
   // Without this the only way to reach a saved food is to search for it, so a
   // typo or a one-off recipe would sit in the list forever with no way out.
+  function openMyFoodsSheet() {
+    openModal({
+      title: "My foods and recipes",
+      body: `<div id="myfoods-sheet"></div>`,
+      actions: [{ label: "Close", className: "btn btn-ghost", onClick: () => { closeModal(); renderFoodDay(); } }],
+    });
+    renderMyFoods();
+  }
+
+  // Draws into the sheet when it's open; when it isn't, callers are just asking
+  // for the saved-food count on the food screen to catch up.
   function renderMyFoods() {
-    const el = $("#my-foods-card"); if (!el) return;
+    const el = $("#myfoods-sheet");
+    if (!el) { renderFoodDay(); return; }
     const progress = state.clientData.progress;
     const foods = progress.customFoods || [];
     const meals = progress.savedMeals || [];
-    const n = foods.length + meals.length;
-    if (!n) { el.classList.add("hidden"); return; }
-    el.classList.remove("hidden");
-    const open = !!_myFoodsOpen;
+    if (!foods.length && !meals.length) {
+      el.innerHTML = `<p class="muted">Nothing saved yet. Foods you create and recipes you build land here.</p>`;
+      return;
+    }
     el.innerHTML = `
-      <button class="myfoods-head" id="myfoods-toggle" type="button" aria-expanded="${open}">
-        <span><strong>My foods and recipes</strong> <span class="myfoods-count">${n}</span></span>
-        <span class="myfoods-caret">${open ? "▾" : "▸"}</span>
-      </button>
-      ${open ? `<div class="myfoods-list">
+      <div class="myfoods-list">
         ${meals.map((m) => {
           const t = foodDayTotals(m.items);
           const isRecipe = m.kind === "recipe";
@@ -15595,9 +15838,8 @@
           </span>
           <button class="myfoods-del" type="button" data-mfdelfood="${escapeHtml(f.id)}" aria-label="Delete ${escapeHtml(f.name)}">×</button>
         </div>`).join("")}
-      </div>` : ""}`;
+      </div>`;
 
-    $("#myfoods-toggle").addEventListener("click", () => { _myFoodsOpen = !_myFoodsOpen; renderMyFoods(); });
     el.querySelectorAll("[data-mfedit]").forEach((b) => b.addEventListener("click", () => {
       const m = meals.find((x) => x.id === b.dataset.mfedit);
       if (m) startRecipe(null, m);
@@ -15638,8 +15880,21 @@
       </div>`).join("")}</div>`;
   }
 
+  function openTargetsSheet() {
+    openModal({
+      title: "Daily targets",
+      body: `<div id="targets-sheet"></div>`,
+      actions: [{ label: "Close", className: "btn btn-ghost", onClick: () => { closeModal(); renderFoodDay(); } }],
+    });
+    renderClientTargets();
+  }
+
+  // Draws into the targets sheet when it's open. The food screen no longer has
+  // a targets card of its own (the ring and meters already plot these numbers),
+  // so when the sheet is closed this just refreshes the HUD.
   function renderClientTargets() {
-    const el = $("#client-targets-card"); if (!el) return;
+    const el = $("#targets-sheet");
+    if (!el) { renderFoodDay(); return; }
     const client = state.clientData.program?.client;
     const progress = state.clientData.progress;
     const eff = effectiveTargets(client, progress);
@@ -15647,8 +15902,7 @@
 
     if (!plan) {
       el.innerHTML = `
-        <h3 style="margin-top:0">Daily targets</h3>
-        <p class="muted">No targets yet. Work them out from your bodyweight and goal, or type them in.</p>
+        <p class="muted" style="margin-top:0">No targets yet. Work them out from your bodyweight and goal, or type them in.</p>
         <div class="target-actions">
           <button class="btn btn-primary btn-sm slim-btn" id="btn-calc-targets">Calculate for me</button>
           <button class="btn btn-ghost btn-sm slim-btn" id="btn-edit-targets">Enter my own</button>
@@ -15662,10 +15916,7 @@
       : "Your own targets";
     const canSwitch = !eff.locked && (eff.coachPlan || eff.ownPlan);
     el.innerHTML = `
-      <div class="nutrition-plan-head">
-        <h3 style="margin:0">Daily targets</h3>
-        <span class="muted" style="font-size:0.8rem">${escapeHtml(whose)}</span>
-      </div>
+      <p class="muted" style="margin:0 0 0.7em">${escapeHtml(whose)}</p>
       ${targetStripHtml(plan)}
       ${plan.notes ? `<div class="client-instructions" style="margin-top:0.8em">${escapeHtml(plan.notes)}</div>` : ""}
       ${eff.locked ? `<p class="muted target-locked">🔒 Your coach has locked these. Talk to them if they need changing.</p>` : `
@@ -16902,10 +17153,12 @@
         title: "Rest timer", text: "Tap Go to start your rest. It dings when it's time to lift, then rolls straight into the next rest until you stop it. The small time button picks the length, the bell mutes the ding." },
       { sel: '[data-ctab-panel="prs"]', go: () => setClientTab("prs"),
         title: "Personal records", text: "Your PRs live here. Locking a heavy set can raise them automatically." },
-      { sel: "#food-day-card", go: () => setClientTab("diet"),
-        title: "Food log", text: "Log what you eat and watch the ring fill toward your calorie target. Search thousands of foods, save the ones you eat often, or use Quick add when you already know the numbers." },
-      { sel: "#client-targets-card", go: () => setClientTab("diet"),
-        title: "Your daily targets", text: "Calories and macros, either from your coach or worked out from your bodyweight and goal. Tap Calculate for me to get a starting point." },
+      { sel: ".food-tiles", go: () => setClientTab("diet"),
+        title: "Food log", text: "One tile per meal. Tap a tile to open it, then add what you ate. Search thousands of foods, save the ones you eat often, or use Quick add when you already know the numbers." },
+      { sel: "#food-ring", go: () => setClientTab("diet"),
+        title: "Hit the zone", text: "The ring fills toward your calorie target and turns gold when you land inside it. Tap it any time to set or change your targets." },
+      { sel: ".food-lvl", go: () => setClientTab("diet"),
+        title: "Level up", text: "Every logged day earns XP: more for landing close to your numbers, a bonus for a perfect day, and more again the longer your streak runs." },
       { sel: "#client-feedback", go: () => setClientTab("diet"),
         title: "Cardio and notes", text: "Your cardio log. Record the minutes and, if you tracked it, the distance. This note box goes straight to your coach." },
       { sel: '[data-ctab-panel="sessions"]', go: () => setClientTab("sessions"),
