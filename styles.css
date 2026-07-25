@@ -277,6 +277,7 @@ input[type="text"],
 input[type="number"],
 input[type="password"],
 input[type="date"],
+input[type="search"],
 textarea,
 select {
   width: 100%;
@@ -302,6 +303,11 @@ input:focus, textarea:focus, select:focus {
 }
 textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
 input[type="date"] { color-scheme: dark; }
+/* Strip iOS Safari's native search pill so search fields match every other
+   field in the app. */
+input[type="search"] { -webkit-appearance: none; appearance: none; }
+input[type="search"]::-webkit-search-decoration,
+input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 
 .grid-2 {
   display: grid;
@@ -1449,9 +1455,12 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   border: 1px solid rgba(251,146,60,0.3);
   border-radius: 8px; padding: 0.4em 0.6em;
 }
-.cex-finisher-lbl { font-size: 0.8rem; font-weight: 700; color: var(--text); }
+.cex-finisher-lbl { font-size: 0.8rem; font-weight: 700; color: var(--text); min-width: 0; }
 .cex-finisher-pct { font-weight: 500; color: #fb923c; }
-.cex-finisher-input { width: 64px; flex-shrink: 0; text-align: center; }
+/* `input.` prefix needed so this beats the base `input[type="number"]` rule
+   (which is width:100% and outranks a bare class). Without it the reps box
+   stretches to the row width and shoves the finisher off the exercise card. */
+input.cex-finisher-input { width: 72px; flex: 0 0 72px; text-align: center; }
 
 /* ===== Warm-up sets ===== */
 /* Coach row button (cyan accent, distinct from the orange finisher). */
@@ -2823,6 +2832,15 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
 .notif-name { font-weight: 700; color: var(--text); }
 .notif-text { color: var(--text-soft); }
 .notif-when { flex-shrink: 0; color: var(--muted); font-size: 0.72rem; }
+/* Phones: one-line-plus-ellipsis truncates an alert to uselessness ("Jordan
+   Reyes eating well under…"), and the nowrap row also gave the card a
+   min-content wider than the screen, which stretched the whole Overview grid
+   past the viewport. Let the text wrap instead. */
+@media (max-width: 600px) {
+  .notif-row { align-items: flex-start; padding: 0.55rem 0.2rem; }
+  .notif-body { white-space: normal; overflow: visible; text-overflow: clip; }
+  .notif-log-scroll { max-height: 9.5rem; }
+}
 
 /* Mobile: the whole month fits on screen — every cell an equal square with
    just the date and a client/booking count badge (pills hide, badge shows) */
@@ -3624,6 +3642,7 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
   input[type="number"],
   input[type="password"],
   input[type="date"],
+  input[type="search"],
   textarea,
   select {
     font-size: 16px;
@@ -3682,6 +3701,7 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
   input[type="number"],
   input[type="password"],
   input[type="date"],
+  input[type="search"],
   textarea,
   select {
     padding: 0.7em 0.8em;
@@ -8387,8 +8407,18 @@ body.live-log-mode #screen-client .header-right { display: none; }
 .food-add-btn:hover { border-color: var(--primary); color: var(--primary-bright); }
 .food-day-foot { display: flex; justify-content: center; margin-top: 1rem; }
 
+/* Finger-sized targets. The food log's round ✕, the dashed add button and the
+   recipe-builder ingredient ✕ are all comfortable with a mouse but land well
+   under the 44px minimum on a phone, and they sit inches from each other. */
+@media (pointer: coarse) {
+  .food-entry { gap: 0.4em; }
+  .food-entry-del { width: 40px; height: 40px; font-size: 1.15rem; }
+  .food-add-btn { padding: 0.75em 0.4em; font-size: 0.85rem; }
+  .rb-item-del { padding: 0.55em 0.7em; font-size: 1.3rem; }
+}
+
 /* Add-food modal */
-.food-search { width: 100%; margin-bottom: 0.7em; }
+.food-search { width: 100%; }
 .food-results { max-height: 46vh; overflow-y: auto; }
 .food-results-head {
   font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em;
@@ -8514,6 +8544,14 @@ body.live-log-mode #screen-client .header-right { display: none; }
 .adh-dows { display: flex; gap: 3px; margin-top: 0.35em; }
 .adh-dow { flex: 1 1 0; min-width: 0; text-align: center; font-size: 0.6rem; color: var(--muted); font-weight: 700; }
 .adh-hint { font-size: 0.78rem; margin: 0.4em 0 0; text-align: center; }
+/* Phones: 30 days across a phone leaves 7px columns nobody can tap and a smear
+   of day letters. Floor each day at a finger-width column and scroll the chart
+   sideways instead. Short ranges still fit, so they keep filling the card. */
+@media (max-width: 600px) {
+  .adh-chart { overflow-x: auto; overflow-y: hidden; padding-bottom: 0.15em; }
+  .adh-cols, .adh-dows { width: max-content; min-width: 100%; }
+  .adh-bar, .adh-dow { flex: 1 0 16px; }
+}
 
 .adh-detail {
   margin-top: 0.6em; padding: 0.7rem 0.8rem; border-radius: var(--radius);
@@ -8629,8 +8667,10 @@ body.live-log-mode #screen-client .header-right { display: none; }
 .myfoods-del:hover { color: var(--danger); }
 
 /* ============ Barcode scanning and online lookup ============ */
-.food-search-row { display: flex; gap: 0.5em; align-items: stretch; }
-.food-search-row .food-search { flex: 1 1 auto; min-width: 0; }
+.food-search-row { display: flex; gap: 0.5em; align-items: stretch; margin-bottom: 0.7em; }
+/* Margins zeroed on the field itself — the base input rule's margin-top would
+   otherwise make the stretched scan button taller than the box beside it. */
+.food-search-row .food-search { flex: 1 1 auto; min-width: 0; margin: 0; }
 .food-scan-btn {
   flex: 0 0 auto; width: 2.75rem; border-radius: var(--radius);
   border: 1px solid var(--border); background: var(--surface-2); color: var(--text-soft);

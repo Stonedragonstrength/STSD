@@ -8119,6 +8119,9 @@
         _adhOpenDay = _adhOpenDay === d || !foodDayEntries(progress, d).length ? null : d;
         draw();
       }));
+      // On phones a long range scrolls sideways — start at the newest days.
+      const chart = card.querySelector(".adh-chart");
+      if (chart) chart.scrollLeft = chart.scrollWidth;
     };
     draw();
     return card;
@@ -15191,7 +15194,13 @@
       handleBarcode(clean, mealKey, opts);
     };
 
-    navigator.mediaDevices?.getUserMedia({ video: { facingMode: "environment" } })
+    // No camera API at all (old browser, or the page somehow isn't on https)
+    // — say so instead of leaving "Starting the camera…" up forever.
+    if (!navigator.mediaDevices?.getUserMedia) {
+      say("This browser can't open the camera here. Type the number under the barcode instead.");
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
       .then(async (s) => {
         if (done) { s.getTracks().forEach((t) => t.stop()); return; } // closed while asking
         stream = s;
