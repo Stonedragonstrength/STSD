@@ -243,6 +243,9 @@
   // When set, renderWeeks/addWeek operate on this template instead of the current client.
   let _programEditorId = null;
   let _coachActiveWeekIdx = 0;
+  // The pinned "Coaching" tab at the end of the week strip. One-off sessions
+  // aren't a week, so they get a flag rather than an index into weeks[].
+  let _coachOneOffTab = false;
   let _prEditIds = new Set();
   let _exLibraryTarget = null; // { day, rerenderFn } (coach) or { onAdd } (athlete) — set by openExLibrary()/openAthleteExLibrary(), used for tap-to-add
   // Athletes can add their own exercises to a day on the fly (stored in progress
@@ -3208,6 +3211,7 @@
     ensureProgramTemplates();
     _programEditorId = id;
     _coachActiveWeekIdx = 0;
+    _coachOneOffTab = false;
     const tpl = currentProgramTemplate(); if (!tpl) return;
     switchCoachView("program-editor");
     updateHeaderBreadcrumb({ name: tpl.name || "Program" });
@@ -3535,6 +3539,7 @@
     // athlete's program (the "Edit this day lands on a random program" bug).
     _programEditorId = null;
     _coachActiveWeekIdx = 0;
+    _coachOneOffTab = false;
     _prEditIds = new Set();
     _prNewLifts = [];
     if (!c.schedule) c.schedule = {};
@@ -6223,14 +6228,18 @@
     const empty = $("#weeks-empty");
     container.innerHTML = "";
     // One-off sessions render even with no program loaded — throwing a day
-    // together mustn't require weeks to exist.
-    if (c.weeks.length === 0) { show(empty); renderOneOffSection(c); return; }
+    // together mustn't require weeks to exist. With no weeks there's no tab
+    // strip to pin them to, so they fall back to the container below.
+    if (c.weeks.length === 0) { show(empty); _coachOneOffTab = false; renderOneOffSection(c); return; }
     hide(empty);
     _coachActiveWeekIdx = Math.min(_coachActiveWeekIdx, c.weeks.length - 1);
+    // The Coaching tab owns the one-off section once a strip exists — don't
+    // leave a second copy stranded at the bottom of the program.
+    const ooHost = $("#oneoff-container");
+    if (ooHost) ooHost.innerHTML = "";
     renderCoachWeekTabs(c.weeks, container);
-    renderMoodRollupBanner(c, container);
+    if (!_coachOneOffTab) renderMoodRollupBanner(c, container);
     renderArchiveSection(c);
-    renderOneOffSection(c);
   }
   // Compact "how they've been feeling" roll-up above the athlete's program.
   function renderMoodRollupBanner(c, container) {
@@ -6249,20 +6258,25 @@
   // together days). They live in c.oneOffDays, never in weeks, so program
   // progression / week nav / up-next don't see them. PR detection does.
   const _oneOffOpen = new Set(); // session ids expanded in this session
-  function renderOneOffSection(c) {
-    const container = $("#oneoff-container");
+  // `host` defaults to the standalone container below the program; the pinned
+  // Coaching tab passes its own body plus a rerender that rebuilds the strip
+  // (so the tab's session count stays honest after an add or delete).
+  function renderOneOffSection(c, host, rerenderFn) {
+    const container = host || $("#oneoff-container");
     if (!container) return;
     if (!Array.isArray(c.oneOffDays)) c.oneOffDays = [];
-    container.innerHTML = "";
-    const rerender = () => renderOneOffSection(c);
+    const inTab = container.id !== "oneoff-container";
+    if (!inTab) container.innerHTML = "";
+    const rerender = rerenderFn || (() => renderOneOffSection(c, container));
 
     const section = document.createElement("div");
-    section.className = "card oneoff-section";
+    section.className = inTab ? "oneoff-section oneoff-section-tab" : "card oneoff-section";
     const head = document.createElement("div");
     head.className = "oneoff-head";
     const intro = document.createElement("div");
     intro.className = "oneoff-head-text";
-    intro.innerHTML = `<h3>🐉 One-off sessions</h3><p class="muted oneoff-hint">Days you run together outside the program: heavy lifts with your equipment, or a thrown-together day. The program never sees them, PRs do.</p>`;
+    intro.innerHTML = (inTab ? "" : `<h3>🐉 One-off sessions</h3>`) +
+      `<p class="muted oneoff-hint">Days you run together outside the program: heavy lifts with your equipment, or a thrown-together day. The program never sees them, PRs do.</p>`;
     const actions = document.createElement("div");
     actions.className = "oneoff-head-actions";
 
@@ -6366,7 +6380,9 @@
     if (!c.oneOffDays.length) {
       const emptyHint = document.createElement("p");
       emptyHint.className = "muted oneoff-empty";
-      emptyHint.textContent = "No one-off sessions yet.";
+      emptyHint.textContent = inTab
+        ? 'No sessions yet. Hit "＋ New session" to build one for a day you train together.'
+        : "No one-off sessions yet.";
       section.appendChild(emptyHint);
     }
     container.appendChild(section);
@@ -6381,7 +6397,7 @@
 
     weeks.forEach((week, wIdx) => {
       const tab = document.createElement("button");
-      tab.className = "coach-week-tab" + (wIdx === _coachActiveWeekIdx ? " active" : "");
+      tab.className = "coach-week-tab" + (wIdx === _coachActiveWeekIdx && !_coachOneOffTab ? " active" : "");
       tab.title = "Drag to reorder";
       const lbl = document.createElement("span");
       lbl.className = "coach-week-tab-lbl";
@@ -6441,6 +6457,7 @@
       tab.appendChild(del);
       tab.addEventListener("click", () => {
         _coachActiveWeekIdx = wIdx;
+        _coachOneOffTab = false;
         renderWeeks();
       });
 
@@ -6492,12 +6509,35 @@
       addBtn.title = "Add week";
       addBtn.addEventListener("click", () => {
         _coachActiveWeekIdx = weeks.length;
+        _coachOneOffTab = false;
         addWeek();
       });
       strip.appendChild(addBtn);
     }
 
+    // ── Pinned Coaching tab ──
+    // One-off sessions belong to an athlete, not a program template, so this
+    // is client-side only. It's pinned last so it doesn't shift when weeks
+    // get added, duplicated or dragged around.
+    const ooClient = _programEditorId ? null : currentClient();
+    if (ooClient) {
+      const nSessions = (ooClient.oneOffDays || []).length;
+      const ooTab = document.createElement("button");
+      ooTab.className = "coach-week-tab coach-week-tab-oneoff" + (_coachOneOffTab ? " active" : "");
+      ooTab.title = "Sessions you run together outside the program";
+      ooTab.innerHTML = `<span class="coach-week-tab-lbl">🐉 Coaching</span>` +
+        (nSessions ? `<span class="coach-week-tab-count">${nSessions}</span>` : "");
+      ooTab.addEventListener("click", () => { _coachOneOffTab = true; renderWeeks(); });
+      strip.appendChild(ooTab);
+    }
+
     container.appendChild(strip);
+
+    // The Coaching tab replaces the week body rather than sitting under it.
+    if (_coachOneOffTab && ooClient) {
+      renderOneOffSection(ooClient, container, renderWeeks);
+      return;
+    }
 
     // ── Active week body ──
     const week = weeks[_coachActiveWeekIdx];
