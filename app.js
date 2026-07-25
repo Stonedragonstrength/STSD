@@ -14618,18 +14618,22 @@
     { name: "Wyrm", icon: "🦖" },
     { name: "Stone Dragon", icon: "🐉" },
   ];
-  // Rank cost compounds 46% a rank rather than creeping up by a flat amount,
-  // the way a game's level curve does: the first few come in a week, the last
-  // one is a season's work. A flawless day is 114 XP, so Stone Dragon's ~34,400
-  // is about a year of real logging and can't be rushed in under ten months.
+  // XP to leave each rank, one entry per jump. Spelled out rather than
+  // generated so the shape is tunable by eye.
   //
-  // The climb stops compounding at the last named rank, otherwise each prestige
-  // numeral past Stone Dragon would cost half again as much as the whole ladder
-  // and the numerals would be decoration rather than something to earn.
-  const XP_BASE = 250, XP_RATIO = 1.46;
+  // The cost accelerates hardest through the middle of the ladder and then
+  // eases off, instead of compounding all the way. A pure geometric curve put
+  // 11,000 XP on the final jump alone, a bar that crawls under 1% a day for
+  // four months. Paying for that in the middle ranks, where an athlete is
+  // established enough to take it, keeps the top of the ladder moving.
+  //
+  // Total to Stone Dragon is 33,970: about a year at 95 XP a day, and no less
+  // than ten months even for someone who never drops a flawless 114-XP day.
+  // Past the last named rank the cost holds at the final step, so each prestige
+  // numeral is roughly a 75-day season.
+  const RANK_XP = [250, 420, 700, 1150, 1800, 2650, 3600, 4550, 5450, 6300, 7100];
   function xpForLevel(level) {
-    const step = Math.min(Math.max(level, 1), RANKS.length - 1);
-    return Math.round(XP_BASE * Math.pow(XP_RATIO, step - 1) / 10) * 10;
+    return RANK_XP[Math.min(Math.max(level, 1), RANK_XP.length) - 1];
   }
   function levelFromXp(xp) {
     let level = 1, spent = 0, need = xpForLevel(1);
