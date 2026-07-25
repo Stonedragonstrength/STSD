@@ -14629,11 +14629,44 @@
   //
   // Total to Stone Dragon is 33,970: about a year at 95 XP a day, and no less
   // than ten months even for someone who never drops a flawless 114-XP day.
-  // Past the last named rank the cost holds at the final step, so each prestige
-  // numeral is roughly a 75-day season.
   const RANK_XP = [250, 420, 700, 1150, 1800, 2650, 3600, 4550, 5450, 6300, 7100];
+
+  // Reaching Stone Dragon doesn't end the ladder, it starts a new lap. The
+  // dragon takes on a material and hardens through the Mohs scale, talc to
+  // diamond, before earning the next Stone Dragon numeral and starting over on
+  // something harder still.
+  const MOHS = [
+    { name: "Talc", icon: "⬜", mohs: 1 },
+    { name: "Gypsum", icon: "🟫", mohs: 2 },
+    { name: "Calcite", icon: "⬛", mohs: 3 },
+    { name: "Fluorite", icon: "🟪", mohs: 4 },
+    { name: "Apatite", icon: "🟦", mohs: 5 },
+    { name: "Feldspar", icon: "🟧", mohs: 6 },
+    { name: "Quartz", icon: "🔹", mohs: 7 },
+    { name: "Topaz", icon: "🟨", mohs: 8 },
+    { name: "Corundum", icon: "♦️", mohs: 9 },
+    { name: "Diamond", icon: "💎", mohs: 10 },
+  ];
+  const CYCLE = MOHS.length + 1;   // ten materials, then the next numeral
+
+  // A lap restarts cheap and compounds steeply through it, the way a game
+  // resets you to level 1 of a harder tier: a new material every three weeks
+  // early on, stretching to three months by diamond. It never settles into a
+  // flat per-step cost.
+  //
+  // One lap is 54,640 XP, about 18 months, so every lap costs more than the
+  // whole original climb did. CYCLE_GROWTH then makes each lap 35% dearer than
+  // the one before, so the ladder never straightens out no matter how far up
+  // someone gets.
+  const PRESTIGE_XP = [1900, 2240, 2650, 3120, 3680, 4350, 5130, 6050, 7140, 8430, 9950];
+  const CYCLE_GROWTH = 1.35;
+
   function xpForLevel(level) {
-    return RANK_XP[Math.min(Math.max(level, 1), RANK_XP.length) - 1];
+    const l = Math.max(level, 1);
+    if (l <= RANK_XP.length) return RANK_XP[l - 1];
+    const past = l - (RANK_XP.length + 1);
+    const cost = PRESTIGE_XP[past % CYCLE] * Math.pow(CYCLE_GROWTH, Math.floor(past / CYCLE));
+    return Math.round(cost / 10) * 10;
   }
   function levelFromXp(xp) {
     let level = 1, spent = 0, need = xpForLevel(1);
@@ -14646,14 +14679,23 @@
     if (n < ROMAN.length) return ROMAN[n];
     return "X".repeat(Math.floor(n / 10)) + (ROMAN[n % 10] || "");
   }
+  // Below Stone Dragon it's the plain named ladder. At and past it, a lap:
+  // step 0 is the bare Stone Dragon numeral, steps 1-10 wear a Mohs material.
   function rankForLevel(level) {
-    const i = Math.min(Math.max(level, 1), RANKS.length) - 1;
-    const r = RANKS[i];
-    const past = level - RANKS.length;   // prestige count once the names run out
+    if (level < RANKS.length) {
+      const r = RANKS[Math.max(level, 1) - 1];
+      return { name: r.name, icon: r.icon, isMax: false, isDragon: false, tier: 0 };
+    }
+    const top = RANKS[RANKS.length - 1];
+    const past = level - RANKS.length;
+    const tier = Math.floor(past / CYCLE) + 1;    // which Stone Dragon numeral
+    const step = past % CYCLE;                    // 0 = the numeral itself
+    const dragon = tier > 1 ? `${top.name} ${romanFor(tier)}` : top.name;
+    if (step === 0) return { name: dragon, icon: top.icon, isMax: true, isDragon: true, tier };
+    const m = MOHS[step - 1];
     return {
-      ...r,
-      name: past > 0 ? `${r.name} ${romanFor(past + 1)}` : r.name,
-      isMax: level >= RANKS.length,
+      name: `${m.name} ${dragon}`, icon: m.icon + top.icon,
+      isMax: false, isDragon: true, tier, mohs: m.mohs,
     };
   }
 
@@ -14911,15 +14953,17 @@
         </div>
       </div>
 
-      <div class="food-lvl ${game.promoted ? "is-promoted" : ""} ${game.rank.isMax ? "is-max" : ""}">
+      <div class="food-lvl ${game.promoted ? "is-promoted" : ""} ${game.rank.isMax ? "is-max" : ""} ${game.rank.isDragon ? "is-dragon" : ""}">
         <div class="food-rank">
           <span class="food-rank-badge">${game.rank.icon}</span>
           <span class="food-rank-name">${escapeHtml(game.rank.name)}</span>
-          <span class="food-lvl-xp">${game.into}<i>/${game.need} XP</i></span>
+        </div>
+        <div class="food-lvl-meter">
+          <span class="food-lvl-track"><span class="food-lvl-fill"
+            style="width:${((game.into / game.need) * 100).toFixed(1)}%"></span></span>
+          <span class="food-lvl-xp">${game.into.toLocaleString()}<i>/${game.need.toLocaleString()} XP</i></span>
           ${game.streak ? `<span class="food-streak" title="${game.streak} day streak. Best: ${game.bestStreak}">🔥${game.streak}</span>` : ""}
         </div>
-        <span class="food-lvl-track"><span class="food-lvl-fill"
-          style="width:${((game.into / game.need) * 100).toFixed(1)}%"></span></span>
       </div>
 
       ${plan ? "" : `<p class="muted food-no-target">No targets yet. Tap the ring to set them and this all fills in.</p>`}

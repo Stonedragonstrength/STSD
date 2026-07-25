@@ -8423,8 +8423,15 @@ body.live-log-mode #screen-client .header-right { display: none; }
   text-transform: uppercase; color: var(--gold);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* A bare Stone Dragon numeral is the peak of a lap, so it takes the accent
+   color; the materials worn on the way there stay gold. */
 .food-lvl.is-max .food-rank-name { color: var(--primary-bright); }
 .food-lvl.is-max .food-rank-badge { filter: drop-shadow(0 0 5px rgba(var(--primary-rgb), 0.6)); }
+/* Two-emoji material badges (material + dragon) need to sit tighter. */
+.food-lvl.is-dragon .food-rank-badge { letter-spacing: -0.08em; }
+/* Material names run long ("FELDSPAR STONE DRAGON II"), so ease the tracking
+   rather than truncating the rank someone spent a year earning. */
+.food-lvl.is-dragon .food-rank-name { letter-spacing: 0.03em; font-size: 0.68rem; }
 /* A promotion lands on this render — give the plate one pass of shine. */
 .food-lvl.is-promoted .food-rank-badge { animation: rank-pop 0.9s ease; }
 @keyframes rank-pop {
@@ -8432,8 +8439,9 @@ body.live-log-mode #screen-client .header-right { display: none; }
   35% { transform: scale(1.45) rotate(-8deg); }
   100% { transform: scale(1); }
 }
+.food-lvl-meter { display: flex; align-items: center; gap: 0.5em; }
 .food-lvl-track {
-  height: 6px; border-radius: 999px;
+  flex: 1 1 auto; height: 6px; border-radius: 999px;
   background: var(--surface-3); overflow: hidden;
 }
 .food-lvl-fill {
