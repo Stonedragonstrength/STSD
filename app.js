@@ -594,21 +594,46 @@
   // Weight climbs each set by a chosen percent, compounding off the previous
   // set's number and rounded to the nearest 5 lb plate. Reps can optionally
   // step down per set (classic 12/10/8). Stored as
-  // ex.pyramid = { pct: "10", repDrop: 0 }. Weight ladder starts at
-  // ex.currentWeight; BW lifts have no ladder.
+  // ex.pyramid = { pct: "10", repDrop: 0, weights: [] }. Weight ladder starts
+  // at ex.currentWeight; BW lifts have no ladder.
+  // `weights` is an optional per-set override: any set the coach typed a number
+  // into uses that number verbatim AND re-anchors the climb for the sets after
+  // it, so you can pin the openers and let the percent carry the top end. A
+  // pyramid with only typed weights and no percent is valid (a flat ladder).
   const PYRAMID_PCTS = ["5", "7.5", "10", "12.5", "15"];
+  function pyramidCustom(ex) {
+    return Array.isArray(ex?.pyramid?.weights) ? ex.pyramid.weights : [];
+  }
+  function pyramidHasCustom(ex) {
+    return pyramidCustom(ex).some((v) => parseFloat(v) > 0);
+  }
   function pyramidActive(ex) {
-    return !!(ex && ex.kind !== "mobility" && ex.pyramid && parseFloat(ex.pyramid.pct) > 0);
+    if (!ex || ex.kind === "mobility" || !ex.pyramid) return false;
+    return parseFloat(ex.pyramid.pct) > 0 || pyramidHasCustom(ex);
   }
   function roundPlate5(v) { return Math.max(5, Math.round(v / 5) * 5); }
   function pyramidWeights(ex, numSets) {
     if (!pyramidActive(ex) || !numSets) return null;
-    let cur = parseFloat(ex.currentWeight);
-    if (!isFinite(cur) || cur <= 0) return null;
-    const p = parseFloat(ex.pyramid.pct) / 100;
-    const out = [cur];
-    for (let i = 1; i < numSets; i++) { cur = roundPlate5(cur * (1 + p)); out.push(cur); }
+    const custom = pyramidCustom(ex);
+    const pct = parseFloat(ex.pyramid.pct);
+    const step = isFinite(pct) ? pct / 100 : 0;
+    const base = parseFloat(ex.currentWeight);
+    let cur = isFinite(base) && base > 0 ? base : null;
+    const out = [];
+    for (let i = 0; i < numSets; i++) {
+      const c = parseFloat(custom[i]);
+      if (isFinite(c) && c > 0) cur = c;        // typed-in set wins and re-anchors
+      else if (cur === null) return null;       // nothing to climb from yet
+      else if (i > 0) cur = roundPlate5(cur * (1 + step));
+      out.push(cur);
+    }
     return out;
+  }
+  // Once weights are typed in by hand the percent is only filling gaps, so the
+  // chip/button say "custom" rather than quoting a climb that isn't the story.
+  function pyramidLabel(ex, prefix) {
+    if (pyramidHasCustom(ex)) return `${prefix} custom`;
+    return `${prefix} +${ex?.pyramid?.pct}%`;
   }
   function pyramidReps(ex, numSets) {
     const base = parseInt(ex.currentReps, 10);
@@ -1029,6 +1054,16 @@
     pop.style.cssText = "position:fixed;z-index:9999;visibility:hidden";
 
     const saveChange = () => { saveTrainer(); onChange(); render(); };
+    // Sets and typed weights are editable before any percent is picked, so the
+    // pyramid object gets created on demand rather than only by the % row.
+    const ensurePyr = () => (ex.pyramid = ex.pyramid || { pct: "", repDrop: 0 });
+
+    function sectionLabel(text) {
+      const el = document.createElement("div");
+      el.className = "finisher-slot-lbl";
+      el.textContent = text;
+      return el;
+    }
 
     function render() {
       pop.innerHTML = "";
@@ -1039,16 +1074,96 @@
 
       const hint = document.createElement("p");
       hint.className = "prog-pop-hint";
-      hint.textContent = "Weight climbs each set by this percent, compounding off the previous set and rounded to 5 lb plates.";
+      hint.textContent = "Pick the sets, type a weight for any set you want to pin, and let the percent fill in the rest.";
       pop.appendChild(hint);
 
-      // % per set (10% is the classic; Off clears it)
+      // ── 1. How many sets ── (same values as the row's Sets button)
+      pop.appendChild(sectionLabel("Sets"));
+      const setsRow = document.createElement("div");
+      setsRow.className = "finisher-pct-row";
+      SETS_VALUES.forEach((v) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "finisher-pct-btn" + (String(ex.sets || "") === v ? " on" : "");
+        b.textContent = v;
+        b.addEventListener("click", () => {
+          ex.sets = v;
+          // Drop weights typed past the new last set so they can't linger unseen.
+          const w = ex.pyramid?.weights;
+          if (Array.isArray(w) && w.length > parseInt(v, 10)) w.length = parseInt(v, 10);
+          saveChange();
+        });
+        setsRow.appendChild(b);
+      });
+      pop.appendChild(setsRow);
+
+      const n = parseInt(ex.sets, 10) || 0;
+
+      // ── 2. Weight per set ── typed numbers beat the computed ladder
+      const wLbl = sectionLabel("Weight per set");
+      const clearBtn = document.createElement("button");
+      clearBtn.type = "button";
+      clearBtn.className = "pyr-clear-btn";
+      clearBtn.textContent = "Clear";
+      clearBtn.title = "Drop the typed weights and go back to the percent ladder";
+      clearBtn.addEventListener("click", () => {
+        if (ex.pyramid) delete ex.pyramid.weights;
+        saveChange();
+      });
+      if (pyramidHasCustom(ex)) wLbl.appendChild(clearBtn);
+      pop.appendChild(wLbl);
+
+      const wRow = document.createElement("div");
+      wRow.className = "pyr-weight-row";
+      const cells = [];
+      if (!n) {
+        const none = document.createElement("p");
+        none.className = "prog-pop-hint";
+        none.textContent = "Pick how many sets first.";
+        wRow.appendChild(none);
+      }
+      for (let i = 0; i < n; i++) {
+        const cell = document.createElement("label");
+        cell.className = "pyr-weight-cell";
+        const cap = document.createElement("span");
+        cap.className = "pyr-weight-cap";
+        cap.textContent = "S" + (i + 1);
+        const inp = document.createElement("input");
+        inp.type = "number";
+        inp.inputMode = "decimal";
+        inp.className = "pyr-weight-input";
+        inp.value = pyramidCustom(ex)[i] || "";
+        inp.addEventListener("input", () => {
+          ensurePyr();
+          const arr = pyramidCustom(ex).slice();
+          for (let k = 0; k < n; k++) if (arr[k] == null) arr[k] = ""; // no sparse holes into the DB
+          arr[i] = inp.value.trim();
+          ex.pyramid.weights = arr;
+          // An all-blank array is the same as no override — don't keep the husk.
+          if (!arr.some((v) => String(v).trim())) delete ex.pyramid.weights;
+          saveTrainer();
+          onChange();   // row button + card tint follow immediately
+          refresh();    // ladder line and downstream placeholders, in place
+        });
+        cell.appendChild(cap);
+        cell.appendChild(inp);
+        wRow.appendChild(cell);
+        cells.push(inp);
+      }
+      pop.appendChild(wRow);
+
+      // ── 3. Percent climb ── (10% is the classic; Off clears the whole pyramid)
+      pop.appendChild(sectionLabel("Climb per set"));
       const pctRow = document.createElement("div");
       pctRow.className = "finisher-pct-row";
       const offBtn = document.createElement("button");
       offBtn.type = "button";
-      offBtn.className = "finisher-pct-btn" + (!ex.pyramid ? " on" : "");
+      // Reads "on" whenever nothing is actually driving a ladder — clearing the
+      // percent with no typed weights leaves ex.pyramid alive but inert, and
+      // the row should still show that as off.
+      offBtn.className = "finisher-pct-btn" + (!pyramidActive(ex) ? " on" : "");
       offBtn.textContent = "Off";
+      offBtn.title = "Clear the pyramid, typed weights included";
       offBtn.addEventListener("click", () => { delete ex.pyramid; saveChange(); });
       pctRow.appendChild(offBtn);
       PYRAMID_PCTS.forEach((p) => {
@@ -1057,45 +1172,51 @@
         b.className = "finisher-pct-btn" + (ex.pyramid?.pct === p ? " on" : "");
         b.textContent = "+" + p + "%";
         b.addEventListener("click", () => {
-          ex.pyramid = { pct: p, repDrop: ex.pyramid?.repDrop || 0 };
+          ensurePyr();
+          ex.pyramid.pct = ex.pyramid.pct === p ? "" : p; // tap again to drop the climb
           saveChange();
         });
         pctRow.appendChild(b);
       });
       pop.appendChild(pctRow);
 
-      if (ex.pyramid) {
-        const dropLbl = document.createElement("div");
-        dropLbl.className = "finisher-slot-lbl";
-        dropLbl.textContent = "Reps each set";
-        pop.appendChild(dropLbl);
-        const dropRow = document.createElement("div");
-        dropRow.className = "finisher-pct-row";
-        [[0, "Same"], [1, "−1"], [2, "−2"], [3, "−3"]].forEach(([d, lbl]) => {
-          const b = document.createElement("button");
-          b.type = "button";
-          b.className = "finisher-pct-btn" + ((parseInt(ex.pyramid.repDrop, 10) || 0) === d ? " on" : "");
-          b.textContent = lbl;
-          b.addEventListener("click", () => { ex.pyramid.repDrop = d; saveChange(); });
-          dropRow.appendChild(b);
-        });
-        pop.appendChild(dropRow);
+      // ── 4. Reps per set ──
+      pop.appendChild(sectionLabel("Reps each set"));
+      const dropRow = document.createElement("div");
+      dropRow.className = "finisher-pct-row";
+      [[0, "Same"], [1, "−1"], [2, "−2"], [3, "−3"]].forEach(([d, lbl]) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "finisher-pct-btn" + ((parseInt(ex.pyramid?.repDrop, 10) || 0) === d ? " on" : "");
+        b.textContent = lbl;
+        b.addEventListener("click", () => { ensurePyr().repDrop = d; saveChange(); });
+        dropRow.appendChild(b);
+      });
+      pop.appendChild(dropRow);
 
-        // Live preview of the ladder from the current sets/weight/reps
-        const n = parseInt(ex.sets, 10) || 0;
+      // Live ladder preview from the current sets/weights/reps.
+      const preview = document.createElement("p");
+      preview.className = "prog-pop-hint pyr-preview";
+      pop.appendChild(preview);
+
+      // Repaints only the parts that follow from a typed weight, so the input
+      // being typed into keeps focus and the caret.
+      function refresh() {
         const w = pyramidWeights(ex, n);
-        const preview = document.createElement("p");
-        preview.className = "prog-pop-hint pyr-preview";
+        const r = w ? pyramidReps(ex, n) : null;
         if (!w) {
           preview.textContent = ex.currentWeight === "BW"
-            ? "Bodyweight lifts have no weight ladder. Set a weight first."
-            : "Set a starting weight and sets to see the ladder.";
+            ? "Bodyweight lifts have no weight ladder. Type a weight per set, or set a starting weight."
+            : "Type a weight per set, or set a starting weight and a climb.";
         } else {
-          const r = pyramidReps(ex, n);
           preview.textContent = w.map((wt, i) => `${wt}${r ? "×" + r[i] : ""}`).join(" · ");
         }
-        pop.appendChild(preview);
+        // Blank cells show what the ladder would put there.
+        cells.forEach((inp, i) => {
+          inp.placeholder = w && !String(inp.value).trim() ? String(w[i]) : "";
+        });
       }
+      refresh();
     }
     render();
     document.body.appendChild(pop);
@@ -7195,8 +7316,12 @@
     setsBtn.className = "picker-btn picker-btn-sm" + (ex.sets ? "" : " empty");
     setsBtn.textContent = ex.sets || "—";
     setsBtn.title = isMob ? "Rounds" : "Sets";
+    const refreshSetsBtn = () => {
+      setsBtn.textContent = ex.sets || "—";
+      setsBtn.classList.toggle("empty", !ex.sets);
+    };
     setsBtn.addEventListener("click", (e) => { e.stopPropagation(); openGridPicker(isMob ? "Rounds" : "Sets", SETS_VALUES, ex.sets || "3", (val) => {
-      ex.sets = val; saveTrainer(); setsBtn.textContent = val; setsBtn.classList.remove("empty");
+      ex.sets = val; saveTrainer(); refreshSetsBtn();
     }, setsBtn); });
 
     // Mobility hold-duration button (seconds). Edits ex.currentReps (reused as the
@@ -7283,15 +7408,19 @@
     // Pyramid — weight climbs each set by a percent; sandy card when on.
     const pyrBtn = document.createElement("button");
     pyrBtn.className = "picker-btn picker-btn-sm ex-pyr-btn";
-    pyrBtn.title = "Pyramid: weight climbs each set by a percent (rounded to 5 lb plates)";
+    pyrBtn.title = "Pyramid: set count, a weight per set, and a percent climb for the rest";
     const refreshPyrBtn = () => {
       const on = pyramidActive(ex);
-      pyrBtn.textContent = on ? `🔺+${ex.pyramid.pct}%` : "＋🔺";
+      pyrBtn.textContent = on ? pyramidLabel(ex, "🔺") : "＋🔺";
       pyrBtn.classList.toggle("empty", !on);
       wrapper.classList.toggle("pyramid-tint", on);
     };
     refreshPyrBtn();
-    pyrBtn.addEventListener("click", (e) => { e.stopPropagation(); openPyramidPicker(ex, pyrBtn, refreshPyrBtn); });
+    // The picker edits ex.sets too, so the Sets button has to follow it.
+    pyrBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openPyramidPicker(ex, pyrBtn, () => { refreshPyrBtn(); refreshSetsBtn(); });
+    });
 
     // Effort / intensity (heat ramp) — sits with the finisher.
     const effortBtn = document.createElement("button");
@@ -13082,8 +13211,8 @@
     if (pyrW) {
       const chip = document.createElement("span");
       chip.className = "cex-pyr-chip";
-      chip.textContent = `🔺 +${ex.pyramid.pct}%`;
-      chip.title = "Pyramid: the weight climbs each set. " + pyrW.map((w, i) => `${w}${pyrR ? "×" + pyrR[i] : ""}`).join(" → ");
+      chip.textContent = pyramidLabel(ex, "🔺");
+      chip.title = "Pyramid: the weight changes each set. " + pyrW.map((w, i) => `${w}${pyrR ? "×" + pyrR[i] : ""}`).join(" → ");
       rxEl.appendChild(chip);
     }
 
