@@ -134,6 +134,7 @@
       custom_foods: p.customFoods || [],
       saved_meals: p.savedMeals || [],
       nutrition_game: p.nutritionGame || {},
+      hoard: p.hoard || {},
       synced_at: new Date().toISOString(),
     };
   }
@@ -158,6 +159,7 @@
       customFoods: r.custom_foods || [],
       savedMeals: r.saved_meals || [],
       nutritionGame: r.nutrition_game || {},
+      hoard: r.hoard || {},
       syncedAt: r.synced_at,
     };
   }

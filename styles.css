@@ -2122,6 +2122,82 @@ input.cex-finisher-input { width: 72px; flex: 0 0 72px; text-align: center; }
   color: #062131; font-weight: 900; font-size: 0.95rem;
 }
 
+/* ===== The Hoard: training rank bar =====
+   One slim row, on purpose. The food tab's rank plate is two rows with a
+   chunky meter; repeating that shape here would eat screen for a status line.
+   Everything sits on a single baseline and the track takes the slack. */
+.ov-hoard {
+  display: flex;
+  align-items: center;
+  /* Wraps only when it genuinely runs out of room (a long prestige name like
+     "Dragonsteel HOARD II" on a narrow phone), so the common case stays one
+     line instead of paying for a breakpoint that fires too early. */
+  flex-wrap: wrap;
+  row-gap: 0.3rem;
+  gap: 0.55rem;
+  padding: 0.42rem 0.7rem;
+  margin-bottom: 0.7rem;
+  /* Capped so a 4px track doesn't stretch across a desktop as dead space. It
+     reads as a status chip under the greeting, not a full-width component. */
+  max-width: 520px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  border-left: 3px solid rgba(var(--gold-rgb), 0.75);
+}
+.ov-hoard-badge { font-size: 1.05rem; line-height: 1; flex-shrink: 0; }
+.ov-hoard-name {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gold);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+/* The track is the only thing that flexes, so long rank names like
+   "Dragonsteel HOARD II" never get truncated. */
+.ov-hoard-track {
+  position: relative;
+  flex: 1 1 60px;
+  min-width: 60px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.ov-hoard-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(var(--gold-rgb), 0.55), var(--gold));
+  transition: width 0.35s ease;
+}
+.ov-hoard-lb {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--text-soft);
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+/* Past HOARD the bar earns its glow; the bare numeral peak goes brightest. */
+.ov-hoard.is-hoard { border-left-color: var(--gold); }
+.ov-hoard.is-hoard .ov-hoard-badge { filter: drop-shadow(0 0 5px rgba(var(--gold-rgb), 0.6)); }
+.ov-hoard.is-max { border-color: rgba(var(--gold-rgb), 0.4); }
+.ov-hoard.is-promoted { animation: hoard-pop 0.9s ease; }
+@keyframes hoard-pop {
+  0%   { box-shadow: 0 0 0 0 rgba(var(--gold-rgb), 0.5); }
+  60%  { box-shadow: 0 0 0 7px rgba(var(--gold-rgb), 0); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--gold-rgb), 0); }
+}
+/* Powerlifting multiplier button on the coach's exercise row. */
+.ex-pl-btn:not(.empty) {
+  color: var(--gold);
+  border-color: rgba(var(--gold-rgb), 0.45);
+}
+.pl-preview { color: #e3c07e; font-weight: 700; }
+
 /* Mini widgets (bodyweight / top PR) */
 .ov-mini-row { display: flex; gap: 0.7rem; }
 .ov-mini {

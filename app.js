@@ -1224,6 +1224,75 @@
     _attachOutsideClose(pop, anchorBtn);
   }
 
+  // P tag: marks a lift as powerlifting work so its sets count for more toward
+  // the athlete's Hoard. Heavy triples move less raw weight than high-rep
+  // accessory work, and without a multiplier a set of curls would out-earn a
+  // heavy squat. Multiplier rather than a flat toggle so the weighting is the
+  // coach's call per lift.
+  function openPowerPicker(ex, anchorBtn, onChange) {
+    document.querySelector(".pl-pop")?.remove();
+    const pop = document.createElement("div");
+    pop.className = "grid-picker-pop prog-pop pl-pop";
+    pop.style.cssText = "position:fixed;z-index:9999;visibility:hidden";
+
+    const saveChange = () => { saveTrainer(); onChange(); render(); };
+
+    function render() {
+      pop.innerHTML = "";
+      const head = document.createElement("div");
+      head.className = "prog-pop-head";
+      head.textContent = "🅿️ Powerlifting set";
+      pop.appendChild(head);
+
+      const hint = document.createElement("p");
+      hint.className = "prog-pop-hint";
+      hint.textContent = "Counts this lift's sets for more toward their Hoard, so heavy work isn't out-earned by high-rep accessories.";
+      pop.appendChild(hint);
+
+      const row = document.createElement("div");
+      row.className = "finisher-pct-row";
+      const off = document.createElement("button");
+      off.type = "button";
+      off.className = "finisher-pct-btn" + (plMult(ex) === 1 ? " on" : "");
+      off.textContent = "Off";
+      off.addEventListener("click", () => { delete ex.plMult; saveChange(); });
+      row.appendChild(off);
+      PL_MULTS.forEach((m) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "finisher-pct-btn" + (String(ex.plMult || "") === m ? " on" : "");
+        b.textContent = "×" + m;
+        b.addEventListener("click", () => { ex.plMult = m; saveChange(); });
+        row.appendChild(b);
+      });
+      pop.appendChild(row);
+
+      // What this lift is actually worth as prescribed, so the multiplier is a
+      // concrete number rather than an abstract weighting.
+      const sets = parseInt(ex.sets, 10) || 0;
+      const reps = parseInt(ex.currentReps, 10) || 0;
+      let w = weightToLb(ex.currentWeight);
+      if (isFinite(w) && w > 0 && usesDumbbellPair(ex)) w *= 2;
+      const preview = document.createElement("p");
+      preview.className = "prog-pop-hint pl-preview";
+      if (exIsTimed(ex) || ex.kind === "mobility") {
+        preview.textContent = "Timed work has no reps to multiply, so it sits out of the Hoard.";
+      } else if (!sets || !reps || !isFinite(w) || w <= 0) {
+        preview.textContent = ex.currentWeight === "BW"
+          ? "Bodyweight lifts don't count toward the Hoard. Put a real load in to score it."
+          : "Set weight, sets and reps to see what this lift is worth.";
+      } else {
+        const base = sets * reps * w;
+        preview.textContent = `${Math.round(base).toLocaleString()} lb → ${Math.round(base * plMult(ex)).toLocaleString()} lb per session`;
+      }
+      pop.appendChild(preview);
+    }
+    render();
+    document.body.appendChild(pop);
+    requestAnimationFrame(() => _positionPop(pop, anchorBtn));
+    _attachOutsideClose(pop, anchorBtn);
+  }
+
   function openFinisherPicker(ex, anchorBtn, onChange) {
     document.querySelector(".finisher-pop")?.remove();
     const pop = document.createElement("div");
@@ -7422,6 +7491,18 @@
       openPyramidPicker(ex, pyrBtn, () => { refreshPyrBtn(); refreshSetsBtn(); });
     });
 
+    // Powerlifting multiplier — how much this lift's tonnage counts for.
+    const plBtn = document.createElement("button");
+    plBtn.className = "picker-btn picker-btn-sm ex-pl-btn";
+    plBtn.title = "Powerlifting set: weight this lift heavier toward their Hoard";
+    const refreshPlBtn = () => {
+      const m = plMult(ex);
+      plBtn.textContent = m > 1 ? `🅿️×${ex.plMult}` : "＋🅿️";
+      plBtn.classList.toggle("empty", m === 1);
+    };
+    refreshPlBtn();
+    plBtn.addEventListener("click", (e) => { e.stopPropagation(); openPowerPicker(ex, plBtn, refreshPlBtn); });
+
     // Effort / intensity (heat ramp) — sits with the finisher.
     const effortBtn = document.createElement("button");
     effortBtn.className = "picker-btn picker-btn-sm ex-effort-btn";
@@ -7561,6 +7642,7 @@
     row.appendChild(metricsGroup);
     if (!isMob) row.appendChild(progBtn); // auto-progression rides the working sets
     if (!isMob) row.appendChild(pyrBtn);  // pyramid weight ladder
+    if (!isMob) row.appendChild(plBtn);   // powerlifting tonnage multiplier
     if (!isMob) row.appendChild(finisherBtn);
     if (isMob) row.appendChild(placeBtn); // warm-up ↔ finisher placement
     row.appendChild(expandBtn); row.appendChild(saveBtn); row.appendChild(editBtn); row.appendChild(ssBtn); row.appendChild(delBtn);
@@ -11820,8 +11902,10 @@
     // "Up next" reads as a compact floating badge pinned to the bottom-center
     // of the overview (day name on top, kicker under it). The whole badge is
     // the tap target on startable states, so there's no separate Start button.
+    // The rank sits with the greeting, above the calendar: it's an identity
+    // line, and below the fold it may as well not exist.
     const greetHost = $("#overview-greeting");
-    if (greetHost) greetHost.innerHTML = `<div class="ov-greeting">Hey, ${firstName} 👋</div>`;
+    if (greetHost) greetHost.innerHTML = `<div class="ov-greeting">Hey, ${firstName} 👋</div>${hoardBarHtml(c, progress)}`;
     if (heroHost) heroHost.innerHTML = `
       <div class="ov-hero${hero.jump ? " is-clickable" : ""}" id="ov-hero" style="--hero-color:${hero.color || "var(--primary-bright)"};--hero-soft:${hero.soft || "var(--primary-soft)"}">
         <div class="ov-hero-textcol">
@@ -14947,6 +15031,223 @@
     if (promoted) { changed = true; toast(`New rank: ${rank.icon} ${rank.name}`); }
     if (changed) saveClient();
     return { ...lvl, rank, promoted, xp: g.xp, streak, bestStreak: g.bestStreak, plan };
+  }
+
+  // ================= The Hoard (training rank ladder) =================
+  // Deliberately NOT the nutrition engine with new paint. Nutrition grades a
+  // day out of 100 and can be lost: miss your macros and the score drops, skip
+  // a day and the streak dies. The Hoard is an odometer. It counts pounds
+  // actually moved and only ever climbs, so a bad session costs nothing, it
+  // just adds less. Nothing here can take tonnage back.
+  //
+  // Gold denominations, because a dragon's pile of it is the obvious unit.
+  const HOARD_RANKS = [
+    { name: "Coin",     icon: "🪙" },
+    { name: "Pouch",    icon: "💰" },
+    { name: "Ingot",    icon: "🥇" },
+    { name: "Satchel",  icon: "🎒" },
+    { name: "Crate",    icon: "📦" },
+    { name: "Chest",    icon: "🗃️" },
+    { name: "Barrel",   icon: "🛢️" },
+    { name: "Cartload", icon: "🛒" },
+    { name: "Wagon",    icon: "🚂" },
+    { name: "Vault",    icon: "🏛️" },
+    { name: "Treasury", icon: "👑" },
+    { name: "HOARD",    icon: "🐉" },
+  ];
+  // Pounds to leave each rank. A hand-tuned table like RANK_XP, not a formula,
+  // so the shape stays tunable by eye. Compounds the whole way with no flat
+  // tail: every tier costs roughly 1.4x the one before it.
+  //
+  // Total to HOARD is 3,221,000 lb. A moderate session (5 lifts x 3 x 8 near
+  // 100 lb) is about 12,000 lb, so at four days a week that lands around 13
+  // months. Coin to Pouch clears in a week, so the first promotion is quick.
+  const HOARD_LB = [8000, 15000, 28000, 50000, 85000, 140000, 225000, 350000, 520000, 750000, 1050000];
+
+  // Past HOARD the pile is re-forged in a harder metal each lap. Metals rather
+  // than nutrition's Mohs minerals, so the two ladders never read alike.
+  const HOARD_METALS = [
+    { name: "Bronze",     icon: "🥉" },
+    { name: "Silver",     icon: "🥈" },
+    { name: "Gold",       icon: "🥇" },
+    { name: "Platinum",   icon: "⚪" },
+    { name: "Titanium",   icon: "🔵" },
+    { name: "Mythril",    icon: "🟣" },
+    { name: "Adamant",    icon: "⚫" },
+    { name: "Orichalcum", icon: "🔴" },
+    { name: "Starmetal",  icon: "🌟" },
+    { name: "Dragonsteel",icon: "💠" },
+  ];
+  const HOARD_CYCLE = HOARD_METALS.length + 1;  // ten metals, then the numeral
+  // Restart cheap, compound steeply through the lap, and make each lap dearer
+  // than the last, so it never straightens out. One lap is 5,140,000 lb, well
+  // past the 3,221,000 of the original climb.
+  const HOARD_PRESTIGE_LB = [180000, 235000, 305000, 395000, 515000, 670000, 870000, 1130000, 1470000, 1910000, 2480000];
+  const HOARD_CYCLE_GROWTH = 1.35;
+
+  function hoardLbForLevel(level) {
+    const l = Math.max(level, 1);
+    if (l <= HOARD_LB.length) return HOARD_LB[l - 1];
+    const past = l - (HOARD_LB.length + 1);
+    const cost = HOARD_PRESTIGE_LB[past % HOARD_CYCLE] * Math.pow(HOARD_CYCLE_GROWTH, Math.floor(past / HOARD_CYCLE));
+    return Math.round(cost / 1000) * 1000;
+  }
+  function hoardLevelFromLb(lb) {
+    let level = 1, spent = 0, need = hoardLbForLevel(1);
+    while (lb - spent >= need) { spent += need; level++; need = hoardLbForLevel(level); }
+    return { level, into: lb - spent, need, floor: spent };
+  }
+  function hoardRankForLevel(level) {
+    if (level < HOARD_RANKS.length) {
+      const r = HOARD_RANKS[Math.max(level, 1) - 1];
+      return { name: r.name, icon: r.icon, isMax: false, isHoard: false, tier: 0 };
+    }
+    const top = HOARD_RANKS[HOARD_RANKS.length - 1];
+    const past = level - HOARD_RANKS.length;
+    const tier = Math.floor(past / HOARD_CYCLE) + 1;
+    const step = past % HOARD_CYCLE;              // 0 = the bare numeral
+    const hoard = tier > 1 ? `${top.name} ${romanFor(tier)}` : top.name;
+    if (step === 0) return { name: hoard, icon: top.icon, isMax: true, isHoard: true, tier };
+    const m = HOARD_METALS[step - 1];
+    return { name: `${m.name} ${hoard}`, icon: m.icon + top.icon, isMax: false, isHoard: true, tier };
+  }
+
+  // ---- Tonnage ----
+  // Powerlifting multiplier: heavy triples move less raw weight than high-rep
+  // accessory work, so without this a 4x15 of curls out-earns a 5x3 squat. The
+  // coach marks the lift with the P tag and its working sets count for more.
+  const PL_MULTS = ["1.5", "2", "3"];
+  function plMult(ex) {
+    const m = parseFloat(ex && ex.plMult);
+    return isFinite(m) && m > 0 ? m : 1;
+  }
+  // Pounds moved by one logged set. Bodyweight lifts count zero on purpose:
+  // nobody moves their whole bodyweight on any lift, so scoring it that way
+  // would be a lie. Put a real number in the weight field and it counts.
+  // Timed work has no reps to multiply, so it sits out too.
+  function setLb(ex, s) {
+    if (!s || s.skipped) return 0;
+    if (exIsTimed(ex) || ex.kind === "mobility") return 0;
+    let w = weightToLb(s.weight);
+    if (!isFinite(w) || w <= 0) return 0;          // BW and blanks score nothing
+    if (usesDumbbellPair(ex)) w *= 2;              // "80s" is two 80s off the rack
+    const reps = parseInt(s.reps, 10) || 0;
+    if (reps <= 0) return 0;
+    return w * reps * plMult(ex);
+  }
+  // One logged exercise-day. Warm-ups are excluded: they're preparation, and
+  // counting them would pay an athlete for padding the ramp.
+  function logEntryLb(ex, entry) {
+    if (!entry || entry.skipped || !Array.isArray(entry.sets)) return 0;
+    return entry.sets.reduce((n, s) => n + setLb(ex, s), 0);
+  }
+
+  function ensureHoard(progress) {
+    if (!progress) return null;
+    if (!progress.hoard || typeof progress.hoard !== "object") progress.hoard = {};
+    const h = progress.hoard;
+    if (typeof h.lb !== "number" || !isFinite(h.lb)) h.lb = 0;
+    if (!h.awarded || typeof h.awarded !== "object") h.awarded = {};
+    return h;
+  }
+
+  // Every exercise the athlete can have logged against, by log id. Walks the
+  // program, the one-off sessions and anything they added themselves, so a lift
+  // is still priceable while it exists.
+  function hoardExerciseIndex(client, progress) {
+    const byId = new Map();
+    const add = (ex) => { if (ex && ex.id) byId.set(ex.id, ex); };
+    [...(client?.weeks || []), { days: client?.oneOffDays || [] }]
+      .forEach((w) => (w.days || []).forEach((d) => (d.exercises || []).forEach(add)));
+    Object.values(progress?.addedExercises || {}).forEach((list) =>
+      (Array.isArray(list) ? list : []).forEach(add));
+    return byId;
+  }
+
+  // Fingerprint of what the athlete actually logged. Banked awards carry it so
+  // a re-sync can tell "they corrected a set" (re-price it) from "the coach
+  // edited the exercise" (leave settled history alone).
+  function logEntrySig(entry) {
+    return (entry.sets || [])
+      .map((s) => `${s && s.skipped ? "x" : ""}${(s && s.weight) ?? ""}/${(s && s.reps) ?? ""}`)
+      .join(",");
+  }
+
+  // Banks tonnage per logged exercise-day. An award is priced once and then
+  // frozen: re-pricing on every sync would let a coach retune a P multiplier or
+  // retype a weight and silently rewrite tonnage the athlete already earned.
+  // Only a change to the logged sets themselves re-prices, so fixing a typo
+  // still corrects its own award without double counting. Deleting an exercise
+  // drops its logs entirely, and the banked award simply stays.
+  function syncHoard(client, progress) {
+    const h = ensureHoard(progress);
+    const byId = hoardExerciseIndex(client, progress);
+    let changed = false;
+
+    for (const [exId, entries] of Object.entries(progress?.exerciseLogs || {})) {
+      const ex = byId.get(exId);
+      if (!ex || !Array.isArray(entries)) continue;
+      for (const entry of entries) {
+        if (!entry || entry.locked !== true || !entry.date) continue;
+        const key = `${exId}:${entry.date}`;
+        const sig = logEntrySig(entry);
+        const prev = h.awarded[key];
+        // Awards banked before fingerprinting existed: adopt at face value and
+        // stamp the signature, never re-price them.
+        if (typeof prev === "number") { h.awarded[key] = { lb: prev, sig }; changed = true; continue; }
+        if (prev && prev.sig === sig) continue;          // settled, hands off
+        const had = Number(prev && prev.lb) || 0;
+        const want = Math.round(logEntryLb(ex, entry));
+        if (want !== had) h.lb = Math.max(0, h.lb + (want - had));
+        if (want) h.awarded[key] = { lb: want, sig }; else delete h.awarded[key];
+        changed = true;
+      }
+    }
+
+    const lvl = hoardLevelFromLb(h.lb);
+    const rank = hoardRankForLevel(lvl.level);
+    // Same one-shot promotion gate as the food ladder: seenRank is seeded
+    // silently the first time so an athlete with history isn't congratulated
+    // for a rank they already held.
+    let promoted = false;
+    if (typeof h.seenRank !== "number") h.seenRank = lvl.level;
+    else if (lvl.level > h.seenRank) { h.seenRank = lvl.level; promoted = true; changed = true; }
+    else if (lvl.level < h.seenRank) { h.seenRank = lvl.level; changed = true; }
+    if (promoted) toast(`New rank: ${rank.icon} ${rank.name}`);
+    if (changed) saveClient();
+    return { ...lvl, rank, promoted, lb: h.lb };
+  }
+
+  // "1,250 lb" under a ton, "12.5 tons" over it — a six-figure pound count is
+  // unreadable and the whole point is bragging about the size of the pile.
+  function hoardLbLabel(lb) {
+    const n = Math.round(lb || 0);
+    if (n < 2000) return `${n.toLocaleString()} lb`;
+    const tons = n / 2000;
+    return `${tons < 10 ? tons.toFixed(1) : Math.round(tons).toLocaleString()} tons`;
+  }
+
+  // One slim row at the top of the athlete's overview: badge, rank, a thin
+  // track and the size of the pile. Deliberately a single line — the food tab's
+  // rank plate is two rows with a chunky meter, and stacking a second block of
+  // that height here would cost more of the screen than the status is worth.
+  // Hidden entirely until there's tonnage, so a new athlete sees no empty bar.
+  function hoardBarHtml(client, progress) {
+    if (!progress) return "";
+    const g = syncHoard(client, progress);
+    if (!g.lb) return "";
+    const pctInto = Math.max(0, Math.min(100, (g.into / g.need) * 100));
+    const next = hoardRankForLevel(g.level + 1);
+    const cls = [g.rank.isMax ? "is-max" : "", g.rank.isHoard ? "is-hoard" : "", g.promoted ? "is-promoted" : ""]
+      .filter(Boolean).join(" ");
+    const tip = `${Math.round(g.into).toLocaleString()} of ${g.need.toLocaleString()} lb toward ${next.name}`;
+    return `
+      <div class="ov-hoard ${cls}" title="${escapeHtml(tip)}">
+        <span class="ov-hoard-badge">${g.rank.icon}</span>
+        <span class="ov-hoard-name">${escapeHtml(g.rank.name)}</span>
+        <span class="ov-hoard-track"><span class="ov-hoard-fill" style="width:${pctInto.toFixed(1)}%"></span></span>
+        <span class="ov-hoard-lb">${escapeHtml(hoardLbLabel(g.lb))}</span>
+      </div>`;
   }
 
   // ---- Rendering ----

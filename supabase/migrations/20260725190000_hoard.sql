@@ -1,0 +1,22 @@
+-- Training game state: the Hoard. Lifetime tonnage moved, driving the gold
+-- rank ladder (Coin -> HOARD) on the athlete's training side. Lives on
+-- `progress` alongside exercise_logs for the usual reason (the coach upserts
+-- whole athlete rows and would clobber anything written to `athletes`).
+--
+-- Unlike nutrition_game this is NOT here to survive a prune: exercise_logs is
+-- never pruned. It exists because the hoard must be monotonic and the logs are
+-- not a safe source of truth for a permanent total. Deleting an exercise drops
+-- its logs (app.js removes progress.exerciseLogs[ex.id]), and a coach editing
+-- an exercise's P multiplier would retroactively rewrite history. Banking the
+-- total as it is earned means neither can ever take tonnage back.
+--
+-- hoard:
+--   { lb: 0,                              -- lifetime pounds moved, monotonic
+--     awarded: { "<exId>:<date>": 1234 }, -- tonnage already banked per logged
+--                                         -- exercise-day, so a re-logged or
+--                                         -- corrected session is diffed rather
+--                                         -- than double counted
+--     seenRank: 3 }                       -- last rank announced, gates the
+--                                         -- promotion toast to exactly once
+alter table public.progress
+  add column if not exists hoard jsonb not null default '{}'::jsonb;
