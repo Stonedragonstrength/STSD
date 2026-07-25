@@ -129,6 +129,10 @@
       workout_moods: p.workoutMoods || {},
       added_exercises: p.addedExercises || {},
       form_checks: p.formChecks || {},
+      nutrition_targets: p.nutritionTargets || {},
+      food_log: p.foodLog || {},
+      custom_foods: p.customFoods || [],
+      saved_meals: p.savedMeals || [],
       synced_at: new Date().toISOString(),
     };
   }
@@ -148,6 +152,10 @@
       workoutMoods: r.workout_moods || {},
       addedExercises: r.added_exercises || {},
       formChecks: r.form_checks || {},
+      nutritionTargets: r.nutrition_targets || {},
+      foodLog: r.food_log || {},
+      customFoods: r.custom_foods || [],
+      savedMeals: r.saved_meals || [],
       syncedAt: r.synced_at,
     };
   }

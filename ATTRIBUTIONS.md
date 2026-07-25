@@ -14,6 +14,20 @@ name, image count, equipment, muscles, level, category) is vendored, in
 `exercise-demos.js`. Regenerate it from `dist/exercises.json` in that repo when
 the dataset updates.
 
+## USDA FoodData Central (food logger database)
+
+The food logger's searchable food list comes from **USDA FoodData Central**.
+
+- Source: https://fdc.nal.usda.gov/download-datasets
+- Datasets: Foundation Foods (2025-12-18) and SR Legacy (2018-04, final release)
+- License: public domain (a work of the U.S. federal government, 17 U.S.C. § 105)
+
+The data is vendored in `food-db.js` rather than fetched at runtime, so search
+works offline and needs no API key. Only the fields the logger uses are kept
+(name, category, calories, protein, carbs, fat, fiber per 100 g, and up to three
+household portions), and USDA survey bookkeeping is stripped from the names.
+Regenerate with `scripts/build-food-db.js` after downloading the bulk JSON.
+
 ## Body Muscles (anatomy muscle-map SVG paths)
 
 The Anatomy Library's front/back muscle-map figure uses SVG path data adapted

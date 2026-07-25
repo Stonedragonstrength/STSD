@@ -8329,3 +8329,173 @@ body.live-log-mode #screen-client .header-right { display: none; }
 }
 .partner-link-note { font-size: 0.85rem; margin-top: 0.25em; max-width: 40em; }
 .partner-chip { cursor: default; }
+
+/* ============ Food logger (athlete) ============ */
+.food-day-card { padding-bottom: 1rem; }
+.food-day-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.6em; margin-bottom: 1rem;
+}
+.food-day-title { display: flex; flex-direction: column; align-items: center; gap: 0.15em; }
+.food-day-title strong { font-size: 1.05rem; letter-spacing: 0.01em; }
+.food-today-btn {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: var(--primary-bright); font-size: 0.75rem; font-weight: 700;
+}
+.food-nav {
+  flex: 0 0 auto; width: 38px; height: 38px; border-radius: 50%;
+  background: var(--surface-2); border: 1px solid var(--border);
+  color: var(--text); font-size: 1.3rem; line-height: 1; cursor: pointer;
+}
+.food-nav:hover:not(:disabled) { background: var(--surface-3); border-color: var(--border-strong); }
+.food-nav:disabled { opacity: 0.3; cursor: default; }
+
+/* Calorie ring + macro bars */
+.food-totals {
+  display: flex; align-items: center; gap: 1.4rem;
+  padding-bottom: 1rem; border-bottom: 1px solid var(--border);
+}
+.kcal-ring { flex: 0 0 auto; text-align: center; }
+.kcal-ring svg { width: 130px; height: 130px; }
+.kcal-ring-track { fill: none; stroke: var(--surface-3); stroke-width: 11; }
+.kcal-ring-fill {
+  fill: none; stroke-width: 11; stroke-linecap: round;
+  transform: rotate(-90deg); transform-origin: 65px 65px;
+  transition: stroke-dasharray 0.35s ease;
+}
+.kcal-ring-num { fill: var(--text); font-size: 1.5rem; font-weight: 800; }
+.kcal-ring-lbl { fill: var(--text-soft); font-size: 0.72rem; font-weight: 600; }
+.kcal-ring-left { font-size: 0.8rem; font-weight: 700; color: var(--text-soft); margin-top: 0.2em; }
+.kcal-ring-left.is-over { color: var(--warn); }
+.macro-bars { flex: 1 1 auto; min-width: 0; display: grid; gap: 0.65em; }
+.macro-bar-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.6em; }
+.macro-bar-name {
+  display: flex; align-items: center; gap: 0.4em;
+  font-size: 0.82rem; font-weight: 700; color: var(--text); min-width: 5.2em;
+}
+.macro-bar-track {
+  height: 8px; border-radius: 999px; background: var(--surface-3); overflow: hidden;
+}
+.macro-bar-fill { display: block; height: 100%; border-radius: 999px; transition: width 0.35s ease; }
+.macro-bar-val { font-size: 0.78rem; color: var(--text-soft); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.macro-bar-val.is-over { color: var(--warn); }
+.food-no-target { font-size: 0.82rem; margin: 0.8em 0 0; }
+@media (max-width: 520px) {
+  .food-totals { flex-direction: column; gap: 1rem; }
+  .macro-bars { width: 100%; }
+}
+
+/* Meal sections */
+.food-meals { margin-top: 1rem; display: grid; gap: 0.9rem; }
+.food-meal {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 0.6rem 0.7rem;
+}
+.food-meal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.6em; margin-bottom: 0.35em;
+}
+.food-meal-name { font-weight: 700; font-size: 0.92rem; }
+.food-meal-right { display: flex; align-items: center; gap: 0.7em; }
+.food-meal-save {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: var(--text-soft); font-size: 0.72rem; font-weight: 700;
+}
+.food-meal-save:hover { color: var(--primary-bright); }
+.food-meal-kcal {
+  font-size: 0.8rem; font-weight: 700; color: var(--text-soft);
+  font-variant-numeric: tabular-nums;
+}
+.food-entry {
+  display: flex; align-items: center; gap: 0.6em;
+  padding: 0.4rem 0; border-top: 1px solid var(--border);
+}
+.food-entry-main { flex: 1 1 auto; min-width: 0; }
+.food-entry-name {
+  display: block; font-size: 0.87rem; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.food-entry-sub { display: block; font-size: 0.72rem; color: var(--muted); }
+.food-entry-kcal {
+  font-size: 0.85rem; font-weight: 700; color: var(--text);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.food-entry-del {
+  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%;
+  background: none; border: 1px solid var(--border); color: var(--text-soft);
+  font-size: 1rem; line-height: 1; cursor: pointer;
+}
+.food-entry-del:hover { background: var(--danger-soft); border-color: var(--danger); color: var(--text); }
+.food-add-btn {
+  width: 100%; margin-top: 0.45em; padding: 0.4em;
+  background: none; border: 1px dashed var(--border-strong); border-radius: 8px;
+  color: var(--text-soft); font-size: 0.8rem; font-weight: 700; cursor: pointer;
+}
+.food-add-btn:hover { border-color: var(--primary); color: var(--primary-bright); }
+.food-day-foot { display: flex; justify-content: center; margin-top: 1rem; }
+
+/* Add-food modal */
+.food-search { width: 100%; margin-bottom: 0.7em; }
+.food-results { max-height: 46vh; overflow-y: auto; }
+.food-results-head {
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--text-soft); margin: 0 0 0.3em;
+}
+.food-result {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 0.5rem 0.6rem; margin-bottom: 0.4em;
+}
+.food-result:hover { border-color: var(--primary); background: var(--surface-3); }
+.food-result-name { display: block; font-size: 0.87rem; color: var(--text); font-weight: 600; }
+.food-result-sub { display: block; font-size: 0.73rem; color: var(--muted); margin-top: 0.15em; }
+.food-tag {
+  display: inline-block; margin-left: 0.4em; padding: 0.05em 0.45em;
+  border-radius: 999px; background: var(--primary-soft); color: var(--primary-bright);
+  font-size: 0.65rem; font-weight: 700; vertical-align: middle;
+}
+.food-modal-foot { display: flex; gap: 0.6em; margin-top: 0.8em; }
+
+/* Portion step */
+.portion-row { display: grid; grid-template-columns: 1fr 1.4fr; gap: 0.7em; }
+.portion-preview {
+  display: flex; align-items: baseline; gap: 0.8em; margin-top: 0.9em;
+  padding: 0.7rem 0.8rem; border-radius: var(--radius);
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+.portion-kcal { font-size: 1.35rem; font-weight: 800; color: var(--text); }
+.portion-macros { font-size: 0.82rem; color: var(--text-soft); }
+.quick-add-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6em 0.9em; margin-top: 0.6em; }
+
+/* Target calculator */
+.calc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6em 0.9em; }
+.calc-out {
+  margin-top: 0.9em; padding: 0.8rem 0.9rem; border-radius: var(--radius);
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+.calc-line {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 0.8em; font-size: 0.85rem; color: var(--text-soft); padding: 0.22em 0;
+}
+.calc-line strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.calc-line-main {
+  border-top: 1px solid var(--border); margin-top: 0.35em; padding-top: 0.5em;
+  font-size: 0.95rem; color: var(--text);
+}
+.calc-line-main strong { font-size: 1.2rem; color: var(--primary-bright); }
+.calc-macros { display: flex; flex-wrap: wrap; gap: 0.8em; margin-top: 0.6em; }
+.calc-macro { display: flex; align-items: center; gap: 0.35em; font-size: 0.8rem; color: var(--text-soft); }
+.target-actions { display: flex; flex-wrap: wrap; gap: 0.5em; margin-top: 0.9em; }
+.target-locked { font-size: 0.82rem; margin: 0.9em 0 0; }
+
+/* Coach side: lock toggle + what the athlete set */
+.nut-lock-row {
+  display: flex; align-items: flex-start; gap: 0.6em; margin-top: 0.9em;
+  text-transform: none; letter-spacing: 0; font-weight: 400;
+}
+.nut-lock-row input { width: auto; margin-top: 0.2em; flex: 0 0 auto; }
+.nut-lock-row span.muted { display: block; font-size: 0.8rem; margin-top: 0.1em; }
+.nut-active-line { display: flex; align-items: center; gap: 0.5em; font-size: 0.86rem; margin: 0 0 0.7em; }
+.nut-active-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.nut-active-dot.is-own { background: var(--warn); }
+.nut-active-dot.is-coach { background: var(--accent); }

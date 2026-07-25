@@ -7641,6 +7641,86 @@
     </div>`;
   }
 
+  // -------- Effective targets: coach's plan vs the athlete's own --------
+  // The coach's plan lives on the athlete row (client.nutrition.current). The
+  // athlete's own targets live on progress, because the coach upserts whole
+  // athlete rows and would clobber anything the athlete wrote there (same
+  // reasoning as addedExercises).
+  //
+  // The coach keeps override authority: `locked` on the coach plan forces their
+  // numbers regardless of what the athlete picked. Unlocked, `mode` decides.
+  function ensureNutritionTargets(progress) {
+    if (!progress) return null;
+    if (!progress.nutritionTargets || typeof progress.nutritionTargets !== "object") {
+      progress.nutritionTargets = {};
+    }
+    return progress.nutritionTargets;
+  }
+  function planHasTargets(p) { return !!p && Number(p.calories) > 0; }
+
+  // Returns { plan, source, locked, coachPlan, ownPlan } — `plan` is null when
+  // neither side has set anything yet.
+  function effectiveTargets(client, progress) {
+    const coachPlan = client?.nutrition?.current || null;
+    const own = progress?.nutritionTargets || null;
+    const locked = !!coachPlan?.locked;
+    const hasCoach = planHasTargets(coachPlan);
+    const hasOwn = planHasTargets(own);
+    const base = { coachPlan: hasCoach ? coachPlan : null, ownPlan: hasOwn ? own : null, locked };
+    if (locked && hasCoach) return { ...base, plan: coachPlan, source: "coach" };
+    if (hasOwn && own.mode === "own") return { ...base, plan: own, source: "own" };
+    if (hasCoach) return { ...base, plan: coachPlan, source: "coach" };
+    if (hasOwn) return { ...base, plan: own, source: "own" };
+    return { ...base, plan: null, source: null };
+  }
+
+  // -------- Target calculator (Mifflin-St Jeor) --------
+  const ACTIVITY_LEVELS = [
+    { key: "sedentary", label: "Sedentary", mult: 1.2, hint: "Desk job, little moving outside training" },
+    { key: "light", label: "Lightly active", mult: 1.375, hint: "On your feet some of the day" },
+    { key: "moderate", label: "Moderately active", mult: 1.55, hint: "Training most days, regular walking" },
+    { key: "very", label: "Very active", mult: 1.725, hint: "Hard training plus an active job" },
+    { key: "extreme", label: "Extremely active", mult: 1.9, hint: "Physical job and daily hard training" },
+  ];
+  const DIET_GOALS = [
+    { key: "cut", label: "Lose fat", adjust: -0.2, proteinPerLb: 1, hint: "Around 20% under maintenance" },
+    { key: "maintain", label: "Maintain", adjust: 0, proteinPerLb: 0.9, hint: "Hold steady where you are" },
+    { key: "lean", label: "Lean bulk", adjust: 0.1, proteinPerLb: 0.9, hint: "A small surplus, minimal fat gain" },
+  ];
+  // Sex changes only the constant in the formula. "Prefer not to say" splits the
+  // difference so the calculator still works without forcing an answer.
+  const SEX_CONSTANTS = { male: 5, female: -161, unspecified: -78 };
+
+  function calcTargets(input) {
+    const weightLb = Number(input.weightLb) || 0;
+    const heightIn = Number(input.heightIn) || 0;
+    const age = Number(input.age) || 0;
+    if (!weightLb || !heightIn || !age) return null;
+    const activity = ACTIVITY_LEVELS.find((a) => a.key === input.activity) || ACTIVITY_LEVELS[2];
+    const goal = DIET_GOALS.find((g) => g.key === input.goal) || DIET_GOALS[1];
+    const kg = weightLb * 0.45359237;
+    const cm = heightIn * 2.54;
+    const sexConst = SEX_CONSTANTS[input.sex] ?? SEX_CONSTANTS.unspecified;
+    const bmr = 10 * kg + 6.25 * cm - 5 * age + sexConst;
+    const tdee = bmr * activity.mult;
+    const calories = Math.max(1200, Math.round((tdee * (1 + goal.adjust)) / 10) * 10);
+    // Protein by bodyweight, fat at a health floor, carbs get what's left.
+    let proteinG = Math.round(weightLb * goal.proteinPerLb);
+    let fatG = Math.round(weightLb * 0.35);
+    // Protein + fat must leave room for at least some carbs; trim fat first,
+    // then protein, so a small cut doesn't produce a negative carb target.
+    const minCarbKcal = calories * 0.1;
+    while (proteinG * 4 + fatG * 9 > calories - minCarbKcal && fatG > Math.round(weightLb * 0.25)) fatG--;
+    while (proteinG * 4 + fatG * 9 > calories - minCarbKcal && proteinG > Math.round(weightLb * 0.7)) proteinG--;
+    const carbsG = Math.max(0, Math.round((calories - proteinG * 4 - fatG * 9) / 4));
+    const pct = (g, kcalPerG) => Math.round((g * kcalPerG / calories) * 100);
+    return {
+      bmr: Math.round(bmr), tdee: Math.round(tdee), calories,
+      protein: proteinG, carbs: carbsG, fat: fatG,
+      proteinPct: pct(proteinG, 4), carbsPct: pct(carbsG, 4), fatPct: pct(fatG, 9),
+    };
+  }
+
   function renderDiet() {
     const c = currentClient(); if (!c) return;
     ensureNutrition(c);
@@ -7672,6 +7752,13 @@
         <textarea id="nut-notes" rows="2" placeholder="Meal timing, supplements, hydration…">${escapeHtml(cur.notes || "")}</textarea>
       </label>
       <div id="nut-chart-preview">${macroDonutHtml(cur)}</div>
+      <label class="nut-lock-row">
+        <input type="checkbox" id="nut-lock" ${cur.locked ? "checked" : ""} />
+        <span>
+          <strong>Lock these targets</strong>
+          <span class="muted">${escapeHtml(c.name)} follows your numbers and can't switch to their own.</span>
+        </span>
+      </label>
       <button class="btn btn-primary" id="btn-save-nutrition" style="margin-top:0.7em">Save plan</button>`;
     container.appendChild(card);
 
@@ -7703,10 +7790,11 @@
         proteinPct: pcts.protein, carbsPct: pcts.carbs, fatPct: pcts.fat,
         protein: grams.protein, carbs: grams.carbs, fat: grams.fat,
         notes: $("#nut-notes").value.trim(),
+        locked: $("#nut-lock").checked,
         effectiveFrom: todayISO(),
       };
       const prev = c.nutrition.current;
-      const changed = !prev || ["calories", "proteinPct", "carbsPct", "fatPct", "notes"].some(
+      const changed = !prev || ["calories", "proteinPct", "carbsPct", "fatPct", "notes", "locked"].some(
         (k) => String(prev[k] ?? "") !== String(plan[k] ?? ""));
       if (!changed) { toast("No changes to save"); return; }
       // Same-day edits are corrections, not a new era — don't spam history.
@@ -7731,6 +7819,41 @@
           </div>`);
       });
       container.appendChild(hist);
+    }
+
+    // What the athlete set for themselves, and which targets are actually in
+    // play right now. Read-only here — the coach steers with "Lock" above.
+    const eff = effectiveTargets(c, c.importedProgress);
+    if (eff.ownPlan || eff.locked) {
+      const own = eff.ownPlan;
+      const calc = own?.calc;
+      const activeLbl = eff.source === "own"
+        ? `${escapeHtml(c.name)}'s own targets are active`
+        : eff.locked ? "Your targets are locked on" : "Your targets are active";
+      const ownCard = document.createElement("div");
+      ownCard.className = "card";
+      ownCard.style.marginTop = "1.75rem";
+      ownCard.innerHTML = `
+        <h4 style="margin-top:0">Athlete's own targets</h4>
+        <p class="nut-active-line"><span class="nut-active-dot ${eff.source === "own" ? "is-own" : "is-coach"}"></span>${activeLbl}</p>
+        ${own ? `<div class="nutrition-history-row">
+            <strong>${escapeHtml(nutritionPlanSummary(own))}</strong>
+            <span class="muted">${own.updatedAt ? "set " + escapeHtml(own.updatedAt) : ""}</span>
+          </div>` : `<p class="muted" style="margin:0.2em 0 0">${escapeHtml(c.name)} hasn't set their own targets.</p>`}
+        ${calc ? `<p class="muted" style="margin:0.5em 0 0;font-size:0.85rem">
+            Calculated from ${escapeHtml(String(calc.heightIn || "?"))} in, age ${escapeHtml(String(calc.age || "?"))},
+            ${escapeHtml((ACTIVITY_LEVELS.find((a) => a.key === calc.activity) || {}).label || "activity not set")},
+            goal ${escapeHtml((DIET_GOALS.find((g) => g.key === calc.goal) || {}).label || "not set")}.
+            Maintenance about ${Number(calc.tdee || 0).toLocaleString()} kcal.</p>` : ""}`;
+      // A one-line pulse on whether they're actually logging food.
+      const fl = c.importedProgress?.foodLog || {};
+      const days = recentDateKeys(7);
+      const logged = days.filter((d) => (fl[d] || []).length).length;
+      if (logged) {
+        ownCard.insertAdjacentHTML("beforeend",
+          `<p class="muted" style="margin:0.5em 0 0;font-size:0.85rem">Logged food on ${logged} of the last 7 days.</p>`);
+      }
+      container.appendChild(ownCard);
     }
 
     // Athlete's logged body weight (read-only) — lives with nutrition now.
@@ -10516,7 +10639,7 @@
       err.classList.remove("hidden");
     }
   }
-  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {}, totalWorkoutMs: 0, workoutMoods: {}, addedExercises: {}, formChecks: {} }; }
+  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {}, totalWorkoutMs: 0, workoutMoods: {}, addedExercises: {}, formChecks: {}, nutritionTargets: {}, foodLog: {}, customFoods: [], savedMeals: [] }; }
   function ensureProgressShape(p) {
     if (!p.exerciseLogs) p.exerciseLogs = {};
     if (!p.bodyweightLog) p.bodyweightLog = [];
@@ -10531,6 +10654,10 @@
     if (typeof p.totalWorkoutMs !== "number" || !isFinite(p.totalWorkoutMs)) p.totalWorkoutMs = 0;
     if (!p.workoutMoods || typeof p.workoutMoods !== "object") p.workoutMoods = {};
     if (!p.formChecks || typeof p.formChecks !== "object") p.formChecks = {};
+    if (!p.nutritionTargets || typeof p.nutritionTargets !== "object") p.nutritionTargets = {};
+    if (!p.foodLog || typeof p.foodLog !== "object") p.foodLog = {};
+    if (!Array.isArray(p.customFoods)) p.customFoods = [];
+    if (!Array.isArray(p.savedMeals)) p.savedMeals = [];
     return p;
   }
 
@@ -13962,54 +14089,801 @@
     });
   }
 
-  // -------- Athlete diet --------
+  // -------- Food logger --------
+  // The vendored USDA database is ~850 KB, so it loads on demand the first time
+  // the athlete opens a food picker rather than on every boot. The service
+  // worker caches it cache-first afterwards, so it's a one-time download.
+  const FOOD_DB_URL = "food-db.js?v=food1";
+  const MEALS = [
+    { key: "breakfast", label: "Breakfast", icon: "🌅" },
+    { key: "lunch", label: "Lunch", icon: "🥪" },
+    { key: "dinner", label: "Dinner", icon: "🍽️" },
+    { key: "snack", label: "Snacks", icon: "🍎" },
+  ];
+  const FOOD_LOG_DAYS = 180; // rolling window; the whole progress row syncs
+  const OZ_G = 28.3495;
+
+  let _foodDbPromise = null;
+  function loadFoodDb() {
+    if (window.FOOD_DB) return Promise.resolve(window.FOOD_DB);
+    if (_foodDbPromise) return _foodDbPromise;
+    _foodDbPromise = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = FOOD_DB_URL;
+      s.onload = () => window.FOOD_DB ? resolve(window.FOOD_DB) : reject(new Error("food db empty"));
+      s.onerror = () => { _foodDbPromise = null; reject(new Error("food db failed")); };
+      document.head.appendChild(s);
+    });
+    return _foodDbPromise;
+  }
+
+  // Row: [fdcId, name, catIndex, kcal, protein, carbs, fat, fiber, portions?]
+  const F = { ID: 0, NAME: 1, CAT: 2, KCAL: 3, P: 4, C: 5, FAT: 6, FIBER: 7, PORTIONS: 8 };
+  let _foodIndex = null;
+  function foodIndex() {
+    if (_foodIndex) return _foodIndex;
+    const db = window.FOOD_DB;
+    if (!db) return [];
+    _foodIndex = db.foods.map((row) => ({ row, lc: row[F.NAME].toLowerCase() }));
+    return _foodIndex;
+  }
+  function foodRowById(id) {
+    return (window.FOOD_DB?.foods || []).find((r) => r[F.ID] === id) || null;
+  }
+
+  // Every query token must appear. Matches at a word boundary outrank matches
+  // buried mid-word, and shorter names win ties so "Egg, whole, raw" beats a
+  // 60-character casserole that happens to contain "egg".
+  function searchFoods(q, limit = 40) {
+    const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
+    if (!tokens.length) return [];
+    const hits = [];
+    for (const e of foodIndex()) {
+      let score = 0, ok = true;
+      for (const t of tokens) {
+        const at = e.lc.indexOf(t);
+        if (at < 0) { ok = false; break; }
+        score += at === 0 ? 45 : /[\s,(]/.test(e.lc[at - 1]) ? 22 : 6;
+      }
+      if (!ok) continue;
+      score -= Math.min(e.lc.length, 90) / 8;
+      hits.push({ row: e.row, score });
+    }
+    hits.sort((a, b) => b.score - a.score);
+    return hits.slice(0, limit).map((h) => h.row);
+  }
+
+  // ---- Log data ----
+  function ensureFoodLog(progress) {
+    if (!progress) return;
+    if (!progress.foodLog || typeof progress.foodLog !== "object") progress.foodLog = {};
+    if (!Array.isArray(progress.customFoods)) progress.customFoods = [];
+    if (!Array.isArray(progress.savedMeals)) progress.savedMeals = [];
+    ensureNutritionTargets(progress);
+  }
+  function foodDayEntries(progress, dateKey) {
+    return (progress?.foodLog?.[dateKey] || []).slice();
+  }
+  function foodDayTotals(entries) {
+    return (entries || []).reduce((t, e) => ({
+      kcal: t.kcal + (Number(e.kcal) || 0),
+      protein: t.protein + (Number(e.p) || 0),
+      carbs: t.carbs + (Number(e.c) || 0),
+      fat: t.fat + (Number(e.f) || 0),
+    }), { kcal: 0, protein: 0, carbs: 0, fat: 0 });
+  }
+  function recentDateKeys(n) {
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(addDaysISO(todayISO(), -i));
+    return out;
+  }
+  // Keep the log to a rolling window — the coach's sync upserts the whole
+  // progress row, so an unbounded log makes every push heavier.
+  function pruneFoodLog(progress) {
+    const cutoff = addDaysISO(todayISO(), -FOOD_LOG_DAYS);
+    for (const k of Object.keys(progress.foodLog || {})) {
+      if (k < cutoff) delete progress.foodLog[k];
+    }
+  }
+  function saveFoodLog() {
+    const p = state.clientData.progress;
+    pruneFoodLog(p);
+    saveClient();
+  }
+  function addFoodEntry(dateKey, entry) {
+    const p = state.clientData.progress;
+    ensureFoodLog(p);
+    if (!p.foodLog[dateKey]) p.foodLog[dateKey] = [];
+    // id/at last: re-logged entries (recents, saved meals) carry the originals
+    // and must always get a fresh identity, never inherit or blank one.
+    p.foodLog[dateKey].push({ ...entry, id: uid(), at: Date.now() });
+    saveFoodLog();
+  }
+  function removeFoodEntry(dateKey, id) {
+    const p = state.clientData.progress;
+    const list = p.foodLog?.[dateKey];
+    if (!list) return;
+    const i = list.findIndex((e) => e.id === id);
+    if (i < 0) return;
+    list.splice(i, 1);
+    if (!list.length) delete p.foodLog[dateKey];
+    saveFoodLog();
+  }
+
+  // Most-logged foods from the recent past, so the usual breakfast is one tap.
+  function recentFoods(progress, limit = 12) {
+    const tally = new Map();
+    for (const d of recentDateKeys(45)) {
+      for (const e of progress.foodLog?.[d] || []) {
+        const key = `${e.src}:${e.ref || ""}:${e.name}`;
+        const prev = tally.get(key);
+        if (prev) { prev.n++; continue; }
+        tally.set(key, { n: 1, entry: e });
+      }
+    }
+    return [...tally.values()].sort((a, b) => b.n - a.n).slice(0, limit).map((x) => x.entry);
+  }
+
+  // ---- Rendering ----
+  let _foodDate = null;
+
   function renderClientDiet() {
     const container = $("#client-diet-container");
     container.innerHTML = "";
-    const nut = state.clientData.program?.client?.nutrition;
-    const cur = nut?.current;
-    if (!cur || (!Number(cur.calories) && !Number(cur.protein))) {
-      container.innerHTML = `<div class="empty-state"><div class="empty-emoji">🥩</div><h3>No nutrition plan yet</h3><p>Your coach hasn't set nutrition targets yet.</p></div>`;
+    const client = state.clientData.program?.client;
+    const progress = state.clientData.progress;
+    if (!client || !progress) return;
+    ensureFoodLog(progress);
+    _foodDate = todayISO();
+    container.insertAdjacentHTML("beforeend", `<div class="card food-day-card" id="food-day-card"></div>`);
+    container.insertAdjacentHTML("beforeend", `<div class="card" id="client-targets-card" style="margin-top:1.75rem"></div>`);
+    renderFoodDay();
+    renderClientTargets();
+  }
+
+  function foodDateLabel(iso) {
+    if (iso === todayISO()) return "Today";
+    if (iso === addDaysISO(todayISO(), -1)) return "Yesterday";
+    const d = new Date(iso + "T12:00:00");
+    return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  }
+
+  // Calorie ring. Over-target fills the track in the warn color rather than
+  // wrapping around, so "past your number" reads at a glance.
+  function calorieRingHtml(eaten, target) {
+    const R = 52, C = 2 * Math.PI * R;
+    const has = Number(target) > 0;
+    const ratio = has ? eaten / target : 0;
+    const over = ratio > 1;
+    const dash = has ? Math.min(ratio, 1) * C : 0;
+    const color = over ? "var(--warn)" : "var(--primary)";
+    const left = has ? Math.round(target - eaten) : 0;
+    return `<div class="kcal-ring">
+      <svg viewBox="0 0 130 130" role="img" aria-label="${Math.round(eaten)} of ${has ? Math.round(target) : "no"} calorie target">
+        <circle cx="65" cy="65" r="${R}" class="kcal-ring-track" />
+        <circle cx="65" cy="65" r="${R}" class="kcal-ring-fill" stroke="${color}"
+          stroke-dasharray="${dash.toFixed(1)} ${(C - dash).toFixed(1)}" />
+        <text x="65" y="61" text-anchor="middle" class="kcal-ring-num">${Math.round(eaten).toLocaleString()}</text>
+        <text x="65" y="80" text-anchor="middle" class="kcal-ring-lbl">${has ? "of " + Math.round(target).toLocaleString() : "kcal"}</text>
+      </svg>
+      ${has ? `<div class="kcal-ring-left ${over ? "is-over" : ""}">${over
+        ? `${Math.abs(left).toLocaleString()} over`
+        : `${left.toLocaleString()} left`}</div>` : ""}
+    </div>`;
+  }
+
+  function macroBarsHtml(totals, plan) {
+    return MACROS.map((m) => {
+      const eaten = totals[m.key] || 0;
+      const target = Number(plan?.[m.key]) || 0;
+      const pct = target > 0 ? Math.min(eaten / target, 1) * 100 : 0;
+      const over = target > 0 && eaten > target * 1.05;
+      return `<div class="macro-bar-row">
+        <span class="macro-bar-name"><span class="macro-dot" style="background:${m.color}"></span>${m.label}</span>
+        <span class="macro-bar-track"><span class="macro-bar-fill" style="width:${pct.toFixed(1)}%;background:${m.color}"></span></span>
+        <span class="macro-bar-val ${over ? "is-over" : ""}">${Math.round(eaten)}${target ? ` / ${Math.round(target)}` : ""} g</span>
+      </div>`;
+    }).join("");
+  }
+
+  function foodEntryRowHtml(e) {
+    // Household portion labels already carry their own count ("1 cup"), so a
+    // single serving reads as the label alone rather than "1 × 1 cup".
+    const n = Number(e.qty) || 0;
+    const unit = e.unit || "serving";
+    const qty = (unit === "g" || unit === "oz") ? `${Math.round(n * 10) / 10} ${unit}`
+      : n === 1 ? unit
+      : `${Math.round(n * 100) / 100} × ${unit}`;
+    return `<div class="food-entry" data-entry="${escapeHtml(e.id)}">
+      <div class="food-entry-main">
+        <span class="food-entry-name">${escapeHtml(e.name)}</span>
+        <span class="food-entry-sub">${escapeHtml(qty)} · P ${Math.round(e.p || 0)} · C ${Math.round(e.c || 0)} · F ${Math.round(e.f || 0)}</span>
+      </div>
+      <span class="food-entry-kcal">${Math.round(e.kcal || 0).toLocaleString()}</span>
+      <button class="food-entry-del" data-del="${escapeHtml(e.id)}" aria-label="Remove ${escapeHtml(e.name)}">×</button>
+    </div>`;
+  }
+
+  function renderFoodDay() {
+    const el = $("#food-day-card"); if (!el) return;
+    const client = state.clientData.program?.client;
+    const progress = state.clientData.progress;
+    const eff = effectiveTargets(client, progress);
+    const plan = eff.plan;
+    const entries = foodDayEntries(progress, _foodDate);
+    const totals = foodDayTotals(entries);
+    const isToday = _foodDate === todayISO();
+
+    const mealsHtml = MEALS.map((m) => {
+      const list = entries.filter((e) => e.meal === m.key);
+      const kcal = Math.round(foodDayTotals(list).kcal);
+      return `<div class="food-meal">
+        <div class="food-meal-head">
+          <span class="food-meal-name">${m.icon} ${m.label}</span>
+          <span class="food-meal-right">
+            ${list.length ? `<button class="food-meal-save" data-savemeal="${m.key}">Save as meal</button>` : ""}
+            <span class="food-meal-kcal">${kcal ? kcal.toLocaleString() : "—"}</span>
+          </span>
+        </div>
+        ${list.map(foodEntryRowHtml).join("")}
+        <button class="food-add-btn" data-addmeal="${m.key}">+ Add food</button>
+      </div>`;
+    }).join("");
+
+    el.innerHTML = `
+      <div class="food-day-head">
+        <button class="food-nav" id="food-prev" aria-label="Previous day">‹</button>
+        <div class="food-day-title">
+          <strong>${escapeHtml(foodDateLabel(_foodDate))}</strong>
+          ${isToday ? "" : `<button class="food-today-btn" id="food-today">Back to today</button>`}
+        </div>
+        <button class="food-nav" id="food-next" aria-label="Next day" ${isToday ? "disabled" : ""}>›</button>
+      </div>
+      <div class="food-totals">
+        ${calorieRingHtml(totals.kcal, plan?.calories)}
+        <div class="macro-bars">${macroBarsHtml(totals, plan)}</div>
+      </div>
+      ${plan ? "" : `<p class="muted food-no-target">No targets set yet. Set them below and this fills in.</p>`}
+      <div class="food-meals">${mealsHtml}</div>
+      <div class="food-day-foot">
+        <button class="btn btn-ghost btn-sm slim-btn" id="food-copy-yesterday">Copy yesterday</button>
+      </div>`;
+
+    $("#food-prev").addEventListener("click", () => { _foodDate = addDaysISO(_foodDate, -1); renderFoodDay(); });
+    const next = $("#food-next");
+    if (!isToday) next.addEventListener("click", () => { _foodDate = addDaysISO(_foodDate, 1); renderFoodDay(); });
+    const todayBtn = $("#food-today");
+    if (todayBtn) todayBtn.addEventListener("click", () => { _foodDate = todayISO(); renderFoodDay(); });
+    el.querySelectorAll("[data-addmeal]").forEach((b) => {
+      b.addEventListener("click", () => openAddFoodModal(b.dataset.addmeal));
+    });
+    el.querySelectorAll("[data-del]").forEach((b) => {
+      b.addEventListener("click", () => { removeFoodEntry(_foodDate, b.dataset.del); renderFoodDay(); });
+    });
+    el.querySelectorAll("[data-savemeal]").forEach((b) => {
+      b.addEventListener("click", () => openSaveMealModal(b.dataset.savemeal));
+    });
+    $("#food-copy-yesterday").addEventListener("click", copyYesterday);
+  }
+
+  function copyYesterday() {
+    const progress = state.clientData.progress;
+    const src = foodDayEntries(progress, addDaysISO(_foodDate, -1));
+    if (!src.length) { toast("Nothing logged the day before"); return; }
+    ensureFoodLog(progress);
+    if (!progress.foodLog[_foodDate]) progress.foodLog[_foodDate] = [];
+    src.forEach((e) => {
+      progress.foodLog[_foodDate].push({ ...e, id: uid(), at: Date.now() });
+    });
+    saveFoodLog();
+    renderFoodDay();
+    toast(`Copied ${src.length} item${src.length === 1 ? "" : "s"} ✓`);
+  }
+
+  // ---- Add-food flow ----
+  // One search box across every source: the athlete's own foods and saved meals
+  // rank above the USDA list, because those are what they actually eat.
+  function openAddFoodModal(mealKey) {
+    const meal = MEALS.find((m) => m.key === mealKey) || MEALS[0];
+    openModal({
+      title: `Add to ${meal.label}`,
+      body: `
+        <input type="search" id="food-q" class="food-search" placeholder="Search a food…" autocomplete="off" />
+        <div id="food-results" class="food-results"><p class="muted">Loading foods…</p></div>
+        <div class="food-modal-foot">
+          <button class="btn btn-ghost btn-sm" id="food-quick-add">Quick add</button>
+          <button class="btn btn-ghost btn-sm" id="food-new-custom">New food</button>
+        </div>`,
+      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
+    });
+    $("#food-quick-add").addEventListener("click", () => openQuickAddModal(mealKey));
+    $("#food-new-custom").addEventListener("click", () => openCustomFoodModal(mealKey));
+
+    const results = $("#food-results");
+    const draw = () => {
+      const q = ($("#food-q").value || "").trim();
+      results.innerHTML = foodResultsHtml(q, mealKey);
+      results.querySelectorAll("[data-pick]").forEach((b) => {
+        b.addEventListener("click", () => pickFoodResult(b.dataset.pick, b.dataset.pickid, mealKey));
+      });
+    };
+    loadFoodDb().then(() => {
+      $("#food-q").addEventListener("input", draw);
+      draw();
+      $("#food-q").focus();
+    }).catch(() => {
+      results.innerHTML = `<p class="muted">Couldn't load the food list. You're offline and it hasn't been downloaded yet. Quick add still works.</p>`;
+    });
+  }
+
+  function foodResultsHtml(q, mealKey) {
+    const progress = state.clientData.progress;
+    const rows = [];
+    if (!q) {
+      const recents = recentFoods(progress);
+      if (!recents.length) {
+        return `<p class="muted">Search for a food, or use Quick add if you already know the numbers.</p>`;
+      }
+      rows.push(`<p class="food-results-head">Recent</p>`);
+      recents.forEach((e, i) => {
+        rows.push(`<button class="food-result" data-pick="recent" data-pickid="${i}">
+          <span class="food-result-name">${escapeHtml(e.name)}</span>
+          <span class="food-result-sub">${Math.round(e.kcal)} kcal · P ${Math.round(e.p)} · C ${Math.round(e.c)} · F ${Math.round(e.f)}</span>
+        </button>`);
+      });
+      return rows.join("");
+    }
+    const lc = q.toLowerCase();
+    const customs = (progress.customFoods || []).filter((f) => f.name.toLowerCase().includes(lc));
+    const meals = (progress.savedMeals || []).filter((m) => m.name.toLowerCase().includes(lc));
+    customs.forEach((f) => {
+      rows.push(`<button class="food-result" data-pick="custom" data-pickid="${escapeHtml(f.id)}">
+        <span class="food-result-name">${escapeHtml(f.name)} <span class="food-tag">My food</span></span>
+        <span class="food-result-sub">${Math.round(f.kcal)} kcal per ${escapeHtml(f.servingLabel || "serving")}</span>
+      </button>`);
+    });
+    meals.forEach((m) => {
+      const t = foodDayTotals(m.items);
+      rows.push(`<button class="food-result" data-pick="meal" data-pickid="${escapeHtml(m.id)}">
+        <span class="food-result-name">${escapeHtml(m.name)} <span class="food-tag">Meal</span></span>
+        <span class="food-result-sub">${m.items.length} items · ${Math.round(t.kcal)} kcal</span>
+      </button>`);
+    });
+    const hits = searchFoods(q);
+    hits.forEach((r) => {
+      rows.push(`<button class="food-result" data-pick="db" data-pickid="${r[F.ID]}">
+        <span class="food-result-name">${escapeHtml(r[F.NAME])}</span>
+        <span class="food-result-sub">${r[F.KCAL]} kcal · P ${r[F.P]} · C ${r[F.C]} · F ${r[F.FAT]} per 100 g</span>
+      </button>`);
+    });
+    if (!rows.length) {
+      return `<p class="muted">No match. Try fewer words, or add it yourself with Quick add.</p>`;
+    }
+    return rows.join("");
+  }
+
+  function pickFoodResult(kind, id, mealKey) {
+    const progress = state.clientData.progress;
+    if (kind === "recent") {
+      const e = recentFoods(progress)[Number(id)];
+      if (!e) return;
+      addFoodEntry(_foodDate, { ...e, meal: mealKey });
+      closeModal(); renderFoodDay();
+      toast(`${e.name} added ✓`);
       return;
     }
-    const card = document.createElement("div");
-    card.className = "card";
-    const chart = macroDonutHtml(cur);
-    // With fewer than two macros there's no split to chart — plain stat tiles.
-    const tiles = chart ? "" : `
-      <div class="client-diet-targets">
-        <div class="client-diet-target">
-          <div class="target-num">${escapeHtml(String(cur.calories || "—"))}</div>
-          <div class="target-lbl">kcal / day</div>
+    if (kind === "custom") {
+      const f = (progress.customFoods || []).find((x) => x.id === id);
+      if (f) openPortionStep({ kind: "custom", food: f }, mealKey);
+      return;
+    }
+    if (kind === "meal") {
+      const m = (progress.savedMeals || []).find((x) => x.id === id);
+      if (!m) return;
+      m.items.forEach((it) => addFoodEntry(_foodDate, { ...it, meal: mealKey }));
+      m.uses = (m.uses || 0) + 1;
+      saveFoodLog();
+      closeModal(); renderFoodDay();
+      toast(`${m.name} added ✓`);
+      return;
+    }
+    const row = foodRowById(Number(id));
+    if (row) openPortionStep({ kind: "db", row }, mealKey);
+  }
+
+  // Step two: how much of it. Units come from the USDA household measures plus
+  // grams and ounces, so "1 cup" and "150 g" are both one step away.
+  function openPortionStep(pick, mealKey) {
+    const meal = MEALS.find((m) => m.key === mealKey) || MEALS[0];
+    const isDb = pick.kind === "db";
+    const name = isDb ? pick.row[F.NAME] : pick.food.name;
+    const units = [];
+    if (isDb) {
+      (pick.row[F.PORTIONS] || []).forEach(([label, grams]) => units.push({ label, grams }));
+      units.push({ label: "g", grams: 1 }, { label: "oz", grams: OZ_G });
+    } else {
+      units.push({ label: pick.food.servingLabel || "serving", grams: 0 });
+    }
+    const defaultIdx = 0;
+    openModal({
+      title: name.length > 48 ? name.slice(0, 47) + "…" : name,
+      body: `
+        <div class="portion-row">
+          <label>Amount
+            <input type="number" id="portion-qty" min="0" step="0.25" value="1" inputmode="decimal" />
+          </label>
+          <label>Unit
+            <select id="portion-unit">
+              ${units.map((u, i) => `<option value="${i}" ${i === defaultIdx ? "selected" : ""}>${escapeHtml(u.label)}</option>`).join("")}
+            </select>
+          </label>
         </div>
-        <div class="client-diet-target">
-          <div class="target-num">${escapeHtml(cur.protein ? cur.protein + "g" : "—")}</div>
-          <div class="target-lbl">protein / day</div>
-        </div>
-      </div>`;
-    card.innerHTML = `
+        <div id="portion-preview" class="portion-preview"></div>`,
+      actions: [
+        { label: "Back", className: "btn btn-ghost", onClick: () => openAddFoodModal(mealKey) },
+        { label: `Add to ${meal.label}`, className: "btn btn-primary", onClick: () => {
+            const v = computePortion();
+            if (!v) { toast("Enter an amount"); return; }
+            addFoodEntry(_foodDate, v);
+            if (!isDb) {
+              pick.food.uses = (pick.food.uses || 0) + 1;
+              saveFoodLog();
+            }
+            closeModal(); renderFoodDay();
+            toast("Logged ✓");
+          } },
+      ],
+    });
+
+    function computePortion() {
+      const qty = Number($("#portion-qty").value);
+      if (!(qty > 0)) return null;
+      const unit = units[Number($("#portion-unit").value)] || units[0];
+      if (isDb) {
+        const grams = qty * unit.grams;
+        const k = grams / 100;
+        return {
+          name, meal: mealKey, qty, unit: unit.label, grams: Math.round(grams * 10) / 10,
+          kcal: Math.round(pick.row[F.KCAL] * k),
+          p: Math.round(pick.row[F.P] * k * 10) / 10,
+          c: Math.round(pick.row[F.C] * k * 10) / 10,
+          f: Math.round(pick.row[F.FAT] * k * 10) / 10,
+          src: "db", ref: pick.row[F.ID],
+        };
+      }
+      const f = pick.food;
+      return {
+        name, meal: mealKey, qty, unit: unit.label, grams: null,
+        kcal: Math.round(f.kcal * qty),
+        p: Math.round((f.p || 0) * qty * 10) / 10,
+        c: Math.round((f.c || 0) * qty * 10) / 10,
+        f: Math.round((f.f || 0) * qty * 10) / 10,
+        src: "custom", ref: f.id,
+      };
+    }
+    const refresh = () => {
+      const v = computePortion();
+      $("#portion-preview").innerHTML = v
+        ? `<span class="portion-kcal">${v.kcal.toLocaleString()} kcal</span>
+           <span class="portion-macros">P ${v.p} · C ${v.c} · F ${v.f}</span>`
+        : `<span class="muted">Enter an amount</span>`;
+    };
+    $("#portion-qty").addEventListener("input", refresh);
+    $("#portion-unit").addEventListener("change", refresh);
+    refresh();
+    $("#portion-qty").select();
+  }
+
+  function openQuickAddModal(mealKey) {
+    const meal = MEALS.find((m) => m.key === mealKey) || MEALS[0];
+    openModal({
+      title: "Quick add",
+      body: `
+        <p class="muted" style="margin-top:0">For when you already know the numbers. Calories are all that's required.</p>
+        <label>Name <input type="text" id="qa-name" placeholder="e.g. Lunch out" /></label>
+        <div class="quick-add-grid">
+          <label>Calories <input type="number" id="qa-kcal" min="0" inputmode="numeric" /></label>
+          <label>Protein g <input type="number" id="qa-p" min="0" inputmode="numeric" /></label>
+          <label>Carbs g <input type="number" id="qa-c" min="0" inputmode="numeric" /></label>
+          <label>Fat g <input type="number" id="qa-f" min="0" inputmode="numeric" /></label>
+        </div>`,
+      actions: [
+        { label: "Back", className: "btn btn-ghost", onClick: () => openAddFoodModal(mealKey) },
+        { label: `Add to ${meal.label}`, className: "btn btn-primary", onClick: () => {
+            const kcal = Number($("#qa-kcal").value) || 0;
+            const p = Number($("#qa-p").value) || 0;
+            const c = Number($("#qa-c").value) || 0;
+            const f = Number($("#qa-f").value) || 0;
+            if (!kcal && !p && !c && !f) { toast("Enter at least the calories"); return; }
+            addFoodEntry(_foodDate, {
+              name: ($("#qa-name").value || "").trim() || "Quick add",
+              meal: mealKey, qty: 1, unit: "entry", grams: null,
+              kcal: kcal || Math.round(p * 4 + c * 4 + f * 9),
+              p, c, f, src: "quick", ref: null,
+            });
+            closeModal(); renderFoodDay();
+            toast("Logged ✓");
+          } },
+      ],
+    });
+    $("#qa-name").focus();
+  }
+
+  // A food the athlete keeps eating that isn't in the USDA list — protein
+  // powder, a supplement bar, their own recipe. Saved once, searchable after.
+  function openCustomFoodModal(mealKey) {
+    openModal({
+      title: "New food",
+      body: `
+        <p class="muted" style="margin-top:0">Copy the numbers off the label. Saved to your foods so you can log it in one tap next time.</p>
+        <label>Name <input type="text" id="cf-name" placeholder="e.g. Whey shake" /></label>
+        <label>One serving is <input type="text" id="cf-serving" placeholder="e.g. 1 scoop" value="1 serving" /></label>
+        <div class="quick-add-grid">
+          <label>Calories <input type="number" id="cf-kcal" min="0" inputmode="numeric" /></label>
+          <label>Protein g <input type="number" id="cf-p" min="0" inputmode="numeric" /></label>
+          <label>Carbs g <input type="number" id="cf-c" min="0" inputmode="numeric" /></label>
+          <label>Fat g <input type="number" id="cf-f" min="0" inputmode="numeric" /></label>
+        </div>`,
+      actions: [
+        { label: "Back", className: "btn btn-ghost", onClick: () => openAddFoodModal(mealKey) },
+        { label: "Save and log", className: "btn btn-primary", onClick: () => {
+            const name = ($("#cf-name").value || "").trim();
+            if (!name) { toast("Give it a name"); return; }
+            const kcal = Number($("#cf-kcal").value) || 0;
+            const p = Number($("#cf-p").value) || 0;
+            const c = Number($("#cf-c").value) || 0;
+            const f = Number($("#cf-f").value) || 0;
+            if (!kcal && !p && !c && !f) { toast("Enter at least the calories"); return; }
+            const progress = state.clientData.progress;
+            ensureFoodLog(progress);
+            const food = {
+              id: uid(), name,
+              servingLabel: ($("#cf-serving").value || "").trim() || "serving",
+              kcal: kcal || Math.round(p * 4 + c * 4 + f * 9),
+              p, c, f, uses: 0, createdAt: todayISO(),
+            };
+            progress.customFoods.push(food);
+            saveFoodLog();
+            openPortionStep({ kind: "custom", food }, mealKey);
+          } },
+      ],
+    });
+    $("#cf-name").focus();
+  }
+
+  function openSaveMealModal(mealKey) {
+    const entries = foodDayEntries(state.clientData.progress, _foodDate).filter((e) => e.meal === mealKey);
+    if (!entries.length) return;
+    const meal = MEALS.find((m) => m.key === mealKey) || MEALS[0];
+    const t = foodDayTotals(entries);
+    openModal({
+      title: "Save as a meal",
+      body: `
+        <p class="muted" style="margin-top:0">Saves these ${entries.length} item${entries.length === 1 ? "" : "s"}
+          (${Math.round(t.kcal)} kcal) as one entry you can log in a single tap.</p>
+        <label>Meal name <input type="text" id="sm-name" placeholder="e.g. Usual breakfast" value="${escapeHtml("My " + meal.label.toLowerCase())}" /></label>`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Save", className: "btn btn-primary", onClick: () => {
+            const name = ($("#sm-name").value || "").trim();
+            if (!name) { toast("Give it a name"); return; }
+            const progress = state.clientData.progress;
+            ensureFoodLog(progress);
+            progress.savedMeals.push({
+              id: uid(), name, uses: 0, createdAt: todayISO(),
+              items: entries.map((e) => ({ ...e, id: undefined, at: undefined })),
+            });
+            saveFoodLog();
+            closeModal();
+            toast("Meal saved ✓");
+          } },
+      ],
+    });
+  }
+
+  // -------- Athlete targets --------
+  function renderClientTargets() {
+    const el = $("#client-targets-card"); if (!el) return;
+    const client = state.clientData.program?.client;
+    const progress = state.clientData.progress;
+    const eff = effectiveTargets(client, progress);
+    const plan = eff.plan;
+
+    if (!plan) {
+      el.innerHTML = `
+        <h3 style="margin-top:0">Daily targets</h3>
+        <p class="muted">No targets yet. Work them out from your bodyweight and goal, or type them in.</p>
+        <div class="target-actions">
+          <button class="btn btn-primary btn-sm slim-btn" id="btn-calc-targets">Calculate for me</button>
+          <button class="btn btn-ghost btn-sm slim-btn" id="btn-edit-targets">Enter my own</button>
+        </div>`;
+      wireTargetButtons();
+      return;
+    }
+
+    const whose = eff.source === "coach"
+      ? (eff.locked ? "Set by your coach and locked" : "Set by your coach")
+      : "Your own targets";
+    const canSwitch = !eff.locked && (eff.coachPlan || eff.ownPlan);
+    el.innerHTML = `
       <div class="nutrition-plan-head">
         <h3 style="margin:0">Daily targets</h3>
-        ${cur.effectiveFrom ? `<span class="muted" style="font-size:0.8rem">since ${escapeHtml(cur.effectiveFrom)}</span>` : ""}
+        <span class="muted" style="font-size:0.8rem">${escapeHtml(whose)}</span>
       </div>
-      ${chart}${tiles}
-      ${cur.notes ? `<div class="client-instructions" style="margin-top:0.8em">${escapeHtml(cur.notes)}</div>` : ""}`;
-    container.appendChild(card);
+      ${macroDonutHtml(plan) || `
+        <div class="client-diet-targets">
+          <div class="client-diet-target">
+            <div class="target-num">${escapeHtml(String(plan.calories || "—"))}</div>
+            <div class="target-lbl">kcal / day</div>
+          </div>
+          <div class="client-diet-target">
+            <div class="target-num">${escapeHtml(plan.protein ? plan.protein + "g" : "—")}</div>
+            <div class="target-lbl">protein / day</div>
+          </div>
+        </div>`}
+      ${plan.notes ? `<div class="client-instructions" style="margin-top:0.8em">${escapeHtml(plan.notes)}</div>` : ""}
+      ${eff.locked ? `<p class="muted target-locked">🔒 Your coach has locked these. Talk to them if they need changing.</p>` : `
+        <div class="target-actions">
+          <button class="btn btn-primary btn-sm slim-btn" id="btn-calc-targets">Calculate for me</button>
+          <button class="btn btn-ghost btn-sm slim-btn" id="btn-edit-targets">${eff.ownPlan ? "Edit my targets" : "Set my own"}</button>
+          ${canSwitch && eff.coachPlan && eff.ownPlan ? `<button class="btn btn-ghost btn-sm slim-btn" id="btn-switch-targets">
+            ${eff.source === "own" ? "Use coach's targets" : "Use my targets"}</button>` : ""}
+        </div>`}`;
+    if (!eff.locked) wireTargetButtons();
+  }
 
-    const history = nut.history || [];
-    if (history.length) {
-      const hist = document.createElement("div");
-      hist.className = "card";
-      hist.innerHTML = `<h4 style="margin-top:0">Past targets</h4>`;
-      [...history].reverse().forEach((h) => {
-        hist.insertAdjacentHTML("beforeend", `
-          <div class="nutrition-history-row">
-            <strong>${escapeHtml(nutritionPlanSummary(h))}</strong>
-            <span class="muted">${escapeHtml(h.effectiveFrom || "")} → ${escapeHtml(h.endedAt || "")}</span>
-          </div>`);
-      });
-      container.appendChild(hist);
+  function wireTargetButtons() {
+    const calc = $("#btn-calc-targets");
+    if (calc) calc.addEventListener("click", openTargetCalculator);
+    const edit = $("#btn-edit-targets");
+    if (edit) edit.addEventListener("click", () => openTargetsEditor());
+    const sw = $("#btn-switch-targets");
+    if (sw) sw.addEventListener("click", () => {
+      const t = ensureNutritionTargets(state.clientData.progress);
+      t.mode = t.mode === "own" ? "coach" : "own";
+      saveClient();
+      renderClientTargets();
+      renderFoodDay();
+      toast(t.mode === "own" ? "Using your targets ✓" : "Using your coach's targets ✓");
+    });
+  }
+
+  function saveOwnTargets(fields, calcInputs) {
+    const progress = state.clientData.progress;
+    const t = ensureNutritionTargets(progress);
+    Object.assign(t, fields, {
+      mode: "own",
+      updatedAt: todayISO(),
+    });
+    if (calcInputs) t.calc = calcInputs;
+    saveClient();
+    renderClientTargets();
+    renderFoodDay();
+  }
+
+  function openTargetsEditor() {
+    const progress = state.clientData.progress;
+    const cur = progress.nutritionTargets || {};
+    const pcts = planPercents(planHasTargets(cur) ? cur : (state.clientData.program?.client?.nutrition?.current || {}));
+    const cal = planHasTargets(cur) ? cur.calories : (state.clientData.program?.client?.nutrition?.current?.calories || "");
+    openModal({
+      title: "My targets",
+      body: `
+        <label>Calories / day <input type="number" min="0" id="mt-cal" placeholder="e.g. 2500" value="${escapeHtml(String(cal ?? ""))}" /></label>
+        <div class="nutrition-form" style="margin-top:0.7em">
+          <label>Protein % <input type="number" min="0" max="100" id="mt-protein-pct" value="${escapeHtml(String(pcts.protein ?? ""))}" /></label>
+          <label>Carbs % <input type="number" min="0" max="100" id="mt-carbs-pct" value="${escapeHtml(String(pcts.carbs ?? ""))}" /></label>
+          <label>Fat % <input type="number" min="0" max="100" id="mt-fat-pct" value="${escapeHtml(String(pcts.fat ?? ""))}" /></label>
+        </div>
+        <div id="mt-calc">${macroCalcHtml(cal ?? "", pcts)}</div>`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Save", className: "btn btn-primary", onClick: () => {
+            const calories = $("#mt-cal").value.trim();
+            if (!calories) { toast("Enter a daily calorie target"); return; }
+            const p = readMtPcts();
+            const grams = pctToGrams(calories, p);
+            saveOwnTargets({
+              calories,
+              proteinPct: p.protein, carbsPct: p.carbs, fatPct: p.fat,
+              protein: grams.protein, carbs: grams.carbs, fat: grams.fat,
+            });
+            closeModal();
+            toast("Targets saved ✓");
+          } },
+      ],
+    });
+    const readMtPcts = () => ({
+      protein: $("#mt-protein-pct").value.trim(),
+      carbs: $("#mt-carbs-pct").value.trim(),
+      fat: $("#mt-fat-pct").value.trim(),
+    });
+    const refresh = () => {
+      $("#mt-calc").innerHTML = macroCalcHtml($("#mt-cal").value.trim(), readMtPcts());
+    };
+    ["mt-cal", "mt-protein-pct", "mt-carbs-pct", "mt-fat-pct"].forEach((id) => {
+      $("#" + id).addEventListener("input", refresh);
+    });
+  }
+
+  // Mifflin-St Jeor, driven by the bodyweight they already log. Every term here
+  // has an explainer on the Science page, so the numbers aren't a black box.
+  function openTargetCalculator() {
+    const progress = state.clientData.progress;
+    const client = state.clientData.program?.client;
+    const prev = progress.nutritionTargets?.calc || {};
+    const bw = latestBodyweight(progress, client);
+    const weightLb = Number(bw) || Number(prev.weightLb) || "";
+    openModal({
+      title: "Work out my targets",
+      body: `
+        ${weightLb ? "" : `<p class="muted" style="margin-top:0">Log a bodyweight below and this gets more accurate.</p>`}
+        <div class="calc-grid">
+          <label>Bodyweight lb <input type="number" id="tc-weight" min="0" inputmode="decimal" value="${escapeHtml(String(weightLb))}" /></label>
+          <label>Height in <input type="number" id="tc-height" min="0" inputmode="numeric" value="${escapeHtml(String(prev.heightIn ?? ""))}" placeholder="e.g. 70" /></label>
+          <label>Age <input type="number" id="tc-age" min="0" inputmode="numeric" value="${escapeHtml(String(prev.age ?? ""))}" /></label>
+          <label>Sex
+            <select id="tc-sex">
+              <option value="male" ${prev.sex === "male" ? "selected" : ""}>Male</option>
+              <option value="female" ${prev.sex === "female" ? "selected" : ""}>Female</option>
+              <option value="unspecified" ${prev.sex === "unspecified" ? "selected" : ""}>Prefer not to say</option>
+            </select>
+          </label>
+        </div>
+        <label style="margin-top:0.7em">Activity
+          <select id="tc-activity">
+            ${ACTIVITY_LEVELS.map((a) => `<option value="${a.key}" ${(prev.activity || "moderate") === a.key ? "selected" : ""}>${a.label}: ${a.hint}</option>`).join("")}
+          </select>
+        </label>
+        <label style="margin-top:0.7em">Goal
+          <select id="tc-goal">
+            ${DIET_GOALS.map((g) => `<option value="${g.key}" ${(prev.goal || "maintain") === g.key ? "selected" : ""}>${g.label}: ${g.hint}</option>`).join("")}
+          </select>
+        </label>
+        <div id="tc-out" class="calc-out"></div>`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Use these", className: "btn btn-primary", onClick: () => {
+            const r = readCalc();
+            if (!r.result) { toast("Fill in weight, height and age"); return; }
+            const { result, inputs } = r;
+            saveOwnTargets({
+              calories: String(result.calories),
+              proteinPct: String(result.proteinPct), carbsPct: String(result.carbsPct), fatPct: String(result.fatPct),
+              protein: result.protein, carbs: result.carbs, fat: result.fat,
+            }, { ...inputs, bmr: result.bmr, tdee: result.tdee });
+            closeModal();
+            toast("Targets set ✓");
+          } },
+      ],
+    });
+
+    function readCalc() {
+      const inputs = {
+        weightLb: Number($("#tc-weight").value) || 0,
+        heightIn: Number($("#tc-height").value) || 0,
+        age: Number($("#tc-age").value) || 0,
+        sex: $("#tc-sex").value,
+        activity: $("#tc-activity").value,
+        goal: $("#tc-goal").value,
+      };
+      return { inputs, result: calcTargets(inputs) };
     }
+    const refresh = () => {
+      const { result } = readCalc();
+      const out = $("#tc-out");
+      if (!result) { out.innerHTML = `<p class="muted">Fill in weight, height and age to see your numbers.</p>`; return; }
+      out.innerHTML = `
+        <div class="calc-line"><span>Resting burn</span><strong>${result.bmr.toLocaleString()} kcal</strong></div>
+        <div class="calc-line"><span>Maintenance (TDEE)</span><strong>${result.tdee.toLocaleString()} kcal</strong></div>
+        <div class="calc-line calc-line-main"><span>Your target</span><strong>${result.calories.toLocaleString()} kcal</strong></div>
+        <div class="calc-macros">
+          ${MACROS.map((m) => `<span class="calc-macro"><span class="macro-dot" style="background:${m.color}"></span>${m.label} ${result[m.key]} g</span>`).join("")}
+        </div>`;
+    };
+    ["tc-weight", "tc-height", "tc-age"].forEach((id) => $("#" + id).addEventListener("input", refresh));
+    ["tc-sex", "tc-activity", "tc-goal"].forEach((id) => $("#" + id).addEventListener("change", refresh));
+    refresh();
   }
 
   // -------- Athlete progress (bodyweight + feedback + send) --------
@@ -15080,8 +15954,12 @@
         title: "Rest timer", text: "Tap Go to start your rest. It dings when it's time to lift, then rolls straight into the next rest until you stop it. The small time button picks the length, the bell mutes the ding." },
       { sel: '[data-ctab-panel="prs"]', go: () => setClientTab("prs"),
         title: "Personal records", text: "Your PRs live here. Locking a heavy set can raise them automatically." },
+      { sel: "#food-day-card", go: () => setClientTab("diet"),
+        title: "Food log", text: "Log what you eat and watch the ring fill toward your calorie target. Search thousands of foods, save the ones you eat often, or use Quick add when you already know the numbers." },
+      { sel: "#client-targets-card", go: () => setClientTab("diet"),
+        title: "Your daily targets", text: "Calories and macros, either from your coach or worked out from your bodyweight and goal. Tap Calculate for me to get a starting point." },
       { sel: "#client-feedback", go: () => setClientTab("diet"),
-        title: "Nutrition, cardio & notes", text: "Coach's nutrition targets and your cardio log — record the minutes and, if you tracked it, the distance. This note box goes straight to your coach." },
+        title: "Cardio and notes", text: "Your cardio log. Record the minutes and, if you tracked it, the distance. This note box goes straight to your coach." },
       { sel: '[data-ctab-panel="sessions"]', go: () => setClientTab("sessions"),
         title: "Sessions", text: "Your session packages, bookings and open slots with your coach." },
       { sel: "#btn-tour-client", go: () => setClientTab("overview"),
