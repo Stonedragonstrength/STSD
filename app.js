@@ -14609,6 +14609,39 @@
     return { level, into: xp - spent, need, floor: spent };
   }
 
+  // One named rank with its own badge per level, climbing from a pebble to the
+  // thing on the front of the app. Past the last name the rank holds and takes
+  // a numeral instead, so the ladder never runs out.
+  const RANKS = [
+    { name: "Pebble", icon: "🪨" },
+    { name: "Flint", icon: "🔨" },
+    { name: "Granite", icon: "🧱" },
+    { name: "Ironclad", icon: "🛡️" },
+    { name: "Steelforged", icon: "⚔️" },
+    { name: "Obsidian", icon: "🌑" },
+    { name: "Scalebound", icon: "🐾" },
+    { name: "Talon", icon: "🦅" },
+    { name: "Wingborne", icon: "🪽" },
+    { name: "Serpent", icon: "🐍" },
+    { name: "Wyrm", icon: "🦖" },
+    { name: "Stone Dragon", icon: "🐉" },
+  ];
+  const ROMAN = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
+  function romanFor(n) {
+    if (n < ROMAN.length) return ROMAN[n];
+    return "X".repeat(Math.floor(n / 10)) + (ROMAN[n % 10] || "");
+  }
+  function rankForLevel(level) {
+    const i = Math.min(Math.max(level, 1), RANKS.length) - 1;
+    const r = RANKS[i];
+    const past = level - RANKS.length;   // prestige count once the names run out
+    return {
+      ...r,
+      name: past > 0 ? `${r.name} ${romanFor(past + 1)}` : r.name,
+      isMax: level >= RANKS.length,
+    };
+  }
+
   function ensureNutritionGame(progress) {
     if (!progress) return null;
     if (!progress.nutritionGame || typeof progress.nutritionGame !== "object") {
@@ -14619,6 +14652,15 @@
     if (!g.awarded || typeof g.awarded !== "object") g.awarded = {};
     if (typeof g.bestStreak !== "number") g.bestStreak = 0;
     return g;
+  }
+
+  // Announces a promotion once. seenRank is seeded silently the first time so
+  // an athlete who already has XP doesn't get told they just earned it.
+  function checkRankUp(g, level) {
+    if (typeof g.seenRank !== "number") { g.seenRank = level; return false; }
+    if (level <= g.seenRank) { g.seenRank = level; return false; }
+    g.seenRank = level;
+    return true;
   }
 
   // Re-banks XP for every day still inside the log window. Because it diffs
@@ -14656,8 +14698,12 @@
       changed = true;
     }
     if (streak > g.bestStreak) { g.bestStreak = streak; changed = true; }
+    const lvl = levelFromXp(g.xp);
+    const rank = rankForLevel(lvl.level);
+    const promoted = checkRankUp(g, lvl.level);
+    if (promoted) { changed = true; toast(`New rank: ${rank.icon} ${rank.name}`); }
     if (changed) saveClient();
-    return { ...levelFromXp(g.xp), xp: g.xp, streak, bestStreak: g.bestStreak, plan };
+    return { ...lvl, rank, promoted, xp: g.xp, streak, bestStreak: g.bestStreak, plan };
   }
 
   // ---- Rendering ----
@@ -14850,12 +14896,15 @@
         </div>
       </div>
 
-      <div class="food-lvl">
-        <span class="food-lvl-badge">LV ${game.level}</span>
+      <div class="food-lvl ${game.promoted ? "is-promoted" : ""} ${game.rank.isMax ? "is-max" : ""}">
+        <div class="food-rank">
+          <span class="food-rank-badge">${game.rank.icon}</span>
+          <span class="food-rank-name">${escapeHtml(game.rank.name)}</span>
+          <span class="food-lvl-xp">${game.into}<i>/${game.need} XP</i></span>
+          ${game.streak ? `<span class="food-streak" title="${game.streak} day streak. Best: ${game.bestStreak}">🔥${game.streak}</span>` : ""}
+        </div>
         <span class="food-lvl-track"><span class="food-lvl-fill"
           style="width:${((game.into / game.need) * 100).toFixed(1)}%"></span></span>
-        <span class="food-lvl-xp">${game.into}<i>/${game.need}</i></span>
-        ${game.streak ? `<span class="food-streak" title="${game.streak} day streak. Best: ${game.bestStreak}">🔥${game.streak}</span>` : ""}
       </div>
 
       ${plan ? "" : `<p class="muted food-no-target">No targets yet. Tap the ring to set them and this all fills in.</p>`}
@@ -17158,7 +17207,7 @@
       { sel: "#food-ring", go: () => setClientTab("diet"),
         title: "Hit the zone", text: "The ring fills toward your calorie target and turns gold when you land inside it. Tap it any time to set or change your targets." },
       { sel: ".food-lvl", go: () => setClientTab("diet"),
-        title: "Level up", text: "Every logged day earns XP: more for landing close to your numbers, a bonus for a perfect day, and more again the longer your streak runs." },
+        title: "Earn your rank", text: "Every logged day earns XP: more for landing close to your numbers, a bonus for a perfect day, and more again the longer your streak runs. Fill the bar and you take the next rank, from Pebble all the way up to Stone Dragon." },
       { sel: "#client-feedback", go: () => setClientTab("diet"),
         title: "Cardio and notes", text: "Your cardio log. Record the minutes and, if you tracked it, the distance. This note box goes straight to your coach." },
       { sel: '[data-ctab-panel="sessions"]', go: () => setClientTab("sessions"),

@@ -8409,19 +8409,31 @@ body.live-log-mode #screen-client .header-right { display: none; }
 .food-score i { font-style: normal; font-size: 0.66rem; font-weight: 600; color: var(--muted); }
 .food-score.is-perfect { color: var(--gold); font-size: 0.76rem; letter-spacing: 0.02em; }
 
-/* Level strip */
-.food-lvl {
-  display: flex; align-items: center; gap: 0.5em;
-  margin-top: 0.6rem;
+/* Rank plate. Two lines because rank names ("Steelforged") need the room, and
+   the badge is the point — it shouldn't be squeezed to fit beside the bar. */
+.food-lvl { display: grid; gap: 0.3em; margin-top: 0.6rem; }
+.food-rank { display: flex; align-items: center; gap: 0.45em; }
+.food-rank-badge {
+  flex: 0 0 auto; font-size: 0.95rem; line-height: 1;
+  filter: drop-shadow(0 0 4px rgba(var(--gold-rgb), 0.35));
 }
-.food-lvl-badge {
-  flex: 0 0 auto; font-size: 0.66rem; font-weight: 900; letter-spacing: 0.06em;
-  color: var(--gold); background: rgba(var(--gold-rgb), 0.12);
-  border: 1px solid rgba(var(--gold-rgb), 0.35);
-  border-radius: 999px; padding: 0.15em 0.5em;
+.food-rank-name {
+  flex: 1 1 auto; min-width: 0;
+  font-size: 0.72rem; font-weight: 900; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--gold);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.food-lvl.is-max .food-rank-name { color: var(--primary-bright); }
+.food-lvl.is-max .food-rank-badge { filter: drop-shadow(0 0 5px rgba(var(--primary-rgb), 0.6)); }
+/* A promotion lands on this render — give the plate one pass of shine. */
+.food-lvl.is-promoted .food-rank-badge { animation: rank-pop 0.9s ease; }
+@keyframes rank-pop {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.45) rotate(-8deg); }
+  100% { transform: scale(1); }
 }
 .food-lvl-track {
-  flex: 1 1 auto; height: 6px; border-radius: 999px;
+  height: 6px; border-radius: 999px;
   background: var(--surface-3); overflow: hidden;
 }
 .food-lvl-fill {
@@ -8430,7 +8442,7 @@ body.live-log-mode #screen-client .header-right { display: none; }
   transition: width 0.4s ease;
 }
 .food-lvl-xp {
-  flex: 0 0 auto; font-size: 0.68rem; font-weight: 700; color: var(--text-soft);
+  flex: 0 0 auto; font-size: 0.68rem; font-weight: 800; color: var(--text-soft);
   font-variant-numeric: tabular-nums;
 }
 .food-lvl-xp i { font-style: normal; color: var(--muted); font-weight: 600; }
