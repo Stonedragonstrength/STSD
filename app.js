@@ -14601,14 +14601,6 @@
     return xp;
   }
 
-  // Level curve: 250 XP for the first level-up, +50 for each one after. Level
-  // 10 lands around 45 solid days.
-  function levelFromXp(xp) {
-    let level = 1, need = 250, spent = 0;
-    while (xp - spent >= need) { spent += need; level++; need += 50; }
-    return { level, into: xp - spent, need, floor: spent };
-  }
-
   // One named rank with its own badge per level, climbing from a pebble to the
   // thing on the front of the app. Past the last name the rank holds and takes
   // a numeral instead, so the ladder never runs out.
@@ -14626,6 +14618,25 @@
     { name: "Wyrm", icon: "🦖" },
     { name: "Stone Dragon", icon: "🐉" },
   ];
+  // Rank cost compounds 46% a rank rather than creeping up by a flat amount,
+  // the way a game's level curve does: the first few come in a week, the last
+  // one is a season's work. A flawless day is 114 XP, so Stone Dragon's ~34,400
+  // is about a year of real logging and can't be rushed in under ten months.
+  //
+  // The climb stops compounding at the last named rank, otherwise each prestige
+  // numeral past Stone Dragon would cost half again as much as the whole ladder
+  // and the numerals would be decoration rather than something to earn.
+  const XP_BASE = 250, XP_RATIO = 1.46;
+  function xpForLevel(level) {
+    const step = Math.min(Math.max(level, 1), RANKS.length - 1);
+    return Math.round(XP_BASE * Math.pow(XP_RATIO, step - 1) / 10) * 10;
+  }
+  function levelFromXp(xp) {
+    let level = 1, spent = 0, need = xpForLevel(1);
+    while (xp - spent >= need) { spent += need; level++; need = xpForLevel(level); }
+    return { level, into: xp - spent, need, floor: spent };
+  }
+
   const ROMAN = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
   function romanFor(n) {
     if (n < ROMAN.length) return ROMAN[n];
