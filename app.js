@@ -268,6 +268,7 @@
       goals: "", notes: "",
       weeks: [],
       oneOffDays: [],
+      trials: [],
       schedule: {},
       coachPRs: DEFAULT_PR_LIFTS.map((n) => ({ id: uid(), name: n, pr1: "", pr2: "", pr3: "" })),
       // Seed with any active bulletins so a new athlete sees current notices.
@@ -1692,6 +1693,7 @@
     if (!c.schedule) c.schedule = {};
     if (!c.coachPRs) c.coachPRs = [];
     if (!Array.isArray(c.oneOffDays)) c.oneOffDays = [];
+    if (!Array.isArray(c.trials)) c.trials = [];
     if (!Array.isArray(c.archivedPrograms)) c.archivedPrograms = [];
     ensureSessionBank(c);
     if (!c.inviteCode) { c.inviteCode = makeInviteCode(); _trainerDataDirty = true; }
@@ -2139,6 +2141,7 @@
         goals: athlete.goals,
         weeks: athlete.weeks || [],
         oneOffDays: athlete.oneOffDays || [],
+        trials: athlete.trials || [],
         schedule: athlete.schedule || {},
         coachPRs: athlete.coachPRs || [],
         inviteCode: athlete.inviteCode,
@@ -2415,6 +2418,7 @@
       if (!a.schedule) a.schedule = {};
       if (!a.coachPRs) a.coachPRs = [];
       if (!Array.isArray(a.oneOffDays)) a.oneOffDays = [];
+      if (!Array.isArray(a.trials)) a.trials = [];
       ensureSessionBank(a);
       if (!a.inviteCode) a.inviteCode = makeInviteCode();
       return a;
@@ -9398,6 +9402,9 @@
     addBtn.textContent = "+ Add lift";
     addBtn.addEventListener("click", addPRLift);
     container.appendChild(addBtn);
+
+    // Trials live under the PRs — both are "what are we chasing".
+    renderTrialsSection(c);
   }
 
   function addPRLift() {
@@ -11101,7 +11108,7 @@
       sharedAt: Date.now(),
       client: {
         id: match.id, name: match.name, age: match.age, heightIn: match.heightIn, weightLb: match.weightLb,
-        goals: match.goals, weeks: match.weeks, oneOffDays: match.oneOffDays || [], schedule: match.schedule || {},
+        goals: match.goals, weeks: match.weeks, oneOffDays: match.oneOffDays || [], trials: match.trials || [], schedule: match.schedule || {},
         coachPRs: match.coachPRs || [], inviteCode: match.inviteCode,
         sessionBank: match.sessionBank || { packages: [], redemptions: [] },
         nutrition: match.nutrition || { current: null, history: [] },
@@ -11138,7 +11145,7 @@
       sharedAt: Date.now(),
       client: {
         id: athlete.id, name: athlete.name, age: athlete.age, heightIn: athlete.heightIn, weightLb: athlete.weightLb,
-        goals: athlete.goals, weeks: athlete.weeks, oneOffDays: athlete.oneOffDays || [], schedule: athlete.schedule || {},
+        goals: athlete.goals, weeks: athlete.weeks, oneOffDays: athlete.oneOffDays || [], trials: athlete.trials || [], schedule: athlete.schedule || {},
         coachPRs: athlete.coachPRs || [], inviteCode: athlete.inviteCode,
         sessionBank: athlete.sessionBank || { packages: [], redemptions: [] },
         nutrition: athlete.nutrition || { current: null, history: [] },
@@ -11870,7 +11877,10 @@
 
     // ---- Streak · ring · tonnage · recap · trophies ----
     const streakN = weeklyStreak(progress);
-    const ton = lifetimeTonnage(progress);
+    // Bank the Hoard before anything reads a tonnage: it is the one lifetime
+    // total the app quotes, so "Total lifted" and the rank can't disagree.
+    const hoardGame = syncHoard(c, progress);
+    const ton = hoardGame.lb;
     const lastWk = lastWorkoutVolume(progress);
     const lastWkLabel = lastWk ? new Date(lastWk.date + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
     // Lifetime lifting stats — the tonnage lives here (not as a mini tile too)
@@ -11899,13 +11909,33 @@
         <div class="trophy-grid">${badges.map((b) => `<div class="trophy${b.earned ? " earned" : ""}" title="${escapeHtml(b.hint)}"><span class="trophy-icon">${b.icon}</span><span class="trophy-name">${escapeHtml(b.name)}</span></div>`).join("")}</div>
       </details>` : "";
 
+    // Trials: the coach's own challenges, above the generic trophy case
+    // because these are personal and worth more attention. Open by default
+    // while any are outstanding — a goal nobody sees isn't a goal.
+    const trials = syncTrials(c, progress, true);
+    const trialsWon = trials.filter((t) => t.done).length;
+    const trialsHtml = trials.length ? `<details class="card ov-trials"${trialsWon < trials.length ? " open" : ""}>
+        <summary>⚔️ Trials <span class="muted">${trialsWon}/${trials.length}</span><span class="ov-trophies-chev">▸</span></summary>
+        <div class="ov-trial-list">${trials.map((s) => {
+          const pct = s.target > 0 ? Math.max(0, Math.min(100, (s.cur / s.target) * 100)) : 0;
+          return `<div class="ov-trial${s.done ? " is-won" : ""}">
+            <span class="ov-trial-ico">${s.t.icon || "🎯"}</span>
+            <span class="ov-trial-body">
+              <span class="ov-trial-name">${escapeHtml(s.t.name || "Trial")}</span>
+              <span class="ov-trial-track"><span class="ov-trial-fill" style="width:${s.done ? 100 : pct.toFixed(1)}%"></span></span>
+            </span>
+            <span class="ov-trial-meta">${s.done ? "Won ✓" : escapeHtml(s.label || "")}</span>
+          </div>`;
+        }).join("")}</div>
+      </details>` : "";
+
     // "Up next" reads as a compact floating badge pinned to the bottom-center
     // of the overview (day name on top, kicker under it). The whole badge is
     // the tap target on startable states, so there's no separate Start button.
     // The rank sits with the greeting, above the calendar: it's an identity
     // line, and below the fold it may as well not exist.
     const greetHost = $("#overview-greeting");
-    if (greetHost) greetHost.innerHTML = `<div class="ov-greeting">Hey, ${firstName} 👋</div>${hoardBarHtml(c, progress)}`;
+    if (greetHost) greetHost.innerHTML = `<div class="ov-greeting">Hey, ${firstName} 👋</div>${hoardBarHtml(hoardGame)}`;
     if (heroHost) heroHost.innerHTML = `
       <div class="ov-hero${hero.jump ? " is-clickable" : ""}" id="ov-hero" style="--hero-color:${hero.color || "var(--primary-bright)"};--hero-soft:${hero.soft || "var(--primary-soft)"}">
         <div class="ov-hero-textcol">
@@ -11918,7 +11948,7 @@
     host.innerHTML = `
       ${prHtml ? `<div class="ov-mini-row">${prHtml}</div>` : ""}
       ${statsHtml}`;
-    if (trophyHost) trophyHost.innerHTML = trophyHtml;
+    if (trophyHost) trophyHost.innerHTML = trialsHtml + trophyHtml;
 
     if (hero.jump) $("#ov-hero")?.addEventListener("click", () => jumpToWorkout(hero.jump, today));
     renderClientHeaderSessions();
@@ -15232,10 +15262,256 @@
   // rank plate is two rows with a chunky meter, and stacking a second block of
   // that height here would cost more of the screen than the status is worth.
   // Hidden entirely until there's tonnage, so a new athlete sees no empty bar.
-  function hoardBarHtml(client, progress) {
-    if (!progress) return "";
-    const g = syncHoard(client, progress);
-    if (!g.lb) return "";
+  // ================= Trials =================
+  // The Hoard is the passive number that always climbs. Trials are the active
+  // goals: coach-authored, per athlete, and specific enough to actually chase.
+  // Everything but "manual" scores itself off the athlete's own logs, so the
+  // coach writes the challenge once and never has to police it.
+  const TRIAL_KINDS = [
+    { id: "lift",     label: "Hit a lift",   hint: "Get a named lift to a weight" },
+    { id: "workouts", label: "Workouts",     hint: "Complete this many sessions" },
+    { id: "tonnage",  label: "Tonnage",      hint: "Move this many pounds lifetime" },
+    { id: "streak",   label: "Week streak",  hint: "Hit this many weeks in a row" },
+    { id: "manual",   label: "Manual",       hint: "You tick this one off yourself" },
+  ];
+  const TRIAL_ICONS = ["🎯", "🔥", "⚔️", "🛡️", "👑", "💀", "🐉", "⭐", "🏆", "⚡", "🧗", "🪨"];
+
+  function ensureTrials(client) {
+    if (!client) return [];
+    if (!Array.isArray(client.trials)) client.trials = [];
+    return client.trials;
+  }
+
+  // Best weight the athlete has actually put up on a lift, matched by NAME the
+  // same way PR cards and the "Last:" line do — program copies share a name,
+  // not an id, so an id lookup would only ever see one week's worth.
+  function bestLoggedWeightForLift(client, progress, liftName, minReps) {
+    const want = String(liftName || "").trim().toLowerCase();
+    if (!want) return 0;
+    const need = Math.max(1, parseInt(minReps, 10) || 1);
+    const byId = hoardExerciseIndex(client, progress);
+    let best = 0;
+    for (const [exId, entries] of Object.entries(progress?.exerciseLogs || {})) {
+      const ex = byId.get(exId);
+      if (!ex || String(ex.name || "").trim().toLowerCase() !== want) continue;
+      for (const entry of entries || []) {
+        if (!entry || entry.skipped) continue;
+        for (const s of entry.sets || []) {
+          if (!s || s.skipped) continue;
+          if ((parseInt(s.reps, 10) || 0) < need) continue;
+          let w = weightToLb(s.weight);
+          if (!isFinite(w) || w <= 0) continue;
+          if (usesDumbbellPair(ex)) w *= 2;   // "80s" is two 80s, same as the Hoard
+          if (w > best) best = w;
+        }
+      }
+    }
+    return best;
+  }
+
+  // { done, cur, target, label } — a number as well as a tick, so an unearned
+  // trial still shows how close they are instead of a blank box.
+  function trialProgress(client, progress, t) {
+    const target = Math.max(0, parseFloat(t.kind === "lift" ? t.weight : t.n) || 0);
+    if (t.kind === "manual") {
+      return { done: !!t.doneAt, cur: t.doneAt ? 1 : 0, target: 1, label: t.doneAt ? "Done" : "Not yet" };
+    }
+    let cur = 0, label = "";
+    if (t.kind === "lift") {
+      cur = bestLoggedWeightForLift(client, progress, t.lift, t.reps);
+      const r = Math.max(1, parseInt(t.reps, 10) || 1);
+      label = `${Math.round(cur).toLocaleString()} / ${target.toLocaleString()} lb${r > 1 ? ` × ${r}` : ""}`;
+    } else if (t.kind === "workouts") {
+      cur = completionDateList(progress).length;
+      label = `${cur} / ${target} workouts`;
+    } else if (t.kind === "tonnage") {
+      cur = Number(progress?.hoard?.lb) || 0;
+      label = `${hoardLbLabel(cur)} / ${hoardLbLabel(target)}`;
+    } else if (t.kind === "streak") {
+      cur = weeklyStreak(progress);
+      label = `${cur} / ${target} weeks`;
+    }
+    return { done: target > 0 && cur >= target, cur, target, label };
+  }
+
+  // Auto trials stamp the day they first came true, so the win sticks even if
+  // the numbers later move — a deload must not un-win a trial already taken.
+  //
+  // The stamp goes in `progress`, not on the trial, because `trials` is a
+  // coach-owned column the athlete is blocked from writing (see the athletes
+  // self-edit guard). Progress is theirs and syncs, so the athlete's own device
+  // records their own achievement. It rides in the hoard blob rather than
+  // earning a column of its own: new keys inside an existing jsonb need no
+  // migration. `manual` trials are the coach's to tick, so those live on the
+  // trial itself as `doneAt`.
+  //
+  // `persist` is off for coach-side rendering: outside a live session the
+  // coach's state.clientData is not this athlete's, so nothing should be saved
+  // from a read-only view of their trials.
+  function syncTrials(client, progress, persist) {
+    const list = ensureTrials(client);
+    const h = ensureHoard(progress);
+    if (!h.trialsDone || typeof h.trialsDone !== "object") h.trialsDone = {};
+    let changed = false;
+    const out = list.map((t) => {
+      const p = trialProgress(client, progress, t);
+      const stamped = h.trialsDone[t.id] || (t.kind === "manual" ? t.doneAt : null);
+      if (p.done && !stamped && t.kind !== "manual") { h.trialsDone[t.id] = todayISO(); changed = true; }
+      return { t, ...p, done: p.done || !!stamped, wonAt: stamped || (p.done ? todayISO() : null) };
+    });
+    if (changed && persist) saveClient();
+    return out;
+  }
+
+  // -------- Trials (coach authoring) --------
+  const _trialOpen = new Set();
+  function renderTrialsSection(c) {
+    const host = $("#trials-container");
+    if (!host) return;
+    ensureTrials(c);
+    host.innerHTML = "";
+    const rerender = () => renderTrialsSection(c);
+    // Read-only here: outside a live session the coach's clientData is not
+    // this athlete's, so scoring reads their synced progress and saves nothing.
+    const scored = syncTrials(c, c.importedProgress || emptyProgress(), false);
+
+    const section = document.createElement("div");
+    section.className = "card trials-section";
+
+    const head = document.createElement("div");
+    head.className = "trials-head";
+    const doneN = scored.filter((s) => s.done).length;
+    head.innerHTML = `<div class="trials-head-text">
+        <h3>⚔️ Trials${scored.length ? ` <span class="trials-count">${doneN}/${scored.length}</span>` : ""}</h3>
+        <p class="muted trials-hint">Challenges you set for them. Everything but Manual scores itself off their logs.</p>
+      </div>`;
+    const addBtn = document.createElement("button");
+    addBtn.className = "btn btn-primary btn-sm slim-btn";
+    addBtn.textContent = "＋ New trial";
+    addBtn.addEventListener("click", () => {
+      const t = { id: uid(), name: "New trial", icon: "🎯", kind: "lift", lift: "", weight: "", reps: "1", n: "" };
+      c.trials.push(t);
+      _trialOpen.add(t.id);
+      saveTrainer(); rerender();
+    });
+    head.appendChild(addBtn);
+    section.appendChild(head);
+
+    scored.forEach(({ t, done, label }) => {
+      const card = document.createElement("details");
+      card.className = "trial-card" + (done ? " is-done" : "");
+      card.open = _trialOpen.has(t.id);
+      card.addEventListener("toggle", () => {
+        if (card.open) _trialOpen.add(t.id); else _trialOpen.delete(t.id);
+      });
+      const sum = document.createElement("summary");
+      sum.className = "trial-summary";
+      sum.innerHTML = `<span class="trial-ico">${t.icon || "🎯"}</span>
+        <span class="trial-name">${escapeHtml(t.name || "Untitled trial")}</span>
+        <span class="trial-meta">${escapeHtml(label || "")}${done ? ` · <span class="trial-won">won ✓</span>` : ""}</span>`;
+      card.appendChild(sum);
+
+      const body = document.createElement("div");
+      body.className = "trial-body";
+
+      const field = (labelText, el) => {
+        const wrap = document.createElement("label");
+        wrap.className = "trial-field";
+        wrap.innerHTML = `<span>${escapeHtml(labelText)}</span>`;
+        wrap.appendChild(el);
+        return wrap;
+      };
+      const textIn = (val, ph, on) => {
+        const i = document.createElement("input");
+        i.type = "text"; i.className = "trial-input"; i.value = val || ""; i.placeholder = ph || "";
+        i.addEventListener("input", () => { on(i.value); saveTrainer(); });
+        return i;
+      };
+      const numIn = (val, ph, on) => {
+        const i = document.createElement("input");
+        i.type = "number"; i.className = "trial-input"; i.value = val || ""; i.placeholder = ph || "";
+        i.addEventListener("input", () => { on(i.value); saveTrainer(); });
+        return i;
+      };
+
+      const row1 = document.createElement("div");
+      row1.className = "trial-row";
+      row1.appendChild(field("Name", textIn(t.name, "Squat 315", (v) => { t.name = v; sum.querySelector(".trial-name").textContent = v || "Untitled trial"; })));
+      // Icon picker: a short palette beats a free-text emoji field on a phone.
+      const iconWrap = document.createElement("div");
+      iconWrap.className = "trial-icons";
+      TRIAL_ICONS.forEach((ic) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "trial-icon-btn" + ((t.icon || "🎯") === ic ? " on" : "");
+        b.textContent = ic;
+        b.addEventListener("click", () => { t.icon = ic; saveTrainer(); rerender(); });
+        iconWrap.appendChild(b);
+      });
+      row1.appendChild(field("Badge", iconWrap));
+      body.appendChild(row1);
+
+      const kindWrap = document.createElement("div");
+      kindWrap.className = "finisher-pct-row trial-kinds";
+      TRIAL_KINDS.forEach((k) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "finisher-pct-btn" + (t.kind === k.id ? " on" : "");
+        b.textContent = k.label;
+        b.title = k.hint;
+        b.addEventListener("click", () => { t.kind = k.id; saveTrainer(); rerender(); });
+        kindWrap.appendChild(b);
+      });
+      body.appendChild(field("Type", kindWrap));
+
+      const row2 = document.createElement("div");
+      row2.className = "trial-row";
+      if (t.kind === "lift") {
+        row2.appendChild(field("Lift name", textIn(t.lift, "Back Squat", (v) => { t.lift = v; })));
+        row2.appendChild(field("Weight (lb)", numIn(t.weight, "315", (v) => { t.weight = v; })));
+        row2.appendChild(field("For reps", numIn(t.reps, "1", (v) => { t.reps = v; })));
+      } else if (t.kind === "manual") {
+        const mark = document.createElement("button");
+        mark.className = "btn btn-sm " + (t.doneAt ? "btn-ghost" : "btn-primary");
+        mark.textContent = t.doneAt ? "✓ Won " + t.doneAt : "Mark as won";
+        mark.addEventListener("click", () => {
+          if (t.doneAt) delete t.doneAt; else t.doneAt = todayISO();
+          saveTrainer(); rerender();
+        });
+        row2.appendChild(field("Status", mark));
+      } else {
+        const unit = t.kind === "workouts" ? "Workouts" : t.kind === "tonnage" ? "Pounds" : "Weeks";
+        row2.appendChild(field(unit, numIn(t.n, t.kind === "tonnage" ? "500000" : "100", (v) => { t.n = v; })));
+      }
+      body.appendChild(row2);
+
+      const del = document.createElement("button");
+      del.className = "btn btn-ghost btn-xs";
+      del.style.color = "var(--danger)";
+      del.textContent = "✕ Delete trial";
+      del.addEventListener("click", () => {
+        if (!window.confirm(`Delete "${t.name || "this trial"}"?`)) return;
+        c.trials = c.trials.filter((x) => x.id !== t.id);
+        _trialOpen.delete(t.id);
+        saveTrainer(); rerender();
+      });
+      body.appendChild(del);
+
+      card.appendChild(body);
+      section.appendChild(card);
+    });
+
+    if (!scored.length) {
+      const empty = document.createElement("p");
+      empty.className = "muted trials-empty";
+      empty.textContent = "No trials yet. Set them a challenge worth chasing.";
+      section.appendChild(empty);
+    }
+    host.appendChild(section);
+  }
+
+  function hoardBarHtml(g) {
+    if (!g || !g.lb) return "";
     const pctInto = Math.max(0, Math.min(100, (g.into / g.need) * 100));
     const next = hoardRankForLevel(g.level + 1);
     const cls = [g.rank.isMax ? "is-max" : "", g.rank.isHoard ? "is-hoard" : "", g.promoted ? "is-promoted" : ""]
@@ -17172,7 +17448,13 @@
     while (wk.has(cursor)) { n++; cursor = addDaysISO(cursor, -7); }
     return n;
   }
-  function lifetimeTonnage(progress) {
+  // Raw weight × reps over every logged set, with none of the Hoard's rules.
+  // Superseded by the Hoard as the number the app quotes: this one counted a
+  // timed carry's seconds as reps and never doubled dumbbell pairs, so it read
+  // high. It survives only as a floor for the volume trophies below, so that
+  // switching to the honest number can't revoke a badge an athlete already
+  // holds. Don't surface it.
+  function legacyRawTonnage(progress) {
     let t = 0;
     Object.values(progress?.exerciseLogs || {}).forEach((ls) => (ls || []).forEach((l) => {
       (l.sets || []).forEach((s) => {
@@ -17383,7 +17665,9 @@
     const dates = completionDateList(progress);
     const workouts = dates.length;
     const prCount = (progress?.personalRecords || []).length;
-    const ton = lifetimeTonnage(progress);
+    // The Hoard is the real total, but never below what the old raw count had
+    // already unlocked — a trophy on the shelf doesn't come back off.
+    const ton = Math.max(Number(progress?.hoard?.lb) || 0, legacyRawTonnage(progress));
     const streak = weeklyStreak(progress);
     let comeback = false;
     for (let i = 1; i < dates.length; i++) {

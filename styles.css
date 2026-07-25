@@ -2191,6 +2191,79 @@ input.cex-finisher-input { width: 72px; flex: 0 0 72px; text-align: center; }
   60%  { box-shadow: 0 0 0 7px rgba(var(--gold-rgb), 0); }
   100% { box-shadow: 0 0 0 0 rgba(var(--gold-rgb), 0); }
 }
+/* ===== Trials: athlete-facing wall (overview) =====
+   One row per trial, same slim language as the Hoard bar: badge, name over a
+   thin track, status on the right. Reads as a checklist, not a stack of cards. */
+.ov-trial-list { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.2rem 0 0.1rem; }
+.ov-trial { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
+.ov-trial-ico { font-size: 1.05rem; line-height: 1; flex-shrink: 0; }
+.ov-trial-body { display: flex; flex-direction: column; gap: 0.25rem; flex: 1 1 auto; min-width: 0; }
+.ov-trial-name {
+  font-size: 0.8rem; font-weight: 700; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ov-trial-track { position: relative; height: 4px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+.ov-trial-fill {
+  position: absolute; inset: 0 auto 0 0; border-radius: 999px;
+  background: var(--primary); transition: width 0.35s ease;
+}
+.ov-trial-meta {
+  font-size: 0.72rem; font-weight: 700; color: var(--text-soft);
+  white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums;
+}
+.ov-trial.is-won .ov-trial-name { color: var(--gold); }
+.ov-trial.is-won .ov-trial-meta { color: var(--gold); }
+.ov-trial.is-won .ov-trial-fill { background: var(--gold); }
+
+/* ===== Trials: coach authoring (PRs tab) ===== */
+.trials-section { margin-top: 1.75rem; }
+.trials-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+.trials-head-text h3 { margin: 0 0 0.2em; }
+.trials-hint { font-size: 0.85rem; margin: 0; max-width: 46em; }
+.trials-count { font-size: 0.8rem; color: var(--muted); font-weight: 700; }
+.trials-empty { margin: 0.5rem 0 0; font-size: 0.9rem; }
+.trial-card {
+  margin-top: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.trial-card.is-done { border-color: rgba(var(--gold-rgb), 0.45); }
+.trial-summary {
+  display: flex; align-items: center; gap: 0.5em;
+  padding: 0.5em 0.8em; cursor: pointer; list-style: none;
+}
+.trial-summary::-webkit-details-marker { display: none; }
+.trial-summary:hover { background: var(--surface-3); }
+.trial-ico { font-size: 1rem; flex-shrink: 0; }
+.trial-name { font-weight: 700; font-size: 0.9rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trial-meta { margin-left: auto; color: var(--muted); font-size: 0.78rem; white-space: nowrap; flex-shrink: 0; }
+.trial-won { color: var(--gold); font-weight: 700; }
+.trial-body { padding: 0.5em 0.8em 0.8em; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 0.6rem; }
+.trial-row { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: flex-end; }
+.trial-field { display: flex; flex-direction: column; gap: 0.25rem; flex: 1 1 130px; min-width: 0; margin: 0; }
+/* The flex basis above is for sitting side by side inside a .trial-row. As a
+   direct child of the column body it would grow vertically instead, leaving a
+   dead gap under the type picker. */
+.trial-body > .trial-field { flex: 0 0 auto; }
+.trial-body > .btn { align-self: flex-start; }
+.trial-field > span { font-size: 0.68rem; font-weight: 700; color: var(--text-soft); letter-spacing: 0.04em; }
+/* `input.` prefix so this beats the base input[type=...] width:100% rule. */
+input.trial-input {
+  width: 100%; padding: 0.4em 0.55em; font-size: 0.85rem;
+  background: var(--surface-3); border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px); color: var(--text);
+}
+.trial-icons { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.trial-icon-btn {
+  width: 30px; height: 30px; line-height: 1; font-size: 0.95rem; cursor: pointer;
+  background: var(--surface-3); border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+}
+.trial-icon-btn.on { border-color: var(--primary); background: var(--primary-soft); }
+.trial-kinds { flex-wrap: wrap; }
+
 /* Powerlifting multiplier button on the coach's exercise row. */
 .ex-pl-btn:not(.empty) {
   color: var(--gold);
