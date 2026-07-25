@@ -441,6 +441,18 @@
     } catch (e) { console.warn("[Cloud] sendPush", e); return null; }
   }
 
+  // Branded-food text search. Proxied through an Edge Function because the
+  // USDA key is confidential and can't live in config.js — see
+  // supabase/functions/food-search. Returns [] on any failure so the caller
+  // can just show "no results" when offline.
+  async function searchFoodsOnline(q) {
+    try {
+      const { data, error } = await sb.functions.invoke("food-search", { body: { q } });
+      if (error) { console.warn("[Cloud] searchFoodsOnline", error.message || error); return []; }
+      return Array.isArray(data?.foods) ? data.foods : [];
+    } catch (e) { console.warn("[Cloud] searchFoodsOnline", e); return []; }
+  }
+
   // -------- Form-check videos (private Storage bucket) --------
   // Layout: <athleteId>/<dayId>/<uid>.<ext>. RLS lets the owning athlete write
   // and read their own folder, and lets that athlete's coach read/delete it.
@@ -651,6 +663,8 @@
     savePushSubscription,
     deletePushSubscription,
     sendPush,
+    // Food search
+    searchFoodsOnline,
     // Setmore sync
     getSetmoreEvents,
     refreshSetmoreSync,

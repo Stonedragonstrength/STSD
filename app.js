@@ -14780,7 +14780,7 @@
     });
     // The vendored list is whole foods. Packaged and branded items live online,
     // so offer that as a second step rather than leaving a dead end.
-    const online = usdaKey()
+    const online = onlineSearchAvailable()
       ? `<button class="btn btn-ghost btn-sm online-search-btn" id="food-search-online" type="button">Search branded foods online</button>`
       : "";
     if (!rows.length) {
@@ -15040,14 +15040,14 @@
   //   • Barcodes → Open Food Facts. No key, and its whole point is packaged
   //     products by barcode. Data is ODbL, so it's attributed and never
   //     vendored — we only ever fetch the one product being scanned.
-  //   • Text search → USDA FoodData Central's Branded set. Open Food Facts'
-  //     search host doesn't send Access-Control-Allow-Origin, so the browser
-  //     blocks it; USDA sends `*` and covers branded items the vendored
-  //     whole-food list can't. It needs a free key, so it's optional: with no
-  //     key the button simply never appears and scanning still works.
+  //   • Text search → USDA FoodData Central's Branded set, via the food-search
+  //     Edge Function. Open Food Facts' search host doesn't send
+  //     Access-Control-Allow-Origin so the browser blocks it, and USDA's key
+  //     is confidential — it can't sit in config.js, since this repo is public
+  //     and config.js ships to every browser. The function holds the key and
+  //     returns already-normalised rows. Offline, the button is simply absent.
   const OFF_PRODUCT_URL = "https://world.openfoodfacts.org/api/v2/product/";
   const OFF_FIELDS = "code,product_name,brands,serving_size,nutriments";
-  const USDA_SEARCH_URL = "https://api.nal.usda.gov/fdc/v1/foods/search";
   const ZXING_JS = "vendor/zxing/zxing-reader.js?v=zx1";
   const ZXING_WASM = "vendor/zxing/zxing_reader.wasm";
   // Retail barcodes only. Narrowing the format list makes every frame cheaper
@@ -15057,7 +15057,7 @@
   const SCAN_MAX_W = 640;   // downscale before decoding; plenty for a barcode
   const SCAN_INTERVAL = 240;
 
-  function usdaKey() { return String(window.STONE_DRAGON_CONFIG?.USDA_API_KEY || "").trim(); }
+  function onlineSearchAvailable() { return !!window.Cloud?.enabled; }
   function customFoodTag(f) { return f.barcode ? "Scanned" : f.fdcId ? "Online" : "My food"; }
 
   let _zxingPromise = null;
@@ -15125,25 +15125,16 @@
     };
   }
 
-  function usdaToFood(item) {
-    const num = (n) => {
-      const hit = (item.foodNutrients || []).find((x) => String(x.nutrientNumber) === n);
-      return hit ? Number(hit.value) || 0 : 0;
-    };
-    const kcal = num("208");
-    if (!kcal) return null;
-    const brand = String(item.brandName || item.brandOwner || "").trim();
-    const name = [String(item.description || "").trim(), brand].filter(Boolean).join(" · ");
-    const grams = String(item.servingSizeUnit || "").toUpperCase() === "GRM"
-      ? Number(item.servingSize) || 0 : 0;
+  // The Edge Function already normalised these; this just gives the row the
+  // shape a custom food needs so it can be portioned and saved like any other.
+  function onlineRowToFood(row) {
+    if (!row?.kcal) return null;
     return {
-      id: uid(), name: name.slice(0, 90), fdcId: item.fdcId,
-      per100: true, servingG: grams,
-      servingLabel: grams
-        ? (String(item.householdServingFullText || "").trim() || `${grams} g`)
-        : "100 g",
-      kcal: Math.round(kcal), p: round1(num("203")), c: round1(num("205")),
-      f: round1(num("204")), uses: 0, createdAt: todayISO(),
+      id: uid(), name: String(row.name || "").slice(0, 90), fdcId: row.fdcId,
+      per100: true, servingG: Number(row.servingG) || 0,
+      servingLabel: row.servingLabel || "100 g",
+      kcal: Math.round(row.kcal), p: round1(row.p), c: round1(row.c), f: round1(row.f),
+      uses: 0, createdAt: todayISO(),
     };
   }
 
@@ -15313,23 +15304,17 @@
   }
 
   async function searchOnline(q, mealKey, opts = {}) {
-    const key = usdaKey();
-    if (!key) return;
+    if (!onlineSearchAvailable()) return;
     openModal({
       title: "Searching online",
       body: `<p class="muted" style="margin:0">Looking for “${escapeHtml(q)}” in branded foods…</p>`,
       actions: [{ label: "Cancel", className: "btn btn-ghost", onClick: () => openAddFoodModal(mealKey, opts) }],
     });
 
-    let items = [];
-    try {
-      const url = `${USDA_SEARCH_URL}?api_key=${encodeURIComponent(key)}&query=${encodeURIComponent(q)}&dataType=Branded&pageSize=25`;
-      const res = await fetch(url);
-      const data = res.ok ? await res.json() : null;
-      items = (data?.foods || []).map(usdaToFood).filter(Boolean);
-    } catch (err) {
-      // Falls through to the empty state below.
-    }
+    // Cloud.searchFoodsOnline swallows its own errors and returns [], so an
+    // offline athlete lands on the empty state rather than a broken modal.
+    const rows = await window.Cloud.searchFoodsOnline(q);
+    const items = rows.map(onlineRowToFood).filter(Boolean);
 
     if (!items.length) {
       openModal({
