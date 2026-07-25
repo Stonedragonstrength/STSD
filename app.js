@@ -3577,6 +3577,7 @@
       renderClientLogs();
       renderCoachCalendar();
       renderCoachPRs();
+      renderDiet(); // food log and body weight both live on the Nutrition tab
     }
   }
   function clientMetaText(c) {
@@ -7674,6 +7675,122 @@
     return { ...base, plan: null, source: null };
   }
 
+  // -------- Nutrition rollup (coach adherence view + eating-habit signals) --------
+  // Both read the same window over progress.foodLog, so the thresholds that
+  // decide "missed", "over" and "on point" live in exactly one place.
+  const ADH_UNDER = 0.8;  // below this share of the calorie target = a miss
+  const ADH_OVER = 1.15;  // above this = an overshoot
+  const ADH_ON = 0.1;     // within ±10% of target = on point
+
+  // One row per day in the window, oldest → newest, logged or not. Averages
+  // count only the days they actually logged — a blank day is missing data,
+  // not a zero-calorie day, and averaging it in would libel every athlete.
+  function nutritionRollup(client, progress, days = 7, endISO) {
+    const end = endISO || todayISO();
+    const plan = effectiveTargets(client, progress).plan;
+    const calTarget = Number(plan?.calories) || 0;
+    const proTarget = Number(plan?.protein) || 0;
+    const log = progress?.foodLog || {};
+    const rows = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const date = addDaysISO(end, -i);
+      const entries = log[date] || [];
+      rows.push({ date, count: entries.length, logged: entries.length > 0, ...foodDayTotals(entries) });
+    }
+    const hit = rows.filter((r) => r.logged);
+    const avg = (k) => (hit.length ? Math.round(hit.reduce((s, r) => s + r[k], 0) / hit.length) : 0);
+    return {
+      rows, plan, calTarget, proTarget, days,
+      logged: hit.length,
+      avgKcal: avg("kcal"), avgProtein: avg("protein"), avgCarbs: avg("carbs"), avgFat: avg("fat"),
+      onTarget: calTarget ? hit.filter((r) => Math.abs(r.kcal - calTarget) <= calTarget * ADH_ON).length : 0,
+    };
+  }
+
+  // Exception-based, never event-based. A row per logged meal would be 100+
+  // entries a week and would bury the workouts and form checks that make the
+  // coach's log worth reading, so only the handful of things worth acting on
+  // fire — plus one positive, so it isn't purely a complaints feed.
+  //
+  // Each signal is anchored on the date its condition STARTED, not on today,
+  // so it surfaces once and then stays quiet for as long as the condition
+  // holds. The anchor is found over a wide lookback rather than the 7-day
+  // trigger window: clamping it to the window would slide it forward a day at
+  // a time and re-fire the same signal every morning.
+  const NUT_STOP_DAYS = 3;    // no log for this long = they've dropped off
+  const NUT_BAD_DAYS = 4;     // this many bad days inside the 7-day window
+  const NUT_RUN_DAYS = 5;     // consecutive on-target days worth a well done
+  const NUT_ANCHOR_DAYS = 45; // lookback used only to pin a stable start date
+
+  function nutritionSignals(client) {
+    const progress = client?.importedProgress;
+    const log = progress?.foodLog || {};
+    const dates = Object.keys(log).filter((d) => (log[d] || []).length).sort();
+    if (!dates.length) return []; // never logged anything: nothing to report
+    const out = [];
+    const last = dates[dates.length - 1];
+    const gap = Math.round(
+      (new Date(todayISO() + "T12:00:00") - new Date(last + "T12:00:00")) / 86400000);
+    if (gap >= NUT_STOP_DAYS) {
+      // Anchored on the last day they logged, which doesn't move while the
+      // gap grows, so this stays one notification rather than a daily nag.
+      return [{ type: "stopped", anchor: last, tone: "warn", icon: "🍽️",
+        text: `hasn't logged food in ${gap} days` }];
+    }
+
+    const roll = nutritionRollup(client, progress, 7);
+    const hit = roll.rows.filter((r) => r.logged);
+    if (!roll.calTarget || hit.length < NUT_BAD_DAYS) return out;
+    const wide = nutritionRollup(client, progress, NUT_ANCHOR_DAYS);
+
+    // Walk back from today over the wide window for the first day the run
+    // began. An unlogged day doesn't break a run (they just didn't log);
+    // a genuinely good day does, and if they later slide back the signal
+    // fires again — that re-fire is a real change, not noise.
+    const runStart = (bad) => {
+      let start = null;
+      for (let i = wide.rows.length - 1; i >= 0; i--) {
+        const r = wide.rows[i];
+        if (!r.logged) continue;
+        if (!bad(r)) break;
+        start = r.date;
+      }
+      return start;
+    };
+    const under = (r) => r.kcal < roll.calTarget * ADH_UNDER;
+    const over = (r) => r.kcal > roll.calTarget * ADH_OVER;
+    const lowProtein = (r) => roll.proTarget > 0 && r.protein < roll.proTarget * ADH_UNDER;
+
+    if (hit.filter(under).length >= NUT_BAD_DAYS) {
+      const anchor = runStart(under);
+      if (anchor) out.push({ type: "under", anchor, tone: "warn", icon: "🥗",
+        text: `eating well under target · ${roll.avgKcal.toLocaleString()} vs ${roll.calTarget.toLocaleString()} kcal` });
+    } else if (hit.filter(over).length >= NUT_BAD_DAYS) {
+      const anchor = runStart(over);
+      if (anchor) out.push({ type: "over", anchor, tone: "warn", icon: "🍔",
+        text: `eating over target · ${roll.avgKcal.toLocaleString()} vs ${roll.calTarget.toLocaleString()} kcal` });
+    }
+    if (roll.proTarget && hit.filter(lowProtein).length >= NUT_BAD_DAYS) {
+      const anchor = runStart(lowProtein);
+      if (anchor) out.push({ type: "protein", anchor, tone: "warn", icon: "🥩",
+        text: `missing protein · ${roll.avgProtein} vs ${roll.proTarget} g a day` });
+    }
+
+    // A streak of on-target days. Counted over the wide window so a long run
+    // keeps its true start date and doesn't re-announce itself every week.
+    let run = 0, runFrom = null;
+    for (let i = wide.rows.length - 1; i >= 0; i--) {
+      const r = wide.rows[i];
+      if (!r.logged || Math.abs(r.kcal - roll.calTarget) > roll.calTarget * ADH_ON) break;
+      run++; runFrom = r.date;
+    }
+    if (run >= NUT_RUN_DAYS) {
+      out.push({ type: "onpoint", anchor: runFrom, tone: "good", icon: "🎯",
+        text: `${run} days on target` });
+    }
+    return out;
+  }
+
   // -------- Target calculator (Mifflin-St Jeor) --------
   const ACTIVITY_LEVELS = [
     { key: "sedentary", label: "Sedentary", mult: 1.2, hint: "Desk job, little moving outside training" },
@@ -7845,16 +7962,11 @@
             ${escapeHtml((ACTIVITY_LEVELS.find((a) => a.key === calc.activity) || {}).label || "activity not set")},
             goal ${escapeHtml((DIET_GOALS.find((g) => g.key === calc.goal) || {}).label || "not set")}.
             Maintenance about ${Number(calc.tdee || 0).toLocaleString()} kcal.</p>` : ""}`;
-      // A one-line pulse on whether they're actually logging food.
-      const fl = c.importedProgress?.foodLog || {};
-      const days = recentDateKeys(7);
-      const logged = days.filter((d) => (fl[d] || []).length).length;
-      if (logged) {
-        ownCard.insertAdjacentHTML("beforeend",
-          `<p class="muted" style="margin:0.5em 0 0;font-size:0.85rem">Logged food on ${logged} of the last 7 days.</p>`);
-      }
       container.appendChild(ownCard);
     }
+
+    // What they've actually been eating against those targets.
+    container.appendChild(adherenceCardEl(c));
 
     // Athlete's logged body weight (read-only) — lives with nutrition now.
     const bwLog = c.importedProgress?.bodyweightLog || [];
@@ -7878,6 +7990,138 @@
         `<p class="muted" style="margin:0.2em 0 0">No weight entries yet. ${escapeHtml(c.name)} hasn't logged any body weight.</p>`);
     }
     container.appendChild(bwCard);
+  }
+
+  // -------- Coach adherence view --------
+  // The coach's read on whether the plan is actually being followed: averages
+  // over the window, how many days were logged at all, and a bar per day so a
+  // pattern (weekends blown out, protein only on training days) is visible at
+  // a glance. Tapping a bar opens that day's food, read-only.
+  const ADH_RANGES = [7, 14, 30];
+  let _adhRange = 7;
+  let _adhOpenDay = null;
+
+  function adhDayClass(row, calTarget) {
+    if (!row.logged) return "is-blank";
+    if (!calTarget) return "is-plain";
+    if (row.kcal < calTarget * ADH_UNDER) return "is-under";
+    if (row.kcal > calTarget * ADH_OVER) return "is-over";
+    return "is-on";
+  }
+
+  function adhDayDetailHtml(progress, date) {
+    const entries = foodDayEntries(progress, date);
+    if (!entries.length) return "";
+    const t = foodDayTotals(entries);
+    const known = new Set(MEALS.map((m) => m.key));
+    const groups = MEALS.map((m) => ({ label: `${m.icon} ${m.label}`, list: entries.filter((e) => e.meal === m.key) }));
+    const other = entries.filter((e) => !known.has(e.meal));
+    if (other.length) groups.push({ label: "🍴 Other", list: other });
+    return `<div class="adh-detail">
+      <div class="adh-detail-head">
+        <strong>${escapeHtml(foodDateLabel(date))}</strong>
+        <span class="muted">${Math.round(t.kcal).toLocaleString()} kcal · P ${Math.round(t.protein)} · C ${Math.round(t.carbs)} · F ${Math.round(t.fat)}</span>
+      </div>
+      ${groups.filter((g) => g.list.length).map((g) => `
+        <div class="adh-detail-meal">
+          <span class="adh-detail-meal-name">${escapeHtml(g.label)}</span>
+          ${g.list.map((e) => `<div class="adh-detail-row">
+            <span class="adh-detail-food">${escapeHtml(e.name)}</span>
+            <span class="adh-detail-kcal">${Math.round(e.kcal || 0).toLocaleString()}</span>
+          </div>`).join("")}
+        </div>`).join("")}
+    </div>`;
+  }
+
+  function adherenceCardEl(client) {
+    const card = document.createElement("div");
+    card.className = "card adh-card";
+    card.style.marginTop = "1.75rem";
+    const progress = client?.importedProgress || {};
+    const everLogged = Object.values(progress.foodLog || {}).some((v) => (v || []).length);
+    if (!everLogged) {
+      card.innerHTML = `<h4 style="margin-top:0">Eating</h4>
+        <p class="muted" style="margin:0.2em 0 0">${escapeHtml(client.name)} hasn't logged any food yet.
+          Their log shows up here as soon as they start.</p>`;
+      return card;
+    }
+
+    const draw = () => {
+      const roll = nutritionRollup(client, progress, _adhRange);
+      // Same-length window ending the day before this one starts.
+      const prev = nutritionRollup(client, progress, _adhRange, addDaysISO(todayISO(), -_adhRange));
+      const signals = nutritionSignals(client);
+      const onPct = roll.logged ? Math.round((roll.onTarget / roll.logged) * 100) : 0;
+      const delta = roll.logged && prev.logged ? roll.avgKcal - prev.avgKcal : null;
+      // Scale bars to the target so "over" reads as over. Headroom of 1.4×
+      // keeps a big day from flattening the rest of the week.
+      const peak = Math.max(roll.calTarget * 1.4, ...roll.rows.map((r) => r.kcal), 1);
+      const targetPct = roll.calTarget ? (roll.calTarget / peak) * 100 : 0;
+
+      card.innerHTML = `
+        <div class="adh-head">
+          <h4 style="margin:0">Eating</h4>
+          <div class="adh-ranges">
+            ${ADH_RANGES.map((n) => `<button type="button" class="adh-range${n === _adhRange ? " is-active" : ""}" data-range="${n}">${n}d</button>`).join("")}
+          </div>
+        </div>
+        ${signals.length ? `<div class="adh-signals">${signals.map((s) => `
+          <span class="adh-signal is-${s.tone}">${s.icon} ${escapeHtml(s.text)}</span>`).join("")}</div>` : ""}
+        <div class="adh-stats">
+          <div class="adh-stat">
+            <div class="adh-stat-num">${roll.logged}<span class="adh-stat-of">/${roll.days}</span></div>
+            <div class="adh-stat-lbl">days logged</div>
+          </div>
+          <div class="adh-stat">
+            <div class="adh-stat-num">${roll.avgKcal ? roll.avgKcal.toLocaleString() : "—"}</div>
+            <div class="adh-stat-lbl">avg kcal${roll.calTarget ? ` of ${roll.calTarget.toLocaleString()}` : ""}</div>
+          </div>
+          <div class="adh-stat">
+            <div class="adh-stat-num">${roll.avgProtein || "—"}<span class="adh-stat-of">g</span></div>
+            <div class="adh-stat-lbl">avg protein${roll.proTarget ? ` of ${roll.proTarget}` : ""}</div>
+          </div>
+          <div class="adh-stat">
+            <div class="adh-stat-num">${roll.calTarget ? onPct + "%" : "—"}</div>
+            <div class="adh-stat-lbl">on target</div>
+          </div>
+        </div>
+        ${delta === null ? "" : `<p class="adh-trend">${delta === 0
+          ? "Same average as the window before."
+          : `<span class="adh-trend-arrow">${delta > 0 ? "▲" : "▼"}</span> ${Math.abs(delta).toLocaleString()} kcal a day vs the ${_adhRange} days before.`}</p>`}
+        <div class="adh-chart">
+          <div class="adh-cols" role="list">
+            ${roll.calTarget ? `<div class="adh-target-line" style="bottom:${targetPct.toFixed(1)}%"><span>target</span></div>` : ""}
+            ${roll.rows.map((r) => {
+              const h = r.logged ? Math.max((r.kcal / peak) * 100, 2) : 0;
+              const label = r.logged ? `${Math.round(r.kcal).toLocaleString()} kcal` : "not logged";
+              return `<button type="button" role="listitem" class="adh-bar ${adhDayClass(r, roll.calTarget)}${r.date === _adhOpenDay ? " is-open" : ""}"
+                data-day="${escapeHtml(r.date)}" title="${escapeHtml(r.date)} · ${escapeHtml(label)}"
+                aria-label="${escapeHtml(r.date)}, ${escapeHtml(label)}">
+                <span class="adh-bar-fill" style="height:${h.toFixed(1)}%"></span>
+              </button>`;
+            }).join("")}
+          </div>
+          <div class="adh-dows" aria-hidden="true">
+            ${roll.rows.map((r) => `<span class="adh-dow">${escapeHtml(
+              new Date(r.date + "T12:00:00").toLocaleDateString(undefined, { weekday: "narrow" }))}</span>`).join("")}
+          </div>
+        </div>
+        ${_adhOpenDay ? adhDayDetailHtml(progress, _adhOpenDay) : `<p class="muted adh-hint">Tap a day to see what they ate.</p>`}`;
+
+      card.querySelectorAll("[data-range]").forEach((b) => b.addEventListener("click", () => {
+        _adhRange = Number(b.dataset.range);
+        _adhOpenDay = null;
+        draw();
+      }));
+      card.querySelectorAll("[data-day]").forEach((b) => b.addEventListener("click", () => {
+        const d = b.dataset.day;
+        // Tapping the open day closes it; an empty day has nothing to open.
+        _adhOpenDay = _adhOpenDay === d || !foodDayEntries(progress, d).length ? null : d;
+        draw();
+      }));
+    };
+    draw();
+    return card;
   }
 
   // -------- Calendar shared helpers --------
@@ -10062,6 +10306,7 @@
           if (!date || date < cutoff) return;
           out.push({
             key: `${c.id}:${dayId}:${date}`,
+            kind: "workout",
             clientId: c.id,
             dayId,
             name: c.name,
@@ -10069,6 +10314,22 @@
             dayName: dayNames[dayId] || "a workout",
             date,
           });
+        });
+      });
+
+      // Eating-habit signals. The key ends in the condition's start date, so
+      // pruneSeenActivity reads a real date out of it like every other key,
+      // and the signal is dismissed once rather than re-announced daily.
+      nutritionSignals(c).forEach((s) => {
+        if (s.anchor < cutoff) return;
+        out.push({
+          key: `${c.id}:nut-${s.type}:${s.anchor}`,
+          kind: "nutrition",
+          clientId: c.id,
+          dayId: null,
+          name: c.name,
+          dayName: `${s.icon} ${s.text}`,
+          date: s.anchor,
         });
       });
     });
@@ -10142,7 +10403,7 @@
         <h3 style="margin:0">🏋️ New activity <span class="overview-req-count">${fresh.length}</span></h3>
         <button class="btn btn-ghost btn-sm" id="btn-activity-seen" type="button">Mark all read</button>
       </div>
-      ${shown.map((it) => `<div class="activity-row" data-client="${escapeHtml(it.clientId)}" data-day="${escapeHtml(it.dayId)}" data-date="${escapeHtml(it.date)}">
+      ${shown.map((it) => `<div class="activity-row" data-kind="${escapeHtml(it.kind || "workout")}" data-client="${escapeHtml(it.clientId)}" data-day="${escapeHtml(it.dayId || "")}" data-date="${escapeHtml(it.date)}">
         <span class="activity-name">${escapeHtml(it.name)}</span>
         <span class="activity-day">${escapeHtml(it.dayName)}</span>
         <span class="activity-when">${escapeHtml(activityWhen(it.date))}</span>
@@ -10150,8 +10411,10 @@
       ${fresh.length > shown.length ? `<p class="muted activity-more">+${fresh.length - shown.length} more</p>` : ""}`;
 
     card.querySelectorAll(".activity-row").forEach((row) => {
-      row.addEventListener("click", () =>
-        openCompletedWorkout(row.dataset.client, row.dataset.day, row.dataset.date));
+      row.addEventListener("click", () => {
+        if (row.dataset.kind === "nutrition") return openClientNutrition(row.dataset.client);
+        openCompletedWorkout(row.dataset.client, row.dataset.day, row.dataset.date);
+      });
     });
     card.querySelector("#btn-activity-seen").addEventListener("click", () => {
       markActivitySeen(fresh);
@@ -10201,6 +10464,18 @@
           });
         });
       });
+
+      // Eating-habit signals. These are derived from the CURRENT log rather
+      // than recorded when they fired, so a condition that has since cleared
+      // drops off the list — same as every other row here.
+      nutritionSignals(c).forEach((s) => {
+        out.push({
+          type: "nutrition", icon: s.icon,
+          ts: new Date(s.anchor + "T12:00:00").getTime(),
+          name: c.name, text: s.text,
+          clientId: c.id, dayId: null, date: s.anchor,
+        });
+      });
     });
     out.sort((a, b) => b.ts - a.ts);
     return out.slice(0, NOTIF_LOG_MAX);
@@ -10228,18 +10503,29 @@
       return;
     }
     host.innerHTML = items.map((it) => {
-      const clickable = it.type === "workout" || it.type === "formcheck";
+      const clickable = it.type === "workout" || it.type === "formcheck" || it.type === "nutrition";
       return `<div class="notif-row${clickable ? " is-clickable" : ""}"${clickable
-        ? ` data-client="${escapeHtml(it.clientId)}" data-day="${escapeHtml(it.dayId)}" data-date="${escapeHtml(it.date)}"` : ""}>
+        ? ` data-kind="${escapeHtml(it.type)}" data-client="${escapeHtml(it.clientId)}" data-day="${escapeHtml(it.dayId || "")}" data-date="${escapeHtml(it.date)}"` : ""}>
         <span class="notif-icon" aria-hidden="true">${it.icon}</span>
         <span class="notif-body"><span class="notif-name">${escapeHtml(it.name)}</span> <span class="notif-text">${escapeHtml(it.text)}</span></span>
         <span class="notif-when">${escapeHtml(notifWhen(it.ts))}</span>
       </div>`;
     }).join("");
     host.querySelectorAll(".notif-row.is-clickable").forEach((row) => {
-      row.addEventListener("click", () =>
-        openCompletedWorkout(row.dataset.client, row.dataset.day, row.dataset.date));
+      row.addEventListener("click", () => {
+        if (row.dataset.kind === "nutrition") return openClientNutrition(row.dataset.client);
+        openCompletedWorkout(row.dataset.client, row.dataset.day, row.dataset.date);
+      });
     });
+  }
+
+  // An eating signal has no workout to land on, so it opens the athlete on the
+  // Nutrition tab, where the adherence card explains what triggered it.
+  function openClientNutrition(clientId) {
+    const c = state.trainerData.clients.find((x) => x.id === clientId);
+    if (!c) return renderDashboard();
+    openClient(clientId);
+    setTab("diet");
   }
 
   // Tapping an activity row drops the coach straight into that athlete's live
@@ -14226,6 +14512,7 @@
 
   // ---- Rendering ----
   let _foodDate = null;
+  let _myFoodsOpen = false;
 
   function renderClientDiet() {
     const container = $("#client-diet-container");
@@ -14236,9 +14523,23 @@
     ensureFoodLog(progress);
     _foodDate = todayISO();
     container.insertAdjacentHTML("beforeend", `<div class="card food-day-card" id="food-day-card"></div>`);
+    container.insertAdjacentHTML("beforeend", `<div class="card myfoods-card hidden" id="my-foods-card" style="margin-top:1.75rem"></div>`);
     container.insertAdjacentHTML("beforeend", `<div class="card" id="client-targets-card" style="margin-top:1.75rem"></div>`);
     renderFoodDay();
+    renderMyFoods();
     renderClientTargets();
+  }
+
+  // People think in fractions for cups and spoons, so every amount box accepts
+  // "1/2" and "1 1/2" as well as "1.5".
+  function parseAmount(raw) {
+    const s = String(raw ?? "").trim();
+    if (!s) return NaN;
+    let m = s.match(/^(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/); // "1 1/2"
+    if (m) { const d = Number(m[3]); return d ? Number(m[1]) + Number(m[2]) / d : NaN; }
+    m = s.match(/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/);                       // "1/2"
+    if (m) { const d = Number(m[2]); return d ? Number(m[1]) / d : NaN; }
+    return /^\d+(?:\.\d+)?$/.test(s) ? Number(s) : NaN;
   }
 
   function foodDateLabel(iso) {
@@ -14383,29 +14684,43 @@
   // ---- Add-food flow ----
   // One search box across every source: the athlete's own foods and saved meals
   // rank above the USDA list, because those are what they actually eat.
-  function openAddFoodModal(mealKey) {
+  // `opts.ingredient` runs the same picker inside the recipe builder: the pick
+  // is handed back to the draft recipe instead of being logged, and every exit
+  // route returns to the builder rather than closing.
+  function openAddFoodModal(mealKey, opts = {}) {
+    const ingredient = !!opts.ingredient;
     const meal = MEALS.find((m) => m.key === mealKey) || MEALS[0];
     openModal({
-      title: `Add to ${meal.label}`,
+      title: ingredient ? "Add an ingredient" : `Add to ${meal.label}`,
       body: `
-        <input type="search" id="food-q" class="food-search" placeholder="Search a food…" autocomplete="off" />
+        <div class="food-search-row">
+          <input type="search" id="food-q" class="food-search" placeholder="Search a food…" autocomplete="off" />
+          <button class="food-scan-btn" id="food-scan" type="button" aria-label="Scan a barcode" title="Scan a barcode">⛶</button>
+        </div>
         <div id="food-results" class="food-results"><p class="muted">Loading foods…</p></div>
         <div class="food-modal-foot">
           <button class="btn btn-ghost btn-sm" id="food-quick-add">Quick add</button>
           <button class="btn btn-ghost btn-sm" id="food-new-custom">New food</button>
+          ${ingredient ? "" : `<button class="btn btn-ghost btn-sm" id="food-new-recipe">Build a recipe</button>`}
         </div>`,
-      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
+      actions: [{ label: ingredient ? "Back" : "Close", className: "btn btn-ghost",
+        onClick: ingredient ? () => openRecipeBuilder() : closeModal }],
     });
-    $("#food-quick-add").addEventListener("click", () => openQuickAddModal(mealKey));
-    $("#food-new-custom").addEventListener("click", () => openCustomFoodModal(mealKey));
+    $("#food-quick-add").addEventListener("click", () => openQuickAddModal(mealKey, opts));
+    $("#food-new-custom").addEventListener("click", () => openCustomFoodModal(mealKey, opts));
+    $("#food-scan").addEventListener("click", () => openScanModal(mealKey, opts));
+    const recipeBtn = $("#food-new-recipe");
+    if (recipeBtn) recipeBtn.addEventListener("click", () => startRecipe(mealKey));
 
     const results = $("#food-results");
     const draw = () => {
       const q = ($("#food-q").value || "").trim();
-      results.innerHTML = foodResultsHtml(q, mealKey);
+      results.innerHTML = foodResultsHtml(q, mealKey, opts);
       results.querySelectorAll("[data-pick]").forEach((b) => {
-        b.addEventListener("click", () => pickFoodResult(b.dataset.pick, b.dataset.pickid, mealKey));
+        b.addEventListener("click", () => pickFoodResult(b.dataset.pick, b.dataset.pickid, mealKey, opts));
       });
+      const online = results.querySelector("#food-search-online");
+      if (online) online.addEventListener("click", () => searchOnline(q, mealKey, opts));
     };
     loadFoodDb().then(() => {
       $("#food-q").addEventListener("input", draw);
@@ -14416,13 +14731,13 @@
     });
   }
 
-  function foodResultsHtml(q, mealKey) {
+  function foodResultsHtml(q, mealKey, opts = {}) {
     const progress = state.clientData.progress;
     const rows = [];
     if (!q) {
       const recents = recentFoods(progress);
       if (!recents.length) {
-        return `<p class="muted">Search for a food, or use Quick add if you already know the numbers.</p>`;
+        return `<p class="muted">Search for a food, scan a barcode, or use Quick add if you already know the numbers.</p>`;
       }
       rows.push(`<p class="food-results-head">Recent</p>`);
       recents.forEach((e, i) => {
@@ -14435,20 +14750,27 @@
     }
     const lc = q.toLowerCase();
     const customs = (progress.customFoods || []).filter((f) => f.name.toLowerCase().includes(lc));
-    const meals = (progress.savedMeals || []).filter((m) => m.name.toLowerCase().includes(lc));
     customs.forEach((f) => {
       rows.push(`<button class="food-result" data-pick="custom" data-pickid="${escapeHtml(f.id)}">
-        <span class="food-result-name">${escapeHtml(f.name)} <span class="food-tag">My food</span></span>
-        <span class="food-result-sub">${Math.round(f.kcal)} kcal per ${escapeHtml(f.servingLabel || "serving")}</span>
+        <span class="food-result-name">${escapeHtml(f.name)} <span class="food-tag">${escapeHtml(customFoodTag(f))}</span></span>
+        <span class="food-result-sub">${Math.round(f.kcal)} kcal per ${escapeHtml(f.per100 ? "100 g" : f.servingLabel || "serving")}</span>
       </button>`);
     });
-    meals.forEach((m) => {
-      const t = foodDayTotals(m.items);
-      rows.push(`<button class="food-result" data-pick="meal" data-pickid="${escapeHtml(m.id)}">
-        <span class="food-result-name">${escapeHtml(m.name)} <span class="food-tag">Meal</span></span>
-        <span class="food-result-sub">${m.items.length} items · ${Math.round(t.kcal)} kcal</span>
-      </button>`);
-    });
+    // A saved meal or recipe can't be an ingredient of a recipe — that would
+    // nest one inside another and make the totals impossible to follow.
+    if (!opts.ingredient) {
+      (progress.savedMeals || []).filter((m) => m.name.toLowerCase().includes(lc)).forEach((m) => {
+        const t = foodDayTotals(m.items);
+        const isRecipe = m.kind === "recipe";
+        const servings = Math.max(Number(m.servings) || 1, 1);
+        rows.push(`<button class="food-result" data-pick="meal" data-pickid="${escapeHtml(m.id)}">
+          <span class="food-result-name">${escapeHtml(m.name)} <span class="food-tag">${isRecipe ? "Recipe" : "Meal"}</span></span>
+          <span class="food-result-sub">${m.items.length} item${m.items.length === 1 ? "" : "s"} · ${isRecipe
+            ? `${Math.round(t.kcal / servings)} kcal a serving`
+            : `${Math.round(t.kcal)} kcal`}</span>
+        </button>`);
+      });
+    }
     const hits = searchFoods(q);
     hits.forEach((r) => {
       rows.push(`<button class="food-result" data-pick="db" data-pickid="${r[F.ID]}">
@@ -14456,17 +14778,33 @@
         <span class="food-result-sub">${r[F.KCAL]} kcal · P ${r[F.P]} · C ${r[F.C]} · F ${r[F.FAT]} per 100 g</span>
       </button>`);
     });
+    // The vendored list is whole foods. Packaged and branded items live online,
+    // so offer that as a second step rather than leaving a dead end.
+    const online = usdaKey()
+      ? `<button class="btn btn-ghost btn-sm online-search-btn" id="food-search-online" type="button">Search branded foods online</button>`
+      : "";
     if (!rows.length) {
-      return `<p class="muted">No match. Try fewer words, or add it yourself with Quick add.</p>`;
+      return `<p class="muted">No match here. Try fewer words${online ? ", search online," : ""} or add it with Quick add.</p>${online}`;
     }
-    return rows.join("");
+    return rows.join("") + online;
   }
 
-  function pickFoodResult(kind, id, mealKey) {
+  // Where a finished pick goes: onto the day's log, or into the recipe being
+  // built. Everything that produces a food entry funnels through here.
+  function deliverPick(value, mealKey, opts = {}) {
+    if (opts.ingredient) { addRecipeIngredient(value); return; }
+    addFoodEntry(_foodDate, { ...value, meal: mealKey });
+    closeModal();
+    renderFoodDay();
+    toast("Logged ✓");
+  }
+
+  function pickFoodResult(kind, id, mealKey, opts = {}) {
     const progress = state.clientData.progress;
     if (kind === "recent") {
       const e = recentFoods(progress)[Number(id)];
       if (!e) return;
+      if (opts.ingredient) { addRecipeIngredient(e); return; }
       addFoodEntry(_foodDate, { ...e, meal: mealKey });
       closeModal(); renderFoodDay();
       toast(`${e.name} added ✓`);
@@ -14474,12 +14812,16 @@
     }
     if (kind === "custom") {
       const f = (progress.customFoods || []).find((x) => x.id === id);
-      if (f) openPortionStep({ kind: "custom", food: f }, mealKey);
+      if (f) openPortionStep({ kind: "custom", food: f }, mealKey, opts);
       return;
     }
     if (kind === "meal") {
       const m = (progress.savedMeals || []).find((x) => x.id === id);
       if (!m) return;
+      // A recipe is a dish with a yield, so it asks how much of it you ate and
+      // logs one line. A saved meal is just a bundle of items you ate together,
+      // so it drops those items back in exactly as they were.
+      if (m.kind === "recipe") { openRecipePortionStep(m, mealKey); return; }
       m.items.forEach((it) => addFoodEntry(_foodDate, { ...it, meal: mealKey }));
       m.uses = (m.uses || 0) + 1;
       saveFoodLog();
@@ -14488,18 +14830,24 @@
       return;
     }
     const row = foodRowById(Number(id));
-    if (row) openPortionStep({ kind: "db", row }, mealKey);
+    if (row) openPortionStep({ kind: "db", row }, mealKey, opts);
   }
 
   // Step two: how much of it. Units come from the USDA household measures plus
   // grams and ounces, so "1 cup" and "150 g" are both one step away.
-  function openPortionStep(pick, mealKey) {
+  function openPortionStep(pick, mealKey, opts = {}) {
     const meal = MEALS.find((m) => m.key === mealKey) || MEALS[0];
     const isDb = pick.kind === "db";
     const name = isDb ? pick.row[F.NAME] : pick.food.name;
     const units = [];
+    // A scanned or online food carries per-100 g numbers like a database row,
+    // so it gets the same weight units on top of the pack's own serving size.
+    const per100 = !isDb && !!pick.food.per100;
     if (isDb) {
       (pick.row[F.PORTIONS] || []).forEach(([label, grams]) => units.push({ label, grams }));
+      units.push({ label: "g", grams: 1 }, { label: "oz", grams: OZ_G });
+    } else if (per100) {
+      if (pick.food.servingG > 0) units.push({ label: pick.food.servingLabel || "serving", grams: pick.food.servingG });
       units.push({ label: "g", grams: 1 }, { label: "oz", grams: OZ_G });
     } else {
       units.push({ label: pick.food.servingLabel || "serving", grams: 0 });
@@ -14510,7 +14858,7 @@
       body: `
         <div class="portion-row">
           <label>Amount
-            <input type="number" id="portion-qty" min="0" step="0.25" value="1" inputmode="decimal" />
+            <input type="text" id="portion-qty" value="1" inputmode="decimal" autocomplete="off" placeholder="1 1/2" />
           </label>
           <label>Unit
             <select id="portion-unit">
@@ -14520,23 +14868,21 @@
         </div>
         <div id="portion-preview" class="portion-preview"></div>`,
       actions: [
-        { label: "Back", className: "btn btn-ghost", onClick: () => openAddFoodModal(mealKey) },
-        { label: `Add to ${meal.label}`, className: "btn btn-primary", onClick: () => {
+        { label: "Back", className: "btn btn-ghost", onClick: () => openAddFoodModal(mealKey, opts) },
+        { label: opts.ingredient ? "Add to recipe" : `Add to ${meal.label}`, className: "btn btn-primary", onClick: () => {
             const v = computePortion();
             if (!v) { toast("Enter an amount"); return; }
-            addFoodEntry(_foodDate, v);
             if (!isDb) {
               pick.food.uses = (pick.food.uses || 0) + 1;
               saveFoodLog();
             }
-            closeModal(); renderFoodDay();
-            toast("Logged ✓");
+            deliverPick(v, mealKey, opts);
           } },
       ],
     });
 
     function computePortion() {
-      const qty = Number($("#portion-qty").value);
+      const qty = parseAmount($("#portion-qty").value);
       if (!(qty > 0)) return null;
       const unit = units[Number($("#portion-unit").value)] || units[0];
       if (isDb) {
@@ -14552,6 +14898,16 @@
         };
       }
       const f = pick.food;
+      if (per100) {
+        const grams = qty * unit.grams;
+        const k = grams / 100;
+        return {
+          name, meal: mealKey, qty, unit: unit.label, grams: Math.round(grams * 10) / 10,
+          kcal: Math.round(f.kcal * k),
+          p: round1((f.p || 0) * k), c: round1((f.c || 0) * k), f: round1((f.f || 0) * k),
+          src: "custom", ref: f.id,
+        };
+      }
       return {
         name, meal: mealKey, qty, unit: unit.label, grams: null,
         kcal: Math.round(f.kcal * qty),
@@ -14574,7 +14930,7 @@
     $("#portion-qty").select();
   }
 
-  function openQuickAddModal(mealKey) {
+  function openQuickAddModal(mealKey, opts = {}) {
     const meal = MEALS.find((m) => m.key === mealKey) || MEALS[0];
     openModal({
       title: "Quick add",
@@ -14588,21 +14944,19 @@
           <label>Fat g <input type="number" id="qa-f" min="0" inputmode="numeric" /></label>
         </div>`,
       actions: [
-        { label: "Back", className: "btn btn-ghost", onClick: () => openAddFoodModal(mealKey) },
-        { label: `Add to ${meal.label}`, className: "btn btn-primary", onClick: () => {
+        { label: "Back", className: "btn btn-ghost", onClick: () => openAddFoodModal(mealKey, opts) },
+        { label: opts.ingredient ? "Add to recipe" : `Add to ${meal.label}`, className: "btn btn-primary", onClick: () => {
             const kcal = Number($("#qa-kcal").value) || 0;
             const p = Number($("#qa-p").value) || 0;
             const c = Number($("#qa-c").value) || 0;
             const f = Number($("#qa-f").value) || 0;
             if (!kcal && !p && !c && !f) { toast("Enter at least the calories"); return; }
-            addFoodEntry(_foodDate, {
+            deliverPick({
               name: ($("#qa-name").value || "").trim() || "Quick add",
-              meal: mealKey, qty: 1, unit: "entry", grams: null,
+              qty: 1, unit: "entry", grams: null,
               kcal: kcal || Math.round(p * 4 + c * 4 + f * 9),
               p, c, f, src: "quick", ref: null,
-            });
-            closeModal(); renderFoodDay();
-            toast("Logged ✓");
+            }, mealKey, opts);
           } },
       ],
     });
@@ -14611,7 +14965,7 @@
 
   // A food the athlete keeps eating that isn't in the USDA list — protein
   // powder, a supplement bar, their own recipe. Saved once, searchable after.
-  function openCustomFoodModal(mealKey) {
+  function openCustomFoodModal(mealKey, opts = {}) {
     openModal({
       title: "New food",
       body: `
@@ -14625,8 +14979,8 @@
           <label>Fat g <input type="number" id="cf-f" min="0" inputmode="numeric" /></label>
         </div>`,
       actions: [
-        { label: "Back", className: "btn btn-ghost", onClick: () => openAddFoodModal(mealKey) },
-        { label: "Save and log", className: "btn btn-primary", onClick: () => {
+        { label: "Back", className: "btn btn-ghost", onClick: () => openAddFoodModal(mealKey, opts) },
+        { label: opts.ingredient ? "Save and use" : "Save and log", className: "btn btn-primary", onClick: () => {
             const name = ($("#cf-name").value || "").trim();
             if (!name) { toast("Give it a name"); return; }
             const kcal = Number($("#cf-kcal").value) || 0;
@@ -14644,7 +14998,7 @@
             };
             progress.customFoods.push(food);
             saveFoodLog();
-            openPortionStep({ kind: "custom", food }, mealKey);
+            openPortionStep({ kind: "custom", food }, mealKey, opts);
           } },
       ],
     });
@@ -14681,7 +15035,615 @@
     });
   }
 
+  // -------- Barcode scanning and online lookup --------
+  // Two different sources, picked for what each is actually good at:
+  //   • Barcodes → Open Food Facts. No key, and its whole point is packaged
+  //     products by barcode. Data is ODbL, so it's attributed and never
+  //     vendored — we only ever fetch the one product being scanned.
+  //   • Text search → USDA FoodData Central's Branded set. Open Food Facts'
+  //     search host doesn't send Access-Control-Allow-Origin, so the browser
+  //     blocks it; USDA sends `*` and covers branded items the vendored
+  //     whole-food list can't. It needs a free key, so it's optional: with no
+  //     key the button simply never appears and scanning still works.
+  const OFF_PRODUCT_URL = "https://world.openfoodfacts.org/api/v2/product/";
+  const OFF_FIELDS = "code,product_name,brands,serving_size,nutriments";
+  const USDA_SEARCH_URL = "https://api.nal.usda.gov/fdc/v1/foods/search";
+  const ZXING_JS = "vendor/zxing/zxing-reader.js?v=zx1";
+  const ZXING_WASM = "vendor/zxing/zxing_reader.wasm";
+  // Retail barcodes only. Narrowing the format list makes every frame cheaper
+  // and stops a stray QR code on the packaging from winning the race.
+  const BD_FORMATS = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf"];
+  const ZX_FORMATS = ["EAN-13", "EAN-8", "UPC-A", "UPC-E", "Code128", "Code39", "ITF"];
+  const SCAN_MAX_W = 640;   // downscale before decoding; plenty for a barcode
+  const SCAN_INTERVAL = 240;
+
+  function usdaKey() { return String(window.STONE_DRAGON_CONFIG?.USDA_API_KEY || "").trim(); }
+  function customFoodTag(f) { return f.barcode ? "Scanned" : f.fdcId ? "Online" : "My food"; }
+
+  let _zxingPromise = null;
+  let _onlineResults = []; // last online search, indexed by the result buttons
+
+  function loadZxing() {
+    if (window.ZXingWASM) return Promise.resolve(window.ZXingWASM);
+    if (_zxingPromise) return _zxingPromise;
+    _zxingPromise = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = ZXING_JS;
+      s.onload = () => {
+        if (!window.ZXingWASM) { _zxingPromise = null; reject(new Error("zxing missing")); return; }
+        // The published build fetches its wasm from a CDN; point it at ours so
+        // scanning works offline once the file has been cached.
+        window.ZXingWASM.prepareZXingModule({
+          overrides: { locateFile: (path) => (String(path).endsWith(".wasm") ? ZXING_WASM : path) },
+        });
+        resolve(window.ZXingWASM);
+      };
+      s.onerror = () => { _zxingPromise = null; reject(new Error("zxing failed")); };
+      document.head.appendChild(s);
+    });
+    return _zxingPromise;
+  }
+
+  // Camera teardown. Every modal transition calls this, so a stream can never
+  // outlive the modal that opened it and leave the camera light on.
+  let _scanStop = null;
+  function stopScan() {
+    if (!_scanStop) return;
+    const fn = _scanStop;
+    _scanStop = null;
+    try { fn(); } catch (err) { /* already gone */ }
+  }
+
+  function normalizeBarcode(raw) {
+    const digits = String(raw || "").replace(/\D/g, "");
+    return digits.length >= 8 && digits.length <= 14 ? digits : "";
+  }
+
+  // Serving size comes through as free text ("39 g", "1 cup (240 ml)"). Only a
+  // gram figure is usable as a unit, so anything else falls back to 100 g.
+  function servingGramsFrom(text) {
+    const m = String(text || "").match(/([\d.]+)\s*g\b/i);
+    const g = m ? Number(m[1]) : 0;
+    return g > 0 && g < 2000 ? g : 0;
+  }
+
+  // Both sources report per 100 g, so packaged foods are stored as custom
+  // foods with per100:true and the portion step offers g / oz / serving.
+  function offToFood(product, code) {
+    const n = product?.nutriments || {};
+    const kcal = Number(n["energy-kcal_100g"]);
+    if (!Number.isFinite(kcal) || kcal <= 0) return null;
+    const brand = String(product.brands || "").split(",")[0].trim();
+    const name = [String(product.product_name || "").trim(), brand].filter(Boolean).join(" · ");
+    const grams = servingGramsFrom(product.serving_size);
+    return {
+      id: uid(), name: (name || `Barcode ${code}`).slice(0, 90), barcode: code,
+      per100: true, servingG: grams,
+      servingLabel: grams ? String(product.serving_size).trim() : "100 g",
+      kcal: Math.round(kcal), p: round1(n.proteins_100g), c: round1(n.carbohydrates_100g),
+      f: round1(n.fat_100g), uses: 0, createdAt: todayISO(),
+    };
+  }
+
+  function usdaToFood(item) {
+    const num = (n) => {
+      const hit = (item.foodNutrients || []).find((x) => String(x.nutrientNumber) === n);
+      return hit ? Number(hit.value) || 0 : 0;
+    };
+    const kcal = num("208");
+    if (!kcal) return null;
+    const brand = String(item.brandName || item.brandOwner || "").trim();
+    const name = [String(item.description || "").trim(), brand].filter(Boolean).join(" · ");
+    const grams = String(item.servingSizeUnit || "").toUpperCase() === "GRM"
+      ? Number(item.servingSize) || 0 : 0;
+    return {
+      id: uid(), name: name.slice(0, 90), fdcId: item.fdcId,
+      per100: true, servingG: grams,
+      servingLabel: grams
+        ? (String(item.householdServingFullText || "").trim() || `${grams} g`)
+        : "100 g",
+      kcal: Math.round(kcal), p: round1(num("203")), c: round1(num("205")),
+      f: round1(num("204")), uses: 0, createdAt: todayISO(),
+    };
+  }
+
+  // Saved on first use so it's searchable offline next time and shows up in
+  // recents, instead of costing a network round trip every single log.
+  function rememberPackagedFood(food, matchKey) {
+    const progress = state.clientData.progress;
+    ensureFoodLog(progress);
+    const existing = matchKey
+      ? progress.customFoods.find((f) => f[matchKey.field] === matchKey.value)
+      : null;
+    if (existing) return existing;
+    progress.customFoods.push(food);
+    saveFoodLog();
+    return food;
+  }
+
+  function openScanModal(mealKey, opts = {}) {
+    openModal({
+      title: "Scan a barcode",
+      body: `
+        <div class="scan-wrap">
+          <video id="scan-video" playsinline muted autoplay></video>
+          <div class="scan-frame" aria-hidden="true"></div>
+        </div>
+        <p class="scan-status" id="scan-status">Starting the camera…</p>
+        <div class="scan-foot">
+          <button class="btn btn-ghost btn-sm" id="scan-manual" type="button">Type the number instead</button>
+        </div>
+        <p class="scan-credit">Packaged food data from Open Food Facts, licensed under the ODbL.</p>`,
+      actions: [{ label: "Back", className: "btn btn-ghost", onClick: () => openAddFoodModal(mealKey, opts) }],
+    });
+    $("#scan-manual").addEventListener("click", () => openManualBarcodeModal(mealKey, opts));
+
+    const video = $("#scan-video");
+    const status = $("#scan-status");
+    const say = (msg) => { if (document.body.contains(status)) status.textContent = msg; };
+
+    let stream = null, timer = null, done = false;
+    _scanStop = () => {
+      done = true;
+      if (timer) clearInterval(timer);
+      timer = null;
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      stream = null;
+    };
+
+    const onFound = (code) => {
+      if (done) return;
+      const clean = normalizeBarcode(code);
+      if (!clean) return;
+      stopScan();
+      say("Looking it up…");
+      handleBarcode(clean, mealKey, opts);
+    };
+
+    navigator.mediaDevices?.getUserMedia({ video: { facingMode: "environment" } })
+      .then(async (s) => {
+        if (done) { s.getTracks().forEach((t) => t.stop()); return; } // closed while asking
+        stream = s;
+        video.srcObject = s;
+        await video.play().catch(() => {});
+        say("Point the camera at the barcode.");
+
+        // The browser's own detector where it exists (Android Chrome), the
+        // vendored decoder everywhere else (all iOS browsers, desktop Safari).
+        let detect;
+        if (window.BarcodeDetector) {
+          const supported = await window.BarcodeDetector.getSupportedFormats().catch(() => []);
+          const formats = BD_FORMATS.filter((f) => supported.includes(f));
+          if (formats.length) {
+            const bd = new window.BarcodeDetector({ formats });
+            detect = async () => (await bd.detect(video))[0]?.rawValue;
+          }
+        }
+        if (!detect) {
+          say("Getting the scanner ready…");
+          const zx = await loadZxing();
+          if (done) return;
+          const canvas = document.createElement("canvas");
+          const ctx = canvas.getContext("2d", { willReadFrequently: true });
+          detect = async () => {
+            if (!video.videoWidth) return null;
+            const scale = Math.min(1, SCAN_MAX_W / video.videoWidth);
+            canvas.width = Math.round(video.videoWidth * scale);
+            canvas.height = Math.round(video.videoHeight * scale);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const out = await zx.readBarcodes(
+              ctx.getImageData(0, 0, canvas.width, canvas.height),
+              { formats: ZX_FORMATS, tryHarder: true });
+            return out?.[0]?.text;
+          };
+          say("Point the camera at the barcode.");
+        }
+
+        let busy = false;
+        timer = setInterval(async () => {
+          if (busy || done) return;
+          busy = true;
+          try {
+            const code = await detect();
+            if (code) onFound(code);
+          } catch (err) {
+            // A dropped frame mid-decode is normal — just try the next one.
+          } finally { busy = false; }
+        }, SCAN_INTERVAL);
+      })
+      .catch(() => {
+        say("No camera access. Type the number under the barcode instead.");
+      });
+  }
+
+  function openManualBarcodeModal(mealKey, opts = {}) {
+    openModal({
+      title: "Enter a barcode",
+      body: `
+        <p class="muted" style="margin-top:0">The number printed under the bars, digits only.</p>
+        <label>Barcode <input type="text" id="mb-code" inputmode="numeric" autocomplete="off" placeholder="e.g. 737628064502" /></label>`,
+      actions: [
+        { label: "Back", className: "btn btn-ghost", onClick: () => openAddFoodModal(mealKey, opts) },
+        { label: "Look up", className: "btn btn-primary", onClick: () => {
+            const code = normalizeBarcode($("#mb-code").value);
+            if (!code) { toast("That doesn't look like a barcode"); return; }
+            handleBarcode(code, mealKey, opts);
+          } },
+      ],
+    });
+    $("#mb-code").focus();
+  }
+
+  async function handleBarcode(code, mealKey, opts = {}) {
+    const progress = state.clientData.progress;
+    ensureFoodLog(progress);
+    // Already scanned once: skip the network entirely.
+    const known = (progress.customFoods || []).find((f) => f.barcode === code);
+    if (known) { openPortionStep({ kind: "custom", food: known }, mealKey, opts); return; }
+
+    openModal({
+      title: "Looking it up",
+      body: `<p class="muted" style="margin:0">Checking the food database for ${escapeHtml(code)}…</p>`,
+      actions: [{ label: "Cancel", className: "btn btn-ghost", onClick: () => openAddFoodModal(mealKey, opts) }],
+    });
+
+    let food = null;
+    try {
+      const res = await fetch(`${OFF_PRODUCT_URL}${encodeURIComponent(code)}.json?fields=${OFF_FIELDS}`);
+      const data = res.ok ? await res.json() : null;
+      if (data?.product) food = offToFood(data.product, code);
+    } catch (err) {
+      // Offline or the service is down — handled by the not-found path below.
+    }
+
+    if (!food) {
+      openModal({
+        title: "Not found",
+        body: `<p class="muted" style="margin-top:0">Nothing came back for ${escapeHtml(code)}. It might be a local
+          product, or you might be offline. You can copy the numbers off the label instead and it'll be saved for next time.</p>`,
+        actions: [
+          { label: "Back", className: "btn btn-ghost", onClick: () => openAddFoodModal(mealKey, opts) },
+          { label: "Enter it myself", className: "btn btn-primary", onClick: () => openCustomFoodModal(mealKey, opts) },
+        ],
+      });
+      return;
+    }
+    const saved = rememberPackagedFood(food, { field: "barcode", value: code });
+    openPortionStep({ kind: "custom", food: saved }, mealKey, opts);
+  }
+
+  async function searchOnline(q, mealKey, opts = {}) {
+    const key = usdaKey();
+    if (!key) return;
+    openModal({
+      title: "Searching online",
+      body: `<p class="muted" style="margin:0">Looking for “${escapeHtml(q)}” in branded foods…</p>`,
+      actions: [{ label: "Cancel", className: "btn btn-ghost", onClick: () => openAddFoodModal(mealKey, opts) }],
+    });
+
+    let items = [];
+    try {
+      const url = `${USDA_SEARCH_URL}?api_key=${encodeURIComponent(key)}&query=${encodeURIComponent(q)}&dataType=Branded&pageSize=25`;
+      const res = await fetch(url);
+      const data = res.ok ? await res.json() : null;
+      items = (data?.foods || []).map(usdaToFood).filter(Boolean);
+    } catch (err) {
+      // Falls through to the empty state below.
+    }
+
+    if (!items.length) {
+      openModal({
+        title: "No results",
+        body: `<p class="muted" style="margin-top:0">Nothing came back for “${escapeHtml(q)}”. You might be offline,
+          or it may not be listed. Quick add still works if you have the numbers.</p>`,
+        actions: [{ label: "Back", className: "btn btn-ghost", onClick: () => openAddFoodModal(mealKey, opts) }],
+      });
+      return;
+    }
+
+    _onlineResults = items;
+    openModal({
+      title: "Branded foods",
+      body: `
+        <div class="food-results">
+          ${items.map((f, i) => `<button class="food-result" data-online="${i}">
+            <span class="food-result-name">${escapeHtml(f.name)} <span class="food-tag">Online</span></span>
+            <span class="food-result-sub">${f.kcal} kcal · P ${f.p} · C ${f.c} · F ${f.f} per 100 g</span>
+          </button>`).join("")}
+        </div>
+        <p class="scan-credit">Branded food data from USDA FoodData Central.</p>`,
+      actions: [{ label: "Back", className: "btn btn-ghost", onClick: () => openAddFoodModal(mealKey, opts) }],
+    });
+    $$("[data-online]").forEach((b) => b.addEventListener("click", () => {
+      const food = _onlineResults[Number(b.dataset.online)];
+      if (!food) return;
+      const saved = rememberPackagedFood(food, food.fdcId ? { field: "fdcId", value: food.fdcId } : null);
+      openPortionStep({ kind: "custom", food: saved }, mealKey, opts);
+    }));
+  }
+
+  // -------- Recipe builder --------
+  // A recipe is a saved meal with a yield: the same { name, items[] } shape,
+  // plus `servings` and kind:"recipe". That keeps one list of saved things in
+  // the search results instead of two, and the only real difference is how
+  // it's logged — a meal drops its items back in, a recipe asks how much of
+  // the dish you ate and logs a single scaled line.
+  const RECIPE_MAX_ITEMS = 30;
+  let _recipeDraft = null;
+  let _recipeReturnMeal = null;
+
+  function startRecipe(mealKey, existing) {
+    _recipeReturnMeal = mealKey;
+    _recipeDraft = existing
+      ? { id: existing.id, name: existing.name, servings: Math.max(Number(existing.servings) || 1, 1),
+          items: existing.items.map((it) => ({ ...it })), editing: true }
+      : { id: null, name: "", servings: 1, items: [], editing: false };
+    openRecipeBuilder();
+  }
+
+  function addRecipeIngredient(value) {
+    if (!_recipeDraft) return;
+    if (_recipeDraft.items.length >= RECIPE_MAX_ITEMS) {
+      toast(`A recipe holds up to ${RECIPE_MAX_ITEMS} ingredients`);
+      openRecipeBuilder();
+      return;
+    }
+    const { meal, id, at, ...item } = value;
+    _recipeDraft.items.push(item);
+    openRecipeBuilder();
+  }
+
+  function recipePerServing(draft) {
+    const t = foodDayTotals(draft.items);
+    const s = Math.max(Number(draft.servings) || 1, 1);
+    return { kcal: t.kcal / s, protein: t.protein / s, carbs: t.carbs / s, fat: t.fat / s };
+  }
+
+  // Read the live fields back into the draft before any action that reopens
+  // the modal, so a half-typed name or serving count survives the round trip.
+  function syncRecipeFields() {
+    if (!_recipeDraft) return;
+    const nameEl = $("#rb-name"), servEl = $("#rb-servings");
+    if (nameEl) _recipeDraft.name = nameEl.value;
+    if (servEl) _recipeDraft.servings = Math.max(Number(servEl.value) || 1, 1);
+  }
+
+  function openRecipeBuilder() {
+    const draft = _recipeDraft;
+    if (!draft) return;
+    const total = foodDayTotals(draft.items);
+    const per = recipePerServing(draft);
+    const mealKey = _recipeReturnMeal;
+
+    openModal({
+      title: draft.editing ? "Edit recipe" : "Build a recipe",
+      body: `
+        <label>Recipe name <input type="text" id="rb-name" placeholder="e.g. Chicken and rice bowl" value="${escapeHtml(draft.name)}" /></label>
+        <label class="rb-servings-label">Makes
+          <span class="rb-servings-row">
+            <input type="number" id="rb-servings" min="1" step="1" inputmode="numeric" value="${escapeHtml(String(draft.servings))}" />
+            <span class="muted" id="rb-serving-word">serving${draft.servings === 1 ? "" : "s"}</span>
+          </span>
+        </label>
+        <div class="rb-items">
+          ${draft.items.length ? draft.items.map((it, i) => {
+            const n = Number(it.qty) || 0;
+            const unit = it.unit || "serving";
+            const qty = (unit === "g" || unit === "oz") ? `${Math.round(n * 10) / 10} ${unit}`
+              : n === 1 ? unit : `${Math.round(n * 100) / 100} × ${unit}`;
+            return `<div class="rb-item">
+              <span class="rb-item-main">
+                <span class="rb-item-name">${escapeHtml(it.name)}</span>
+                <span class="rb-item-sub">${escapeHtml(qty)}</span>
+              </span>
+              <span class="rb-item-kcal">${Math.round(it.kcal || 0).toLocaleString()}</span>
+              <button class="rb-item-del" type="button" data-rbdel="${i}" aria-label="Remove ${escapeHtml(it.name)}">×</button>
+            </div>`;
+          }).join("") : `<p class="muted rb-empty">No ingredients yet. Add the things that go into it and the totals work themselves out.</p>`}
+        </div>
+        <button class="food-add-btn" id="rb-add" type="button">+ Add ingredient</button>
+        <div class="rb-totals">
+          <div class="rb-total">
+            <span class="rb-total-num" id="rb-total-whole">${Math.round(total.kcal).toLocaleString()}</span>
+            <span class="rb-total-lbl">kcal whole recipe</span>
+          </div>
+          <div class="rb-total is-main">
+            <span class="rb-total-num" id="rb-total-serving">${Math.round(per.kcal).toLocaleString()}</span>
+            <span class="rb-total-lbl">kcal a serving</span>
+          </div>
+        </div>
+        <p class="rb-per-macros" id="rb-per-macros">Per serving · P ${Math.round(per.protein)} · C ${Math.round(per.carbs)} · F ${Math.round(per.fat)}</p>`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: () => {
+            _recipeDraft = null;
+            if (mealKey) openAddFoodModal(mealKey); else closeModal();
+          } },
+        { label: draft.editing ? "Save changes" : "Save recipe", className: "btn btn-primary", onClick: saveRecipe },
+      ],
+    });
+
+    $("#rb-add").addEventListener("click", () => {
+      syncRecipeFields();
+      openAddFoodModal(mealKey, { ingredient: true });
+    });
+    $$("[data-rbdel]").forEach((b) => b.addEventListener("click", () => {
+      syncRecipeFields();
+      draft.items.splice(Number(b.dataset.rbdel), 1);
+      openRecipeBuilder();
+    }));
+    // Patch the totals in place rather than redrawing the modal. Redrawing on
+    // change fired on blur — so the very tap that blurred the field (Add
+    // ingredient, a delete ×, Save) landed on a node that was replaced before
+    // the click resolved, and did nothing.
+    $("#rb-servings").addEventListener("input", () => {
+      syncRecipeFields();
+      const t = foodDayTotals(draft.items);
+      const ps = recipePerServing(draft);
+      $("#rb-total-whole").textContent = Math.round(t.kcal).toLocaleString();
+      $("#rb-total-serving").textContent = Math.round(ps.kcal).toLocaleString();
+      $("#rb-serving-word").textContent = `serving${draft.servings === 1 ? "" : "s"}`;
+      $("#rb-per-macros").textContent =
+        `Per serving · P ${Math.round(ps.protein)} · C ${Math.round(ps.carbs)} · F ${Math.round(ps.fat)}`;
+    });
+
+    function saveRecipe() {
+      syncRecipeFields();
+      const name = (draft.name || "").trim();
+      if (!name) { toast("Give the recipe a name"); return; }
+      if (!draft.items.length) { toast("Add at least one ingredient"); return; }
+      const progress = state.clientData.progress;
+      ensureFoodLog(progress);
+      const existing = draft.id ? progress.savedMeals.find((m) => m.id === draft.id) : null;
+      if (existing) {
+        Object.assign(existing, { name, servings: draft.servings, items: draft.items });
+      } else {
+        progress.savedMeals.push({
+          id: uid(), name, kind: "recipe", servings: draft.servings,
+          items: draft.items, uses: 0, createdAt: todayISO(),
+        });
+      }
+      saveFoodLog();
+      _recipeDraft = null;
+      closeModal();
+      // Not renderClientDiet — that resets the picker back to today, which
+      // would yank them out of a past day they were filling in.
+      renderMyFoods();
+      toast(existing ? "Recipe updated ✓" : "Recipe saved ✓");
+    }
+  }
+
+  // Logging a recipe: one line for the dish, scaled to how much of it you ate.
+  function openRecipePortionStep(recipe, mealKey) {
+    const meal = MEALS.find((m) => m.key === mealKey) || MEALS[0];
+    const per = recipePerServing(recipe);
+    openModal({
+      title: recipe.name.length > 48 ? recipe.name.slice(0, 47) + "…" : recipe.name,
+      body: `
+        <p class="muted" style="margin-top:0">Makes ${Math.max(Number(recipe.servings) || 1, 1)} servings
+          at ${Math.round(per.kcal).toLocaleString()} kcal each.</p>
+        <label>Servings eaten
+          <input type="text" id="rp-qty" value="1" inputmode="decimal" autocomplete="off" placeholder="1 1/2" />
+        </label>
+        <div id="rp-preview" class="portion-preview"></div>`,
+      actions: [
+        { label: "Back", className: "btn btn-ghost", onClick: () => openAddFoodModal(mealKey) },
+        { label: `Add to ${meal.label}`, className: "btn btn-primary", onClick: () => {
+            const v = compute();
+            if (!v) { toast("Enter how many servings"); return; }
+            recipe.uses = (recipe.uses || 0) + 1;
+            addFoodEntry(_foodDate, v);
+            closeModal(); renderFoodDay();
+            toast("Logged ✓");
+          } },
+      ],
+    });
+    function compute() {
+      const qty = parseAmount($("#rp-qty").value);
+      if (!(qty > 0)) return null;
+      return {
+        name: recipe.name, meal: mealKey, qty, unit: "serving", grams: null,
+        kcal: Math.round(per.kcal * qty),
+        p: Math.round(per.protein * qty * 10) / 10,
+        c: Math.round(per.carbs * qty * 10) / 10,
+        f: Math.round(per.fat * qty * 10) / 10,
+        src: "recipe", ref: recipe.id,
+      };
+    }
+    const refresh = () => {
+      const v = compute();
+      $("#rp-preview").innerHTML = v
+        ? `<span class="portion-kcal">${v.kcal.toLocaleString()} kcal</span>
+           <span class="portion-macros">P ${v.p} · C ${v.c} · F ${v.f}</span>`
+        : `<span class="muted">Enter how many servings</span>`;
+    };
+    $("#rp-qty").addEventListener("input", refresh);
+    refresh();
+    $("#rp-qty").select();
+  }
+
+  // -------- My foods and recipes --------
+  // Without this the only way to reach a saved food is to search for it, so a
+  // typo or a one-off recipe would sit in the list forever with no way out.
+  function renderMyFoods() {
+    const el = $("#my-foods-card"); if (!el) return;
+    const progress = state.clientData.progress;
+    const foods = progress.customFoods || [];
+    const meals = progress.savedMeals || [];
+    const n = foods.length + meals.length;
+    if (!n) { el.classList.add("hidden"); return; }
+    el.classList.remove("hidden");
+    const open = !!_myFoodsOpen;
+    el.innerHTML = `
+      <button class="myfoods-head" id="myfoods-toggle" type="button" aria-expanded="${open}">
+        <span><strong>My foods and recipes</strong> <span class="myfoods-count">${n}</span></span>
+        <span class="myfoods-caret">${open ? "▾" : "▸"}</span>
+      </button>
+      ${open ? `<div class="myfoods-list">
+        ${meals.map((m) => {
+          const t = foodDayTotals(m.items);
+          const isRecipe = m.kind === "recipe";
+          const servings = Math.max(Number(m.servings) || 1, 1);
+          return `<div class="myfoods-row">
+            <span class="myfoods-main">
+              <span class="myfoods-name">${escapeHtml(m.name)} <span class="food-tag">${isRecipe ? "Recipe" : "Meal"}</span></span>
+              <span class="myfoods-sub">${m.items.length} item${m.items.length === 1 ? "" : "s"} · ${isRecipe
+                ? `${Math.round(t.kcal / servings)} kcal a serving`
+                : `${Math.round(t.kcal)} kcal`}</span>
+            </span>
+            ${isRecipe ? `<button class="myfoods-btn" type="button" data-mfedit="${escapeHtml(m.id)}">Edit</button>` : ""}
+            <button class="myfoods-del" type="button" data-mfdelmeal="${escapeHtml(m.id)}" aria-label="Delete ${escapeHtml(m.name)}">×</button>
+          </div>`;
+        }).join("")}
+        ${foods.map((f) => `<div class="myfoods-row">
+          <span class="myfoods-main">
+            <span class="myfoods-name">${escapeHtml(f.name)} <span class="food-tag">${escapeHtml(customFoodTag(f))}</span></span>
+            <span class="myfoods-sub">${Math.round(f.kcal)} kcal per ${escapeHtml(f.per100 ? "100 g" : f.servingLabel || "serving")}</span>
+          </span>
+          <button class="myfoods-del" type="button" data-mfdelfood="${escapeHtml(f.id)}" aria-label="Delete ${escapeHtml(f.name)}">×</button>
+        </div>`).join("")}
+      </div>` : ""}`;
+
+    $("#myfoods-toggle").addEventListener("click", () => { _myFoodsOpen = !_myFoodsOpen; renderMyFoods(); });
+    el.querySelectorAll("[data-mfedit]").forEach((b) => b.addEventListener("click", () => {
+      const m = meals.find((x) => x.id === b.dataset.mfedit);
+      if (m) startRecipe(null, m);
+    }));
+    // Deleting a saved food never touches days already logged — those entries
+    // hold their own copy of the numbers.
+    el.querySelectorAll("[data-mfdelmeal]").forEach((b) => b.addEventListener("click", () => {
+      const i = meals.findIndex((x) => x.id === b.dataset.mfdelmeal);
+      if (i < 0 || !window.confirm(`Delete "${meals[i].name}"? Days you've already logged keep their food.`)) return;
+      meals.splice(i, 1);
+      saveFoodLog();
+      renderMyFoods();
+    }));
+    el.querySelectorAll("[data-mfdelfood]").forEach((b) => b.addEventListener("click", () => {
+      const i = foods.findIndex((x) => x.id === b.dataset.mfdelfood);
+      if (i < 0 || !window.confirm(`Delete "${foods[i].name}"? Days you've already logged keep their food.`)) return;
+      foods.splice(i, 1);
+      saveFoodLog();
+      renderMyFoods();
+    }));
+  }
+
   // -------- Athlete targets --------
+  // Plain statement of the four numbers. Deliberately not a chart: the calorie
+  // ring and macro bars directly above already plot these same targets against
+  // what's actually been eaten, so a donut here was drawing the data twice.
+  function targetStripHtml(plan) {
+    const cells = [{ num: Number(plan?.calories) ? Number(plan.calories).toLocaleString() : "—", lbl: "kcal" }];
+    MACROS.forEach((m) => cells.push({
+      num: plan?.[m.key] ? `${Math.round(plan[m.key])} g` : "—",
+      lbl: m.label.toLowerCase(), color: m.color,
+    }));
+    return `<div class="nut-target-strip">${cells.map((c) => `
+      <div class="nut-target-cell">
+        <div class="nut-target-num">${escapeHtml(c.num)}</div>
+        <div class="nut-target-lbl">${c.color
+          ? `<span class="macro-dot" style="background:${c.color}"></span>` : ""}${escapeHtml(c.lbl)}</div>
+      </div>`).join("")}</div>`;
+  }
+
   function renderClientTargets() {
     const el = $("#client-targets-card"); if (!el) return;
     const client = state.clientData.program?.client;
@@ -14710,17 +15672,7 @@
         <h3 style="margin:0">Daily targets</h3>
         <span class="muted" style="font-size:0.8rem">${escapeHtml(whose)}</span>
       </div>
-      ${macroDonutHtml(plan) || `
-        <div class="client-diet-targets">
-          <div class="client-diet-target">
-            <div class="target-num">${escapeHtml(String(plan.calories || "—"))}</div>
-            <div class="target-lbl">kcal / day</div>
-          </div>
-          <div class="client-diet-target">
-            <div class="target-num">${escapeHtml(plan.protein ? plan.protein + "g" : "—")}</div>
-            <div class="target-lbl">protein / day</div>
-          </div>
-        </div>`}
+      ${targetStripHtml(plan)}
       ${plan.notes ? `<div class="client-instructions" style="margin-top:0.8em">${escapeHtml(plan.notes)}</div>` : ""}
       ${eff.locked ? `<p class="muted target-locked">🔒 Your coach has locked these. Talk to them if they need changing.</p>` : `
         <div class="target-actions">
@@ -15056,7 +16008,9 @@
   }
 
   // -------- Body-composition trend charts (hand-rolled SVG small multiples) --------
-  const round1 = (n) => Math.round(n * 10) / 10;
+  // Shared with the food logger, where a missing macro reads as 0 rather than
+  // poisoning a total with NaN.
+  const round1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
   let bwChartRange = "all"; // "30" | "90" | "all" — shared across athlete + coach views
   const BW_RANGES = [
     { k: "30", label: "30d", days: 30 },
@@ -16086,6 +17040,10 @@
   // "who owes" chip so unpaid packages still surface somewhere.
   // -------- Modal --------
   function openModal({ title, body, actions = [] }) {
+    // Any modal transition tears down a running camera. The scanner replaces
+    // itself with the lookup and portion modals without closing first, so
+    // hooking both open and close is what guarantees the light goes off.
+    stopScan();
     $("#modal-title").textContent = title;
     $("#modal-body").innerHTML = body;
     const foot = $("#modal-foot");
@@ -16099,7 +17057,7 @@
     }
     show($("#modal"));
   }
-  function closeModal() { hide($("#modal")); }
+  function closeModal() { stopScan(); hide($("#modal")); }
 
   // -------- Bug reports --------
   // bugreport.js silently records diagnostics (errors, console, taps); this is

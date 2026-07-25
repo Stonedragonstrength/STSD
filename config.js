@@ -4,5 +4,11 @@
 window.STONE_DRAGON_CONFIG = {
   SUPABASE_URL: "https://thhfslggjmtciavxrwwz.supabase.co",
   SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoaGZzbGdnam10Y2lhdnhyd3d6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NzI2ODgsImV4cCI6MjA5ODM0ODY4OH0.PCD2RIwyn2lV4ZLGbg4z4zOe8_k8DXOeEEcLnjfSqFc",
-  VAPID_PUBLIC_KEY: "BJDrxqC-2mCPimJIdlQoBen_xbb64Eq_tmUZxyL3-ZiArVVG1Jf0pZ310nR7j6lIa1kQ-dQMnNVz2tkBBE45Yts"
+  VAPID_PUBLIC_KEY: "BJDrxqC-2mCPimJIdlQoBen_xbb64Eq_tmUZxyL3-ZiArVVG1Jf0pZ310nR7j6lIa1kQ-dQMnNVz2tkBBE45Yts",
+  // Optional. Turns on "Search branded foods online" in the food logger, via
+  // USDA FoodData Central. Free key, issued instantly, public by design like
+  // the anon key above: https://fdc.nal.usda.gov/api-key-signup.html
+  // Leave empty and the button never appears — barcode scanning is unaffected,
+  // since Open Food Facts needs no key.
+  USDA_API_KEY: ""
 };
