@@ -1643,6 +1643,23 @@
       if (stack.length) history.back();
       else if (typeof fallback === "function") fallback();
     }
+    // Escape hatch: leave every in-app level at once and run `fn`, however deep
+    // the drill-down went. `back()` pops a single level, which strands buttons
+    // like "Back to coach view" on whatever screen happens to be underneath
+    // (a live session is already 2 deep the moment it opens on a workout).
+    // `fn` runs first so it can re-navigate off a still-intact history, then
+    // the matching entries are unwound in one hop; the stack is empty by then,
+    // so the popstate that fires is a harmless no-op.
+    function exit(fn) {
+      const depth = stack.length;
+      stack.length = 0;
+      if (typeof fn === "function") {
+        inBack = true; // fn re-navigates — don't let it push fresh levels
+        try { fn(); } catch (e) { console.warn("[Nav] exit handler failed", e); }
+        inBack = false;
+      }
+      if (depth) { try { history.go(-depth); } catch (e) {} }
+    }
     window.addEventListener("popstate", () => {
       const fn = stack.pop();
       if (!fn) return;
@@ -1650,7 +1667,7 @@
       try { fn(); } catch (e) { console.warn("[Nav] back handler failed", e); }
       inBack = false;
     });
-    return { push, reset, back };
+    return { push, reset, back, exit };
   })();
 
   function playLoginFlash() {
@@ -18019,7 +18036,8 @@
     $("#btn-browse-recommended-empty")?.addEventListener("click", openRecommendedTemplatesModal);
     $("#btn-delete-client").addEventListener("click", deleteClientPrompt);
     $("#btn-nudge-athlete")?.addEventListener("click", openNudgeModal);
-    $("#btn-exit-preview")?.addEventListener("click", () => Nav.back(exitPreview));
+    // One tap out of the live session, never a stop on the athlete's picker.
+    $("#btn-exit-preview")?.addEventListener("click", () => Nav.exit(exitPreview));
     // From preview straight into the editor: the day being viewed, or (from
     // the picker / other tabs) the day the athlete is on per synced progress.
     $("#btn-preview-edit-day")?.addEventListener("click", () => {
