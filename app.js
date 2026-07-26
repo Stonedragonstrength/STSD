@@ -1906,24 +1906,31 @@
   }
   // The reduced-motion confetti. Nothing travels across the screen, but each
   // piece pops into place and the whole thing cascades from the top down, so it
-  // still reads as a burst instead of a flash. Ends on a slow fade-out.
+  // still reads as a burst instead of a flash. Both ends are staggered per
+  // piece: they arrive in a wave and dissolve one by one rather than the whole
+  // field dimming as a block.
   function runStillBurst(host, lifeMs) {
+    const clamp01 = (x) => Math.max(0, Math.min(1, x));
     const bits = [...host.querySelectorAll(".dc-bit.still")];
-    const delays = bits.map((el) => (parseFloat(el.style.top) || 0) * 5 + Math.random() * 220);
+    const inDelays = bits.map((el) => (parseFloat(el.style.top) || 0) * 5 + Math.random() * 220);
+    const outDelays = bits.map(() => Math.random() * 600);
     const rots = bits.map((el) => parseFloat(el.dataset.rot) || 0);
-    const IN = 340, OUT = 1000, holdEnd = lifeMs - OUT;
-    popInReduced(host.querySelector(".dc-badge.still"), { ms: 460, prefix: "translate(-50%, -50%) ", from: 0.55 });
+    const IN = 340, OUT = 1200;
+    const holdEnd = lifeMs - OUT - 600; // last piece still finishes before removal
+    const badgeEl = host.querySelector(".dc-badge.still");
+    popInReduced(badgeEl, { ms: 460, prefix: "translate(-50%, -50%) ", from: 0.55 });
     let t0 = null;
     const step = (now) => {
       if (!host.isConnected) return;
       if (t0 === null) t0 = now;
       const t = now - t0;
-      const fade = t > holdEnd ? Math.max(0, 1 - (t - holdEnd) / OUT) : 1;
       bits.forEach((el, i) => {
-        const p = Math.max(0, Math.min(1, (t - delays[i]) / IN));
+        const p = clamp01((t - inDelays[i]) / IN);
+        const fade = clamp01(1 - (t - holdEnd - outDelays[i]) / OUT);
         el.style.opacity = (p * fade).toFixed(3);
         el.style.transform = `rotate(${rots[i]}deg) scale(${(0.35 + 0.65 * easeOutBack(p)).toFixed(3)})`;
       });
+      if (badgeEl && t > holdEnd) badgeEl.style.opacity = clamp01(1 - (t - holdEnd) / OUT).toFixed(3);
       if (t < lifeMs) requestAnimationFrame(step);
     };
     requestAnimationFrame(step);
