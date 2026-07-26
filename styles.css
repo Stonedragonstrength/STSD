@@ -464,13 +464,20 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
   /* Start the sweep at the top-left corner and run clockwise. */
   transform: rotate(0deg);
 }
+/* --rank-color and --rank-glow are set per rank by renderClientHeaderRank():
+   copper at the bottom of the ladder, white-hot at HOARD, each prestige lap in
+   its own metal. Everything below reads those two values, so the whole crest
+   heats as one piece. --gold is the fallback if the ramp ever misses. */
 .rank-ring-bg,
 .rank-ring-fill { fill: none; stroke-width: 2.5; }
 .rank-ring-bg { stroke: var(--surface-3); }
 .rank-ring-fill {
-  stroke: var(--gold);
+  stroke: var(--rank-color, var(--gold));
   stroke-linecap: round;
-  transition: stroke-dashoffset 0.5s ease;
+  transition: stroke-dashoffset 0.5s ease, stroke 0.4s ease;
+  /* Glow rides the stroke itself so it traces the earned arc, not the box. */
+  filter: drop-shadow(0 0 calc(var(--rank-glow, 0) * 3px)
+                      color-mix(in srgb, var(--rank-color, var(--gold)) 85%, transparent));
 }
 /* No rank yet — hide the ring entirely rather than show an empty track. */
 .rank-crest:not(.has-rank) .rank-ring { display: none; }
@@ -485,22 +492,55 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
   height: 17px;
   border-radius: 50%;
   background: var(--surface-2);
-  border: 1px solid rgba(var(--gold-rgb), 0.55);
+  border: 1px solid color-mix(in srgb, var(--rank-color, var(--gold)) 60%, transparent);
   font-size: 9px;
   line-height: 1;
   pointer-events: none;
+  box-shadow: 0 0 calc(var(--rank-glow, 0) * 5px)
+              color-mix(in srgb, var(--rank-color, var(--gold)) 70%, transparent);
+  transition: box-shadow 0.4s ease, border-color 0.4s ease;
 }
-/* Past HOARD the crest earns its glow. */
-.rank-crest.is-max .rank-medallion { box-shadow: 0 0 7px rgba(var(--gold-rgb), 0.65); }
 
 /* The brand line, once it's carrying a rank instead of "Stone Dragon". */
 .header-title.is-rank {
   background: none;
   -webkit-background-clip: border-box;
   background-clip: border-box;
-  color: var(--gold);
+  color: var(--rank-color, var(--gold));
   font-size: 0.78rem;
   letter-spacing: 0.12em;
+  text-shadow: 0 0 calc(var(--rank-glow, 0) * 7px)
+               color-mix(in srgb, var(--rank-color, var(--gold)) 55%, transparent);
+  transition: color 0.4s ease, text-shadow 0.4s ease;
+}
+
+/* ===== Past HOARD: the crest stops being still =====
+   Reserved for the endgame on purpose. A header that pulsed at Coin would be
+   unbearable on every screen; by the time someone is on a prestige lap they
+   have earned a crest that moves. */
+@keyframes rank-burn {
+  0%, 100% { opacity: 1;    filter: brightness(1); }
+  50%      { opacity: 0.82; filter: brightness(1.35); }
+}
+/* The ring carries its glow in `filter: drop-shadow`, and an animated `filter`
+   REPLACES that rather than adding to it — animating brightness here put the
+   ring's glow out at exactly the rank it should burn hardest. So the stroke
+   pulses on opacity alone and keeps its shadow. */
+@keyframes rank-burn-stroke {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.7; }
+}
+.rank-crest.is-hot .rank-ring-fill { animation: rank-burn-stroke 2.8s ease-in-out infinite; }
+/* These glow via box-shadow / text-shadow, so brightness is free to animate. */
+.rank-crest.is-hot .rank-medallion { animation: rank-burn 2.8s ease-in-out infinite; }
+.header-title.is-hot { animation: rank-burn 2.8s ease-in-out infinite; }
+.breadcrumb-rank.is-hot .bcr-ico { animation: rank-burn 2.8s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rank-crest.is-hot .rank-ring-fill,
+  .rank-crest.is-hot .rank-medallion,
+  .header-title.is-hot,
+  .breadcrumb-rank.is-hot .bcr-ico { animation: none; opacity: 1; }
 }
 
 /* Athlete's rank beside their name in the coach breadcrumb. */
@@ -511,15 +551,18 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
   margin-left: 0.5em;
   padding: 0.1em 0.5em;
   border-radius: 999px;
-  background: rgba(var(--gold-rgb), 0.12);
-  border: 1px solid rgba(var(--gold-rgb), 0.3);
+  background: color-mix(in srgb, var(--rank-color, var(--gold)) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--rank-color, var(--gold)) 35%, transparent);
+  box-shadow: 0 0 calc(var(--rank-glow, 0) * 4px)
+              color-mix(in srgb, var(--rank-color, var(--gold)) 45%, transparent);
   white-space: nowrap;
   flex-shrink: 0;
+  transition: background 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
 }
 .bcr-ico { font-size: 0.72rem; line-height: 1; }
 .bcr-name {
   font-size: 0.66rem; font-weight: 800; letter-spacing: 0.05em;
-  text-transform: uppercase; color: var(--gold);
+  text-transform: uppercase; color: var(--rank-color, var(--gold));
   /* A prestige name like "Dragonsteel HOARD VIII" would otherwise shove the
      chip out past the header. */
   max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -2198,75 +2241,6 @@ input.cex-finisher-input { width: 72px; flex: 0 0 72px; text-align: center; }
   color: #062131; font-weight: 900; font-size: 0.95rem;
 }
 
-/* ===== The Hoard: training rank bar =====
-   One slim row, on purpose. The food tab's rank plate is two rows with a
-   chunky meter; repeating that shape here would eat screen for a status line.
-   Everything sits on a single baseline and the track takes the slack. */
-.ov-hoard {
-  display: flex;
-  align-items: center;
-  /* Wraps only when it genuinely runs out of room (a long prestige name like
-     "Dragonsteel HOARD II" on a narrow phone), so the common case stays one
-     line instead of paying for a breakpoint that fires too early. */
-  flex-wrap: wrap;
-  row-gap: 0.3rem;
-  gap: 0.55rem;
-  padding: 0.42rem 0.7rem;
-  margin-bottom: 0.7rem;
-  /* Capped so a 4px track doesn't stretch across a desktop as dead space. It
-     reads as a status chip under the greeting, not a full-width component. */
-  max-width: 520px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  border-left: 3px solid rgba(var(--gold-rgb), 0.75);
-}
-.ov-hoard-badge { font-size: 1.05rem; line-height: 1; flex-shrink: 0; }
-.ov-hoard-name {
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--gold);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-/* The track is the only thing that flexes, so long rank names like
-   "Dragonsteel HOARD II" never get truncated. */
-.ov-hoard-track {
-  position: relative;
-  flex: 1 1 60px;
-  min-width: 60px;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--surface-3);
-  overflow: hidden;
-}
-.ov-hoard-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(var(--gold-rgb), 0.55), var(--gold));
-  transition: width 0.35s ease;
-}
-.ov-hoard-lb {
-  font-size: 0.74rem;
-  font-weight: 700;
-  color: var(--text-soft);
-  white-space: nowrap;
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
-}
-/* Past HOARD the bar earns its glow; the bare numeral peak goes brightest. */
-.ov-hoard.is-hoard { border-left-color: var(--gold); }
-.ov-hoard.is-hoard .ov-hoard-badge { filter: drop-shadow(0 0 5px rgba(var(--gold-rgb), 0.6)); }
-.ov-hoard.is-max { border-color: rgba(var(--gold-rgb), 0.4); }
-.ov-hoard.is-promoted { animation: hoard-pop 0.9s ease; }
-@keyframes hoard-pop {
-  0%   { box-shadow: 0 0 0 0 rgba(var(--gold-rgb), 0.5); }
-  60%  { box-shadow: 0 0 0 7px rgba(var(--gold-rgb), 0); }
-  100% { box-shadow: 0 0 0 0 rgba(var(--gold-rgb), 0); }
-}
 /* ===== Trials: athlete-facing wall (overview) =====
    One row per trial, same slim language as the Hoard bar: badge, name over a
    thin track, status on the right. Reads as a checklist, not a stack of cards. */

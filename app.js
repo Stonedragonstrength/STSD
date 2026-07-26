@@ -2697,9 +2697,13 @@
       const old = bc.querySelector(".breadcrumb-rank");
       if (old) old.remove();
       if (lb) {
-        const rank = hoardRankForLevel(hoardLevelFromLb(lb).level);
+        const lvl = hoardLevelFromLb(lb);
+        const rank = hoardRankForLevel(lvl.level);
+        const look = hoardLook(lvl.level);
         const chip = document.createElement("span");
-        chip.className = "breadcrumb-rank";
+        chip.className = "breadcrumb-rank" + (look.hot ? " is-hot" : "");
+        chip.style.setProperty("--rank-color", look.color);
+        chip.style.setProperty("--rank-glow", String(look.glow));
         chip.innerHTML = `<span class="bcr-ico">${rank.icon}</span><span class="bcr-name">${escapeHtml(rank.name)}</span>`;
         chip.title = `${rank.name} · ${hoardLbLabel(lb)} moved`;
         nameEl.insertAdjacentElement("afterend", chip);
@@ -11949,10 +11953,10 @@
     // "Up next" reads as a compact floating badge pinned to the bottom-center
     // of the overview (day name on top, kicker under it). The whole badge is
     // the tap target on startable states, so there's no separate Start button.
-    // The rank sits with the greeting, above the calendar: it's an identity
-    // line, and below the fold it may as well not exist.
+    // No rank line here: the header crest carries it on every screen, so a bar
+    // under the greeting would just say the same thing twice.
     const greetHost = $("#overview-greeting");
-    if (greetHost) greetHost.innerHTML = `<div class="ov-greeting">Hey, ${firstName} 👋</div>${hoardBarHtml(hoardGame)}`;
+    if (greetHost) greetHost.innerHTML = `<div class="ov-greeting">Hey, ${firstName} 👋</div>`;
     if (heroHost) heroHost.innerHTML = `
       <div class="ov-hero${hero.jump ? " is-clickable" : ""}" id="ov-hero" style="--hero-color:${hero.color || "var(--primary-bright)"};--hero-soft:${hero.soft || "var(--primary-soft)"}">
         <div class="ov-hero-textcol">
@@ -12009,12 +12013,22 @@
     const next = hoardRankForLevel(lvl.level + 1);
     const pct = lvl.need > 0 ? Math.max(0, Math.min(1, lvl.into / lvl.need)) : 0;
 
+    // The heat ramp: one colour + one glow strength drive the ring, medallion
+    // and rank name together, so the whole crest intensifies as one thing.
+    const look = hoardLook(lvl.level);
+    crest.style.setProperty("--rank-color", look.color);
+    crest.style.setProperty("--rank-glow", String(look.glow));
+    title.style.setProperty("--rank-color", look.color);
+    title.style.setProperty("--rank-glow", String(look.glow));
+
     crest.classList.add("has-rank");
     crest.classList.toggle("is-max", !!rank.isMax);
+    crest.classList.toggle("is-hot", !!look.hot);
     med.classList.remove("hidden");
     med.textContent = rank.icon;
     title.textContent = rank.name;
     title.classList.add("is-rank");
+    title.classList.toggle("is-hot", !!look.hot);
     crest.title = `${rank.name} · ${hoardLbLabel(lb)} moved · ${Math.round(lvl.into).toLocaleString()} of ${lvl.need.toLocaleString()} lb to ${next.name}`;
 
     // Sweep the arc by dash offset. The ring is a rounded rect hugging the
@@ -15165,16 +15179,16 @@
   // Past HOARD the pile is re-forged in a harder metal each lap. Metals rather
   // than nutrition's Mohs minerals, so the two ladders never read alike.
   const HOARD_METALS = [
-    { name: "Bronze",     icon: "🥉" },
-    { name: "Silver",     icon: "🥈" },
-    { name: "Gold",       icon: "🥇" },
-    { name: "Platinum",   icon: "⚪" },
-    { name: "Titanium",   icon: "🔵" },
-    { name: "Mythril",    icon: "🟣" },
-    { name: "Adamant",    icon: "⚫" },
-    { name: "Orichalcum", icon: "🔴" },
-    { name: "Starmetal",  icon: "🌟" },
-    { name: "Dragonsteel",icon: "💠" },
+    { name: "Bronze",     icon: "🥉", c: "#cd7f32" },
+    { name: "Silver",     icon: "🥈", c: "#d8d8e0" },
+    { name: "Gold",       icon: "🥇", c: "#ffd700" },
+    { name: "Platinum",   icon: "⚪", c: "#e8f4f8" },
+    { name: "Titanium",   icon: "🔵", c: "#6fb3e0" },
+    { name: "Mythril",    icon: "🟣", c: "#b57edc" },
+    { name: "Adamant",    icon: "⚫", c: "#8d8dff" },
+    { name: "Orichalcum", icon: "🔴", c: "#ff7a4a" },
+    { name: "Starmetal",  icon: "🌟", c: "#ffe9a8" },
+    { name: "Dragonsteel",icon: "💠", c: "#7ef9ff" },
   ];
   const HOARD_CYCLE = HOARD_METALS.length + 1;  // ten metals, then the numeral
   // Restart cheap, compound steeply through the lap, and make each lap dearer
@@ -15182,6 +15196,54 @@
   // past the 3,221,000 of the original climb.
   const HOARD_PRESTIGE_LB = [180000, 235000, 305000, 395000, 515000, 670000, 870000, 1130000, 1470000, 1910000, 2480000];
   const HOARD_CYCLE_GROWTH = 1.35;
+
+  // How hot the rank burns. A twelve-tier ladder where Coin looks like Treasury
+  // wastes the ladder, so the crest heats as it climbs: dull copper, through
+  // brass and true gold, to white-hot at HOARD. Metal being worked, which is
+  // what the app is about. Spelled out per rank so it's tunable by eye.
+  //
+  // `g` drives glow radius/opacity. It stays at 0 for the first two ranks on
+  // purpose — a beginner's crest should look clean, not faintly broken — and
+  // only the very top gets motion, because a header that pulses at Coin would
+  // be unbearable on every screen.
+  const HOARD_LOOK = [
+    { c: "#b87333", g: 0    },  // Coin      raw copper
+    { c: "#c98a2b", g: 0    },  // Pouch
+    { c: "#d9a520", g: 0.2  },  // Ingot     brass catching light
+    { c: "#e8bb1f", g: 0.35 },  // Satchel
+    { c: "#f5cf1c", g: 0.5  },  // Crate
+    { c: "#fde047", g: 0.65 },  // Chest     true gold
+    { c: "#ffe86b", g: 0.8  },  // Barrel
+    { c: "#fff29a", g: 0.95 },  // Cartload
+    { c: "#fff9c4", g: 1.1  },  // Wagon     white-gold
+    { c: "#eaf6ff", g: 1.25 },  // Vault     platinum
+    { c: "#d2f4ff", g: 1.4  },  // Treasury
+    { c: "#ffffff", g: 1.6  },  // HOARD     white-hot
+  ];
+  // { color, glow, hot } for a level. Past HOARD each prestige lap wears its
+  // metal's own colour and burns harder than the last, so the ladder keeps
+  // visibly escalating long after the names start repeating.
+  function hoardLook(level) {
+    if (level < HOARD_RANKS.length) {
+      const l = HOARD_LOOK[Math.max(level, 1) - 1] || HOARD_LOOK[0];
+      return { color: l.c, glow: l.g, hot: false };
+    }
+    const past = level - HOARD_RANKS.length;
+    const lap = Math.floor(past / HOARD_CYCLE);        // 0-based lap
+    const step = past % HOARD_CYCLE;                    // 0 = the bare numeral
+    const top = HOARD_LOOK[HOARD_LOOK.length - 1];
+    const m = step === 0 ? null : HOARD_METALS[step - 1];
+    // A bare numeral is the peak of the lap it just closed, so it has to burn
+    // brighter than that lap's Dragonsteel rather than dipping under it. The
+    // next lap then restarts dimmer and climbs again — the same sawtooth the
+    // XP costs use, so the look tracks the effort.
+    const peak = step === 0 && lap > 0;
+    return {
+      color: m ? m.c : top.c,
+      glow: Math.min(3, peak ? 2.35 + (lap - 1) * 0.4 : 1.6 + step * 0.06 + lap * 0.4),
+      hot: true,
+    };
+  }
 
   function hoardLbForLevel(level) {
     const l = Math.max(level, 1);
@@ -15576,22 +15638,6 @@
       section.appendChild(empty);
     }
     host.appendChild(section);
-  }
-
-  function hoardBarHtml(g) {
-    if (!g || !g.lb) return "";
-    const pctInto = Math.max(0, Math.min(100, (g.into / g.need) * 100));
-    const next = hoardRankForLevel(g.level + 1);
-    const cls = [g.rank.isMax ? "is-max" : "", g.rank.isHoard ? "is-hoard" : "", g.promoted ? "is-promoted" : ""]
-      .filter(Boolean).join(" ");
-    const tip = `${Math.round(g.into).toLocaleString()} of ${g.need.toLocaleString()} lb toward ${next.name}`;
-    return `
-      <div class="ov-hoard ${cls}" title="${escapeHtml(tip)}">
-        <span class="ov-hoard-badge">${g.rank.icon}</span>
-        <span class="ov-hoard-name">${escapeHtml(g.rank.name)}</span>
-        <span class="ov-hoard-track"><span class="ov-hoard-fill" style="width:${pctInto.toFixed(1)}%"></span></span>
-        <span class="ov-hoard-lb">${escapeHtml(hoardLbLabel(g.lb))}</span>
-      </div>`;
   }
 
   // ---- Rendering ----
