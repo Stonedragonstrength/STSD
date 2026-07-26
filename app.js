@@ -1894,23 +1894,32 @@
     host.className = mount === document.body ? "day-celebrate" : "day-celebrate in-modal";
     host.setAttribute("aria-hidden", "true"); // decorative; the toast carries the message
     const COLORS = ["#22d3ee", "#10b981", "#f59e0b", "#ef4444", "#a78bfa", "#ec4899", "#facc15"];
+    // Reduced motion gets a still scatter that simply holds, not zero confetti.
+    // It used to get none at all, which is why phones with iOS Reduce Motion on
+    // saw nothing: no pieces were built, and the global reduce-motion rule
+    // crushes every animation to 0.01ms, so the badge (which animates out to
+    // opacity 0) blinked away in the same frame it appeared.
     let html = badge
-      ? `<div class="dc-badge"><span class="dc-icon">🎉</span><span class="dc-text">Day complete!</span></div>`
+      ? `<div class="dc-badge${reduce ? " still" : ""}"><span class="dc-icon">🎉</span><span class="dc-text">Day complete!</span></div>`
       : "";
-    // Reduced-motion still gets the badge, just no falling pieces.
-    for (let i = 0; i < (reduce ? 0 : 90); i++) {
+    for (let i = 0; i < (reduce ? 46 : 90); i++) {
       const w = 6 + Math.random() * 6;
-      html += `<span class="dc-bit" style="left:${(Math.random() * 100).toFixed(2)}%;`
+      const common = `left:${(Math.random() * 100).toFixed(2)}%;`
         + `--dc-c:${COLORS[i % COLORS.length]};`
-        + `--dc-rot:${Math.round(Math.random() * 360)}deg;`
-        + `--dc-drift:${((Math.random() * 2 - 1) * 16).toFixed(1)}vw;`
-        + `width:${w.toFixed(1)}px;height:${(w * 1.6).toFixed(1)}px;`
-        + `animation-delay:${(Math.random() * 0.35).toFixed(2)}s;`
-        + `animation-duration:${(2.2 + Math.random() * 1.4).toFixed(2)}s"></span>`;
+        + `width:${w.toFixed(1)}px;height:${(w * 1.6).toFixed(1)}px;`;
+      html += reduce
+        ? `<span class="dc-bit still" style="${common}`
+          + `top:${(4 + Math.random() * 84).toFixed(1)}%;`
+          + `transform:rotate(${Math.round(Math.random() * 360)}deg)"></span>`
+        : `<span class="dc-bit" style="${common}`
+          + `--dc-rot:${Math.round(Math.random() * 360)}deg;`
+          + `--dc-drift:${((Math.random() * 2 - 1) * 16).toFixed(1)}vw;`
+          + `animation-delay:${(Math.random() * 0.35).toFixed(2)}s;`
+          + `animation-duration:${(2.2 + Math.random() * 1.4).toFixed(2)}s"></span>`;
     }
     host.innerHTML = html;
     mount.appendChild(host);
-    setTimeout(() => host.remove(), reduce ? 1800 : 4200);
+    setTimeout(() => host.remove(), reduce ? 2400 : 4200);
   }
 
   function toast(msg, ms = 1800) {
@@ -11447,7 +11456,6 @@
     const draw = () => {
       const body = $("#modal-body"); if (!body) return;
       body.innerHTML = `
-        ${celebrate ? `<div class="mood-sheet-win"><span class="msw-icon">🎉</span><span class="msw-txt">Day complete!</span></div>` : ""}
         <p class="mood-sheet-sub">Tap up to ${MAX_MOODS}.</p>
         <div class="mood-grid">
           ${WORKOUT_MOODS.map((m) => `<button type="button" class="mood-opt${sel.includes(m.id) ? " on" : ""}" data-mood="${m.id}">
@@ -11472,7 +11480,15 @@
       ],
     });
     draw();
-    if (celebrate) celebrateDayComplete({ mount: $("#modal"), badge: false });
+    if (celebrate) {
+      // Above the sheet's own header, not inside the body: finishing the day is
+      // the news, "how was your workout?" is the follow-up question. Lives
+      // outside #modal-body so re-picking a mood (which redraws the body)
+      // doesn't wipe it; closeModal/openModal clear it.
+      $("#modal .modal-card")?.insertAdjacentHTML("afterbegin",
+        `<div class="mood-sheet-win"><span class="msw-icon">🎉</span><span class="msw-txt">Day complete!</span></div>`);
+      celebrateDayComplete({ mount: $("#modal"), badge: false });
+    }
     return true;
   }
 
@@ -18308,6 +18324,7 @@
     // itself with the lookup and portion modals without closing first, so
     // hooking both open and close is what guarantees the light goes off.
     stopScan();
+    clearDayCompleteDressing();
     $("#modal-title").textContent = title;
     $("#modal-body").innerHTML = body;
     const foot = $("#modal-foot");
@@ -18321,9 +18338,14 @@
     }
     show($("#modal"));
   }
-  // Also drops a day-complete burst still raining inside the modal, so it can't
-  // outlive its sheet and reappear over whatever opens next.
-  function closeModal() { stopScan(); $("#modal")?.querySelector(".day-celebrate")?.remove(); hide($("#modal")); }
+  // Strips the day-complete banner and any burst still raining inside the modal,
+  // so neither can outlive its sheet and reappear over whatever opens next.
+  function clearDayCompleteDressing() {
+    const m = $("#modal"); if (!m) return;
+    m.querySelector(".day-celebrate")?.remove();
+    m.querySelector(".mood-sheet-win")?.remove();
+  }
+  function closeModal() { stopScan(); clearDayCompleteDressing(); hide($("#modal")); }
 
   // -------- Bug reports --------
   // bugreport.js silently records diagnostics (errors, console, taps); this is
