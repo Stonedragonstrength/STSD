@@ -1867,6 +1867,68 @@
     setTimeout(() => document.body.classList.remove("login-success"), 1100);
   }
 
+  function reducedMotion() {
+    return !!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  }
+  // Overshoot-and-settle easing — the shape that makes something read as a pop
+  // rather than an appearance.
+  function easeOutBack(p) {
+    const c1 = 1.70158, c3 = c1 + 1;
+    return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2);
+  }
+  // Scale-pop an element from rAF. Only needed under reduced motion: the global
+  // reduce-motion rule in styles.css flattens every animation AND transition to
+  // 0.01ms, so CSS keyframes there land as a single flat flash. Inline styles
+  // driven per frame are neither, so they survive it.
+  // Never hides the element up front, and clocks from the first frame rather
+  // than from now: rAF doesn't tick while the tab is hidden, and an element
+  // parked at opacity 0 waiting for a frame that never comes is the exact
+  // failure this whole celebration keeps falling into. Worst case it simply
+  // appears at rest.
+  function popInReduced(el, { ms = 420, prefix = "", from = 0.7 } = {}) {
+    if (!el) return;
+    // Drop any CSS animation first. A `both` fill-mode holds the element at its
+    // 0% keyframe (opacity 0) until the animation actually starts, and it can't
+    // start without a frame — so an element left waiting for one is invisible,
+    // not merely un-animated.
+    el.style.animation = "none";
+    let t0 = null;
+    const step = (now) => {
+      if (!el.isConnected) return;
+      if (t0 === null) t0 = now;
+      const p = Math.min(1, (now - t0) / ms);
+      el.style.opacity = Math.min(1, p * 2.4).toFixed(3);
+      el.style.transform = `${prefix}scale(${(from + (1 - from) * easeOutBack(p)).toFixed(3)})`;
+      if (p < 1) requestAnimationFrame(step);
+      else { el.style.opacity = ""; el.style.transform = prefix || ""; }
+    };
+    requestAnimationFrame(step);
+  }
+  // The reduced-motion confetti. Nothing travels across the screen, but each
+  // piece pops into place and the whole thing cascades from the top down, so it
+  // still reads as a burst instead of a flash. Ends on a slow fade-out.
+  function runStillBurst(host, lifeMs) {
+    const bits = [...host.querySelectorAll(".dc-bit.still")];
+    const delays = bits.map((el) => (parseFloat(el.style.top) || 0) * 5 + Math.random() * 220);
+    const rots = bits.map((el) => parseFloat(el.dataset.rot) || 0);
+    const IN = 340, OUT = 1000, holdEnd = lifeMs - OUT;
+    popInReduced(host.querySelector(".dc-badge.still"), { ms: 460, prefix: "translate(-50%, -50%) ", from: 0.55 });
+    let t0 = null;
+    const step = (now) => {
+      if (!host.isConnected) return;
+      if (t0 === null) t0 = now;
+      const t = now - t0;
+      const fade = t > holdEnd ? Math.max(0, 1 - (t - holdEnd) / OUT) : 1;
+      bits.forEach((el, i) => {
+        const p = Math.max(0, Math.min(1, (t - delays[i]) / IN));
+        el.style.opacity = (p * fade).toFixed(3);
+        el.style.transform = `rotate(${rots[i]}deg) scale(${(0.35 + 0.65 * easeOutBack(p)).toFixed(3)})`;
+      });
+      if (t < lifeMs) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+
   function celebrateElement(el, className = "pr-celebrate", durationMs = 900) {
     if (!el) return;
     el.classList.remove(className);
@@ -1889,37 +1951,41 @@
   // floating pill, because the sheet's own header carries the message.
   function celebrateDayComplete({ mount = document.body, badge = true } = {}) {
     if (document.querySelector(".day-celebrate")) return; // never stack bursts
-    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    const reduce = reducedMotion();
     const host = document.createElement("div");
     host.className = mount === document.body ? "day-celebrate" : "day-celebrate in-modal";
     host.setAttribute("aria-hidden", "true"); // decorative; the toast carries the message
     const COLORS = ["#22d3ee", "#10b981", "#f59e0b", "#ef4444", "#a78bfa", "#ec4899", "#facc15"];
-    // Reduced motion gets a still scatter that simply holds, not zero confetti.
-    // It used to get none at all, which is why phones with iOS Reduce Motion on
-    // saw nothing: no pieces were built, and the global reduce-motion rule
+    // Reduced motion gets its own confetti rather than none. It used to get
+    // nothing at all: no pieces were built, and the global reduce-motion rule
     // crushes every animation to 0.01ms, so the badge (which animates out to
-    // opacity 0) blinked away in the same frame it appeared.
+    // opacity 0) blinked away in the same frame it appeared. These pieces are
+    // written at their resting state and then popped in by runStillBurst.
     let html = badge
-      ? `<div class="dc-badge${reduce ? " still" : ""}"><span class="dc-icon">🎉</span><span class="dc-text">Day complete!</span></div>`
+      ? `<div class="dc-badge${reduce ? " still" : ""}">`
+        + `<span class="dc-icon">🎉</span><span class="dc-text">Day complete!</span></div>`
       : "";
-    for (let i = 0; i < (reduce ? 46 : 90); i++) {
+    for (let i = 0; i < (reduce ? 70 : 90); i++) {
       const w = 6 + Math.random() * 6;
+      const rot = Math.round(Math.random() * 360);
       const common = `left:${(Math.random() * 100).toFixed(2)}%;`
         + `--dc-c:${COLORS[i % COLORS.length]};`
         + `width:${w.toFixed(1)}px;height:${(w * 1.6).toFixed(1)}px;`;
       html += reduce
-        ? `<span class="dc-bit still" style="${common}`
+        ? `<span class="dc-bit still" data-rot="${rot}" style="${common}`
           + `top:${(4 + Math.random() * 84).toFixed(1)}%;`
-          + `transform:rotate(${Math.round(Math.random() * 360)}deg)"></span>`
+          + `transform:rotate(${rot}deg)"></span>`
         : `<span class="dc-bit" style="${common}`
-          + `--dc-rot:${Math.round(Math.random() * 360)}deg;`
+          + `--dc-rot:${rot}deg;`
           + `--dc-drift:${((Math.random() * 2 - 1) * 16).toFixed(1)}vw;`
           + `animation-delay:${(Math.random() * 0.35).toFixed(2)}s;`
           + `animation-duration:${(2.2 + Math.random() * 1.4).toFixed(2)}s"></span>`;
     }
+    const LIFE = 4200;
     host.innerHTML = html;
     mount.appendChild(host);
-    setTimeout(() => host.remove(), reduce ? 2400 : 4200);
+    if (reduce) runStillBurst(host, LIFE);
+    setTimeout(() => host.remove(), LIFE);
   }
 
   function toast(msg, ms = 1800) {
@@ -11487,6 +11553,8 @@
       // doesn't wipe it; closeModal/openModal clear it.
       $("#modal .modal-card")?.insertAdjacentHTML("afterbegin",
         `<div class="mood-sheet-win"><span class="msw-icon">🎉</span><span class="msw-txt">Day complete!</span></div>`);
+      // Its CSS pop is flattened under reduced motion, so drive that one too.
+      if (reducedMotion()) popInReduced($("#modal .mood-sheet-win"), { ms: 400, from: 0.86 });
       celebrateDayComplete({ mount: $("#modal"), badge: false });
     }
     return true;
