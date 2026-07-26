@@ -1879,14 +1879,24 @@
   // a badge plus a confetti burst that clears itself. Deliberately silent —
   // no audio, since this fires in a gym. Overlay is pointer-events:none so it
   // can never block a tap, and it removes itself rather than needing dismissal.
-  function celebrateDayComplete() {
+  //
+  // `mount` is what makes this land on a phone. A body-level fixed overlay is
+  // laid out against the layout viewport, and a day normally completes with the
+  // on-screen keyboard still up (auto-lock fires seconds after the last number
+  // goes in), so the whole burst rendered off-screen and mobile athletes never
+  // saw it. Mounting it inside the "How was your workout?" modal instead puts
+  // it exactly where they're already looking; `badge:false` then drops the
+  // floating pill, because the sheet's own header carries the message.
+  function celebrateDayComplete({ mount = document.body, badge = true } = {}) {
     if (document.querySelector(".day-celebrate")) return; // never stack bursts
     const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
     const host = document.createElement("div");
-    host.className = "day-celebrate";
+    host.className = mount === document.body ? "day-celebrate" : "day-celebrate in-modal";
     host.setAttribute("aria-hidden", "true"); // decorative; the toast carries the message
     const COLORS = ["#22d3ee", "#10b981", "#f59e0b", "#ef4444", "#a78bfa", "#ec4899", "#facc15"];
-    let html = `<div class="dc-badge"><span class="dc-icon">🎉</span><span class="dc-text">Day complete!</span></div>`;
+    let html = badge
+      ? `<div class="dc-badge"><span class="dc-icon">🎉</span><span class="dc-text">Day complete!</span></div>`
+      : "";
     // Reduced-motion still gets the badge, just no falling pieces.
     for (let i = 0; i < (reduce ? 0 : 90); i++) {
       const w = 6 + Math.random() * 6;
@@ -1899,7 +1909,7 @@
         + `animation-duration:${(2.2 + Math.random() * 1.4).toFixed(2)}s"></span>`;
     }
     host.innerHTML = html;
-    document.body.appendChild(host);
+    mount.appendChild(host);
     setTimeout(() => host.remove(), reduce ? 1800 : 4200);
   }
 
@@ -11426,13 +11436,18 @@
     saveClient();
   }
   // The "How was your workout?" sheet. Athlete-only; up to 2 picks.
-  function openWorkoutMoodSheet(day) {
-    if (!day || state.mode !== "client") return;
-    const p = state.clientData.progress; if (!p) return;
+  // `celebrate` is the auto-open after a day finishes: the sheet doubles as the
+  // day-complete celebration, so the win banner and the confetti arrive with
+  // the picker instead of firing separately somewhere the athlete isn't looking.
+  // Returns false when the sheet can't open, so the caller can fall back.
+  function openWorkoutMoodSheet(day, { celebrate = false } = {}) {
+    if (!day || state.mode !== "client") return false;
+    const p = state.clientData.progress; if (!p) return false;
     let sel = dayMoods(p, day.id).slice();
     const draw = () => {
       const body = $("#modal-body"); if (!body) return;
       body.innerHTML = `
+        ${celebrate ? `<div class="mood-sheet-win"><span class="msw-icon">🎉</span><span class="msw-txt">Day complete!</span></div>` : ""}
         <p class="mood-sheet-sub">Tap up to ${MAX_MOODS}.</p>
         <div class="mood-grid">
           ${WORKOUT_MOODS.map((m) => `<button type="button" class="mood-opt${sel.includes(m.id) ? " on" : ""}" data-mood="${m.id}">
@@ -11457,6 +11472,8 @@
       ],
     });
     draw();
+    if (celebrate) celebrateDayComplete({ mount: $("#modal"), badge: false });
+    return true;
   }
 
   // Auto-marks a day complete on the calendar once every exercise in it is
@@ -11482,11 +11499,18 @@
       const key = `${day.id}:${todayISO()}`;
       if (!_celebratedDays.has(key)) {
         _celebratedDays.add(key);
-        celebrateDayComplete();
-        // After the confetti, ask how it felt (once) — unless they already rated.
-        if (!dayMoods(state.clientData.progress, day.id).length) {
-          setTimeout(() => openWorkoutMoodSheet(day), 750);
-        }
+        // Drop the keyboard first. The last set is usually still focused when
+        // auto-lock fires, and on a phone a fixed overlay measured against the
+        // layout viewport lands off-screen while the keyboard is up.
+        document.activeElement?.blur?.();
+        const rated = dayMoods(state.clientData.progress, day.id).length > 0;
+        // Long enough for the keyboard to finish sliding away, short enough to
+        // still read as a reaction to locking the last exercise.
+        setTimeout(() => {
+          // The picker carries the celebration. If it can't open (already
+          // rated, or a coach previewing), burst on its own instead.
+          if (rated || !openWorkoutMoodSheet(day, { celebrate: true })) celebrateDayComplete();
+        }, 300);
       }
     }
   }
@@ -18297,7 +18321,9 @@
     }
     show($("#modal"));
   }
-  function closeModal() { stopScan(); hide($("#modal")); }
+  // Also drops a day-complete burst still raining inside the modal, so it can't
+  // outlive its sheet and reappear over whatever opens next.
+  function closeModal() { stopScan(); $("#modal")?.querySelector(".day-celebrate")?.remove(); hide($("#modal")); }
 
   // -------- Bug reports --------
   // bugreport.js silently records diagnostics (errors, console, taps); this is
