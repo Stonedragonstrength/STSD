@@ -9175,3 +9175,58 @@ body.live-log-mode #screen-client .header-right { display: none; }
 .scan-status { font-size: 0.85rem; color: var(--text-soft); margin: 0.7em 0 0; text-align: center; }
 .scan-foot { display: flex; justify-content: center; margin-top: 0.7em; }
 .scan-credit { font-size: 0.68rem; color: var(--muted); margin: 0.8em 0 0; text-align: center; }
+
+/* ---- Athlete-built sessions (their own one-off days) ---- */
+/* Same family as the coach's 🐉 one-offs, but keyed amber-red so an athlete can
+   tell at a glance which sessions are theirs and which came from the coach. */
+.ownday-section { margin-top: 1.5rem; }
+.ownday-head {
+  display: flex; align-items: center; gap: 0.6em; flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+.ownday-head-title {
+  font-size: 0.82rem; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-soft);
+}
+.ownday-add { margin-left: auto; flex-shrink: 0; }
+.ownday-empty { font-size: 0.85rem; margin: 0; max-width: 46em; }
+.ownday-workout-card { border-color: rgba(248, 113, 113, 0.32); }
+.ownday-workout-card:hover { border-color: rgba(248, 113, 113, 0.6); }
+.ownday-workout-card .workout-card-icon { color: #fb7185; }
+
+/* New-session sheet */
+.ownday-sheet-sub { font-size: 0.88rem; color: var(--text-soft); margin: 0 0 1em; }
+.ownday-sheet-label {
+  display: block; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--muted); margin-top: 0.9em;
+}
+/* `input.` prefix so this beats the base `input[type="text"]` rule (0,1,1). */
+input.ownday-sheet-input { margin-top: 0.35em; }
+
+/* The day title doubles as the rename control on athlete-built sessions. */
+.dh-name-editable { cursor: pointer; }
+.dh-name-pencil {
+  font-size: 0.6em; margin-left: 0.45em; opacity: 0.45;
+  vertical-align: middle; transition: opacity 0.15s;
+}
+.dh-name-editable:hover .dh-name-pencil { opacity: 0.9; }
+
+/* Delete strip under an athlete-built day's header */
+.ownday-meta { display: flex; justify-content: flex-end; margin-bottom: 0.9rem; }
+.ownday-meta-del {
+  flex-shrink: 0; background: none; border: 1px solid var(--border);
+  border-radius: 999px; padding: 0.45em 0.9em;
+  font-family: inherit; font-size: 0.78rem; font-weight: 600;
+  color: var(--danger); cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.ownday-meta-del:hover { border-color: var(--danger); background: rgba(248, 113, 113, 0.08); }
+
+/* Coach's read-only view of what the athlete built for themselves */
+.oneoff-own-head { margin: 1.5rem 0 0.7rem; }
+.oneoff-own-head h4 { margin: 0 0 0.25em; font-size: 0.95rem; }
+.oneoff-card-own { border-color: rgba(248, 113, 113, 0.3); }
+.oneoff-card-own[open] { border-color: rgba(248, 113, 113, 0.5); }
+.oneoff-card-own .oneoff-summary:hover { background: rgba(248, 113, 113, 0.06); }
+.oneoff-card-own .oneoff-body { padding-top: 0.7rem; }
+.oneoff-own-unlogged { font-size: 0.8rem; color: var(--muted); }

@@ -251,6 +251,10 @@
   // Athletes can add their own exercises to a day on the fly (stored in progress
   // so they survive coach re-syncs and reach the coach), capped to prevent abuse.
   const MAX_ADDED_PER_DAY = 8;
+  // Sessions the athlete builds themselves (progress.athleteDays). Capped so a
+  // runaway list can't bloat the row they sync on every save.
+  const MAX_OWN_EXERCISES = 12;
+  const MAX_OWN_SESSIONS = 60;
   let _focusQuickAddDayId = null; // day id whose type-to-add input should refocus after a rerender
   const _coachMobOpen = new Set(); // day ids whose coach-side mobility section is expanded
   let _prNewLifts = [];
@@ -5960,7 +5964,9 @@
   // Athlete "add an exercise on the fly" — same library drawer, but picks land
   // in the athlete's progress (addedExercises) instead of the coach's program.
   function openAthleteExLibrary(day) {
-    _exLibraryTarget = { onAdd: (name) => addAthleteExercise(day, name) };
+    // Athlete-built sessions take the pick into the day itself; program days
+    // park it in progress.addedExercises so the coach's weeks stay untouched.
+    _exLibraryTarget = { onAdd: (name) => (isOwnDay(day) ? addOwnExercise(day, name) : addAthleteExercise(day, name)) };
     $("#ex-library-overlay").classList.add("athlete-mode"); // hides coach-only "custom exercise"
     show($("#ex-library-overlay"));
     renderExLibrary($("#ex-library-search").value || "");
@@ -6707,7 +6713,68 @@
         : "No one-off sessions yet.";
       section.appendChild(emptyHint);
     }
+    renderAthleteOwnSessionsForCoach(c, section);
     container.appendChild(section);
+  }
+
+  // Read-only mirror of the sessions the athlete built for themselves. They own
+  // these (they live in the athlete's progress), so the coach can see what was
+  // trained and what got logged, but can't edit them from here.
+  function renderAthleteOwnSessionsForCoach(c, section) {
+    const ip = c.importedProgress || {};
+    const own = athleteOwnDays(ip);
+    if (!own.length) return;
+    const logs = ip.exerciseLogs || {};
+
+    const head = document.createElement("div");
+    head.className = "oneoff-own-head";
+    head.innerHTML = `<h4>🔥 Their own sessions</h4>
+      <p class="muted oneoff-hint">Workouts ${escapeHtml(c.name || "they")} built and logged outside your program. Read-only, but the numbers feed PRs and charts.</p>`;
+    section.appendChild(head);
+
+    [...own]
+      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
+      .forEach((day) => {
+        const card = document.createElement("details");
+        card.className = "oneoff-card oneoff-card-own";
+        card.open = _oneOffOpen.has(day.id);
+        card.addEventListener("toggle", () => {
+          if (card.open) _oneOffOpen.add(day.id); else _oneOffOpen.delete(day.id);
+        });
+        const nEx = (day.exercises || []).length;
+        const dateLbl = day.date
+          ? new Date(day.date + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
+          : "No date";
+        const loggedEx = (day.exercises || []).filter((ex) => (logs[ex.id] || []).some((l) => l.locked !== false)).length;
+        const summary = document.createElement("summary");
+        summary.className = "oneoff-summary";
+        summary.innerHTML = `
+          <span class="oneoff-date">${escapeHtml(dateLbl)}</span>
+          <span class="oneoff-name">${escapeHtml(day.name || "Their session")}</span>
+          <span class="oneoff-meta">${nEx} exercise${nEx === 1 ? "" : "s"}${nEx && loggedEx >= nEx ? ` · <span class="oneoff-logged">logged ✓</span>` : loggedEx ? ` · ${loggedEx} logged` : ""}</span>`;
+        card.appendChild(summary);
+
+        const body = document.createElement("div");
+        body.className = "oneoff-body";
+        if (!nEx) {
+          body.innerHTML = `<p class="muted oneoff-empty">They haven't added any lifts to this one yet.</p>`;
+        } else {
+          body.innerHTML = (day.exercises || []).map((ex) => {
+            const entry = (logs[ex.id] || []).filter((l) => l.locked !== false)
+              .sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+            const sets = (entry?.sets || []).filter((s) => !s.skipped && (s.weight || s.reps));
+            const pills = sets.length
+              ? sets.map((s, i) => `<span class="breakdown-set-pill">S${i + 1} ${s.weight ? prWeightLabel(ex.name, s.weight) : "—"} × ${escapeHtml(String(s.reps || "—"))}</span>`).join("")
+              : `<span class="oneoff-own-unlogged">Not logged</span>`;
+            return `<div class="breakdown-ex"><div class="breakdown-ex-name">${escapeHtml(ex.name)}</div><div class="breakdown-sets">${pills}</div></div>`;
+          }).join("");
+        }
+        const note = ip.dayNotes?.[day.id];
+        if (note) body.insertAdjacentHTML("beforeend",
+          `<div class="breakdown-note"><span class="breakdown-note-label">Session note</span><p>${escapeHtml(note)}</p></div>`);
+        card.appendChild(body);
+        section.appendChild(card);
+      });
   }
 
   function renderCoachWeekTabs(weeks, container, showAdd = true) {
@@ -6843,10 +6910,10 @@
     // get added, duplicated or dragged around.
     const ooClient = _programEditorId ? null : currentClient();
     if (ooClient) {
-      const nSessions = (ooClient.oneOffDays || []).length;
+      const nSessions = sessionDays(ooClient, ooClient.importedProgress).length;
       const ooTab = document.createElement("button");
       ooTab.className = "coach-week-tab coach-week-tab-oneoff" + (_coachOneOffTab ? " active" : "");
-      ooTab.title = "Sessions you run together outside the program";
+      ooTab.title = "Sessions outside the program: yours together, plus the ones they built themselves";
       ooTab.innerHTML = `<span class="coach-week-tab-lbl">🐉 Coaching</span>` +
         (nSessions ? `<span class="coach-week-tab-count">${nSessions}</span>` : "");
       ooTab.addEventListener("click", () => { _coachOneOffTab = true; renderWeeks(); });
@@ -9471,7 +9538,7 @@
     // Logged-workout bests feed the cards: current program + archives + one-off
     // coach sessions (the pseudo-week wraps them for the by-week walker —
     // heavy session lifts are exactly what PR cards should pick up).
-    const coachWeeks = [...(c.weeks || []), ...(c.archivedPrograms || []).flatMap((a) => a.weeks || []), { days: c.oneOffDays || [] }];
+    const coachWeeks = [...(c.weeks || []), ...(c.archivedPrograms || []).flatMap((a) => a.weeks || []), { days: sessionDays(c, c.importedProgress) }];
     const coachLogs = c.importedProgress?.exerciseLogs || {};
 
     // Coach-managed cards (editable)
@@ -9733,7 +9800,7 @@
     const athleteLogs = state.clientData.progress?.exerciseLogs || {};
     let autoFilled = false;
     coachPRs.forEach(entry => {
-      const best = bestLoggedByReps(entry.name, [...(prog.client.weeks || []), { days: prog.client.oneOffDays || [] }], athleteLogs);
+      const best = bestLoggedByReps(entry.name, [...(prog.client.weeks || []), { days: sessionDays(prog.client, state.clientData.progress) }], athleteLogs);
       if (autoFillPRFromLogs(entry, best)) autoFilled = true;
       const card = document.createElement("div");
       card.className = "pr-edit-card pr-shared-card";
@@ -10824,10 +10891,12 @@
     const out = [];
     (state.trainerData.clients || []).forEach((c) => {
       const ip = c.importedProgress || {};
-      // dayId → day name (current program + one-offs); archived days fall back.
+      // dayId → day name (current program + sessions outside it); archived days
+      // fall back. The athlete's own sessions get flagged so the log reads
+      // "logged Chest and arms (own session)" rather than looking programmed.
       const dayNames = {};
       (c.weeks || []).forEach((w) => (w.days || []).forEach((d) => { dayNames[d.id] = d.name; }));
-      (c.oneOffDays || []).forEach((d) => { dayNames[d.id] = d.name; });
+      sessionDays(c, ip).forEach((d) => { dayNames[d.id] = isOwnDay(d) ? `${d.name} (own session)` : d.name; });
 
       // Logged workouts (date only — anchor the sort at noon that day).
       Object.entries(ip.dayCompletions || {}).forEach(([dayId, dates]) => {
@@ -11315,7 +11384,7 @@
       err.classList.remove("hidden");
     }
   }
-  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {}, totalWorkoutMs: 0, workoutMoods: {}, addedExercises: {}, formChecks: {}, nutritionTargets: {}, foodLog: {}, customFoods: [], savedMeals: [], nutritionGame: {} }; }
+  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {}, totalWorkoutMs: 0, workoutMoods: {}, addedExercises: {}, athleteDays: [], formChecks: {}, nutritionTargets: {}, foodLog: {}, customFoods: [], savedMeals: [], nutritionGame: {} }; }
   function ensureProgressShape(p) {
     if (!p.exerciseLogs) p.exerciseLogs = {};
     if (!p.bodyweightLog) p.bodyweightLog = [];
@@ -11329,6 +11398,7 @@
     if (!p.seenMessages) p.seenMessages = {};
     if (typeof p.totalWorkoutMs !== "number" || !isFinite(p.totalWorkoutMs)) p.totalWorkoutMs = 0;
     if (!p.workoutMoods || typeof p.workoutMoods !== "object") p.workoutMoods = {};
+    if (!Array.isArray(p.athleteDays)) p.athleteDays = [];
     if (!p.formChecks || typeof p.formChecks !== "object") p.formChecks = {};
     if (!p.nutritionTargets || typeof p.nutritionTargets !== "object") p.nutritionTargets = {};
     if (!p.foodLog || typeof p.foodLog !== "object") p.foodLog = {};
@@ -11500,7 +11570,7 @@
     const counts = {};
     const dayIds = new Set();
     (client?.weeks || []).forEach((w) => (w.days || []).forEach((d) => dayIds.add(d.id)));
-    (client?.oneOffDays || []).forEach((d) => dayIds.add(d.id));
+    sessionDays(client, p).forEach((d) => dayIds.add(d.id));
     Object.entries(p.workoutMoods).forEach(([dayId, rec]) => {
       if (dayIds.size && !dayIds.has(dayId)) return; // scope to current program
       (rec?.moods || []).forEach((id) => { counts[id] = (counts[id] || 0) + 1; });
@@ -11612,8 +11682,8 @@
         if ((dc[day.id] || []).includes(iso)) return { week, day };
       }
     }
-    for (const day of client.oneOffDays || []) {
-      if ((dc[day.id] || []).includes(iso)) return { week: null, day, oneOff: true };
+    for (const day of sessionDays(client, state.clientData.progress)) {
+      if ((dc[day.id] || []).includes(iso)) return { week: null, day, oneOff: true, own: isOwnDay(day) };
     }
     return null;
   }
@@ -12317,11 +12387,14 @@
     (prog.client.sessionBank?.upcomingBookings || []).forEach((b) => {
       if (b && b.date) (upcomingByDate[b.date] = upcomingByDate[b.date] || []).push(b);
     });
-    // Scheduled one-off coach sessions → a 🐉 pill until they're completed.
+    // Sessions outside the program → a pill until they're completed. 🐉 for the
+    // coach's, 🔥 for ones the athlete built themselves.
     const oneOffByDate = {};
-    (prog.client.oneOffDays || []).forEach((d) => {
+    sessionDays(prog.client, state.clientData.progress).forEach((d) => {
       if (d && d.date) (oneOffByDate[d.date] = oneOffByDate[d.date] || []).push(d);
     });
+    const sessionPill = (d) =>
+      `<div class="cal-day-pill cal-oneoff-pill">${isOwnDay(d) ? "🔥" : "🐉"} ${escapeHtml(d.name || (isOwnDay(d) ? "My session" : "Coach session"))}</div>`;
     cells.forEach((d) => {
       const iso = dateISO(d);
       const inMonth = d.getMonth() === month;
@@ -12334,7 +12407,7 @@
       const completed = findCompletedDayForDate(prog.client, iso);
       let pillHtml = "";
       if (completed && completed.oneOff) {
-        pillHtml = `<div class="cal-day-pill cal-oneoff-pill">✓ 🐉 ${escapeHtml(completed.day.name || "Coach session")}</div>`;
+        pillHtml = `<div class="cal-day-pill cal-oneoff-pill">✓ ${completed.own ? "🔥" : "🐉"} ${escapeHtml(completed.day.name || (completed.own ? "My session" : "Coach session"))}</div>`;
         cell.classList.add("done");
         if (isUpcoming) cell.classList.add("has-log");
       } else if (completed) {
@@ -12364,7 +12437,7 @@
       }
       const oneOffs = isUpcoming ? (oneOffByDate[iso] || []).filter((d) => !isDayChecked(d.id)) : [];
       if (oneOffs.length) {
-        pillHtml += oneOffs.map((d) => `<div class="cal-day-pill cal-oneoff-pill">🐉 ${escapeHtml(d.name || "Coach session")}</div>`).join("");
+        pillHtml += oneOffs.map(sessionPill).join("");
         cell.classList.add("has-log");
       }
       // Missed-session marks from the coach (close call = green freebie,
@@ -12503,8 +12576,10 @@
       picker.querySelector(".week-chips").innerHTML = "";
       const empty = `<div class="empty-state"><div class="empty-emoji">📋</div><h3>No weeks yet</h3><p>Your coach hasn't added any weeks to your program yet.</p></div>`;
       picker.querySelector(".workout-grid").innerHTML = empty;
-      // One-off coach sessions can exist without a program — still show them.
+      // Sessions outside the program don't need a program to exist — a coach
+      // one-off or a day the athlete built themselves still shows here.
       renderAthleteOneOffSection();
+      renderAthleteOwnSection();
       if (state.workoutView.weekId === "oneoff" && state.workoutView.mode === "detail" && state.workoutView.dayId) {
         renderWorkoutDetailUI();
         return;
@@ -12667,16 +12742,37 @@
       grid.appendChild(card);
     });
     renderAthleteOneOffSection();
+    renderAthleteOwnSection();
   }
 
-  // -------- One-off coach sessions (athlete side) --------
-  // Dated days the coach set up outside the program. Same logging flow as a
-  // program day; the shim week id "oneoff" routes detail-view lookups.
+  // -------- One-off sessions (athlete side) --------
+  // Two flavours of day outside the program: ones the coach set up
+  // (client.oneOffDays) and ones the athlete threw together themselves
+  // (progress.athleteDays, flagged byAthlete). Athlete-built days live in
+  // progress, never on the client, for the same reason addedExercises does —
+  // a coach save upserts the whole athlete row and would wipe them.
+  // Both share the logging flow and the "oneoff" shim week id.
+  function athleteOwnDays(progress) {
+    return Array.isArray(progress?.athleteDays) ? progress.athleteDays : [];
+  }
+  // The pool every "sessions, not program" walker should look at.
+  function sessionDays(client, progress) {
+    return [...(client?.oneOffDays || []), ...athleteOwnDays(progress)];
+  }
+  const isOwnDay = (day) => !!day?.byAthlete;
+
   function oneOffWeekShim(client, day) {
     const dateLbl = day?.date
       ? new Date(day.date + "T12:00:00").toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })
       : "";
-    return { id: "oneoff", label: "Session with Coach", focus: dateLbl, phaseLabel: "1-off", days: client.oneOffDays || [] };
+    const own = isOwnDay(day);
+    return {
+      id: "oneoff",
+      label: own ? "Your own session" : "Session with Coach",
+      focus: dateLbl,
+      phaseLabel: own ? "Solo" : "1-off",
+      days: sessionDays(client, state.clientData.progress),
+    };
   }
   function renderAthleteOneOffSection() {
     const host = $("#oneoff-athlete-container");
@@ -12728,6 +12824,194 @@
       });
     sec.appendChild(grid);
     host.appendChild(sec);
+  }
+
+  // -------- Athlete-built sessions --------
+  // The athlete's own door to a day outside the program: they trained on their
+  // own, so they build the day and log it. Always rendered (even empty) so the
+  // "＋ New session" button is a permanent way in.
+  function renderAthleteOwnSection() {
+    const host = $("#ownday-athlete-container");
+    if (!host) return;
+    host.innerHTML = "";
+    const p = state.clientData.progress;
+    if (!p) return;
+    const sessions = athleteOwnDays(p);
+
+    const sec = document.createElement("div");
+    sec.className = "ownday-section";
+    const head = document.createElement("div");
+    head.className = "ownday-head";
+    head.innerHTML = `<span class="ownday-head-title">🔥 Your own sessions</span>`;
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "btn btn-ghost btn-sm ownday-add";
+    addBtn.textContent = "＋ New session";
+    addBtn.title = "Build a workout you did on your own";
+    addBtn.addEventListener("click", openNewOwnSessionSheet);
+    head.appendChild(addBtn);
+    sec.appendChild(head);
+
+    if (!sessions.length) {
+      const hint = document.createElement("p");
+      hint.className = "muted ownday-empty";
+      hint.textContent = "Trained outside your program? Build the day here and log it. It counts toward your PRs and your Hoard.";
+      sec.appendChild(hint);
+      host.appendChild(sec);
+      return;
+    }
+
+    const grid = document.createElement("div");
+    grid.className = "workout-grid";
+    [...sessions]
+      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
+      .forEach((day, idx) => {
+        const totalEx = (day.exercises || []).length;
+        const doneEx = (day.exercises || []).filter((ex) => hasAnyLog(ex)).length;
+        const checked = isDayChecked(day.id);
+        const card = document.createElement("button");
+        card.className = "workout-card ownday-workout-card";
+        if (checked || (totalEx > 0 && doneEx >= totalEx)) card.classList.add("is-done");
+        else if (doneEx > 0) card.classList.add("is-partial");
+        card.style.animationDelay = `${idx * 60}ms`;
+        const dateLbl = day.date
+          ? new Date(day.date + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
+          : "";
+        const status = checked
+          ? `<span class="wc-status done">Done ✓</span>`
+          : !totalEx
+            ? `<span class="wc-status todo">Add your lifts</span>`
+            : doneEx > 0
+              ? `<span class="wc-status progress">${doneEx}/${totalEx} logged</span>`
+              : `<span class="wc-status todo">Tap to log</span>`;
+        card.innerHTML = `
+          <div class="workout-card-icon">${dayIconHtml(isSvgIcon(day.icon) ? day.icon : workoutIconFor(day.name))}</div>
+          <div class="workout-card-body">
+            <h4 class="workout-card-title">${escapeHtml(day.name || "My session")}</h4>
+            <div class="workout-card-meta">${dateLbl ? escapeHtml(dateLbl) + " · " : ""}${totalEx} exercise${totalEx === 1 ? "" : "s"} · ${status}</div>
+          </div>
+          <div class="workout-card-chevron">›</div>`;
+        card.addEventListener("click", () => openOwnSession(day));
+        grid.appendChild(card);
+      });
+    sec.appendChild(grid);
+    host.appendChild(sec);
+  }
+
+  function openOwnSession(day) {
+    // An athlete-built day is dated by definition, so the log date follows the
+    // session instead of defaulting to today.
+    state.workoutView = { mode: "detail", weekId: "oneoff", dayId: day.id, date: day.date || todayISO() };
+    Nav.push(backToWorkoutPicker);
+    renderWorkoutDetailUI();
+  }
+
+  function openNewOwnSessionSheet() {
+    const p = state.clientData.progress;
+    if (!p) return;
+    ensureProgressShape(p);
+    if (athleteOwnDays(p).length >= MAX_OWN_SESSIONS) {
+      toast(`You can keep up to ${MAX_OWN_SESSIONS} of your own sessions. Delete an old one first.`);
+      return;
+    }
+    const create = () => {
+      const name = ($("#ownday-name")?.value || "").trim().slice(0, 60) || "My session";
+      const date = $("#ownday-date")?.value || todayISO();
+      const day = {
+        id: uid(), date, name,
+        icon: workoutIconFor(name),
+        byAthlete: true, createdAt: Date.now(),
+        exercises: [],
+      };
+      p.athleteDays.push(day);
+      saveClient();
+      closeModal();
+      openOwnSession(day);
+      toast("Session created. Add your lifts.");
+    };
+    openModal({
+      title: "New session",
+      body: `
+        <p class="ownday-sheet-sub">A workout you did on your own. Your coach can see it, and it feeds your PRs.</p>
+        <label class="ownday-sheet-label" for="ownday-name">What was it?</label>
+        <input type="text" id="ownday-name" class="ownday-sheet-input" maxlength="60" placeholder="Chest and arms" />
+        <label class="ownday-sheet-label" for="ownday-date">When?</label>
+        <input type="date" id="ownday-date" class="ownday-sheet-input" value="${escapeHtml(todayISO())}" />`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Create", className: "btn btn-primary", onClick: create },
+      ],
+    });
+    setTimeout(() => $("#ownday-name")?.focus(), 100);
+  }
+
+  // Adding lifts to an athlete-built day writes straight into the day's own
+  // exercises (not addedExercises) — here the exercises ARE the session, so
+  // they need to be first-class for PRs, charts and "Last:".
+  function addOwnExercise(day, name) {
+    if (!Array.isArray(day.exercises)) day.exercises = [];
+    if (day.exercises.length >= MAX_OWN_EXERCISES) {
+      toast(`A session holds up to ${MAX_OWN_EXERCISES} exercises.`);
+      return;
+    }
+    day.exercises.push(makeExercise({ name }));
+    saveClient();
+    toast(`Added ${name}`);
+    if (day.exercises.length >= MAX_OWN_EXERCISES) closeExLibrary();
+    renderWorkoutDetailUI();
+  }
+  function removeOwnExercise(day, ex) {
+    const p = state.clientData.progress;
+    const hasLog = p.exerciseLogs?.[ex.id]?.length;
+    if (hasLog && !window.confirm(`Remove "${ex.name}" and the sets you logged for it?`)) return;
+    day.exercises = (day.exercises || []).filter((e) => e.id !== ex.id);
+    if (p.exerciseLogs?.[ex.id]) delete p.exerciseLogs[ex.id];
+    saveClient();
+    renderWorkoutDetailUI();
+  }
+  function deleteOwnSession(day) {
+    if (!window.confirm(`Delete "${day.name || "this session"}"? The sets you logged in it go too.`)) return;
+    const p = state.clientData.progress;
+    (day.exercises || []).forEach((ex) => { if (p.exerciseLogs) delete p.exerciseLogs[ex.id]; });
+    if (p.dayCompletions) delete p.dayCompletions[day.id];
+    if (p.dayNotes) delete p.dayNotes[day.id];
+    if (p.workoutMoods) delete p.workoutMoods[day.id];
+    if (p.addedExercises) delete p.addedExercises[day.id];
+    p.athleteDays = athleteOwnDays(p).filter((d) => d.id !== day.id);
+    saveClient();
+    toast("Session deleted");
+    backToWorkoutPicker();
+  }
+  // Renaming rides the day title itself (tap it) rather than a second field
+  // repeating the name — so all this strip carries is the way out.
+  function openRenameOwnSessionSheet(day) {
+    const commit = () => {
+      day.name = ($("#ownday-rename")?.value || "").trim().slice(0, 60) || "My session";
+      day.icon = workoutIconFor(day.name);
+      saveClient();
+      closeModal();
+      renderWorkoutDetailUI();
+    };
+    openModal({
+      title: "Rename session",
+      body: `<input type="text" id="ownday-rename" class="ownday-sheet-input" maxlength="60" placeholder="Chest and arms" value="${escapeHtml(day.name || "")}" />`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Save", className: "btn btn-primary", onClick: commit },
+      ],
+    });
+    setTimeout(() => { const i = $("#ownday-rename"); i?.focus(); i?.select(); }, 100);
+  }
+  function renderOwnDayMeta(day) {
+    const wrap = document.createElement("div");
+    wrap.className = "ownday-meta";
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "ownday-meta-del";
+    del.textContent = "✕ Delete session";
+    del.addEventListener("click", () => deleteOwnSession(day));
+    wrap.appendChild(del);
+    return wrap;
   }
 
   // Pick a fun emoji based on day name keywords. Pure UI flavor.
@@ -13042,10 +13326,13 @@
       </div>
       <div class="detail-head-main">
         <button class="day-check-toggle ${checked ? "checked" : ""}" id="detail-toggle" aria-label="Mark whole day complete">${checked ? "✓" : ""}</button>
-        <h2>${escapeHtml(day.name)}</h2>
+        ${isOwnDay(day)
+          ? `<h2 class="dh-name-editable" id="detail-rename" role="button" tabindex="0" title="Rename this session">${escapeHtml(day.name)}<span class="dh-name-pencil">✏️</span></h2>`
+          : `<h2>${escapeHtml(day.name)}</h2>`}
         <button type="button" class="detail-mood-btn ${moods.length ? "has-mood" : ""}" id="detail-mood-btn" title="How was your workout?" aria-label="How was your workout?">${moods.length ? moodChipsHtml(moods, true) : "🫀"}</button>
       </div>
     `;
+    head.querySelector("#detail-rename")?.addEventListener("click", () => openRenameOwnSessionSheet(day));
     head.querySelector("#detail-mood-btn").addEventListener("click", () => openWorkoutMoodSheet(day));
     head.querySelector("#detail-toggle").addEventListener("click", () => {
       toggleDayComplete(day.id);
@@ -13054,6 +13341,9 @@
     });
     head.querySelector("#detail-log-date").addEventListener("change", (e) => {
       state.workoutView.date = e.target.value || todayISO();
+      // An athlete-built session IS its date — one control, not two, so moving
+      // the log date moves the session with it.
+      if (isOwnDay(day)) { day.date = state.workoutView.date; saveClient(); }
       renderWorkoutDetailUI();
     });
     // Day-level "Clear day" was retired 2026-07-22 — each exercise's Tools menu
@@ -13094,8 +13384,8 @@
     let week = prog?.client?.weeks?.find((w) => w.id === state.workoutView.weekId);
     let day = week?.days?.find((d) => d.id === state.workoutView.dayId);
     if (state.workoutView.weekId === "oneoff") {
-      day = (prog?.client?.oneOffDays || []).find((d) => d.id === state.workoutView.dayId) || null;
-      week = day ? oneOffWeekShim(prog.client, day) : null;
+      day = sessionDays(prog?.client, state.clientData.progress).find((d) => d.id === state.workoutView.dayId) || null;
+      week = day ? oneOffWeekShim(prog?.client, day) : null;
     }
     if (!week || !day) {
       // Day was removed; bail back to picker.
@@ -13109,11 +13399,32 @@
     resetDayProgress(); // cards rendered below re-register their set counts
     const list = $("#workout-detail-list");
     list.innerHTML = "";
-    const addedList = (state.clientData.progress?.addedExercises?.[day.id]) || [];
+    // An athlete-built session owns its own exercises, so it gets rename/delete
+    // controls and a ✕ on each lift instead of the "added by you" sub-section.
+    const own = isOwnDay(day);
+    if (own) list.appendChild(renderOwnDayMeta(day));
+    const addedList = own ? [] : ((state.clientData.progress?.addedExercises?.[day.id]) || []);
     if (!day.exercises.length && !addedList.length) {
-      list.innerHTML = `<div class="empty-state"><div class="empty-emoji">💤</div><p>No exercises for this day.</p></div>`;
+      const es = document.createElement("div");
+      es.className = "empty-state";
+      es.innerHTML = own
+        ? `<div class="empty-emoji">🏗️</div><p>Nothing in this session yet. Add the lifts you did below.</p>`
+        : `<div class="empty-emoji">💤</div><p>No exercises for this day.</p>`;
+      list.appendChild(es);
     } else if (day.exercises.length) {
-      const renderer = (ex) => renderClientExercise(week, day, ex, null);
+      const renderer = own
+        ? (ex) => {
+            const card = renderClientExercise(week, day, ex, null);
+            const rm = document.createElement("button");
+            rm.type = "button";
+            rm.className = "added-ex-remove";
+            rm.innerHTML = "✕ Remove";
+            rm.title = "Remove this exercise from your session";
+            rm.addEventListener("click", (e) => { e.stopPropagation(); removeOwnExercise(day, ex); });
+            card.appendChild(rm);
+            return card;
+          }
+        : (ex) => renderClientExercise(week, day, ex, null);
       const isSpeedEx = (e) => e.kind === "mobility" && isSpeedName(e.name);
       const isStretchEx = (e) => e.kind === "mobility" && !isSpeedName(e.name);
       const speedTop = day.exercises.filter((e) => isSpeedEx(e) && e.mobPlacement !== "bottom");
@@ -13167,11 +13478,15 @@
       list.appendChild(sec);
     }
 
-    // "+ Add an exercise" — opens the library drawer; capped per day.
+    // "+ Add an exercise" — opens the library drawer; capped per day. An
+    // athlete-built session fills its own exercises, so it gets the bigger cap.
     const addWrap = document.createElement("div");
     addWrap.className = "added-ex-addwrap";
-    if (addedList.length >= MAX_ADDED_PER_DAY) {
-      addWrap.innerHTML = `<p class="added-ex-cap">You've added the max of ${MAX_ADDED_PER_DAY} extra exercises for this day.</p>`;
+    const atCap = own ? day.exercises.length >= MAX_OWN_EXERCISES : addedList.length >= MAX_ADDED_PER_DAY;
+    if (atCap) {
+      addWrap.innerHTML = own
+        ? `<p class="added-ex-cap">A session holds up to ${MAX_OWN_EXERCISES} exercises.</p>`
+        : `<p class="added-ex-cap">You've added the max of ${MAX_ADDED_PER_DAY} extra exercises for this day.</p>`;
     } else {
       const addBtn = document.createElement("button");
       addBtn.type = "button";
@@ -13422,11 +13737,11 @@
       const name = String(ex.name || "").trim().toLowerCase();
       const logsMap = state.clientData.progress?.exerciseLogs || {};
       const candidates = [];
-      // One-off coach sessions compare against other one-off sessions only,
+      // Sessions outside the program compare against other such sessions only,
       // and program days against the program — a heavy gym day must never
       // become the "Last:" reference for the athlete's solo running program.
       const dayPool = week.id === "oneoff"
-        ? [{ days: state.clientData.program?.client?.oneOffDays || [] }]
+        ? [{ days: sessionDays(state.clientData.program?.client, state.clientData.progress) }]
         : (state.clientData.program?.client?.weeks || []);
       for (const w of dayPool) {
         for (const d of w.days || []) {
@@ -15427,12 +15742,12 @@
   }
 
   // Every exercise the athlete can have logged against, by log id. Walks the
-  // program, the one-off sessions and anything they added themselves, so a lift
-  // is still priceable while it exists.
+  // program, the sessions outside it (coach one-offs + the athlete's own) and
+  // anything they added themselves, so a lift is still priceable while it exists.
   function hoardExerciseIndex(client, progress) {
     const byId = new Map();
     const add = (ex) => { if (ex && ex.id) byId.set(ex.id, ex); };
-    [...(client?.weeks || []), { days: client?.oneOffDays || [] }]
+    [...(client?.weeks || []), { days: sessionDays(client, progress) }]
       .forEach((w) => (w.days || []).forEach((d) => (d.exercises || []).forEach(add)));
     Object.values(progress?.addedExercises || {}).forEach((list) =>
       (Array.isArray(list) ? list : []).forEach(add));
@@ -17490,9 +17805,9 @@
   function exerciseHistoryByName(client, progress) {
     const logs = progress?.exerciseLogs || {};
     const byName = {};
-    // One-off coach sessions ride along as a pseudo-week: their top sets are
-    // real strength data and belong on the trend line.
-    [...(client?.weeks || []), { days: client?.oneOffDays || [] }].forEach((w) => (w.days || []).forEach((d) => (d.exercises || []).forEach((ex) => {
+    // Sessions outside the program ride along as a pseudo-week: their top sets
+    // are real strength data and belong on the trend line.
+    [...(client?.weeks || []), { days: sessionDays(client, progress) }].forEach((w) => (w.days || []).forEach((d) => (d.exercises || []).forEach((ex) => {
       const name = (ex.name || "").trim();
       // Timed carries are excluded — seconds would read as reps in e1RM math.
       if (!name || ex.kind === "mobility" || exIsTimed(ex)) return;
@@ -18037,10 +18352,10 @@
     if (!cur) return;
 
     // Prior best across every copy of this lift (by key), minus the set judged.
-    // One-off coach sessions count both ways: a heavy session lift PRs against
-    // program history, and program lifts are judged against session bests.
+    // Sessions outside the program count both ways: a heavy session lift PRs
+    // against program history, and program lifts are judged against session bests.
     let prev = null;
-    [...(state.clientData.program?.client?.weeks || []), { days: state.clientData.program?.client?.oneOffDays || [] }].forEach((wk) => (wk.days || []).forEach((d) => (d.exercises || []).forEach((e2) => {
+    [...(state.clientData.program?.client?.weeks || []), { days: sessionDays(state.clientData.program?.client, state.clientData.progress) }].forEach((wk) => (wk.days || []).forEach((d) => (d.exercises || []).forEach((e2) => {
       if (exKey(e2.name) !== key) return;
       (logs[e2.id] || []).forEach((l) => {
         if (e2.id === ex.id && l.date === entry.date) return; // the set being judged
