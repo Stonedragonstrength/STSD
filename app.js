@@ -1806,7 +1806,12 @@
   function syncHeaderHeights() {
     const apply = () => $$(".screen").forEach((s) => {
       const header = s.querySelector(".app-header");
-      if (header && header.offsetHeight) s.style.setProperty("--header-h", header.offsetHeight + "px");
+      if (!header || !header.offsetHeight) return;
+      s.style.setProperty("--header-h", header.offsetHeight + "px");
+      // The live-session coach bar pins under the header, so anything sticking
+      // below it (the athlete tab strip) has to clear both.
+      const bar = s.querySelector(".preview-banner:not(.hidden)");
+      s.style.setProperty("--stack-h", (header.offsetHeight + (bar?.offsetHeight || 0)) + "px");
     });
     apply();
     requestAnimationFrame(apply);
@@ -12315,6 +12320,7 @@
     enterClientPortal();
     updatePreviewBanner(c);
     show($("#preview-banner"));
+    syncHeaderHeights(); // the bar now stacks under the header — re-measure
     // Land on the requested completed day (from a notification) or, by default,
     // the day they're currently on. The date drives which logged sets show, so
     // a past completion surfaces what they actually logged that day.
@@ -12335,6 +12341,7 @@
   }
   function exitPreview() {
     if (!state.previewMode) return;
+    teardownCoachSheet(); // never leave the editor layered over the coach screen
     // Push any pending live-session writes before tearing the preview down.
     if (state.liveLog) window.Cloud?.flush?.();
     const ret = _previewReturn; _previewReturn = null;
@@ -12342,6 +12349,7 @@
     state.liveLog = false;
     document.body.classList.remove("preview-mode", "live-log-mode");
     hide($("#preview-banner"));
+    syncHeaderHeights(); // bar gone — the tab strip pins back under the header
     state.clientData = ret.clientData;
     state.mode = ret.mode;
     applyTheme(currentThemeForRole("coach")); // restore coach theme after preview
@@ -12349,6 +12357,130 @@
     show($("#screen-app"));
     openClient(ret.clientId);
     setTab("program"); // land on the program so edits are one tap away
+  }
+
+  // -------- Coach tools, layered on the athlete's own page --------
+  // A live session already puts the coach inside the athlete's real portal.
+  // When the programmed day needs a fix mid-session (wrong weight, a lift to
+  // swap, one to add), the coach day editor opens as a sheet over that page
+  // rather than ejecting back to the coach screen. Same editor code as the
+  // Program tab, and closing it lands on the exact spot they left.
+  let _coachSheetTarget = null;   // { week, day, oneOff? } from the coach's data
+  let _coachSheetScrollY = 0;     // page offset to restore on close
+
+  // Re-derive the live session's working program from the coach-side athlete,
+  // so sheet edits show up in the portal underneath. Progress is untouched:
+  // only the program half is rebuilt, and logs are keyed by exercise id.
+  function refreshLiveProgram() {
+    if (!state.previewMode || !state.clientData) return;
+    const c = currentClient();
+    if (!c) return;
+    state.clientData.program = structuredClone(buildProgramFromAthlete(c));
+  }
+
+  // Resolve the coach-side week + day objects behind whatever the portal is
+  // showing. These are the real objects in state.trainerData, so the editor's
+  // saveTrainer() calls persist and push exactly as they do on the coach screen.
+  function liveDayTarget() {
+    const c = currentClient();
+    if (!c) return null;
+    const view = state.workoutView || {};
+    let weekId = view.mode === "detail" ? view.weekId : null;
+    let dayId = view.mode === "detail" ? view.dayId : null;
+    if (!dayId) {
+      // Not in a day (picker, or another tab) — fall back to the day the
+      // athlete is currently on, same target the old eject button used.
+      const pos = athleteCurrentDay(c);
+      if (!pos) return null;
+      weekId = pos.weekId; dayId = pos.dayId;
+    }
+    if (weekId === "oneoff") {
+      // Coach one-off sessions live on c.oneOffDays. Athlete-built sessions
+      // share the pseudo-week but live in the athlete's own progress, and
+      // aren't the coach's to rewrite.
+      const day = (c.oneOffDays || []).find((d) => d.id === dayId);
+      if (!day) return { locked: "own" };
+      return { week: { id: "oneoff", days: c.oneOffDays }, day, oneOff: true };
+    }
+    const week = (c.weeks || []).find((w) => w.id === weekId);
+    const day = week && (week.days || []).find((d) => d.id === dayId);
+    if (!week || !day) return null;
+    return { week, day };
+  }
+
+  function openCoachDaySheet() {
+    if (!state.previewMode) return;
+    const sheet = $("#coach-day-sheet");
+    if (!sheet || _coachSheetTarget) return;
+    const t = liveDayTarget();
+    if (!t) { toast("Open a workout first, then you can edit it here."); return; }
+    if (t.locked === "own") { toast("This is the athlete's own session. They fill it in themselves."); return; }
+    _coachSheetTarget = t;
+    _coachSheetScrollY = window.scrollY;
+    renderCoachDaySheet();
+    show(sheet);
+    document.body.classList.add("coach-sheet-open");
+    Nav.push(closeCoachDaySheet); // phone Back closes the sheet, not the session
+  }
+
+  function renderCoachDaySheet() {
+    const t = _coachSheetTarget;
+    if (!t) return;
+    const c = currentClient();
+    const kicker = $("#coach-sheet-kicker");
+    if (kicker) {
+      const where = t.oneOff ? "Coach session" : (t.week.label || "Program");
+      kicker.textContent = c?.name ? `${c.name} · ${where}` : where;
+    }
+    const title = $("#coach-sheet-title");
+    if (title) title.textContent = t.day.name || "Untitled day";
+    const body = $("#coach-sheet-body");
+    if (!body) return;
+    body.innerHTML = "";
+    // hideDelete: deleting the day you're standing in from inside it would
+    // leave the portal underneath pointing at nothing. That stays on the
+    // full editor.
+    body.appendChild(renderDayContent(t.week, t.day, renderCoachDaySheet, { hideDelete: true }));
+  }
+
+  // DOM teardown only. Split out so leaving for the full editor doesn't also
+  // re-render (and re-scroll) a portal that's about to be swapped away.
+  function teardownCoachSheet() {
+    if (!_coachSheetTarget) return false;
+    _coachSheetTarget = null;
+    hide($("#coach-day-sheet"));
+    document.body.classList.remove("coach-sheet-open");
+    const body = $("#coach-sheet-body");
+    if (body) body.innerHTML = "";
+    return true;
+  }
+
+  function closeCoachDaySheet() {
+    if (!teardownCoachSheet()) return;
+    // Pull the edits into the portal, then put the coach back where they were.
+    refreshLiveProgram();
+    if (state.workoutView?.mode === "detail") renderWorkoutDetailUI({ keepScroll: true });
+    else renderWorkoutPickerUI();
+    requestAnimationFrame(() => window.scrollTo(0, _coachSheetScrollY));
+  }
+
+  // Escape hatch for the things a single day can't do: reordering weeks,
+  // loading a program, the archive. Drops the coach onto the full Program tab,
+  // landing on the day they were just editing.
+  function openFullProgramEditor() {
+    if (!state.previewMode) return;
+    const t = _coachSheetTarget || liveDayTarget();
+    const pos = t && t.week && !t.oneOff ? { weekId: t.week.id, dayId: t.day.id } : null;
+    teardownCoachSheet();
+    exitPreview();
+    // The live session's nav entries are stale now — Back should return to the
+    // athlete list, same as opening the editor from a card.
+    Nav.reset();
+    Nav.push(renderDashboard);
+    const c = currentClient();
+    if (!c) return;
+    const target = pos || athleteCurrentDay(c);
+    if (target) editClientDay(c.id, target.weekId, target.dayId);
   }
   function setClientTab(name) {
     $$(".tab[data-ctab]").forEach((t) => t.classList.toggle("active", t.dataset.ctab === name));
@@ -13379,7 +13511,10 @@
     };
   })();
 
-  function renderWorkoutDetailUI() {
+  // opts.keepScroll: skip the scroll-into-view. Used when the coach day sheet
+  // closes — the page underneath re-renders, but the coach should land back on
+  // the exact spot they were looking at, not at the top of the day.
+  function renderWorkoutDetailUI(opts) {
     const prog = state.clientData.program;
     let week = prog?.client?.weeks?.find((w) => w.id === state.workoutView.weekId);
     let day = week?.days?.find((d) => d.id === state.workoutView.dayId);
@@ -13508,7 +13643,9 @@
     // Keep the picker grid count fresh in case user comes back.
     renderWorkoutPickerUI();
     // Scroll detail into view smoothly.
-    setTimeout(() => $("#workout-detail")?.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
+    if (!opts?.keepScroll) {
+      setTimeout(() => $("#workout-detail")?.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
+    }
   }
 
   function backToWorkoutPicker() {
@@ -19304,24 +19441,15 @@
     $("#btn-nudge-athlete")?.addEventListener("click", openNudgeModal);
     // One tap out of the live session, never a stop on the athlete's picker.
     $("#btn-exit-preview")?.addEventListener("click", () => Nav.exit(exitPreview));
-    // From preview straight into the editor: the day being viewed, or (from
-    // the picker / other tabs) the day the athlete is on per synced progress.
-    $("#btn-preview-edit-day")?.addEventListener("click", () => {
-      if (!state.previewMode) return;
-      const view = state.workoutView || {};
-      const viewed = view.mode === "detail" && view.dayId
-        ? { weekId: view.weekId, dayId: view.dayId }
-        : null;
-      exitPreview();
-      // The preview's nav entries are stale now — Back should return to the
-      // athlete list, same as opening the editor from a card.
-      Nav.reset();
-      Nav.push(renderDashboard);
-      const c = currentClient();
-      if (!c) return;
-      const pos = viewed || athleteCurrentDay(c);
-      if (pos) editClientDay(c.id, pos.weekId, pos.dayId);
-    });
+    // Coach tools without leaving the athlete's page: the day editor opens as
+    // a sheet over the portal, on the day being viewed (or, from the picker /
+    // another tab, the day the athlete is on per synced progress).
+    $("#btn-preview-edit-day")?.addEventListener("click", openCoachDaySheet);
+    $("#btn-coach-sheet-close")?.addEventListener("click", () => Nav.back(closeCoachDaySheet));
+    $("#btn-coach-sheet-done")?.addEventListener("click", () => Nav.back(closeCoachDaySheet));
+    $("#coach-day-sheet")?.querySelector("[data-cs-close]")
+      ?.addEventListener("click", () => Nav.back(closeCoachDaySheet));
+    $("#btn-coach-sheet-full")?.addEventListener("click", openFullProgramEditor);
     $("#btn-load-program").addEventListener("click", openLoadProgramModal);
     $("#btn-load-program-empty").addEventListener("click", openLoadProgramModal);
     $("#btn-archive-program").addEventListener("click", archiveCurrentProgram);

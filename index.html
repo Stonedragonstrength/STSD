@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=ownday2" />
+  <link rel="stylesheet" href="styles.css?v=coachsheet2" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -755,6 +755,7 @@
       <span class="preview-banner-msg">🏋️ Live session: <strong id="preview-athlete-name"></strong></span>
       <div class="preview-banner-actions">
         <button class="btn btn-sm" id="btn-preview-edit-day">✏️ Edit this day</button>
+        <!-- Sheet markup lives at the end of the body, over every screen. -->
         <button class="btn btn-sm" id="btn-exit-preview">← Back to coach view</button>
       </div>
     </div>
@@ -994,6 +995,28 @@
 
   <div id="toast" class="toast hidden"></div>
 
+  <!-- ============ COACH DAY SHEET ============
+       Coach tools layered on the athlete's own page during a live session.
+       Holds the same day editor as the coach Program tab, so a lift can be
+       fixed mid-workout without leaving the athlete's screen. -->
+  <div id="coach-day-sheet" class="coach-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="coach-sheet-title">
+    <div class="coach-sheet-backdrop" data-cs-close></div>
+    <div class="coach-sheet-card">
+      <div class="coach-sheet-head">
+        <div class="coach-sheet-headtext">
+          <span class="coach-sheet-kicker" id="coach-sheet-kicker"></span>
+          <h3 id="coach-sheet-title">Edit day</h3>
+        </div>
+        <button class="icon-btn" id="btn-coach-sheet-close" aria-label="Close">×</button>
+      </div>
+      <div class="coach-sheet-body" id="coach-sheet-body"></div>
+      <div class="coach-sheet-foot">
+        <button class="btn btn-ghost btn-sm" id="btn-coach-sheet-full" type="button">Full program editor</button>
+        <button class="btn btn-primary btn-sm" id="btn-coach-sheet-done" type="button">Done</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Exercise Library Drawer -->
   <div id="ex-library-overlay" class="ex-library-overlay hidden">
     <div class="ex-library-backdrop" id="ex-library-backdrop"></div>
@@ -1025,10 +1048,10 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="bugreport.js?v=bug1"></script>
-  <script src="config.js?v=ownday2"></script>
-  <script src="cloud.js?v=ownday2"></script>
+  <script src="config.js?v=coachsheet2"></script>
+  <script src="cloud.js?v=coachsheet2"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=ownday2"></script>
+  <script src="app.js?v=coachsheet2"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

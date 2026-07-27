@@ -1095,10 +1095,12 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
      resting position already equals its stuck position → zero jump. Full-bleed
      side margins + solid bg so content scrolls cleanly underneath. */
   position: sticky;
-  /* --header-h is measured off the real header by a ResizeObserver in app.js,
+  /* --stack-h is measured off the real header by a ResizeObserver in app.js,
      so the nav's resting position always equals its stuck position (zero jump)
-     even when header padding/content changes. Fallback ≈ desktop height. */
-  top: var(--header-h, 63px);
+     even when header padding/content changes. It also folds in the live-session
+     coach bar when that's showing, so the tabs clear both. Fallback ≈ desktop
+     header height. */
+  top: var(--stack-h, var(--header-h, 63px));
   z-index: 9;
   /* Opaque glass matching the coach nav (content scrolls underneath, so no
      transparency here — the gradient is mixed into the solid bg). */
@@ -7777,7 +7779,18 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 /* Live session (coach logging for the athlete): green banner, and no
    read-only blocking — the body class is live-log-mode, not preview-mode,
    so the portal behaves exactly as it does for the athlete. */
-.preview-banner.live { background: rgba(34, 197, 94, 0.16); border-bottom-color: #22c55e; }
+/* Pinned under the header for the whole session: the coach tools have to stay
+   one tap away while scrolling a workout, which is where the session is spent.
+   Opaque, because content scrolls underneath it. */
+.preview-banner {
+  position: sticky;
+  top: var(--header-h, 63px);
+  z-index: 11; /* over the athlete tab strip (9) and the header (10) */
+}
+.preview-banner.live {
+  background: linear-gradient(180deg, color-mix(in srgb, #22c55e 17%, var(--bg)), var(--bg));
+  border-bottom-color: #22c55e;
+}
 .preview-banner.live .preview-banner-msg strong { color: #4ade80; }
 .preview-banner.live .btn { background: #22c55e; color: #052e12; }
 .preview-banner-msg strong { color: var(--warn); }
@@ -9230,3 +9243,119 @@ input.ownday-sheet-input { margin-top: 0.35em; }
 .oneoff-card-own .oneoff-summary:hover { background: rgba(248, 113, 113, 0.06); }
 .oneoff-card-own .oneoff-body { padding-top: 0.7rem; }
 .oneoff-own-unlogged { font-size: 0.8rem; color: var(--muted); }
+
+/* ==========================================================================
+   Coach day sheet
+   The coach program editor, layered over the athlete's own page during a live
+   session. Sits above the modal (z 100) and below the exercise library drawer
+   (z 200), so the library still opens on top of it.
+   ========================================================================== */
+.coach-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem 1rem;
+}
+.coach-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(2px);
+}
+.coach-sheet-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 940px;
+  max-height: 100%;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface) 62%);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  border-top-color: rgba(34, 197, 94, 0.5);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+/* A green hairline ties the sheet to the live-session banner that opened it. */
+.coach-sheet-card::before {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #22c55e, rgba(34, 197, 94, 0.15));
+}
+.coach-sheet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem 1.3rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+}
+.coach-sheet-headtext { min-width: 0; }
+.coach-sheet-kicker {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #4ade80;
+  margin-bottom: 0.2em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.coach-sheet-head h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.coach-sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 1rem 1.3rem 1.2rem;
+}
+.coach-sheet-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6em;
+  padding: 0.85rem 1.3rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+/* The editor's own day-name row already titles the day, and the sheet header
+   repeats it. Keep the header as the title and let the row stay editable. */
+.coach-sheet-body .day-content { gap: 0; }
+
+/* Phone: a bottom sheet that keeps the athlete's page visible above it. */
+@media (max-width: 720px) {
+  .coach-sheet {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .coach-sheet-card {
+    max-width: none;
+    height: 94vh;
+    height: 94dvh;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    border-bottom: none;
+  }
+  .coach-sheet-head { padding: 0.9rem 1rem 0.75rem; }
+  .coach-sheet-body { padding: 0.8rem 1rem 1rem; }
+  .coach-sheet-foot { padding: 0.7rem 1rem calc(0.7rem + env(safe-area-inset-bottom)); }
+  .coach-sheet-foot .btn { flex: 1; }
+}
+/* No body-level scroll lock on purpose: `overflow: hidden` on body makes it a
+   scroll container on mobile and kills every sticky descendant (see the
+   overflow-x: clip note above). The sheet covers the viewport and contains its
+   own scroll, so the page behind it stays put anyway. */
+body.coach-sheet-open .rest-timer { display: none; }
