@@ -2566,6 +2566,7 @@
     renderBulletinBoard();
     renderOverviewRequests();
     renderOverviewActivity();
+    renderCoachCardioBoard();
     renderNotificationLog();
   }
 
@@ -6961,6 +6962,8 @@
     "lu:waypoints": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="4.5" r="2.5"/><path d="m10.2 6.3-3.9 3.9"/><circle cx="4.5" cy="12" r="2.5"/><path d="M7 12h10"/><circle cx="19.5" cy="12" r="2.5"/><path d="m13.8 17.7 3.9-3.9"/><circle cx="12" cy="19.5" r="2.5"/></svg>',
     "lu:navigation": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.586 12.586 19 19"/><path d="M3.688 3.037a.497.497 0 0 0-.651.651l6.5 15.999a.501.501 0 0 0 .947-.062l1.569-6.083a2 2 0 0 1 1.448-1.479l6.124-1.579a.5.5 0 0 0 .063-.947z"/></svg>',
     "lu:mappin": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></svg>',
+    // Program sheet — the athlete-created sessions pill and its section header.
+    "lu:clipboardlist": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>',
     "lu:milestone": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 13v8"/><path d="M12 3v3"/><path d="M4 6a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1h13a1 1 0 0 0 .78-.375l1.6-2a1 1 0 0 0 0-1.25l-1.6-2A1 1 0 0 0 17 6z"/></svg>',
     "lu:sailboat": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 18H2a4 4 0 0 0 4 4h12a4 4 0 0 0 4-4Z"/><path d="M21 14 10 2 3 14h18Z"/><path d="M10 2v16"/></svg>',
     "lu:tornado": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4H3"/><path d="M18 8H6"/><path d="M19 12H9"/><path d="M16 16h-6"/><path d="M11 20H9"/></svg>',
@@ -9921,24 +9924,41 @@
     if (!p?.cardioLogs?.length) { show(empty); return; }
     hide(empty);
 
+    // Same summary the athlete sees on their own Program page: this week, then
+    // the lifetime line. A list of sessions doesn't answer "how much".
+    const today = todayISO();
+    const weekStart = sundayOfISO(today);
+    const logs = [...p.cardioLogs].filter((l) => l && l.date)
+      .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    const week = cardioTotals(logs.filter((l) => l.date >= weekStart && l.date <= today));
+    const all = cardioTotals(logs);
+    const line = (label, t) => `<div class="cd-totals">
+      <span class="cd-range">${label}</span>
+      <span class="cd-stats">
+        <span class="cd-stat"><b>${t.n}</b> session${t.n === 1 ? "" : "s"}</span>
+        <span class="cd-stat"><b>${cardioMinLabel(t.min)}</b></span>
+        ${t.mi ? `<span class="cd-stat"><b>${cardioMiLabel(t.mi)}</b> mi</span>` : ""}
+      </span>
+    </div>`;
+
     const cardioCard = document.createElement("div");
     cardioCard.className = "log-week-card";
-    cardioCard.innerHTML = `<h4>Cardio</h4>`;
-    [...p.cardioLogs]
-      .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
-      .forEach((log) => {
-        const row = document.createElement("div");
-        row.className = "cardio-row cardio-row-readonly";
-        row.innerHTML = `
-          <span class="cardio-row-icon">${cardioIcon(log.type)}</span>
-          <div class="cardio-row-info">
-            <strong>${escapeHtml(log.type || "Cardio")}</strong>
-            <span class="muted">${escapeHtml(log.date || "")}${log.miles ? ` · ${escapeHtml(cardioMiLabel(Number(log.miles)))} mi` : ""}</span>
-          </div>
-          <span class="cardio-min">${escapeHtml(String(log.minutes || 0))} min</span>
-          <span class="cardio-intensity cardio-intensity-${escapeHtml((log.intensity || "moderate").toLowerCase())}">${escapeHtml(log.intensity || "Moderate")}</span>`;
-        cardioCard.appendChild(row);
-      });
+    cardioCard.innerHTML = line("This week", week) + (all.n !== week.n ? line("All time", all) : "");
+    logs.forEach((log) => {
+      const when = new Date(log.date + "T12:00:00")
+        .toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+      const row = document.createElement("div");
+      row.className = "cardio-row cardio-row-readonly";
+      row.innerHTML = `
+        <span class="cardio-row-icon">${cardioIcon(log.type)}</span>
+        <div class="cardio-row-info">
+          <strong>${escapeHtml(log.type || "Cardio")}</strong>
+          <span class="muted">${escapeHtml(when)}${log.miles ? ` · ${escapeHtml(cardioMiLabel(Number(log.miles)))} mi` : ""}</span>
+        </div>
+        <span class="cardio-min">${escapeHtml(String(log.minutes || 0))} min</span>
+        <span class="cardio-intensity cardio-intensity-${escapeHtml((log.intensity || "moderate").toLowerCase())}">${escapeHtml(log.intensity || "Moderate")}</span>`;
+      cardioCard.appendChild(row);
+    });
     container.appendChild(cardioCard);
   }
 
@@ -11540,6 +11560,59 @@
     if (days === 1) return "yesterday";
     if (days < 7) return `${days} days ago`;
     return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  // -------- Coach Overview: everyone's last cardio session --------
+  // Cardio was only visible one athlete at a time, inside their own Cardio tab,
+  // which made "who has actually been running" a five-tap question per person.
+  // This is the whole roster on one card: last session, how long ago, and what
+  // they've done this week. Rows open that athlete's log.
+  function renderCoachCardioBoard() {
+    const host = $("#cardio-board");
+    if (!host) return;
+    const clients = state.trainerData.clients || [];
+    const today = todayISO();
+    const weekStart = sundayOfISO(today);
+    const rows = clients.map((c) => {
+      const logs = (c.importedProgress?.cardioLogs || []).filter((l) => l && l.date);
+      const last = logs.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)))[0] || null;
+      const week = cardioTotals(logs.filter((l) => l.date >= weekStart && l.date <= today));
+      const days = last
+        ? Math.round((new Date(today + "T12:00:00") - new Date(last.date + "T12:00:00")) / 86400000)
+        : null;
+      return { c, last, week, days };
+    }).sort((a, b) => String(b.last?.date || "").localeCompare(String(a.last?.date || "")));
+
+    const active = rows.filter((r) => r.week.n).length;
+    const countEl = $("#cardio-board-count");
+    if (countEl) countEl.textContent = clients.length ? `${active}/${clients.length} this week` : "";
+
+    if (!clients.length) {
+      host.innerHTML = `<p class="muted" style="margin:0">No athletes yet.</p>`;
+      return;
+    }
+    host.innerHTML = rows.map((r) => {
+      // Freshness drives the left rail: green in the last two days, amber
+      // through the first week, then grey. Nobody has to read the dates to see
+      // who's drifted.
+      const tone = r.days == null ? "none" : r.days <= 2 ? "fresh" : r.days <= 7 ? "warm" : "cold";
+      const last = r.last
+        ? `${cardioIcon(r.last.type)} ${escapeHtml(r.last.type || "Cardio")} · ${escapeHtml(String(r.last.minutes || 0))} min${r.last.miles ? ` · ${escapeHtml(cardioMiLabel(Number(r.last.miles)))} mi` : ""}`
+        : `<span class="cb-never">No cardio logged</span>`;
+      return `<button type="button" class="cb-row is-${tone}" data-cardio-client="${escapeHtml(r.c.id)}">
+        ${avatarTileHtml(r.c, r.c.importedProgress, { size: "sm" })}
+        <span class="cb-info">
+          <span class="cb-name">${escapeHtml(r.c.name || "Athlete")}</span>
+          <span class="cb-last">${last}</span>
+        </span>
+        ${r.week.n ? `<span class="cb-week">${r.week.n} · ${cardioMinLabel(r.week.min)}</span>` : ""}
+        <span class="cb-when">${r.last ? escapeHtml(activityWhen(r.last.date)) : "—"}</span>
+      </button>`;
+    }).join("");
+    host.querySelectorAll("[data-cardio-client]").forEach((b) => b.addEventListener("click", () => {
+      openClient(b.dataset.cardioClient);
+      setTab("logs"); // their Cardio tab
+    }));
   }
 
   function renderNotificationLog() {
@@ -13633,7 +13706,7 @@
     const specialChip = (kind, icon, label, n) => {
       const b = document.createElement("button");
       b.className = `week-chip week-chip-special is-${kind}${bucket === kind ? " active" : ""}`;
-      b.title = kind === "own" ? "Sessions you built yourself" : "Dated sessions your coach set up";
+      b.title = kind === "own" ? "Sessions the athlete built themselves" : "Dated sessions your coach set up";
       b.innerHTML = `<span class="chip-ico">${icon}</span><span class="chip-label">${escapeHtml(label)}</span>` +
         (n ? `<span class="chip-n">${n}</span>` : "");
       b.addEventListener("click", () => { state.pickerBucket = kind; renderWorkoutPickerUI(); });
@@ -13641,7 +13714,7 @@
     };
     chips.appendChild(Object.assign(document.createElement("span"), { className: "week-chip-sep" }));
     if (coachN) chips.appendChild(specialChip("coach", "🐉", "Coach", coachN));
-    chips.appendChild(specialChip("own", "🔥", "Yours", ownN));
+    chips.appendChild(specialChip("own", dayIconHtml("lu:clipboardlist"), "Athlete Created", ownN));
 
     // Looking at one of those buckets: the week's day cards step aside.
     if (bucket !== "week") {
@@ -13829,7 +13902,8 @@
     const head = document.createElement("div");
     head.className = "wp-head wp-head-own";
     // No count here either — the chip carries it.
-    head.innerHTML = `<span class="wp-head-title">🔥 Your own sessions</span>`;
+    head.innerHTML = `<span class="wp-head-ico">${dayIconHtml("lu:clipboardlist")}</span>` +
+      `<span class="wp-head-title">Athlete Created</span>`;
     const addBtn = document.createElement("button");
     addBtn.type = "button";
     addBtn.className = "btn btn-ghost btn-sm wp-head-action";
@@ -19714,7 +19788,7 @@
       { sel: "#cardio-athlete-block", go: goPicker,
         title: "Cardio", text: "Runs, rides and swims live with your workouts. The bars are your week, day by day, and Month and Year add it all up." },
       { sel: ".week-chip-special.is-own", go: goPicker,
-        title: "Your own sessions", text: "Trained outside your program? This pill holds the days you built yourself. Tap it to open them, or to start a new one." },
+        title: "Athlete Created", text: "Trained outside your program? This pill holds the days you built yourself. Tap it to open them, or to start a new one." },
       { sel: '[data-ctab-panel="prs"]', go: () => setClientTab("prs"),
         title: "Progress", text: "Your PRs live here, with the charts behind them. Locking a heavy set can raise them automatically." },
       { sel: "#athlete-bw-fold", go: () => setClientTab("prs"),

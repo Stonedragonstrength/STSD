@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=prog6" />
+  <link rel="stylesheet" href="styles.css?v=cb4" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -275,6 +275,16 @@
         <div id="dash-cal-grid" class="cal-grid dash-cal-grid"></div>
 
         <div class="overview-bottom">
+          <!-- Everyone's last cardio session, newest first. Rows open that
+               athlete's cardio log. Built by renderCoachCardioBoard(). -->
+          <div class="card">
+            <div class="program-head">
+              <h3 style="margin:0">🏃 Cardio <span class="overview-req-count" id="cardio-board-count"></span></h3>
+            </div>
+            <p class="muted" style="font-size:0.85rem">Everyone's last session, newest first. Tap a row to open their log.</p>
+            <div id="cardio-board" class="cardio-board"></div>
+          </div>
+
           <div class="card notif-log-card">
             <div class="program-head">
               <h3 style="margin:0">🔔 Notifications <span class="overview-req-count" id="notif-log-count"></span></h3>
@@ -618,9 +628,8 @@
 
         <!-- Cardio -->
         <div class="tab-panel" data-tab-panel="logs">
-          <div class="program-head">
-            <h3>Cardio</h3>
-          </div>
+          <!-- No "Cardio" heading here: the tab above already says it, and
+               renderClientLogs() opens with the totals instead. -->
           <div id="logs-container"></div>
           <div id="logs-empty" class="empty-state">
             <div class="empty-emoji">🏃</div>
@@ -1103,7 +1112,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=horm2"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=prog6"></script>
+  <script src="app.js?v=cb4"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

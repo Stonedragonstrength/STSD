@@ -4836,7 +4836,9 @@ input:focus, textarea:focus, select:focus {
   position: relative;
   display: inline-flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
   background: transparent;
   border: none;
   color: var(--text-soft);
@@ -9265,9 +9267,9 @@ body.live-log-mode #screen-client .header-right { display: none; }
    tell at a glance which sessions are theirs and which came from the coach. */
 .ownday-section { margin-top: 1.5rem; }
 .ownday-empty { font-size: 0.85rem; margin: 0; max-width: 46em; }
-.ownday-workout-card { border-color: rgba(248, 113, 113, 0.32); }
-.ownday-workout-card:hover { border-color: rgba(248, 113, 113, 0.6); }
-.ownday-workout-card .workout-card-icon { color: #fb7185; }
+.ownday-workout-card { border-color: rgba(var(--primary-rgb), 0.32); }
+.ownday-workout-card:hover { border-color: rgba(var(--primary-rgb), 0.6); }
+.ownday-workout-card .workout-card-icon { color: var(--primary-bright); }
 
 /* New-session sheet */
 .ownday-sheet-sub { font-size: 0.88rem; color: var(--text-soft); margin: 0 0 1em; }
@@ -9820,7 +9822,7 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 .wp-head .bw-range { margin-left: auto; }
 .wp-head .bw-range + .wp-head-action { margin-left: 0.4em; }
 .wp-head-coach .wp-head-title { color: #fbbf24; }
-.wp-head-own .wp-head-title { color: #fb7185; }
+.wp-head-own .wp-head-title { color: var(--primary-bright); }
 .wp-head-cardio .wp-head-title { color: var(--accent); }
 
 /* ============ Cardio block (Program tab) ============ */
@@ -9942,10 +9944,12 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 .week-chip-special {
   flex-direction: row;
   align-items: center;
-  gap: 0.4em;
+  justify-content: center;
+  gap: 0.45em;
   padding-left: 0.7em;
   padding-right: 0.7em;
 }
+.week-chip-special .chip-ico svg { width: 15px; height: 15px; display: block; }
 .week-chip-special .chip-ico { font-size: 0.9rem; line-height: 1; }
 .week-chip-special .chip-n {
   font-size: 0.62rem;
@@ -9957,17 +9961,93 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
   color: inherit;
 }
 .week-chip-special.is-coach { color: #fbbf24; }
-.week-chip-special.is-own { color: #fb7185; }
+.week-chip-special.is-own { color: var(--primary-bright); }
 .week-chip-special.is-coach:hover { color: #fcd34d; }
-.week-chip-special.is-own:hover { color: #fda4af; }
+.week-chip-special.is-own:hover { color: var(--text); }
 .week-chip-special.is-coach.active {
   background: linear-gradient(180deg, #fbbf24, #d97706);
   color: #291a02;
   box-shadow: 0 3px 10px rgba(245, 158, 11, 0.35);
 }
 .week-chip-special.is-own.active {
-  background: linear-gradient(180deg, #fb7185, #e11d48);
-  color: #2b0710;
-  box-shadow: 0 3px 10px rgba(244, 63, 94, 0.35);
+  background: linear-gradient(180deg, var(--primary-bright), var(--primary));
+  color: #062131;
+  box-shadow: 0 3px 10px rgba(var(--primary-rgb), 0.35);
 }
 .week-chip-special.active .chip-n { background: rgba(0, 0, 0, 0.16); }
+
+
+/* ---- Coach Overview: cardio board ----
+   One row per athlete: avatar, last session, this week's total, how long ago.
+   The left rail is the freshness read — green in the last two days, amber
+   through the first week, grey after that, so the drifters group themselves at
+   the bottom without the coach reading a single date. */
+.cardio-board { display: flex; flex-direction: column; }
+.cb-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  width: 100%;
+  padding: 0.55rem 0.4rem 0.55rem 0.75rem;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.cb-row:last-child { border-bottom: none; }
+.cb-row::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg,
+    rgb(var(--cb-rgb, 148, 163, 184)),
+    rgba(var(--cb-rgb, 148, 163, 184), 0.15));
+  border-radius: 3px;
+}
+.cb-row.is-fresh { --cb-rgb: 16, 185, 129; }
+.cb-row.is-warm  { --cb-rgb: 245, 158, 11; }
+.cb-row.is-cold  { --cb-rgb: 148, 163, 184; }
+.cb-row.is-none  { --cb-rgb: 100, 116, 139; }
+.cb-row:hover {
+  background-image: linear-gradient(100deg, rgba(var(--cb-rgb, 148, 163, 184), 0.2), transparent 66%);
+  background-color: var(--surface-2);
+}
+.cb-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
+.cb-name {
+  font-weight: 700; font-size: 0.9rem; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cb-last {
+  font-size: 0.78rem; color: var(--text-soft);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cb-never { color: var(--muted); font-style: italic; }
+.cb-week {
+  font-size: 0.72rem; font-weight: 800; white-space: nowrap;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: 999px;
+  padding: 0.18em 0.55em;
+}
+.cb-when {
+  font-size: 0.72rem; color: var(--muted); white-space: nowrap;
+  min-width: 4.6em; text-align: right;
+}
+@media (max-width: 560px) {
+  .cb-week { display: none; }
+  .cb-when { min-width: 0; }
+}
+
+.wp-head-ico {
+  display: inline-flex; align-items: center;
+  color: var(--primary-bright);
+}
+.wp-head-ico svg { width: 16px; height: 16px; display: block; }
+.wp-head-own .wp-head-ico { color: var(--primary-bright); }
