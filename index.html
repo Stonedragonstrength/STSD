@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=rank2" />
+  <link rel="stylesheet" href="styles.css?v=avfold1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -663,8 +663,16 @@
             <span class="coach-profile-stat-lbl">athletes</span>
           </div>
         </div>
-        <h3 class="coach-profile-section">Your avatar</h3>
-        <div class="avatar-picker" id="coach-avatar-picker"></div>
+        <details class="avatar-fold" id="coach-avatar-fold">
+          <summary>
+            <span class="avatar-fold-tile" id="coach-avatar-current"></span>
+            <span class="avatar-fold-text">
+              <strong>Your avatar</strong>
+              <span class="avatar-fold-now" id="coach-avatar-current-name">None</span>
+            </span>
+          </summary>
+          <div class="avatar-picker" id="coach-avatar-picker"></div>
+        </details>
         <h3 class="coach-profile-section">Appearance</h3>
         <div class="theme-picker" id="coach-theme-picker"></div>
 
@@ -982,9 +990,20 @@
           <div class="profile-invite" id="profile-invite"></div>
         </div>
         <div class="card">
-          <h3>Your avatar</h3>
-          <p class="muted" style="margin-bottom:0.8em">Pick the character that lifts with you. Your coach sees it too.</p>
-          <div class="avatar-picker" id="athlete-avatar-picker"></div>
+          <!-- Folded away by default: 32 tiles is a lot of screen for something
+               you set once, and someone who wants no avatar shouldn't have to
+               scroll past the whole roster every visit. -->
+          <details class="avatar-fold" id="athlete-avatar-fold">
+            <summary>
+              <span class="avatar-fold-tile" id="athlete-avatar-current"></span>
+              <span class="avatar-fold-text">
+                <strong>Your avatar</strong>
+                <span class="avatar-fold-now" id="athlete-avatar-current-name">None</span>
+              </span>
+            </summary>
+            <p class="muted" style="margin:0.2em 0 0.8em">Pick the character that lifts with you, or None to keep your initials. Your coach sees it too.</p>
+            <div class="avatar-picker" id="athlete-avatar-picker"></div>
+          </details>
         </div>
         <div class="card">
           <h3>Appearance</h3>
@@ -1068,10 +1087,10 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="bugreport.js?v=bug1"></script>
-  <script src="config.js?v=rank2"></script>
-  <script src="cloud.js?v=rank2"></script>
+  <script src="config.js?v=avfold1"></script>
+  <script src="cloud.js?v=avfold1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=rank2"></script>
+  <script src="app.js?v=avfold1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

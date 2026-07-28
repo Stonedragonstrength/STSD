@@ -2672,7 +2672,16 @@
     if (!host) return;
     const cur = coachAvatarId();
     const name = state.trainerData.trainer?.name || "Coach";
-    host.innerHTML = AVATARS.map((a) => `
+    const style = `--av-color:${avatarColor(name)};--av-rgb:6, 182, 212`;
+    renderAvatarFoldSummary("coach", cur, name, style);
+    // "None" is a real option sitting first, not a hidden gesture. Plenty of
+    // people would rather just be their initials.
+    host.innerHTML = `
+      <button type="button" class="avatar-opt${cur ? "" : " on"}" data-cavatar=""
+              aria-pressed="${!cur}" title="No avatar">
+        <span class="av-tile av-lg av-empty" style="${style}">${escapeHtml(nameInitials(name))}</span>
+        <span class="avatar-opt-name">None</span>
+      </button>` + AVATARS.map((a) => `
       <button type="button" class="avatar-opt${a.id === cur ? " on" : ""}" data-cavatar="${a.id}"
               aria-pressed="${a.id === cur}" title="${escapeHtml(a.name)}">
         <span class="av-tile av-lg" style="--av-color:${avatarColor(name)};--av-rgb:6, 182, 212">
@@ -2683,7 +2692,9 @@
     host.querySelectorAll("[data-cavatar]").forEach((b) => {
       b.addEventListener("click", () => {
         const t = state.trainerData.trainer || (state.trainerData.trainer = {});
-        t.avatarId = t.avatarId === b.dataset.cavatar ? "" : b.dataset.cavatar;
+        const pick = b.dataset.cavatar;
+        // None clears outright; tapping the current pick still clears it too.
+        t.avatarId = !pick || t.avatarId === pick ? "" : pick;
         saveTrainer();
         if (window.Cloud?.enabled && state.trainerData.coachId) {
           window.Cloud.debounce(`coachAvatar:${state.trainerData.coachId}`, () =>
@@ -2907,6 +2918,19 @@
     </span>`;
   }
 
+  // What the folded-up picker shows on its own line: the current tile and its
+  // name, or the initials tile and "None" for anyone who'd rather not have one.
+  function renderAvatarFoldSummary(who, cur, name, style) {
+    const tile = $(`#${who}-avatar-current`);
+    const lbl = $(`#${who}-avatar-current-name`);
+    if (tile) {
+      tile.innerHTML = cur
+        ? `<span class="av-tile av-sm" style="${style}"><img src="${avatarSrc(cur)}" alt="" decoding="async" /></span>`
+        : `<span class="av-tile av-sm av-empty" style="${style}">${escapeHtml(nameInitials(name))}</span>`;
+    }
+    if (lbl) lbl.textContent = cur ? avatarById(cur).name : "None";
+  }
+
   // The athlete's picker. Tapping a tile saves immediately — this is a
   // cosmetic choice, not a form worth a Save button.
   function renderAvatarPicker() {
@@ -2917,7 +2941,14 @@
     if (!progress) return;
     const cur = avatarIdFor(client, progress);
     const idx = athleteColorIdx(client);
-    host.innerHTML = AVATARS.map((a) => `
+    const style = `--av-color:${AVATAR_COLORS[idx]};--av-rgb:${AVATAR_RGB[idx]}`;
+    renderAvatarFoldSummary("athlete", cur, client?.name, style);
+    host.innerHTML = `
+      <button type="button" class="avatar-opt${cur ? "" : " on"}" data-avatar=""
+              aria-pressed="${!cur}" title="No avatar">
+        <span class="av-tile av-lg av-empty" style="${style}">${escapeHtml(nameInitials(client?.name))}</span>
+        <span class="avatar-opt-name">None</span>
+      </button>` + AVATARS.map((a) => `
       <button type="button" class="avatar-opt${a.id === cur ? " on" : ""}" data-avatar="${a.id}"
               aria-pressed="${a.id === cur}" title="${escapeHtml(a.name)}">
         <span class="av-tile av-lg" style="--av-color:${AVATAR_COLORS[idx]};--av-rgb:${AVATAR_RGB[idx]}">
@@ -2934,12 +2965,12 @@
     if (state.previewMode) { toast("This is the athlete's own pick."); return; }
     const progress = state.clientData?.progress;
     if (!progress) return;
-    // Tapping the current pick clears it, back to initials.
-    progress.avatarId = progress.avatarId === id ? "" : id;
+    // None clears outright; tapping the current pick clears it too.
+    progress.avatarId = !id || progress.avatarId === id ? "" : id;
     saveClient();
     renderAvatarPicker();
     renderClientHeaderAvatar();
-    toast(progress.avatarId ? `${avatarById(progress.avatarId).name} it is` : "Avatar cleared");
+    toast(progress.avatarId ? `${avatarById(progress.avatarId).name} it is` : "No avatar. Your initials it is.");
   }
 
   function renderClientHeaderAvatar() {

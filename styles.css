@@ -9484,6 +9484,35 @@ input.ownday-sheet-input { margin-top: 0.35em; }
 
 /* The picker: an auto-fill grid so 20 tiles reflow from 3 columns on a phone
    up to as many as the card allows. */
+/* The picker folds away. Closed, it's one row: the current tile, the heading
+   and what you're currently wearing (or None). */
+.avatar-fold > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+}
+.avatar-fold > summary::-webkit-details-marker { display: none; }
+.avatar-fold > summary::after {
+  content: "▸";
+  margin-left: auto;
+  color: var(--text-soft);
+  transition: transform 0.15s;
+}
+.avatar-fold[open] > summary::after { transform: rotate(90deg); }
+.avatar-fold > summary:hover .avatar-fold-text strong { color: var(--primary-bright); }
+.avatar-fold-text { display: flex; flex-direction: column; gap: 0.1em; line-height: 1.2; }
+.avatar-fold-text strong { font-size: 1rem; font-weight: 800; }
+.avatar-fold-now {
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-soft);
+}
+.avatar-fold[open] > summary { margin-bottom: 0.7em; }
+
 .avatar-picker {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
