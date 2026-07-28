@@ -2644,12 +2644,55 @@
     const name = t.name || "Coach";
     const nameEl = $("#coach-profile-name"); if (nameEl) nameEl.textContent = name;
     const emailEl = $("#coach-profile-email"); if (emailEl) emailEl.textContent = t.email || "";
-    const av = $("#coach-profile-avatar");
-    if (av) { av.textContent = nameInitials(name); av.style.background = avatarColor(name); }
+    renderCoachAvatar();
     const cnt = $("#coach-profile-clients");
     if (cnt) cnt.textContent = String(state.trainerData.clients?.length || 0);
+    renderCoachAvatarPicker();
     renderThemePicker($("#coach-theme-picker"), "coach");
     renderBackupNote();
+  }
+
+  // The coach picks one too. Safe on the coaches row (targeted updates only),
+  // unlike the athlete's, which has to dodge whole-row athlete upserts.
+  function coachAvatarId() { return avatarById(state.trainerData.trainer?.avatarId)?.id || ""; }
+
+  function renderCoachAvatar() {
+    const av = $("#coach-profile-avatar");
+    if (!av) return;
+    const name = state.trainerData.trainer?.name || "Coach";
+    const id = coachAvatarId();
+    av.innerHTML = id
+      ? `<span class="av-tile av-md" style="--av-color:${avatarColor(name)};--av-rgb:6, 182, 212">
+           <img src="${avatarSrc(id)}" alt="${escapeHtml(avatarById(id).name)}" decoding="async" /></span>`
+      : `<span class="av-tile av-md av-empty" style="--av-color:${avatarColor(name)};--av-rgb:6, 182, 212">${escapeHtml(nameInitials(name))}</span>`;
+  }
+
+  function renderCoachAvatarPicker() {
+    const host = $("#coach-avatar-picker");
+    if (!host) return;
+    const cur = coachAvatarId();
+    const name = state.trainerData.trainer?.name || "Coach";
+    host.innerHTML = AVATARS.map((a) => `
+      <button type="button" class="avatar-opt${a.id === cur ? " on" : ""}" data-cavatar="${a.id}"
+              aria-pressed="${a.id === cur}" title="${escapeHtml(a.name)}">
+        <span class="av-tile av-lg" style="--av-color:${avatarColor(name)};--av-rgb:6, 182, 212">
+          <img src="${avatarSrc(a.id)}" alt="" loading="lazy" decoding="async" />
+        </span>
+        <span class="avatar-opt-name">${escapeHtml(a.name)}</span>
+      </button>`).join("");
+    host.querySelectorAll("[data-cavatar]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const t = state.trainerData.trainer || (state.trainerData.trainer = {});
+        t.avatarId = t.avatarId === b.dataset.cavatar ? "" : b.dataset.cavatar;
+        saveTrainer();
+        if (window.Cloud?.enabled && state.trainerData.coachId) {
+          window.Cloud.debounce(`coachAvatar:${state.trainerData.coachId}`, () =>
+            window.Cloud.updateCoachAvatar(state.trainerData.coachId, t.avatarId));
+        }
+        renderCoachAvatar();
+        renderCoachAvatarPicker();
+      });
+    });
   }
 
   // -------- Backup / restore --------
@@ -2775,6 +2818,109 @@
     for (let i = 0; i < key.length; i++) h = ((h << 5) + h + key.charCodeAt(i)) | 0;
     return Math.abs(h) % AVATAR_COLORS.length;
   }
+  // -------- Pixel avatars --------
+  // Full-body low-bit fantasy archetypes the athlete picks for themselves. The
+  // per-athlete accent colour (athleteColorIdx) stays underneath as the tile
+  // backdrop, so an athlete without a pick still reads as "theirs" via initials
+  // and the roster keeps its colour coding either way.
+  // Art lives in ./avatars/<id>.png at 64x96, rendered pixelated. Swapping the
+  // placeholder set for the real sprites is a file drop, no code change.
+  const AVATARS = [
+    { id: "barbarian", name: "Barbarian" },
+    { id: "berserker", name: "Berserker" },
+    { id: "knight", name: "Knight" },
+    { id: "fighter", name: "Fighter" },
+    { id: "paladin", name: "Paladin" },
+    { id: "templar", name: "Templar" },
+    { id: "ranger", name: "Ranger" },
+    { id: "beastmaster", name: "Beastmaster" },
+    { id: "rogue", name: "Rogue" },
+    { id: "assassin", name: "Assassin" },
+    { id: "monk", name: "Monk" },
+    { id: "druid", name: "Druid" },
+    { id: "cleric", name: "Cleric" },
+    { id: "bard", name: "Bard" },
+    { id: "sorcerer", name: "Sorcerer" },
+    { id: "wizard", name: "Wizard" },
+    { id: "warlock", name: "Warlock" },
+    { id: "necromancer", name: "Necromancer" },
+    { id: "alchemist", name: "Alchemist" },
+    { id: "dragonborn", name: "Dragonborn" },
+  ];
+  const avatarById = (id) => AVATARS.find((a) => a.id === id) || null;
+  const avatarSrc = (id) => `./avatars/${id}.png`;
+
+  // The athlete's pick lives on their progress (athlete-owned; anything on the
+  // athlete object is clobbered by the coach's whole-row upserts). Coach-side
+  // that arrives as c.importedProgress, athlete-side as state.clientData.progress.
+  function avatarIdFor(client, progress) {
+    const p = progress || client?.importedProgress;
+    return avatarById(p?.avatarId)?.id || "";
+  }
+
+  // One tile renderer for every surface. `size` is a CSS class suffix.
+  function avatarTileHtml(client, progress, { size = "md", colorIdx = null } = {}) {
+    const id = avatarIdFor(client, progress);
+    const idx = colorIdx == null ? athleteColorIdx(client) : colorIdx;
+    const style = `--av-color:${AVATAR_COLORS[idx]};--av-rgb:${AVATAR_RGB[idx]}`;
+    if (!id) {
+      // No pick yet — the initials tile they've always had, same shape so the
+      // roster doesn't jump around once someone chooses.
+      return `<span class="av-tile av-${size} av-empty" style="${style}">${escapeHtml(nameInitials(client?.name))}</span>`;
+    }
+    const a = avatarById(id);
+    return `<span class="av-tile av-${size}" style="${style}">
+      <img src="${avatarSrc(id)}" alt="${escapeHtml(a.name)}" loading="lazy" decoding="async" />
+    </span>`;
+  }
+
+  // The athlete's picker. Tapping a tile saves immediately — this is a
+  // cosmetic choice, not a form worth a Save button.
+  function renderAvatarPicker() {
+    const host = $("#athlete-avatar-picker");
+    if (!host) return;
+    const progress = state.clientData?.progress;
+    const client = state.clientData?.program?.client;
+    if (!progress) return;
+    const cur = avatarIdFor(client, progress);
+    const idx = athleteColorIdx(client);
+    host.innerHTML = AVATARS.map((a) => `
+      <button type="button" class="avatar-opt${a.id === cur ? " on" : ""}" data-avatar="${a.id}"
+              aria-pressed="${a.id === cur}" title="${escapeHtml(a.name)}">
+        <span class="av-tile av-lg" style="--av-color:${AVATAR_COLORS[idx]};--av-rgb:${AVATAR_RGB[idx]}">
+          <img src="${avatarSrc(a.id)}" alt="" loading="lazy" decoding="async" />
+        </span>
+        <span class="avatar-opt-name">${escapeHtml(a.name)}</span>
+      </button>`).join("");
+    host.querySelectorAll("[data-avatar]").forEach((b) => {
+      b.addEventListener("click", () => setAthleteAvatar(b.dataset.avatar));
+    });
+  }
+
+  function setAthleteAvatar(id) {
+    if (state.previewMode) { toast("This is the athlete's own pick."); return; }
+    const progress = state.clientData?.progress;
+    if (!progress) return;
+    // Tapping the current pick clears it, back to initials.
+    progress.avatarId = progress.avatarId === id ? "" : id;
+    saveClient();
+    renderAvatarPicker();
+    renderClientHeaderAvatar();
+    toast(progress.avatarId ? `${avatarById(progress.avatarId).name} it is` : "Avatar cleared");
+  }
+
+  function renderClientHeaderAvatar() {
+    const host = $("#client-header-avatar");
+    if (!host) return;
+    const client = state.clientData?.program?.client;
+    const id = avatarIdFor(client, state.clientData?.progress);
+    // Nothing picked: stay out of the header rather than showing an initials
+    // tile next to a name that already says the same thing.
+    if (!id) { host.innerHTML = ""; host.classList.add("hidden"); return; }
+    host.classList.remove("hidden");
+    host.innerHTML = avatarTileHtml(client, state.clientData?.progress, { size: "xs" });
+  }
+
   function clientInitials(name) {
     return (name || "?").split(" ").map(p => p[0] || "").join("").slice(0, 2).toUpperCase();
   }
@@ -3005,8 +3151,8 @@
 
       const avatar = document.createElement("div");
       avatar.className = "client-avatar";
-      avatar.style.background = AVATAR_COLORS[colorIdx];
-      avatar.textContent = nameInitials(c.name);
+      // Their pixel avatar if they've picked one, else the initials tile.
+      avatar.innerHTML = avatarTileHtml(c, c.importedProgress, { size: "sm", colorIdx });
 
       const main = document.createElement("div");
       main.className = "client-row-main";
@@ -11394,8 +11540,9 @@
       err.classList.remove("hidden");
     }
   }
-  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {}, totalWorkoutMs: 0, workoutMoods: {}, addedExercises: {}, athleteDays: [], formChecks: {}, nutritionTargets: {}, foodLog: {}, customFoods: [], savedMeals: [], nutritionGame: {} }; }
+  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {}, totalWorkoutMs: 0, workoutMoods: {}, addedExercises: {}, athleteDays: [], formChecks: {}, nutritionTargets: {}, foodLog: {}, customFoods: [], savedMeals: [], nutritionGame: {}, avatarId: "" }; }
   function ensureProgressShape(p) {
+    if (typeof p.avatarId !== "string") p.avatarId = "";
     if (!p.exerciseLogs) p.exerciseLogs = {};
     if (!p.bodyweightLog) p.bodyweightLog = [];
     if (p.feedback == null) p.feedback = "";
@@ -11731,6 +11878,8 @@
     if (pInvite) pInvite.innerHTML = prog.client.inviteCode
       ? `<span class="profile-invite-label">🔑 Invite code</span><span class="profile-invite-code">${escapeHtml(prog.client.inviteCode)}</span>`
       : "";
+    renderAvatarPicker();
+    renderClientHeaderAvatar();
     renderThemePicker($("#athlete-theme-picker"), "athlete");
     setClientTab("overview"); // land on the Overview home
     const now = new Date();

@@ -717,19 +717,9 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
   transition: border-color 0.15s, background 0.15s;
 }
 .client-row:hover { border-color: var(--primary); background: var(--surface-2); }
-.client-avatar {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.8rem;
-  font-weight: 800;
-  color: #06101a;
-  flex-shrink: 0;
-  letter-spacing: -0.02em;
-}
+/* Now a bare wrapper — .av-tile inside owns the look, so a roster row shows
+   either a pixel avatar or the initials tile at identical dimensions. */
+.client-avatar { display: flex; flex-shrink: 0; }
 .client-row-main { min-width: 0; flex: 1; }
 .client-row-name { font-size: 1.08rem; font-weight: 800; color: var(--text); letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2; }
 .client-row-sub { font-size: 0.74rem; color: var(--text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.1em; }
@@ -822,11 +812,7 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   margin-bottom: 2rem;
 }
 .coach-profile-id { display: flex; align-items: center; gap: 0.9rem; flex: 1; min-width: 0; }
-.coach-profile-avatar {
-  width: 52px; height: 52px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 1.15rem; font-weight: 800; color: #06101a; flex-shrink: 0; letter-spacing: -0.02em;
-}
+.coach-profile-avatar { display: flex; flex-shrink: 0; }
 .coach-profile-idtext { min-width: 0; }
 .coach-profile-name { font-size: 1.15rem; font-weight: 800; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .coach-profile-email { font-size: 0.85rem; color: var(--text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.1em; }
@@ -3942,7 +3928,8 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
   /* Compact the row's fixed columns so the full name gets one uncut line
      (paired with the JS font-shrink in fitClientRowNames). */
   .client-row { gap: 0.5rem; padding: 0.5rem 0.6rem; }
-  .client-avatar { width: 30px; height: 30px; font-size: 0.72rem; }
+  /* Roster tiles shrink on phones; the tile itself carries the size now. */
+  .client-avatar .av-sm { width: 23px; height: 32px; font-size: 0.66rem; }
   .client-row-prog { width: 54px; }
   .client-row-prog-top .days { display: none; }
   .client-row-view { width: 30px; height: 30px; font-size: 0.9rem; }
@@ -9382,6 +9369,89 @@ input.ownday-sheet-input { margin-top: 0.35em; }
   .coach-sheet-foot { padding: 0.7rem 1rem calc(0.7rem + env(safe-area-inset-bottom)); }
   .coach-sheet-foot .btn { flex: 1; }
 }
+/* ==========================================================================
+   Pixel avatars
+   Full-body low-bit fantasy archetypes. Tiles are 2:3 so a standing figure
+   isn't cropped the way the old circle cropped it. The athlete's accent colour
+   (--av-color / --av-rgb) stays as the backdrop, so the roster keeps its
+   colour coding whether or not someone has picked a character.
+   ========================================================================== */
+.av-tile {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 6px;
+  border: 1px solid rgba(var(--av-rgb), 0.4);
+  background:
+    linear-gradient(180deg, rgba(var(--av-rgb), 0.06), rgba(var(--av-rgb), 0.22));
+  /* Ground shadow so the figure stands on something instead of floating. */
+  box-shadow: inset 0 -6px 10px -6px rgba(0, 0, 0, 0.7);
+}
+.av-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  /* The whole point of low-bit art: keep the pixels hard at any scale. */
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+/* No pick yet: the initials tile, same footprint so nothing jumps when they
+   choose one. */
+.av-empty {
+  align-items: center;
+  background: var(--av-color);
+  color: #06101a;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.av-xs { width: 20px; height: 28px; border-radius: 4px; font-size: 0.6rem; }
+.av-sm { width: 26px; height: 36px; font-size: 0.74rem; }
+.av-md { width: 40px; height: 56px; border-radius: 8px; font-size: 1.05rem; }
+.av-lg { width: 56px; height: 78px; border-radius: 8px; font-size: 1.2rem; }
+
+/* Avatar in the athlete's header name button */
+.header-av { display: inline-flex; margin-right: 0.45em; vertical-align: middle; }
+
+/* The picker: an auto-fill grid so 20 tiles reflow from 3 columns on a phone
+   up to as many as the card allows. */
+.avatar-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 0.6em;
+}
+.avatar-opt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.5em 0.25em 0.45em;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-soft);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.15s;
+}
+.avatar-opt:hover { border-color: var(--primary); background: var(--surface-3); transform: translateY(-2px); }
+.avatar-opt.on {
+  border-color: var(--primary-bright);
+  background: var(--primary-soft);
+  box-shadow: 0 0 0 1px rgba(var(--primary-rgb), 0.45);
+}
+.avatar-opt.on .avatar-opt-name { color: var(--primary-bright); }
+.avatar-opt-name {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-align: center;
+  line-height: 1.1;
+}
+
 /* No body-level scroll lock on purpose: `overflow: hidden` on body makes it a
    scroll container on mobile and kills every sticky descendant (see the
    overflow-x: clip note above). The sheet covers the viewport and contains its

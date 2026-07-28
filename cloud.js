@@ -138,6 +138,7 @@
       saved_meals: p.savedMeals || [],
       nutrition_game: p.nutritionGame || {},
       hoard: p.hoard || {},
+      avatar_id: p.avatarId || null,
       synced_at: new Date().toISOString(),
     };
   }
@@ -164,6 +165,7 @@
       savedMeals: r.saved_meals || [],
       nutritionGame: r.nutrition_game || {},
       hoard: r.hoard || {},
+      avatarId: r.avatar_id || "",
       syncedAt: r.synced_at,
     };
   }
@@ -208,6 +210,17 @@
       if (error) console.warn("[Cloud] updateCoachTemplates error", error.message);
       return !error;
     } catch (e) { console.warn("[Cloud] updateCoachTemplates", e); return false; }
+  }
+
+  // Coach's own pixel avatar. Safe on `coaches` (targeted column updates only,
+  // never a whole-row upsert), unlike the athlete's, which lives on progress.
+  async function updateCoachAvatar(coachId, avatarId) {
+    if (!coachId) return false;
+    try {
+      const { error } = await sb.from("coaches").update({ avatar_id: avatarId || null }).eq("id", coachId);
+      if (error) console.warn("[Cloud] updateCoachAvatar error", error.message);
+      return !error;
+    } catch (e) { console.warn("[Cloud] updateCoachAvatar", e); return false; }
   }
 
   // Coach's exercise-library customizations (custom exercises, hidden list,
@@ -659,6 +672,7 @@
     updateAthleteCoachPRs,
     updateAthleteHideOpenSlots,
     updateAthleteProfileFields,
+    updateCoachAvatar,
     // Progress
     upsertProgress,
     getProgress,
