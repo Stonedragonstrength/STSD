@@ -6184,10 +6184,17 @@
     _exLibraryTarget = day ? { day, rerenderFn } : null;
     $("#ex-library-overlay").classList.remove("athlete-mode");
     show($("#ex-library-overlay"));
+    // The drawer is its own nav level: Back closes it instead of backing out of
+    // the day underneath and leaving the library floating over the picker.
+    Nav.push(closeExLibrary);
     renderExLibrary($("#ex-library-search").value || "");
     setTimeout(() => $("#ex-library-search").focus(), 100);
   }
   function closeExLibrary() { hide($("#ex-library-overlay")); _exLibraryTarget = null; }
+  // Every close path goes through Nav so the level pushed on open is popped
+  // with it. Closing without popping would leave a stale entry and the next
+  // Back press would silently do nothing.
+  function dismissExLibrary() { Nav.back(closeExLibrary); }
 
   // Athlete "add an exercise on the fly" — same library drawer, but picks land
   // in the athlete's progress (addedExercises) instead of the coach's program.
@@ -6197,6 +6204,8 @@
     _exLibraryTarget = { onAdd: (name) => (isOwnDay(day) ? addOwnExercise(day, name) : addAthleteExercise(day, name)) };
     $("#ex-library-overlay").classList.add("athlete-mode"); // hides coach-only "custom exercise"
     show($("#ex-library-overlay"));
+    Nav.push(closeExLibrary); // Back closes the drawer, not the day behind it
+
     renderExLibrary($("#ex-library-search").value || "");
     setTimeout(() => $("#ex-library-search").focus(), 100);
   }
@@ -6214,7 +6223,7 @@
     list.push(ex);
     saveClient();
     toast(`Added ${name}`);
-    if (list.length >= MAX_ADDED_PER_DAY) closeExLibrary();
+    if (list.length >= MAX_ADDED_PER_DAY) dismissExLibrary();
     renderWorkoutDetailUI();
   }
   function removeAthleteExercise(day, ex) {
@@ -12713,6 +12722,9 @@
     if (target) editClientDay(c.id, target.weekId, target.dayId);
   }
   function setClientTab(name) {
+    // Leaving the tab underneath it: the library drawer goes too, rather than
+    // floating over whatever the athlete switched to.
+    if (!$("#ex-library-overlay")?.classList.contains("hidden")) dismissExLibrary();
     $$(".tab[data-ctab]").forEach((t) => t.classList.toggle("active", t.dataset.ctab === name));
     $$(".tab-panel[data-ctab-panel]").forEach((p) => p.classList.toggle("active", p.dataset.ctabPanel === name));
     // The racing bar's soft cap can only measure once its panel is visible.
@@ -13319,7 +13331,7 @@
     day.exercises.push(makeExercise({ name }));
     saveClient();
     toast(`Added ${name}`);
-    if (day.exercises.length >= MAX_OWN_EXERCISES) closeExLibrary();
+    if (day.exercises.length >= MAX_OWN_EXERCISES) dismissExLibrary();
     renderWorkoutDetailUI();
   }
   function removeOwnExercise(day, ex) {
@@ -19872,8 +19884,8 @@
     });
 
     // Exercise library
-    $("#btn-close-library").addEventListener("click", closeExLibrary);
-    $("#ex-library-backdrop").addEventListener("click", closeExLibrary);
+    $("#btn-close-library").addEventListener("click", dismissExLibrary);
+    $("#ex-library-backdrop").addEventListener("click", dismissExLibrary);
     $("#ex-library-search").addEventListener("input", (e) => renderExLibrary(e.target.value));
     $("#ex-lib-sb-search")?.addEventListener("input", (e) => renderSidebarLibrary(e.target.value));
     // × buttons wipe the search and put the cursor back in the field.
