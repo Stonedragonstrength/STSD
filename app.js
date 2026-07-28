@@ -10202,14 +10202,15 @@
   // auto-filling from logs re-renders the whole list).
   const _prOpen = new Set();
   function prSummaryHtml(entry, extra = "") {
+    // Weight only. Dates live in the editor a tap away, and three of them on
+    // one row pushed the third PR off the edge of a phone.
     const chip = (n) => {
       const v = entry[`pr${n}`];
       const d = entry[`pr${n}Date`];
       const lk = !!entry[`pr${n}Locked`];
-      return `<span class="pr-chip${v ? "" : " is-empty"}${lk ? " is-locked" : ""}">
+      return `<span class="pr-chip${v ? "" : " is-empty"}${lk ? " is-locked" : ""}"${d ? ` title="Set ${escapeHtml(d)}"` : ""}>
         <b>${n}RM</b>
         <span class="pr-chip-v">${v ? escapeHtml(prWeightLabel(entry.name, v)) : "—"}</span>
-        ${d ? `<span class="pr-chip-d">${escapeHtml(d)}</span>` : ""}
       </span>`;
     };
     return `<span class="pr-sum-name">${escapeHtml(entry.name || "")}</span>

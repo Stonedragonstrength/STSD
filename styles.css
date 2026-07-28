@@ -1148,7 +1148,19 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
 #screen-client .tab::after { display: none; } /* remove the underline indicator */
 #screen-client .tab:hover { background: var(--surface-2); color: var(--text); }
 #screen-client .tab-icon { font-size: 1.25em; line-height: 1; }
-#screen-client .tab-label { font-size: 0.6rem; white-space: normal; text-align: center; line-height: 1.25; overflow-wrap: break-word; padding-bottom: 1px; }
+/* One line, always. A wrapped label made its tab two rows tall and threw the
+   whole strip out of alignment. */
+#screen-client .tab-label {
+  font-size: 0.6rem; white-space: nowrap; text-align: center;
+  line-height: 1.25; padding-bottom: 1px;
+}
+/* flex-basis: auto lets a longer label (Diet and Comp) claim the width it
+   needs; the shorter tabs still share what's left evenly. */
+#screen-client .tab { flex: 1 1 auto; }
+@media (max-width: 400px) {
+  #screen-client .tab { padding-left: 0.05em; padding-right: 0.05em; }
+  #screen-client .tab-label { font-size: 0.55rem; letter-spacing: -0.01em; }
+}
 /* Sleek active state — matches .coach-nav-item.active exactly. */
 #screen-client .tab.active {
   background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.2), rgba(var(--primary-rgb), 0.07));
@@ -10004,7 +10016,6 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
   color: var(--muted);
 }
 .pr-chip-v { font-size: 0.88rem; font-weight: 800; color: var(--primary-bright); }
-.pr-chip-d { font-size: 0.6rem; color: var(--muted); }
 .pr-chip.is-empty { opacity: 0.5; }
 .pr-chip.is-empty .pr-chip-v { color: var(--muted); }
 /* A locked PR is the coach's line in the sand — gold, same as everywhere else. */
@@ -10025,10 +10036,12 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
      them. The order property keeps the chevron up on the name row — left to
      wrap, it landed on a third line of its own and cost 30px a lift. */
   .pr-fold > summary { flex-wrap: wrap; gap: 0.3em 0.5em; padding: 0.15rem 0; }
-  .pr-sum-name { max-width: none; flex: 1 1 auto; }
+  .pr-sum-name { max-width: none; flex: 1 1 auto; min-width: 7.5em; }
   .pr-sum-chev { order: 2; }
   .pr-fold .pr-delete-btn { order: 2; }
-  .pr-sum-chips { order: 3; margin-left: 0; flex: 1 0 100%; justify-content: flex-start; }
+  /* Share the name’s row when the chips fit, drop under it when they do not.
+     Forcing them onto their own line always cost 26px on every short lift. */
+  .pr-sum-chips { order: 3; margin-left: auto; flex: 0 1 auto; justify-content: flex-start; }
   .pr-chip { padding: 0.15em 0.4em; }
   .pr-chip-v { font-size: 0.82rem; }
 }
