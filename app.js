@@ -11592,13 +11592,17 @@
     else p.workoutMoods[dayId] = { date: todayISO(), moods: clean };
     saveClient();
   }
-  // The "How was your workout?" sheet. Athlete-only; up to 2 picks.
+  // The "How was your workout?" sheet. Up to 2 picks.
   // `celebrate` is the auto-open after a day finishes: the sheet doubles as the
   // day-complete celebration, so the win banner and the confetti arrive with
   // the picker instead of firing separately somewhere the athlete isn't looking.
   // Returns false when the sheet can't open, so the caller can fall back.
   function openWorkoutMoodSheet(day, { celebrate = false } = {}) {
-    if (!day || state.mode !== "client") return false;
+    // A live session keeps state.mode as "trainer" (so a reload restores the
+    // coach view), but the coach is standing in the athlete's portal logging
+    // their workout — asking how it went is part of finishing the session.
+    // setDayMoods → saveClient() already mirrors to the athlete's row.
+    if (!day || (state.mode !== "client" && !state.liveLog)) return false;
     const p = state.clientData.progress; if (!p) return false;
     let sel = dayMoods(p, day.id).slice();
     const draw = () => {
@@ -11673,8 +11677,8 @@
         // Long enough for the keyboard to finish sliding away, short enough to
         // still read as a reaction to locking the last exercise.
         setTimeout(() => {
-          // The picker carries the celebration. If it can't open (already
-          // rated, or a coach previewing), burst on its own instead.
+          // The picker carries the celebration. If it can't open (the day is
+          // already rated), burst on its own instead.
           if (rated || !openWorkoutMoodSheet(day, { celebrate: true })) celebrateDayComplete();
         }, 300);
       }
