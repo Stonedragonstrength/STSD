@@ -2870,18 +2870,39 @@
     return avatarById(p?.avatarId)?.id || "";
   }
 
+  // The Hoard rank an avatar is currently wearing, or null before any tonnage.
+  // Coach-side the totals ride on importedProgress, athlete-side on progress.
+  function avatarRankDress(client, progress) {
+    const lb = Number((progress || client?.importedProgress)?.hoard?.lb) || 0;
+    if (!lb) return null;
+    const lvl = hoardLevelFromLb(lb);
+    return { lb, lvl, rank: hoardRankForLevel(lvl.level), look: hoardLook(lvl.level) };
+  }
+
   // One tile renderer for every surface. `size` is a CSS class suffix.
-  function avatarTileHtml(client, progress, { size = "md", colorIdx = null } = {}) {
+  // Tiles wear the athlete's rank as a ring and a glow that heats up the
+  // ladder, so a roster scan says who has been putting the work in. Pass
+  // rank:false where that would be noise (the picker, where every option would
+  // wear the same crest while you're choosing between them).
+  function avatarTileHtml(client, progress, { size = "md", colorIdx = null, rank = true } = {}) {
     const id = avatarIdFor(client, progress);
     const idx = colorIdx == null ? athleteColorIdx(client) : colorIdx;
-    const style = `--av-color:${AVATAR_COLORS[idx]};--av-rgb:${AVATAR_RGB[idx]}`;
+    let style = `--av-color:${AVATAR_COLORS[idx]};--av-rgb:${AVATAR_RGB[idx]}`;
+    let cls = "";
+    let title = "";
+    const dress = rank ? avatarRankDress(client, progress) : null;
+    if (dress) {
+      style += `;--rank-color:${dress.look.color};--rank-glow:${dress.look.glow}`;
+      cls = " av-ranked" + (dress.look.hot ? " is-hot" : "");
+      title = ` title="${escapeHtml(dress.rank.name)} · ${escapeHtml(hoardLbLabel(dress.lb))} moved"`;
+    }
     if (!id) {
       // No pick yet — the initials tile they've always had, same shape so the
       // roster doesn't jump around once someone chooses.
-      return `<span class="av-tile av-${size} av-empty" style="${style}">${escapeHtml(nameInitials(client?.name))}</span>`;
+      return `<span class="av-tile av-${size} av-empty${cls}" style="${style}"${title}>${escapeHtml(nameInitials(client?.name))}</span>`;
     }
     const a = avatarById(id);
-    return `<span class="av-tile av-${size}" style="${style}">
+    return `<span class="av-tile av-${size}${cls}" style="${style}"${title}>
       <img src="${avatarSrc(id)}" alt="${escapeHtml(a.name)}" loading="lazy" decoding="async" />
     </span>`;
   }
@@ -2923,14 +2944,22 @@
 
   function renderClientHeaderAvatar() {
     const host = $("#client-header-avatar");
-    if (!host) return;
+    const crest = $("#client-rank-crest");
+    const slot = $("#client-crest-avatar");
     const client = state.clientData?.program?.client;
     const id = avatarIdFor(client, state.clientData?.progress);
-    // Nothing picked: stay out of the header rather than showing an initials
-    // tile next to a name that already says the same thing.
-    if (!id) { host.innerHTML = ""; host.classList.add("hidden"); return; }
-    host.classList.remove("hidden");
-    host.innerHTML = avatarTileHtml(client, state.clientData?.progress, { size: "xs" });
+    // Their character stands in the crest, wearing the rank ring and medallion
+    // the logo used to wear. Nothing picked: the logo keeps the frame.
+    if (slot && crest) {
+      slot.innerHTML = id
+        ? `<img src="${avatarSrc(id)}" alt="" decoding="async" />`
+        : "";
+      crest.classList.toggle("has-av", !!id);
+    }
+    if (!host) return;
+    // The small tile beside their name would now be the same figure twice.
+    host.innerHTML = "";
+    host.classList.add("hidden");
   }
 
   function clientInitials(name) {
@@ -19061,13 +19090,23 @@
       if (_restAC.state === "suspended") _restAC.resume();
     } catch (e) {}
   }
-  // Chosen rest length persists — the Go button reuses it and the timer
-  // auto-repeats with it after every ding until the athlete taps Stop.
+  // Chosen rest length persists — the Go button reuses it and, by default, the
+  // timer rolls straight into another rest of the same length.
   const KEY_REST_DUR = "trainerpro_rest_dur_v1";
   function restDur() {
     const v = parseInt(localStorage.getItem(KEY_REST_DUR), 10);
     return Number.isFinite(v) && v > 0 ? v : 90;
   }
+  // What happens at zero, both remembered per device:
+  //   nag       — keep ringing until the athlete taps, instead of one ding.
+  //               Off by default; a single ding is the polite behaviour.
+  //   autostart — roll into the next rest by itself. On by default, which is
+  //               what the timer has always done. Off means it sits on ▶ Go
+  //               and waits to be started for every set.
+  const KEY_REST_NAG = "trainerpro_rest_nag_v1";
+  const KEY_REST_AUTOSTART = "trainerpro_rest_autostart_v1";
+  function restNagOn() { return localStorage.getItem(KEY_REST_NAG) === "1"; }
+  function restAutoStartOn() { return localStorage.getItem(KEY_REST_AUTOSTART) !== "0"; }
   function fmtRest(sec) { return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`; }
   function refreshRestOptBtn() {
     const b = $("#rest-timer-opt-btn"); if (b) b.textContent = fmtRest(restDur());
@@ -19081,6 +19120,7 @@
   }
   function startRestTimer(sec) {
     if (restSoundOn()) unlockRestAudio(); // user gesture — unlock the ding now
+    stopRestRinging();
     _restEnd = Date.now() + sec * 1000;
     clearInterval(_restIv);
     $("#rest-timer-btn")?.classList.add("running");
@@ -19090,21 +19130,60 @@
   }
   function stopRestTimer(finished) {
     clearInterval(_restIv); _restIv = null; _restEnd = 0;
+    stopRestRinging();
     const btn = $("#rest-timer-btn");
     if (!btn) return;
     btn.classList.remove("running");
     btn.textContent = "▶ Go";
   }
+
+  // "Keep ringing until I tap": hold at 0:00 and re-ding every few seconds.
+  // Capped so a phone left in a gym bag doesn't ring for the rest of the day.
+  let _restRingIv = null, _restRingEnd = 0;
+  const REST_RING_EVERY = 3000;
+  const REST_RING_MAX = 90000;
+  function restRinging() { return !!_restRingIv; }
+  function startRestRinging() {
+    clearInterval(_restIv); _restIv = null; _restEnd = 0;
+    const btn = $("#rest-timer-btn");
+    if (btn) { btn.classList.add("ringing"); btn.textContent = "⏰ 0:00"; }
+    _restRingEnd = Date.now() + REST_RING_MAX;
+    clearInterval(_restRingIv);
+    _restRingIv = setInterval(() => {
+      if (Date.now() >= _restRingEnd) { dismissRestRinging(false); return; }
+      restDing();
+    }, REST_RING_EVERY);
+  }
+  function stopRestRinging() {
+    clearInterval(_restRingIv); _restRingIv = null; _restRingEnd = 0;
+    $("#rest-timer-btn")?.classList.remove("ringing");
+  }
+  // Tapping the ringing button silences it and, if the timer is set to carry
+  // on by itself, starts the next rest right there. Otherwise it goes idle.
+  function dismissRestRinging(byTap) {
+    stopRestRinging();
+    if (byTap && restAutoStartOn()) startRestTimer(restDur());
+    else stopRestTimer(false);
+  }
+  function restDing() {
+    try { navigator.vibrate?.([200, 100, 200]); } catch (e) {}
+    restBeep();
+    const btn = $("#rest-timer-btn");
+    if (!btn) return;
+    btn.classList.add("done-flash");
+    setTimeout(() => btn.classList.remove("done-flash"), 1600);
+  }
+
   function tickRestTimer() {
     const btn = $("#rest-timer-btn"); if (!btn) return;
     const left = Math.ceil((_restEnd - Date.now()) / 1000);
     if (left <= 0) {
-      // Ding, then roll straight into the next rest — the timer loops with the
-      // same duration until the athlete taps Stop (or leaves the day).
-      try { navigator.vibrate?.([200, 100, 200]); } catch (e) {}
-      restBeep();
-      btn.classList.add("done-flash");
-      setTimeout(() => btn.classList.remove("done-flash"), 1600);
+      restDing();
+      // Three endings, per the athlete's settings: keep ringing until they tap,
+      // roll straight into another rest of the same length (the default), or
+      // sit on ▶ Go and wait to be started again.
+      if (restNagOn()) { startRestRinging(); return; }
+      if (!restAutoStartOn()) { stopRestTimer(true); return; }
       _restEnd = Date.now() + restDur() * 1000;
     }
     const l2 = Math.max(0, Math.ceil((_restEnd - Date.now()) / 1000));
@@ -19842,11 +19921,34 @@
     // Rest timer (athlete workout detail): the small button picks the length,
     // ▶ Go starts/stops the repeating countdown.
     $("#rest-timer-btn")?.addEventListener("click", () => {
-      if (_restIv) { stopRestTimer(false); return; } // running → tap stops
+      if (restRinging()) { dismissRestRinging(true); return; } // ringing → tap silences
+      if (_restIv) { stopRestTimer(false); return; }           // running → tap stops
       startRestTimer(restDur());
     });
     $("#rest-timer-opt-btn")?.addEventListener("click", () =>
       $("#rest-timer-pop")?.classList.toggle("hidden"));
+    // The two end-of-rest settings. These stay in the popover when tapped —
+    // unlike the lengths, they aren't a one-tap "start now" action.
+    const nagOpt = $("#rest-nag-opt"), autoOpt = $("#rest-auto-opt");
+    const refreshRestModeBtns = () => {
+      [[nagOpt, restNagOn()], [autoOpt, restAutoStartOn()]].forEach(([b, on]) => {
+        if (!b) return;
+        b.classList.toggle("on", on);
+        b.setAttribute("aria-pressed", String(on));
+        const state = b.querySelector(".rest-pop-state");
+        if (state) state.textContent = on ? "On" : "Off";
+      });
+    };
+    refreshRestModeBtns();
+    nagOpt?.addEventListener("click", () => {
+      localStorage.setItem(KEY_REST_NAG, restNagOn() ? "0" : "1");
+      refreshRestModeBtns();
+      if (restSoundOn()) unlockRestAudio();
+    });
+    autoOpt?.addEventListener("click", () => {
+      localStorage.setItem(KEY_REST_AUTOSTART, restAutoStartOn() ? "0" : "1");
+      refreshRestModeBtns();
+    });
     $$("#rest-timer-pop [data-rest]").forEach((b) =>
       b.addEventListener("click", () => {
         const sec = Number(b.dataset.rest);

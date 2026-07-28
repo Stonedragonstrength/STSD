@@ -501,6 +501,30 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
   transition: box-shadow 0.4s ease, border-color 0.4s ease;
 }
 
+/* The athlete's character standing inside the crest, in place of the logo.
+   Inset so it never touches the ring, bottom-aligned like every other avatar
+   surface, and pixelated so the low-bit art stays hard at 40px. */
+.crest-av {
+  position: absolute;
+  inset: 3px;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(var(--primary-bright-rgb), 0.05),
+                                      rgba(var(--primary-bright-rgb), 0.18));
+  overflow: hidden;
+}
+.crest-av img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+.rank-crest.has-av > img { visibility: hidden; }
+.rank-crest.has-av .crest-av { display: flex; }
+
 /* The brand line, once it's carrying a rank instead of "Stone Dragon". */
 .header-title.is-rank {
   background: none;
@@ -7681,6 +7705,14 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 .rest-timer-btn.running { background: var(--primary); color: #04222b; }
 .rest-timer-btn.done-flash { animation: restDone 0.5s ease 3; }
 @keyframes restDone { 50% { transform: scale(1.14); } }
+/* Rest is over and the timer is set to keep ringing: the button holds at 0:00
+   in the alarm colour until it's tapped. Solid rather than animated, so it
+   still reads as "waiting on you" with Reduce Motion on. */
+.rest-timer-btn.ringing {
+  background: var(--gold, #fde047);
+  border-color: var(--gold, #fde047);
+  color: #241a02;
+}
 .rest-timer-pop {
   display: flex; gap: 0.4rem; padding: 0.45rem;
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
@@ -7693,6 +7725,26 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   border-radius: 8px; padding: 0.4em 0.7em; font-weight: 700; cursor: pointer;
 }
 .rest-timer-pop button:hover { border-color: var(--primary); color: var(--primary-bright); }
+/* The two end-of-rest settings under the lengths: full-width rows with their
+   state on the right, so the popover reads as "pick a length, then decide what
+   happens when it runs out". */
+.rest-pop-sep {
+  flex-basis: 100%; height: 1px; background: var(--border); margin: 0.2rem 0;
+}
+.rest-timer-pop .rest-pop-opt {
+  flex-basis: 100%;
+  display: flex; align-items: center; justify-content: space-between; gap: 0.8em;
+  font-size: 0.76rem; font-weight: 600; text-align: left; font-family: inherit;
+  color: var(--text-soft);
+}
+.rest-timer-pop .rest-pop-opt .rest-pop-state {
+  font-weight: 800; font-size: 0.7rem; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--muted);
+}
+.rest-timer-pop .rest-pop-opt.on {
+  border-color: var(--primary); color: var(--primary-bright);
+}
+.rest-timer-pop .rest-pop-opt.on .rest-pop-state { color: var(--primary-bright); }
 
 /* ===== Roster grouping (coach dashboard) ===== */
 .roster-controls {
@@ -9407,6 +9459,21 @@ input.ownday-sheet-input { margin-top: 0.35em; }
   font-weight: 800;
   letter-spacing: -0.02em;
 }
+/* Wearing a Hoard rank: the tile takes the same colour + glow ramp as the
+   header crest, so a roster reads at a glance as copper at the bottom and
+   white-hot at the top. Ring only, no medallion — these tiles are 20-26px and
+   a badge on one is mush. The ground shadow has to be restated because a
+   second box-shadow declaration replaces it rather than adding to it. */
+.av-tile.av-ranked {
+  border-color: color-mix(in srgb, var(--rank-color, var(--gold)) 70%, transparent);
+  box-shadow:
+    inset 0 -6px 10px -6px rgba(0, 0, 0, 0.7),
+    0 0 0 1px color-mix(in srgb, var(--rank-color, var(--gold)) 45%, transparent),
+    0 0 calc(var(--rank-glow, 0) * 6px)
+      color-mix(in srgb, var(--rank-color, var(--gold)) 60%, transparent);
+  transition: box-shadow 0.4s ease, border-color 0.4s ease;
+}
+
 .av-xs { width: 20px; height: 28px; border-radius: 4px; font-size: 0.6rem; }
 .av-sm { width: 26px; height: 36px; font-size: 0.74rem; }
 .av-md { width: 40px; height: 56px; border-radius: 8px; font-size: 1.05rem; }

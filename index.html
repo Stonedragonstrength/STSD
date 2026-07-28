@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=avatars2" />
+  <link rel="stylesheet" href="styles.css?v=rank2" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -731,6 +731,9 @@
             <rect class="rank-ring-fill" x="2.5" y="2.5" width="43" height="43" rx="12" />
           </svg>
           <img src="logo.png" alt="" onerror="this.onerror=null; this.src='icon-192.svg';" />
+          <!-- Once they've picked a character it stands inside the crest in
+               place of the logo, so the ring and medallion frame THEM. -->
+          <span class="crest-av" id="client-crest-avatar" aria-hidden="true"></span>
           <span class="rank-medallion hidden" id="client-rank-medallion"></span>
         </div>
         <div>
@@ -843,6 +846,15 @@
             <button type="button" data-rest="90">1:30</button>
             <button type="button" data-rest="120">2:00</button>
             <button type="button" data-rest="180">3:00</button>
+            <!-- What happens when the countdown hits zero. Both remembered per
+                 device, filled in by refreshRestModeBtns(). -->
+            <div class="rest-pop-sep"></div>
+            <button type="button" class="rest-pop-opt" id="rest-nag-opt">
+              <span>Keep ringing until I tap</span><span class="rest-pop-state"></span>
+            </button>
+            <button type="button" class="rest-pop-opt" id="rest-auto-opt">
+              <span>Start the next rest on its own</span><span class="rest-pop-state"></span>
+            </button>
           </div>
           <div class="rest-timer-row">
             <button id="rest-sound-btn" class="rest-sound-btn" type="button" title="Timer ding">🔔</button>
@@ -1056,10 +1068,10 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="bugreport.js?v=bug1"></script>
-  <script src="config.js?v=avatars2"></script>
-  <script src="cloud.js?v=avatars2"></script>
+  <script src="config.js?v=rank2"></script>
+  <script src="cloud.js?v=rank2"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=avatars2"></script>
+  <script src="app.js?v=rank2"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
