@@ -5536,7 +5536,7 @@
         def: "Training is only the stimulus. The actual repair and growth happen while you rest, sleep, and eat. Train again before you have recovered and you dig a hole; time it right and you come back a little stronger than before.",
         strength: "Progress is training plus recovery, not training alone. Sleep and food are not extras, they are where the adaptation is built." },
     ] },
-    { group: "Length and mobility", tag: "Stretching", icon: "lu:personstanding", accent: "56,189,248", items: [
+    { group: "Length and mobility", tag: "Stretching", icon: "lu:wind", accent: "56,189,248", items: [
       { term: "Flexibility vs. mobility", short: "Passive range vs. range you control.",
         def: "Flexibility is how far a joint can be moved when something else does the moving. Mobility is how much of that range you can reach and control with your own strength. For lifting, controllable mobility is the more useful quality.",
         strength: "Strong through a full range beats loose but shaky. Mobility work is what lets you own the bottom of a squat or a deep stretch instead of just falling into it." },
@@ -5645,7 +5645,7 @@
         def: "Muscle you once built comes back much faster than it took to build the first time. Your muscle fibers keep extra nuclei gained from past training, giving them a head start when you return.",
         apply: "A layoff is not the disaster it feels like. Expect lost size and strength to return in weeks, not the months it originally took." },
     ] },
-    { group: "Macros and food quality", tag: "Macros", icon: "lu:salad", accent: "163,230,53", items: [
+    { group: "Macros and food quality", tag: "Macros", icon: "lu:sandwich", accent: "163,230,53", items: [
       { term: "Protein", short: "The building-block macro.",
         def: "Protein supplies the amino acids your body uses to repair and build muscle. It is the most important macro for body composition, the most filling, and the most costly to digest. Common targets land around 0.7 to 1 gram per pound of bodyweight.",
         apply: "Hit your protein first every day, spread across a few meals. Whether cutting or bulking, it is the macro that protects and builds muscle." },
@@ -5708,7 +5708,7 @@
         def: "Training briefly raises testosterone and growth hormone, and for years that was assumed to drive growth. Studies since have found these acute spikes correlate poorly with actual muscle gain, which tracks mechanical tension and training volume instead.",
         means: "Do not pick exercises to chase a hormone response. Pick them because they load the muscle you want to grow through a full range." },
     ] },
-    { group: "Hunger and metabolism", tag: "Appetite", icon: "lu:gauge", accent: "45,212,191", items: [
+    { group: "Hunger and metabolism", tag: "Appetite", icon: "lu:drumstick", accent: "45,212,191", items: [
       { term: "Insulin", short: "The nutrient traffic controller.",
         def: "Insulin is released when blood sugar rises and moves glucose and amino acids into cells, including muscle. It is a storage hormone for both muscle and fat, and it is not the cause of fat gain on its own. Eating more energy than you burn is.",
         means: "You do not need to fear carbohydrates or insulin to lose fat. Total energy still decides the direction; insulin decides the traffic." },
@@ -5794,7 +5794,7 @@
         def: "Some research reports higher rates of ACL injury around ovulation, with estrogen's effect on ligament laxity as the proposed reason. The finding is not consistent across studies, and the size of any real effect is unclear.",
         means: "It is not a reason to avoid training at any point in the month. Warming up properly and training landing and cutting mechanics protects knees in every phase." },
     ] },
-    { group: "When the cycle changes", tag: "Red flags", icon: "lu:shield", accent: "251,191,36", items: [
+    { group: "When the cycle changes", tag: "Red flags", icon: "lu:flag", accent: "251,191,36", items: [
       { term: "Missing periods", short: "A signal worth taking seriously.",
         def: "Amenorrhea means periods have stopped, or never started. In athletes the most common cause is the brain quieting the reproductive system when it reads the body as being under too much strain, usually from not eating enough for the training being done.",
         means: "A period that disappears is not a convenient side effect of getting fit. It is information about energy availability, and it deserves a doctor's visit rather than a shrug." },
