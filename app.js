@@ -5469,6 +5469,7 @@
           ${g.accessories.map((n) => chip(n, false)).join("")}
         </div>
       </div>
+      ${muscleReadMoreHtml(g)}
     </div>`;
   }
 
@@ -5476,7 +5477,7 @@
   // training makes you stronger. Rendered as tap-to-open cards below the muscle
   // explorer on the Anatomy page (coach + athlete). Static reference content.
   const STRENGTH_CONCEPTS = [
-    { group: "The nervous system", tag: "Neural", items: [
+    { group: "The nervous system", tag: "Neural", icon: "lu:brain", accent: "168,120,255", items: [
       { term: "Motor unit recruitment", short: "How many muscle fibers you switch on.",
         def: "A motor unit is a single nerve plus all the muscle fibers it controls. Your body switches them on smallest first, saving the big, high-force units for when they are truly needed (the size principle). Easy efforts only wake the small ones.",
         strength: "To train your strongest fibers you have to give them a reason to show up: heavy loads, or lighter loads moved with maximum intent. Cruising through easy sets leaves your biggest engines parked." },
@@ -5490,7 +5491,7 @@
         def: "A heavy lift is a coordinated act: the prime movers fire hard, the stabilizers time up, and the opposing muscles relax out of the way. The nervous system gets better at this pattern with practice, the way any skill improves.",
         strength: "Part of getting stronger at squat or bench is simply getting better at that exact movement. It is why practicing the main lifts beats only training around them." },
     ] },
-    { group: "Sensors and reflexes", tag: "Proprioception", items: [
+    { group: "Sensors and reflexes", tag: "Proprioception", icon: "lu:navigation", accent: "56,214,199", items: [
       { term: "Muscle spindles", short: "The stretch sensors woven into the muscle.",
         def: "Muscle spindles are tiny sensory organs threaded among your muscle fibers that track how far and how fast the muscle is being stretched. Sense a quick stretch and they signal the spinal cord, which fires the muscle to contract and resist being pulled any further.",
         strength: "They are the trigger behind the bounce out of the bottom of a squat and the dip before a jump. Tempo work and plyometrics teach you to use that spring, while slow, relaxed stretching quiets the spindles so your range can genuinely open up." },
@@ -5504,7 +5505,7 @@
         def: "Acting on the Golgi tendon signal, your body can dial force down to protect the joint when tension spikes, a built-in brake. Consistent heavy training raises that brake's threshold, letting you reach more of the strength you already own.",
         strength: "Some of your max strength gain is not new force at all, it is permission to use what was there. Gradual, heavy exposure is what turns the brake down safely." },
     ] },
-    { group: "Muscle and growth", tag: "Muscle", items: [
+    { group: "Muscle and growth", tag: "Muscle", icon: "lu:biceps", accent: "255,122,89", items: [
       { term: "Muscle fiber types", short: "Slow-twitch endurance vs. fast-twitch force.",
         def: "Type I (slow-twitch) fibers resist fatigue and are built for endurance. Type II (fast-twitch) fibers make much more force, contract faster, and tire quickly. Most muscles are a mix, and your training biases which qualities develop.",
         strength: "Strength and power lean on fast-twitch fibers. Heavy loads and explosive efforts recruit and develop them; endless light reps mostly train endurance." },
@@ -5518,7 +5519,7 @@
         def: "When a muscle is quickly stretched (the lowering phase) then immediately reverses into shortening (the lifting phase), it stores and releases elastic energy like a loaded spring. The dip before a jump and the bounce out of the bottom of a bench both use it.",
         strength: "It is the root of power and explosive lifts. Controlled tempo work and plyometrics such as jumps and throws sharpen it." },
     ] },
-    { group: "Building muscle", tag: "Hypertrophy", items: [
+    { group: "Building muscle", tag: "Hypertrophy", icon: "lu:trendingup", accent: "74,222,128", items: [
       { term: "Muscle protein synthesis", short: "The repair that actually adds size.",
         def: "A hard session raises the rate at which your muscle builds new protein for roughly a day or two afterward. Growth happens when that synthesis outpaces the normal breakdown, session after session.",
         strength: "This is why food and rest between workouts matter as much as the workout. Enough protein and recovery are what let the repaired tissue accumulate into a bigger, stronger muscle." },
@@ -5535,7 +5536,7 @@
         def: "Training is only the stimulus. The actual repair and growth happen while you rest, sleep, and eat. Train again before you have recovered and you dig a hole; time it right and you come back a little stronger than before.",
         strength: "Progress is training plus recovery, not training alone. Sleep and food are not extras, they are where the adaptation is built." },
     ] },
-    { group: "Length and mobility", tag: "Stretching", items: [
+    { group: "Length and mobility", tag: "Stretching", icon: "lu:stretch", accent: "56,189,248", items: [
       { term: "Flexibility vs. mobility", short: "Passive range vs. range you control.",
         def: "Flexibility is how far a joint can be moved when something else does the moving. Mobility is how much of that range you can reach and control with your own strength. For lifting, controllable mobility is the more useful quality.",
         strength: "Strong through a full range beats loose but shaky. Mobility work is what lets you own the bottom of a squat or a deep stretch instead of just falling into it." },
@@ -5549,7 +5550,7 @@
         def: "Taking a lift through its complete range trains the muscle at every length it works through, and generally builds more size and usable strength than short, partial reps. Targeted partials still have a place on top of that.",
         strength: "Do not trade honest range for a heavier number. Full-range strength carries over to real life and to your other lifts far better than a shortened one." },
     ] },
-    { group: "Training language", tag: "Programming", items: [
+    { group: "Training language", tag: "Programming", icon: "lu:milestone", accent: "251,191,36", items: [
       { term: "1RM and rep maxes", short: "The vocabulary of intensity.",
         def: "Your 1RM is the most you can lift once. A rep max (RM) is the most reps you can do at a given weight: a 5RM is a weight you can lift five times and no more. Programs often set loads as a percentage of your 1RM.",
         strength: "Knowing your maxes lets a program target the right intensity for the goal: heavy and low-rep for strength, moderate for size." },
@@ -5565,7 +5566,7 @@
   // Nutrition and body-composition explainers. Same card shape as the strength
   // concepts, but the takeaway field is `apply` (rendered under "How to use it").
   const NUTRITION_CONCEPTS = [
-    { group: "Energy and calories", tag: "Basics", items: [
+    { group: "Energy and calories", tag: "Basics", icon: "lu:flame", accent: "251,146,60", items: [
       { term: "Calorie", short: "The unit your body runs on.",
         def: "A calorie is simply a unit of energy. Food delivers energy, and your body spends it to move, think, digest, and stay alive. Almost everything about gaining or losing weight traces back to how the energy you eat compares to the energy you burn.",
         apply: "No single food needs to be feared. What moves the needle is your total energy over days and weeks, so judge your diet by the big picture, not one meal." },
@@ -5576,7 +5577,7 @@
         def: "Your maintenance level is the calorie intake that keeps your weight stable, because it matches your total daily burn. Eat here and you neither gain nor lose over time. It is the anchor every goal is measured from.",
         apply: "Find maintenance by tracking intake and weight for two or three weeks. Once you know it, a deficit or surplus is just a deliberate step away from that anchor." },
     ] },
-    { group: "Your metabolism", tag: "TDEE", items: [
+    { group: "Your metabolism", tag: "TDEE", icon: "lu:gauge", accent: "34,211,238", items: [
       { term: "TDEE", short: "Everything you burn in a day.",
         def: "TDEE stands for total daily energy expenditure: every calorie you burn in 24 hours added up. It is the number your intake is really competing against, and it shifts day to day with your activity.",
         apply: "Estimate your TDEE, then eat below it to lose, above it to gain, or at it to maintain. Treat the estimate as a starting point and adjust from what the scale actually does." },
@@ -5596,7 +5597,7 @@
         def: "As you lose weight your TDEE drops: a smaller body costs less to run, and your body trims NEAT and resting burn to defend its fat stores. This is why a deficit that once worked eventually stalls.",
         apply: "Expect to lower calories or add activity as you get leaner. A stall is not failure, it is the target moving, so adjust and keep going." },
     ] },
-    { group: "Losing fat", tag: "Fat loss", items: [
+    { group: "Losing fat", tag: "Fat loss", icon: "lu:target", accent: "251,113,133", items: [
       { term: "Calorie deficit", short: "Eating less than you burn.",
         def: "A calorie deficit means taking in fewer calories than your body spends. It is the one requirement for fat loss. Every effective fat-loss diet, by any name, creates this in the end.",
         apply: "Aim for a moderate deficit you can hold, not the steepest one possible. Crash diets cost you muscle and rarely last." },
@@ -5610,7 +5611,7 @@
         def: "In a deficit your body will burn muscle along with fat unless you give it strong reasons not to. Two reasons dominate: enough protein, and continued hard resistance training that signals the muscle is still needed.",
         apply: "Keep lifting heavy and keep protein high while dieting. Do not switch to light weights and endless cardio, that is how you shrink instead of getting lean." },
     ] },
-    { group: "Gaining muscle and weight", tag: "Muscle gain", items: [
+    { group: "Gaining muscle and weight", tag: "Muscle gain", icon: "lu:beef", accent: "132,204,22", items: [
       { term: "Calorie surplus", short: "Eating more than you burn.",
         def: "A surplus is taking in more calories than you spend. It gives your body spare energy to build new tissue. Some surplus makes gaining muscle easier, but any excess beyond what you can use is stored as fat.",
         apply: "For gaining, a small surplus is enough. Piling on calories does not build muscle faster, it just adds fat you will have to diet off later." },
@@ -5630,7 +5631,7 @@
         def: "Your partitioning ratio is how gained or lost energy divides between muscle and fat. In a surplus it is how much becomes muscle versus fat. In a deficit it is how much lost is fat versus muscle. Training, protein, and sleep all tilt it.",
         apply: "You cannot fully control your p-ratio, but lifting hard, eating enough protein, and sleeping well push it toward more muscle and less fat in either direction." },
     ] },
-    { group: "Losing muscle", tag: "Muscle loss", items: [
+    { group: "Losing muscle", tag: "Muscle loss", icon: "lu:shield", accent: "148,163,184", items: [
       { term: "Anabolism vs. catabolism", short: "Building up versus breaking down.",
         def: "Anabolism is your body building tissue, including muscle. Catabolism is breaking tissue down for energy. Both run constantly, and which one wins over time decides whether you gain or lose muscle.",
         apply: "The word catabolic is nothing to fear. The goal is for building to outweigh breakdown across the week, not to avoid breakdown at every moment." },
@@ -5644,7 +5645,7 @@
         def: "Muscle you once built comes back much faster than it took to build the first time. Your muscle fibers keep extra nuclei gained from past training, giving them a head start when you return.",
         apply: "A layoff is not the disaster it feels like. Expect lost size and strength to return in weeks, not the months it originally took." },
     ] },
-    { group: "Macros and food quality", tag: "Macros", items: [
+    { group: "Macros and food quality", tag: "Macros", icon: "lu:salad", accent: "163,230,53", items: [
       { term: "Protein", short: "The building-block macro.",
         def: "Protein supplies the amino acids your body uses to repair and build muscle. It is the most important macro for body composition, the most filling, and the most costly to digest. Common targets land around 0.7 to 1 gram per pound of bodyweight.",
         apply: "Hit your protein first every day, spread across a few meals. Whether cutting or bulking, it is the macro that protects and builds muscle." },
@@ -5664,7 +5665,7 @@
         def: "Water makes up most of your muscle and is needed for nearly every process, including force production and recovery. Even mild dehydration can dent strength, focus, and how full your muscles feel.",
         apply: "Drink through the day, not just at the gym. Water with each meal and during training covers most people." },
     ] },
-    { group: "Putting it to work", tag: "Strategy", items: [
+    { group: "Putting it to work", tag: "Strategy", icon: "lu:route", accent: "196,181,253", items: [
       { term: "Setting your target", short: "From maintenance to a plan.",
         def: "Once you know your maintenance calories, a goal is simple math: subtract roughly 15 to 25 percent for fat loss, or add a small amount for lean gaining. Set protein first, then fill the rest with carbs and fat to taste.",
         apply: "Start from your real maintenance, not a generic online number, and adjust every few weeks based on what the scale and mirror show." },
@@ -5700,6 +5701,74 @@
   }
   function conceptDefaults(kind) { return kind === "nut" ? NUTRITION_CONCEPTS : STRENGTH_CONCEPTS; }
 
+  // ---- Cross-links between the body map and the science shelves ----
+  // Reading about a muscle should be one tap from the ideas behind training it.
+  // Keyed by movement pattern, since the relevant science is the same for every
+  // pressing muscle; a handful of muscles name their own instead.
+  const MUSCLE_READ_MORE_BY_PATTERN = {
+    push: ["Mechanical tension", "Progressive overload", "Strength is a skill"],
+    pull: ["Motor unit recruitment", "Mechanical tension", "Progressive overload"],
+    squat: ["Range of motion", "Stretch-shortening cycle", "Progressive overload"],
+    hinge: ["Stretch-mediated hypertrophy", "Mechanical tension", "Progressive overload"],
+    core: ["Specificity (SAID)", "Mechanical tension", "Progressive overload"],
+    isolation: ["Training volume", "Metabolic stress (the pump)", "Proximity to failure"],
+  };
+  const MUSCLE_READ_MORE = {
+    forearms: ["Training volume", "Proximity to failure", "Specificity (SAID)"],
+    hamstrings: ["Stretch-mediated hypertrophy", "Muscle spindles", "Range of motion"],
+    calves: ["Stretch-shortening cycle", "Muscle fiber types", "Training volume"],
+    glutes: ["Range of motion", "Mechanical tension", "Progressive overload"],
+  };
+  // The reverse direction, only where a concept has a genuinely specific muscle
+  // story. Most concepts apply to everything, and chips for those would be noise.
+  const CONCEPT_MUSCLES = {
+    "Stretch-mediated hypertrophy": ["hamstrings", "chest", "lats"],
+    "Muscle spindles": ["hamstrings", "calves"],
+    "The stretch reflex": ["calves", "quads"],
+    "Stretch-shortening cycle": ["calves", "quads", "glutes"],
+    "Metabolic stress (the pump)": ["biceps", "delts-side", "calves"],
+    "Range of motion": ["quads", "chest", "lats"],
+    "Golgi tendon organs": ["hamstrings", "forearms"],
+  };
+
+  // Terms resolve to card ids lazily: the id depends on which group a term sits
+  // in, and hard-coding those would rot the moment a card moves.
+  let _termIndex = null;
+  function termIndex() {
+    if (_termIndex) return _termIndex;
+    _termIndex = {};
+    ["str", "nut"].forEach((kind) => conceptDefaults(kind).forEach((grp) => {
+      const sid = conceptSectionId(kind, grp.group);
+      grp.items.forEach((it) => {
+        _termIndex[it.term] = { kind, sid, cid: conceptCardId(sid, it.term), term: it.term };
+      });
+    }));
+    return _termIndex;
+  }
+  function muscleReadMore(g) {
+    const terms = MUSCLE_READ_MORE[g.id] || MUSCLE_READ_MORE_BY_PATTERN[String(g.pattern || "").toLowerCase()] || [];
+    return terms.map((t) => termIndex()[t]).filter(Boolean);
+  }
+  function muscleReadMoreHtml(g) {
+    const links = muscleReadMore(g);
+    if (!links.length) return "";
+    return `<div class="a-readmore">
+      <h4>The science behind it</h4>
+      <div class="a-link-chips">${links.map((l) =>
+        `<button type="button" class="a-link-chip" data-goto-card="${escapeHtml(l.kind)}|${escapeHtml(l.cid)}">${escapeHtml(l.term)}</button>`).join("")}</div>
+    </div>`;
+  }
+  function conceptMuscleLinksHtml(cardId) {
+    const entry = Object.entries(CONCEPT_MUSCLES).find(([term]) => termIndex()[term] && termIndex()[term].cid === cardId);
+    if (!entry) return "";
+    const ids = entry[1].filter((id) => ANATOMY_BY_ID[id]);
+    if (!ids.length) return "";
+    return `<div class="a-link-chips a-link-chips-back">
+      <span class="a-link-lead">Feel it in</span>
+      ${ids.map((id) => `<button type="button" class="a-link-chip" data-goto-muscle="${escapeHtml(id)}">${escapeHtml(ANATOMY_BY_ID[id].name)}</button>`).join("")}
+    </div>`;
+  }
+
   // Apply overrides + added cards to a concept library, returning render-ready
   // groups whose items carry a stable id and a normalized `take` takeaway.
   function mergedConceptGroups(kind, edits) {
@@ -5717,7 +5786,7 @@
       });
       (Array.isArray(cAdd[sid]) ? cAdd[sid] : []).forEach((a) =>
         items.push({ id: a.id, term: a.term || "", short: a.short || "", def: a.def || "", take: a.take || "", _added: true }));
-      return { id: sid, group: grp.group, tag: grp.tag, items };
+      return { id: sid, group: grp.group, tag: grp.tag, icon: grp.icon, accent: grp.accent, items };
     });
   }
   // The unedited default card, for the "reset to default" / diff-on-save path.
@@ -5760,8 +5829,9 @@
   // Groups are already merged (items carry id/term/short/def/take). `editable`
   // adds the coach's per-card Edit and per-group Add controls.
   function conceptGroupsHtml(groups, label, editable) {
-    return groups.map((grp) => `<details class="a-cgroup">
+    return groups.map((grp) => `<details class="a-cgroup" data-group="${escapeHtml(grp.id)}"${grp.accent ? ` style="--a-accent:${escapeHtml(grp.accent)}"` : ""}>
         <summary class="a-cgroup-sum">
+          ${grp.icon ? `<span class="a-cgroup-ico" aria-hidden="true">${dayIconHtml(grp.icon)}</span>` : ""}
           <span class="a-cgroup-title">${escapeHtml(grp.group)}</span>
           <span class="a-cgroup-meta">
             <span class="a-cgroup-tag">${escapeHtml(grp.tag)}</span>
@@ -5770,7 +5840,7 @@
           </span>
         </summary>
         <div class="a-cgrid">
-          ${grp.items.map((c) => `<details class="a-concept${c._added ? " is-added" : (c._edited ? " is-edited" : "")}">
+          ${grp.items.map((c) => `<details class="a-concept${c._added ? " is-added" : (c._edited ? " is-edited" : "")}" data-card="${escapeHtml(c.id)}">
             <summary class="a-concept-sum">
               <span class="a-concept-text"><span class="a-concept-term">${escapeHtml(c.term)}</span><span class="a-concept-short">${escapeHtml(c.short)}</span></span>
               <span class="a-concept-chev" aria-hidden="true"></span>
@@ -5778,6 +5848,7 @@
             <div class="a-concept-body">
               <p class="a-concept-def">${escapeHtml(c.def)}</p>
               <p class="a-concept-str"><span class="a-concept-str-label">${escapeHtml(label)}</span>${escapeHtml(c.take)}</p>
+              ${conceptMuscleLinksHtml(c.id)}
               ${editable ? `<div class="a-edit-row"><button type="button" class="a-edit-btn" data-edit-card="${escapeHtml(grp.id)}|${escapeHtml(c.id)}">✏️ Edit</button></div>` : ""}
             </div>
           </details>`).join("")}
@@ -5813,31 +5884,66 @@
     root.classList.add("anatomy"); // enables the column layout + section spacing
     // Only the coach-screen mount is editable; the athlete tab is read-only.
     const editable = !!root.closest("#screen-app");
+    // One shelf on screen at a time. Stacking the body map and 58 explainer
+    // cards on a single scroll made the page read as three documents in a trench
+    // coat; the switcher keeps one interaction model in front of you at once.
     root.innerHTML = `
-      <p class="anatomy-intro">Tap a muscle on the body or in the list to see what it does, how to train it, and example lifts.${editable ? " Tap ✏️ Edit on any card to rewrite it or add your own." : ""}</p>
-      <div class="anatomy-toggle" role="tablist">
-        <button type="button" class="a-view-btn active" data-view="front">Front</button>
-        <button type="button" class="a-view-btn" data-view="back">Back</button>
+      <div class="a-shelves" role="tablist">
+        <button type="button" class="a-shelf-btn active" data-shelf="body" role="tab" aria-selected="true">Body<span class="a-shelf-n" data-count="body"></span></button>
+        <button type="button" class="a-shelf-btn" data-shelf="str" role="tab" aria-selected="false">Training<span class="a-shelf-n" data-count="str"></span></button>
+        <button type="button" class="a-shelf-btn" data-shelf="nut" role="tab" aria-selected="false">Fuel<span class="a-shelf-n" data-count="nut"></span></button>
       </div>
-      <div class="anatomy-layout">
-        <div class="anatomy-figure">${anatomyFigureSvg("front")}${anatomyFigureSvg("back")}</div>
-        <div class="anatomy-side">
-          <div class="anatomy-list" data-anatomy-list></div>
-          <div class="anatomy-detail" data-anatomy-detail>
-            <div class="anatomy-detail-empty">Select a muscle group to see the details.</div>
+      <div class="a-search-row">
+        <span class="a-search-ico" aria-hidden="true">${dayIconHtml("lu:search")}</span>
+        <input type="search" class="a-search" data-anatomy-search placeholder="Search muscles and topics" aria-label="Search muscles and topics">
+        <button type="button" class="a-search-x hidden" data-search-clear aria-label="Clear search">✕</button>
+      </div>
+      <div class="a-results hidden" data-anatomy-results></div>
+      <div class="a-shelf" data-pane="body">
+        <p class="anatomy-intro">Tap a muscle on the body or in the list to see what it does, how to train it, and example lifts.${editable ? " Tap ✏️ Edit on any card to rewrite it or add your own." : ""}</p>
+        <div class="anatomy-toggle" role="tablist">
+          <button type="button" class="a-view-btn active" data-view="front">Front</button>
+          <button type="button" class="a-view-btn" data-view="back">Back</button>
+        </div>
+        <div class="anatomy-layout">
+          <div class="anatomy-figure">${anatomyFigureSvg("front")}${anatomyFigureSvg("back")}</div>
+          <div class="anatomy-side">
+            <div class="anatomy-list" data-anatomy-list></div>
+            <div class="anatomy-detail" data-anatomy-detail>
+              <div class="anatomy-detail-empty">Select a muscle group to see the details.</div>
+            </div>
           </div>
         </div>
       </div>
-      <div data-anatomy-concepts></div>`;
+      <div class="a-shelf hidden" data-pane="str"></div>
+      <div class="a-shelf hidden" data-pane="nut"></div>`;
 
     const listEl = root.querySelector("[data-anatomy-list]");
     const detailEl = root.querySelector("[data-anatomy-detail]");
-    const conceptsEl = root.querySelector("[data-anatomy-concepts]");
+    const paneEl = (k) => root.querySelector(`[data-pane="${k}"]`);
+    const searchEl = root.querySelector("[data-anatomy-search]");
+    const resultsEl = root.querySelector("[data-anatomy-results]");
     let view = "front";
     let selected = null;
+    let shelf = "body";
 
     function renderConcepts() {
-      conceptsEl.innerHTML = strengthConceptsHtml(editable) + nutritionConceptsHtml(editable);
+      paneEl("str").innerHTML = strengthConceptsHtml(editable);
+      paneEl("nut").innerHTML = nutritionConceptsHtml(editable);
+      const count = (kind) => mergedConceptGroups(kind, getAnatomyEdits(editable))
+        .reduce((n, g) => n + g.items.length, 0);
+      root.querySelector('[data-count="body"]').textContent = ANATOMY_GROUPS.length;
+      root.querySelector('[data-count="str"]').textContent = count("str");
+      root.querySelector('[data-count="nut"]').textContent = count("nut");
+    }
+    function setShelf(next) {
+      shelf = next;
+      root.querySelectorAll(".a-shelf-btn").forEach((b) => {
+        const on = b.dataset.shelf === next;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-selected", String(on));
+      });
+      root.querySelectorAll("[data-pane]").forEach((p) => p.classList.toggle("hidden", p.dataset.pane !== next));
     }
     function renderList() {
       listEl.innerHTML = ANATOMY_VIEW_GROUPS[view].map((id) => {
@@ -5876,9 +5982,93 @@
       highlight();
     }
 
+    // ---- Search across both halves of the library ----
+    // 58 cards behind 13 collapsed groups is unfindable by scrolling, so one
+    // box searches muscles and explainers together and jumps you into the shelf.
+    function searchIndex() {
+      const edits = getAnatomyEdits(editable);
+      const rows = ANATOMY_GROUPS.map((g0) => {
+        const g = mergedMuscle(g0, edits);
+        return { kind: "muscle", id: g.id, title: g.name, sub: g.sub, where: g.pattern,
+          hay: [g.name, g.sub, g.does, g.why, ...(g.anchors || []), ...(g.accessories || [])].join(" ").toLowerCase() };
+      });
+      ["str", "nut"].forEach((kind) => mergedConceptGroups(kind, edits).forEach((grp) => grp.items.forEach((c) => {
+        rows.push({ kind, id: c.id, title: c.term, sub: c.short, where: grp.group, accent: grp.accent,
+          hay: [c.term, c.short, c.def, c.take, grp.group, grp.tag].join(" ").toLowerCase() });
+      })));
+      return rows;
+    }
+    function runSearch(qRaw) {
+      const q = String(qRaw || "").trim().toLowerCase();
+      root.querySelector("[data-search-clear]").classList.toggle("hidden", !q);
+      if (q.length < 2) {
+        resultsEl.classList.add("hidden");
+        root.querySelector(`[data-pane="${shelf}"]`).classList.remove("hidden");
+        return;
+      }
+      root.querySelectorAll("[data-pane]").forEach((p) => p.classList.add("hidden"));
+      resultsEl.classList.remove("hidden");
+      // Title matches first: searching "calves" should not bury Calves under
+      // every card that merely mentions them.
+      const hits = searchIndex().filter((r) => r.hay.includes(q))
+        .sort((a, b) => (b.title.toLowerCase().includes(q) ? 1 : 0) - (a.title.toLowerCase().includes(q) ? 1 : 0));
+      if (!hits.length) {
+        resultsEl.innerHTML = `<p class="a-noresults">Nothing matches “${escapeHtml(qRaw)}”.</p>`;
+        return;
+      }
+      const label = { muscle: "Body", str: "Training", nut: "Fuel" };
+      resultsEl.innerHTML = `<p class="a-results-n">${hits.length} result${hits.length === 1 ? "" : "s"}</p>` +
+        hits.map((r) => `<button type="button" class="a-result"${r.accent ? ` style="--a-accent:${escapeHtml(r.accent)}"` : ""} ${
+          r.kind === "muscle" ? `data-goto-muscle="${escapeHtml(r.id)}"` : `data-goto-card="${escapeHtml(r.kind)}|${escapeHtml(r.id)}"`}>
+          <span class="a-result-main">
+            <span class="a-result-title">${escapeHtml(r.title)}</span>
+            <span class="a-result-sub">${escapeHtml(r.sub || "")}</span>
+          </span>
+          <span class="a-result-where">${escapeHtml(label[r.kind])} · ${escapeHtml(r.where || "")}</span>
+        </button>`).join("");
+    }
+    function clearSearch() {
+      searchEl.value = "";
+      runSearch("");
+    }
+    // Landing on a card from a search hit or a cross-link: open its group and
+    // the card itself, then bring it into view.
+    function gotoCard(kind, cid) {
+      clearSearch();
+      setShelf(kind);
+      const card = paneEl(kind).querySelector(`[data-card="${CSS.escape(cid)}"]`);
+      if (!card) return;
+      const grp = card.closest(".a-cgroup");
+      if (grp) grp.open = true;
+      card.open = true;
+      card.classList.add("a-flash");
+      setTimeout(() => card.classList.remove("a-flash"), 1200);
+      requestAnimationFrame(() => card.scrollIntoView({ block: "center", behavior: "smooth" }));
+    }
+    function gotoMuscle(id) {
+      clearSearch();
+      setShelf("body");
+      // The muscle may live on the face of the body we are not looking at.
+      if (!ANATOMY_VIEW_GROUPS[view].includes(id)) {
+        const other = view === "front" ? "back" : "front";
+        if (ANATOMY_VIEW_GROUPS[other].includes(id)) setView(other);
+      }
+      select(id);
+      requestAnimationFrame(() => detailEl.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+    }
+
+    root.querySelectorAll(".a-shelf-btn").forEach((b) =>
+      b.addEventListener("click", () => { clearSearch(); setShelf(b.dataset.shelf); }));
+    searchEl.addEventListener("input", () => runSearch(searchEl.value));
+    root.querySelector("[data-search-clear]").addEventListener("click", () => { clearSearch(); searchEl.focus(); });
+
     root.querySelectorAll(".a-view-btn").forEach((b) =>
       b.addEventListener("click", () => setView(b.dataset.view)));
     root.addEventListener("click", (e) => {
+      const gotoM = e.target.closest("[data-goto-muscle]");
+      if (gotoM && root.contains(gotoM)) { gotoMuscle(gotoM.dataset.gotoMuscle); return; }
+      const gotoC = e.target.closest("[data-goto-card]");
+      if (gotoC && root.contains(gotoC)) { const [k, cid] = gotoC.dataset.gotoCard.split("|"); gotoCard(k, cid); return; }
       const editCard = e.target.closest("[data-edit-card]");
       if (editCard && root.contains(editCard)) { const [sid, cid] = editCard.dataset.editCard.split("|"); openConceptCardEditor(sid, cid); return; }
       const addCard = e.target.closest("[data-add-card]");
@@ -6631,6 +6821,9 @@
     "lu:goal": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 13V2l8 4-8 4"/><path d="M20.561 10.222a9 9 0 1 1-12.55-5.29"/><path d="M8.002 9.997a5 5 0 1 0 8.9 2.02"/></svg>',
     "lu:handshake": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2"/><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"/><path d="M3 4h8"/></svg>',
     "lu:checkcheck": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 7 17l-5-5"/><path d="m22 10-7.5 7.5L13 16"/></svg>',
+    // UI-only, deliberately left out of DAY_ICON_CATEGORIES so it never shows
+    // up as a pickable day icon.
+    "lu:search": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>',
   };
   function isSvgIcon(v) { return typeof v === "string" && Object.prototype.hasOwnProperty.call(DAY_ICON_SVGS, v); }
   function dayIconHtml(v) { return isSvgIcon(v) ? DAY_ICON_SVGS[v] : escapeHtml(v || ""); }

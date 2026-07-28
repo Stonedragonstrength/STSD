@@ -9564,3 +9564,131 @@ input.ownday-sheet-input { margin-top: 0.35em; }
    overflow-x: clip note above). The sheet covers the viewport and contains its
    own scroll, so the page behind it stays put anyway. */
 body.coach-sheet-open .rest-timer { display: none; }
+
+/* ===== Anatomy library: shelves, search, cross-links ===== */
+/* The page used to stack the body map and 58 explainer cards on one scroll.
+   Now three shelves share the space and only one is mounted on screen. */
+.a-shelves {
+  display: flex; gap: 0.3rem; padding: 0.3rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+}
+.a-shelf-btn {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; justify-content: center; gap: 0.45em;
+  padding: 0.6em 0.5em; border: 0; border-radius: 999px;
+  background: none; color: var(--muted); cursor: pointer;
+  font-family: inherit; font-size: 0.86rem; font-weight: 800;
+  letter-spacing: 0.02em; transition: color 0.15s, background 0.15s;
+}
+.a-shelf-btn:hover { color: var(--text); }
+.a-shelf-btn.active { background: rgba(var(--primary-rgb), 0.16); color: var(--primary-bright); }
+.a-shelf-n {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 1.55em; height: 1.55em; padding: 0 0.35em;
+  font-size: 0.68rem; font-weight: 800; border-radius: 999px;
+  background: var(--surface-2); color: var(--text-soft); border: 1px solid var(--border);
+}
+.a-shelf-btn.active .a-shelf-n {
+  background: rgba(var(--primary-rgb), 0.2);
+  color: var(--primary-bright); border-color: rgba(var(--primary-bright-rgb), 0.35);
+}
+.a-shelf { display: flex; flex-direction: column; gap: 1.25rem; }
+.a-shelf.hidden { display: none; }
+/* Inside a shelf the two libraries no longer need a divider above them */
+.a-shelf > .a-concepts { padding-top: 0; border-top: 0; }
+.a-shelf > .a-concepts + .a-concepts { margin-top: 0; }
+
+.a-search-row {
+  position: relative; display: flex; align-items: center;
+}
+.a-search-ico {
+  position: absolute; left: 0.85rem; width: 16px; height: 16px;
+  color: var(--muted); pointer-events: none;
+}
+.a-search-ico > svg { width: 100%; height: 100%; display: block; }
+input[type="search"].a-search {
+  width: 100%; padding: 0.7em 2.4rem 0.7em 2.5rem;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); color: var(--text);
+  font-family: inherit; font-size: 0.92rem;
+}
+input[type="search"].a-search::-webkit-search-cancel-button { display: none; }
+input[type="search"].a-search:focus {
+  outline: none; border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.16);
+}
+.a-search-x {
+  position: absolute; right: 0.5rem;
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 0; background: var(--surface-2); color: var(--text-soft);
+  cursor: pointer; font-size: 0.72rem; line-height: 1;
+}
+.a-search-x:hover { color: var(--text); }
+.a-search-x.hidden { display: none; }
+
+.a-results { display: flex; flex-direction: column; gap: 0.5rem; }
+.a-results.hidden { display: none; }
+.a-results-n {
+  margin: 0; font-size: 0.7rem; font-weight: 800;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+}
+.a-noresults { margin: 0; color: var(--text-soft); font-size: 0.92rem; }
+.a-result {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  width: 100%; padding: 0.7rem 0.9rem; text-align: left; cursor: pointer;
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  border-left: 3px solid rgba(var(--a-accent, var(--primary-rgb)), 0.85);
+  background: var(--surface); color: var(--text); font-family: inherit;
+}
+.a-result:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.a-result-main { display: flex; flex-direction: column; gap: 0.15em; min-width: 0; }
+.a-result-title { font-size: 0.95rem; font-weight: 700; }
+.a-result-sub {
+  font-size: 0.8rem; color: var(--muted); line-height: 1.35;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.a-result-where {
+  flex: none; font-size: 0.66rem; font-weight: 800;
+  letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-soft);
+}
+
+/* Group rows wear their own icon and accent so thirteen of them stop reading
+   as the same grey pill thirteen times over. */
+.a-cgroup-ico {
+  flex: none; width: 20px; height: 20px;
+  color: rgb(var(--a-accent, var(--primary-rgb)));
+}
+.a-cgroup-ico > svg { width: 100%; height: 100%; display: block; }
+.a-cgroup[open] { border-color: rgba(var(--a-accent, var(--primary-bright-rgb)), 0.45); }
+.a-cgroup .a-cgroup-tag {
+  color: rgb(var(--a-accent, var(--primary-rgb)));
+  background: rgba(var(--a-accent, var(--primary-rgb)), 0.12);
+  border-color: rgba(var(--a-accent, var(--primary-rgb)), 0.32);
+}
+
+/* Cross-links: muscle detail -> the science, and back again */
+.a-readmore { margin-top: 1rem; padding-top: 0.9rem; border-top: 1px solid var(--border); }
+.a-readmore h4 {
+  margin: 0 0 0.55em; font-size: 0.72rem; font-weight: 800;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-soft);
+}
+.a-link-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.a-link-chips-back { margin-top: 0.8rem; }
+.a-link-lead {
+  font-size: 0.68rem; font-weight: 800; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--muted); margin-right: 0.15rem;
+}
+.a-link-chip {
+  padding: 0.4em 0.8em; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.35);
+  background: rgba(var(--primary-rgb), 0.1); color: var(--primary-bright);
+  font-family: inherit; font-size: 0.78rem; font-weight: 700;
+}
+.a-link-chip:hover { background: rgba(var(--primary-rgb), 0.2); border-color: var(--primary); }
+/* Landing on a card from a link: a brief ring so you see where you arrived */
+.a-concept.a-flash { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.18); }
+
+@media (max-width: 560px) {
+  .a-shelf-btn { font-size: 0.78rem; padding: 0.6em 0.35em; gap: 0.3em; }
+  .a-result-where { display: none; }
+}
