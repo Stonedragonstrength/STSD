@@ -5536,7 +5536,7 @@
         def: "Training is only the stimulus. The actual repair and growth happen while you rest, sleep, and eat. Train again before you have recovered and you dig a hole; time it right and you come back a little stronger than before.",
         strength: "Progress is training plus recovery, not training alone. Sleep and food are not extras, they are where the adaptation is built." },
     ] },
-    { group: "Length and mobility", tag: "Stretching", icon: "lu:stretch", accent: "56,189,248", items: [
+    { group: "Length and mobility", tag: "Stretching", icon: "lu:personstanding", accent: "56,189,248", items: [
       { term: "Flexibility vs. mobility", short: "Passive range vs. range you control.",
         def: "Flexibility is how far a joint can be moved when something else does the moving. Mobility is how much of that range you can reach and control with your own strength. For lifting, controllable mobility is the more useful quality.",
         strength: "Strong through a full range beats loose but shaky. Mobility work is what lets you own the bottom of a squat or a deep stretch instead of just falling into it." },
@@ -5733,7 +5733,7 @@
         def: "The hypothalamus releases GnRH, which tells the pituitary to release FSH and LH, which tell the ovaries to produce estrogen and progesterone. Those ovarian hormones then travel back to the brain and adjust the next round of signals. It is a loop, not a one-way chain.",
         means: "Because the loop starts in the brain, anything that stresses the brain's read on your situation, such as severe under-eating or extreme training loads, can quiet the whole system from the top down." },
     ] },
-    { group: "The cycle and training", tag: "Training", icon: "lu:dumbbell", accent: "56,189,248", items: [
+    { group: "The cycle and training", tag: "Training", icon: "lu:waves", accent: "56,189,248", items: [
       { term: "Does the cycle change your strength?", short: "Less, and less predictably, than you have been told.",
         def: "Cycle-phase training plans are everywhere online, but the research behind them is thin. Reviews pooling the available studies find average differences in strength and performance across phases that are small and inconsistent, with individual variation far larger than any group trend.",
         means: "Do not hand your program over to a calendar. Track how you actually feel and perform across a few cycles, and adjust to your own pattern rather than someone else's chart." },
@@ -6939,6 +6939,9 @@
     "lu:route": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg>',
     "lu:snowflake": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="2" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="22"/><path d="m20 16-4-4 4-4"/><path d="m4 8 4 4-4 4"/><path d="m16 4-4 4-4-4"/><path d="m8 20 4-4 4 4"/></svg>',
     "lu:thermometer": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></svg>',
+    // Kept only so days a coach already picked it for still render. It is
+    // Lucide's accessibility mark and the two arcs read as a wheelchair, so it
+    // is deliberately out of DAY_ICON_CATEGORIES; use lu:personstanding.
     "lu:stretch": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="16" cy="4" r="1"/><path d="m18 19 1-7-6 1"/><path d="m5 8 3-3 5.5 3-2.36 3.5"/><path d="M4.24 14.5a5 5 0 0 0 6.88 6"/><path d="M13.76 17.5a5 5 0 0 0-6.88-6"/></svg>',
     "lu:milk": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2h8"/><path d="M9 2v2.789a4 4 0 0 1-.672 2.219l-.656.984A4 4 0 0 0 7 10.212V20a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-9.789a4 4 0 0 0-.672-2.219l-.656-.984A4 4 0 0 1 15 4.788V2"/><path d="M7 15a6.472 6.472 0 0 1 5 0 6.47 6.47 0 0 0 5 0"/></svg>',
     "lu:citrus": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.66 17.67a1.08 1.08 0 0 1-.04 1.6A12 12 0 0 1 4.73 2.38a1.1 1.1 0 0 1 1.61-.04z"/><path d="M19.65 15.66A8 8 0 0 1 8.35 4.34"/><path d="m14 10-5.5 5.5"/><path d="M14 17.85V10H6.15"/></svg>',
@@ -7001,7 +7004,7 @@
       "lu:apple","lu:banana","lu:grape","lu:cherry","lu:citrus","lu:carrot","lu:wheat","lu:egg","lu:beef","lu:fish","lu:salad","lu:drumstick","lu:sandwich","lu:pizza","lu:soup","lu:milk","lu:cookingpot","lu:cake","lu:cookie","lu:icecream","lu:leaf",
     ] },
     { label: "Recovery", icons: [
-      "lu:coffee","lu:shake","lu:water","lu:droplet","lu:battery","lu:bed","lu:sofa","lu:moon","lu:sun","lu:sunrise","lu:sunset","lu:cloud","lu:brain","lu:stretch","lu:snowflake","lu:thermometer","lu:pill","lu:hourglass",
+      "lu:coffee","lu:shake","lu:water","lu:droplet","lu:battery","lu:bed","lu:sofa","lu:moon","lu:sun","lu:sunrise","lu:sunset","lu:cloud","lu:brain","lu:personstanding","lu:snowflake","lu:thermometer","lu:pill","lu:hourglass",
     ] },
     { label: "Wins", icons: [
       "lu:trophy","lu:medal","lu:award","lu:badgecheck","lu:target","lu:goal","lu:flag","lu:crown","lu:star","lu:gem","lu:sparkles","lu:thumbsup","lu:handshake","lu:partypopper","lu:gift","lu:checkcheck","lu:rocket",
