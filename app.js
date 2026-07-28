@@ -12037,6 +12037,8 @@
       });
     }
     container.appendChild(card);
+    const meta = $("#cardio-fold-meta");
+    if (meta) meta.textContent = logs.length ? `${logs.length} logged` : "";
   }
 
   function openCardioModal(editId) {
@@ -12307,12 +12309,8 @@
     $("#client-portal-name").textContent = prog.client.name;
     renderClientHeaderSessions();
     renderClientHeaderRank();
-    // Profile tab: editable details, invite code, theme picker
+    // Profile tab: editable details, avatar, theme picker
     renderAthleteProfileFields();
-    const pInvite = $("#profile-invite");
-    if (pInvite) pInvite.innerHTML = prog.client.inviteCode
-      ? `<span class="profile-invite-label">🔑 Invite code</span><span class="profile-invite-code">${escapeHtml(prog.client.inviteCode)}</span>`
-      : "";
     renderAvatarPicker();
     renderClientHeaderAvatar();
     renderThemePicker($("#athlete-theme-picker"), "athlete");
@@ -18336,6 +18334,14 @@
   }
   function renderBwHistory() {
     const log = state.clientData.progress.bodyweightLog || [];
+    // The latest weight rides on the fold's summary line, so the number is
+    // there without opening it — and it wears .bw-secret, so a private weight
+    // stays blurred in the closed state too.
+    const meta = $("#bw-fold-meta");
+    if (meta) {
+      const latest = [...log].sort(bwSort)[0];
+      meta.textContent = latest ? `${latest.weightLb} lb` : "";
+    }
     renderBwCharts($("#bw-charts"), log);
     const wrap = $("#bw-history");
     wrap.innerHTML = "";
@@ -19433,16 +19439,20 @@
         title: "How did it feel?", text: "When you're done, tap 🫀 to log the vibe of the session — up to two. Your coach sees it, so they know when to push or back off." },
       { sel: "#rest-timer-btn", go: goDetail,
         title: "Rest timer", text: "Tap Go to start your rest. It dings when it's time to lift, then rolls straight into the next rest until you stop it. The small time button picks the length, the bell mutes the ding." },
+      { sel: "#athlete-cardio-fold", go: () => setClientTab("workouts"),
+        title: "Cardio", text: "Runs, rides and swims live with your workouts. Log the minutes and, if you tracked it, the distance." },
       { sel: '[data-ctab-panel="prs"]', go: () => setClientTab("prs"),
-        title: "Personal records", text: "Your PRs live here. Locking a heavy set can raise them automatically." },
+        title: "Progress", text: "Your PRs live here, with the charts behind them. Locking a heavy set can raise them automatically." },
+      { sel: "#athlete-bw-fold", go: () => setClientTab("prs"),
+        title: "Body weight", text: "Log your weight here and watch the trend. The latest number sits on this row, so you can check it without opening anything." },
       { sel: ".food-tiles", go: () => setClientTab("diet"),
         title: "Food log", text: "One tile per meal. Tap a tile to open it, then add what you ate. Search thousands of foods, save the ones you eat often, or use Quick add when you already know the numbers." },
       { sel: "#food-ring", go: () => setClientTab("diet"),
         title: "Hit the zone", text: "The ring fills toward your calorie target and turns gold when you land inside it. Tap it any time to set or change your targets." },
       { sel: ".food-lvl", go: () => setClientTab("diet"),
         title: "Earn your rank", text: "Every logged day earns XP: more for landing close to your numbers, a bonus for a perfect day, and more again the longer your streak runs. Fill the bar and you take the next rank, from Pebble all the way up to Stone Dragon." },
-      { sel: "#client-feedback", go: () => setClientTab("diet"),
-        title: "Cardio and notes", text: "Your cardio log. Record the minutes and, if you tracked it, the distance. This note box goes straight to your coach." },
+      { sel: "#client-feedback", go: () => { setClientTab("profile"); },
+        title: "Notes for your coach", text: "Aches, schedule conflicts, how a week felt: anything you want them to know goes here, and it syncs on its own." },
       { sel: '[data-ctab-panel="sessions"]', go: () => setClientTab("sessions"),
         title: "Sessions", text: "Your session packages, bookings and open slots with your coach." },
       { sel: "#btn-tour-client", go: () => setClientTab("overview"),
@@ -20054,26 +20064,55 @@
     const p = athletePrefs();
     const clips = Object.values(state.clientData.progress?.formChecks || {})
       .reduce((n, list) => n + (Array.isArray(list) ? list.length : 0), 0);
+    // One card, two folds. Both are things you set once and forget, so neither
+    // earns permanent height on a screen you visit to edit your details.
     host.innerHTML = `
-      <div class="card">
-        <h4 style="margin-top:0">🎛️ Make it simpler</h4>
-        <div class="pref-list">
-          ${prefSwitchHtml("simple", "Simple mode", "Hides ranks, XP, trophies and streaks. Your workouts, stats and trials stay.", p.simple)}
-        </div>
-      </div>
-      <div class="card">
-        <h4 style="margin-top:0">🔒 Privacy</h4>
-        <div class="pref-list">
-          ${prefSwitchHtml("hideWeight", "Hide my body weight", "Blurs weight numbers until you tap them, so a glance over your shoulder shows nothing. Your coach still sees them.", p.hideWeight)}
-        </div>
-        <div class="pref-actions">
-          <button class="btn btn-ghost btn-sm" id="btn-export-my-data" type="button">⬇ Download my data</button>
-          <button class="btn btn-ghost btn-sm" id="btn-signout-everywhere" type="button">🚪 Sign out everywhere</button>
-          ${clips ? `<button class="btn btn-ghost btn-sm" id="btn-purge-form-checks" type="button">🎥 Delete my ${clips} form ${clips === 1 ? "video" : "videos"}</button>` : ""}
-        </div>
-        <p class="muted" style="font-size:0.8rem;margin:0.7em 0 0">Form videos delete themselves after ${FORM_CHECK_RETENTION_DAYS} days anyway.</p>
+      <div class="card pref-card">
+        <details class="pref-fold">
+          <summary>
+            <span class="pref-fold-ico">🎛️</span>
+            <span class="pref-fold-text">
+              <span class="pref-fold-title">Make it simpler</span>
+              <span class="pref-fold-sub">${p.simple ? "Simple mode is on" : "Hide the ranks, XP and trophies"}</span>
+            </span>
+            <span class="pref-fold-chev">▸</span>
+          </summary>
+          <div class="pref-list">
+            ${prefSwitchHtml("simple", "Simple mode", "Hides ranks, XP, trophies and streaks. Your workouts, stats and trials stay.", p.simple)}
+          </div>
+        </details>
+        <details class="pref-fold">
+          <summary>
+            <span class="pref-fold-ico">🔒</span>
+            <span class="pref-fold-text">
+              <span class="pref-fold-title">Privacy</span>
+              <span class="pref-fold-sub">${p.hideWeight ? "Body weight is hidden" : "Your weight, your videos, your devices"}</span>
+            </span>
+            <span class="pref-fold-chev">▸</span>
+          </summary>
+          <div class="pref-list">
+            ${prefSwitchHtml("hideWeight", "Hide my body weight", "Blurs weight numbers until you tap them, so a glance over your shoulder shows nothing. Your coach still sees them.", p.hideWeight)}
+          </div>
+          <div class="pref-actions">
+            <button class="btn btn-ghost btn-sm slim-btn" id="btn-export-my-data" type="button">⬇ Download my data</button>
+            <button class="btn btn-ghost btn-sm slim-btn" id="btn-signout-everywhere" type="button">🚪 Sign out everywhere</button>
+            ${clips ? `<button class="btn btn-ghost btn-sm slim-btn" id="btn-purge-form-checks" type="button">🎥 Delete my ${clips} form ${clips === 1 ? "video" : "videos"}</button>` : ""}
+          </div>
+          <p class="pref-foot">Form videos delete themselves after ${FORM_CHECK_RETENTION_DAYS} days anyway.</p>
+        </details>
       </div>`;
-    wirePrefSwitches(host);
+    // Update the fold's summary line in place rather than re-rendering, which
+    // would snap the fold shut under the finger that just tapped it.
+    const setSub = (box, text) => {
+      const sub = box.closest(".pref-fold")?.querySelector(".pref-fold-sub");
+      if (sub) sub.textContent = text;
+    };
+    wirePrefSwitches(host, {
+      simple: (on) => setSub(host.querySelector('[data-pref="simple"]'),
+        on ? "Simple mode is on" : "Hide the ranks, XP and trophies"),
+      hideWeight: (on) => setSub(host.querySelector('[data-pref="hideWeight"]'),
+        on ? "Body weight is hidden" : "Your weight, your videos, your devices"),
+    });
     $("#btn-export-my-data")?.addEventListener("click", exportMyData);
     $("#btn-signout-everywhere")?.addEventListener("click", signOutEverywhere);
     $("#btn-purge-form-checks")?.addEventListener("click", purgeMyFormChecks);

@@ -9761,3 +9761,64 @@ body.bw-private .bw-secret:not(.is-shown) {
   user-select: none;
 }
 body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
+
+
+/* ---- Athlete section folds (Cardio on Program, Body weight on Progress) ----
+   Same shape as the Lifting stats card: an icon, a name, a live value on the
+   right, and a chevron. Closed, it's one row; the value means you rarely need
+   to open it at all. */
+.ath-fold { margin-top: 1rem; }
+.ath-fold > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 0.6em;
+  font-weight: 700; font-size: 1rem;
+}
+.ath-fold > summary::-webkit-details-marker { display: none; }
+.ath-fold-ico { font-size: 1.05rem; line-height: 1; }
+.ath-fold-title { letter-spacing: 0.01em; }
+.ath-fold-meta {
+  margin-left: auto;
+  font-size: 0.85rem; font-weight: 700; color: var(--primary-bright);
+  letter-spacing: 0.02em;
+}
+.ath-fold-meta:empty { display: none; }
+.ath-fold-chev { color: var(--text-soft); transition: transform 0.15s ease; }
+.ath-fold-meta + .ath-fold-chev { margin-left: 0.1em; }
+.ath-fold-chev:first-of-type { margin-left: auto; }
+.ath-fold[open] .ath-fold-chev { transform: rotate(90deg); }
+.ath-fold[open] > summary { margin-bottom: 0.85em; }
+.ath-fold-body > *:last-child { margin-bottom: 0; }
+/* Lead row: the one line of explanation and the action button share a line on
+   anything wider than a phone, and stack on a phone. */
+.ath-fold-lead {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.9em; flex-wrap: wrap; margin-bottom: 0.9em;
+}
+.ath-fold-lead p { margin: 0; flex: 1; min-width: 12rem; font-size: 0.85rem; }
+
+/* ---- Profile settings card: two folds, one card ---- */
+.pref-card { padding-top: 0.35rem; padding-bottom: 0.35rem; }
+.pref-fold + .pref-fold { border-top: 1px solid var(--border); }
+.pref-fold > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 0.75em;
+  padding: 0.95em 0;
+}
+.pref-fold > summary::-webkit-details-marker { display: none; }
+.pref-fold-ico { font-size: 1.1rem; line-height: 1; }
+.pref-fold-text { display: flex; flex-direction: column; gap: 0.1em; min-width: 0; }
+.pref-fold-title { font-size: 0.98rem; font-weight: 700; color: var(--text); }
+.pref-fold-sub { font-size: 0.8rem; color: var(--muted); }
+.pref-fold-chev { margin-left: auto; color: var(--text-soft); transition: transform 0.15s ease; }
+.pref-fold[open] .pref-fold-chev { transform: rotate(90deg); }
+.pref-fold[open] > summary { padding-bottom: 0.35em; }
+.pref-fold .pref-list { margin-top: 0; }
+.pref-fold .pref-list:first-of-type { border-top: none; }
+.pref-fold .pref-row:last-of-type { border-bottom: none; }
+.pref-foot { font-size: 0.78rem; color: var(--muted); margin: 0.8em 0 1em; }
+
+/* The cardio list builds its own .card; inside a fold that reads as a box in
+   a box, so strip the inner chrome and let the fold be the container. */
+.ath-fold-body #cardio-list-container > .card {
+  background: none; border: none; padding: 0; margin: 0; box-shadow: none;
+}

@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=prefs2" />
+  <link rel="stylesheet" href="styles.css?v=tabs2" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -786,11 +786,11 @@
         </button>
         <button class="tab" data-ctab="prs">
           <span class="tab-icon"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14.66v1.626a2 2 0 0 1-.976 1.696A5 5 0 0 0 7 21.978"/><path d="M14 14.66v1.626a2 2 0 0 0 .976 1.696A5 5 0 0 1 17 21.978"/><path d="M18 9h1.5a1 1 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M6 9a6 6 0 0 0 12 0V3a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1z"/><path d="M6 9H4.5a1 1 0 0 1 0-5H6"/></svg></span>
-          <span class="tab-label">PRs</span>
+          <span class="tab-label">Progress</span>
         </button>
         <button class="tab" data-ctab="diet">
           <span class="tab-icon"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 21h10"/><path d="M12 21a9 9 0 0 0 9-9H3a9 9 0 0 0 9 9Z"/><path d="M11.38 12a2.4 2.4 0 0 1-.4-4.77 2.4 2.4 0 0 1 3.2-2.77 2.4 2.4 0 0 1 3.47-.63 2.4 2.4 0 0 1 3.37 3.37 2.4 2.4 0 0 1-1.1 3.7 2.51 2.51 0 0 1 .03 1.1"/><path d="m13 12 4-4"/><path d="M10.9 7.25A3.99 3.99 0 0 0 4 10c0 .73.2 1.41.54 2"/></svg></span>
-          <span class="tab-label">Food/<wbr>Cardio</span>
+          <span class="tab-label">Food</span>
         </button>
         <button class="tab" data-ctab="anatomy">
           <span class="tab-icon"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1"/><path d="m9 20 3-6 3 6"/><path d="m6 8 6 2 6-2"/><path d="M12 10v4"/></svg></span>
@@ -837,6 +837,23 @@
           <div id="oneoff-athlete-container"></div>
           <div id="ownday-athlete-container"></div>
           <div id="client-archive-container"></div>
+          <!-- Cardio sits with the lifting days, because a run is a session.
+               Folded away so it never pushes the day cards down the screen. -->
+          <details class="card ath-fold" id="athlete-cardio-fold">
+            <summary>
+              <span class="ath-fold-ico">🏃</span>
+              <span class="ath-fold-title">Cardio</span>
+              <span class="ath-fold-meta" id="cardio-fold-meta"></span>
+              <span class="ath-fold-chev">▸</span>
+            </summary>
+            <div class="ath-fold-body">
+              <div class="ath-fold-lead">
+                <p class="muted">Runs, rides, swims: anything that gets the heart rate up. Tap an entry to edit it.</p>
+                <button class="btn btn-primary btn-sm slim-btn" id="btn-add-cardio">+ Log cardio</button>
+              </div>
+              <div id="cardio-list-container"></div>
+            </div>
+          </details>
         </div>
         <!-- Detail: shown when a day is selected -->
         <div id="workout-detail" class="workout-detail hidden">
@@ -887,50 +904,14 @@
         </div>
       </div>
 
-      <!-- Diet -->
+      <!-- Food — nothing but eating now. Cardio moved to Program (a run is a
+           session), body weight to Progress (a number tracked over time). -->
       <div class="tab-panel" data-ctab-panel="diet">
         <div id="client-diet-container" class="weeks-container"></div>
-        <div class="card" style="margin-top:1.75rem">
-          <h3>Today's body weight</h3>
-          <div class="bw-form">
-            <label>Date
-              <input type="date" id="bw-date" />
-            </label>
-            <label>Weight (lb)
-              <input type="number" id="bw-weight" step="0.1" placeholder="e.g. 178.5" />
-            </label>
-            <button class="btn btn-primary" id="btn-log-bw">Log weight</button>
-          </div>
-          <div class="bw-import">
-            <button class="btn btn-ghost" type="button" id="btn-import-scale">Import from scale…</button>
-            <span class="muted">Renpho: Profile → Settings → Export Data, then upload the CSV.</span>
-            <input type="file" id="scale-csv-input" accept=".csv,text/csv" hidden />
-          </div>
-        </div>
-        <div class="card">
-          <h3>Body weight</h3>
-          <div id="bw-charts" class="bw-secret"></div>
-          <div id="bw-history" class="bw-secret"></div>
-        </div>
-
-        <!-- Cardio (merged into Nutrition/Cardio) -->
-        <div class="program-head" style="margin-top:1.75rem">
-          <h3>Cardio</h3>
-          <button class="btn btn-primary" id="btn-add-cardio">+ Log cardio</button>
-        </div>
-        <p class="muted" style="margin-bottom:1em">Track runs, rides, swims: anything that gets the heart rate up. Tap an entry to edit it.</p>
-        <div id="cardio-list-container"></div>
-
-        <div class="card">
-          <h3>Notes for my coach</h3>
-          <textarea id="client-feedback" rows="4" placeholder="How are things going? Any aches, schedule conflicts, food cravings…"></textarea>
-          <p class="muted">Synced automatically. Your coach will see it.</p>
-        </div>
       </div>
 
-      <!-- PRs (athlete) -->
+      <!-- Progress: PRs, strength charts, and the body-weight log -->
       <div class="tab-panel" data-ctab-panel="prs">
-        <p class="muted" style="margin-bottom:1em">Log your best lifts. The heaviest set per exercise is highlighted as your current PR.</p>
         <div id="athlete-strength-charts"></div>
         <div id="athlete-pr-archive"></div>
         <div id="athlete-pr-container"></div>
@@ -939,6 +920,32 @@
           <h3>No PRs yet</h3>
           <p>Smash a lift, then log it here. Your coach will see it automatically.</p>
         </div>
+        <details class="card ath-fold" id="athlete-bw-fold">
+          <summary>
+            <span class="ath-fold-ico">⚖️</span>
+            <span class="ath-fold-title">Body weight</span>
+            <span class="ath-fold-meta bw-secret" id="bw-fold-meta"></span>
+            <span class="ath-fold-chev">▸</span>
+          </summary>
+          <div class="ath-fold-body">
+            <div class="bw-form">
+              <label>Date
+                <input type="date" id="bw-date" />
+              </label>
+              <label>Weight (lb)
+                <input type="number" id="bw-weight" step="0.1" placeholder="e.g. 178.5" />
+              </label>
+              <button class="btn btn-primary" id="btn-log-bw">Log weight</button>
+            </div>
+            <div class="bw-import">
+              <button class="btn btn-ghost btn-sm slim-btn" type="button" id="btn-import-scale">Import from scale…</button>
+              <span class="muted">Renpho: Profile → Settings → Export Data, then upload the CSV.</span>
+              <input type="file" id="scale-csv-input" accept=".csv,text/csv" hidden />
+            </div>
+            <div id="bw-charts" class="bw-secret"></div>
+            <div id="bw-history" class="bw-secret"></div>
+          </div>
+        </details>
       </div>
 
       <!-- Sessions + Calendar (athlete, merged) -->
@@ -996,9 +1003,9 @@
             </label>
           </div>
         </div>
-        <div class="card">
-          <div class="profile-invite" id="profile-invite"></div>
-        </div>
+        <!-- No invite code here. It exists to claim an account once; an athlete
+             reading this screen has already used theirs, and the coach can see
+             it on their side if it's ever needed again. -->
         <div class="card">
           <!-- Folded away by default: 32 tiles is a lot of screen for something
                you set once, and someone who wants no avatar shouldn't have to
@@ -1019,6 +1026,13 @@
           <h3>Appearance</h3>
           <p class="muted" style="margin-bottom:0.8em">Pick a color scheme for your app.</p>
           <div class="theme-picker" id="athlete-theme-picker"></div>
+        </div>
+        <!-- Notes for the coach: this is a message to a person, so it belongs
+             with the rest of "me and my coach", not buried under the food log. -->
+        <div class="card">
+          <h3>Notes for my coach</h3>
+          <textarea id="client-feedback" rows="4" placeholder="How are things going? Any aches, schedule conflicts, food cravings…"></textarea>
+          <p class="muted">Synced automatically. Your coach will see it.</p>
         </div>
         <!-- Simple mode + privacy, rendered by renderAthleteSettingsCards() -->
         <div id="athlete-settings-host"></div>
@@ -1102,7 +1116,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=horm2"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=prefs2"></script>
+  <script src="app.js?v=tabs2"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
