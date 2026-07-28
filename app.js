@@ -2576,6 +2576,7 @@
     hide($("#screen-login"));
     show($("#screen-app"));
     hide($("#screen-client"));
+    applyAthletePrefs(); // athlete-only body classes never follow the coach out
     $("#header-trainer-name").textContent = state.trainerData.trainer.name;
     // Populate the athletes grid + package badge in the background, then land on
     // the Overview page.
@@ -9859,7 +9860,7 @@
         clip.reviewedAt = Date.now();
         saveAthleteProgressFromCoach(c);
         window.Cloud?.sendPush?.([c.id], "🎥 Your form check is back",
-          clip.coachReply ? "Your coach replied to your form video." : "Your coach watched your form video.", "./");
+          clip.coachReply ? "Your coach replied to your form video." : "Your coach watched your form video.", "./", "formcheck");
         toast("Sent to " + (c.name || "athlete"));
         b.textContent = "Update reply";
       });
@@ -11767,7 +11768,7 @@
     if (window.Cloud?.enabled) {
       clients.forEach((c) => window.Cloud.upsertAthlete(c, state.trainerData.coachId));
       // Ping every athlete who's opted into notifications.
-      window.Cloud.sendPush?.(clients.map((c) => c.id), "📌 New bulletin from your coach", text, "./");
+      window.Cloud.sendPush?.(clients.map((c) => c.id), "📌 New bulletin from your coach", text, "./", "bulletin");
     }
     if (ta) ta.value = "";
     if (statusEl) statusEl.textContent = "";
@@ -12329,8 +12330,11 @@
     renderAthleteOverview();
     refreshAthleteOpenSlots();
     refreshAthleteAnatomyEdits();
+    applyAthletePrefs();
     renderAthleteNotifyCard();
+    renderAthleteSettingsCards();
     refreshPushSubscription();
+    pullAthletePrefs(); // cloud copy wins, then re-renders the cards
     // First time on this device: one guided lap (never during a coach live
     // session — that's the coach's screen, not the athlete's).
     if (!state.previewMode && !localStorage.getItem(KEY_TOUR_ATHLETE)) {
@@ -12416,10 +12420,10 @@
   }
 
   // -------- Overview stats: fixed calendar-header tiles + customizable racing bar --------
-  function ovStatTile({ icon, num, small, label, title, trend, trendNeutral }) {
+  function ovStatTile({ icon, num, small, label, title, trend, trendNeutral, cls }) {
     const arrow = trend === "up" ? "▲" : trend === "down" ? "▼" : "";
     const t = trend ? `<span class="cal-trend ${trend}${trendNeutral ? " neutral" : ""}">${arrow}</span>` : "";
-    return `<span class="cal-stat" title="${escapeHtml(title || "")}">
+    return `<span class="cal-stat${cls ? " " + cls : ""}" title="${escapeHtml(title || "")}">
         <span class="cal-stat-val"><span class="cal-stat-ico">${icon}</span><span class="cal-stat-num${small ? " cal-stat-sm" : ""}">${escapeHtml(String(num))}</span>${t}</span>
         <span class="cal-stat-lbl">${escapeHtml(label)}</span>
       </span>`;
@@ -12442,7 +12446,7 @@
     const tiles = [];
     if (ctx.totalDays) tiles.push(ovRingTile({ done: ctx.doneDays, total: ctx.totalDays, label: "week",
       title: `${ctx.doneDays} of ${ctx.totalDays} workouts done in ${ctx.weekLabel}` }));
-    tiles.push(ovStatTile({ icon: "🔥", num: ctx.streakN, label: "streak",
+    tiles.push(ovStatTile({ icon: "🔥", num: ctx.streakN, label: "streak", cls: "game-only",
       title: "Consecutive weeks with at least one completed workout" }));
     if (ctx.bookingLabel) tiles.push(ovStatTile({ icon: "📅", num: ctx.bookingLabel, small: true, label: "next",
       title: "Your next booked session" }));
@@ -12451,9 +12455,9 @@
 
   // -------- Customizable "racing" stats bar (slanted rows in the stats card) --------
   // Each stat: { id, icon, label, get(ctx) -> { value, unit?, when?, trend?, trendNeutral? } | null }.
-  function racingRowHtml(label, d) {
+  function racingRowHtml(label, d, secret) {
     const tr = d.trend ? `<span class="sr-trend ${d.trend}${d.trendNeutral ? " neutral" : ""}">${d.trend === "up" ? "▲" : "▼"}</span>` : "";
-    return `<div class="ov-stat-row"><div class="sr-in"><span class="sr-lbl">${escapeHtml(label)}${d.when ? ` <span class="sr-when">${escapeHtml(d.when)}</span>` : ""}</span><span class="sr-val">${escapeHtml(String(d.value))}${d.unit ? `<span class="sr-unit">${escapeHtml(d.unit)}</span>` : ""}${tr}</span></div></div>`;
+    return `<div class="ov-stat-row${secret ? " bw-secret" : ""}"><div class="sr-in"><span class="sr-lbl">${escapeHtml(label)}${d.when ? ` <span class="sr-when">${escapeHtml(d.when)}</span>` : ""}</span><span class="sr-val">${escapeHtml(String(d.value))}${d.unit ? `<span class="sr-unit">${escapeHtml(d.unit)}</span>` : ""}${tr}</span></div></div>`;
   }
   const RACING_LIB = [
     { id: "workouts", icon: "🏋️", label: "Workouts", get: (x) => ({ value: completionDateList(x.progress).length }) },
@@ -12477,7 +12481,7 @@
         return { value: completionDateList(x.progress).filter((d) => d.slice(0, 7) === ym).length }; } },
     { id: "streak", icon: "🔥", label: "Week streak", get: (x) => ({ value: x.streakN }) },
     { id: "thisweek", icon: "◔", label: "This week", get: (x) => x.totalDays ? ({ value: `${x.doneDays}/${x.totalDays}` }) : null },
-    { id: "bw", icon: "⚖️", label: "Bodyweight", get: (x) => {
+    { id: "bw", icon: "⚖️", label: "Bodyweight", secret: true, get: (x) => {
         const log = [...(x.progress.bodyweightLog || [])].filter((e) => e.date && isFinite(parseFloat(e.weightLb))).sort((a, b) => a.date.localeCompare(b.date));
         if (!log.length) return null;
         const latest = log[log.length - 1], cur = parseFloat(latest.weightLb);
@@ -12538,7 +12542,7 @@
   function renderRacingRows(ctx) {
     return getRacingStatIds(ctx.progress)
       .map((id) => RACING_LIB.find((s) => s.id === id)).filter(Boolean)
-      .map((def) => { const d = def.get(ctx); return d ? racingRowHtml(def.label, d) : ""; }).join("");
+      .map((def) => { const d = def.get(ctx); return d ? racingRowHtml(def.label, d, def.secret) : ""; }).join("");
   }
   // Soft cap: show RACING_CAP rows, scroll the rest inside a fixed-height window
   // with a fade at whichever edge has more. Only sizes while the (collapsible)
@@ -12667,15 +12671,9 @@
       bookingLabel = `${wd} ${nextBooking.time || ""}`.trim();
     }
 
-    // ---- Bodyweight latest + trend ----
-    // ---- Top PR ----
-    let prHtml = "";
-    const prWithVal = (c.coachPRs || []).filter((p) => p.name && p.pr1);
-    if (prWithVal.length) {
-      const top = prWithVal.slice().sort((a, b) => Number(b.pr1) - Number(a.pr1))[0];
-      prHtml = `<div class="ov-mini"><div class="ov-mini-top"><span class="ov-mini-val">${prWeightLabel(top.name, top.pr1)}</span></div><div class="ov-mini-lbl">${escapeHtml(top.name)} 1RM</div></div>`;
-    }
-
+    // No lone "top PR" tile here: the Lifting stats card below already carries
+    // a Highest PR row, and a floating mini tile above it said the same thing
+    // twice with no label to explain itself.
     const firstName = escapeHtml((c.name || "").trim().split(/\s+/)[0] || "athlete");
 
     // ---- Streak · ring · tonnage · recap · trophies ----
@@ -12707,7 +12705,7 @@
     const badges = computeBadges(progress, c);
     const earnedCount = badges.filter((b) => b.earned).length;
     // Collapsed by default — the summary line carries the earned count.
-    const trophyHtml = earnedCount ? `<details class="card ov-trophies">
+    const trophyHtml = earnedCount ? `<details class="card ov-trophies game-only">
         <summary>🏆 Trophy case <span class="muted">${earnedCount}/${badges.length}</span><span class="ov-trophies-chev">▸</span></summary>
         <div class="trophy-grid">${badges.map((b) => `<div class="trophy${b.earned ? " earned" : ""}" title="${escapeHtml(b.hint)}"><span class="trophy-icon">${b.icon}</span><span class="trophy-name">${escapeHtml(b.name)}</span></div>`).join("")}</div>
       </details>` : "";
@@ -12748,9 +12746,7 @@
         ${hero.cta ? `<span class="ov-hero-arrow" aria-hidden="true">→</span>` : ""}
       </div>`;
     renderCalHeaderStats({ doneDays, totalDays, weekLabel, streakN, bookingLabel });
-    host.innerHTML = `
-      ${prHtml ? `<div class="ov-mini-row">${prHtml}</div>` : ""}
-      ${statsHtml}`;
+    host.innerHTML = statsHtml;
     if (trophyHost) trophyHost.innerHTML = trialsHtml + trophyHtml;
 
     if (hero.jump) $("#ov-hero")?.addEventListener("click", () => jumpToWorkout(hero.jump, today));
@@ -12781,8 +12777,10 @@
     const progress = state.clientData.progress;
     const lb = Number(progress?.hoard?.lb) || 0;
     // Nothing earned yet: leave the plain brand mark rather than showing an
-    // empty ring and a rank they haven't started.
-    if (!c || !lb) {
+    // empty ring and a rank they haven't started. Simple mode lands in the
+    // same branch on purpose: the crest is the loudest bit of the game layer,
+    // and hiding it in CSS would leave the brand line reading as a rank.
+    if (!c || !lb || athletePrefs().simple) {
       crest.classList.remove("has-rank", "is-max");
       med.classList.add("hidden");
       title.textContent = "Stone Dragon";
@@ -12947,6 +12945,7 @@
     applyTheme(currentThemeForRole("coach")); // restore coach theme after preview
     hide($("#screen-client"));
     show($("#screen-app"));
+    applyAthletePrefs();
     openClient(ret.clientId);
     setTab("program"); // land on the program so edits are one tap away
   }
@@ -16992,7 +16991,7 @@
         </div>
       </div>
 
-      <div class="food-lvl ${game.promoted ? "is-promoted" : ""} ${game.rank.isMax ? "is-max" : ""} ${game.rank.isDragon ? "is-dragon" : ""}">
+      <div class="food-lvl game-only ${game.promoted ? "is-promoted" : ""} ${game.rank.isMax ? "is-max" : ""} ${game.rank.isDragon ? "is-dragon" : ""}">
         <div class="food-rank">
           <span class="food-rank-badge">${game.rank.icon}</span>
           <span class="food-rank-name">${escapeHtml(game.rank.name)}</span>
@@ -19809,6 +19808,91 @@
     }));
   }
 
+  // -------- Athlete preferences --------
+  // Everything the athlete sets about themselves rather than about their
+  // training: which pushes they want, when to be left alone, how much of the
+  // game layer to show, and whether their weight shows on screen.
+  //
+  // Stored twice on purpose. localStorage answers instantly and works offline
+  // (the app reads these on every render); the `athlete_prefs` table carries
+  // them to their other devices and, more importantly, is what the push Edge
+  // Functions read when deciding whether to send. Cloud wins on load.
+  const KEY_PREFS = "trainerpro_prefs_v1";
+  const PREFS_DEFAULT = {
+    bulletins: true, messages: true, formChecks: true,
+    reminderOn: false, reminderTime: "17:00",
+    quietOn: false, quietFrom: "21:00", quietTo: "07:00",
+    simple: false, hideWeight: false,
+  };
+  let _prefs = null;
+  function athletePrefs() {
+    if (!_prefs) {
+      let saved = null;
+      try { saved = JSON.parse(localStorage.getItem(KEY_PREFS) || "null"); } catch (e) {}
+      _prefs = Object.assign({}, PREFS_DEFAULT, saved || {});
+    }
+    return _prefs;
+  }
+  function localTimezone() {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (e) { return "UTC"; }
+  }
+  function setAthletePrefs(patch) {
+    const p = Object.assign(athletePrefs(), patch);
+    try { localStorage.setItem(KEY_PREFS, JSON.stringify(p)); } catch (e) {}
+    applyAthletePrefs();
+    // The server needs the timezone to honour a reminder time or quiet hours,
+    // and it can only come from the device. Send it with every save so a move
+    // or a trip fixes itself on the next toggle.
+    const id = state.clientData.program?.clientId || state.clientData.program?.client?.id;
+    if (id && !state.previewMode && window.Cloud?.enabled) {
+      window.Cloud.saveAthletePrefs(id, Object.assign({}, p, { tz: localTimezone() }));
+    }
+    return p;
+  }
+  async function pullAthletePrefs() {
+    const id = state.clientData.program?.clientId || state.clientData.program?.client?.id;
+    if (!id || state.previewMode || !window.Cloud?.enabled) return;
+    const remote = await window.Cloud.getAthletePrefs(id);
+    if (!remote) {
+      // No row yet: seed one so the Edge Functions know their timezone.
+      window.Cloud.saveAthletePrefs(id, Object.assign({}, athletePrefs(), { tz: localTimezone() }));
+      return;
+    }
+    delete remote.tz;
+    _prefs = Object.assign(athletePrefs(), remote);
+    try { localStorage.setItem(KEY_PREFS, JSON.stringify(_prefs)); } catch (e) {}
+    applyAthletePrefs();
+    renderAthleteNotifyCard();
+    renderAthleteSettingsCards();
+  }
+  // Two body classes carry the prefs into the CSS, so simple mode and a
+  // hidden body weight take effect everywhere at once without every render
+  // path having to ask.
+  function applyAthletePrefs() {
+    const p = athletePrefs();
+    const on = state.mode === "client" || state.previewMode;
+    document.body.classList.toggle("simple-mode", on && !!p.simple);
+    const priv = on && !!p.hideWeight;
+    document.body.classList.toggle("bw-private", priv);
+    // Turning it back on re-hides anything revealed earlier in the session.
+    if (!priv) $$(".bw-secret.is-shown").forEach((el) => el.classList.remove("is-shown"));
+    // The crest is JS-drawn, so flipping simple mode has to redraw it — CSS
+    // alone would leave the rank name sitting in the header.
+    if (on && $("#client-rank-crest")) renderClientHeaderRank();
+  }
+  // Tap a blurred weight to read it. Delegated once, because these elements are
+  // re-rendered constantly and the reveal is deliberately per-view: leaving the
+  // tab and coming back hides them again.
+  document.addEventListener("click", (e) => {
+    if (!document.body.classList.contains("bw-private")) return;
+    const hit = e.target.closest?.(".bw-secret");
+    if (hit && !hit.classList.contains("is-shown")) {
+      hit.classList.add("is-shown");
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, true);
+
   // -------- Web push (athlete notifications) --------
   // The athlete opts in from Profile → 🔔. Their browser subscription is
   // stored per-device in Supabase (push_subscriptions, RLS: athlete-owned);
@@ -19882,12 +19966,47 @@
     } else if (blocked) {
       inner = `<p class="muted">Notifications are blocked for this site. Allow them in your browser settings, then come back.</p>`;
     } else {
+      const p = athletePrefs();
+      // The detail switches only exist once notifications are on. Showing
+      // "which kinds do you want" above a dead master switch is just noise.
+      const detail = enabled ? `
+        <div class="pref-list">
+          ${prefSwitchHtml("bulletins", "Bulletins", "Announcements your coach posts to everyone", p.bulletins)}
+          ${prefSwitchHtml("messages", "Messages from your coach", "Nudges sent just to you", p.messages)}
+          ${prefSwitchHtml("formChecks", "Form-check replies", "When your coach reviews a clip you sent", p.formChecks)}
+        </div>
+        <div class="pref-list">
+          ${prefSwitchHtml("reminderOn", "Workout reminder", "A daily nudge, skipped on days you already trained", p.reminderOn)}
+          <div class="pref-sub${p.reminderOn ? "" : " hidden"}" id="pref-reminder-sub">
+            <label>Remind me at
+              <input type="time" id="pref-reminder-time" value="${escapeHtml(p.reminderTime)}" />
+            </label>
+          </div>
+          ${prefSwitchHtml("quietOn", "Quiet hours", "Hold everything overnight", p.quietOn)}
+          <div class="pref-sub${p.quietOn ? "" : " hidden"}" id="pref-quiet-sub">
+            <label>From <input type="time" id="pref-quiet-from" value="${escapeHtml(p.quietFrom)}" /></label>
+            <label>To <input type="time" id="pref-quiet-to" value="${escapeHtml(p.quietTo)}" /></label>
+          </div>
+        </div>` : `<p class="muted" style="font-size:0.85rem">Get a ping when your coach posts a bulletin or sends you a message.</p>`;
       inner = `
-        <p class="muted" style="font-size:0.85rem">Get a ping when your coach posts a bulletin or sends you a message.</p>
+        ${detail}
         ${iosTip}
         <button class="btn ${enabled ? "btn-ghost" : "btn-primary"} btn-sm" id="btn-toggle-push" type="button">${enabled ? "🔕 Turn off notifications" : "🔔 Enable notifications"}</button>`;
     }
     host.innerHTML = `<div class="card"><h4 style="margin-top:0">🔔 Notifications</h4>${inner}</div>`;
+    wirePrefSwitches(host, {
+      reminderOn: (on) => $("#pref-reminder-sub")?.classList.toggle("hidden", !on),
+      quietOn: (on) => $("#pref-quiet-sub")?.classList.toggle("hidden", !on),
+    });
+    const timeField = (sel, key) => $(sel)?.addEventListener("change", (e) => {
+      const v = /^\d{2}:\d{2}$/.test(e.target.value) ? e.target.value : PREFS_DEFAULT[key];
+      e.target.value = v;
+      setAthletePrefs({ [key]: v });
+      toast("Saved");
+    });
+    timeField("#pref-reminder-time", "reminderTime");
+    timeField("#pref-quiet-from", "quietFrom");
+    timeField("#pref-quiet-to", "quietTo");
     $("#btn-toggle-push")?.addEventListener("click", async () => {
       const btn = $("#btn-toggle-push");
       if (btn) { btn.disabled = true; btn.textContent = "Working…"; }
@@ -19905,6 +20024,113 @@
       renderAthleteNotifyCard();
     });
   }
+  // One preference row: a label, a line of explanation, and a checkbox. Every
+  // switch in Profile is built from this so they all read and behave alike.
+  function prefSwitchHtml(key, label, hint, on) {
+    return `<label class="pref-row">
+      <span class="pref-text"><span class="pref-label">${escapeHtml(label)}</span>${hint ? `<span class="pref-hint">${escapeHtml(hint)}</span>` : ""}</span>
+      <input type="checkbox" class="pref-toggle" data-pref="${escapeHtml(key)}"${on ? " checked" : ""} />
+    </label>`;
+  }
+  // Wires every [data-pref] switch inside a host to setAthletePrefs, with an
+  // optional per-key callback for rows that reveal a sub-panel.
+  function wirePrefSwitches(host, after = {}) {
+    host.querySelectorAll("[data-pref]").forEach((box) => {
+      box.addEventListener("change", () => {
+        const key = box.dataset.pref;
+        setAthletePrefs({ [key]: box.checked });
+        after[key]?.(box.checked);
+        toast("Saved");
+      });
+    });
+  }
+
+  // Profile → the two cards under Notifications: how much app the athlete
+  // wants, and what leaves their phone.
+  function renderAthleteSettingsCards() {
+    const host = $("#athlete-settings-host");
+    if (!host) return;
+    if (state.previewMode) { host.innerHTML = ""; return; } // coach preview: not their settings
+    const p = athletePrefs();
+    const clips = Object.values(state.clientData.progress?.formChecks || {})
+      .reduce((n, list) => n + (Array.isArray(list) ? list.length : 0), 0);
+    host.innerHTML = `
+      <div class="card">
+        <h4 style="margin-top:0">🎛️ Make it simpler</h4>
+        <div class="pref-list">
+          ${prefSwitchHtml("simple", "Simple mode", "Hides ranks, XP, trophies and streaks. Your workouts, stats and trials stay.", p.simple)}
+        </div>
+      </div>
+      <div class="card">
+        <h4 style="margin-top:0">🔒 Privacy</h4>
+        <div class="pref-list">
+          ${prefSwitchHtml("hideWeight", "Hide my body weight", "Blurs weight numbers until you tap them, so a glance over your shoulder shows nothing. Your coach still sees them.", p.hideWeight)}
+        </div>
+        <div class="pref-actions">
+          <button class="btn btn-ghost btn-sm" id="btn-export-my-data" type="button">⬇ Download my data</button>
+          <button class="btn btn-ghost btn-sm" id="btn-signout-everywhere" type="button">🚪 Sign out everywhere</button>
+          ${clips ? `<button class="btn btn-ghost btn-sm" id="btn-purge-form-checks" type="button">🎥 Delete my ${clips} form ${clips === 1 ? "video" : "videos"}</button>` : ""}
+        </div>
+        <p class="muted" style="font-size:0.8rem;margin:0.7em 0 0">Form videos delete themselves after ${FORM_CHECK_RETENTION_DAYS} days anyway.</p>
+      </div>`;
+    wirePrefSwitches(host);
+    $("#btn-export-my-data")?.addEventListener("click", exportMyData);
+    $("#btn-signout-everywhere")?.addEventListener("click", signOutEverywhere);
+    $("#btn-purge-form-checks")?.addEventListener("click", purgeMyFormChecks);
+  }
+
+  // Everything this athlete's app holds about them, as one JSON file. The
+  // honest answer to "what happens to my data if I leave".
+  function exportMyData() {
+    const c = state.clientData.program?.client;
+    const data = {
+      exportedAt: new Date().toISOString(),
+      athlete: { name: c?.name || "", age: c?.age || null, heightIn: c?.heightIn || null, goals: c?.goals || "" },
+      program: { weeks: c?.weeks || [], oneOffDays: c?.oneOffDays || [], schedule: c?.schedule || {} },
+      progress: state.clientData.progress || {},
+      preferences: athletePrefs(),
+    };
+    const name = (c?.name || "my").trim().split(/\s+/)[0].toLowerCase();
+    downloadFile(`stone-dragon-${name}-${todayISO()}.json`,
+      JSON.stringify(data, null, 2), "application/json");
+    toast("Downloaded ✓");
+  }
+
+  // Drops every clip this athlete has sent, blobs and all, without waiting for
+  // the 30-day prune. Their coach's replies go with them: the reply lives on
+  // the clip record, and keeping half of a conversation would be stranger.
+  async function purgeMyFormChecks() {
+    const p = state.clientData.progress;
+    const paths = Object.values(p?.formChecks || {}).flat().map((f) => f?.path).filter(Boolean);
+    if (!paths.length) return;
+    if (!window.confirm(`Delete all ${paths.length} of your form videos? Your coach's replies to them go too. This can't be undone.`)) return;
+    const btn = $("#btn-purge-form-checks");
+    if (btn) { btn.disabled = true; btn.textContent = "Deleting…"; }
+    for (const path of paths) await window.Cloud?.deleteFormCheck?.(path);
+    p.formChecks = {};
+    saveClient();
+    renderAthleteSettingsCards();
+    renderClientWorkouts();
+    toast("Form videos deleted ✓");
+  }
+
+  // Kills every session on the account and every device signed up for pushes,
+  // then drops this one back to the login screen.
+  async function signOutEverywhere() {
+    if (!window.confirm("Sign out on every device? You'll need your email and password to get back in.")) return;
+    const btn = $("#btn-signout-everywhere");
+    if (btn) { btn.disabled = true; btn.textContent = "Signing out…"; }
+    const id = state.clientData.program?.clientId || state.clientData.program?.client?.id;
+    await unsubscribePush();
+    if (id) await window.Cloud?.deleteAllPushSubscriptions?.(id);
+    await window.Cloud?.signOutEverywhere?.();
+    // Reload rather than swapping screens: a global sign-out invalidates the
+    // session mid-flight, and a fresh boot lands on the sign-in screen with
+    // their local program still intact.
+    sessionStorage.removeItem(KEY_SESSION);
+    location.reload();
+  }
+
   // Coach → one athlete: push a custom message to their phone.
   function openNudgeModal() {
     const c = currentClient(); if (!c) return;
@@ -19919,10 +20145,12 @@
           const text = $("#nudge-text")?.value.trim();
           if (!text) return;
           closeModal();
-          const res = await window.Cloud?.sendPush?.([c.id], "Stone Dragon Strength", text, "./");
+          const res = await window.Cloud?.sendPush?.([c.id], "Stone Dragon Strength", text, "./", "message");
           toast(res?.sent
             ? `Nudge sent to ${c.name} ✓`
-            : `No devices reached. Has ${c.name} enabled notifications?`, 3500);
+            : res?.muted
+              ? `${c.name} has coach messages muted or is in quiet hours.`
+              : `No devices reached. Has ${c.name} enabled notifications?`, 3500);
         } },
       ],
     });

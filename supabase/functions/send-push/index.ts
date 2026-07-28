@@ -6,9 +6,15 @@
 // Auth model: the caller's JWT must belong to a coach; targets are filtered
 // to that coach's own athletes, so one coach can never push to another's.
 // Dead subscriptions (endpoint gone: 404/410) are pruned on the way out.
+//
+// Targets are filtered a second time by the athlete's own notification
+// preferences: the `kind` of the push ("bulletin" | "message" | "formcheck")
+// must still be switched on for them, and their quiet hours must not be in
+// effect. An athlete with no prefs row hears everything.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
+import { allowedTargets, type Prefs, type PushKind } from "../_shared/notify-prefs.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -39,20 +45,30 @@ Deno.serve(async (req) => {
       .from("coaches").select("id").eq("auth_user_id", user.id).maybeSingle();
     if (!coach) return json({ error: "coaches only" }, 403);
 
-    const { athleteIds, title, body, url } = await req.json();
+    const { athleteIds, title, body, url, kind } = await req.json();
     if (!Array.isArray(athleteIds) || !athleteIds.length || !title) {
       return json({ error: "athleteIds[] and title required" }, 400);
     }
+    const pushKind: PushKind =
+      kind === "bulletin" || kind === "message" || kind === "formcheck" ? kind : "message";
 
     // Only this coach's athletes.
     const { data: athletes } = await sb
       .from("athletes").select("id").eq("coach_id", coach.id).in("id", athleteIds);
-    const ids = (athletes ?? []).map((a: { id: string }) => a.id);
+    let ids = (athletes ?? []).map((a: { id: string }) => a.id);
     if (!ids.length) return json({ ok: true, sent: 0 });
+
+    // Then only the ones who still want this kind, and aren't in quiet hours.
+    const { data: prefs } = await sb
+      .from("athlete_prefs").select("*").in("athlete_id", ids);
+    const before = ids.length;
+    ids = allowedTargets(ids, (prefs ?? []) as Prefs[], pushKind);
+    const muted = before - ids.length;
+    if (!ids.length) return json({ ok: true, sent: 0, muted });
 
     const { data: subs } = await sb
       .from("push_subscriptions").select("id, subscription").in("athlete_id", ids);
-    if (!subs?.length) return json({ ok: true, sent: 0 });
+    if (!subs?.length) return json({ ok: true, sent: 0, muted });
 
     webpush.setVapidDetails(vapidSubject, vapidPub, vapidPriv);
     const payload = JSON.stringify({
@@ -75,7 +91,7 @@ Deno.serve(async (req) => {
     }));
     if (dead.length) await sb.from("push_subscriptions").delete().in("id", dead);
 
-    return json({ ok: true, sent, pruned: dead.length });
+    return json({ ok: true, sent, muted, pruned: dead.length });
   } catch (e) {
     console.error("[send-push] fatal:", e);
     return json({ ok: false, error: String(e) }, 500);

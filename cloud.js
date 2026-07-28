@@ -45,6 +45,15 @@
   async function signOut() {
     try { await sb.auth.signOut(); } catch (e) { console.warn("[Cloud] signOut", e); }
   }
+  // Kills every session for this account, not just this browser's. Pairs with
+  // clearing the athlete's push subscriptions, so an old phone goes fully dark.
+  async function signOutEverywhere() {
+    try {
+      const { error } = await sb.auth.signOut({ scope: "global" });
+      if (error) { console.warn("[Cloud] signOutEverywhere", error.message); return false; }
+      return true;
+    } catch (e) { console.warn("[Cloud] signOutEverywhere", e); return false; }
+  }
   async function resetPassword(email) {
     const { error } = await sb.auth.resetPasswordForEmail(email, {
       redirectTo: window.location.origin + window.location.pathname,
@@ -452,14 +461,71 @@
       return true;
     } catch (e) { console.warn("[Cloud] deletePushSubscription", e); return false; }
   }
-  async function sendPush(athleteIds, title, body, url) {
+  // `kind` is one of "bulletin" | "message" | "formcheck". The Edge Function
+  // drops athletes who muted that kind or are inside their quiet hours, so the
+  // caller never has to know a recipient's preferences.
+  async function sendPush(athleteIds, title, body, url, kind) {
     try {
       const { data, error } = await sb.functions.invoke("send-push", {
-        body: { athleteIds, title, body, url },
+        body: { athleteIds, title, body, url, kind },
       });
       if (error) { console.warn("[Cloud] sendPush", error.message || error); return null; }
       return data;
     } catch (e) { console.warn("[Cloud] sendPush", e); return null; }
+  }
+  // Every device this athlete enabled notifications on. Used by "sign out
+  // everywhere", so a lost or borrowed phone stops receiving their pushes.
+  async function deleteAllPushSubscriptions(athleteId) {
+    if (!athleteId) return false;
+    try {
+      const { error } = await sb.from("push_subscriptions").delete().eq("athlete_id", athleteId);
+      if (error) { console.warn("[Cloud] deleteAllPushSubscriptions", error.message); return false; }
+      return true;
+    } catch (e) { console.warn("[Cloud] deleteAllPushSubscriptions", e); return false; }
+  }
+
+  // -------- Athlete preferences --------
+  // Notification categories, the daily reminder, quiet hours, and the app
+  // surface switches (simple mode, hidden body weight). Their own table:
+  // the push Edge Functions read it on every send, and `last_reminder_on` is
+  // server-written, so it can't ride along on the progress row.
+  const PREF_COLS = {
+    bulletins:    "notify_bulletins",
+    messages:     "notify_messages",
+    formChecks:   "notify_formchecks",
+    reminderOn:   "reminder_on",
+    reminderTime: "reminder_time",
+    tz:           "tz",
+    quietOn:      "quiet_on",
+    quietFrom:    "quiet_from",
+    quietTo:      "quiet_to",
+    simple:       "simple_mode",
+    hideWeight:   "hide_weight",
+  };
+  async function getAthletePrefs(athleteId) {
+    if (!athleteId) return null;
+    try {
+      const { data, error } = await sb.from("athlete_prefs")
+        .select("*").eq("athlete_id", athleteId).maybeSingle();
+      if (error || !data) return null;
+      const out = {};
+      for (const [k, col] of Object.entries(PREF_COLS)) {
+        if (data[col] !== null && data[col] !== undefined) out[k] = data[col];
+      }
+      return out;
+    } catch (e) { console.warn("[Cloud] getAthletePrefs", e); return null; }
+  }
+  async function saveAthletePrefs(athleteId, prefs) {
+    if (!athleteId || !prefs) return false;
+    try {
+      const row = { athlete_id: athleteId, updated_at: new Date().toISOString() };
+      for (const [k, col] of Object.entries(PREF_COLS)) {
+        if (prefs[k] !== undefined) row[col] = prefs[k];
+      }
+      const { error } = await sb.from("athlete_prefs").upsert(row, { onConflict: "athlete_id" });
+      if (error) { console.warn("[Cloud] saveAthletePrefs", error.message); return false; }
+      return true;
+    } catch (e) { console.warn("[Cloud] saveAthletePrefs", e); return false; }
   }
 
   // Branded-food text search. Proxied through an Edge Function because the
@@ -644,6 +710,7 @@
     signUp,
     signIn,
     signOut,
+    signOutEverywhere,
     resetPassword,
     updatePassword,
     getSession,
@@ -684,7 +751,11 @@
     // Web push
     savePushSubscription,
     deletePushSubscription,
+    deleteAllPushSubscriptions,
     sendPush,
+    // Athlete preferences
+    getAthletePrefs,
+    saveAthletePrefs,
     // Food search
     searchFoodsOnline,
     // Setmore sync

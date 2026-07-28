@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=horm4" />
+  <link rel="stylesheet" href="styles.css?v=prefs2" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -909,8 +909,8 @@
         </div>
         <div class="card">
           <h3>Body weight</h3>
-          <div id="bw-charts"></div>
-          <div id="bw-history"></div>
+          <div id="bw-charts" class="bw-secret"></div>
+          <div id="bw-history" class="bw-secret"></div>
         </div>
 
         <!-- Cardio (merged into Nutrition/Cardio) -->
@@ -1020,6 +1020,8 @@
           <p class="muted" style="margin-bottom:0.8em">Pick a color scheme for your app.</p>
           <div class="theme-picker" id="athlete-theme-picker"></div>
         </div>
+        <!-- Simple mode + privacy, rendered by renderAthleteSettingsCards() -->
+        <div id="athlete-settings-host"></div>
         <div class="card">
           <h3>Something not working?</h3>
           <p class="muted" style="margin-bottom:0.8em">Send a bug report. It attaches a snapshot of what the app was doing so it can get fixed fast.</p>
@@ -1100,7 +1102,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=horm2"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=horm4"></script>
+  <script src="app.js?v=prefs2"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
