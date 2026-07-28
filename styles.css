@@ -4820,12 +4820,6 @@ input:focus, textarea:focus, select:focus {
 /* The workout picker now uses the standard .program-head layout (like the
    Diet / PRs tabs) instead of a bespoke bordered card, so it reads as part
    of the same page family. */
-.picker-heading h3 { margin: 0; }
-.picker-sub {
-  margin: 0.25em 0 0;
-  color: var(--text-soft);
-  font-size: 0.85rem;
-}
 /* ---- Week chip selector ---- */
 /* One segmented bar instead of separate floating pills. */
 .week-chips {
@@ -8686,10 +8680,6 @@ body.live-log-mode #screen-client .header-right { display: none; }
 
 /* Athlete side: "Sessions with Coach" cards under the day picker */
 .oneoff-athlete-section { margin-top: 1.5rem; }
-.oneoff-athlete-head {
-  font-size: 0.78rem; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.08em; color: #fbbf24; margin-bottom: 0.6rem;
-}
 .oneoff-workout-card { border-color: rgba(245, 158, 11, 0.35); }
 .oneoff-workout-card:hover { border-color: rgba(245, 158, 11, 0.6); }
 .oneoff-workout-card .workout-card-icon { color: #fbbf24; }
@@ -9274,15 +9264,6 @@ body.live-log-mode #screen-client .header-right { display: none; }
 /* Same family as the coach's 🐉 one-offs, but keyed amber-red so an athlete can
    tell at a glance which sessions are theirs and which came from the coach. */
 .ownday-section { margin-top: 1.5rem; }
-.ownday-head {
-  display: flex; align-items: center; gap: 0.6em; flex-wrap: wrap;
-  margin-bottom: 0.6rem;
-}
-.ownday-head-title {
-  font-size: 0.82rem; font-weight: 700; letter-spacing: 0.08em;
-  text-transform: uppercase; color: var(--text-soft);
-}
-.ownday-add { margin-left: auto; flex-shrink: 0; }
 .ownday-empty { font-size: 0.85rem; margin: 0; max-width: 46em; }
 .ownday-workout-card { border-color: rgba(248, 113, 113, 0.32); }
 .ownday-workout-card:hover { border-color: rgba(248, 113, 113, 0.6); }
@@ -9788,13 +9769,6 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 .ath-fold[open] .ath-fold-chev { transform: rotate(90deg); }
 .ath-fold[open] > summary { margin-bottom: 0.85em; }
 .ath-fold-body > *:last-child { margin-bottom: 0; }
-/* Lead row: the one line of explanation and the action button share a line on
-   anything wider than a phone, and stack on a phone. */
-.ath-fold-lead {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 0.9em; flex-wrap: wrap; margin-bottom: 0.9em;
-}
-.ath-fold-lead p { margin: 0; flex: 1; min-width: 12rem; font-size: 0.85rem; }
 
 /* ---- Profile settings card: two folds, one card ---- */
 .pref-card { padding-top: 0.35rem; padding-bottom: 0.35rem; }
@@ -9817,8 +9791,136 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 .pref-fold .pref-row:last-of-type { border-bottom: none; }
 .pref-foot { font-size: 0.78rem; color: var(--muted); margin: 0.8em 0 1em; }
 
-/* The cardio list builds its own .card; inside a fold that reads as a box in
-   a box, so strip the inner chrome and let the fold be the container. */
-.ath-fold-body #cardio-list-container > .card {
-  background: none; border: none; padding: 0; margin: 0; box-shadow: none;
+
+
+/* ============ Program page: one section rhythm ============ */
+/* Every block on the athlete's Program tab (the week, cardio, coach sessions,
+   their own sessions) wears the same header: a title, an optional live count,
+   and at most one slim action pushed to the right. */
+.wp-head {
+  display: flex; align-items: center; gap: 0.6em; flex-wrap: wrap;
+  margin: 1.5rem 0 0.6rem;
+}
+.workout-picker > #workout-week-head .wp-head { margin-top: 0.1rem; }
+.wp-head-title {
+  font-size: 0.82rem; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-soft);
+}
+.wp-head-sub {
+  font-size: 0.78rem; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 18em;
+}
+.wp-head-count {
+  font-size: 0.7rem; font-weight: 800; letter-spacing: 0.04em;
+  color: var(--text-soft); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 999px; padding: 0.15em 0.6em;
+}
+.wp-head-count.is-done { color: var(--accent); border-color: rgba(16, 185, 129, 0.45); background: var(--accent-soft); }
+.wp-head-action { margin-left: auto; flex-shrink: 0; }
+.wp-head .bw-range { margin-left: auto; }
+.wp-head .bw-range + .wp-head-action { margin-left: 0.4em; }
+.wp-head-coach .wp-head-title { color: #fbbf24; }
+.wp-head-own .wp-head-title { color: #fb7185; }
+.wp-head-cardio .wp-head-title { color: var(--accent); }
+
+/* ============ Cardio block (Program tab) ============ */
+.cardio-block { display: block; }
+/* Bars: one per day in Week, per week in Month, per month in Year. Height is
+   minutes; colour is the hardest session in the bucket, reusing the same
+   intensity palette as the rows underneath. */
+.cardio-chart {
+  display: flex; align-items: stretch; gap: 5px;
+  padding: 0.2rem 0 0;
+}
+.cd-col {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  background: none; border: 0; padding: 0.15rem 0 0.2rem; cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.15s ease;
+}
+.cd-col:hover { background: var(--surface-2); }
+.cd-col.is-picked { background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--border-strong, var(--border)); }
+.cd-val {
+  font-size: 0.62rem; font-weight: 800; color: var(--text-soft);
+  height: 0.85em; line-height: 1; white-space: nowrap;
+}
+.cd-track {
+  width: min(100%, 34px); height: 64px;
+  display: flex; align-items: flex-end; justify-content: center;
+  border-radius: 8px;
+  background: linear-gradient(180deg, var(--surface-3), var(--surface-2));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+}
+.cd-bar {
+  width: 100%;
+  border-radius: 5px 5px 0 0;
+  background: linear-gradient(180deg, rgb(var(--cd-rgb)), rgba(var(--cd-rgb), 0.35));
+  box-shadow: 0 0 10px rgba(var(--cd-rgb), 0.35);
+  transition: height 0.2s ease;
+}
+.cd-lbl { font-size: 0.66rem; color: var(--muted); font-weight: 600; }
+.cd-col.is-today .cd-lbl { color: var(--primary-bright); font-weight: 800; }
+.cd-col.is-today .cd-track { box-shadow: inset 0 0 0 1px rgba(var(--primary-bright-rgb), 0.55); }
+.cd-col.is-empty .cd-val { color: transparent; }
+.cd-year .cd-lbl { font-size: 0.58rem; letter-spacing: -0.02em; }
+
+/* Range summary: what the bars add up to. */
+.cd-totals {
+  display: flex; align-items: center; gap: 0.7em; flex-wrap: wrap;
+  margin: 0.7rem 0 0.6rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+.cd-range {
+  font-size: 0.72rem; font-weight: 800; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--text-soft);
+}
+.cd-clear {
+  cursor: pointer; color: var(--muted); font-weight: 700;
+  padding: 0 0.25em; border-radius: 4px;
+}
+.cd-clear:hover { color: var(--text); background: var(--surface-3); }
+.cd-stats { display: flex; align-items: center; gap: 0.9em; flex-wrap: wrap; margin-left: auto; }
+.cd-stat { font-size: 0.8rem; color: var(--muted); }
+.cd-stat b { color: var(--text); font-weight: 800; font-size: 0.92rem; }
+
+/* Entry list: soft-capped so a heavy cardio month can't run off the page. */
+.cardio-list { display: flex; flex-direction: column; }
+.cardio-list.is-capped {
+  max-height: 15.5rem; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent;
+  -webkit-mask-image: linear-gradient(180deg, #000 84%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 84%, transparent 100%);
+}
+.cardio-list.is-capped::-webkit-scrollbar { width: 5px; }
+.cardio-list.is-capped::-webkit-scrollbar-thumb {
+  background: var(--border-strong); border-radius: 999px;
+}
+.cardio-list.is-capped::-webkit-scrollbar-track { background: transparent; }
+/* flex: none — inside the capped scroll box these would otherwise shrink into
+   each other instead of scrolling. */
+.cardio-list .cardio-row {
+  width: 100%; flex: 0 0 auto; text-align: left;
+  background: none; font: inherit; color: inherit;
+}
+.cd-empty { font-size: 0.85rem; color: var(--muted); margin: 0.4rem 0 0; }
+
+/* Lifetime line: the odometer under the range view. */
+.cd-alltime {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.8em;
+  margin-top: 0.7rem; padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.78rem; color: var(--muted); font-weight: 600;
+}
+.cd-alltime > span:first-child {
+  text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; font-size: 0.72rem;
+}
+.cd-alltime b { color: var(--text-soft); font-size: 0.85rem; }
+
+@media (max-width: 560px) {
+  .cd-track { height: 54px; width: min(100%, 28px); }
+  .cd-stats { gap: 0.7em; }
+  .wp-head-sub { max-width: 10em; }
 }

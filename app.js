@@ -9933,7 +9933,7 @@
           <span class="cardio-row-icon">${cardioIcon(log.type)}</span>
           <div class="cardio-row-info">
             <strong>${escapeHtml(log.type || "Cardio")}</strong>
-            <span class="muted">${escapeHtml(log.date || "")}${log.miles ? ` · ${escapeHtml(String(log.miles))} mi` : ""}</span>
+            <span class="muted">${escapeHtml(log.date || "")}${log.miles ? ` · ${escapeHtml(cardioMiLabel(Number(log.miles)))} mi` : ""}</span>
           </div>
           <span class="cardio-min">${escapeHtml(String(log.minutes || 0))} min</span>
           <span class="cardio-intensity cardio-intensity-${escapeHtml((log.intensity || "moderate").toLowerCase())}">${escapeHtml(log.intensity || "Moderate")}</span>`;
@@ -12009,36 +12009,225 @@
   const CARDIO_INTENSITIES = ["Low", "Moderate", "High"];
   const cardioIcon = (type) => (CARDIO_TYPES.find(([, n]) => n === type) || ["🔥"])[0];
 
-  function renderAthleteCardio() {
-    const container = $("#cardio-list-container");
-    if (!container) return;
-    container.innerHTML = "";
-    ensureProgressShape(state.clientData.progress);
-    const logs = [...state.clientData.progress.cardioLogs]
-      .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-    const card = document.createElement("div");
-    card.className = "card";
-    if (!logs.length) {
-      card.innerHTML = `<p class="muted" style="margin:0.3em 0">Nothing logged yet. Tap <strong>+ Log cardio</strong> after your next session.</p>`;
-    } else {
-      logs.slice(0, 30).forEach((log) => {
-        const row = document.createElement("div");
-        row.className = "cardio-row";
-        row.innerHTML = `
-          <span class="cardio-row-icon">${cardioIcon(log.type)}</span>
-          <div class="cardio-row-info">
-            <strong>${escapeHtml(log.type || "Cardio")}</strong>
-            <span class="muted">${escapeHtml(log.date || "")}${log.miles ? ` · ${escapeHtml(String(log.miles))} mi` : ""}</span>
-          </div>
-          <span class="cardio-min">${escapeHtml(String(log.minutes || 0))} min</span>
-          <span class="cardio-intensity cardio-intensity-${escapeHtml((log.intensity || "moderate").toLowerCase())}">${escapeHtml(log.intensity || "Moderate")}</span>`;
-        row.addEventListener("click", () => openCardioModal(log.id));
-        card.appendChild(row);
+  // Cardio lives on the Program page, under the week's day cards, because a
+  // run is a training session. It is dated, though, and program weeks are not,
+  // so the week strip anchors to the calendar week that program week was
+  // actually trained in (falling back to this week for one not started yet).
+  // Month and Year are overall tracking and always anchor to today.
+  const KEY_CARDIO_RANGE = "trainerpro_cardio_range_v1";
+  const CARDIO_INT_RGB = { low: "16,185,129", moderate: "245,158,11", high: "239,68,68" };
+  const MON_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  function cardioRangeMode() {
+    const v = localStorage.getItem(KEY_CARDIO_RANGE);
+    return v === "month" || v === "year" ? v : "week";
+  }
+  function cardioLogsAll(progress) {
+    return Array.isArray(progress?.cardioLogs) ? progress.cardioLogs : [];
+  }
+  function cardioTotals(list) {
+    return list.reduce((t, l) => {
+      t.n += 1;
+      t.min += Number(l.minutes) || 0;
+      t.mi += Number(l.miles) || 0;
+      return t;
+    }, { n: 0, min: 0, mi: 0 });
+  }
+  // Minutes read as hours once there are enough of them — "1h 47m" beats "107".
+  function cardioMinLabel(min) {
+    const m = Math.round(min || 0);
+    if (m < 60) return `${m} min`;
+    const h = Math.floor(m / 60), rem = m % 60;
+    return rem ? `${h}h ${rem}m` : `${h}h`;
+  }
+  const cardioMiLabel = (mi) => (Math.round(mi * 10) / 10).toLocaleString();
+  // Bar labels: raw minutes while they still read at a glance, hours after
+  // that. "462" over a month bar means nothing; "7.7h" does.
+  function cardioBarLabel(min) {
+    if (!min) return "";
+    if (min < 120) return String(Math.round(min));
+    const h = min / 60;
+    return h < 10 ? `${Math.round(h * 10) / 10}h` : `${Math.round(h)}h`;
+  }
+  // Sunday-start, to match the calendar on the Overview page.
+  function sundayOfISO(iso) {
+    const d = new Date(iso + "T12:00:00");
+    return dateISO(new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay()));
+  }
+  // The last day this program week was touched — a completion or a day the
+  // athlete scheduled onto it. That is the calendar week it belongs to.
+  function weekAnchorDate(client, progress, weekId) {
+    const week = (client?.weeks || []).find((w) => w.id === weekId);
+    if (!week) return todayISO();
+    const dc = progress?.dayCompletions || {};
+    const dates = [];
+    (week.days || []).forEach((d) => (dc[d.id] || []).forEach((x) => x && dates.push(x)));
+    Object.entries(progress?.selfSchedule || {}).forEach(([date, v]) => {
+      if (v?.weekId === weekId) dates.push(date);
+    });
+    if (!dates.length) return todayISO();
+    return dates.sort()[dates.length - 1];
+  }
+  // Buckets carry their own date window so the list below can reuse them.
+  function cardioBuckets(mode, anchorISO) {
+    const out = [];
+    if (mode === "year") {
+      const y = Number(anchorISO.slice(0, 4));
+      for (let m = 0; m < 12; m++) {
+        const from = dateISO(new Date(y, m, 1));
+        const to = dateISO(new Date(y, m + 1, 0));
+        out.push({ key: `${y}-${m}`, label: MON_ABBR[m], title: `${MON_ABBR[m]} ${y}`, from, to });
+      }
+      return out;
+    }
+    if (mode === "month") {
+      const d = new Date(anchorISO + "T12:00:00");
+      const y = d.getFullYear(), m = d.getMonth();
+      const monthEnd = dateISO(new Date(y, m + 1, 0));
+      let cur = sundayOfISO(dateISO(new Date(y, m, 1)));
+      while (cur <= monthEnd) {
+        const end = addDaysISO(cur, 6);
+        const shown = cur < dateISO(new Date(y, m, 1)) ? dateISO(new Date(y, m, 1)) : cur;
+        out.push({
+          key: cur, label: String(Number(shown.slice(8, 10))),
+          title: `${MON_ABBR[Number(cur.slice(5, 7)) - 1]} ${Number(cur.slice(8, 10))} – ${MON_ABBR[Number(end.slice(5, 7)) - 1]} ${Number(end.slice(8, 10))}`,
+          from: cur, to: end,
+        });
+        cur = addDaysISO(cur, 7);
+      }
+      return out;
+    }
+    const start = sundayOfISO(anchorISO);
+    const dayLbl = ["S", "M", "T", "W", "T", "F", "S"];
+    for (let i = 0; i < 7; i++) {
+      const date = addDaysISO(start, i);
+      out.push({
+        key: date, label: dayLbl[i], from: date, to: date,
+        title: new Date(date + "T12:00:00").toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" }),
+        isToday: date === todayISO(),
       });
     }
-    container.appendChild(card);
-    const meta = $("#cardio-fold-meta");
-    if (meta) meta.textContent = logs.length ? `${logs.length} logged` : "";
+    return out;
+  }
+  // A bucket takes the colour of whichever intensity it spent the most minutes
+  // at, ties going to the harder one. Colouring by the single hardest session
+  // instead would paint a whole month red off one interval day.
+  function cardioBucketRgb(list) {
+    if (!list.length) return "148,163,184";
+    const by = { low: 0, moderate: 0, high: 0 };
+    list.forEach((l) => {
+      const k = (l.intensity || "moderate").toLowerCase();
+      if (by[k] === undefined) return;
+      by[k] += Number(l.minutes) || 0;
+    });
+    const top = ["high", "moderate", "low"].reduce((best, k) => (by[k] > by[best] ? k : best), "low");
+    return CARDIO_INT_RGB[top] || CARDIO_INT_RGB.moderate;
+  }
+  function cardioRowHtml(log) {
+    const when = log.date
+      ? new Date(log.date + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
+      : "";
+    const intensity = log.intensity || "Moderate";
+    return `<button type="button" class="cardio-row" data-cardio-id="${escapeHtml(log.id)}">
+      <span class="cardio-row-icon">${cardioIcon(log.type)}</span>
+      <span class="cardio-row-info">
+        <strong>${escapeHtml(log.type || "Cardio")}</strong>
+        <span class="muted">${escapeHtml(when)}${log.miles ? ` · ${escapeHtml(String(log.miles))} mi` : ""}</span>
+      </span>
+      <span class="cardio-min">${escapeHtml(String(log.minutes || 0))} min</span>
+      <span class="cardio-intensity cardio-intensity-${escapeHtml(intensity.toLowerCase())}">${escapeHtml(intensity)}</span>
+    </button>`;
+  }
+
+  function renderAthleteCardio() {
+    const host = $("#cardio-athlete-block");
+    if (!host) return;
+    ensureProgressShape(state.clientData.progress);
+    const progress = state.clientData.progress;
+    const client = state.clientData.program?.client;
+    const logs = cardioLogsAll(progress);
+    const mode = cardioRangeMode();
+    // Week follows the program week you're looking at; the wider views don't.
+    const anchor = mode === "week"
+      ? weekAnchorDate(client, progress, state.workoutView?.weekId)
+      : todayISO();
+    const buckets = cardioBuckets(mode, anchor);
+    const inRange = (l, b) => l.date >= b.from && l.date <= b.to;
+    buckets.forEach((b) => {
+      b.list = logs.filter((l) => l.date && inRange(l, b));
+      b.min = cardioTotals(b.list).min;
+    });
+    // A pick survives only while its bucket is on screen.
+    if (state.cardioPick && !buckets.some((b) => b.key === state.cardioPick)) state.cardioPick = null;
+    const picked = buckets.find((b) => b.key === state.cardioPick) || null;
+
+    const spanFrom = buckets[0].from, spanTo = buckets[buckets.length - 1].to;
+    const rangeList = picked ? picked.list : logs.filter((l) => l.date && l.date >= spanFrom && l.date <= spanTo);
+    const rangeT = cardioTotals(rangeList);
+    const allT = cardioTotals(logs);
+    const maxMin = Math.max(...buckets.map((b) => b.min), 1);
+
+    const rangeLabel = picked ? picked.title
+      : mode === "year" ? anchor.slice(0, 4)
+      : mode === "month" ? `${MON_ABBR[Number(anchor.slice(5, 7)) - 1]} ${anchor.slice(0, 4)}`
+      : (buckets.some((b) => b.isToday) ? "This week"
+        : `Week of ${MON_ABBR[Number(spanFrom.slice(5, 7)) - 1]} ${Number(spanFrom.slice(8, 10))}`);
+
+    const seg = [["week", "Week"], ["month", "Month"], ["year", "Year"]].map(([k, lbl]) =>
+      `<button type="button" class="bw-range-btn${mode === k ? " on" : ""}" data-cardio-range="${k}">${lbl}</button>`).join("");
+
+    const chart = `<div class="cardio-chart cd-${mode}">${buckets.map((b) => {
+      const h = b.min ? Math.max(6, Math.round((b.min / maxMin) * 100)) : 0;
+      return `<button type="button" class="cd-col${b.isToday ? " is-today" : ""}${picked && picked.key === b.key ? " is-picked" : ""}${b.min ? "" : " is-empty"}"
+          data-cardio-bucket="${escapeHtml(b.key)}" title="${escapeHtml(b.title)}${b.min ? `: ${cardioMinLabel(b.min)}` : ""}">
+        <span class="cd-val">${cardioBarLabel(b.min)}</span>
+        <span class="cd-track"><span class="cd-bar" style="height:${h}%;--cd-rgb:${cardioBucketRgb(b.list)}"></span></span>
+        <span class="cd-lbl">${escapeHtml(b.label)}</span>
+      </button>`;
+    }).join("")}</div>`;
+
+    const statsRow = `<div class="cd-totals">
+      <span class="cd-range">${escapeHtml(rangeLabel)}${picked ? ` <span class="cd-clear" data-cardio-clear>✕</span>` : ""}</span>
+      <span class="cd-stats">
+        <span class="cd-stat"><b>${rangeT.n}</b> session${rangeT.n === 1 ? "" : "s"}</span>
+        <span class="cd-stat"><b>${cardioMinLabel(rangeT.min)}</b></span>
+        ${rangeT.mi ? `<span class="cd-stat"><b>${cardioMiLabel(rangeT.mi)}</b> mi</span>` : ""}
+      </span>
+    </div>`;
+
+    const list = rangeList.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    const listHtml = list.length
+      ? `<div class="cardio-list${list.length > 5 ? " is-capped" : ""}">${list.map(cardioRowHtml).join("")}</div>`
+      : `<p class="cd-empty">${logs.length ? "Nothing logged in this range." : "Log a run, ride or swim and it lands here, on the week you did it."}</p>`;
+
+    host.innerHTML = `
+      <div class="wp-head wp-head-cardio">
+        <span class="wp-head-title">🏃 Cardio</span>
+        <div class="bw-range" role="group" aria-label="Cardio range">${seg}</div>
+        <button type="button" class="btn btn-ghost btn-sm wp-head-action" id="btn-add-cardio">＋ Log</button>
+      </div>
+      ${logs.length ? chart + statsRow : ""}
+      ${listHtml}
+      ${allT.n && !(allT.n === rangeT.n && !picked) ?`<div class="cd-alltime"><span>All time</span><span><b>${allT.n}</b> session${allT.n === 1 ? "" : "s"} · <b>${cardioMinLabel(allT.min)}</b>${allT.mi ? ` · <b>${cardioMiLabel(allT.mi)}</b> mi` : ""}</span></div>` : ""}`;
+
+    host.querySelector("#btn-add-cardio")?.addEventListener("click", () => openCardioModal());
+    host.querySelectorAll("[data-cardio-range]").forEach((b) => b.addEventListener("click", () => {
+      localStorage.setItem(KEY_CARDIO_RANGE, b.dataset.cardioRange);
+      state.cardioPick = null;
+      renderAthleteCardio();
+    }));
+    host.querySelectorAll("[data-cardio-bucket]").forEach((b) => b.addEventListener("click", () => {
+      const key = b.dataset.cardioBucket;
+      state.cardioPick = state.cardioPick === key ? null : key;
+      renderAthleteCardio();
+    }));
+    host.querySelector("[data-cardio-clear]")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.cardioPick = null;
+      renderAthleteCardio();
+    });
+    host.querySelectorAll("[data-cardio-id]").forEach((row) =>
+      row.addEventListener("click", () => openCardioModal(row.dataset.cardioId)));
   }
 
   function openCardioModal(editId) {
@@ -13301,7 +13490,10 @@
       const empty = `<div class="empty-state"><div class="empty-emoji">📋</div><h3>No weeks yet</h3><p>Your coach hasn't added any weeks to your program yet.</p></div>`;
       picker.querySelector(".workout-grid").innerHTML = empty;
       // Sessions outside the program don't need a program to exist — a coach
-      // one-off or a day the athlete built themselves still shows here.
+      // one-off, a day the athlete built themselves, or cardio still shows here.
+      const head = $("#workout-week-head");
+      if (head) head.innerHTML = "";
+      renderAthleteCardio();
       renderAthleteOneOffSection();
       renderAthleteOwnSection();
       if (state.workoutView.weekId === "oneoff" && state.workoutView.mode === "detail" && state.workoutView.dayId) {
@@ -13422,8 +13614,26 @@
     // Day cards for the active week
     const week = prog.client.weeks.find((w) => w.id === state.workoutView.weekId);
     grid.innerHTML = "";
+    // Week header: the week's focus and how much of it is done. This replaced a
+    // standing "Tap a day to start logging your sets" line — the cards already
+    // say "Tap to start", and a progress count is worth the same row.
+    const head = $("#workout-week-head");
+    if (head) {
+      const days = week?.days || [];
+      const done = days.filter((d) => isDayChecked(d.id) ||
+        (d.exercises.length && d.exercises.every((ex) => hasAnyLog(ex)))).length;
+      head.innerHTML = days.length ? `
+        <div class="wp-head">
+          <span class="wp-head-title">${escapeHtml(week.label || "This week")}</span>
+          ${week.focus ? `<span class="wp-head-sub">${escapeHtml(week.focus)}</span>` : ""}
+          <span class="wp-head-count${done && done >= days.length ? " is-done" : ""}">${done}/${days.length} done</span>
+        </div>` : "";
+    }
     if (!week || !week.days.length) {
       grid.innerHTML = `<div class="empty-state"><div class="empty-emoji">🛏️</div><h3>Rest week</h3><p>No workouts in this week.</p></div>`;
+      renderAthleteCardio();
+      renderAthleteOneOffSection();
+      renderAthleteOwnSection();
       return;
     }
     week.days.forEach((day, idx) => {
@@ -13465,6 +13675,8 @@
       });
       grid.appendChild(card);
     });
+    // Cardio follows the week you're looking at, so it re-renders with the chips.
+    renderAthleteCardio();
     renderAthleteOneOffSection();
     renderAthleteOwnSection();
   }
@@ -13508,7 +13720,10 @@
     const today = todayISO();
     const sec = document.createElement("div");
     sec.className = "oneoff-athlete-section";
-    sec.innerHTML = `<div class="oneoff-athlete-head">🐉 Sessions with Coach</div>`;
+    sec.innerHTML = `<div class="wp-head wp-head-coach">
+      <span class="wp-head-title">🐉 Sessions with Coach</span>
+      <span class="wp-head-count">${sessions.length}</span>
+    </div>`;
     const grid = document.createElement("div");
     grid.className = "workout-grid";
     [...sessions]
@@ -13565,11 +13780,12 @@
     const sec = document.createElement("div");
     sec.className = "ownday-section";
     const head = document.createElement("div");
-    head.className = "ownday-head";
-    head.innerHTML = `<span class="ownday-head-title">🔥 Your own sessions</span>`;
+    head.className = "wp-head wp-head-own";
+    head.innerHTML = `<span class="wp-head-title">🔥 Your own sessions</span>` +
+      (sessions.length ? `<span class="wp-head-count">${sessions.length}</span>` : "");
     const addBtn = document.createElement("button");
     addBtn.type = "button";
-    addBtn.className = "btn btn-ghost btn-sm ownday-add";
+    addBtn.className = "btn btn-ghost btn-sm wp-head-action";
     addBtn.textContent = "＋ New session";
     addBtn.title = "Build a workout you did on your own";
     addBtn.addEventListener("click", openNewOwnSessionSheet);
@@ -19439,7 +19655,7 @@
         title: "How did it feel?", text: "When you're done, tap 🫀 to log the vibe of the session — up to two. Your coach sees it, so they know when to push or back off." },
       { sel: "#rest-timer-btn", go: goDetail,
         title: "Rest timer", text: "Tap Go to start your rest. It dings when it's time to lift, then rolls straight into the next rest until you stop it. The small time button picks the length, the bell mutes the ding." },
-      { sel: "#athlete-cardio-fold", go: () => setClientTab("workouts"),
+      { sel: "#cardio-athlete-block", go: () => setClientTab("workouts"),
         title: "Cardio", text: "Runs, rides and swims live with your workouts. Log the minutes and, if you tracked it, the distance." },
       { sel: '[data-ctab-panel="prs"]', go: () => setClientTab("prs"),
         title: "Progress", text: "Your PRs live here, with the charts behind them. Locking a heavy set can raise them automatically." },
@@ -20650,7 +20866,8 @@
       if (f) importScaleCsv(f);
       e.target.value = ""; // allow re-selecting the same file
     });
-    $("#btn-add-cardio")?.addEventListener("click", () => openCardioModal());
+    // No #btn-add-cardio here: the cardio block re-renders itself on every
+    // range change, so its Log button is wired where it's built.
     ["#ath-prof-name", "#ath-prof-age", "#ath-prof-height-ft", "#ath-prof-height-in", "#ath-prof-weight", "#ath-prof-goals"]
       .forEach((sel) => $(sel)?.addEventListener("change", saveAthleteProfile));
     $("#client-feedback").addEventListener("input", () => {

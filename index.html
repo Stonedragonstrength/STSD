@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=tabs2" />
+  <link rel="stylesheet" href="styles.css?v=prog3" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -827,33 +827,17 @@
       <div class="tab-panel" data-ctab-panel="workouts">
         <!-- Picker: shown by default; tapping a day card swaps it for the detail view. -->
         <div id="workout-picker" class="workout-picker">
-          <div class="program-head">
-            <div class="picker-heading">
-              <p class="picker-sub">Tap a day to start logging your sets.</p>
-            </div>
-          </div>
           <div class="week-chips" id="workout-week-chips" role="tablist"></div>
+          <!-- Each block below gets the same header rhythm (.wp-head): a title,
+               a live count, and one slim action on the right. -->
+          <div id="workout-week-head"></div>
           <div class="workout-grid" id="workout-day-grid"></div>
+          <!-- Cardio: a permanent home on the training page, following the same
+               week you're looking at. Built by renderAthleteCardio(). -->
+          <section class="cardio-block" id="cardio-athlete-block"></section>
           <div id="oneoff-athlete-container"></div>
           <div id="ownday-athlete-container"></div>
           <div id="client-archive-container"></div>
-          <!-- Cardio sits with the lifting days, because a run is a session.
-               Folded away so it never pushes the day cards down the screen. -->
-          <details class="card ath-fold" id="athlete-cardio-fold">
-            <summary>
-              <span class="ath-fold-ico">🏃</span>
-              <span class="ath-fold-title">Cardio</span>
-              <span class="ath-fold-meta" id="cardio-fold-meta"></span>
-              <span class="ath-fold-chev">▸</span>
-            </summary>
-            <div class="ath-fold-body">
-              <div class="ath-fold-lead">
-                <p class="muted">Runs, rides, swims: anything that gets the heart rate up. Tap an entry to edit it.</p>
-                <button class="btn btn-primary btn-sm slim-btn" id="btn-add-cardio">+ Log cardio</button>
-              </div>
-              <div id="cardio-list-container"></div>
-            </div>
-          </details>
         </div>
         <!-- Detail: shown when a day is selected -->
         <div id="workout-detail" class="workout-detail hidden">
@@ -1116,7 +1100,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=horm2"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=tabs2"></script>
+  <script src="app.js?v=prog3"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
