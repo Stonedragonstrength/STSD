@@ -19183,7 +19183,7 @@
   // "Keep ringing until I tap": hold at 0:00 and re-ding every few seconds.
   // Capped so a phone left in a gym bag doesn't ring for the rest of the day.
   let _restRingIv = null, _restRingEnd = 0;
-  const REST_RING_EVERY = 3000;
+  const REST_RING_EVERY = 1500;
   const REST_RING_MAX = 90000;
   function restRinging() { return !!_restRingIv; }
   function startRestRinging() {
@@ -19214,7 +19214,9 @@
     const btn = $("#rest-timer-btn");
     if (!btn) return;
     btn.classList.add("done-flash");
-    setTimeout(() => btn.classList.remove("done-flash"), 1600);
+    // Just under the re-ring gap, so the pulse restarts on every ding instead
+    // of one flash swallowing the next.
+    setTimeout(() => btn.classList.remove("done-flash"), REST_RING_EVERY - 100);
   }
 
   function tickRestTimer() {
