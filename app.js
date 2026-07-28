@@ -5684,6 +5684,140 @@
     ] },
   ];
 
+  // Hormones and the menstrual cycle. Same card shape again; the takeaway field
+  // is `means` (rendered under "What it means for training"). The cycle groups
+  // lead, because how it works is the part most people were never taught. The
+  // training layer stays deliberately hedged: the mechanics of the cycle are
+  // settled physiology, but phase-based programming is not.
+  const HORMONE_CONCEPTS = [
+    { group: "How the cycle works", tag: "The cycle", icon: "lu:moon", accent: "244,114,182", items: [
+      { term: "The cycle at a glance", short: "One month, two halves, one egg.",
+        def: "The menstrual cycle is the monthly rhythm that prepares the body for a possible pregnancy. It is counted from the first day of one period to the first day of the next, and averages about 28 days, though anywhere from 21 to 35 is normal. Ovulation splits it into two halves: the follicular phase before, and the luteal phase after.",
+        means: "Cycle length varies between people and from month to month in the same person. Counting from day 1 of your period is the only reliable way to know where you are." },
+      { term: "Day 1: the period", short: "The lining sheds and a new cycle begins.",
+        def: "When no pregnancy happens, the hormones holding the uterine lining in place fall away and the lining sheds. That bleeding is your period, and its first day is day 1 of a new cycle. It typically lasts three to seven days, and the blood loss is far smaller than it looks, usually a few tablespoons in total.",
+        means: "Day 1 is the anchor for everything else. If you track nothing else about your cycle, track that date." },
+      { term: "The follicular phase", short: "Follicles grow and estrogen climbs.",
+        def: "This runs from day 1 until ovulation. The pituitary gland releases FSH, which tells a batch of fluid-filled sacs in the ovary, called follicles, to start maturing. Each holds an immature egg. One becomes dominant and the others break down. As the dominant follicle grows it releases rising amounts of estrogen, which rebuilds the uterine lining that just shed.",
+        means: "This is the longer and more variable half. When a cycle runs long or short, it is almost always this phase that stretched or shrank." },
+      { term: "Ovulation", short: "The egg is released.",
+        def: "Estrogen climbing past a threshold flips the brain's response from damping down to spurring on, triggering a sharp surge of LH. Roughly a day after that surge, the dominant follicle ruptures and releases its egg into the fallopian tube. The egg itself survives only about 12 to 24 hours.",
+        means: "Ovulation is a single event, not a phase. It sits in the middle of the cycle only if the follicular phase happened to run about two weeks." },
+      { term: "The luteal phase", short: "Progesterone takes over.",
+        def: "The emptied follicle collapses into a temporary gland called the corpus luteum, which produces progesterone along with some estrogen. Progesterone holds the uterine lining thick, stable, and ready to receive a fertilized egg. This half is the more consistent one, running about 12 to 14 days in most people.",
+        means: "Because the luteal phase is fairly fixed, ovulation usually lands about two weeks before your next period, not two weeks after the last one." },
+      { term: "The end of the cycle", short: "No pregnancy, so the signal switches off.",
+        def: "Without a fertilized egg, the corpus luteum breaks down after roughly two weeks. Progesterone and estrogen both fall sharply. The lining loses the hormonal support holding it in place, and the next period starts. That steep hormone drop is behind much of what gets called premenstrual symptoms.",
+        means: "The heaviest symptom window is usually the few days of falling hormones before bleeding starts, not the bleeding itself." },
+      { term: "The uterine lining", short: "The tissue the whole cycle is building.",
+        def: "The endometrium is the inner lining of the uterus. Estrogen thickens it through the first half of the cycle. Progesterone then matures it and holds it steady through the second half. If no pregnancy occurs it is shed and the process starts again.",
+        means: "Every phase of the cycle is really about this one tissue: build it, hold it, or let it go." },
+      { term: "What counts as normal", short: "A wide range, and worth knowing yours.",
+        def: "Cycles anywhere from 21 to 35 days, bleeding for up to about seven days, and some variation month to month all fall inside normal. Cycles are often irregular for the first year or two after they start and again approaching menopause.",
+        means: "Matching a 28-day average matters far less than knowing your own pattern, because your pattern is what tells you when something has changed." },
+    ] },
+    { group: "The hormones behind it", tag: "Signals", icon: "lu:droplet", accent: "167,139,250", items: [
+      { term: "Estrogen", short: "The builder of the first half.",
+        def: "Estrogen rises through the follicular phase as the dominant follicle grows. It rebuilds the uterine lining, and it acts well beyond the reproductive system: it supports bone density, influences tendon and ligament properties, and affects mood and sleep.",
+        means: "Its role in bone and connective tissue is why chronically low estrogen, from any cause, is a genuine concern for a lifter and not just a fertility issue." },
+      { term: "Progesterone", short: "The steady hand of the second half.",
+        def: "Progesterone is produced by the corpus luteum after ovulation. It maintains the uterine lining, and it also raises resting body temperature slightly and has a mild sedative, calming effect on the brain.",
+        means: "The small temperature rise is real and measurable, which is why waking temperature is one way people confirm that ovulation happened." },
+      { term: "FSH", short: "The wake-up call for the follicles.",
+        def: "Follicle stimulating hormone comes from the pituitary gland at the base of the brain. It rises at the start of the cycle and recruits a group of follicles to begin maturing.",
+        means: "FSH is the opening move of the whole sequence. Everything downstream, including estrogen, depends on it firing first." },
+      { term: "LH", short: "The trigger that releases the egg.",
+        def: "Luteinizing hormone also comes from the pituitary. It sits low through most of the follicular phase, then spikes sharply in response to high estrogen. That surge is what causes the follicle to rupture and release its egg.",
+        means: "Ovulation predictor kits work by detecting this surge in urine, which is why they flag the day before ovulation rather than the day of it." },
+      { term: "The feedback loop", short: "The brain and the ovaries talk both ways.",
+        def: "The hypothalamus releases GnRH, which tells the pituitary to release FSH and LH, which tell the ovaries to produce estrogen and progesterone. Those ovarian hormones then travel back to the brain and adjust the next round of signals. It is a loop, not a one-way chain.",
+        means: "Because the loop starts in the brain, anything that stresses the brain's read on your situation, such as severe under-eating or extreme training loads, can quiet the whole system from the top down." },
+    ] },
+    { group: "The cycle and training", tag: "Training", icon: "lu:dumbbell", accent: "56,189,248", items: [
+      { term: "Does the cycle change your strength?", short: "Less, and less predictably, than you have been told.",
+        def: "Cycle-phase training plans are everywhere online, but the research behind them is thin. Reviews pooling the available studies find average differences in strength and performance across phases that are small and inconsistent, with individual variation far larger than any group trend.",
+        means: "Do not hand your program over to a calendar. Track how you actually feel and perform across a few cycles, and adjust to your own pattern rather than someone else's chart." },
+      { term: "Training on your period", short: "Usually fine, and often helps.",
+        def: "There is no physiological reason to skip training while bleeding, and many people find that movement eases cramping. Others feel genuinely worse and train lighter. Both are normal.",
+        means: "Treat it like any other recovery variable. A lighter day when you feel wrecked is good coaching, not weakness, and pushing through a good day is fine too." },
+      { term: "Cramps and what helps", short: "The uterus contracting, and what eases it.",
+        def: "Cramps come from the uterus contracting to shed its lining, driven by compounds called prostaglandins. Heat, gentle movement, and over-the-counter anti-inflammatories are the best-supported ways to reduce them.",
+        means: "Light aerobic work and mobility on a bad day beats doing nothing, but there is no need to be heroic about a heavy session." },
+      { term: "Iron and heavy bleeding", short: "Blood loss is iron loss.",
+        def: "Menstrual bleeding is a recurring loss of iron, and heavy periods are one of the most common causes of low iron and iron-deficiency anemia. Low iron shows up as unusual fatigue, breathlessness, and training that feels far harder than the numbers suggest.",
+        means: "If your conditioning falls off a cliff for no clear reason, iron is worth asking a doctor to check with a blood test rather than guessing at supplements." },
+      { term: "Bloating, water and the scale", short: "Weight that is not fat.",
+        def: "Water retention commonly rises in the late luteal phase and around the period, and can move the scale by several pounds in either direction over a few days. It is fluid, not tissue.",
+        means: "Expect it and do not react to it. Compare weight to the same point in your previous cycle rather than to last week, or judge the trend over a full month." },
+      { term: "Temperature and sleep", short: "The luteal phase runs slightly warmer.",
+        def: "Progesterone raises resting body temperature by a few tenths of a degree after ovulation and holds it there until the period. That small shift can make sleep lighter and hot rooms or hard conditioning feel harder.",
+        means: "If a session in the heat feels unusually rough in the second half of your cycle, that is a real effect. Adjust rest and hydration rather than assuming you lost fitness." },
+      { term: "Hormonal birth control", short: "It replaces the cycle rather than following it.",
+        def: "Most hormonal contraceptives work by suppressing the natural rise and fall of your own hormones, preventing ovulation. The bleed on the placebo week of a combined pill is a withdrawal bleed caused by stopping the hormone, not a true period, and some methods stop bleeding altogether.",
+        means: "If you are on hormonal contraception, cycle-phase training advice mostly does not apply to you, because the cycle it describes is not happening." },
+      { term: "The injury-risk question", short: "Suggestive, not settled.",
+        def: "Some research reports higher rates of ACL injury around ovulation, with estrogen's effect on ligament laxity as the proposed reason. The finding is not consistent across studies, and the size of any real effect is unclear.",
+        means: "It is not a reason to avoid training at any point in the month. Warming up properly and training landing and cutting mechanics protects knees in every phase." },
+    ] },
+    { group: "When the cycle changes", tag: "Red flags", icon: "lu:shield", accent: "251,191,36", items: [
+      { term: "Missing periods", short: "A signal worth taking seriously.",
+        def: "Amenorrhea means periods have stopped, or never started. In athletes the most common cause is the brain quieting the reproductive system when it reads the body as being under too much strain, usually from not eating enough for the training being done.",
+        means: "A period that disappears is not a convenient side effect of getting fit. It is information about energy availability, and it deserves a doctor's visit rather than a shrug." },
+      { term: "Low energy availability", short: "Not enough fuel left over for the basics.",
+        def: "Energy availability is the energy left for your body's core functions after training has taken its share. Push it too low for too long, whether deliberately or accidentally, and the body starts economising on things it treats as optional, including the reproductive system.",
+        means: "Under-eating hard enough to stop a cycle is also under-eating hard enough to stall your lifts. Fixing the fuelling usually fixes both." },
+      { term: "RED-S", short: "What sustained under-fuelling costs.",
+        def: "Relative Energy Deficiency in Sport is the umbrella term for the effects of sustained low energy availability. Beyond menstrual disruption it can affect bone density, immunity, mood, and performance, and it affects men too, just without the visible menstrual warning sign.",
+        means: "The menstrual cycle is one of the earliest and clearest warning lights on this dashboard. Losing it is worth acting on early, not once other symptoms pile up." },
+      { term: "Bone health", short: "Where lost estrogen shows up years later.",
+        def: "Estrogen helps maintain bone density. Extended stretches without a cycle, and therefore without normal estrogen, are linked to lower bone density and a higher risk of stress fractures. The bone built in your teens and twenties is difficult to get back later.",
+        means: "Lifting is genuinely good for bone, but it cannot compensate for years of being under-fuelled. Food and the cycle come first." },
+      { term: "Perimenopause", short: "The years of transition.",
+        def: "Perimenopause is the stretch before periods stop for good, often starting in the forties and lasting several years. Hormones swing unpredictably rather than declining smoothly, so cycles become irregular and symptoms such as poor sleep and hot flushes are common.",
+        means: "Strength training becomes more valuable here, not less. It defends the muscle and bone that falling estrogen makes harder to hold onto." },
+      { term: "Menopause", short: "Twelve months without a period.",
+        def: "Menopause is defined as a full year with no period. Estrogen settles at a low level afterwards, which accelerates loss of bone density and makes muscle harder to maintain.",
+        means: "Resistance training and enough protein are among the most effective tools available for protecting bone and muscle through and after this transition." },
+      { term: "When to see a doctor", short: "The list worth acting on.",
+        def: "Worth getting checked: periods that stop for three months or more, bleeding heavy enough to soak through protection hourly, severe pain that stops you functioning, bleeding between periods, or cycles that change markedly from your normal pattern.",
+        means: "This page is background, not diagnosis. Anything on that list is a conversation with a doctor, and your coach only needs to know how it affects your training." },
+    ] },
+    { group: "Training hormones", tag: "Anabolic", icon: "lu:zap", accent: "251,146,60", items: [
+      { term: "Testosterone", short: "Present in everyone, in very different amounts.",
+        def: "Testosterone supports muscle protein synthesis and is one reason for the average difference in muscle mass between men and women. Women produce it too, at roughly a tenth to a twentieth the level, and it still matters for their strength and recovery.",
+        means: "Your natural level is largely out of your hands. Sleep, sensible training loads, and not staying in a deep deficit for months are the levers you actually control." },
+      { term: "Growth hormone", short: "Real, but not the muscle switch it is sold as.",
+        def: "Growth hormone is released in pulses, mostly during deep sleep, and supports tissue repair and fat metabolism. The temporary spike from a hard training session is small and short compared with what you produce overnight.",
+        means: "The best growth-hormone strategy is unglamorous: sleep properly. Chasing the post-workout spike is not worth structuring a program around." },
+      { term: "Cortisol", short: "The stress hormone, and not the villain.",
+        def: "Cortisol rises with stress of any kind, including training, and helps mobilise energy. It is essential and follows a daily rhythm, peaking in the morning. The problem is not cortisol itself but chronically elevated levels from stress that never lets up.",
+        means: "A hard session raising cortisol is normal and necessary. Months of poor sleep, under-eating and relentless volume together is the pattern that actually costs you progress." },
+      { term: "IGF-1", short: "The messenger that does much of the work.",
+        def: "Insulin-like growth factor 1 is produced largely in the liver in response to growth hormone, and acts locally in muscle to support repair and growth. It is heavily influenced by how much you eat and how much protein you get.",
+        means: "This is part of why eating enough matters for gaining muscle. Chronic under-eating lowers the signals that tell muscle to rebuild." },
+      { term: "The post-workout spike myth", short: "Hormone bumps do not build the muscle.",
+        def: "Training briefly raises testosterone and growth hormone, and for years that was assumed to drive growth. Studies since have found these acute spikes correlate poorly with actual muscle gain, which tracks mechanical tension and training volume instead.",
+        means: "Do not pick exercises to chase a hormone response. Pick them because they load the muscle you want to grow through a full range." },
+    ] },
+    { group: "Hunger and metabolism", tag: "Appetite", icon: "lu:gauge", accent: "45,212,191", items: [
+      { term: "Insulin", short: "The nutrient traffic controller.",
+        def: "Insulin is released when blood sugar rises and moves glucose and amino acids into cells, including muscle. It is a storage hormone for both muscle and fat, and it is not the cause of fat gain on its own. Eating more energy than you burn is.",
+        means: "You do not need to fear carbohydrates or insulin to lose fat. Total energy still decides the direction; insulin decides the traffic." },
+      { term: "Leptin", short: "The fullness signal from fat tissue.",
+        def: "Leptin is produced by fat cells and tells the brain roughly how much stored energy is available. As you lose fat, leptin falls, and the brain responds by increasing hunger and quietly reducing how much you move.",
+        means: "This is the biology behind a stalling diet and rising appetite. It is a predictable response, not a personal failure, and diet breaks at maintenance help ease it." },
+      { term: "Ghrelin", short: "The hunger signal from the stomach.",
+        def: "Ghrelin rises before meals and falls after eating, prompting hunger. It climbs during a sustained calorie deficit and stays elevated for a while even after weight is lost.",
+        means: "Protein and high-volume, fibrous foods blunt it best. Expect hunger to run higher in a deficit and plan meals around it rather than relying on willpower." },
+      { term: "Thyroid hormones", short: "The pace-setter for your metabolism.",
+        def: "Thyroid hormones set the rate at which your body burns energy at rest. Extended dieting can lower their output modestly, which is part of why maintenance calories drift down over a long cut.",
+        means: "Some slowdown while dieting is normal adaptation, not a broken metabolism. Genuine thyroid disorders exist and are diagnosed by a blood test, not by a stalled scale." },
+      { term: "Sleep and your hormones", short: "The cheapest hormonal intervention there is.",
+        def: "Short sleep raises ghrelin, lowers leptin, raises cortisol, and reduces testosterone and overnight growth hormone release. Studies restricting sleep during a diet find people lose a greater share of that weight as muscle instead of fat.",
+        means: "If you fix one thing on this shelf, fix sleep. It moves more of these hormones at once than any supplement on the market." },
+    ] },
+  ];
+
   // ---- Coach edits to the Anatomy / Science page (overrides + added cards) ----
   // The coach can rewrite any built-in muscle/concept content and add their own
   // cards; athletes see the coach's curated version. Edits are one jsonb blob on
@@ -5699,7 +5833,16 @@
     if (editable) return state.trainerData?.anatomyEdits || {};
     return state.clientData?.coachAnatomyEdits || state.trainerData?.anatomyEdits || {};
   }
-  function conceptDefaults(kind) { return kind === "nut" ? NUTRITION_CONCEPTS : STRENGTH_CONCEPTS; }
+  // Three concept libraries share one renderer, one editor and one search. Each
+  // keeps its own takeaway field so the source data reads naturally.
+  const CONCEPT_KINDS = {
+    str: { defaults: () => STRENGTH_CONCEPTS, take: "strength", label: "Why it helps strength" },
+    nut: { defaults: () => NUTRITION_CONCEPTS, take: "apply",    label: "How to use it" },
+    hrm: { defaults: () => HORMONE_CONCEPTS,   take: "means",    label: "What it means for training" },
+  };
+  function conceptDefaults(kind) { return (CONCEPT_KINDS[kind] || CONCEPT_KINDS.str).defaults(); }
+  function conceptTakeOf(kind, item) { return item[(CONCEPT_KINDS[kind] || CONCEPT_KINDS.str).take]; }
+  function conceptTakeLabel(kind) { return (CONCEPT_KINDS[kind] || CONCEPT_KINDS.str).label; }
 
   // ---- Cross-links between the body map and the science shelves ----
   // Reading about a muscle should be one tap from the ideas behind training it.
@@ -5737,7 +5880,7 @@
   function termIndex() {
     if (_termIndex) return _termIndex;
     _termIndex = {};
-    ["str", "nut"].forEach((kind) => conceptDefaults(kind).forEach((grp) => {
+    Object.keys(CONCEPT_KINDS).forEach((kind) => conceptDefaults(kind).forEach((grp) => {
       const sid = conceptSectionId(kind, grp.group);
       grp.items.forEach((it) => {
         _termIndex[it.term] = { kind, sid, cid: conceptCardId(sid, it.term), term: it.term };
@@ -5781,7 +5924,7 @@
         const cid = conceptCardId(sid, it.term);
         const ov = cOv[cid];
         if (ov && ov.hidden) return;
-        const base = { id: cid, term: it.term, short: it.short, def: it.def, take: kind === "nut" ? it.apply : it.strength };
+        const base = { id: cid, term: it.term, short: it.short, def: it.def, take: conceptTakeOf(kind, it) };
         items.push(ov ? { ...base, ...pickDefined(ov, ["term", "short", "def", "take"]), _edited: true } : base);
       });
       (Array.isArray(cAdd[sid]) ? cAdd[sid] : []).forEach((a) =>
@@ -5795,7 +5938,7 @@
       if (conceptSectionId(kind, grp.group) !== sid) continue;
       for (const it of grp.items) {
         if (conceptCardId(sid, it.term) === cid)
-          return { term: it.term, short: it.short, def: it.def, take: kind === "nut" ? it.apply : it.strength };
+          return { term: it.term, short: it.short, def: it.def, take: conceptTakeOf(kind, it) };
       }
     }
     return null;
@@ -5873,7 +6016,18 @@
         <h3>Nutrition and Body Composition</h3>
         <p>How food turns into fat loss, muscle, and everything in between. Pick a topic, then tap any card to open it.</p>
       </div>
-      ${conceptGroupsHtml(mergedConceptGroups("nut", getAnatomyEdits(editable)), "How to use it", editable)}
+      ${conceptGroupsHtml(mergedConceptGroups("nut", getAnatomyEdits(editable)), conceptTakeLabel("nut"), editable)}
+    </section>`;
+  }
+
+  function hormoneConceptsHtml(editable) {
+    return `<section class="a-concepts">
+      <div class="a-concepts-head">
+        <h3>Hormones and the Menstrual Cycle</h3>
+        <p>How the cycle actually works, the hormones driving it, and what the rest of your endocrine system does to training. Pick a topic, then tap any card to open it.</p>
+      </div>
+      ${conceptGroupsHtml(mergedConceptGroups("hrm", getAnatomyEdits(editable)), conceptTakeLabel("hrm"), editable)}
+      <p class="a-disclaimer">Background reading, not medical advice. Anything that worries you is worth taking to a doctor.</p>
     </section>`;
   }
 
@@ -5892,6 +6046,7 @@
         <button type="button" class="a-shelf-btn active" data-shelf="body" role="tab" aria-selected="true">Body<span class="a-shelf-n" data-count="body"></span></button>
         <button type="button" class="a-shelf-btn" data-shelf="str" role="tab" aria-selected="false">Training<span class="a-shelf-n" data-count="str"></span></button>
         <button type="button" class="a-shelf-btn" data-shelf="nut" role="tab" aria-selected="false">Fuel<span class="a-shelf-n" data-count="nut"></span></button>
+        <button type="button" class="a-shelf-btn" data-shelf="hrm" role="tab" aria-selected="false">Hormones<span class="a-shelf-n" data-count="hrm"></span></button>
       </div>
       <div class="a-search-row">
         <span class="a-search-ico" aria-hidden="true">${dayIconHtml("lu:search")}</span>
@@ -5916,7 +6071,8 @@
         </div>
       </div>
       <div class="a-shelf hidden" data-pane="str"></div>
-      <div class="a-shelf hidden" data-pane="nut"></div>`;
+      <div class="a-shelf hidden" data-pane="nut"></div>
+      <div class="a-shelf hidden" data-pane="hrm"></div>`;
 
     const listEl = root.querySelector("[data-anatomy-list]");
     const detailEl = root.querySelector("[data-anatomy-detail]");
@@ -5930,11 +6086,11 @@
     function renderConcepts() {
       paneEl("str").innerHTML = strengthConceptsHtml(editable);
       paneEl("nut").innerHTML = nutritionConceptsHtml(editable);
+      paneEl("hrm").innerHTML = hormoneConceptsHtml(editable);
       const count = (kind) => mergedConceptGroups(kind, getAnatomyEdits(editable))
         .reduce((n, g) => n + g.items.length, 0);
       root.querySelector('[data-count="body"]').textContent = ANATOMY_GROUPS.length;
-      root.querySelector('[data-count="str"]').textContent = count("str");
-      root.querySelector('[data-count="nut"]').textContent = count("nut");
+      ["str", "nut", "hrm"].forEach((k) => { root.querySelector(`[data-count="${k}"]`).textContent = count(k); });
     }
     function setShelf(next) {
       shelf = next;
@@ -5992,7 +6148,7 @@
         return { kind: "muscle", id: g.id, title: g.name, sub: g.sub, where: g.pattern,
           hay: [g.name, g.sub, g.does, g.why, ...(g.anchors || []), ...(g.accessories || [])].join(" ").toLowerCase() };
       });
-      ["str", "nut"].forEach((kind) => mergedConceptGroups(kind, edits).forEach((grp) => grp.items.forEach((c) => {
+      ["str", "nut", "hrm"].forEach((kind) => mergedConceptGroups(kind, edits).forEach((grp) => grp.items.forEach((c) => {
         rows.push({ kind, id: c.id, title: c.term, sub: c.short, where: grp.group, accent: grp.accent,
           hay: [c.term, c.short, c.def, c.take, grp.group, grp.tag].join(" ").toLowerCase() });
       })));
@@ -6016,7 +6172,7 @@
         resultsEl.innerHTML = `<p class="a-noresults">Nothing matches “${escapeHtml(qRaw)}”.</p>`;
         return;
       }
-      const label = { muscle: "Body", str: "Training", nut: "Fuel" };
+      const label = { muscle: "Body", str: "Training", nut: "Fuel", hrm: "Hormones" };
       resultsEl.innerHTML = `<p class="a-results-n">${hits.length} result${hits.length === 1 ? "" : "s"}</p>` +
         hits.map((r) => `<button type="button" class="a-result"${r.accent ? ` style="--a-accent:${escapeHtml(r.accent)}"` : ""} ${
           r.kind === "muscle" ? `data-goto-muscle="${escapeHtml(r.id)}"` : `data-goto-card="${escapeHtml(r.kind)}|${escapeHtml(r.id)}"`}>
@@ -6091,7 +6247,7 @@
   }
 
   // -------- Coach anatomy/concept editors (coach-screen only) --------
-  function conceptKindOf(sid) { return sid.startsWith("nut:") ? "nut" : "str"; }
+  function conceptKindOf(sid) { const k = String(sid).split(":")[0]; return CONCEPT_KINDS[k] ? k : "str"; }
   function findMergedCard(sid, cid) {
     const kind = conceptKindOf(sid);
     const grp = mergedConceptGroups(kind, state.trainerData?.anatomyEdits || {}).find((g) => g.id === sid);
@@ -6114,7 +6270,7 @@
   function openConceptCardEditor(sid, cid) {
     const { kind, card } = findMergedCard(sid, cid);
     if (!card) return;
-    const takeLabel = kind === "nut" ? "How to use it" : "Why it helps strength";
+    const takeLabel = conceptTakeLabel(kind);
     const actions = [{ label: "Save", className: "btn btn-primary", onClick: () => {
       const v = readConceptEditor();
       if (!v.term) { toast("Give the card a title."); return; }
@@ -6149,7 +6305,7 @@
   }
   function openAddConceptCard(sid) {
     const kind = conceptKindOf(sid);
-    const takeLabel = kind === "nut" ? "How to use it" : "Why it helps strength";
+    const takeLabel = conceptTakeLabel(kind);
     openModal({
       title: "Add a card",
       body: conceptEditorBody({}, takeLabel),

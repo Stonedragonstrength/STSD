@@ -9692,3 +9692,10 @@ input[type="search"].a-search:focus {
   .a-shelf-btn { font-size: 0.78rem; padding: 0.6em 0.35em; gap: 0.3em; }
   .a-result-where { display: none; }
 }
+
+/* Hormones shelf: the medical boundary, stated once at the bottom */
+.a-disclaimer {
+  margin: 0.4rem 0 0; padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem; line-height: 1.5; color: var(--muted); font-style: italic;
+}
