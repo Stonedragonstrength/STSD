@@ -20,7 +20,7 @@
  * Because navigations are network-first, a fresh deploy is picked up on the
  * next online open automatically — no user prompt.
  */
-const CACHE = "stonedragon-v5";
+const CACHE = "stonedragon-v6";
 
 // Stable, un-versioned URLs worth precaching up front. The versioned css/js
 // (styles.css?v=…, app.js?v=…) are cached at runtime on first online load —
@@ -44,11 +44,13 @@ const CORE = [
   "./fonts/barlow-800.woff2",
   "./fonts/barlow-900.woff2",
   // Pixel avatars (stable filenames, no ?v= — replace the file contents when
-  // the art changes and bump CACHE). ~300 B each, so precaching all 20 costs
+  // the art changes and bump CACHE). ~2 KB each, so precaching all 32 costs
   // less than a single logo and the picker works offline.
-  ...["barbarian","berserker","knight","fighter","paladin","templar","ranger",
-      "beastmaster","rogue","assassin","monk","druid","cleric","bard","sorcerer",
-      "wizard","warlock","necromancer","alchemist","dragonborn"]
+  ...["barbarian","berserker","juggernaut","knight","fighter","mercenary",
+      "duelist","gladiator","paladin","templar","crusader","sentinel","valkyrie",
+      "ranger","scout","huntress","beastmaster","rogue","assassin","nightblade",
+      "ronin","monk","druid","warden","cleric","bard","sorcerer","wizard",
+      "warlock","necromancer","alchemist","dragonborn"]
       .map((id) => `./avatars/${id}.png`),
   "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2",
 ];

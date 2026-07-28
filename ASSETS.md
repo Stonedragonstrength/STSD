@@ -14,12 +14,12 @@ recorded. Check this file before adding a new asset, and add a row when you do.
 
 ## Pixel avatars
 
-`avatars/*.png` are 20 full-body fantasy archetypes chosen from Batareya's
+`avatars/*.png` are 32 full-body fantasy archetypes chosen from Batareya's
 "Characters 500+" pack. The roster is defined by `AVATARS` in `app.js`; the
-filenames are `<id>.png` and all 20 are precached by `sw.js`.
+filenames are `<id>.png` and all 32 are precached by `sw.js`.
 
 The license permits embedding in the app but **not** redistributing the pack.
-Only these 20 are vendored here, which is use, not redistribution. Do not
+Only these 32 are vendored here, which is use, not redistribution. Do not
 commit the full pack.
 
 ### How they were prepared
@@ -55,6 +55,9 @@ Source file for each, by pack index:
 | knight | 149 | ranger | 385 | monk | 483 | sorcerer | 518 |
 | fighter | 146 | beastmaster | 290 | druid | 445 | wizard | 265 |
 | necromancer | 490 | alchemist | 441 | warlock | 426 | dragonborn | 9 |
+| juggernaut | 154 | mercenary | 174 | duelist | 119 | gladiator | 199 |
+| crusader | 523 | sentinel | 299 | valkyrie | 510 | scout | 10 |
+| huntress | 194 | nightblade | 3 | ronin | 379 | warden | 318 |
 
 ### Packs that were also evaluated
 
