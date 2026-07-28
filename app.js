@@ -3920,7 +3920,10 @@
     const parts = [];
     if (c.age) parts.push(`${c.age} yrs`);
     if (c.heightIn) parts.push(formatHeight(c.heightIn));
-    if (c.weightLb) parts.push(`${c.weightLb} lb`);
+    // Their newest weigh-in, not the number typed into the profile once. The
+    // two are kept in step now, but the log wins if a sync hasn't landed yet.
+    const w = latestBodyweight(c.importedProgress, c);
+    if (w) parts.push(`${Math.round(w * 10) / 10} lb`);
     return parts.join(" · ") || "Profile incomplete";
   }
   function currentClient() { return state.trainerData.clients.find((x) => x.id === state.currentClientId); }
@@ -3967,7 +3970,9 @@
     const h = Number(c.heightIn) || 0;
     $("#prof-height-ft").value = h ? Math.floor(h / 12) : "";
     $("#prof-height-in").value = h ? Math.round(h % 12) : "";
-    $("#prof-weight").value = c.weightLb || "";
+    // Their newest weigh-in, so this field matches the card above it rather
+    // than showing whatever was typed here months ago.
+    $("#prof-weight").value = latestBodyweight(c.importedProgress, c) ?? "";
     $("#prof-goals").value = c.goals;
     $("#prof-notes").value = c.notes;
     if (!c.inviteCode) { c.inviteCode = makeInviteCode(); saveTrainer(); }
@@ -12260,7 +12265,7 @@
     const h = Number(c.heightIn) || 0;
     set("#ath-prof-height-ft", h ? Math.floor(h / 12) : "");
     set("#ath-prof-height-in", h ? Math.round(h % 12) : "");
-    set("#ath-prof-weight", c.weightLb || "");
+    set("#ath-prof-weight", latestBodyweight(state.clientData.progress, c) ?? "");
     set("#ath-prof-goals", c.goals || "");
   }
   function saveAthleteProfile() {
@@ -16414,7 +16419,7 @@
         </div>
       </div>
 
-      ${plan ? "" : `<p class="muted food-no-target">No targets yet. Tap the ring to set them and this all fills in.</p>`}
+      ${plan ? targetDriftHtml(client, progress) : `<p class="muted food-no-target">No targets yet. Tap the ring to set them and this all fills in.</p>`}
 
       <div class="food-tiles">${tiles}</div>
 
@@ -16436,6 +16441,8 @@
         <button type="button" id="food-copy-yesterday">Copy yesterday</button>
       </div>`;
 
+    $("#btn-drift-update")?.addEventListener("click", applyTargetDrift);
+    $("#btn-drift-dismiss")?.addEventListener("click", dismissTargetDrift);
     $("#food-prev").addEventListener("click", () => { _foodDate = addDaysISO(_foodDate, -1); renderFoodDay(); });
     const next = $("#food-next");
     if (!isToday) next.addEventListener("click", () => { _foodDate = addDaysISO(_foodDate, 1); renderFoodDay(); });
@@ -17509,9 +17516,75 @@
       updatedAt: todayISO(),
     });
     if (calcInputs) t.calc = calcInputs;
+    delete t.driftSeenAt; // fresh numbers — any dismissed drift is settled
     saveClient();
     renderClientTargets();
     renderFoodDay();
+  }
+
+  // -------- Targets vs. bodyweight drift --------
+  // calcTargets bakes bodyweight into calories, protein (weight × perLb) and
+  // fat (weight × 0.35), then the result is frozen. A cut or a bulk moves that
+  // number and the targets quietly go stale. Surface the drift rather than
+  // recalculating behind their back: coach-locked targets aren't the athlete's
+  // to change, and silently moving someone's calories is not the app's call.
+  const TARGET_DRIFT_LB = 5;
+  function targetWeightDrift(client, progress) {
+    const eff = effectiveTargets(client, progress);
+    if (eff.locked || eff.source !== "own") return null; // coach's numbers, not ours to move
+    const calc = progress?.nutritionTargets?.calc;
+    const was = Number(calc?.weightLb) || 0;
+    if (!was) return null; // typed in by hand, never calculated — no baseline to drift from
+    const now = latestBodyweight(progress, client);
+    if (!now) return null;
+    // Compare against the weight they last acted on: updating resets the
+    // baseline, dismissing parks it, so a nudge returns only after another
+    // TARGET_DRIFT_LB of movement instead of nagging every open.
+    const seen = Number(progress.nutritionTargets.driftSeenAt) || was;
+    if (Math.abs(now - seen) < TARGET_DRIFT_LB) return null;
+    return { was, now, delta: now - was };
+  }
+
+  function applyTargetDrift() {
+    const client = state.clientData.program?.client;
+    const progress = state.clientData.progress;
+    const d = targetWeightDrift(client, progress);
+    if (!d) return;
+    const inputs = { ...(progress.nutritionTargets.calc || {}), weightLb: d.now };
+    const result = calcTargets(inputs);
+    // Height or age went missing since the last calculation — open the full
+    // calculator (already prefilled with the new weight) instead of failing.
+    if (!result) { openTargetCalculator(); return; }
+    saveOwnTargets({
+      calories: String(result.calories),
+      proteinPct: String(result.proteinPct), carbsPct: String(result.carbsPct), fatPct: String(result.fatPct),
+      protein: result.protein, carbs: result.carbs, fat: result.fat,
+    }, { ...inputs, bmr: result.bmr, tdee: result.tdee });
+    toast(`Targets updated for ${Math.round(d.now * 10) / 10} lb ✓`);
+  }
+
+  function dismissTargetDrift() {
+    const progress = state.clientData.progress;
+    const now = latestBodyweight(progress, state.clientData.program?.client);
+    if (!now) return;
+    ensureNutritionTargets(progress).driftSeenAt = now;
+    saveClient();
+    renderFoodDay();
+  }
+
+  function targetDriftHtml(client, progress) {
+    const d = targetWeightDrift(client, progress);
+    if (!d) return "";
+    const dir = d.delta < 0 ? "down" : "up";
+    const amount = Math.abs(Math.round(d.delta * 10) / 10);
+    return `
+      <div class="target-drift">
+        <p class="target-drift-msg">You're ${dir} ${amount} lb since these targets were worked out.</p>
+        <div class="target-drift-actions">
+          <button type="button" class="btn btn-primary btn-sm slim-btn" id="btn-drift-update">Update them</button>
+          <button type="button" class="btn btn-ghost btn-sm slim-btn" id="btn-drift-dismiss">Keep as is</button>
+        </div>
+      </div>`;
   }
 
   function openTargetsEditor() {
@@ -17690,19 +17763,57 @@
           state.clientData.progress.bodyweightLog =
             state.clientData.progress.bodyweightLog.filter((x) => x.id !== entry.id);
           saveClient();
+          syncProfileWeightFromLog(); // deleting the newest entry falls back to the one before
           renderBwHistory();
+          renderFoodDay();
         },
       }));
     });
   }
+  // The bodyweight log is the live record; client.weightLb is the snapshot the
+  // profile, the coach's athlete card and the cloud row all read. It used to be
+  // write-once (typed at signup, then stale forever), so every weigh-in meant
+  // re-typing it somewhere. Now the log pushes it forward on its own.
+  function syncProfileWeightFromLog() {
+    const progress = state.clientData?.progress;
+    const client = state.clientData?.program?.client;
+    if (!progress || !client) return;
+    const latest = latestBodyweight(progress, null); // log only, never the stale field
+    if (latest === null) return;
+    const w = String(Math.round(latest * 10) / 10);
+    if (String(client.weightLb ?? "") === w) return;
+    client.weightLb = w;
+    // A live session runs off a cloned program and saveClient() only mirrors
+    // progress, so write the coach's real athlete object directly.
+    if (state.liveLog) {
+      const c = currentClient();
+      if (c) { c.weightLb = w; saveTrainer(); }
+      return;
+    }
+    saveClient();
+    // Same push the profile form uses, so the coach sees the new number.
+    const athleteId = state.clientData.program?.clientId;
+    if (window.Cloud?.enabled && athleteId) {
+      window.Cloud.debounce(`athleteProfile:${athleteId}`, () =>
+        window.Cloud.updateAthleteProfileFields(athleteId, {
+          name: client.name, age: client.age, heightIn: client.heightIn,
+          weightLb: client.weightLb, goals: client.goals,
+        })
+      );
+    }
+    renderAthleteProfileFields(); // keep the Profile tab honest if it's open
+  }
+
   function logBodyweight() {
     const date = $("#bw-date").value || todayISO();
     const w = $("#bw-weight").value;
     if (!w) { toast("Enter a weight"); return; }
     state.clientData.progress.bodyweightLog.push({ id: uid(), date, weightLb: w });
     saveClient();
+    syncProfileWeightFromLog();
     $("#bw-weight").value = "";
     renderBwHistory();
+    renderFoodDay(); // a new weigh-in can put the targets out of date
     toast("Weight logged ✓");
   }
 
@@ -17801,7 +17912,9 @@
         added++;
       });
       saveClient();
+      syncProfileWeightFromLog();
       renderBwHistory();
+      renderFoodDay(); // an import can put the targets out of date
       toast(added ? `Imported ${added} weigh-in${added === 1 ? "" : "s"} ✓` : "Already up to date. Nothing new.");
     };
     reader.onerror = () => toast("Couldn't read that file.");
@@ -18253,9 +18366,29 @@
     });
     return best;
   }
+  // Minutes past midnight, or -1 when there's no usable time. Scale imports
+  // carry a raw CSV time ("8:15", "08:15:00"), so a plain string sort would
+  // put 8:15 after 10:30 among the same day's weigh-ins.
+  function timeRank(t) {
+    const m = /^(\d{1,2}):(\d{2})/.exec(String(t || ""));
+    return m ? Number(m[1]) * 60 + Number(m[2]) : -1;
+  }
+  // Newest weigh-in wins; `client` is only a fallback for athletes who typed a
+  // profile weight but have never logged one. Pass null for the log alone.
+  // Ties break on array position, not sort order: two manual logs on the same
+  // day both carry no time, and the one added last is the correction. A stable
+  // sort would hand back the first, which is how a same-day re-weigh used to
+  // get silently ignored.
   function latestBodyweight(progress, client) {
-    const latest = [...(progress?.bodyweightLog || [])]
-      .sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0];
+    let latest = null;
+    (progress?.bodyweightLog || []).forEach((e) => {
+      const v = parseFloat(e?.weightLb);
+      if (!isFinite(v) || v <= 0) return; // a junk row must not shadow a good one
+      if (!latest ||
+          ((e.date || "").localeCompare(latest.date || "") || timeRank(e.time) - timeRank(latest.time)) >= 0) {
+        latest = e;
+      }
+    });
     const v = parseFloat(latest?.weightLb ?? client?.weightLb);
     return isFinite(v) && v > 0 ? v : null;
   }

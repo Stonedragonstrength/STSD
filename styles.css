@@ -8831,6 +8831,34 @@ body.live-log-mode #screen-client .header-right { display: none; }
 }
 .food-no-target { font-size: 0.8rem; margin: 0.7em 0 0; }
 
+/* "Your weight moved since these targets were set." Gold, because it's an
+   earned-it nudge about their own progress, not a warning. */
+.target-drift {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7em;
+  flex-wrap: wrap;
+  margin: 0.7em 0 0;
+  padding: 0.6em 0.75em;
+  border: 1px solid rgba(var(--gold-rgb), 0.35);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: rgba(var(--gold-rgb), 0.07);
+}
+.target-drift-msg {
+  margin: 0;
+  flex: 1 1 12em;
+  min-width: 0;
+  font-size: 0.82rem;
+  color: var(--text-soft);
+}
+.target-drift-actions { display: flex; gap: 0.4em; flex-wrap: wrap; }
+@media (max-width: 480px) {
+  .target-drift-actions { width: 100%; }
+  .target-drift-actions .btn { flex: 1; }
+}
+
 /* Meal tiles: one row, tap to open. Replaces four stacked meal cards. */
 .food-tiles {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.4em;
