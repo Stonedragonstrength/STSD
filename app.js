@@ -171,9 +171,6 @@
         // a new Supabase column — no migration to run against live data.
         athleteTemplates: state.trainerData.athleteTemplates || [],
         templateFolders: state.trainerData.templateFolders || [],
-        // Which athlete-activity rows this coach has marked read. Synced so a
-        // dismissal on one device clears the "New activity" card on all of them.
-        seenActivity: state.trainerData.seenActivity || {},
       });
       if (ok) localStorage.removeItem(KEY_LIBPREFS_DIRTY); // confirmed in the cloud
     });
@@ -2490,17 +2487,9 @@
       state.trainerData.templateFolders =
         mergeById(prefs.templateFolders, state.trainerData.templateFolders);
     }
-    // Read-activity marks are a monotonic set (you never un-see a row), so
-    // always UNION cloud with local regardless of the keepLocal flag — neither
-    // side's dismissals should be lost. Leaving it undefined here (older rows
-    // with no seenActivity key) lets renderOverviewActivity's first-run branch
-    // adopt current activity as seen, exactly as before cloud sync existed.
-    if (prefs.seenActivity || state.trainerData.seenActivity) {
-      state.trainerData.seenActivity = {
-        ...(prefs.seenActivity || {}),
-        ...(state.trainerData.seenActivity || {}),
-      };
-    }
+    // (Read-activity marks used to be unioned here. The "New activity" card
+    // they belonged to is gone — the notification log shows everything, with
+    // nothing to dismiss — so the stored key is simply ignored.)
     state.trainerData.openSlots = coach.open_slots || [];
     if (coach.anatomy_edits && typeof coach.anatomy_edits === "object") {
       state.trainerData.anatomyEdits = coach.anatomy_edits;
@@ -2565,8 +2554,6 @@
     refreshCoachOpenSlots();
     renderBulletinBoard();
     renderOverviewRequests();
-    renderOverviewActivity();
-    renderCoachCardioBoard();
     renderNotificationLog();
   }
 
@@ -6044,17 +6031,19 @@
     // One shelf on screen at a time. Stacking the body map and 58 explainer
     // cards on a single scroll made the page read as three documents in a trench
     // coat; the switcher keeps one interaction model in front of you at once.
+    // Search leads: it cuts across all four shelves, so making someone pick a
+    // shelf first to reach it had the order backwards.
     root.innerHTML = `
+      <div class="a-search-row">
+        <span class="a-search-ico" aria-hidden="true">${dayIconHtml("lu:search")}</span>
+        <input type="search" class="a-search" data-anatomy-search placeholder="Search muscles and topics" aria-label="Search muscles and topics">
+        <button type="button" class="a-search-x hidden" data-search-clear aria-label="Clear search">✕</button>
+      </div>
       <div class="a-shelves" role="tablist">
         <button type="button" class="a-shelf-btn active" data-shelf="body" role="tab" aria-selected="true">Body<span class="a-shelf-n" data-count="body"></span></button>
         <button type="button" class="a-shelf-btn" data-shelf="str" role="tab" aria-selected="false">Training<span class="a-shelf-n" data-count="str"></span></button>
         <button type="button" class="a-shelf-btn" data-shelf="nut" role="tab" aria-selected="false">Fuel<span class="a-shelf-n" data-count="nut"></span></button>
         <button type="button" class="a-shelf-btn" data-shelf="hrm" role="tab" aria-selected="false">Hormones<span class="a-shelf-n" data-count="hrm"></span></button>
-      </div>
-      <div class="a-search-row">
-        <span class="a-search-ico" aria-hidden="true">${dayIconHtml("lu:search")}</span>
-        <input type="search" class="a-search" data-anatomy-search placeholder="Search muscles and topics" aria-label="Search muscles and topics">
-        <button type="button" class="a-search-x hidden" data-search-clear aria-label="Clear search">✕</button>
       </div>
       <div class="a-results hidden" data-anatomy-results></div>
       <div class="a-shelf" data-pane="body">
@@ -10205,6 +10194,48 @@
     }, 50);
   }
 
+  // -------- PR cards: one row closed, the editor open --------
+  // A PR card used to be ~200px of stacked labels and inputs, so a phone showed
+  // one and a half lifts. Collapsed, it's a single row that still carries every
+  // number and date; the tall editing form only exists for the one you opened.
+  // Which folds are open is remembered across re-renders (locking a slot or
+  // auto-filling from logs re-renders the whole list).
+  const _prOpen = new Set();
+  function prSummaryHtml(entry, extra = "") {
+    const chip = (n) => {
+      const v = entry[`pr${n}`];
+      const d = entry[`pr${n}Date`];
+      const lk = !!entry[`pr${n}Locked`];
+      return `<span class="pr-chip${v ? "" : " is-empty"}${lk ? " is-locked" : ""}">
+        <b>${n}RM</b>
+        <span class="pr-chip-v">${v ? escapeHtml(prWeightLabel(entry.name, v)) : "—"}</span>
+        ${d ? `<span class="pr-chip-d">${escapeHtml(d)}</span>` : ""}
+      </span>`;
+    };
+    return `<span class="pr-sum-name">${escapeHtml(entry.name || "")}</span>
+      <span class="pr-sum-chips">${chip(1)}${chip(2)}${chip(3)}</span>
+      ${extra}
+      <span class="pr-sum-chev">▸</span>`;
+  }
+  function prFoldHtml(entry, key, bodyHtml, extra = "") {
+    return `<details class="pr-fold" data-pr-key="${escapeHtml(key)}"${_prOpen.has(key) ? " open" : ""}>
+      <summary class="pr-sum">${prSummaryHtml(entry, extra)}</summary>
+      <div class="pr-fold-body">${bodyHtml}</div>
+    </details>`;
+  }
+  function wirePRFold(card) {
+    const det = card.querySelector(".pr-fold");
+    if (!det) return;
+    det.addEventListener("toggle", () => {
+      const key = det.dataset.prKey;
+      if (det.open) _prOpen.add(key); else _prOpen.delete(key);
+    });
+    // A button inside a <summary> toggles the fold as well as firing; delete
+    // and the like have to stop that themselves.
+    det.querySelector("summary")?.querySelectorAll("button").forEach((b) =>
+      b.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); }));
+  }
+
   function buildCoachPRCard(c, entry, inEdit, isNew, athletePR, best) {
     const card = document.createElement("div");
     card.className = "pr-edit-card" + (isNew ? " is-editing" : " pr-shared-card");
@@ -10263,11 +10294,7 @@
             ${prLoggedChip(entry, n, best)}
           </div>`;
       };
-      card.innerHTML = `
-        <div class="pr-view-header">
-          <h4 class="pr-exercise-name">${escapeHtml(entry.name)}</h4>
-          <button class="pr-delete-btn" title="Delete">×</button>
-        </div>
+      card.innerHTML = prFoldHtml(entry, entry.id || entry.name, `
         <div class="pr-edit-fields">
           ${slot(1, "1 Rep PR (lb)", "e.g. 315")}
           ${slot(2, "2 Rep PR (lb)", "e.g. 295")}
@@ -10277,7 +10304,9 @@
           <div class="pr-athlete-row">
             <span class="pr-author athlete">athlete</span>
             <span>${prWeightLabel(entry.name, athletePR.weight)} × ${escapeHtml(athletePR.reps || "—")} reps</span>
-          </div>` : ""}`;
+          </div>` : ""}`,
+        `<button class="pr-delete-btn" title="Delete">×</button>`);
+      wirePRFold(card);
 
       [1, 2, 3].forEach((n) => {
         card.querySelector(`.pr-${n}rm-input`).addEventListener("input", (e) => { entry[`pr${n}`] = e.target.value; saveTrainer(); });
@@ -10429,15 +10458,13 @@
             ${prLoggedChip(entry, n, best)}
           </div>`;
       };
-      card.innerHTML = `
-        <div class="pr-view-header">
-          <h4 class="pr-exercise-name">${escapeHtml(entry.name)}</h4>
-        </div>
+      card.innerHTML = prFoldHtml(entry, entry.id || entry.name, `
         <div class="pr-edit-fields">
           ${slot(1, "1 Rep PR (lb)", "e.g. 315")}
           ${slot(2, "2 Rep PR (lb)", "e.g. 295")}
           ${slot(3, "3 Rep PR (lb)", "e.g. 275")}
-        </div>`;
+        </div>`);
+      wirePRFold(card);
       [1, 2, 3].forEach((n) => {
         card.querySelector(`.pr-${n}rm-input`).addEventListener("input", (e) => { entry[`pr${n}`] = e.target.value; pushCoachPRs(); });
         card.querySelector(`.pr-${n}rm-date`).addEventListener("input", (e) => {
@@ -11100,7 +11127,7 @@
     container.innerHTML = "";
     const slots = ensureOpenSlots();
     if (!slots.length) {
-      container.insertAdjacentHTML("beforeend", `<p class="muted" style="font-size:0.85rem">No open slots posted. Tap <strong>+ Post open slot</strong> when you have an opening.</p>`);
+      container.insertAdjacentHTML("beforeend", `<p class="muted" style="font-size:0.85rem">No open slots posted.</p>`);
     } else {
       [...slots].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).forEach((s) => {
         const row = document.createElement("div");
@@ -11353,144 +11380,6 @@
     host.appendChild(card);
   }
 
-  // -------- "Since you were last here" activity feed (coach Overview) --------
-  // dayCompletions only records a DATE (no clock time), so "new" can't be a
-  // timestamp comparison. Instead each completion has a stable key —
-  // clientId:dayId:date — and the coach's device remembers which keys it has
-  // already shown, the same way the athlete side tracks seenMessages.
-  const ACTIVITY_WINDOW_DAYS = 14;
-  const ACTIVITY_MAX_ROWS = 8;
-
-  function activityFeedItems() {
-    const cutoff = addDaysISO(todayISO(), -ACTIVITY_WINDOW_DAYS);
-    const out = [];
-    (state.trainerData.clients || []).forEach((c) => {
-      const dc = c.importedProgress?.dayCompletions || {};
-      // dayId → day name, so a completion reads as "Push Day" not an opaque id.
-      const dayNames = {};
-      (c.weeks || []).forEach((w) => (w.days || []).forEach((d) => { dayNames[d.id] = d.name; }));
-      Object.entries(dc).forEach(([dayId, dates]) => {
-        (Array.isArray(dates) ? dates : []).forEach((date) => {
-          if (!date || date < cutoff) return;
-          out.push({
-            key: `${c.id}:${dayId}:${date}`,
-            kind: "workout",
-            clientId: c.id,
-            dayId,
-            name: c.name,
-            // Days from an archived program are no longer in c.weeks.
-            dayName: dayNames[dayId] || "a workout",
-            date,
-          });
-        });
-      });
-
-      // Eating-habit signals. The key ends in the condition's start date, so
-      // pruneSeenActivity reads a real date out of it like every other key,
-      // and the signal is dismissed once rather than re-announced daily.
-      nutritionSignals(c).forEach((s) => {
-        if (s.anchor < cutoff) return;
-        out.push({
-          key: `${c.id}:nut-${s.type}:${s.anchor}`,
-          kind: "nutrition",
-          clientId: c.id,
-          dayId: null,
-          name: c.name,
-          dayName: `${s.icon} ${s.text}`,
-          date: s.anchor,
-        });
-      });
-    });
-    out.sort((a, b) => b.date.localeCompare(a.date) || a.name.localeCompare(b.name));
-    return out;
-  }
-
-  function saveSeenActivity() {
-    localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
-    // Sync the read marks so a dismissal here clears the card on the coach's
-    // other devices too. Rides the library-prefs blob (see pushCoachLibPrefs).
-    pushCoachLibPrefs();
-  }
-
-  // Prune keys that have aged out of the window so the map can't grow forever.
-  // Prune by DATE, never by "is it in the list right now".
-  //
-  // This used to drop any seen key missing from the currently-loaded items,
-  // which made already-read activity reappear: renderOverviewActivity runs at
-  // coach entry BEFORE refreshAllAthletePackages has pulled each athlete's
-  // importedProgress, so on that first pass the list is short, the prune wiped
-  // those marks, and when the cloud data landed the same items rendered as new.
-  // Keys are "<clientId>:<dayId>:<YYYY-MM-DD>" and uid() never emits a colon,
-  // so the date is whatever follows the last one.
-  function pruneSeenActivity(seen, cutoffISO) {
-    let changed = false;
-    Object.keys(seen).forEach((k) => {
-      const date = k.slice(k.lastIndexOf(":") + 1);
-      if (date < cutoffISO) { delete seen[k]; changed = true; }
-    });
-    return changed;
-  }
-
-  function markActivitySeen(items) {
-    const seen = state.trainerData.seenActivity || (state.trainerData.seenActivity = {});
-    items.forEach((it) => { seen[it.key] = true; });
-    saveSeenActivity();
-  }
-
-  function activityWhen(date) {
-    const days = Math.round((new Date(todayISO() + "T12:00:00") - new Date(date + "T12:00:00")) / 86400000);
-    if (days <= 0) return "today";
-    if (days === 1) return "yesterday";
-    if (days < 7) return `${days} days ago`;
-    return new Date(date + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  }
-
-  function renderOverviewActivity() {
-    const host = $("#overview-activity");
-    if (!host) return;
-    host.innerHTML = "";
-    const items = activityFeedItems();
-
-    // First run on this device: adopt everything as already-seen so upgrading
-    // doesn't greet the coach with two weeks of back-dated "new" activity.
-    if (!state.trainerData.seenActivity) {
-      state.trainerData.seenActivity = {};
-      markActivitySeen(items);
-      return;
-    }
-    const seen = state.trainerData.seenActivity;
-    if (pruneSeenActivity(seen, addDaysISO(todayISO(), -ACTIVITY_WINDOW_DAYS))) saveSeenActivity();
-
-    const fresh = items.filter((it) => !seen[it.key]);
-    if (!fresh.length) return;
-
-    const card = document.createElement("div");
-    card.className = "card overview-activity-card";
-    const shown = fresh.slice(0, ACTIVITY_MAX_ROWS);
-    card.innerHTML = `<div class="program-head">
-        <h3 style="margin:0">🏋️ New activity <span class="overview-req-count">${fresh.length}</span></h3>
-        <button class="btn btn-ghost btn-sm" id="btn-activity-seen" type="button">Mark all read</button>
-      </div>
-      ${shown.map((it) => `<div class="activity-row" data-kind="${escapeHtml(it.kind || "workout")}" data-client="${escapeHtml(it.clientId)}" data-day="${escapeHtml(it.dayId || "")}" data-date="${escapeHtml(it.date)}">
-        <span class="activity-name">${escapeHtml(it.name)}</span>
-        <span class="activity-day">${escapeHtml(it.dayName)}</span>
-        <span class="activity-when">${escapeHtml(activityWhen(it.date))}</span>
-      </div>`).join("")}
-      ${fresh.length > shown.length ? `<p class="muted activity-more">+${fresh.length - shown.length} more</p>` : ""}`;
-
-    card.querySelectorAll(".activity-row").forEach((row) => {
-      row.addEventListener("click", () => {
-        if (row.dataset.kind === "nutrition") return openClientNutrition(row.dataset.client);
-        openCompletedWorkout(row.dataset.client, row.dataset.day, row.dataset.date);
-      });
-    });
-    card.querySelector("#btn-activity-seen").addEventListener("click", () => {
-      markActivitySeen(fresh);
-      renderOverviewActivity();
-    });
-    host.appendChild(card);
-  }
-
   // -------- Permanent notification log (coach Overview, bottom) --------
   // Unlike the "New activity" card (unseen-only, self-dismissing), this is a
   // durable archive of everything athletes have done — workouts logged, form
@@ -11535,6 +11424,20 @@
         });
       });
 
+      // Cardio sessions. Same shape as a workout row, so a run reads next to
+      // the lifting day it sat between rather than needing its own card.
+      (ip.cardioLogs || []).forEach((log) => {
+        if (!log || !log.date) return;
+        const miles = Number(log.miles) ? ` · ${cardioMiLabel(Number(log.miles))} mi` : "";
+        out.push({
+          type: "cardio", icon: cardioIcon(log.type),
+          ts: new Date(log.date + "T12:00:00").getTime(),
+          name: c.name,
+          text: `logged ${String(log.type || "cardio").toLowerCase()} · ${log.minutes || 0} min${miles}`,
+          clientId: c.id, dayId: null, date: log.date,
+        });
+      });
+
       // Eating-habit signals. These are derived from the CURRENT log rather
       // than recorded when they fired, so a condition that has since cleared
       // drops off the list — same as every other row here.
@@ -11562,59 +11465,6 @@
     return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
 
-  // -------- Coach Overview: everyone's last cardio session --------
-  // Cardio was only visible one athlete at a time, inside their own Cardio tab,
-  // which made "who has actually been running" a five-tap question per person.
-  // This is the whole roster on one card: last session, how long ago, and what
-  // they've done this week. Rows open that athlete's log.
-  function renderCoachCardioBoard() {
-    const host = $("#cardio-board");
-    if (!host) return;
-    const clients = state.trainerData.clients || [];
-    const today = todayISO();
-    const weekStart = sundayOfISO(today);
-    const rows = clients.map((c) => {
-      const logs = (c.importedProgress?.cardioLogs || []).filter((l) => l && l.date);
-      const last = logs.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)))[0] || null;
-      const week = cardioTotals(logs.filter((l) => l.date >= weekStart && l.date <= today));
-      const days = last
-        ? Math.round((new Date(today + "T12:00:00") - new Date(last.date + "T12:00:00")) / 86400000)
-        : null;
-      return { c, last, week, days };
-    }).sort((a, b) => String(b.last?.date || "").localeCompare(String(a.last?.date || "")));
-
-    const active = rows.filter((r) => r.week.n).length;
-    const countEl = $("#cardio-board-count");
-    if (countEl) countEl.textContent = clients.length ? `${active}/${clients.length} this week` : "";
-
-    if (!clients.length) {
-      host.innerHTML = `<p class="muted" style="margin:0">No athletes yet.</p>`;
-      return;
-    }
-    host.innerHTML = rows.map((r) => {
-      // Freshness drives the left rail: green in the last two days, amber
-      // through the first week, then grey. Nobody has to read the dates to see
-      // who's drifted.
-      const tone = r.days == null ? "none" : r.days <= 2 ? "fresh" : r.days <= 7 ? "warm" : "cold";
-      const last = r.last
-        ? `${cardioIcon(r.last.type)} ${escapeHtml(r.last.type || "Cardio")} · ${escapeHtml(String(r.last.minutes || 0))} min${r.last.miles ? ` · ${escapeHtml(cardioMiLabel(Number(r.last.miles)))} mi` : ""}`
-        : `<span class="cb-never">No cardio logged</span>`;
-      return `<button type="button" class="cb-row is-${tone}" data-cardio-client="${escapeHtml(r.c.id)}">
-        ${avatarTileHtml(r.c, r.c.importedProgress, { size: "sm" })}
-        <span class="cb-info">
-          <span class="cb-name">${escapeHtml(r.c.name || "Athlete")}</span>
-          <span class="cb-last">${last}</span>
-        </span>
-        ${r.week.n ? `<span class="cb-week">${r.week.n} · ${cardioMinLabel(r.week.min)}</span>` : ""}
-        <span class="cb-when">${r.last ? escapeHtml(activityWhen(r.last.date)) : "—"}</span>
-      </button>`;
-    }).join("");
-    host.querySelectorAll("[data-cardio-client]").forEach((b) => b.addEventListener("click", () => {
-      openClient(b.dataset.cardioClient);
-      setTab("logs"); // their Cardio tab
-    }));
-  }
-
   function renderNotificationLog() {
     const host = $("#notif-log-scroll");
     if (!host) return;
@@ -11626,7 +11476,8 @@
       return;
     }
     host.innerHTML = items.map((it) => {
-      const clickable = it.type === "workout" || it.type === "formcheck" || it.type === "nutrition";
+      const clickable = it.type === "workout" || it.type === "formcheck" ||
+        it.type === "nutrition" || it.type === "cardio";
       return `<div class="notif-row${clickable ? " is-clickable" : ""}"${clickable
         ? ` data-kind="${escapeHtml(it.type)}" data-client="${escapeHtml(it.clientId)}" data-day="${escapeHtml(it.dayId || "")}" data-date="${escapeHtml(it.date)}"` : ""}>
         <span class="notif-icon" aria-hidden="true">${it.icon}</span>
@@ -11637,6 +11488,8 @@
     host.querySelectorAll(".notif-row.is-clickable").forEach((row) => {
       row.addEventListener("click", () => {
         if (row.dataset.kind === "nutrition") return openClientNutrition(row.dataset.client);
+        // A cardio row has no workout day to land on — open their cardio log.
+        if (row.dataset.kind === "cardio") { openClient(row.dataset.client); return setTab("logs"); }
         openCompletedWorkout(row.dataset.client, row.dataset.day, row.dataset.date);
       });
     });
@@ -11700,12 +11553,12 @@
       _packagesRefreshing = false;
     }
     // Update the athlete-card chips / Overview inbox if either is on screen.
-    // This pull is also what brings in fresh dayCompletions, so the activity
-    // feed re-runs here — that's where "someone logged a workout" surfaces.
+    // This pull is also what brings in fresh dayCompletions, so the
+    // notification log re-runs here — that's where "someone logged a
+    // workout" surfaces.
     if (!$("#view-dashboard").classList.contains("hidden")) renderClientGrid();
     if (!$("#view-overview").classList.contains("hidden")) {
       renderOverviewRequests();
-      renderOverviewActivity();
       renderNotificationLog();
     }
   }
@@ -19791,14 +19644,14 @@
         title: "Athlete Created", text: "Trained outside your program? This pill holds the days you built yourself. Tap it to open them, or to start a new one." },
       { sel: '[data-ctab-panel="prs"]', go: () => setClientTab("prs"),
         title: "Progress", text: "Your PRs live here, with the charts behind them. Locking a heavy set can raise them automatically." },
-      { sel: "#athlete-bw-fold", go: () => setClientTab("prs"),
-        title: "Body weight", text: "Log your weight here and watch the trend. The latest number sits on this row, so you can check it without opening anything." },
       { sel: ".food-tiles", go: () => setClientTab("diet"),
         title: "Food log", text: "One tile per meal. Tap a tile to open it, then add what you ate. Search thousands of foods, save the ones you eat often, or use Quick add when you already know the numbers." },
       { sel: "#food-ring", go: () => setClientTab("diet"),
         title: "Hit the zone", text: "The ring fills toward your calorie target and turns gold when you land inside it. Tap it any time to set or change your targets." },
       { sel: ".food-lvl", go: () => setClientTab("diet"),
         title: "Earn your rank", text: "Every logged day earns XP: more for landing close to your numbers, a bonus for a perfect day, and more again the longer your streak runs. Fill the bar and you take the next rank, from Pebble all the way up to Stone Dragon." },
+      { sel: "#athlete-bw-fold", go: () => setClientTab("diet"),
+        title: "Body weight", text: "Log your weight here and watch the trend. The latest number sits on this row, so you can check it without opening anything." },
       { sel: "#client-feedback", go: () => { setClientTab("profile"); },
         title: "Notes for your coach", text: "Aches, schedule conflicts, how a week felt: anything you want them to know goes here, and it syncs on its own." },
       { sel: '[data-ctab-panel="sessions"]', go: () => setClientTab("sessions"),

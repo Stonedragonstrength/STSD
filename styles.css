@@ -2517,34 +2517,6 @@ input.trial-input {
   vertical-align: middle;
 }
 
-/* "New activity" feed — same shape as the requests inbox, green rail so it
-   reads as news rather than a to-do. Empty container renders nothing. */
-.overview-activity:empty { display: none; }
-.overview-activity { margin-bottom: 1.25rem; }
-.overview-activity-card { border-left: 3px solid var(--accent); }
-.overview-activity-card .overview-req-count { background: var(--accent); color: #04211a; }
-.activity-row {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  padding: 0.45rem 0.2rem;
-  border-top: 1px solid var(--border);
-  cursor: pointer;
-  transition: background 0.12s;
-}
-.activity-row:hover { background: var(--surface-2); }
-.activity-name { font-weight: 700; color: var(--text); font-size: 0.88rem; flex-shrink: 0; }
-.activity-day {
-  color: var(--text-soft);
-  font-size: 0.8rem;
-  flex: 1;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.activity-when { color: var(--muted); font-size: 0.72rem; flex-shrink: 0; }
-.activity-more { font-size: 0.75rem; margin: 0.5em 0 0; }
 .bulletin-item {
   display: flex;
   align-items: flex-start;
@@ -3286,8 +3258,8 @@ input.trial-input {
     linear-gradient(180deg, var(--surface-2), var(--surface) 65%);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 1rem 1.25rem;
-  margin-bottom: 0.75rem;
+  padding: 0.45rem 0.7rem 0.45rem 0.9rem;
+  margin-bottom: 0.4rem;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 .pr-edit-card::before {
@@ -9977,73 +9949,6 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 .week-chip-special.active .chip-n { background: rgba(0, 0, 0, 0.16); }
 
 
-/* ---- Coach Overview: cardio board ----
-   One row per athlete: avatar, last session, this week's total, how long ago.
-   The left rail is the freshness read — green in the last two days, amber
-   through the first week, grey after that, so the drifters group themselves at
-   the bottom without the coach reading a single date. */
-.cardio-board { display: flex; flex-direction: column; }
-.cb-row {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 0.7em;
-  width: 100%;
-  padding: 0.55rem 0.4rem 0.55rem 0.75rem;
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  background: none;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.cb-row:last-child { border-bottom: none; }
-.cb-row::before {
-  content: "";
-  position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 3px;
-  background: linear-gradient(180deg,
-    rgb(var(--cb-rgb, 148, 163, 184)),
-    rgba(var(--cb-rgb, 148, 163, 184), 0.15));
-  border-radius: 3px;
-}
-.cb-row.is-fresh { --cb-rgb: 16, 185, 129; }
-.cb-row.is-warm  { --cb-rgb: 245, 158, 11; }
-.cb-row.is-cold  { --cb-rgb: 148, 163, 184; }
-.cb-row.is-none  { --cb-rgb: 100, 116, 139; }
-.cb-row:hover {
-  background-image: linear-gradient(100deg, rgba(var(--cb-rgb, 148, 163, 184), 0.2), transparent 66%);
-  background-color: var(--surface-2);
-}
-.cb-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
-.cb-name {
-  font-weight: 700; font-size: 0.9rem; color: var(--text);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.cb-last {
-  font-size: 0.78rem; color: var(--text-soft);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.cb-never { color: var(--muted); font-style: italic; }
-.cb-week {
-  font-size: 0.72rem; font-weight: 800; white-space: nowrap;
-  color: var(--accent);
-  background: var(--accent-soft);
-  border: 1px solid rgba(16, 185, 129, 0.35);
-  border-radius: 999px;
-  padding: 0.18em 0.55em;
-}
-.cb-when {
-  font-size: 0.72rem; color: var(--muted); white-space: nowrap;
-  min-width: 4.6em; text-align: right;
-}
-@media (max-width: 560px) {
-  .cb-week { display: none; }
-  .cb-when { min-width: 0; }
-}
 
 .wp-head-ico {
   display: inline-flex; align-items: center;
@@ -10051,3 +9956,79 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 }
 .wp-head-ico svg { width: 16px; height: 16px; display: block; }
 .wp-head-own .wp-head-ico { color: var(--primary-bright); }
+
+
+/* ---- PR rows: collapsed summary, expandable editor ---- */
+.pr-fold > summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.3rem 0;
+}
+.pr-fold > summary::-webkit-details-marker { display: none; }
+.pr-sum-name {
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: var(--text);
+  flex: 0 1 auto;
+  min-width: 5.5em;
+  max-width: 11em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pr-sum-chips {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  margin-left: auto;
+  min-width: 0;
+}
+.pr-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3em;
+  padding: 0.2em 0.5em;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.pr-chip b {
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.pr-chip-v { font-size: 0.88rem; font-weight: 800; color: var(--primary-bright); }
+.pr-chip-d { font-size: 0.6rem; color: var(--muted); }
+.pr-chip.is-empty { opacity: 0.5; }
+.pr-chip.is-empty .pr-chip-v { color: var(--muted); }
+/* A locked PR is the coach's line in the sand — gold, same as everywhere else. */
+.pr-chip.is-locked { border-color: rgba(234, 179, 8, 0.45); background: rgba(234, 179, 8, 0.1); }
+.pr-chip.is-locked .pr-chip-v { color: var(--gold, #eab308); }
+.pr-sum-chev {
+  color: var(--text-soft);
+  transition: transform 0.15s ease;
+  flex: none;
+}
+.pr-fold[open] .pr-sum-chev { transform: rotate(90deg); }
+.pr-fold-body { padding-top: 0.7rem; }
+.pr-fold-body > *:last-child { margin-bottom: 0; }
+.pr-fold .pr-delete-btn { flex: none; }
+
+@media (max-width: 600px) {
+  /* Two lines on a phone: the lift name and chevron, then all three PRs under
+     them. The order property keeps the chevron up on the name row — left to
+     wrap, it landed on a third line of its own and cost 30px a lift. */
+  .pr-fold > summary { flex-wrap: wrap; gap: 0.3em 0.5em; padding: 0.15rem 0; }
+  .pr-sum-name { max-width: none; flex: 1 1 auto; }
+  .pr-sum-chev { order: 2; }
+  .pr-fold .pr-delete-btn { order: 2; }
+  .pr-sum-chips { order: 3; margin-left: 0; flex: 1 0 100%; justify-content: flex-start; }
+  .pr-chip { padding: 0.15em 0.4em; }
+  .pr-chip-v { font-size: 0.82rem; }
+}
