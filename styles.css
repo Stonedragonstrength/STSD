@@ -7732,13 +7732,24 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   flex-basis: 100%; height: 1px; background: var(--border); margin: 0.2rem 0;
 }
 .rest-timer-pop .rest-pop-opt {
-  flex-basis: 100%;
-  display: flex; align-items: center; justify-content: space-between; gap: 0.8em;
-  font-size: 0.76rem; font-weight: 600; text-align: left; font-family: inherit;
+  flex: 1 1 0; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 0.25em;
+  padding: 0.45em 0.4em 0.4em; font-family: inherit;
   color: var(--text-soft);
 }
+.rest-pop-ico {
+  position: relative; display: block; width: 22px; height: 22px;
+}
+.rest-pop-ico > svg { width: 100%; height: 100%; display: block; }
+/* The ∞ rides on the bell's shoulder: "this one rings forever". */
+.rest-pop-badge {
+  position: absolute; right: -5px; bottom: 0;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--surface); display: block;
+}
+.rest-pop-badge > svg { width: 100%; height: 100%; display: block; }
 .rest-timer-pop .rest-pop-opt .rest-pop-state {
-  font-weight: 800; font-size: 0.7rem; letter-spacing: 0.04em;
+  font-weight: 800; font-size: 0.6rem; letter-spacing: 0.06em;
   text-transform: uppercase; color: var(--muted);
 }
 .rest-timer-pop .rest-pop-opt.on {

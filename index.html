@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=libnav1" />
+  <link rel="stylesheet" href="styles.css?v=resticon1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -854,14 +854,24 @@
             <button type="button" data-rest="90">1:30</button>
             <button type="button" data-rest="120">2:00</button>
             <button type="button" data-rest="180">3:00</button>
-            <!-- What happens when the countdown hits zero. Both remembered per
-                 device, filled in by refreshRestModeBtns(). -->
+            <!-- What happens when the countdown hits zero. Two icon toggles:
+                 a bell looping forever, and a timer that restarts itself. Both
+                 remembered per device, filled in by refreshRestModeBtns(). -->
             <div class="rest-pop-sep"></div>
-            <button type="button" class="rest-pop-opt" id="rest-nag-opt">
-              <span>Keep ringing until I tap</span><span class="rest-pop-state"></span>
+            <button type="button" class="rest-pop-opt" id="rest-nag-opt"
+                    title="Keep ringing until I tap" aria-label="Keep ringing until I tap">
+              <span class="rest-pop-ico">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.41 5.956-2.74 7.326"/></svg>
+                <i class="rest-pop-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16a4 4 0 1 1 0-8c3.5 0 6.5 8 10 8a4 4 0 1 0 0-8c-3.5 0-6.5 8-10 8z"/></svg></i>
+              </span>
+              <span class="rest-pop-state"></span>
             </button>
-            <button type="button" class="rest-pop-opt" id="rest-auto-opt">
-              <span>Start the next rest on its own</span><span class="rest-pop-state"></span>
+            <button type="button" class="rest-pop-opt" id="rest-auto-opt"
+                    title="Start the next rest on its own" aria-label="Start the next rest on its own">
+              <span class="rest-pop-ico">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2h4"/><path d="M12 14v-4"/><path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6"/><path d="M9 17H4v5"/></svg>
+              </span>
+              <span class="rest-pop-state"></span>
             </button>
           </div>
           <div class="rest-timer-row">
@@ -1087,10 +1097,10 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="bugreport.js?v=bug1"></script>
-  <script src="config.js?v=libnav1"></script>
-  <script src="cloud.js?v=libnav1"></script>
+  <script src="config.js?v=resticon1"></script>
+  <script src="cloud.js?v=resticon1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=libnav1"></script>
+  <script src="app.js?v=resticon1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
