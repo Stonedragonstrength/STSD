@@ -5685,11 +5685,46 @@
   ];
 
   // Hormones and the menstrual cycle. Same card shape again; the takeaway field
-  // is `means` (rendered under "What it means for training"). The cycle groups
-  // lead, because how it works is the part most people were never taught. The
-  // training layer stays deliberately hedged: the mechanics of the cycle are
-  // settled physiology, but phase-based programming is not.
+  // is `means` (rendered under "What it means for training"). The training and
+  // appetite hormones lead, since they apply to everyone reading the page; the
+  // cycle groups follow. The training layer stays deliberately hedged: the
+  // mechanics of the cycle are settled physiology, but phase-based programming
+  // is not.
   const HORMONE_CONCEPTS = [
+    { group: "Training hormones", tag: "Anabolic", icon: "lu:zap", accent: "251,146,60", items: [
+      { term: "Testosterone", short: "Present in everyone, in very different amounts.",
+        def: "Testosterone supports muscle protein synthesis and is one reason for the average difference in muscle mass between men and women. Women produce it too, at roughly a tenth to a twentieth the level, and it still matters for their strength and recovery.",
+        means: "Your natural level is largely out of your hands. Sleep, sensible training loads, and not staying in a deep deficit for months are the levers you actually control." },
+      { term: "Growth hormone", short: "Real, but not the muscle switch it is sold as.",
+        def: "Growth hormone is released in pulses, mostly during deep sleep, and supports tissue repair and fat metabolism. The temporary spike from a hard training session is small and short compared with what you produce overnight.",
+        means: "The best growth-hormone strategy is unglamorous: sleep properly. Chasing the post-workout spike is not worth structuring a program around." },
+      { term: "Cortisol", short: "The stress hormone, and not the villain.",
+        def: "Cortisol rises with stress of any kind, including training, and helps mobilise energy. It is essential and follows a daily rhythm, peaking in the morning. The problem is not cortisol itself but chronically elevated levels from stress that never lets up.",
+        means: "A hard session raising cortisol is normal and necessary. Months of poor sleep, under-eating and relentless volume together is the pattern that actually costs you progress." },
+      { term: "IGF-1", short: "The messenger that does much of the work.",
+        def: "Insulin-like growth factor 1 is produced largely in the liver in response to growth hormone, and acts locally in muscle to support repair and growth. It is heavily influenced by how much you eat and how much protein you get.",
+        means: "This is part of why eating enough matters for gaining muscle. Chronic under-eating lowers the signals that tell muscle to rebuild." },
+      { term: "The post-workout spike myth", short: "Hormone bumps do not build the muscle.",
+        def: "Training briefly raises testosterone and growth hormone, and for years that was assumed to drive growth. Studies since have found these acute spikes correlate poorly with actual muscle gain, which tracks mechanical tension and training volume instead.",
+        means: "Do not pick exercises to chase a hormone response. Pick them because they load the muscle you want to grow through a full range." },
+    ] },
+    { group: "Hunger and metabolism", tag: "Appetite", icon: "lu:gauge", accent: "45,212,191", items: [
+      { term: "Insulin", short: "The nutrient traffic controller.",
+        def: "Insulin is released when blood sugar rises and moves glucose and amino acids into cells, including muscle. It is a storage hormone for both muscle and fat, and it is not the cause of fat gain on its own. Eating more energy than you burn is.",
+        means: "You do not need to fear carbohydrates or insulin to lose fat. Total energy still decides the direction; insulin decides the traffic." },
+      { term: "Leptin", short: "The fullness signal from fat tissue.",
+        def: "Leptin is produced by fat cells and tells the brain roughly how much stored energy is available. As you lose fat, leptin falls, and the brain responds by increasing hunger and quietly reducing how much you move.",
+        means: "This is the biology behind a stalling diet and rising appetite. It is a predictable response, not a personal failure, and diet breaks at maintenance help ease it." },
+      { term: "Ghrelin", short: "The hunger signal from the stomach.",
+        def: "Ghrelin rises before meals and falls after eating, prompting hunger. It climbs during a sustained calorie deficit and stays elevated for a while even after weight is lost.",
+        means: "Protein and high-volume, fibrous foods blunt it best. Expect hunger to run higher in a deficit and plan meals around it rather than relying on willpower." },
+      { term: "Thyroid hormones", short: "The pace-setter for your metabolism.",
+        def: "Thyroid hormones set the rate at which your body burns energy at rest. Extended dieting can lower their output modestly, which is part of why maintenance calories drift down over a long cut.",
+        means: "Some slowdown while dieting is normal adaptation, not a broken metabolism. Genuine thyroid disorders exist and are diagnosed by a blood test, not by a stalled scale." },
+      { term: "Sleep and your hormones", short: "The cheapest hormonal intervention there is.",
+        def: "Short sleep raises ghrelin, lowers leptin, raises cortisol, and reduces testosterone and overnight growth hormone release. Studies restricting sleep during a diet find people lose a greater share of that weight as muscle instead of fat.",
+        means: "If you fix one thing on this shelf, fix sleep. It moves more of these hormones at once than any supplement on the market." },
+    ] },
     { group: "How the cycle works", tag: "The cycle", icon: "lu:moon", accent: "244,114,182", items: [
       { term: "The cycle at a glance", short: "One month, two halves, one egg.",
         def: "The menstrual cycle is the monthly rhythm that prepares the body for a possible pregnancy. It is counted from the first day of one period to the first day of the next, and averages about 28 days, though anywhere from 21 to 35 is normal. Ovulation splits it into two halves: the follicular phase before, and the luteal phase after.",
@@ -5781,40 +5816,6 @@
       { term: "When to see a doctor", short: "The list worth acting on.",
         def: "Worth getting checked: periods that stop for three months or more, bleeding heavy enough to soak through protection hourly, severe pain that stops you functioning, bleeding between periods, or cycles that change markedly from your normal pattern.",
         means: "This page is background, not diagnosis. Anything on that list is a conversation with a doctor, and your coach only needs to know how it affects your training." },
-    ] },
-    { group: "Training hormones", tag: "Anabolic", icon: "lu:zap", accent: "251,146,60", items: [
-      { term: "Testosterone", short: "Present in everyone, in very different amounts.",
-        def: "Testosterone supports muscle protein synthesis and is one reason for the average difference in muscle mass between men and women. Women produce it too, at roughly a tenth to a twentieth the level, and it still matters for their strength and recovery.",
-        means: "Your natural level is largely out of your hands. Sleep, sensible training loads, and not staying in a deep deficit for months are the levers you actually control." },
-      { term: "Growth hormone", short: "Real, but not the muscle switch it is sold as.",
-        def: "Growth hormone is released in pulses, mostly during deep sleep, and supports tissue repair and fat metabolism. The temporary spike from a hard training session is small and short compared with what you produce overnight.",
-        means: "The best growth-hormone strategy is unglamorous: sleep properly. Chasing the post-workout spike is not worth structuring a program around." },
-      { term: "Cortisol", short: "The stress hormone, and not the villain.",
-        def: "Cortisol rises with stress of any kind, including training, and helps mobilise energy. It is essential and follows a daily rhythm, peaking in the morning. The problem is not cortisol itself but chronically elevated levels from stress that never lets up.",
-        means: "A hard session raising cortisol is normal and necessary. Months of poor sleep, under-eating and relentless volume together is the pattern that actually costs you progress." },
-      { term: "IGF-1", short: "The messenger that does much of the work.",
-        def: "Insulin-like growth factor 1 is produced largely in the liver in response to growth hormone, and acts locally in muscle to support repair and growth. It is heavily influenced by how much you eat and how much protein you get.",
-        means: "This is part of why eating enough matters for gaining muscle. Chronic under-eating lowers the signals that tell muscle to rebuild." },
-      { term: "The post-workout spike myth", short: "Hormone bumps do not build the muscle.",
-        def: "Training briefly raises testosterone and growth hormone, and for years that was assumed to drive growth. Studies since have found these acute spikes correlate poorly with actual muscle gain, which tracks mechanical tension and training volume instead.",
-        means: "Do not pick exercises to chase a hormone response. Pick them because they load the muscle you want to grow through a full range." },
-    ] },
-    { group: "Hunger and metabolism", tag: "Appetite", icon: "lu:gauge", accent: "45,212,191", items: [
-      { term: "Insulin", short: "The nutrient traffic controller.",
-        def: "Insulin is released when blood sugar rises and moves glucose and amino acids into cells, including muscle. It is a storage hormone for both muscle and fat, and it is not the cause of fat gain on its own. Eating more energy than you burn is.",
-        means: "You do not need to fear carbohydrates or insulin to lose fat. Total energy still decides the direction; insulin decides the traffic." },
-      { term: "Leptin", short: "The fullness signal from fat tissue.",
-        def: "Leptin is produced by fat cells and tells the brain roughly how much stored energy is available. As you lose fat, leptin falls, and the brain responds by increasing hunger and quietly reducing how much you move.",
-        means: "This is the biology behind a stalling diet and rising appetite. It is a predictable response, not a personal failure, and diet breaks at maintenance help ease it." },
-      { term: "Ghrelin", short: "The hunger signal from the stomach.",
-        def: "Ghrelin rises before meals and falls after eating, prompting hunger. It climbs during a sustained calorie deficit and stays elevated for a while even after weight is lost.",
-        means: "Protein and high-volume, fibrous foods blunt it best. Expect hunger to run higher in a deficit and plan meals around it rather than relying on willpower." },
-      { term: "Thyroid hormones", short: "The pace-setter for your metabolism.",
-        def: "Thyroid hormones set the rate at which your body burns energy at rest. Extended dieting can lower their output modestly, which is part of why maintenance calories drift down over a long cut.",
-        means: "Some slowdown while dieting is normal adaptation, not a broken metabolism. Genuine thyroid disorders exist and are diagnosed by a blood test, not by a stalled scale." },
-      { term: "Sleep and your hormones", short: "The cheapest hormonal intervention there is.",
-        def: "Short sleep raises ghrelin, lowers leptin, raises cortisol, and reduces testosterone and overnight growth hormone release. Studies restricting sleep during a diet find people lose a greater share of that weight as muscle instead of fat.",
-        means: "If you fix one thing on this shelf, fix sleep. It moves more of these hormones at once than any supplement on the market." },
     ] },
   ];
 
@@ -6024,7 +6025,7 @@
     return `<section class="a-concepts">
       <div class="a-concepts-head">
         <h3>Hormones and the Menstrual Cycle</h3>
-        <p>How the cycle actually works, the hormones driving it, and what the rest of your endocrine system does to training. Pick a topic, then tap any card to open it.</p>
+        <p>What your hormones do to training, appetite and recovery, plus how the menstrual cycle actually works and the signals driving it. Pick a topic, then tap any card to open it.</p>
       </div>
       ${conceptGroupsHtml(mergedConceptGroups("hrm", getAnatomyEdits(editable)), conceptTakeLabel("hrm"), editable)}
       <p class="a-disclaimer">Background reading, not medical advice. Anything that worries you is worth taking to a doctor.</p>
