@@ -46,6 +46,11 @@ crisply.
 Replace `avatars/<id>.png` (same filename, 2:3, transparent) and bump `CACHE`
 in `sw.js` so installed PWAs refetch it. No code change needed.
 
+Pick a replacement that fills its tile: measure the figure's width against the
+tile's, since every figure is scaled to full height. The original wizard (#265)
+covered only 20% of its tile against a ~34% roster median and read as a runt
+next to the sorcerer beside it; #245 covers 40%.
+
 Source file for each, by pack index:
 
 | Avatar | # | Avatar | # | Avatar | # | Avatar | # |
@@ -53,7 +58,7 @@ Source file for each, by pack index:
 | barbarian | 153 | paladin | 500 | rogue | 161 | cleric | 98 |
 | berserker | 151 | templar | 20 | assassin | 399 | bard | 359 |
 | knight | 149 | ranger | 385 | monk | 483 | sorcerer | 518 |
-| fighter | 146 | beastmaster | 290 | druid | 445 | wizard | 265 |
+| fighter | 146 | beastmaster | 290 | druid | 445 | wizard | 245 |
 | necromancer | 490 | alchemist | 441 | warlock | 426 | dragonborn | 9 |
 | juggernaut | 154 | mercenary | 174 | duelist | 119 | gladiator | 199 |
 | crusader | 523 | sentinel | 299 | valkyrie | 510 | scout | 10 |

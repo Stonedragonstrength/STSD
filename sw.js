@@ -20,7 +20,7 @@
  * Because navigations are network-first, a fresh deploy is picked up on the
  * next online open automatically — no user prompt.
  */
-const CACHE = "stonedragon-v6";
+const CACHE = "stonedragon-v7";
 
 // Stable, un-versioned URLs worth precaching up front. The versioned css/js
 // (styles.css?v=…, app.js?v=…) are cached at runtime on first online load —
