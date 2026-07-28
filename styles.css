@@ -990,7 +990,29 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   background: rgba(var(--primary-bright-rgb), 0.1);
 }
 .ex-prog-btn.empty { color: var(--muted); border-style: dashed; }
-.prog-pop { min-width: 230px; max-width: 270px; padding: 0.55rem; display: flex; flex-direction: column; gap: 0.35rem; }
+/* The ladder rows plus the autoregulation block can outgrow a phone, so the
+   popover scrolls inside itself instead of running off the screen. Children
+   keep their natural height (a scrolling flex column would otherwise squash
+   them) and the scroll doesn't chain out to the page behind it. */
+.prog-pop {
+  min-width: 230px; max-width: 270px; padding: 0.55rem;
+  display: flex; flex-direction: column; gap: 0.35rem;
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.prog-pop > * { flex: none; }
+/* Divider between the ladder itself and the layers riding on top of it. */
+.prog-pop-sub {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary-bright);
+}
 .prog-pop-head { font-weight: 800; font-size: 0.85rem; }
 .prog-pop-hint { margin: 0; font-size: 0.72rem; color: var(--muted); line-height: 1.35; }
 .prog-pop-lbl { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-soft); margin-top: 0.25rem; }
@@ -5347,6 +5369,84 @@ input:focus, textarea:focus, select:focus {
   border-radius: 999px;
   padding: 0.12em 0.55em;
   white-space: nowrap;
+}
+/* Sets earned by the progression's set leg — gold, matching the app's
+   "you earned this" signal rather than the cyan "target moved" one. */
+.cex-setleg-chip {
+  color: var(--gold);
+  background: rgba(var(--gold-rgb), 0.12);
+  border-color: rgba(var(--gold-rgb), 0.35);
+}
+/* Stall handling. Amber = the target has been sitting still; green = the
+   back-off fired and gave them a running start, which is a good thing. */
+.cex-stall-chip,
+.cex-deload-chip {
+  font-size: 0.64rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0.12em 0.55em;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.cex-stall-chip {
+  color: var(--warn);
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.4);
+}
+.cex-deload-chip {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+/* ===== Left in the tank (RIR) ===== */
+/* Sits under the set sheet on any exercise carrying a progression rule. One
+   optional tap that tells the ladder how hard the work actually was. */
+.cex-rir-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+.cex-rir-lbl {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  margin-right: auto;
+}
+.cex-rir-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28em;
+  padding: 0.3em 0.6em;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-soft);
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cex-rir-btn:hover:not(:disabled) { border-color: var(--border-strong); color: var(--text); }
+.cex-rir-btn:disabled { opacity: 0.5; cursor: default; }
+.cex-rir-btn.on {
+  color: var(--primary-bright);
+  border-color: rgba(var(--primary-bright-rgb), 0.7);
+  background: rgba(var(--primary-bright-rgb), 0.14);
+  font-weight: 800;
+}
+.cex-rir-ico { font-size: 0.95rem; line-height: 1; }
+/* On a phone the label and three chips don't share a line without orphaning
+   one of them, so give the label its own row and keep the chips together. */
+@media (max-width: 520px) {
+  .cex-rir-lbl { flex: 0 0 100%; margin-right: 0; }
+  .cex-rir-btn { flex: 1 1 0; justify-content: center; }
 }
 /* ===== Pyramid sets: sandy look ===== */
 /* Same sand wash on the coach editor row and the athlete logging card, so a

@@ -693,12 +693,45 @@
   // ≥ the ceiling reps and ≥ the effective weight, the next week's matching
   // exercise (by name) shows +increment. Misses hold steady. Program data is
   // never mutated — the effective target is computed from weeks + logs.
+  //
+  // Three optional layers ride on top of that base ladder, each off by default
+  // so every rule written before them behaves exactly as it always did:
+  //   • the SET leg (rule.addSets) — reps top out, ADD A SET, reps reset, and
+  //     only once the extra sets are spent does the weight move;
+  //   • STALL handling (rule.backoff / rule.stallAfter) — consecutive failed
+  //     weeks are counted, and the coach can have the chain back off a % and
+  //     re-climb instead of sitting at a wall forever;
+  //   • RIR autoregulation — the athlete tags a locked exercise with how much
+  //     was left in the tank. 4+ in reserve makes a hit climb two rungs instead
+  //     of one, and stops a miss counting as a stall (they stopped early, they
+  //     didn't fail).
   // Ceiling sentinel for bodyweight rep ladders with no cap ("∞").
   const PROG_NO_CAP = 999;
   // Timed exercises run the SAME double progression, but the ladder rung is
   // seconds, not reps — so the auto-target climbs by this many seconds per
   // successful week instead of +1. (Reps always climb by 1.)
   const PROG_TIME_STEP = 5;
+  // Set leg: how many extra sets a rule may stack before the weight moves.
+  const PROG_MAX_ADD_SETS = 2;
+  // Stall handling: failed weeks in a row before a back-off fires, and the
+  // back-off sizes the coach can pick from.
+  const PROG_STALL_DEFAULT = 2;
+  const PROG_BACKOFF_PCTS = [10, 15];
+  // Stall count at which the athlete's card starts saying so out loud. One
+  // held week is normal; two in a row is a signal.
+  const PROG_STALL_SHOW = 2;
+  // RIR ("reps in reserve") buckets the athlete can tag a locked exercise with.
+  // At or above PROG_RIR_EASY the set was submaximal: climb faster, and don't
+  // let a miss at that effort count as a strength stall.
+  const PROG_RIR_EASY = 4;
+  const RIR_OPTS = [
+    { v: 0, icon: "😮‍💨", label: "All out",
+      hint: "Nothing left in the tank.", timedHint: "Nothing left. Could not have held it a second longer." },
+    { v: 2, icon: "💪", label: "Hard",
+      hint: "About 2 good reps left.", timedHint: "Could have held it a few seconds longer." },
+    { v: PROG_RIR_EASY, icon: "🙂", label: "Easy",
+      hint: "4 or more reps left. Your targets will climb faster.", timedHint: "Plenty left. Your targets will climb faster." },
+  ];
 
   function progressionRule(ex) {
     const p = ex && ex.progression;
@@ -710,6 +743,14 @@
     // Timed exercises climb the ladder in seconds — same chain, bigger rung.
     const timed = exIsTimed(ex);
     const step = timed ? PROG_TIME_STEP : 1;
+    // The three optional layers. Every one of them is clamped here so the rest
+    // of the engine can trust the numbers without re-checking.
+    const bo = parseInt(p.backoff, 10);
+    const layers = {
+      addSets: Math.max(0, Math.min(PROG_MAX_ADD_SETS, parseInt(p.sets, 10) || 0)),
+      backoff: PROG_BACKOFF_PCTS.includes(bo) ? bo : 0,
+      stallAfter: Math.max(1, parseInt(p.stallAfter, 10) || PROG_STALL_DEFAULT),
+    };
     // Bodyweight: rep ladder. Without an increment it holds at the cap forever.
     // With an increment (and a real cap) it *graduates*: at the cap it starts
     // adding weight and reps reset, then climbs as a normal double-progression.
@@ -717,42 +758,131 @@
       const bwInc = parseFloat(p.inc);
       if (bwInc && ceil !== PROG_NO_CAP) {
         const bwReset = parseInt(p.reset, 10);
-        return { floor, ceil, inc: bwInc, reset: bwReset >= 1 && bwReset < ceil ? bwReset : floor, bw: true, graduate: true, step, timed };
+        return { floor, ceil, inc: bwInc, reset: bwReset >= 1 && bwReset < ceil ? bwReset : floor, bw: true, graduate: true, step, timed, ...layers };
       }
-      return { floor, ceil, inc: 0, bw: true, step, timed };
+      return { floor, ceil, inc: 0, reset: floor, bw: true, step, timed, ...layers };
     }
     const base = parseFloat(ex.currentWeight);
     if (!isFinite(base)) return null;
     // Reps-only (weighted): the weight stays as written — reps climb to the
     // ceiling and hold there. Same ladder as bodyweight, but with a bar.
-    if (p.repsOnly) return { floor, ceil, inc: 0, repsOnly: true, step, timed };
+    if (p.repsOnly) {
+      const roReset = parseInt(p.reset, 10);
+      return { floor, ceil, inc: 0, reset: roReset >= 1 && roReset < ceil ? roReset : floor, repsOnly: true, step, timed, ...layers };
+    }
     const inc = parseFloat(p.inc);
     if (!inc) return null; // weighted needs a base + increment
     // Optional custom rep target after a weight jump ("sometimes the reps
     // need to drop when going up in weight") — defaults to the floor.
     const reset = parseInt(p.reset, 10);
-    return { floor, ceil, inc, reset: reset >= 1 && reset < ceil ? reset : floor, step, timed };
+    return { floor, ceil, inc, reset: reset >= 1 && reset < ceil ? reset : floor, step, timed, ...layers };
   }
 
-  // The athlete's most recent locked log for this exercise copy, evaluated at
-  // that week's effective weight: returns the WORST set's reps when every
-  // prescribed set was done at ≥ the effective weight, else null (no full
-  // locked log at weight = hold, same as a miss).
-  function progressionMinReps(exCopy, effWeight, logsMap) {
+  // The athlete's most recent locked log for this exercise copy, read against
+  // that week's effective weight and effective set count. Returns:
+  //   { logged: false }           — nothing to judge: no locked log, a whole-
+  //                                 exercise skip, or fewer sets logged than
+  //                                 prescribed. The chain holds, and it does
+  //                                 NOT count as a stall. They didn't fail,
+  //                                 they didn't train.
+  //   { logged: true, min: null } — a real attempt that fell short: a skipped
+  //                                 set, or a set under the target weight.
+  //   { logged: true, min: n }    — every set made weight; n is the WORST
+  //                                 set's reps (or seconds, when timed).
+  // `rir` rides along when the athlete tagged how much was left in the tank.
+  function progressionAttempt(exCopy, effWeight, effSets, logsMap) {
+    const none = { logged: false, min: null, rir: null };
     const arr = logsMap?.[exCopy.id];
-    if (!Array.isArray(arr) || !arr.length) return null;
+    if (!Array.isArray(arr) || !arr.length) return none;
     const entry = [...arr].sort((a, b) => String(b.date).localeCompare(String(a.date)))
       .find((l) => l.locked === true && (l.skipped || (Array.isArray(l.sets) && l.sets.length)));
-    if (!entry || entry.skipped) return null; // whole-exercise skip = miss, targets hold
-    const need = parseInt(exCopy.sets, 10) || 0;
-    if (!need || entry.sets.length < need) return null;
+    if (!entry || entry.skipped) return none; // whole-exercise skip: targets hold, no stall
+    const need = effSets || 0;
+    if (!need || entry.sets.length < need) return none;
+    const parsedRir = parseInt(entry.rir, 10);
+    const rir = Number.isFinite(parsedRir) ? parsedRir : null;
     let min = Infinity;
     for (const s of entry.sets.slice(0, need)) {
-      if (s.skipped) return null; // skipped set = miss, targets hold
-      if ((parseFloat(s.weight) || 0) < effWeight - 0.01) return null;
+      if (s.skipped) return { logged: true, min: null, rir }; // skipped set = a real miss
+      if ((parseFloat(s.weight) || 0) < effWeight - 0.01) return { logged: true, min: null, rir };
       min = Math.min(min, parseInt(s.reps, 10) || 0);
     }
-    return min;
+    return { logged: true, min, rir };
+  }
+
+  // Stall reset: hand back the earned weight at the coach's %, rounded down to
+  // a real increment, and re-climb from the rep floor. The WRITTEN weight is a
+  // hard floor — the chain never deloads below what the coach actually
+  // programmed, so a lifter stuck at the starting number keeps counting stalls
+  // and stays flagged rather than spiralling downward on its own.
+  function progressionBackoff(st, rule, base) {
+    const unit = rule.inc || 5;
+    const cut = Math.max(base, Math.floor((st.weight * (1 - rule.backoff / 100)) / unit) * unit);
+    const gaveBack = cut < st.weight - 0.01 || st.reps > rule.floor || st.extra > 0;
+    st.weight = cut;
+    st.reps = rule.floor;
+    st.extra = 0;
+    if (!gaveBack) return; // nothing left to give back — keep the stall flag up
+    st.stall = 0;
+    st.deloads += 1;
+    st.last = "deload";
+  }
+
+  // One week of ladder movement, shared by the bodyweight and weighted chains.
+  // `st` is the running ladder state and is mutated in place; `base` is the
+  // written weight the back-off may never cut below.
+  function progressionStep(st, rule, att, base) {
+    if (!att.logged) { st.last = "rest"; return; } // nothing to judge
+    const easy = att.rir != null && att.rir >= PROG_RIR_EASY;
+    if (att.min == null || att.min < st.reps) {
+      // A miss with 4+ left in the tank isn't a strength failure — they stopped
+      // early. Hold the target, but don't hold it against them.
+      if (easy) { st.last = "hold"; return; }
+      st.stall += 1;
+      st.last = "miss";
+      if (rule.backoff && st.stall >= rule.stallAfter) progressionBackoff(st, rule, base);
+      return;
+    }
+    st.stall = 0;
+    // Left plenty in the tank on a hit → take two rungs instead of one.
+    const boost = easy ? 2 : 1;
+    if (att.min < rule.ceil) {
+      st.reps = Math.min(att.min + rule.step * boost, rule.ceil);
+      st.last = "climb";
+      return;
+    }
+    // Topped out. Spend the set leg first, then the weight leg.
+    if (st.extra < rule.addSets) { st.extra += 1; st.reps = rule.reset; st.last = "set"; return; }
+    // No weight leg to spend (reps-only, or bodyweight that never graduates):
+    // the ladder just holds at its ceiling.
+    if (rule.repsOnly || (rule.bw && !rule.graduate)) { st.reps = rule.ceil; st.last = "cap"; return; }
+    st.weight += rule.inc * boost;
+    st.reps = rule.reset;
+    st.extra = 0;
+    st.earned += boost;
+    st.last = "jump";
+  }
+
+  function newProgressionState(weight, reps) {
+    return { weight, reps, extra: 0, stall: 0, earned: 0, deloads: 0, last: null };
+  }
+
+  function progressionResult(st, rule, writtenSets, base) {
+    return {
+      weight: Math.round(st.weight * 100) / 100,
+      reps: st.reps,
+      // `earned` counts successful weight jumps; `gained` is the lb actually
+      // standing above what the coach wrote. They diverge once a back-off hands
+      // some of it back, and it's `gained` that the athlete's chip must show.
+      earned: st.earned,
+      gained: Math.round((st.weight - base) * 100) / 100,
+      extra: st.extra,
+      sets: writtenSets ? writtenSets + st.extra : 0,
+      stall: st.stall,
+      deloads: st.deloads,
+      justDeloaded: st.last === "deload",
+      ...rule,
+    };
   }
 
   // Walk this exercise's copies (matched by name) in program order up to the
@@ -763,7 +893,8 @@
   //   - miss (or no locked log) → hold everything.
   // A hand-edited written weight (different from the previous copy's) re-bases
   // the chain, so the coach can deload / jump mid-program by typing a number.
-  // Returns { weight, reps, earned, floor, ceil, inc } or null when no rule.
+  // Returns { weight, reps, sets, earned, extra, stall, deloads, justDeloaded,
+  // floor, ceil, inc, ... } or null when the exercise has no rule.
   function effectiveProgression(weeks, ex, logsMap) {
     const rule = progressionRule(ex);
     if (!rule) return null;
@@ -777,7 +908,8 @@
       // written weight stays "BW". A hand-edited written REPS value re-bases the
       // rep floor (only before graduating), mirroring the weighted chain's
       // re-base on a written-weight edit.
-      let reps = rule.floor, weight = 0, earned = 0, prevFloor = null;
+      const st = newProgressionState(0, rule.floor);
+      let prevFloor = null;
       for (const w of weeks || []) {
         for (const d of w.days || []) {
           for (const e of d.exercises || []) {
@@ -785,37 +917,40 @@
             if (e.currentWeight !== "BW") continue; // ladder only chains BW copies
             const f = parseInt(e.currentReps, 10);
             if (!f) continue;
-            if (weight === 0 && (prevFloor === null || f !== prevFloor)) reps = f;
-            prevFloor = f;
-            if (e.id === ex.id) {
-              return weight > 0
-                ? { weight: Math.round(weight * 100) / 100, reps, earned, ...rule, bw: false }
-                : { weight: null, reps, earned, ...rule };
+            if (st.weight === 0 && (prevFloor === null || f !== prevFloor)) {
+              st.reps = f; st.extra = 0; st.stall = 0; st.last = null;
             }
-            const min = progressionMinReps(e, weight, logsMap);
-            if (min == null || min < reps) continue; // miss / no log → hold
-            if (rule.graduate && min >= rule.ceil) { weight += rule.inc; reps = rule.reset; earned += 1; }
-            else reps = Math.min(min + rule.step, rule.ceil);
+            prevFloor = f;
+            const wrote = parseInt(e.sets, 10) || 0;
+            if (e.id === ex.id) {
+              const res = progressionResult(st, rule, wrote, 0);
+              return st.weight > 0 ? { ...res, bw: false } : { ...res, weight: null };
+            }
+            progressionStep(st, rule, progressionAttempt(e, st.weight, wrote + st.extra, logsMap), 0);
           }
         }
       }
       return null;
     }
-    let eff = null, reps = rule.floor, earned = 0, prevWritten = null;
+    const st = newProgressionState(0, rule.floor);
+    let base = 0, prevWritten = null;
     for (const w of weeks || []) {
       for (const d of w.days || []) {
         for (const e of d.exercises || []) {
           if (String(e.name || "").trim().toLowerCase() !== name) continue;
           const written = parseFloat(e.currentWeight);
           if (!isFinite(written)) continue; // skip BW/blank copies
-          if (prevWritten === null || written !== prevWritten) { eff = written; reps = rule.floor; earned = 0; }
+          // A hand-edited written weight re-bases the whole chain, so the coach
+          // can deload / jump mid-program by typing a number.
+          if (prevWritten === null || written !== prevWritten) {
+            base = written;
+            st.weight = written; st.reps = rule.floor; st.extra = 0;
+            st.stall = 0; st.earned = 0; st.deloads = 0; st.last = null;
+          }
           prevWritten = written;
-          if (e.id === ex.id) return { weight: Math.round(eff * 100) / 100, reps, earned, ...rule };
-          const min = progressionMinReps(e, eff, logsMap);
-          if (min == null || min < reps) continue; // miss / no log → hold
-          // Reps-only rules never jump weight — the ladder just tops out.
-          if (min >= rule.ceil && !rule.repsOnly) { eff += rule.inc; reps = rule.reset; earned += 1; }
-          else reps = Math.min(min + rule.step, rule.ceil);
+          const wrote = parseInt(e.sets, 10) || 0;
+          if (e.id === ex.id) return progressionResult(st, rule, wrote, base);
+          progressionStep(st, rule, progressionAttempt(e, st.weight, wrote + st.extra, logsMap), base);
         }
       }
     }
@@ -870,6 +1005,16 @@
     const floor = parseInt(ex.currentReps, 10) || 0;
     const isTimed = exIsTimed(ex);
     const isBW = ex.currentWeight === "BW";
+    // The ceiling / increment buttons rebuild ex.progression from scratch.
+    // These knobs are independent of both, so they ride along instead of being
+    // silently wiped every time the coach retunes the ladder. (progressionRule
+    // re-clamps `reset` against the new ceiling, so carrying it is safe.)
+    const carry = (p) => ({
+      ...(p.reset ? { reset: p.reset } : {}),
+      ...(p.sets ? { sets: p.sets } : {}),
+      ...(p.backoff ? { backoff: p.backoff } : {}),
+      ...(p.stallAfter ? { stallAfter: p.stallAfter } : {}),
+    });
     const render = () => {
       pop.innerHTML = "";
       const p = ex.progression || {};
@@ -895,7 +1040,7 @@
               : `Reps climb from ${floor}. When every set hits the ceiling, next week adds weight and reps reset to ${floor}. Misses hold steady.`;
       pop.appendChild(hint);
 
-      const section = (label, values, cur, fmt, onPick) => {
+      const section = (label, values, cur, fmt, onPick, off = false) => {
         const lbl = document.createElement("div");
         lbl.className = "prog-pop-lbl";
         lbl.textContent = label;
@@ -907,11 +1052,17 @@
           b.type = "button";
           b.className = "prog-opt" + (cur === v ? " on" : "");
           b.textContent = fmt(v);
-          b.disabled = !floor;
+          b.disabled = !floor || off;
           b.addEventListener("click", () => onPick(v));
           row.appendChild(b);
         });
         pop.appendChild(row);
+      };
+      const subHint = (text) => {
+        const el = document.createElement("p");
+        el.className = "prog-pop-hint";
+        el.textContent = text;
+        pop.appendChild(el);
       };
 
       if (isTimed) {
@@ -921,12 +1072,12 @@
         // the "add weight" leg fires — progressionRule() sorts that out.
         section("Time ceiling", PROG_TIME_CEIL_VALUES.filter((v) => v > floor), parseInt(p.ceil, 10) || null,
           (v) => `${floor || "?"}→${v}s`,
-          (v) => { ex.progression = p.repsOnly ? { ceil: v, repsOnly: true } : { ceil: v, inc: parseFloat(p.inc) || 5 }; saveTrainer(); onChange(); render(); });
+          (v) => { ex.progression = p.repsOnly ? { ceil: v, repsOnly: true, ...carry(p) } : { ceil: v, inc: parseFloat(p.inc) || 5, ...carry(p) }; saveTrainer(); onChange(); render(); });
         section("Then add", [...PROG_INC_VALUES, PROG_REPS_ONLY], p.repsOnly ? PROG_REPS_ONLY : (parseFloat(p.inc) || null),
           (v) => (v === PROG_REPS_ONLY ? "Time only" : `+${v} lb`),
           (v) => {
             const ceil = parseInt(p.ceil, 10) || PROG_TIME_CEIL_VALUES.find((c) => c > floor) || (floor + 15);
-            ex.progression = v === PROG_REPS_ONLY ? { ceil, repsOnly: true } : { ceil, inc: v, ...(p.reset ? { reset: p.reset } : {}) };
+            ex.progression = v === PROG_REPS_ONLY ? { ceil, repsOnly: true, ...carry(p) } : { ceil, inc: v, ...carry(p) };
             saveTrainer(); onChange(); render();
           });
         // Optional: custom hold target (seconds) after a weight jump — defaults
@@ -959,8 +1110,8 @@
           (v) => {
             // ∞ can't graduate; a finite cap keeps any chosen weight increment.
             ex.progression = v === PROG_NO_CAP
-              ? { ceil: v }
-              : { ceil: v, ...(p.inc ? { inc: p.inc, ...(p.reset ? { reset: p.reset } : {}) } : {}) };
+              ? { ceil: v, ...carry(p) }
+              : { ceil: v, ...(p.inc ? { inc: p.inc } : {}), ...carry(p) };
             saveTrainer(); onChange(); render();
           });
         // "Then add weight" — off = bodyweight forever; a weight = graduate at the
@@ -972,8 +1123,8 @@
             let ceil = parseInt(p.ceil, 10);
             if (!ceil || ceil === PROG_NO_CAP) ceil = PROG_BW_CEIL_VALUES.find((c) => c > floor) || floor + 7;
             ex.progression = v === PROG_REPS_ONLY
-              ? { ceil }
-              : { ceil, inc: v, ...(p.reset && p.reset < ceil ? { reset: p.reset } : {}) };
+              ? { ceil, ...carry(p) }
+              : { ceil, inc: v, ...carry(p) };
             saveTrainer(); onChange(); render();
           });
         // Optional: reps after the weight jump (defaults to the floor). Only
@@ -1001,13 +1152,13 @@
       } else {
         section("Rep ceiling", PROG_CEIL_VALUES.filter((v) => v > floor), parseInt(p.ceil, 10) || null,
           (v) => `${floor || "?"}–${v}`,
-          (v) => { ex.progression = p.repsOnly ? { ceil: v, repsOnly: true } : { ceil: v, inc: parseFloat(p.inc) || 5 }; saveTrainer(); onChange(); render(); });
+          (v) => { ex.progression = p.repsOnly ? { ceil: v, repsOnly: true, ...carry(p) } : { ceil: v, inc: parseFloat(p.inc) || 5, ...carry(p) }; saveTrainer(); onChange(); render(); });
         // "Reps only" rides the increment row: same ladder, no weight leg.
         section("Then add", [...PROG_INC_VALUES, PROG_REPS_ONLY], p.repsOnly ? PROG_REPS_ONLY : (parseFloat(p.inc) || null),
           (v) => (v === PROG_REPS_ONLY ? "Reps only" : `+${v} lb`),
           (v) => {
             const ceil = parseInt(p.ceil, 10) || (floor + 4);
-            ex.progression = v === PROG_REPS_ONLY ? { ceil, repsOnly: true } : { ceil, inc: v, ...(p.reset ? { reset: p.reset } : {}) };
+            ex.progression = v === PROG_REPS_ONLY ? { ceil, repsOnly: true, ...carry(p) } : { ceil, inc: v, ...carry(p) };
             saveTrainer(); onChange(); render();
           });
 
@@ -1034,6 +1185,72 @@
         });
         pop.appendChild(rInp);
       }
+
+      // ── Shared layers ──
+      // The set leg and stall handling sit on top of whichever ladder was built
+      // above, so they're written once here instead of three times inside the
+      // branches. Both are off by default: an untouched rule behaves exactly as
+      // it did before these existed.
+      const hasRule = !!floor && !!parseInt(p.ceil, 10);
+      const resetTo = parseInt(p.reset, 10) || floor;
+      // The ladder's top rung reads differently for a hold than for reps, and
+      // both halves of the sentence have to agree, so keep them as phrases.
+      const topsOut = isTimed ? "The hold tops out" : "Reps top out";
+      const resetsTo = isTimed ? `the hold resets to ${resetTo}s` : `reps reset to ${resetTo}`;
+
+      const sub = document.createElement("div");
+      sub.className = "prog-pop-sub";
+      sub.textContent = "Autoregulation";
+      pop.appendChild(sub);
+
+      const curSets = Math.max(0, Math.min(PROG_MAX_ADD_SETS, parseInt(p.sets, 10) || 0));
+      section("Add sets before the weight moves", [0, 1, 2], curSets,
+        (v) => (v === 0 ? "None" : `+${v} set${v > 1 ? "s" : ""}`),
+        (v) => {
+          if (!ex.progression) return;
+          if (v) ex.progression.sets = v; else delete ex.progression.sets;
+          saveTrainer(); onChange(); render();
+        }, !hasRule);
+      subHint(!curSets
+        ? `Off: ${topsOut.toLowerCase()} and the weight moves on the next hit.`
+        : `${topsOut}, a set gets added, and ${resetsTo}. The weight only moves once all ${curSets} extra ${curSets > 1 ? "sets are" : "set is"} in.`);
+
+      const curBackoff = PROG_BACKOFF_PCTS.includes(parseInt(p.backoff, 10)) ? parseInt(p.backoff, 10) : 0;
+      const curStallAfter = Math.max(1, parseInt(p.stallAfter, 10) || PROG_STALL_DEFAULT);
+      section("If they stall", [0, ...PROG_BACKOFF_PCTS], curBackoff,
+        (v) => (v === 0 ? "Hold" : `Back off ${v}%`),
+        (v) => {
+          if (!ex.progression) return;
+          if (v) ex.progression.backoff = v; else delete ex.progression.backoff;
+          saveTrainer(); onChange(); render();
+        }, !hasRule);
+
+      const stallLbl = document.createElement("div");
+      stallLbl.className = "prog-pop-lbl";
+      stallLbl.textContent = "Missed weeks before it fires";
+      pop.appendChild(stallLbl);
+      const stallInp = document.createElement("input");
+      stallInp.type = "number";
+      stallInp.min = "1";
+      stallInp.max = "6";
+      stallInp.className = "prog-reset-input";
+      stallInp.placeholder = String(PROG_STALL_DEFAULT);
+      stallInp.value = p.stallAfter || "";
+      stallInp.disabled = !hasRule || !curBackoff;
+      stallInp.addEventListener("click", (e) => e.stopPropagation());
+      stallInp.addEventListener("change", () => {
+        if (!ex.progression) return;
+        const v = parseInt(stallInp.value, 10);
+        if (v >= 1 && v <= 6) ex.progression.stallAfter = v;
+        else { delete ex.progression.stallAfter; stallInp.value = ""; }
+        saveTrainer(); onChange(); render();
+      });
+      pop.appendChild(stallInp);
+      subHint(!curBackoff
+        ? "Off: a missed week holds the target where it is. Their card still calls out a lift that has been stuck two weeks or more."
+        : `After ${curStallAfter} missed weeks in a row the target drops ${curBackoff}% and re-climbs from ${floor || "the floor"}${isTimed ? "s" : ""}. It never drops below the weight you wrote.`);
+
+      subHint("Athletes can tag how much was left in the tank. Four or more reps in reserve climbs the target two rungs instead of one, and keeps a missed week from counting as a stall.");
 
       const off = document.createElement("button");
       off.type = "button";
@@ -8293,11 +8510,16 @@
       : "Auto-progression: when every set hits the rep ceiling, next week's target adds weight";
     const refreshProgBtn = () => {
       const r = progressionRule(ex);
-      progBtn.textContent = !r ? "＋📈"
+      const ladder = !r ? "＋📈"
         : r.timed ? `⏱${r.floor}→${r.ceil}s${r.repsOnly ? "" : ` +${r.inc}${r.reset !== r.floor ? "→" + r.reset + "s" : ""}`}`
         : r.bw ? `📈${r.floor}→${r.ceil === PROG_NO_CAP ? "∞" : r.ceil}${r.graduate ? ` +${r.inc}` : ""}`
         : r.repsOnly ? `📈${r.floor}→${r.ceil} reps`
         : `📈${r.floor}–${r.ceil} +${r.inc}${r.reset !== r.floor ? "→" + r.reset : ""}`;
+      // The autoregulation layers ride as short suffixes so the whole rule is
+      // readable without opening the picker: ⊕ = extra sets, ↓ = stall back-off.
+      progBtn.textContent = ladder
+        + (r?.addSets ? ` ⊕${r.addSets}` : "")
+        + (r?.backoff ? ` ↓${r.backoff}%` : "");
       progBtn.classList.toggle("empty", !r);
     };
     refreshProgBtn();
@@ -14456,10 +14678,12 @@
     if (!l.sets || l.sets.length < numSets) return false;
     return l.sets.every((s) => s.reps && (s.weight || ex.currentWeight === "BW"));
   }
-  function hasAnyLog(ex) {
+  // `setsOverride` lets the caller pass the EFFECTIVE set count (written plus
+  // any earned by the progression set leg) so a short log doesn't read as done.
+  function hasAnyLog(ex, setsOverride) {
     const logs = state.clientData.progress?.exerciseLogs?.[ex.id];
     if (!logs || !logs.length) return false;
-    const numSets = parseInt(ex.sets) || 0;
+    const numSets = setsOverride || parseInt(ex.sets) || 0;
     if (!numSets) return logs.length > 0;
     return logs.some((l) => isLogEntryLocked(l, ex, numSets));
   }
@@ -14686,6 +14910,10 @@
     // Auto-progression: effective target computed from prior weeks' locked
     // logs (chain of earned increments). Null when the exercise has no rule.
     const prog = pyrW ? null : effectiveProgression(state.clientData.program?.client?.weeks, ex, state.clientData.progress?.exerciseLogs);
+    // Effective set count: the set leg (📈 "add sets before the weight moves")
+    // stacks earned sets on top of what the coach wrote. Everything downstream
+    // that cares how many rows this card has reads THIS, not ex.sets.
+    const effSets = (prog && prog.sets) || parseInt(ex.sets, 10) || 0;
     // True when this exercise logs reps only (no weight): a plain BW lift, or a
     // BW-graduating lift still in its bodyweight phase. Once it graduates
     // (prog.bw === false) the athlete logs real weight, so steppers/seeds return.
@@ -14721,7 +14949,7 @@
     const rxEl = document.createElement("div");
     rxEl.className = "cex-rx";
     const rxParts = [];
-    if (ex.sets) rxParts.push(ex.sets + " sets");
+    if (effSets) rxParts.push(effSets + " sets");
     if (pyrW) {
       // The whole ladder when it fits, first→last when it doesn't.
       const s = usesDumbbellPair(ex) ? "s" : " lb";
@@ -14742,17 +14970,24 @@
     const rxMain = document.createElement("span");
     rxMain.className = "cex-rx-main";
     rxMain.textContent = rxParts.join(" · ") || "—";
-    if (prog) rxMain.title = prog.timed
-      ? ((prog.repsOnly || (prog.bw && !prog.graduate))
-          ? `Time ladder ${prog.floor}→${prog.ceil}s: hold the target on every set and next week adds ${prog.step}s, up to ${prog.ceil}s. No weight added.`
-          : `Timed double progression ${prog.floor}→${prog.ceil}s: hold the target on every set to add ${prog.step}s next week; hold ${prog.ceil}s on all sets and the weight goes up ${prog.inc} lb (time resets to ${prog.reset}s).`)
-      : prog.bw
-      ? (prog.graduate
-          ? `Bodyweight rep ladder: hit every set at the target and next week asks for your worst set + 1, up to ${prog.ceil}. Hit ${prog.ceil} on all sets and it graduates — add ${prog.inc} lb, reps reset to ${prog.reset}.`
-          : `Rep ladder: hit every set at the target and next week asks for your worst set + 1${prog.ceil === PROG_NO_CAP ? "" : `, up to ${prog.ceil}`}. No weight added.`)
-      : prog.repsOnly
-        ? `Rep ladder ${prog.floor}→${prog.ceil}: hit every set at the target and next week asks for your worst set + 1, up to ${prog.ceil}. The weight stays at ${prog.weight} lb.`
-        : `Double progression ${prog.floor}–${prog.ceil}: hit every set at the target to move up a rep next week; hit ${prog.ceil} on all sets and the weight goes up ${prog.inc} lb (reps drop to ${prog.reset}).`;
+    if (prog) {
+      const ladderTip = prog.timed
+        ? ((prog.repsOnly || (prog.bw && !prog.graduate))
+            ? `Time ladder ${prog.floor}→${prog.ceil}s: hold the target on every set and next week adds ${prog.step}s, up to ${prog.ceil}s. No weight added.`
+            : `Timed double progression ${prog.floor}→${prog.ceil}s: hold the target on every set to add ${prog.step}s next week; hold ${prog.ceil}s on all sets and the weight goes up ${prog.inc} lb (time resets to ${prog.reset}s).`)
+        : prog.bw
+        ? (prog.graduate
+            ? `Bodyweight rep ladder: hit every set at the target and next week asks for your worst set + 1, up to ${prog.ceil}. Hit ${prog.ceil} on all sets and it graduates — add ${prog.inc} lb, reps reset to ${prog.reset}.`
+            : `Rep ladder: hit every set at the target and next week asks for your worst set + 1${prog.ceil === PROG_NO_CAP ? "" : `, up to ${prog.ceil}`}. No weight added.`)
+        : prog.repsOnly
+          ? `Rep ladder ${prog.floor}→${prog.ceil}: hit every set at the target and next week asks for your worst set + 1, up to ${prog.ceil}. The weight stays at ${prog.weight} lb.`
+          : `Double progression ${prog.floor}–${prog.ceil}: hit every set at the target to move up a rep next week; hit ${prog.ceil} on all sets and the weight goes up ${prog.inc} lb (reps drop to ${prog.reset}).`;
+      // The optional layers only get explained when the coach turned them on.
+      const extraTips = [];
+      if (prog.addSets) extraTips.push(`At the top of the ladder a set gets added first (up to ${prog.addSets} extra) before the weight moves.`);
+      if (prog.backoff) extraTips.push(`After ${prog.stallAfter} missed weeks in a row the target backs off ${prog.backoff}% and re-climbs.`);
+      rxMain.title = [ladderTip, ...extraTips].join(" ");
+    }
     rxEl.appendChild(rxMain);
 
     if (pyrW) {
@@ -14763,11 +14998,41 @@
       rxEl.appendChild(chip);
     }
 
-    if (prog && prog.earned > 0) {
+    // What the ladder has actually put on the bar above what the coach wrote.
+    // Read from the weight itself, not the jump count, so it stays honest after
+    // a stall back-off has handed some of it back.
+    if (prog && prog.gained > 0) {
       const chip = document.createElement("span");
       chip.className = "cex-prog-chip";
-      chip.textContent = `📈 +${Math.round(prog.earned * prog.inc * 100) / 100} lb`;
+      chip.textContent = `📈 +${prog.gained} lb`;
       chip.title = "Auto-progression: you hit the rep ceiling on every set, so the target went up";
+      rxEl.appendChild(chip);
+    }
+
+    // Set leg: sets earned on top of what the coach wrote.
+    if (prog && prog.extra > 0) {
+      const chip = document.createElement("span");
+      chip.className = "cex-prog-chip cex-setleg-chip";
+      chip.textContent = `⊕ +${prog.extra} set${prog.extra > 1 ? "s" : ""}`;
+      chip.title = `You topped out the ${prog.timed ? "hold" : "reps"}, so the volume went up before the weight does.`;
+      rxEl.appendChild(chip);
+    }
+
+    // Stall handling: either the back-off just fired, or the target has been
+    // sitting still long enough to say so out loud.
+    if (prog && prog.justDeloaded) {
+      const chip = document.createElement("span");
+      chip.className = "cex-deload-chip";
+      chip.textContent = `↓ Backed off ${prog.backoff}%`;
+      chip.title = "The target got stuck, so it stepped back to give you a running start. Climb it again.";
+      rxEl.appendChild(chip);
+    } else if (prog && prog.stall >= PROG_STALL_SHOW) {
+      const chip = document.createElement("span");
+      chip.className = "cex-stall-chip";
+      chip.textContent = `⚠ Stuck ${prog.stall} weeks`;
+      chip.title = prog.backoff
+        ? `Same target ${prog.stall} weeks running. It backs off ${prog.backoff}% after ${prog.stallAfter}.`
+        : `Same target ${prog.stall} weeks running. Talk to your coach if it stays there.`;
       rxEl.appendChild(chip);
     }
 
@@ -14848,7 +15113,7 @@
     const logForm = document.createElement("div");
     logForm.className = "cex-log-form";
 
-    const numSets = parseInt(ex.sets) || 0;
+    const numSets = effSets;
     // With a progression rule, placeholders/seeds use the computed target.
     // DB-pair exercises read plural ("50s") in placeholders, matching the rx.
     const pairS = usesDumbbellPair(ex) ? "s" : "";
@@ -14870,7 +15135,7 @@
     // Locked when this date's entry is locked — or when the exercise reads
     // "done" from a session on another date (the card shows a green ✓ from
     // hasAnyLog, so the control must be Edit, not a dead-end lock button).
-    let isLocked = isLogEntryLocked(todayLog, ex, numSets) || (!todayLog && hasAnyLog(ex));
+    let isLocked = isLogEntryLocked(todayLog, ex, numSets) || (!todayLog && hasAnyLog(ex, numSets));
 
     // Prescribed reps/weight seed the per-field steppers when a field is empty.
     const prescribedReps = prog ? prog.reps : parseInt(ex.currentReps, 10);
@@ -15114,6 +15379,39 @@
       return arr.some((w) => w.weight || w.reps) ? { warmups: arr } : {};
     };
 
+    // ── Left in the tank (RIR) ──
+    // Only rendered on exercises the coach put a progression rule on, because
+    // that's the one place the answer changes anything. Always optional: it
+    // never blocks locking in, and skipping it leaves the ladder behaving
+    // exactly as it did before this existed. Tapping the picked chip clears it.
+    let rirValue = Number.isFinite(parseInt(todayLog?.rir, 10)) ? parseInt(todayLog.rir, 10) : null;
+    const rirBtns = [];
+    const rirRow = document.createElement("div");
+    rirRow.className = "cex-rir-row";
+    if (prog) {
+      const rirLbl = document.createElement("span");
+      rirLbl.className = "cex-rir-lbl";
+      rirLbl.textContent = isTimed ? "Left in the tank?" : "Reps left in the tank?";
+      rirRow.appendChild(rirLbl);
+      RIR_OPTS.forEach((o) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "cex-rir-btn" + (rirValue === o.v ? " on" : "");
+        b.innerHTML = `<span class="cex-rir-ico">${o.icon}</span><span>${escapeHtml(o.label)}</span>`;
+        b.title = isTimed ? o.timedHint : o.hint;
+        b.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (isLocked) return;
+          rirValue = rirValue === o.v ? null : o.v;
+          rirBtns.forEach((r) => r.el.classList.toggle("on", rirValue === r.v));
+          autoSave();
+        });
+        rirBtns.push({ el: b, v: o.v });
+        rirRow.appendChild(b);
+      });
+    }
+    const collectRir = () => (rirValue == null ? {} : { rir: rirValue });
+
     // Auto-save: debounced 800ms after last keystroke, saves a draft entry.
     // Drafts never lock in the green checkmark — only the Lock button does.
     let _ast = null;
@@ -15148,7 +15446,7 @@
           state.clientData.progress.exerciseLogs[ex.id] = [];
         const exLogs = state.clientData.progress.exerciseLogs[ex.id];
         const idx = exLogs.findIndex(l => l.date === logDate);
-        const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets, locked: false, ...collectWarmups(), ...collectFinishers() };
+        const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets, locked: false, ...collectWarmups(), ...collectFinishers(), ...collectRir() };
         if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
         saveClient();
         renderAthleteCalendar();
@@ -15310,6 +15608,7 @@
       warmupInputs.forEach(({ wt, rp }) => { wt.readOnly = readonly; rp.readOnly = readonly; });
       finisherInputs.forEach(({ rp }) => { rp.readOnly = readonly; });
       setSteppers.forEach((b) => { b.disabled = readonly; });
+      rirBtns.forEach((r) => { r.el.disabled = readonly; });
     };
     const refreshLockUI = () => {
       hide(isLocked ? lockBtn : editBtn);
@@ -15352,7 +15651,7 @@
         state.clientData.progress.exerciseLogs[ex.id] = [];
       const exLogs = state.clientData.progress.exerciseLogs[ex.id];
       const idx = exLogs.findIndex(l => l.date === logDate);
-      const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets, locked: true, ...collectWarmups(), ...collectFinishers() };
+      const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets, locked: true, ...collectWarmups(), ...collectFinishers(), ...collectRir() };
       if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
       detectAndCelebratePR(ex, entry, wrapper);
       saveClient();
@@ -15452,6 +15751,7 @@
 
     logForm.appendChild(setTable);
     if (finisherInputs.length) logForm.appendChild(finisherWrap);
+    if (prog) logForm.appendChild(rirRow);
     } // end else (numSets > 0)
     panel.appendChild(logForm);
 
