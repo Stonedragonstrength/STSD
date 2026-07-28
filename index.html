@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=prog3" />
+  <link rel="stylesheet" href="styles.css?v=prog6" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -832,11 +832,14 @@
                a live count, and one slim action on the right. -->
           <div id="workout-week-head"></div>
           <div class="workout-grid" id="workout-day-grid"></div>
+          <!-- The chip bar switches between these three: a program week's days
+               (above), the coach's dated one-offs, and the athlete's own
+               sessions. Only the selected one renders. -->
+          <div id="oneoff-athlete-container"></div>
+          <div id="ownday-athlete-container"></div>
           <!-- Cardio: a permanent home on the training page, following the same
                week you're looking at. Built by renderAthleteCardio(). -->
           <section class="cardio-block" id="cardio-athlete-block"></section>
-          <div id="oneoff-athlete-container"></div>
-          <div id="ownday-athlete-container"></div>
           <div id="client-archive-container"></div>
         </div>
         <!-- Detail: shown when a day is selected -->
@@ -1100,7 +1103,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=horm2"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=prog3"></script>
+  <script src="app.js?v=prog6"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

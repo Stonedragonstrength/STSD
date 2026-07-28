@@ -9924,3 +9924,50 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
   .cd-stats { gap: 0.7em; }
   .wp-head-sub { max-width: 10em; }
 }
+
+
+/* ---- Session pills on the week bar ----
+   The two buckets that aren't program weeks (the coach's dated one-offs, and
+   the athlete's own sessions) ride on the end of the same segmented bar, so
+   "what am I looking at" stays one control. A hairline separates them from the
+   weeks; each keeps its section's accent colour when idle and takes the same
+   filled treatment as a week chip when active. */
+.week-chip-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 0.25em 0.3em;
+  background: var(--border);
+  flex: none;
+}
+.week-chip-special {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4em;
+  padding-left: 0.7em;
+  padding-right: 0.7em;
+}
+.week-chip-special .chip-ico { font-size: 0.9rem; line-height: 1; }
+.week-chip-special .chip-n {
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0.2em 0.4em;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.09);
+  color: inherit;
+}
+.week-chip-special.is-coach { color: #fbbf24; }
+.week-chip-special.is-own { color: #fb7185; }
+.week-chip-special.is-coach:hover { color: #fcd34d; }
+.week-chip-special.is-own:hover { color: #fda4af; }
+.week-chip-special.is-coach.active {
+  background: linear-gradient(180deg, #fbbf24, #d97706);
+  color: #291a02;
+  box-shadow: 0 3px 10px rgba(245, 158, 11, 0.35);
+}
+.week-chip-special.is-own.active {
+  background: linear-gradient(180deg, #fb7185, #e11d48);
+  color: #2b0710;
+  box-shadow: 0 3px 10px rgba(244, 63, 94, 0.35);
+}
+.week-chip-special.active .chip-n { background: rgba(0, 0, 0, 0.16); }

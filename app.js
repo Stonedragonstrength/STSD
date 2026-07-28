@@ -12147,8 +12147,9 @@
     const client = state.clientData.program?.client;
     const logs = cardioLogsAll(progress);
     const mode = cardioRangeMode();
-    // Week follows the program week you're looking at; the wider views don't.
-    const anchor = mode === "week"
+    // Week follows the program week you're looking at; the wider views don't,
+    // and neither do the session buckets, which aren't tied to a week at all.
+    const anchor = mode === "week" && pickerBucket() === "week"
       ? weekAnchorDate(client, progress, state.workoutView?.weekId)
       : todayISO();
     const buckets = cardioBuckets(mode, anchor);
@@ -13573,6 +13574,14 @@
     container.appendChild(section);
   }
 
+  // Which of the picker's three views is showing. "all" is the no-program
+  // case: with no weeks to switch between, everything the athlete has is
+  // listed at once rather than hidden behind a chip.
+  function pickerBucket() {
+    if (!state.clientData.program?.client?.weeks?.length) return "all";
+    return state.pickerBucket === "own" || state.pickerBucket === "coach" ? state.pickerBucket : "week";
+  }
+
   function renderWorkoutPickerUI() {
     const prog = state.clientData.program;
     if (!prog?.client?.weeks?.length) return;
@@ -13590,18 +13599,21 @@
       state.workoutView.weekId = pickerWeeks[0]?.id || null;
     }
 
-    // Week chips
+    // Week chips. Only one chip on the bar reads as selected, so a week goes
+    // quiet while one of the session pills is open.
+    const onWeeks = pickerBucket() === "week";
     chips.innerHTML = "";
     pickerWeeks.forEach((week) => {
       const chip = document.createElement("button");
       chip.className = "week-chip";
-      if (week.id === state.workoutView.weekId) chip.classList.add("active");
+      if (onWeeks && week.id === state.workoutView.weekId) chip.classList.add("active");
       if (week.phaseLabel) chip.classList.add("has-phase");
       chip.innerHTML = `
         ${week.phaseLabel ? `<span class="chip-phase">${escapeHtml(week.phaseLabel)}</span>` : ""}
         <span class="chip-label">${escapeHtml(week.label)}</span>
       `;
       chip.addEventListener("click", () => {
+        state.pickerBucket = "week";
         state.workoutView.weekId = week.id;
         // Remember the athlete's week so reopening the program returns here.
         state.clientData.selectedWeekId = week.id;
@@ -13610,6 +13622,37 @@
       });
       chips.appendChild(chip);
     });
+
+    // Sessions that aren't part of a week get their own pills on the end of the
+    // same bar, because "what am I looking at" is one question, not two. The
+    // coach pill only appears when there's something in it; "Yours" is always
+    // there, since that view is where an athlete builds their first one.
+    const bucket = pickerBucket();
+    const coachN = (prog.client.oneOffDays || []).length;
+    const ownN = athleteOwnDays(state.clientData.progress).length;
+    const specialChip = (kind, icon, label, n) => {
+      const b = document.createElement("button");
+      b.className = `week-chip week-chip-special is-${kind}${bucket === kind ? " active" : ""}`;
+      b.title = kind === "own" ? "Sessions you built yourself" : "Dated sessions your coach set up";
+      b.innerHTML = `<span class="chip-ico">${icon}</span><span class="chip-label">${escapeHtml(label)}</span>` +
+        (n ? `<span class="chip-n">${n}</span>` : "");
+      b.addEventListener("click", () => { state.pickerBucket = kind; renderWorkoutPickerUI(); });
+      return b;
+    };
+    chips.appendChild(Object.assign(document.createElement("span"), { className: "week-chip-sep" }));
+    if (coachN) chips.appendChild(specialChip("coach", "🐉", "Coach", coachN));
+    chips.appendChild(specialChip("own", "🔥", "Yours", ownN));
+
+    // Looking at one of those buckets: the week's day cards step aside.
+    if (bucket !== "week") {
+      grid.innerHTML = "";
+      const wh = $("#workout-week-head");
+      if (wh) wh.innerHTML = "";
+      renderAthleteCardio();
+      renderAthleteOneOffSection();
+      renderAthleteOwnSection();
+      return;
+    }
 
     // Day cards for the active week
     const week = prog.client.weeks.find((w) => w.id === state.workoutView.weekId);
@@ -13714,15 +13757,17 @@
     const host = $("#oneoff-athlete-container");
     if (!host) return;
     host.innerHTML = "";
+    const bucket = pickerBucket();
+    if (bucket !== "coach" && bucket !== "all") return; // its chip isn't selected
     const client = state.clientData.program?.client;
     const sessions = client?.oneOffDays || [];
     if (!sessions.length) return;
     const today = todayISO();
     const sec = document.createElement("div");
     sec.className = "oneoff-athlete-section";
+    // No count here: the chip that opened this view already carries it.
     sec.innerHTML = `<div class="wp-head wp-head-coach">
       <span class="wp-head-title">🐉 Sessions with Coach</span>
-      <span class="wp-head-count">${sessions.length}</span>
     </div>`;
     const grid = document.createElement("div");
     grid.className = "workout-grid";
@@ -13773,6 +13818,8 @@
     const host = $("#ownday-athlete-container");
     if (!host) return;
     host.innerHTML = "";
+    const bucket = pickerBucket();
+    if (bucket !== "own" && bucket !== "all") return; // its chip isn't selected
     const p = state.clientData.progress;
     if (!p) return;
     const sessions = athleteOwnDays(p);
@@ -13781,8 +13828,8 @@
     sec.className = "ownday-section";
     const head = document.createElement("div");
     head.className = "wp-head wp-head-own";
-    head.innerHTML = `<span class="wp-head-title">🔥 Your own sessions</span>` +
-      (sessions.length ? `<span class="wp-head-count">${sessions.length}</span>` : "");
+    // No count here either — the chip carries it.
+    head.innerHTML = `<span class="wp-head-title">🔥 Your own sessions</span>`;
     const addBtn = document.createElement("button");
     addBtn.type = "button";
     addBtn.className = "btn btn-ghost btn-sm wp-head-action";
@@ -13866,6 +13913,7 @@
       p.athleteDays.push(day);
       saveClient();
       closeModal();
+      state.pickerBucket = "own"; // backing out of it lands on the list it joined
       openOwnSession(day);
       toast("Session created. Add your lifts.");
     };
@@ -19632,6 +19680,12 @@
         renderWorkoutDetailUI();
       }
     });
+    // Back out to the day list. Steps that point at the picker need this after
+    // the logging steps, or their target is hidden behind the detail view.
+    const goPicker = () => {
+      setClientTab("workouts");
+      if (state.workoutView?.mode === "detail") backToWorkoutPicker();
+    };
     return [
       { sel: "#screen-client .tabs", go: () => setClientTab("overview"),
         title: "Welcome to Stone Dragon", text: "A quick lap around your training hub, about a minute. Skip any time. These tabs are everything." },
@@ -19655,8 +19709,12 @@
         title: "How did it feel?", text: "When you're done, tap 🫀 to log the vibe of the session — up to two. Your coach sees it, so they know when to push or back off." },
       { sel: "#rest-timer-btn", go: goDetail,
         title: "Rest timer", text: "Tap Go to start your rest. It dings when it's time to lift, then rolls straight into the next rest until you stop it. The small time button picks the length, the bell mutes the ding." },
-      { sel: "#cardio-athlete-block", go: () => setClientTab("workouts"),
-        title: "Cardio", text: "Runs, rides and swims live with your workouts. Log the minutes and, if you tracked it, the distance." },
+      // Both of these live in the picker, so the tour has to close the day
+      // detail first — a hidden target gets silently skipped.
+      { sel: "#cardio-athlete-block", go: goPicker,
+        title: "Cardio", text: "Runs, rides and swims live with your workouts. The bars are your week, day by day, and Month and Year add it all up." },
+      { sel: ".week-chip-special.is-own", go: goPicker,
+        title: "Your own sessions", text: "Trained outside your program? This pill holds the days you built yourself. Tap it to open them, or to start a new one." },
       { sel: '[data-ctab-panel="prs"]', go: () => setClientTab("prs"),
         title: "Progress", text: "Your PRs live here, with the charts behind them. Locking a heavy set can raise them automatically." },
       { sel: "#athlete-bw-fold", go: () => setClientTab("prs"),
