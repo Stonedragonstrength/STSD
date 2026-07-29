@@ -2892,7 +2892,7 @@
     refreshCoachSchedule();
     renderBulletinBoard();
     renderCoachToday();
-    renderNotificationLog();
+    refreshCoachInbox();
   }
 
   function signIntoTrainer() {
@@ -3246,6 +3246,16 @@
     return `<span class="av-tile av-${size}${cls}" style="${style}"${title}>
       <img src="${avatarSrc(id)}" alt="${escapeHtml(a.name)}" loading="lazy" decoding="async" />
     </span>`;
+  }
+
+  // The athlete as the coach should always see them: their own colour, the
+  // character they picked, or their initials in that colour if they haven't.
+  // One helper so every list that prints a name prints the same face beside
+  // it — a coach scanning a list recognises a face and a colour long before
+  // they read a name.
+  function athleteFaceHtml(c, size = "sm") {
+    if (!c) return `<span class="av-tile av-${size} av-empty">?</span>`;
+    return avatarTileHtml(c, c.importedProgress, { size });
   }
 
   // What the folded-up picker shows on its own line: the current tile and its
@@ -10195,7 +10205,7 @@
             : `<button class="btn-missed-mark cc" type="button" data-miss-cc="${i}" title="Close call: use their free missed session for this month (no charge)">🤝</button>
                <button class="btn-missed-mark chg" type="button" data-miss-charge="${i}" title="Missed: session is still charged">✕</button>`;
           body += `<div class="breakdown-ex dash-booked-row dash-booked-linked" data-open-athlete="${escapeHtml(athlete.id)}">
-            <div class="breakdown-ex-name">${escapeHtml(athlete.name)}
+            <div class="breakdown-ex-name">${athleteFaceHtml(athlete, "xs")}${escapeHtml(athlete.name)}
               <span class="booked-balance-chip${sum.remaining <= 0 ? " low" : ""}">🎟 ${sum.remaining} left</span>
             </div>
             <div class="breakdown-sets">${time}
@@ -12140,14 +12150,15 @@
       host.innerHTML = `<div class="sched-book-head">Upcoming bookings</div><p class="sched-empty">Nothing booked yet.</p>`;
       return;
     }
-    const nameOf = (id) => (state.trainerData.clients || []).find((c) => c.id === id)?.name || "Athlete";
+    const clientOf = (id) => (state.trainerData.clients || []).find((c) => c.id === id) || null;
+    const nameOf = (id) => clientOf(id)?.name || "Athlete";
     host.innerHTML = `<div class="sched-book-head">Upcoming bookings <span class="sched-book-n">${upcoming.length}</span></div>` +
       upcoming.map((b) => {
         const start = +new Date(b.start_at);
         return `<div class="sched-book-row">` +
           `<span class="sched-book-when">${escapeHtml(new Date(start).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }))}` +
           ` · ${escapeHtml(fmtSlotTime(start))}</span>` +
-          `<span class="sched-book-who">${escapeHtml(nameOf(b.athlete_id))}` +
+          `<span class="sched-book-who">${athleteFaceHtml(clientOf(b.athlete_id), "xs")}${escapeHtml(nameOf(b.athlete_id))}` +
             (b.series_id ? `<span class="cbk-weekly-tag" title="Part of a weekly series">weekly</span>` : "") +
           `</span>` +
           `<button type="button" class="btn-delete-mini" data-cancel-booking="${escapeHtml(b.id)}" title="Cancel">×</button>` +
@@ -12272,7 +12283,7 @@
       return list.map((c) => {
         const sum = sessionBankSummary(c);
         return `<button type="button" class="cbk-ath-row${c.id === draft.athleteId ? " on" : ""}" data-ath="${escapeHtml(c.id)}">` +
-          `<span class="cbk-ini">${escapeHtml(clientInitials(c.name))}</span>` +
+          `<span class="cbk-face">${athleteFaceHtml(c)}</span>` +
           `<span class="cbk-ath-name">${escapeHtml(c.name)}</span>` +
           `<span class="cbk-bal${sum.remaining <= 0 ? " low" : ""}" title="Sessions left">${sum.remaining}</span>` +
         `</button>`;
@@ -12528,12 +12539,14 @@
     if (!list.length) { host.innerHTML = ""; return; }
     const a = normalizeAvailability(coachAvailability());
     const tz = a.tz || localTz();
-    const nameOf = (id) => (state.trainerData.clients || []).find((c) => c.id === id)?.name || "Athlete";
+    const clientOf = (id) => (state.trainerData.clients || []).find((c) => c.id === id) || null;
+    const nameOf = (id) => clientOf(id)?.name || "Athlete";
     host.innerHTML = `<div class="sched-book-head">Weekly regulars <span class="sched-book-n">${list.length}</span></div>` +
       list.map((s) => {
         const startMs = +new Date(s.first.start_at);
         const dow = new Date(startMs).toLocaleDateString(undefined, { weekday: "long", timeZone: tz });
         return `<div class="cbk-series-row">` +
+          `<span class="cbk-series-face">${athleteFaceHtml(clientOf(s.first.athlete_id))}</span>` +
           `<span class="cbk-series-txt">` +
             `<b>${escapeHtml(nameOf(s.first.athlete_id))}</b>` +
             `<span>${escapeHtml(dow)}s · ${escapeHtml(fmtSlotTime(startMs, tz))} · ${s.rows.length} left, through ${escapeHtml(fmtSlotDay(zonedDateISO(+new Date(s.last.start_at), tz)))}</span>` +
@@ -13127,26 +13140,29 @@
     }
     host.appendChild(sched);
 
-    // ---- Card 2: needs you ----
-    const needs = coachNeedsRows();
-    if (!needs.length) return;
-    const card = document.createElement("div");
-    card.className = "card needs-card";
-    card.innerHTML = `<div class="program-head">
-        <h3 style="margin:0">⚡ Needs you <span class="overview-req-count">${needs.length}</span></h3>
-      </div>`;
-    const list = document.createElement("div");
-    list.className = "needs-list";
-    needs.forEach((n) => {
+    // "Needs you" is not a card here any more — it is the header pill, and the
+    // list behind it. Keeping the count fresh is all this page owes it.
+    renderCoachInboxCount();
+  }
+
+  // One row of the inbox: something waiting on the coach. Returns an element
+  // because a purchase request carries live buttons, not just a link.
+  function needsRowEl(n) {
       const row = document.createElement("div");
       row.className = "needs-row needs-" + n.kind;
-      const jump = (fn) => { row.classList.add("is-clickable"); row.addEventListener("click", fn); };
+      // Close BEFORE navigating: unlocking the page restores the scroll
+      // position it was locked at, which would fight whatever the new view
+      // sets if it ran afterwards.
+      const jump = (fn) => {
+        row.classList.add("is-clickable");
+        row.addEventListener("click", () => { closeModal(); fn(); });
+      };
 
       if (n.kind === "request") {
         row.innerHTML = `
-          <span class="needs-icon" aria-hidden="true">🎟</span>
+          <span class="needs-face">${athleteFaceHtml(n.c)}</span>
           <span class="needs-body"><span class="needs-name">${escapeHtml(n.c.name)}</span>
-            <span class="needs-text">wants ${escapeHtml(String(n.req.size))} sessions</span></span>
+            <span class="needs-text">🎟 wants ${escapeHtml(String(n.req.size))} sessions</span></span>
           <span class="needs-actions">
             <button class="btn btn-ghost btn-sm" type="button" data-decline>Decline</button>
             <button class="btn btn-primary btn-sm" type="button" data-approve>Approve &amp; mark paid</button>
@@ -13154,46 +13170,45 @@
         row.querySelector("[data-approve]").addEventListener("click", (e) => {
           e.stopPropagation();
           approvePackageRequest(n.c, n.req.id, Number(n.req.size), Number(n.req.price) || 0);
+          refreshCoachInbox();
         });
         row.querySelector("[data-decline]").addEventListener("click", (e) => {
           e.stopPropagation();
           declinePackageRequest(n.c, n.req.id);
+          refreshCoachInbox();
         });
       } else if (n.kind === "message") {
         row.innerHTML = `
-          <span class="needs-icon" aria-hidden="true">💬</span>
+          <span class="needs-face">${athleteFaceHtml(n.c)}</span>
           <span class="needs-body"><span class="needs-name">${escapeHtml(n.c.name)}</span>
-            <span class="needs-text">sent ${n.n === 1 ? "a message" : n.n + " messages"}</span></span>
+            <span class="needs-text">💬 sent ${n.n === 1 ? "a message" : n.n + " messages"}</span></span>
           <span class="needs-when">${escapeHtml(notifWhen(n.ts))}</span>
           <span class="needs-go">→</span>`;
         jump(() => openMessageThread(n.c.id));
       } else if (n.kind === "formcheck") {
         row.innerHTML = `
-          <span class="needs-icon" aria-hidden="true">🎥</span>
+          <span class="needs-face">${athleteFaceHtml(n.c)}</span>
           <span class="needs-body"><span class="needs-name">${escapeHtml(n.c.name)}</span>
-            <span class="needs-text">sent a form video</span></span>
+            <span class="needs-text">🎥 sent a form video</span></span>
           <span class="needs-when">${escapeHtml(notifWhen(n.ts))}</span>
           <span class="needs-go">→</span>`;
         jump(() => openCompletedWorkout(n.c.id, n.dayId, dateISO(new Date(n.ts))));
       } else if (n.kind === "nosessions") {
         row.innerHTML = `
-          <span class="needs-icon" aria-hidden="true">🎫</span>
+          <span class="needs-face">${athleteFaceHtml(n.c)}</span>
           <span class="needs-body"><span class="needs-name">${escapeHtml(n.c.name)}</span>
-            <span class="needs-text">is out of sessions</span></span>
+            <span class="needs-text">🎫 is out of sessions</span></span>
           <span class="needs-go">→</span>`;
         jump(() => { Nav.push(showCoachOverview); openClient(n.c.id); setTab("sessions"); });
       } else {
         row.innerHTML = `
-          <span class="needs-icon" aria-hidden="true">😴</span>
+          <span class="needs-face">${athleteFaceHtml(n.c)}</span>
           <span class="needs-body"><span class="needs-name">${escapeHtml(n.c.name)}</span>
-            <span class="needs-text">hasn't trained in ${n.days} days</span></span>
+            <span class="needs-text">😴 hasn't trained in ${n.days} days</span></span>
           <span class="needs-go">→</span>`;
         jump(() => { Nav.push(showCoachOverview); openClient(n.c.id); });
       }
-      list.appendChild(row);
-    });
-    card.appendChild(list);
-    host.appendChild(card);
+    return row;
   }
 
   // -------- Permanent notification log (coach Overview, bottom) --------
@@ -13292,28 +13307,79 @@
     return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
 
-  function renderNotificationLog() {
-    const host = $("#notif-log-scroll");
+  // One activity row: something an athlete did. The leading slot is the athlete
+  // (face and colour), and the kind emoji moves into the sentence, where it
+  // reads as part of what happened rather than competing to be the row's
+  // identity.
+  function notifRowHtml(it) {
+    const clickable = it.type === "workout" || it.type === "formcheck" ||
+      it.type === "nutrition" || it.type === "cardio" || it.type === "message";
+    const c = (state.trainerData.clients || []).find((x) => x.id === it.clientId);
+    return `<div class="notif-row${clickable ? " is-clickable" : ""}"${clickable
+      ? ` data-kind="${escapeHtml(it.type)}" data-client="${escapeHtml(it.clientId)}" data-day="${escapeHtml(it.dayId || "")}" data-date="${escapeHtml(it.date)}"` : ""}>
+      <span class="notif-face">${athleteFaceHtml(c)}</span>
+      <span class="notif-body"><span class="notif-name">${escapeHtml(it.name)}</span> <span class="notif-text">${it.icon} ${escapeHtml(it.text)}</span></span>
+      <span class="notif-when">${escapeHtml(notifWhen(it.ts))}</span>
+    </div>`;
+  }
+
+  // -------- The coach inbox: one list behind the header pill --------
+  // What needs the coach and what athletes have done are interleaved rather
+  // than stacked in two sections — they are the same question ("what happened
+  // while I wasn't looking?") answered at two urgencies, and two lists meant
+  // reading the same names twice.
+  //
+  // Sort: standing problems first, then strictly newest-first. "Out of
+  // sessions" and "hasn't trained in 9 days" are STATES, not events — they
+  // have no moment they happened at, so they can't take a place in a
+  // chronological list and would sink out of sight if given ts 0. They pin.
+  function coachInboxRows() {
+    const needs = coachNeedsRows().map((n) => ({
+      kind: "need", ts: n.ts > 0 ? n.ts : 0, pinned: !(n.ts > 0), n,
+    }));
+    // An unreviewed video, or a message still waiting on an answer, is already
+    // IN the needs list. Its activity copy is the same event a second time, one
+    // row apart — so the actionable version wins and the echo is dropped.
+    // Matched on the exact moment, so an older message from the same athlete
+    // still shows as history.
+    const covered = needs
+      .filter((x) => x.n.kind === "formcheck" || x.n.kind === "message")
+      .map((x) => ({ id: x.n.c.id, type: x.n.kind, ts: x.ts }));
+    const acts = notificationLogItems()
+      .filter((it) => !covered.some((cv) =>
+        cv.id === it.clientId && cv.type === it.type && Math.abs(cv.ts - it.ts) < 1000))
+      .map((it) => ({ kind: "act", ts: it.ts, pinned: false, it }));
+    return [...needs, ...acts].sort((a, b) =>
+      (b.pinned - a.pinned) || (b.ts - a.ts));
+  }
+
+  function renderCoachInboxCount() {
+    const el = $("#coach-inbox-count");
+    const btn = $("#btn-coach-inbox");
+    if (!el || !btn) return;
+    const n = coachNeedsRows().length;
+    el.textContent = n ? String(n) : "";
+    // Lit only when something is actually waiting; otherwise it is a quiet way
+    // back to the activity list, not an alarm.
+    btn.classList.toggle("has-needs", n > 0);
+  }
+
+  function renderCoachInbox() {
+    const host = $("#coach-inbox-list");
     if (!host) return;
-    const items = notificationLogItems();
-    const countEl = $("#notif-log-count");
-    if (countEl) countEl.textContent = items.length ? String(items.length) : "";
-    if (!items.length) {
-      host.innerHTML = `<p class="muted" style="margin:0;padding:0.4rem 0.2rem;font-size:0.85rem">No activity yet. This fills in as your athletes train.</p>`;
+    host.innerHTML = "";
+    const rows = coachInboxRows();
+    if (!rows.length) {
+      host.innerHTML = `<p class="muted" style="margin:0;padding:0.6rem 0.2rem;font-size:0.85rem">Nothing waiting, and no activity yet. This fills in as your athletes train.</p>`;
       return;
     }
-    host.innerHTML = items.map((it) => {
-      const clickable = it.type === "workout" || it.type === "formcheck" ||
-        it.type === "nutrition" || it.type === "cardio" || it.type === "message";
-      return `<div class="notif-row${clickable ? " is-clickable" : ""}"${clickable
-        ? ` data-kind="${escapeHtml(it.type)}" data-client="${escapeHtml(it.clientId)}" data-day="${escapeHtml(it.dayId || "")}" data-date="${escapeHtml(it.date)}"` : ""}>
-        <span class="notif-icon" aria-hidden="true">${it.icon}</span>
-        <span class="notif-body"><span class="notif-name">${escapeHtml(it.name)}</span> <span class="notif-text">${escapeHtml(it.text)}</span></span>
-        <span class="notif-when">${escapeHtml(notifWhen(it.ts))}</span>
-      </div>`;
-    }).join("");
+    rows.forEach((r) => {
+      if (r.kind === "need") { host.appendChild(needsRowEl(r.n)); return; }
+      host.insertAdjacentHTML("beforeend", notifRowHtml(r.it));
+    });
     host.querySelectorAll(".notif-row.is-clickable").forEach((row) => {
       row.addEventListener("click", () => {
+        closeModal();
         if (row.dataset.kind === "message") return openMessageThread(row.dataset.client);
         if (row.dataset.kind === "nutrition") return openClientNutrition(row.dataset.client);
         // A cardio row has no workout day to land on — open their cardio log.
@@ -13321,6 +13387,23 @@
         openCompletedWorkout(row.dataset.client, row.dataset.day, row.dataset.date);
       });
     });
+  }
+
+  // Redraw the list only if it is actually on screen, plus the pill, which is
+  // on screen everywhere.
+  function refreshCoachInbox() {
+    renderCoachInboxCount();
+    if ($("#coach-inbox-list")) renderCoachInbox();
+  }
+
+  function openCoachInbox() {
+    const needs = coachNeedsRows().length;
+    openModal({
+      title: needs ? `⚡ ${needs} waiting` : "🔔 Activity",
+      body: `<div class="coach-inbox" id="coach-inbox-list"></div>`,
+      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
+    });
+    renderCoachInbox();
   }
 
   // An eating signal has no workout to land on, so it opens the athlete on the
@@ -13380,15 +13463,13 @@
     } finally {
       _packagesRefreshing = false;
     }
-    // Update the athlete-card chips / Overview inbox if either is on screen.
-    // This pull is also what brings in fresh dayCompletions, so the
-    // notification log re-runs here — that's where "someone logged a
-    // workout" surfaces.
+    // Update the athlete-card chips if they're on screen. This pull is also
+    // what brings in fresh dayCompletions, so the inbox re-runs here — that's
+    // where "someone logged a workout" surfaces. The pill is in the header on
+    // every page, so its count is refreshed whatever view is showing.
     if (!$("#view-dashboard").classList.contains("hidden")) renderClientGrid();
-    if (!$("#view-overview").classList.contains("hidden")) {
-      renderCoachToday();
-      renderNotificationLog();
-    }
+    if (!$("#view-overview").classList.contains("hidden")) renderCoachToday();
+    refreshCoachInbox();
     // Same trip: pull the threads, so an unanswered question shows up on the
     // nav badge and the Today board without a separate refresh path.
     loadCoachMessages();
@@ -13639,6 +13720,7 @@
       </div>
       ${rows.map((r) => `
         <button class="msg-thread-row${r.n ? " is-unread" : ""}" type="button" data-cid="${escapeHtml(r.c.id)}">
+          <span class="msg-thread-face">${athleteFaceHtml(r.c)}</span>
           <span class="msg-thread-name">${escapeHtml(r.c.name || "Unnamed")}</span>
           <span class="msg-thread-last">${r.last
             ? escapeHtml((r.last.sender === "coach" ? "You: " : "") + r.last.body.slice(0, 90))
@@ -22710,6 +22792,27 @@
       foot.appendChild(btn);
     }
     show($("#modal"));
+    // Hold the page still underneath. Without this, a scroll that starts on
+    // the sheet — or continues past its end — scrolls the page behind it, so
+    // closing the sheet leaves the coach somewhere else entirely.
+    lockPageScroll(true);
+  }
+  // iOS ignores overflow:hidden on <body> for touch scrolling, so the page is
+  // pinned by position:fixed at its current offset and put back on close.
+  let _scrollLockY = 0;
+  function lockPageScroll(on) {
+    const b = document.body;
+    if (on) {
+      if (b.classList.contains("scroll-locked")) return;
+      _scrollLockY = window.scrollY || window.pageYOffset || 0;
+      b.style.top = `-${_scrollLockY}px`;
+      b.classList.add("scroll-locked");
+    } else {
+      if (!b.classList.contains("scroll-locked")) return;
+      b.classList.remove("scroll-locked");
+      b.style.top = "";
+      window.scrollTo(0, _scrollLockY);
+    }
   }
   // Strips the day-complete banner and any burst still raining inside the modal,
   // so neither can outlive its sheet and reappear over whatever opens next.
@@ -22719,7 +22822,7 @@
     m.querySelector(".mood-sheet-win")?.remove();
     m.querySelector(".sess-sum")?.remove();
   }
-  function closeModal() { stopScan(); clearDayCompleteDressing(); hide($("#modal")); }
+  function closeModal() { stopScan(); clearDayCompleteDressing(); hide($("#modal")); lockPageScroll(false); }
 
   // -------- Bug reports --------
   // bugreport.js silently records diagnostics (errors, console, taps); this is
@@ -23636,6 +23739,7 @@
     // Booking without going via the calendar first. Opens on today; the day is
     // whatever the coach picks in the sheet.
     $("#btn-book-athlete")?.addEventListener("click", () => openBookAthleteSheet(todayISO()));
+    $("#btn-coach-inbox")?.addEventListener("click", openCoachInbox);
     $("#btn-redeem-session")?.addEventListener("click", openRedeemSessionModal);
     prefillRememberedEmails();
     $("#btn-export-sessions")?.addEventListener("click", () => {

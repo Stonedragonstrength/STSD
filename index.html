@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=book8" />
+  <link rel="stylesheet" href="styles.css?v=book13" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -207,6 +207,14 @@
         </div>
       </div>
       <div class="header-right">
+        <!-- What needs you, and everything your athletes have done, in one
+             list behind one pill. Both used to be permanent blocks on the
+             Overview; the count is the part that actually needed to be on
+             screen at all times, and it follows the coach onto every page. -->
+        <button class="btn btn-ghost btn-sm hdr-inbox" id="btn-coach-inbox" title="What needs you, and recent activity">
+          <span class="hdr-inbox-ico">⚡</span>
+          <span class="hdr-inbox-n" id="coach-inbox-count"></span>
+        </button>
         <button class="btn btn-ghost btn-sm tour-help-btn" id="btn-tour-coach" title="Quick tour of the app">?</button>
         <button class="btn btn-ghost btn-sm" id="btn-logout">Sign out</button>
       </div>
@@ -263,11 +271,11 @@
 
       <!-- Overview (dashboard calendar) -->
       <div id="view-overview" class="view hidden">
-        <!-- Today board: who's on the schedule today, and what's waiting on the
-             coach. Sits above the month grid so the first screen answers "what
-             now?" instead of opening on an empty calendar. Built by
-             renderCoachToday(). Not a second activity feed — the notification
-             log at the bottom stays the only one. -->
+        <!-- Today board: who is on the schedule today. Sits above the month
+             grid so the first screen answers "what now?" instead of opening on
+             an empty calendar. Built by renderCoachToday(). What needs the
+             coach, and the activity log, both live behind the header pill now
+             — still one feed, just not on this page. -->
         <div id="overview-today" class="overview-today"></div>
         <!-- The nav and the month grid are wrapped as ONE column. On a laptop
              this sits beside the rail, and if they were two separate grid
@@ -285,12 +293,6 @@
         </div>
 
         <div class="overview-bottom">
-          <div class="card notif-log-card">
-            <div class="program-head">
-              <h3 style="margin:0">🔔 Notifications <span class="overview-req-count" id="notif-log-count"></span></h3>
-            </div>
-            <div id="notif-log-scroll" class="notif-log-scroll"></div>
-          </div>
 
           <!-- Scheduling: recurring availability, the bookings it produces,
                and the Google Calendar link. Open slots fold in at the bottom
@@ -1159,9 +1161,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="bugreport.js?v=bug1"></script>
   <script src="config.js?v=horm2"></script>
-  <script src="cloud.js?v=book8"></script>
+  <script src="cloud.js?v=book13"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=book8"></script>
+  <script src="app.js?v=book13"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

@@ -10528,7 +10528,9 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 .msg-threads { display: flex; flex-direction: column; max-width: 980px; margin-bottom: 1.4rem; }
 .msg-thread-row {
   display: grid;
-  grid-template-columns: minmax(6rem, 10rem) 1fr auto;
+  /* First column is the athlete's face — added when avatars and colours were
+     wired through every coach list. */
+  grid-template-columns: auto minmax(6rem, 10rem) 1fr auto;
   align-items: center;
   gap: 0.8rem;
   width: 100%;
@@ -10631,13 +10633,14 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
    the preview runs full width under it. */
 @media (max-width: 640px) {
   .msg-thread-row {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: auto 1fr auto;
     gap: 0.15rem 0.6rem;
     padding: 0.75rem 0.2rem;
   }
-  .msg-thread-name { grid-column: 1; }
-  .msg-thread-meta { grid-column: 2; grid-row: 1; }
-  .msg-thread-last { grid-column: 1 / -1; white-space: normal; }
+  .msg-thread-face { grid-column: 1; grid-row: 1 / span 2; }
+  .msg-thread-name { grid-column: 2; }
+  .msg-thread-meta { grid-column: 3; grid-row: 1; }
+  .msg-thread-last { grid-column: 2 / -1; white-space: normal; }
 }
 
 
@@ -11126,15 +11129,7 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 .cbk-ath-row:last-child { border-bottom: 0; }
 .cbk-ath-row:hover { background: var(--surface-3); }
 .cbk-ath-row.on { background: var(--primary-soft); color: var(--primary-bright); }
-.cbk-ath-row.on .cbk-ini { background: var(--primary); color: #0b0f14; }
 .cbk-ath-none { padding: 0.8em 0.7em; margin: 0; font-size: 0.82rem; color: var(--muted); }
-.cbk-ini {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 24px; height: 24px; flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--surface-3); color: var(--text-soft);
-  font-size: 0.62rem; font-weight: 800;
-}
 .cbk-ath-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; min-width: 0; }
 /* Sessions left. The coach needs it while picking, not after booking. */
 .cbk-bal {
@@ -11245,3 +11240,57 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 }
 .msg-bulletin-n:empty { display: none; }
 .msg-bulletin .bulletin-compose { padding-top: 0.6rem; }
+
+/* ============ Coach inbox: header pill + one merged list ============
+   "Needs you" and the activity log were two permanent blocks on the Overview
+   asking the same question at two urgencies. They are one list now, behind one
+   pill that rides the header on every page — the count was the only part that
+   ever needed to be on screen. */
+.hdr-inbox {
+  display: inline-flex; align-items: center; gap: 0.35em;
+  padding-left: 0.7em; padding-right: 0.7em;
+}
+.hdr-inbox-ico { font-size: 0.95em; line-height: 1; opacity: 0.75; }
+.hdr-inbox.has-needs .hdr-inbox-ico { opacity: 1; }
+.hdr-inbox-n {
+  font-weight: 800; font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  background: var(--warn, #f59e0b); color: #1a1005;
+  border-radius: 999px; padding: 0 0.42em; min-width: 1.35em; text-align: center;
+}
+.hdr-inbox-n:empty { display: none; }
+.hdr-inbox.has-needs {
+  border-color: rgba(245, 158, 11, 0.55);
+  background: rgba(245, 158, 11, 0.12);
+}
+
+/* The list itself. Actionable rows keep the warm left edge they had as a card,
+   so they still read as "this one is on you" inside a chronological list. */
+.coach-inbox { display: flex; flex-direction: column; }
+.coach-inbox .needs-row {
+  border-left: 3px solid var(--warn, #f59e0b);
+  padding-left: 0.6em;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: rgba(245, 158, 11, 0.06);
+}
+.coach-inbox .needs-row + .notif-row { margin-top: 0.15rem; }
+.coach-inbox .notif-row { padding-left: 0.6em; }
+
+/* Hold the page still while a sheet is open. overflow:hidden on <body> is not
+   enough on iOS — touch scrolling ignores it — so the page is pinned with
+   position:fixed at the offset it was on, and put back on close. */
+body.scroll-locked {
+  position: fixed;
+  left: 0; right: 0; width: 100%;
+  overflow: hidden;
+}
+
+/* Athlete faces in coach lists. Their colour and their chosen character travel
+   with the name everywhere, so a list is scannable before it is readable. */
+.needs-face, .notif-face, .msg-thread-face, .cbk-series-face, .cbk-face {
+  flex-shrink: 0; display: flex; align-items: center;
+}
+.notif-row .notif-face { margin-right: 0.15em; }
+.sched-book-who .av-tile,
+.breakdown-ex-name .av-tile { vertical-align: middle; margin-right: 0.4em; }
+.coach-inbox .needs-row, .coach-inbox .notif-row { align-items: center; }
