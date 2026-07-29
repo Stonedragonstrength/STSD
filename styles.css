@@ -3144,11 +3144,16 @@ input.trial-input {
 /* Overview: Bulletin Board + Open Slots side by side on desktop. */
 .overview-bottom {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* minmax(0, …) not 1fr: a bare 1fr floors at min-content, and these cards
+     hold nowrap text (timestamps, times, athlete names) whose min-content is
+     wider than the rail. That doesn't make the page scroll — it silently
+     clips the right-hand side off screen, buttons included. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 1rem;
   margin-top: 1.1rem;
   align-items: start;
 }
+.overview-bottom > .card { min-width: 0; }
 .overview-bottom > .card { margin: 0; }
 .notif-log-card { grid-column: 1 / -1; }
 @media (max-width: 720px) { .overview-bottom { grid-template-columns: 1fr; } }
@@ -3839,13 +3844,18 @@ input.trial-input {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.5rem 0.75rem;
   padding: 0.7rem 0;
   border-top: 1px solid var(--border);
+  /* These rows live in the Schedule card's fold now, which is a narrow rail on
+     a laptop. The actions don't shrink, so without wrapping they push the
+     delete button off the right edge of the screen. */
+  flex-wrap: wrap;
 }
-.open-slot-info { min-width: 0; }
-.open-slot-info strong { display: block; }
-.open-slot-actions { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+.open-slot-info { flex: 1 1 60%; min-width: 0; }
+.open-slot-info strong { display: block; overflow-wrap: anywhere; }
+.open-slot-actions { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; flex-wrap: wrap; }
+.open-slot-actions .status-pill { overflow-wrap: anywhere; }
 .open-slots-athlete-card { border-color: rgba(var(--primary-rgb), 0.35); }
 .open-slots-athlete-card h4 { color: var(--primary-bright); }
 .open-slot-optout { margin-top: 0.9rem; }
@@ -10700,10 +10710,11 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
     align-self: stretch;
     display: flex;
     flex-direction: column;
+    min-width: 0; /* a flex container defaults to min-width:auto and won't shrink */
   }
   #view-overview > .overview-bottom {
     grid-column: 2;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     margin-top: 0;
   }
   .overview-bottom .notif-log-scroll { max-height: 20rem; }
