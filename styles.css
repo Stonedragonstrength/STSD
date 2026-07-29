@@ -10700,6 +10700,15 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
     margin-top: 0;
   }
   .overview-bottom .notif-log-scroll { max-height: 20rem; }
+  /* The right rail is taller than the month grid, and a grid row sizes to its
+     tallest column — which left a dead area under the calendar. Let the grid
+     stretch into that instead, so the leftover height becomes taller day cells
+     (more room for the booking pills) rather than empty page. Everything else
+     stays top-aligned, hence align-self rather than a container-wide stretch. */
+  #view-overview > #dash-cal-grid {
+    align-self: stretch;
+    grid-auto-rows: minmax(68px, 1fr);
+  }
 }
 
 /* ── Pre-workout readiness check-in ─────────────────────────────────────────
@@ -11005,3 +11014,24 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
   border: 1px solid rgba(var(--primary-bright-rgb), 0.3);
   border-radius: 999px; padding: 0.1em 0.5em; white-space: nowrap;
 }
+
+/* Open slots, folded into the Schedule card. */
+.sched-openslots { margin-top: 0.9rem; border-top: 1px solid var(--border); padding-top: 0.6rem; }
+.sched-openslots > summary {
+  cursor: pointer; list-style: none;
+  font-size: 0.7rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-soft);
+  display: flex; align-items: center; gap: 0.5em;
+}
+.sched-openslots > summary::-webkit-details-marker { display: none; }
+.sched-openslots > summary::after { content: "▾"; margin-left: auto; font-size: 0.8rem; }
+.sched-openslots[open] > summary::after { content: "▴"; }
+.sched-openslots > summary:hover { color: var(--text); }
+.sched-os-n {
+  background: var(--primary-soft); color: var(--primary-bright);
+  border-radius: 999px; padding: 0 0.5em; font-size: 0.72rem;
+}
+.sched-os-n:empty { display: none; }
+.sched-os-body { padding-top: 0.6rem; }
+.sched-os-body > .slim-btn { margin-bottom: 0.5rem; }
+.sched-os-n.claimed { background: rgba(245, 158, 11, 0.18); color: var(--warn); }

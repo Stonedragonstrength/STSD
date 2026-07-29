@@ -12247,6 +12247,16 @@
     const container = $("#open-slots-container"); if (!container) return;
     container.innerHTML = "";
     const slots = ensureOpenSlots();
+    // Open slots live behind a fold now, so anything needing attention has to
+    // show on the closed summary or it may as well not exist. Claims first,
+    // since those are the ones waiting on the coach.
+    const count = $("#open-slots-count");
+    if (count) {
+      const claimed = slots.filter((s) => s.status === "claimed").length;
+      const open = slots.filter((s) => s.status === "open" && !slotBookingClosed(s)).length;
+      count.textContent = claimed ? `${claimed} claimed` : open ? String(open) : "";
+      count.classList.toggle("claimed", claimed > 0);
+    }
     if (!slots.length) {
       container.insertAdjacentHTML("beforeend", `<p class="muted" style="font-size:0.85rem">No open slots posted.</p>`);
     } else {

@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=sched4" />
+  <link rel="stylesheet" href="styles.css?v=sched5" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -310,7 +310,11 @@
           </div>
 
           <!-- Scheduling: recurring availability, the bookings it produces,
-               and the Google Calendar link. -->
+               and the Google Calendar link. Open slots fold in at the bottom
+               rather than getting their own card — since athletes book from
+               availability directly, a posted slot is now the exception, and
+               two side-by-side cards about the same thing made the rail taller
+               than the month grid next to it. -->
           <div class="card">
             <div class="program-head">
               <h3 style="margin:0">🗓️ Schedule</h3>
@@ -319,14 +323,13 @@
             <div id="sched-summary" class="sched-summary"></div>
             <div id="sched-google" class="sched-google"></div>
             <div id="sched-bookings" class="sched-bookings"></div>
-          </div>
-
-          <div class="card">
-            <div class="program-head">
-              <h3 style="margin:0">📣 Open Slots</h3>
-              <button class="btn btn-primary btn-sm" id="btn-post-open-slot">+ Post open slot</button>
-            </div>
-            <div id="open-slots-container"></div>
+            <details class="sched-openslots">
+              <summary>📣 Open slots<span class="sched-os-n" id="open-slots-count"></span></summary>
+              <div class="sched-os-body">
+                <button class="btn slim-btn btn-sm" id="btn-post-open-slot">+ Post open slot</button>
+                <div id="open-slots-container"></div>
+              </div>
+            </details>
           </div>
         </div>
       </div>
@@ -1122,9 +1125,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="bugreport.js?v=bug1"></script>
   <script src="config.js?v=horm2"></script>
-  <script src="cloud.js?v=sched4"></script>
+  <script src="cloud.js?v=sched5"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=sched4"></script>
+  <script src="app.js?v=sched5"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
