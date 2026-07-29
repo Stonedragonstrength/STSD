@@ -10701,3 +10701,163 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
   }
   .overview-bottom .notif-log-scroll { max-height: 20rem; }
 }
+
+/* ── Pre-workout readiness check-in ─────────────────────────────────────────
+   Sits above the first exercise in the workout detail. Asking state is three
+   rows of three; answered state collapses to one chip row. */
+.rdy-block { margin: 0 0 0.9rem; }
+.rdy-block.hidden { display: none; }
+.rdy-block.asking {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 0.7rem 0.85rem 0.8rem;
+}
+.rdy-head { display: flex; align-items: flex-start; gap: 0.55em; margin-bottom: 0.6rem; }
+.rdy-head-ico { font-size: 1.1rem; line-height: 1.2; }
+.rdy-head-txt { display: flex; flex-direction: column; gap: 0.12em; min-width: 0; flex: 1; }
+.rdy-head-txt b { font-size: 0.95rem; font-weight: 800; color: var(--text); }
+.rdy-head-txt span { font-size: 0.72rem; color: var(--text-soft); line-height: 1.35; }
+.rdy-skip {
+  flex: 0 0 auto; width: 1.5rem; height: 1.5rem; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: none; border-radius: 999px;
+  color: var(--muted); font-size: 0.8rem; cursor: pointer;
+}
+.rdy-skip:hover { background: var(--surface-2); color: var(--text); }
+.rdy-qs { display: flex; flex-direction: column; gap: 0.4rem; }
+.rdy-q { display: flex; align-items: center; gap: 0.6em; }
+.rdy-q-lbl {
+  flex: 0 0 5.9em; display: inline-flex; align-items: center; gap: 0.35em;
+  font-size: 0.72rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--text-soft);
+}
+.rdy-q-ico { font-size: 0.95rem; }
+.rdy-q-opts { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.3em; }
+.rdy-opt {
+  padding: 0.45em 0.2em; min-height: 2.1rem;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 999px; color: var(--text-soft);
+  font-size: 0.72rem; font-weight: 800; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.rdy-opt:hover { border-color: var(--border-strong); color: var(--text); }
+.rdy-opt.on { color: #04121a; border-color: transparent; }
+.rdy-opt.l1.on { background: var(--warn); }
+.rdy-opt.l2.on { background: var(--primary); color: #fff; }
+.rdy-opt.l3.on { background: var(--accent); }
+
+/* Answered: one row, tap to change. */
+.rdy-done {
+  width: 100%; display: flex; align-items: center; gap: 0.55em;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 999px; padding: 0.4em 0.5em 0.4em 0.7em;
+  color: var(--text); text-align: left; cursor: pointer;
+}
+.rdy-done[disabled] { cursor: default; }
+.rdy-block.answered.low .rdy-done { border-color: rgba(245, 158, 11, 0.5); }
+.rdy-block.answered.high .rdy-done { border-color: rgba(16, 185, 129, 0.45); }
+.rdy-done-emo { font-size: 1rem; line-height: 1; }
+.rdy-done-lbl {
+  font-size: 0.72rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.05em; white-space: nowrap;
+}
+.rdy-block.answered.low .rdy-done-lbl { color: var(--warn); }
+.rdy-block.answered.high .rdy-done-lbl { color: var(--accent); }
+.rdy-done-ans {
+  flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 0.2em 0.6em;
+  font-size: 0.68rem; color: var(--text-soft);
+}
+.rdy-done-a { display: inline-flex; align-items: center; gap: 0.25em; white-space: nowrap; }
+.rdy-done-i { font-size: 0.8rem; }
+.rdy-done-edit {
+  flex: 0 0 auto; font-size: 0.62rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--primary-bright);
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.3);
+  border-radius: 999px; padding: 0.2em 0.6em;
+}
+.rdy-note {
+  margin: 0.45rem 0 0; padding: 0 0.3rem;
+  font-size: 0.72rem; line-height: 1.4; color: var(--text-soft);
+}
+
+/* The chip the coach and the day cards read. */
+.rdy-chip {
+  display: inline-flex; align-items: center; gap: 0.28em;
+  background: rgba(var(--primary-rgb), 0.12);
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.28);
+  border-radius: 999px; padding: 0.12em 0.5em;
+  font-size: 0.62rem; font-weight: 800; color: var(--text-soft);
+}
+.rdy-chip.low { background: rgba(245, 158, 11, 0.14); border-color: rgba(245, 158, 11, 0.4); }
+.rdy-chip.high { background: rgba(16, 185, 129, 0.14); border-color: rgba(16, 185, 129, 0.4); }
+.rdy-chip-emo { line-height: 1; }
+.rdy-chip-txt { text-transform: uppercase; letter-spacing: 0.04em; }
+.day-tab .rdy-chip { padding: 0; border: none; background: none; font-size: 0.9em; }
+/* Day card: readiness and mood share one wrapping line. */
+.wc-tags { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.3em; margin-top: 0.35em; }
+.wc-tags .mood-chips { margin-top: 0; }
+
+/* Narrow phones: the option labels are the first thing to give. */
+@media (max-width: 380px) {
+  .rdy-q-lbl { flex-basis: 1.4em; }
+  .rdy-q-txt { display: none; }
+  .rdy-opt { font-size: 0.66rem; padding-left: 0.1em; padding-right: 0.1em; }
+  .rdy-done-ans { font-size: 0.62rem; gap: 0.15em 0.4em; }
+}
+
+/* ── Session summary (the day-complete sheet's numbers) ────────────────────
+   Sits between the win bar and the "How was your workout?" header, outside
+   #modal-body so redrawing the mood grid doesn't wipe it. Racing-stat styling:
+   big tabular numbers, small uppercase units. */
+.sess-sum {
+  padding: 0.85rem 1.1rem 0.9rem;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  border-bottom: 1px solid var(--border);
+}
+.mood-sheet-win + .sess-sum { border-radius: 0; }
+/* With no win bar above it the summary owns the sheet's top corners. */
+.modal-card > .sess-sum:first-child { border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+.sess-sum + .modal-head::before { display: none; }
+.sess-sum + .modal-head { padding-top: 1rem; }
+.sess-tiles { display: flex; align-items: stretch; gap: 0.5rem; }
+.sess-tile {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.1em; padding: 0.5em 0.35em;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+}
+.sess-tile-v {
+  font-size: 1.45rem; font-weight: 800; line-height: 1.05;
+  color: var(--primary-bright); font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em; white-space: nowrap;
+}
+.sess-tile-u {
+  font-size: 0.58rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--text-soft); text-align: center;
+}
+.sess-cmp {
+  margin-top: 0.55rem; display: flex; align-items: center; justify-content: center;
+  gap: 0.35em; font-size: 0.75rem; font-weight: 700; color: var(--text-soft);
+  text-align: center;
+}
+.sess-cmp-arrow { font-size: 0.7em; }
+.sess-cmp.up { color: var(--accent); }
+.sess-cmp.down { color: var(--warn); }
+.sess-prs { margin-top: 0.6rem; display: flex; flex-direction: column; gap: 0.35rem; }
+.sess-pr {
+  display: flex; align-items: center; gap: 0.5em;
+  padding: 0.4em 0.7em; border-radius: 999px;
+  background: rgba(var(--gold-rgb), 0.12);
+  border: 1px solid rgba(var(--gold-rgb), 0.35);
+  font-size: 0.78rem;
+}
+.sess-pr-ico { font-size: 0.95rem; line-height: 1; }
+.sess-pr-name { flex: 1; min-width: 0; font-weight: 800; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sess-pr-load { font-weight: 800; color: var(--gold); font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 380px) {
+  .sess-sum { padding-left: 0.8rem; padding-right: 0.8rem; }
+  .sess-tile-v { font-size: 1.2rem; }
+  .sess-tile-u { font-size: 0.54rem; letter-spacing: 0.05em; }
+}

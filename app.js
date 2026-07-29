@@ -886,8 +886,10 @@
   //   { logged: true, min: n }    — every set made weight; n is the WORST
   //                                 set's reps (or seconds, when timed).
   // `rir` rides along when the athlete tagged how much was left in the tank.
-  function progressionAttempt(exCopy, effWeight, effSets, logsMap) {
-    const none = { logged: false, min: null, rir: null };
+  // `protect` rides along when the athlete checked in beat up before this
+  // session — see the readiness section. It only ever cancels a stall.
+  function progressionAttempt(exCopy, effWeight, effSets, logsMap, ctx) {
+    const none = { logged: false, min: null, rir: null, protect: false };
     const arr = logsMap?.[exCopy.id];
     if (!Array.isArray(arr) || !arr.length) return none;
     const entry = [...arr].sort((a, b) => String(b.date).localeCompare(String(a.date)))
@@ -897,13 +899,19 @@
     if (!need || entry.sets.length < need) return none;
     const parsedRir = parseInt(entry.rir, 10);
     const rir = Number.isFinite(parsedRir) ? parsedRir : null;
+    // Only a check-in dated to the session being judged counts. A readiness
+    // answer from a later pass through this day must not reach back and excuse
+    // an older log.
+    const rdy = ctx?.readyMap?.[ctx.dayId];
+    const protect = !!rdy && String(rdy.date) === String(entry.date) &&
+      readinessScore(rdy) >= READINESS_QS.length && readinessScore(rdy) <= READY_LOW_MAX;
     let min = Infinity;
     for (const s of entry.sets.slice(0, need)) {
-      if (s.skipped) return { logged: true, min: null, rir }; // skipped set = a real miss
-      if ((parseFloat(s.weight) || 0) < effWeight - 0.01) return { logged: true, min: null, rir };
+      if (s.skipped) return { logged: true, min: null, rir, protect }; // skipped set = a real miss
+      if ((parseFloat(s.weight) || 0) < effWeight - 0.01) return { logged: true, min: null, rir, protect };
       min = Math.min(min, parseInt(s.reps, 10) || 0);
     }
-    return { logged: true, min, rir };
+    return { logged: true, min, rir, protect };
   }
 
   // Stall reset: hand back the earned weight at the coach's %, rounded down to
@@ -932,8 +940,11 @@
     const easy = att.rir != null && att.rir >= PROG_RIR_EASY;
     if (att.min == null || att.min < st.reps) {
       // A miss with 4+ left in the tank isn't a strength failure — they stopped
-      // early. Hold the target, but don't hold it against them.
-      if (easy) { st.last = "hold"; return; }
+      // early. Hold the target, but don't hold it against them. Same for a miss
+      // on a day they checked in beat up: that's a bad night's sleep, not a
+      // strength failure. Note `boost` below is NOT protected-aware — readiness
+      // is a brake only, it never speeds the ladder up.
+      if (easy || att.protect) { st.last = "hold"; return; }
       st.stall += 1;
       st.last = "miss";
       if (rule.backoff && st.stall >= rule.stallAfter) progressionBackoff(st, rule, base);
@@ -991,7 +1002,8 @@
   // the chain, so the coach can deload / jump mid-program by typing a number.
   // Returns { weight, reps, sets, earned, extra, stall, deloads, justDeloaded,
   // floor, ceil, inc, ... } or null when the exercise has no rule.
-  function effectiveProgression(weeks, ex, logsMap) {
+  // `readyMap` is progress.readiness — optional, and only ever cancels stalls.
+  function effectiveProgression(weeks, ex, logsMap, readyMap) {
     const rule = progressionRule(ex);
     if (!rule) return null;
     const name = String(ex.name || "").trim().toLowerCase();
@@ -1022,7 +1034,7 @@
               const res = progressionResult(st, rule, wrote, 0);
               return st.weight > 0 ? { ...res, bw: false } : { ...res, weight: null };
             }
-            progressionStep(st, rule, progressionAttempt(e, st.weight, wrote + st.extra, logsMap), 0);
+            progressionStep(st, rule, progressionAttempt(e, st.weight, wrote + st.extra, logsMap, { dayId: d.id, readyMap }), 0);
           }
         }
       }
@@ -1046,7 +1058,7 @@
           prevWritten = written;
           const wrote = parseInt(e.sets, 10) || 0;
           if (e.id === ex.id) return progressionResult(st, rule, wrote, base);
-          progressionStep(st, rule, progressionAttempt(e, st.weight, wrote + st.extra, logsMap), base);
+          progressionStep(st, rule, progressionAttempt(e, st.weight, wrote + st.extra, logsMap, { dayId: d.id, readyMap }), base);
         }
       }
     }
@@ -7848,7 +7860,8 @@
         const tab = document.createElement("button");
         tab.className = "day-tab" + (dIdx === week._activeDayIdx ? " active" : "");
         const dm = moodClient ? dayMoods(moodClient.importedProgress, day.id) : [];
-        tab.innerHTML = `<span class="day-tab-name">${escapeHtml(day.name || `Day ${dIdx + 1}`)}</span>${dm.length ? moodChipsHtml(dm, true) : ""}`;
+        const dr = moodClient ? dayReadiness(moodClient.importedProgress, day.id) : null;
+        tab.innerHTML = `<span class="day-tab-name">${escapeHtml(day.name || `Day ${dIdx + 1}`)}</span>${readinessChipHtml(dr, true)}${dm.length ? moodChipsHtml(dm, true) : ""}`;
         tab.addEventListener("click", () => { week._activeDayIdx = dIdx; renderDayTabs(); renderActiveDayContent(); });
         // Drag to reorder days within the week
         tab.draggable = true;
@@ -8104,7 +8117,8 @@
         const tab = document.createElement("button");
         tab.className = "day-tab" + (dIdx === week._activeDayIdx ? " active" : "");
         const dm = moodClient ? dayMoods(moodClient.importedProgress, day.id) : [];
-        tab.innerHTML = `<span class="day-tab-name">${escapeHtml(day.name || `Day ${dIdx + 1}`)}</span>${dm.length ? moodChipsHtml(dm, true) : ""}`;
+        const dr = moodClient ? dayReadiness(moodClient.importedProgress, day.id) : null;
+        tab.innerHTML = `<span class="day-tab-name">${escapeHtml(day.name || `Day ${dIdx + 1}`)}</span>${readinessChipHtml(dr, true)}${dm.length ? moodChipsHtml(dm, true) : ""}`;
         tab.addEventListener("click", () => {
           week._activeDayIdx = dIdx;
           renderDayTabs();
@@ -12712,6 +12726,7 @@
     if (!p.seenMessages) p.seenMessages = {};
     if (typeof p.totalWorkoutMs !== "number" || !isFinite(p.totalWorkoutMs)) p.totalWorkoutMs = 0;
     if (!p.workoutMoods || typeof p.workoutMoods !== "object") p.workoutMoods = {};
+    if (!p.readiness || typeof p.readiness !== "object") p.readiness = {};
     if (!Array.isArray(p.athleteDays)) p.athleteDays = [];
     if (!p.formChecks || typeof p.formChecks !== "object") p.formChecks = {};
     if (!p.swaps || typeof p.swaps !== "object") p.swaps = {};
@@ -13042,6 +13057,71 @@
     saveClient();
     renderClientWorkouts();
   }
+  // -------- Pre-workout readiness check-in --------
+  // Three taps before the first set: sleep, soreness, stress. Each answer is
+  // 1-3 (rough / okay / good) and they sum to a 3-9 score.
+  //
+  // The effect on the progression ladder is deliberately ONE WAY: a low score
+  // can only protect (a miss on a wrecked day stops counting as a stall), never
+  // penalise, and a high score does nothing at all. Same reasoning as RIR only
+  // ever accelerating - an answer has to be safe to give honestly, or nobody
+  // gives it honestly. RIR already owns the accelerator; this owns the brake.
+  const READINESS_QS = [
+    { id: "sleep",  icon: "😴", label: "Sleep",    opts: ["Rough", "Okay", "Great"] },
+    { id: "sore",   icon: "💪", label: "Soreness", opts: ["Wrecked", "Some", "Fresh"] },
+    { id: "stress", icon: "🧠", label: "Stress",   opts: ["Fried", "Some", "Calm"] },
+  ];
+  // At or below this the day reads as "beat up" and stalls stop counting. The
+  // neutral score is 6 (all three answered "okay"), so this is genuinely below
+  // par rather than merely "not great".
+  const READY_LOW_MAX = 5;
+  const READY_LEVELS = [
+    { max: READY_LOW_MAX, id: "low",  emoji: "🪫", label: "Beat up" },
+    { max: 7,             id: "mid",  emoji: "🔋", label: "Okay" },
+    { max: 9,             id: "high", emoji: "⚡", label: "Ready" },
+  ];
+  function readinessScore(rec) {
+    if (!rec) return 0;
+    return READINESS_QS.reduce((n, q) => n + (parseInt(rec[q.id], 10) || 0), 0);
+  }
+  // null until all three are answered — a partial answer has no score to read.
+  function readinessLevel(rec) {
+    const s = readinessScore(rec);
+    if (s < READINESS_QS.length) return null;
+    return READY_LEVELS.find((l) => s <= l.max) || READY_LEVELS[READY_LEVELS.length - 1];
+  }
+  // Latest answer for a day, from any progress object (athlete-local or the
+  // coach's mirrored importedProgress). null when unanswered.
+  function dayReadiness(progress, dayId) {
+    const rec = progress?.readiness?.[dayId];
+    return rec && readinessLevel(rec) ? rec : null;
+  }
+  // Athlete write, latest-wins per day. Dated with the log date so the ladder
+  // can tell "they were wrecked the day they logged this" from an answer given
+  // on some other pass through the same day.
+  function setDayReadiness(dayId, answers, logDate) {
+    const p = state.clientData.progress; if (!p) return;
+    ensureProgressShape(p);
+    const clean = {};
+    READINESS_QS.forEach((q) => {
+      const v = parseInt(answers?.[q.id], 10);
+      if (v >= 1 && v <= 3) clean[q.id] = v;
+    });
+    if (Object.keys(clean).length < READINESS_QS.length) return;
+    clean.date = logDate || todayISO();
+    clean.score = readinessScore(clean);
+    p.readiness[dayId] = clean;
+    saveClient();
+  }
+  // The slim chip both the athlete and the coach read. `compact` drops the word.
+  function readinessChipHtml(rec, compact) {
+    const lvl = readinessLevel(rec); if (!lvl) return "";
+    const detail = READINESS_QS.map((q) => `${q.label}: ${q.opts[rec[q.id] - 1] || "?"}`).join(" · ");
+    return `<span class="rdy-chip ${lvl.id}" title="Readiness ${readinessScore(rec)}/9 · ${escapeHtml(detail)}">` +
+      `<span class="rdy-chip-emo">${lvl.emoji}</span>` +
+      (compact ? "" : `<span class="rdy-chip-txt">${escapeHtml(lvl.label)}</span>`) + `</span>`;
+  }
+
   // -------- Post-workout mood check-in ("How was your workout?") --------
   // Athlete taps up to 2 feelings when they finish a day; the picks show on
   // that day's card and feed the coach's per-day chips + program roll-up.
@@ -13094,6 +13174,107 @@
     else p.workoutMoods[dayId] = { date: todayISO(), moods: clean };
     saveClient();
   }
+  // -------- Session summary (what the day-complete sheet reports) --------
+  // Everything here is derived from the logs at read time — nothing new is
+  // stored. Volume uses the same weight × reps convention as the volume chart
+  // and the Hoard, so the numbers agree wherever the athlete looks.
+  function dayLogStats(day, progress, onDate) {
+    const logs = progress?.exerciseLogs || {};
+    const exs = [...(day?.exercises || []), ...((progress?.addedExercises?.[day?.id]) || [])];
+    let volume = 0, sets = 0, reps = 0, date = null;
+    exs.forEach((ex) => {
+      (logs[ex.id] || []).forEach((l) => {
+        if (l.locked !== true || l.skipped) return;
+        if (onDate && l.date !== onDate) return;
+        if (!date || String(l.date) > String(date)) date = l.date;
+        (l.sets || []).forEach((s) => {
+          if (s.skipped) return;
+          const w = parseFloat(s.weight), r = parseInt(s.reps, 10) || 0;
+          if (!r) return;
+          sets += 1;
+          reps += r;
+          if (isFinite(w) && w > 0) volume += w * r;
+        });
+      });
+    });
+    return { volume: Math.round(volume), sets, reps, date };
+  }
+
+  // "Last time through this day". A program day is only ever logged once (week
+  // 2's Push Day is a different day id from week 1's), so the comparison is by
+  // day NAME across the program and the athlete's own sessions — the previous
+  // time they did this workout, not the previous time they trained at all.
+  function previousDayOccurrence(day, beforeDate) {
+    const client = state.clientData.program?.client;
+    const progress = state.clientData.progress;
+    const key = String(day?.name || "").trim().toLowerCase();
+    if (!key || !client) return null;
+    const all = [];
+    (client.weeks || []).forEach((w) => (w.days || []).forEach((d) => all.push(d)));
+    sessionDays(client, progress).forEach((d) => all.push(d));
+    let best = null;
+    all.forEach((d) => {
+      if (d.id === day.id) return;
+      if (String(d.name || "").trim().toLowerCase() !== key) return;
+      const st = dayLogStats(d, progress);
+      if (!st.date || !st.volume) return;
+      if (beforeDate && String(st.date) >= String(beforeDate)) return;
+      if (!best || String(st.date) > String(best.date)) best = st;
+    });
+    return best;
+  }
+
+  // PRs stamped today that belong to a lift in this day. Scoped by name so a
+  // PR logged from somewhere else on the same date doesn't get claimed here.
+  function dayPRsOn(day, progress, onDate) {
+    const exs = [...(day?.exercises || []), ...((progress?.addedExercises?.[day?.id]) || [])];
+    const names = new Set(exs.map((e) => exKey(exResolvedName(e, progress))).filter(Boolean));
+    return (progress?.personalRecords || []).filter((pr) => pr.date === onDate && names.has(exKey(pr.name)));
+  }
+
+  // The block that makes finishing a day worth screenshotting: what got moved,
+  // how it compares to last time, and any PRs. Returns "" when there's nothing
+  // worth reporting (an all-bodyweight day with no volume, say).
+  function sessionSummaryHtml(day, logDate) {
+    const p = state.clientData.progress; if (!p || !day) return "";
+    const now = dayLogStats(day, p, logDate);
+    if (!now.sets) return "";
+    const ms = WorkoutClock.sessionMs();
+    const mins = Math.round(ms / 60000);
+    const tiles = [];
+    if (now.volume) tiles.push({ v: now.volume.toLocaleString(), u: "lb moved" });
+    tiles.push({ v: String(now.sets), u: now.sets === 1 ? "set" : "sets" });
+    if (mins >= 1) tiles.push({ v: String(mins), u: mins === 1 ? "minute" : "minutes" });
+    else tiles.push({ v: String(now.reps), u: "reps" });
+
+    const prev = now.volume ? previousDayOccurrence(day, logDate) : null;
+    let compare = "";
+    if (prev && prev.volume) {
+      const pct = Math.round(((now.volume - prev.volume) / prev.volume) * 100);
+      const when = new Date(prev.date + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      compare = Math.abs(pct) < 1
+        ? `<div class="sess-cmp even">Dead even with last time${when ? ` (${escapeHtml(when)})` : ""}</div>`
+        : `<div class="sess-cmp ${pct > 0 ? "up" : "down"}"><span class="sess-cmp-arrow">${pct > 0 ? "▲" : "▼"}</span>` +
+          `${Math.abs(pct)}% ${pct > 0 ? "more" : "less"} than last time${when ? ` (${escapeHtml(when)})` : ""}</div>`;
+    } else if (now.volume) {
+      compare = `<div class="sess-cmp first">First time through this one. That's the number to beat.</div>`;
+    }
+
+    const prs = dayPRsOn(day, p, logDate);
+    const prHtml = prs.length
+      ? `<div class="sess-prs">${prs.map((pr) => {
+          const bw = String(pr.weight) === "BW";
+          const load = bw ? `${escapeHtml(String(pr.reps))} reps` : `${escapeHtml(prWeightLabel(pr.name, pr.weight))} × ${escapeHtml(String(pr.reps))}`;
+          return `<div class="sess-pr"><span class="sess-pr-ico">🏆</span><span class="sess-pr-name">${escapeHtml(pr.name)}</span><span class="sess-pr-load">${load}</span></div>`;
+        }).join("")}</div>`
+      : "";
+
+    return `<div class="sess-sum">` +
+      `<div class="sess-tiles">${tiles.map((t) =>
+        `<div class="sess-tile"><span class="sess-tile-v">${escapeHtml(t.v)}</span><span class="sess-tile-u">${escapeHtml(t.u)}</span></div>`).join("")}</div>` +
+      compare + prHtml + `</div>`;
+  }
+
   // The "How was your workout?" sheet. Up to 2 picks.
   // `celebrate` is the auto-open after a day finishes: the sheet doubles as the
   // day-complete celebration, so the win banner and the confetti arrive with
@@ -13134,13 +13315,21 @@
       ],
     });
     draw();
-    if (celebrate) {
-      // Above the sheet's own header, not inside the body: finishing the day is
-      // the news, "how was your workout?" is the follow-up question. Lives
-      // outside #modal-body so re-picking a mood (which redraws the body)
-      // doesn't wipe it; closeModal/openModal clear it.
+    // Above the sheet's own header, not inside the body: what they just did is
+    // the news, "how was your workout?" is the follow-up question. Both live
+    // outside #modal-body so re-picking a mood (which redraws the body) doesn't
+    // wipe them; closeModal/openModal clear them via clearDayCompleteDressing.
+    const logDate = state.workoutView?.dayId === day.id && state.workoutView?.date
+      ? state.workoutView.date : todayISO();
+    // The numbers show whenever there are any, so re-opening from the 🫀 button
+    // later still reports the session. Only the win bar is celebrate-only.
+    const summary = sessionSummaryHtml(day, logDate);
+    if (celebrate || summary) {
       $("#modal .modal-card")?.insertAdjacentHTML("afterbegin",
-        `<div class="mood-sheet-win"><span class="msw-icon">🎉</span><span class="msw-txt">Day complete!</span></div>`);
+        (celebrate ? `<div class="mood-sheet-win"><span class="msw-icon">🎉</span><span class="msw-txt">Day complete!</span></div>` : "") +
+        summary);
+    }
+    if (celebrate) {
       // Its CSS pop is flattened under reduced motion, so drive that one too.
       if (reducedMotion()) popInReduced($("#modal .mood-sheet-win"), { ms: 400, from: 0.86 });
       celebrateDayComplete({ mount: $("#modal"), badge: false });
@@ -14508,12 +14697,13 @@
           ? `<span class="wc-status progress">${doneEx}/${totalEx} logged</span>`
           : `<span class="wc-status todo">Tap to start</span>`;
       const moods = dayMoods(state.clientData.progress, day.id);
+      const rdy = dayReadiness(state.clientData.progress, day.id);
       card.innerHTML = `
         <div class="workout-card-icon">${dayIconHtml(icon)}</div>
         <div class="workout-card-body">
           <h4 class="workout-card-title">${escapeHtml(day.name)}</h4>
           <div class="workout-card-meta">${totalEx} exercise${totalEx === 1 ? "" : "s"} · ${status}</div>
-          ${moods.length ? moodChipsHtml(moods) : ""}
+          ${rdy || moods.length ? `<span class="wc-tags">${readinessChipHtml(rdy)}${moodChipsHtml(moods)}</span>` : ""}
         </div>
         <div class="workout-card-chevron">›</div>
       `;
@@ -15099,6 +15289,93 @@
     $("#day-progress-label").textContent = pct >= 100 ? "Day done 🎉" : `${done}/${total} sets`;
   }
 
+  // Days the athlete waved off this session. In memory only: dismissing is a
+  // "not right now", not an answer, and it should come back next visit.
+  const _readinessSkipped = new Set();
+
+  // The three-tap readiness check-in that sits above the first exercise.
+  // Unanswered it's three rows of three buttons; answered it collapses to a
+  // single chip row you can tap to change. Answering the third question saves
+  // and collapses in the same tap, so the whole thing really is three taps.
+  function renderReadinessBlock(day, logDate) {
+    const wrap = document.createElement("div");
+    const p = state.clientData.progress;
+    // A live session is the coach standing in the athlete's portal running the
+    // workout, so the check-in is theirs to fill in too — same gate as moods.
+    const canAnswer = state.mode === "client" || state.liveLog;
+    let editing = false;
+    let draft = {};
+
+    const collapse = () => { editing = false; draft = {}; draw(); };
+    const draw = () => {
+      const rec = dayReadiness(p, day.id);
+      wrap.innerHTML = "";
+      if (rec && !editing) {
+        const lvl = readinessLevel(rec);
+        wrap.className = `rdy-block answered ${lvl.id}`;
+        wrap.innerHTML =
+          `<button type="button" class="rdy-done"${canAnswer ? "" : " disabled"} title="Your check-in for this session">` +
+            `<span class="rdy-done-emo">${lvl.emoji}</span>` +
+            `<span class="rdy-done-lbl">${escapeHtml(lvl.label)}</span>` +
+            `<span class="rdy-done-ans">${READINESS_QS.map((q) =>
+              `<span class="rdy-done-a"><span class="rdy-done-i">${q.icon}</span>${escapeHtml(q.opts[rec[q.id] - 1] || "?")}</span>`).join("")}</span>` +
+            (canAnswer ? `<span class="rdy-done-edit">Change</span>` : "") +
+          `</button>` +
+          (lvl.id === "low"
+            ? `<p class="rdy-note">Rough day. Keep the reps honest and take weight off if you need it. Nothing you miss today counts against your targets.</p>`
+            : "");
+        if (canAnswer) wrap.querySelector(".rdy-done").addEventListener("click", () => {
+          editing = true;
+          draft = {};
+          READINESS_QS.forEach((q) => { draft[q.id] = rec[q.id]; });
+          draw();
+        });
+        return;
+      }
+      // Nothing to show a coach previewing a day the athlete never answered,
+      // and no point asking how someone feels about a workout they finished.
+      if (!canAnswer || _readinessSkipped.has(day.id) || (!editing && isDayChecked(day.id))) {
+        wrap.className = "rdy-block hidden";
+        return;
+      }
+      wrap.className = "rdy-block asking";
+      wrap.innerHTML =
+        `<div class="rdy-head">` +
+          `<span class="rdy-head-ico">🔋</span>` +
+          `<span class="rdy-head-txt"><b>How are you today?</b><span>Three taps. A rough day will not count against your targets.</span></span>` +
+          `<button type="button" class="rdy-skip" title="Not now" aria-label="Not now">✕</button>` +
+        `</div>` +
+        `<div class="rdy-qs">${READINESS_QS.map((q) =>
+          `<div class="rdy-q" data-q="${q.id}">` +
+            `<span class="rdy-q-lbl"><span class="rdy-q-ico">${q.icon}</span><span class="rdy-q-txt">${escapeHtml(q.label)}</span></span>` +
+            `<div class="rdy-q-opts">${q.opts.map((o, i) =>
+              `<button type="button" class="rdy-opt l${i + 1}${draft[q.id] === i + 1 ? " on" : ""}" data-v="${i + 1}">${escapeHtml(o)}</button>`).join("")}</div>` +
+          `</div>`).join("")}</div>`;
+      wrap.querySelector(".rdy-skip").addEventListener("click", () => {
+        _readinessSkipped.add(day.id);
+        draw();
+      });
+      wrap.querySelectorAll(".rdy-q").forEach((row) => {
+        row.querySelectorAll(".rdy-opt").forEach((btn) => btn.addEventListener("click", () => {
+          draft[row.dataset.q] = parseInt(btn.dataset.v, 10);
+          // Third answer commits: no Save button to hunt for.
+          if (READINESS_QS.every((q) => draft[q.id])) {
+            setDayReadiness(day.id, draft, logDate);
+            collapse();
+            // The ladder may now be reading this session differently, so the
+            // cards below need their targets recomputed.
+            renderWorkoutDetailUI({ keepScroll: true });
+            renderClientWorkouts();
+            return;
+          }
+          draw();
+        }));
+      });
+    };
+    draw();
+    return wrap;
+  }
+
   function renderWorkoutDetailHeader(week, day) {
     if (!state.workoutView.date) state.workoutView.date = todayISO();
     const head = $("#workout-detail-head");
@@ -15154,9 +15431,13 @@
   const WorkoutClock = (() => {
     const IDLE_MS = 5 * 60 * 1000;         // gaps longer than this don't count
     const COMMIT_CAP_MS = 3 * 60 * 60 * 1000; // sanity cap per committed chunk
-    let active = false, accum = 0, lastActive = 0;
+    // `accum` is the un-banked chunk and gets zeroed by every commit; `session`
+    // is the running total for THIS visit to the day and survives a commit, so
+    // the day-complete summary can report "47 minutes" even if the athlete
+    // backgrounded the app halfway through.
+    let active = false, accum = 0, lastActive = 0, session = 0;
     const eligible = () => state.mode === "client" && !state.previewMode;
-    function flush(now) { if (!active) return; const gap = now - lastActive; if (gap > 0 && gap <= IDLE_MS) accum += gap; lastActive = now; }
+    function flush(now) { if (!active) return; const gap = now - lastActive; if (gap > 0 && gap <= IDLE_MS) { accum += gap; session += gap; } lastActive = now; }
     function commit() {
       const add = Math.min(accum, COMMIT_CAP_MS); accum = 0;
       if (add < 1000) return;
@@ -15165,8 +15446,11 @@
       saveClient();
     }
     return {
-      enter() { if (!eligible()) return; const now = Date.now(); if (active) { flush(now); return; } active = true; accum = 0; lastActive = now; },
+      enter() { if (!eligible()) return; const now = Date.now(); if (active) { flush(now); return; } active = true; accum = 0; session = 0; lastActive = now; },
       touch() { if (active) flush(Date.now()); },
+      // Time spent in this visit to the day, for the session summary. 0 when
+      // the clock never ran (coach preview, or a day opened and never touched).
+      sessionMs() { if (active) flush(Date.now()); return session; },
       leave() { if (!active) return; flush(Date.now()); active = false; commit(); },
       // Backgrounding: bank what we have but keep the session open for return.
       onHidden() { if (!active) return; flush(Date.now()); commit(); },
@@ -15197,6 +15481,8 @@
     resetDayProgress(); // cards rendered below re-register their set counts
     const list = $("#workout-detail-list");
     list.innerHTML = "";
+    // Readiness first: it's the thing you answer before the first set.
+    list.appendChild(renderReadinessBlock(day, state.workoutView.date || todayISO()));
     // An athlete-built session owns its own exercises, so it gets rename/delete
     // controls and a ✕ on each lift instead of the "added by you" sub-section.
     const own = isOwnDay(day);
@@ -15742,7 +16028,7 @@
     const pyrR = pyrW ? pyramidReps(ex, parseInt(ex.sets, 10) || 0) : null;
     // Auto-progression: effective target computed from prior weeks' locked
     // logs (chain of earned increments). Null when the exercise has no rule.
-    const prog = pyrW ? null : effectiveProgression(state.clientData.program?.client?.weeks, ex, state.clientData.progress?.exerciseLogs);
+    const prog = pyrW ? null : effectiveProgression(state.clientData.program?.client?.weeks, ex, state.clientData.progress?.exerciseLogs, state.clientData.progress?.readiness);
     // Effective set count: the set leg (📈 "add sets before the weight moves")
     // stacks earned sets on top of what the coach wrote. Everything downstream
     // that cares how many rows this card has reads THIS, not ex.sets.
@@ -20934,6 +21220,8 @@
         title: "Talk to your coach", text: "Tap here to open your thread. Ask about a lift, a weight, a sore shoulder, anything. They see it on their side and write back." },
       { sel: '[data-ctab-panel="workouts"]', go: () => setClientTab("workouts"),
         title: "Your program", text: "Everything your coach wrote for you. Tap a day to open the session and start logging." },
+      { sel: ".workout-detail-list .rdy-block", go: goDetail,
+        title: "Before your first set", text: "Three taps: how you slept, how sore you are, how stressed. Answer honestly. A rough day never counts against your targets, it only tells the app to stop pushing for one session." },
       { sel: ".workout-detail-list .cex-rx", go: goDetail,
         title: "Your target", text: "Each exercise shows what to do: sets, weight and reps (or seconds for timed moves). The number climbs automatically as you hit it week to week." },
       { sel: ".workout-detail-list .demo-btn", go: goDetail,
@@ -21172,6 +21460,7 @@
     const m = $("#modal"); if (!m) return;
     m.querySelector(".day-celebrate")?.remove();
     m.querySelector(".mood-sheet-win")?.remove();
+    m.querySelector(".sess-sum")?.remove();
   }
   function closeModal() { stopScan(); clearDayCompleteDressing(); hide($("#modal")); }
 
