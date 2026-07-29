@@ -531,6 +531,102 @@
     return usesDumbbellPair(ex) ? v + "s" : v + " lb";
   }
 
+  // ── Plate math ──────────────────────────────────────────────────────────
+  // A prescription is a total; what an athlete standing at the rack needs is
+  // what to hang on each end. Everything here is display-only and local: the
+  // bar and the plate rack live in localStorage, never in the program or the
+  // cloud, so nothing new syncs and a coach upsert can't touch it.
+  const KEY_PLATES = "trainerpro_plates_v1";
+  const PLATE_SIZES = [45, 35, 25, 10, 5, 2.5];
+  const PLATE_DEFAULT_INV = [45, 25, 10, 5, 2.5]; // 35s are the pair most racks skip
+  // Bars offered in the picker. 0 = plate-loaded with no bar (leg press, sled).
+  const BAR_OPTIONS = [
+    { lb: 45, label: "Barbell", sub: "45" },
+    { lb: 35, label: "Light bar", sub: "35" },
+    { lb: 25, label: "EZ bar", sub: "25" },
+    { lb: 55, label: "Trap bar", sub: "55" },
+    { lb: 0,  label: "No bar", sub: "plates only" },
+  ];
+  // Library lifts whose loading isn't obvious from the name alone.
+  const BAR_BY_NAME = {
+    "bench press": 45, "incline bench press": 45, "decline bench press": 45,
+    "close-grip bench press": 45, "floor press": 45, "jm press": 45,
+    "skull crusher": 45, "row": 45, "pendlay row": 45, "rack pull": 45,
+    "back squat": 45, "front squat": 45, "box squat": 45, "pause squat": 45,
+    "zercher squat": 45, "deadlift": 45, "romanian deadlift": 45,
+    "stiff-leg deadlift": 45, "sumo deadlift": 45, "good morning": 45,
+    "hip thrust": 45, "b-stance hip thrust": 45, "glute bridge": 45,
+    "overhead press": 45, "push press": 45, "z press": 45, "upright row": 45,
+    "shrug": 45, "curl": 45, "reverse curl": 45, "drag curl": 45,
+    "ez-bar curl": 25, "preacher curl": 25, "spider curl": 25,
+    "trap bar deadlift": 55, "trap bar carry": 55,
+    "zercher carry": 45, "front rack carry": 45,
+    "leg press": 0, "hack squat": 0, "pendulum squat": 0, "t-bar row": 0,
+    "landmine press": 0, "meadows row": 0, "sled push": 0,
+  };
+  // The bar a lift loads, in lb — null when it isn't loaded with plates at all
+  // (dumbbells, cables, machines with a pin, bodyweight).
+  function guessBar(name, mods) {
+    const m = mods || [];
+    if (m.includes("EZ Bar")) return 25;
+    if (m.includes("BB")) return 45;
+    if (m.includes("DB") || m.includes("DBs") || m.includes("KB") || m.includes("Cable") ||
+        m.includes("Rope") || m.includes("Band") || m.includes("Wide Bar") || m.includes("Machine")) return null;
+    const n = String(name || "").trim().toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(BAR_BY_NAME, n)) return BAR_BY_NAME[n];
+    if (/\bsmith\b/.test(n)) return 25;
+    if (/\btrap bar\b/.test(n)) return 55;
+    if (/\bez[- ]?bar\b/.test(n)) return 25;
+    if (/\bdumbbell|kettlebell|cable|band|machine\b/.test(n)) return null;
+    if (/\bbarbell\b/.test(n)) return 45;
+    return null;
+  }
+  function plateSettings() {
+    try { return JSON.parse(localStorage.getItem(KEY_PLATES)) || {}; } catch { return {}; }
+  }
+  function savePlateSettings(s) {
+    try { localStorage.setItem(KEY_PLATES, JSON.stringify(s)); } catch {}
+  }
+  // The rack: which plate sizes this gym actually has, biggest first.
+  function plateInventory() {
+    const inv = (plateSettings().inv || []).filter((p) => PLATE_SIZES.includes(p));
+    return (inv.length ? inv : PLATE_DEFAULT_INV).slice().sort((a, b) => b - a);
+  }
+  // An athlete's own pick for a lift always beats the guess. "off" hides it.
+  function plateBarFor(name, mods) {
+    const own = (plateSettings().ex || {})[String(name || "").trim().toLowerCase()];
+    if (own === "off") return null;
+    if (Number.isFinite(own)) return own;
+    return guessBar(name, mods);
+  }
+  function setPlateBarFor(name, val) {
+    const s = plateSettings();
+    s.ex = s.ex || {};
+    const key = String(name || "").trim().toLowerCase();
+    if (val === null) delete s.ex[key]; else s.ex[key] = val;
+    savePlateSettings(s);
+  }
+  // Greedy loader: the biggest plate that still fits, over and over. Returns
+  // one side's stack plus whatever the rack couldn't make.
+  function platesPerSide(totalLb, barLb, inv) {
+    const total = parseFloat(totalLb); // "" is not a weight; Number("") would be 0
+    if (!Number.isFinite(total) || !Number.isFinite(barLb)) return null;
+    let perSide = (total - barLb) / 2;
+    if (perSide < -1e-9) return { plates: [], leftover: 0, under: true };
+    const plates = [];
+    (inv || plateInventory()).forEach((p) => {
+      while (perSide >= p - 1e-9) { plates.push(p); perSide -= p; }
+    });
+    return { plates, leftover: Math.round(perSide * 100) / 100, under: false };
+  }
+  // "45 · 45 · 25" — the stack as it goes on the sleeve, biggest first.
+  function plateText(load) {
+    if (!load) return "";
+    if (load.under) return "under the bar";
+    if (!load.plates.length) return load.leftover ? "—" : "bar only";
+    return load.plates.map((p) => String(p)).join(" · ");
+  }
+
   const TAG_COLORS = {
     "1A":        { color: "#f87171", bg: "rgba(248,113,113,0.18)" },
     "1L":        { color: "#fb923c", bg: "rgba(251,146,60,0.18)"  },
@@ -13195,6 +13291,35 @@
     draw();
   }
 
+  // What a day is actually made of, for the home hero: the lifts in it, how
+  // many sets (warm-ups included, the same way the day bar counts them), how
+  // many of those are already logged on this date, and a rough clock estimate.
+  // Read-only — it never touches state.
+  function dayPlanSummary(progress, day, date) {
+    const added = (progress?.addedExercises?.[day.id]) || [];
+    const list = [...(day.exercises || []), ...added];
+    const logs = progress?.exerciseLogs || {};
+    let sets = 0, doneSets = 0;
+    const lifts = [];
+    list.forEach((ex) => {
+      lifts.push(exResolvedName(ex, progress) || ex.name || "");
+      const n = parseInt(ex.sets, 10) || 0;
+      const warm = ex.kind === "mobility" ? 0 : Math.min(3, (ex.warmups || []).length);
+      sets += n + warm;
+      const entry = (logs[ex.id] || []).find((l) => l.date === date);
+      if (!entry) return;
+      if (entry.skipped) { doneSets += n + warm; return; }
+      // Mobility logs rounds; everything else logs sets (and maybe warm-ups).
+      if (Array.isArray(entry.rounds)) doneSets += entry.rounds.filter(Boolean).length;
+      doneSets += (entry.sets || []).filter((s) => s.skipped || s.weight || s.reps).length;
+      doneSets += (entry.warmups || []).filter((w) => w.weight || w.reps).length;
+    });
+    // Roughly two and a half minutes a set, plus a minute per lift to set up,
+    // rounded to five. Deliberately a "~" number, not a promise.
+    const mins = sets ? Math.max(10, Math.round((sets * 2.5 + list.length) / 5) * 5) : 0;
+    return { lifts, sets, doneSets: Math.min(sets, doneSets), mins };
+  }
+
   function renderAthleteOverview() {
     const host = $("#overview-stats");
     const heroHost = $("#overview-hero");
@@ -13222,13 +13347,18 @@
     const pct = totalDays ? Math.round((doneDays / totalDays) * 100) : 0;
     const nextDay = days.find((d) => !isDone(d)) || days[0];
 
-    // ---- Adaptive "up next" hero: Today / Up next / Rest / All caught up ----
+    // ---- Adaptive hero: Today / Up next / Rest / All caught up ----
+    // The athlete's twin of the coach Today board — what to do next, what's in
+    // it, and one big Start, at the top of the page instead of floating over
+    // the bottom of it.
     const dayHero = (wkId, day, kicker) => {
       const list = (weeks.find((w) => w.id === wkId)?.days) || [];
       const col = getDayColor(Math.max(0, list.findIndex((d) => d.id === day.id)));
+      const plan = dayPlanSummary(progress, day, today);
       return { icon: day.icon || workoutIconFor(day.name), kicker, title: escapeHtml(day.name),
-        sub: "", color: col.color, soft: col.soft,
-        jump: { weekId: wkId, dayId: day.id }, cta: "Start" };
+        sub: "", color: col.color, soft: col.soft, plan,
+        jump: { weekId: wkId, dayId: day.id },
+        cta: plan.doneSets ? "Pick up where you left off" : "Start workout" };
     };
     const selfToday = progress.selfSchedule?.[today];
     let hero = null;
@@ -13316,26 +13446,57 @@
         }).join("")}</div>
       </details>` : "";
 
-    // "Up next" reads as a compact floating badge pinned to the bottom-center
-    // of the overview (day name on top, kicker under it). The whole badge is
-    // the tap target on startable states, so there's no separate Start button.
+    // The hero opens the page: the day's name, the lifts inside it, how much
+    // work it is, and one Start. A part-finished day says so on its own bar and
+    // offers to resume instead. Rest and caught-up states keep the short shape.
     // No rank line here: the header crest carries it on every screen, so a bar
     // under the greeting would just say the same thing twice.
     const greetHost = $("#overview-greeting");
     if (greetHost) greetHost.innerHTML = `<div class="ov-greeting">Hey, ${firstName} 👋</div>`;
-    if (heroHost) heroHost.innerHTML = `
-      <div class="ov-hero${hero.jump ? " is-clickable" : ""}" id="ov-hero" style="--hero-color:${hero.color || "var(--primary-bright)"};--hero-soft:${hero.soft || "var(--primary-soft)"}">
-        <div class="ov-hero-textcol">
-          <span class="ov-hero-title">${hero.title}</span>
-          <span class="ov-hero-kicker">${hero.kicker}</span>
-        </div>
-        ${hero.cta ? `<span class="ov-hero-arrow" aria-hidden="true">→</span>` : ""}
-      </div>`;
+    if (heroHost) {
+      const p = hero.plan;
+      // Four lifts is what fits on a phone in two lines; the rest are counted.
+      const liftLine = p && p.lifts.length
+        ? p.lifts.slice(0, 4).map((n) => escapeHtml(n)).join(" · ") +
+          (p.lifts.length > 4 ? `<span class="ov-hero-more"> +${p.lifts.length - 4} more</span>` : "")
+        : "";
+      const metaBits = p ? [
+        `${p.lifts.length} ${p.lifts.length === 1 ? "lift" : "lifts"}`,
+        p.sets ? `${p.sets} sets` : "",
+        p.mins ? `~${p.mins} min` : "",
+      ].filter(Boolean) : [];
+      const donePct = p && p.sets ? Math.round((p.doneSets / p.sets) * 100) : 0;
+      heroHost.innerHTML = `
+        <div class="ov-hero${hero.jump ? " is-clickable" : ""}${p ? " has-plan" : ""}" id="ov-hero"
+             ${hero.jump ? 'role="button" tabindex="0"' : ""}
+             style="--hero-color:${hero.color || "var(--primary-bright)"};--hero-soft:${hero.soft || "var(--primary-soft)"}">
+          <div class="ov-hero-top">
+            <span class="ov-hero-ico" aria-hidden="true">${dayIconHtml(hero.icon)}</span>
+            <div class="ov-hero-textcol">
+              <span class="ov-hero-kicker">${hero.kicker}</span>
+              <span class="ov-hero-title">${hero.title}</span>
+            </div>
+          </div>
+          ${metaBits.length ? `<div class="ov-hero-meta">${metaBits.join(" · ")}</div>` : ""}
+          ${liftLine ? `<div class="ov-hero-lifts">${liftLine}</div>` : ""}
+          ${hero.sub ? `<div class="ov-hero-sub">${hero.sub}</div>` : ""}
+          ${p && p.doneSets ? `<div class="ov-hero-track" role="img" aria-label="${p.doneSets} of ${p.sets} sets logged">
+            <span class="ov-hero-fill" style="width:${donePct}%"></span>
+          </div><div class="ov-hero-progress">${p.doneSets} of ${p.sets} sets logged</div>` : ""}
+          ${hero.cta ? `<span class="ov-hero-cta"><span class="ov-hero-cta-ico" aria-hidden="true">▶</span>${escapeHtml(hero.cta)}</span>` : ""}
+        </div>`;
+    }
     renderCalHeaderStats({ doneDays, totalDays, weekLabel, streakN, bookingLabel });
     host.innerHTML = statsHtml;
     if (trophyHost) trophyHost.innerHTML = trialsHtml + trophyHtml;
 
-    if (hero.jump) $("#ov-hero")?.addEventListener("click", () => jumpToWorkout(hero.jump, today));
+    if (hero.jump) {
+      const heroEl = $("#ov-hero");
+      heroEl?.addEventListener("click", () => jumpToWorkout(hero.jump, today));
+      heroEl?.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); jumpToWorkout(hero.jump, today); }
+      });
+    }
     renderClientHeaderSessions();
     renderClientHeaderRank();
     $("#btn-share-recap")?.addEventListener("click", () => shareLifetimeImage(lifeStats, c.name));
@@ -15053,6 +15214,85 @@
     const nm = exResolvedName(ex, progress) || "(unnamed)";
     return [...before, nm, ...after].join(" ");
   }
+  // Bar + rack picker behind the plate readout. The bar is per exercise (the
+  // app's guess is only a guess, and one gym's "Row" is another's Smith rack);
+  // the plates are one rack shared by every lift. Rendered to <body> and
+  // anchored like the Tools menu so the card's overflow can't clip it.
+  let _plateSheet = null;
+  function openPlateSheet(name, mods, anchor, onChange) {
+    closePlateSheet();
+    const key = String(name || "").trim().toLowerCase();
+    const pop = document.createElement("div");
+    pop.className = "plate-pop";
+    _plateSheet = pop;
+
+    const render = () => {
+      const cur = plateBarFor(name, mods);
+      const own = (plateSettings().ex || {})[key];
+      const inv = plateInventory();
+      pop.innerHTML = `
+        <div class="plate-pop-head">${escapeHtml(name || "This lift")}</div>
+        <div class="plate-pop-lbl">Bar</div>
+        <div class="plate-pop-bars">
+          ${BAR_OPTIONS.map((b) => `<button type="button" class="plate-bar-opt${cur === b.lb ? " on" : ""}" data-bar="${b.lb}">
+            <span>${escapeHtml(b.label)}</span><em>${escapeHtml(b.sub)}</em></button>`).join("")}
+          <button type="button" class="plate-bar-opt plate-bar-off${own === "off" ? " on" : ""}" data-bar="off">
+            <span>Not a bar lift</span><em>hide</em></button>
+        </div>
+        <div class="plate-pop-lbl">Plates in your gym</div>
+        <div class="plate-pop-plates">
+          ${PLATE_SIZES.map((p) => `<button type="button" class="plate-size${inv.includes(p) ? " on" : ""}" data-plate="${p}">${p}</button>`).join("")}
+        </div>
+        <div class="plate-pop-foot">The bar is per exercise. The plates apply everywhere.</div>`;
+      pop.querySelectorAll("[data-bar]").forEach((b) => b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const v = b.dataset.bar;
+        if (v === "off") setPlateBarFor(name, own === "off" ? null : "off");
+        else setPlateBarFor(name, cur === Number(v) ? null : Number(v));
+        render();
+        onChange?.();
+      }));
+      pop.querySelectorAll("[data-plate]").forEach((b) => b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const p = Number(b.dataset.plate);
+        const next = inv.includes(p) ? inv.filter((x) => x !== p) : [...inv, p];
+        if (!next.length) return; // an empty rack can't load anything
+        const s = plateSettings();
+        s.inv = next.sort((a, z) => z - a);
+        savePlateSettings(s);
+        render();
+        onChange?.();
+      }));
+    };
+    render();
+    document.body.appendChild(pop);
+
+    const r = anchor.getBoundingClientRect();
+    const pw = pop.offsetWidth, ph = pop.offsetHeight;
+    let left = Math.min(r.left, window.innerWidth - pw - 8);
+    pop.style.left = Math.max(8, left) + "px";
+    // Below the anchor when there's room, above it when there isn't.
+    const below = r.bottom + 6;
+    pop.style.top = (below + ph < window.innerHeight - 8 ? below : Math.max(8, r.top - ph - 6)) + "px";
+
+    setTimeout(() => {
+      document.addEventListener("click", onPlateAway, true);
+      window.addEventListener("scroll", onPlateAway, true);
+      window.addEventListener("resize", onPlateAway, true);
+    }, 0);
+  }
+  function onPlateAway(e) {
+    if (e.type === "scroll" || !_plateSheet || !_plateSheet.contains(e.target)) closePlateSheet();
+  }
+  function closePlateSheet() {
+    if (!_plateSheet) return;
+    _plateSheet.remove();
+    _plateSheet = null;
+    document.removeEventListener("click", onPlateAway, true);
+    window.removeEventListener("scroll", onPlateAway, true);
+    window.removeEventListener("resize", onPlateAway, true);
+  }
+
   // Mobility / stretching card: hold-for-time, no weight logging. The athlete
   // taps a checkmark per round; the row is "done" once every round is checked.
   // Name · prescription · round checks all sit on one horizontal line.
@@ -15482,6 +15722,9 @@
 
     // Per-exercise fill line (bottom edge of the card) + day-bar registration.
     let exBar = null, exProgress = null, updateExBar = () => {};
+    // Plate readout, wired below once the set rows exist. Every edit path
+    // already runs through updateExBar(), so that's where it repaints.
+    let plateSync = () => {};
 
     if (!numSets) {
       setTable.innerHTML = `<p class="cex-no-sets">Sets not prescribed yet. Your coach will fill this in.</p>`;
@@ -15534,6 +15777,7 @@
       exBarFill.style.width = pct + "%";
       exBar.classList.toggle("complete", pct >= 100);
       doneSyncs.forEach((f) => f());
+      plateSync();
       updateDayProgressBar();
     };
     // Values that are actually filled in (typed, stepped, tapped-to-accept, or
@@ -15726,6 +15970,67 @@
       setTable.appendChild(col);
       setInputs.push(item);
     }
+
+    // ── Plate math ──
+    // What goes on each end of the bar for the weight in each row. Reads the
+    // typed value first and the prescription second, so it follows what the
+    // athlete is actually loading, warm-ups included. Rows that load the same
+    // weight collapse into one line ("S1-S3"). Nothing here is stored.
+    const plateName = exResolvedName(ex, state.clientData.progress);
+    const plateRow = document.createElement("div");
+    plateRow.className = "cex-plate-row hidden";
+    plateRow.setAttribute("role", "button");
+    plateRow.tabIndex = 0;
+    plateRow.title = "Tap to set the bar and which plates your gym has";
+    const updatePlates = () => {
+      const bar = plateBarFor(plateName, ex.modifiers);
+      if (bar == null || repsOnlyLog) { hide(plateRow); plateRow.innerHTML = ""; return; }
+      const inv = plateInventory();
+      // Every row that carries a weight, in the order they're lifted.
+      const rows = [
+        ...warmupInputs.map((it, i) => ({
+          lbl: `W${i + 1}`,
+          lb: it.wt.value !== "" ? parseFloat(it.wt.value) : weightToLb(warmups[i]?.weight),
+        })),
+        ...setInputs.map((it, s) => ({
+          lbl: `S${s + 1}`,
+          lb: it.skipped ? NaN : (it.wt.value !== "" ? parseFloat(it.wt.value) : wSeedAt(s)),
+        })),
+      ].filter((r) => Number.isFinite(r.lb));
+      if (!rows.length) { hide(plateRow); plateRow.innerHTML = ""; return; }
+      // Consecutive rows at the same weight read as one line.
+      const groups = [];
+      rows.forEach((r) => {
+        const last = groups[groups.length - 1];
+        if (last && last.lb === r.lb) last.to = r.lbl;
+        else groups.push({ from: r.lbl, to: null, lb: r.lb });
+      });
+      const barLbl = bar ? `bar ${bar}` : "no bar";
+      const lines = groups.map((g) => {
+        const load = platesPerSide(g.lb, bar, inv);
+        const span = g.to ? `${g.from}-${g.to}` : g.from;
+        const extra = load && load.leftover ? `<span class="cex-plate-off">${load.leftover} short</span>` : "";
+        return `<div class="cex-plate-line"><span class="cex-plate-set">${escapeHtml(span)}</span>` +
+               `<span class="cex-plate-lb">${escapeHtml(String(g.lb))}</span>` +
+               `<span class="cex-plate-list">${escapeHtml(plateText(load))}</span>${extra}</div>`;
+      }).join("");
+      plateRow.innerHTML =
+        `<div class="cex-plate-head"><span class="cex-plate-ico">🏋</span>` +
+        `<span>Per side</span><span class="cex-plate-bar">${escapeHtml(barLbl)}</span></div>` +
+        `<div class="cex-plate-lines">${lines}</div>`;
+      show(plateRow);
+    };
+    const openPlatePicker = (anchor) => openPlateSheet(plateName, ex.modifiers, anchor, () => {
+      updatePlates();
+      // Other open cards on this day share the same rack setting.
+      $$(".cex-plate-row").forEach((el) => el._refresh && el !== plateRow && el._refresh());
+    });
+    plateRow._refresh = updatePlates;
+    plateSync = updatePlates;
+    plateRow.addEventListener("click", (e) => { e.stopPropagation(); openPlatePicker(plateRow); });
+    plateRow.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); openPlatePicker(plateRow); }
+    });
 
     // Pre-fill today's existing log so edits persist
     if (todayLog?.sets?.length) {
@@ -15986,7 +16291,20 @@
       openSwapPicker(ex);
     });
 
-    toolsMenu.append(skipRow, toolsDiv, swapItem, skipExItem, clearItem);
+    // Plate math: the readout only shows itself on lifts the app can tell are
+    // plate-loaded, so this is how an athlete turns it on for one it guessed
+    // wrong — and how anyone reaches the bar and rack settings.
+    const platesItem = document.createElement("button");
+    platesItem.type = "button";
+    platesItem.className = "cex-tools-item";
+    platesItem.textContent = "🏋 Plate math";
+    platesItem.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeToolsMenu();
+      openPlatePicker(toolsBtn);
+    });
+
+    toolsMenu.append(skipRow, toolsDiv, swapItem, platesItem, skipExItem, clearItem);
 
     const refreshToolsState = () => {
       clearItem.disabled = !draftHasData();
@@ -16188,6 +16506,8 @@
     if (todayLog?.skipped && isLocked) applySkippedUI(true);
 
     logForm.appendChild(setTable);
+    logForm.appendChild(plateRow);
+    updatePlates();
     if (finisherInputs.length) logForm.appendChild(finisherWrap);
     if (prog) logForm.appendChild(rirRow);
     } // end else (numSets > 0)
@@ -20360,7 +20680,7 @@
       { sel: "#screen-client .tabs", go: () => setClientTab("overview"),
         title: "Welcome to Stone Dragon", text: "A quick lap around your training hub, about a minute. Skip any time. These tabs are everything." },
       { sel: '[data-ctab-panel="overview"]',
-        title: "Overview", text: "Your streak, last workout, lifetime totals, charts and trophies. It fills in as you train — tap ⋯ on the stats card to pick what shows, like cardio time, distance, or total push-ups and pull-ups." },
+        title: "Overview", text: "The card up top is your next workout: the lifts in it, how long it runs, and one tap to start. Under it sit your streak, last workout, lifetime totals, charts and trophies. It fills in as you train. Tap ⋯ on the stats card to pick what shows, like cardio time, distance, or total push-ups and pull-ups." },
       { sel: '[data-ctab-panel="workouts"]', go: () => setClientTab("workouts"),
         title: "Your program", text: "Everything your coach wrote for you. Tap a day to open the session and start logging." },
       { sel: ".workout-detail-list .cex-rx", go: goDetail,
