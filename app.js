@@ -13013,8 +13013,7 @@
     refreshAthleteOpenSlots();
     refreshAthleteAnatomyEdits();
     applyAthletePrefs();
-    renderAthleteNotifyCard();
-    renderAthleteSettingsCards();
+    renderAthleteSettingsCards(); // renders the notifications fold too
     refreshPushSubscription();
     pullAthletePrefs(); // cloud copy wins, then re-renders the cards
     // First time on this device: one guided lap (never during a coach live
@@ -21138,8 +21137,7 @@
     _prefs = Object.assign(athletePrefs(), remote);
     try { localStorage.setItem(KEY_PREFS, JSON.stringify(_prefs)); } catch (e) {}
     applyAthletePrefs();
-    renderAthleteNotifyCard();
-    renderAthleteSettingsCards();
+    renderAthleteSettingsCards(); // renders the notifications fold too
   }
   // Two body classes carry the prefs into the CSS, so simple mode and a
   // hidden body weight take effect everywhere at once without every render
@@ -21226,21 +21224,38 @@
       await window.Cloud.savePushSubscription(athleteId, sub.toJSON());
     } catch (e) {}
   }
+  // Notifications is the first fold of the settings card, so it's rebuilt in
+  // place: turning push on or off changes which switches exist, but the fold
+  // it lives in must not slam shut under the finger that just tapped it.
   function renderAthleteNotifyCard() {
-    const host = $("#athlete-notify-host");
-    if (!host) return;
-    if (state.previewMode) { host.innerHTML = ""; return; } // coach preview: not their device
+    const fold = $("#pref-fold-notify");
+    if (!fold) return;
+    const wasOpen = fold.open;
+    fold.outerHTML = notifyFoldHtml();
+    const next = $("#pref-fold-notify");
+    if (next) { next.open = wasOpen; wireNotifyFold(next); }
+  }
+  // The fold's summary line says where notifications stand without opening it.
+  function notifyFoldSub() {
+    if (!pushSupported()) return "Not supported in this browser";
+    if (Notification.permission === "denied") return "Blocked in your browser settings";
+    return pushOn() ? "Notifications are on" : "Get a ping for bulletins and messages";
+  }
+  function pushOn() {
+    return pushSupported() && Notification.permission === "granted" && localStorage.getItem(KEY_PUSH) === "1";
+  }
+  function notifyFoldHtml() {
     const supported = pushSupported();
-    const enabled = supported && Notification.permission === "granted" && localStorage.getItem(KEY_PUSH) === "1";
+    const enabled = pushOn();
     const blocked = supported && Notification.permission === "denied";
     const iosTip = /iphone|ipad|ipod/i.test(navigator.userAgent) && !isStandalone()
-      ? `<p class="muted" style="font-size:0.8rem">On iPhone: install the app first (Share → Add to Home Screen), then enable here.</p>`
+      ? `<p class="pref-foot">On iPhone: install the app first (Share → Add to Home Screen), then enable here.</p>`
       : "";
     let inner;
     if (!supported) {
-      inner = `<p class="muted">This browser doesn't support notifications.</p>`;
+      inner = `<p class="pref-foot">This browser doesn't support notifications.</p>`;
     } else if (blocked) {
-      inner = `<p class="muted">Notifications are blocked for this site. Allow them in your browser settings, then come back.</p>`;
+      inner = `<p class="pref-foot">Notifications are blocked for this site. Allow them in your browser settings, then come back.</p>`;
     } else {
       const p = athletePrefs();
       // The detail switches only exist once notifications are on. Showing
@@ -21263,13 +21278,31 @@
             <label>From <input type="time" id="pref-quiet-from" value="${escapeHtml(p.quietFrom)}" /></label>
             <label>To <input type="time" id="pref-quiet-to" value="${escapeHtml(p.quietTo)}" /></label>
           </div>
-        </div>` : `<p class="muted" style="font-size:0.85rem">Get a ping when your coach posts a bulletin or sends you a message.</p>`;
+        </div>` : `<p class="pref-foot">Get a ping when your coach posts a bulletin or sends you a message.</p>`;
       inner = `
         ${detail}
         ${iosTip}
-        <button class="btn ${enabled ? "btn-ghost" : "btn-primary"} btn-sm" id="btn-toggle-push" type="button">${enabled ? "🔕 Turn off notifications" : "🔔 Enable notifications"}</button>`;
+        <div class="pref-actions">
+          <button class="btn ${enabled ? "btn-ghost" : "btn-primary"} btn-sm slim-btn" id="btn-toggle-push" type="button">${enabled ? "🔕 Turn off notifications" : "🔔 Enable notifications"}</button>
+        </div>`;
     }
-    host.innerHTML = `<div class="card"><h4 style="margin-top:0">🔔 Notifications</h4>${inner}</div>`;
+    return `
+      <details class="pref-fold" id="pref-fold-notify">
+        <summary>
+          <span class="pref-fold-ico">🔔</span>
+          <span class="pref-fold-text">
+            <span class="pref-fold-title">Notifications</span>
+            <span class="pref-fold-sub">${escapeHtml(notifyFoldSub())}</span>
+          </span>
+          <span class="pref-fold-chev">▸</span>
+        </summary>
+        ${inner}
+      </details>`;
+  }
+  // Everything inside the notifications fold: the kind switches, the two time
+  // panels, and the master button.
+  function wireNotifyFold(host) {
+    const enabled = pushOn();
     wirePrefSwitches(host, {
       reminderOn: (on) => $("#pref-reminder-sub")?.classList.toggle("hidden", !on),
       quietOn: (on) => $("#pref-quiet-sub")?.classList.toggle("hidden", !on),
@@ -21312,6 +21345,10 @@
   // optional per-key callback for rows that reveal a sub-panel.
   function wirePrefSwitches(host, after = {}) {
     host.querySelectorAll("[data-pref]").forEach((box) => {
+      // The folds nest, so the card's own pass would re-bind switches the
+      // notifications fold already wired — and save (and toast) twice.
+      if (box.dataset.prefWired) return;
+      box.dataset.prefWired = "1";
       box.addEventListener("change", () => {
         const key = box.dataset.pref;
         setAthletePrefs({ [key]: box.checked });
@@ -21321,8 +21358,9 @@
     });
   }
 
-  // Profile → the two cards under Notifications: how much app the athlete
-  // wants, and what leaves their phone.
+  // Profile → one settings card: what reaches the athlete's phone, how much
+  // app they want, and what leaves it. All three are set-once-and-forget, so
+  // none of them earns permanent height on a screen visited to edit details.
   function renderAthleteSettingsCards() {
     const host = $("#athlete-settings-host");
     if (!host) return;
@@ -21330,10 +21368,9 @@
     const p = athletePrefs();
     const clips = Object.values(state.clientData.progress?.formChecks || {})
       .reduce((n, list) => n + (Array.isArray(list) ? list.length : 0), 0);
-    // One card, two folds. Both are things you set once and forget, so neither
-    // earns permanent height on a screen you visit to edit your details.
     host.innerHTML = `
       <div class="card pref-card">
+        ${notifyFoldHtml()}
         <details class="pref-fold">
           <summary>
             <span class="pref-fold-ico">🎛️</span>
@@ -21379,6 +21416,9 @@
       hideWeight: (on) => setSub(host.querySelector('[data-pref="hideWeight"]'),
         on ? "Body weight is hidden" : "Your weight, your videos, your devices"),
     });
+    // The notifications fold brings its own switches, times and master button.
+    const notifyFold = host.querySelector("#pref-fold-notify");
+    if (notifyFold) wireNotifyFold(notifyFold);
     $("#btn-export-my-data")?.addEventListener("click", exportMyData);
     $("#btn-signout-everywhere")?.addEventListener("click", signOutEverywhere);
     $("#btn-purge-form-checks")?.addEventListener("click", purgeMyFormChecks);
