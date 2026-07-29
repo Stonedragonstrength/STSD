@@ -94,9 +94,17 @@ Deno.serve(async (req) => {
     const coachId = coach.id as string;
 
     if (!clientId || !clientSecret || !redirectUri) {
-      // Everything still answers, so the UI can explain what's missing rather
-      // than looking broken.
-      return json({ ok: false, error: "not configured", needsSetup: true }, 503);
+      // Named individually: these are matched EXACTLY, and getting one name
+      // wrong in the dashboard looks identical to not having set it at all.
+      const missing = [
+        clientId ? null : "GOOGLE_CLIENT_ID",
+        clientSecret ? null : "GOOGLE_CLIENT_SECRET",
+        redirectUri ? null : "GOOGLE_REDIRECT_URI",
+      ].filter(Boolean);
+      // 200, deliberately. supabase-js treats any non-2xx as an error and
+      // throws the body away, so an explanation sent with an error status can
+      // never reach the UI. This is an expected state, not a server fault.
+      return json({ ok: false, error: "not configured", needsSetup: true, missing });
     }
 
     const loadToken = async () => {

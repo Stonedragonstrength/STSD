@@ -345,7 +345,17 @@
       const { data, error } = await sb.functions.invoke("google-calendar", {
         body: { action, ...(payload || {}) },
       });
-      if (error) { console.warn("[Cloud] googleCall", action, error.message); return null; }
+      if (error) {
+        // A non-2xx response still carries the function's JSON body, but only
+        // on error.context. Without reading it, every failure reaches the UI
+        // as a bare null and they all look identical.
+        try {
+          const body = await error.context?.json?.();
+          if (body && typeof body === "object") return body;
+        } catch (e) { /* not JSON — fall through to the warning */ }
+        console.warn("[Cloud] googleCall", action, error.message);
+        return null;
+      }
       return data || null;
     } catch (e) { console.warn("[Cloud] googleCall", action, e); return null; }
   }

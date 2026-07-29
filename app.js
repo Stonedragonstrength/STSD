@@ -12023,9 +12023,15 @@
   async function connectGoogle() {
     const res = await window.Cloud?.googleCall?.("auth-url");
     if (!res?.ok || !res.url) {
-      toast(res?.needsSetup
-        ? "Google isn't set up on the server yet. See the notes in the google-calendar function."
-        : "Couldn't start the Google connection.", 5000);
+      // Name the missing settings. "Not set up" and "set up under the wrong
+      // name" look identical from here, and the second one is the likely
+      // mistake, so guessing between them wastes the coach's time.
+      const msg = res?.needsSetup
+        ? `Google isn't set up yet. Missing on the server: ${(res.missing || []).join(", ") || "the GOOGLE_* settings"}.`
+        : res?.error === "coach only" ? "Only the coach account can connect Google."
+        : res?.error === "not signed in" ? "Sign in again, then reconnect Google."
+        : "Couldn't start the Google connection.";
+      toast(msg, 7000);
       return;
     }
     // The code comes back on the app's own URL and is handed straight to the
