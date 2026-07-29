@@ -2976,6 +2976,9 @@
     if (cnt) cnt.textContent = String(state.trainerData.clients?.length || 0);
     renderCoachAvatarPicker();
     renderThemePicker($("#coach-theme-picker"), "coach");
+    // The Google row lives on this page now, so it has to be drawn here too —
+    // Overview's refresh is no longer guaranteed to have run first.
+    renderGoogleCard();
     renderBackupNote();
   }
 
@@ -12022,9 +12025,23 @@
     return `<div class="sched-days">${rows}</div><div class="sched-meta">${escapeHtml(meta)}</div>${extras}${blocked}`;
   }
 
+  // The closed-fold version of the hours: enough to know they're set and what
+  // shape they are, without seven rows of times sitting on the dashboard.
+  function availabilityLine(av) {
+    const a = normalizeAvailability(av);
+    if (!availabilityIsSet(a)) return "Not set yet";
+    const days = DOW_NAMES.filter((_, i) => (a.weekly[String(i)] || []).length);
+    const which = days.length === 7 ? "Every day"
+      : days.length > 3 ? `${days.length} days a week`
+      : days.join(", ");
+    return `${which} · ${a.sessionMins} min`;
+  }
+
   function renderCoachSchedule() {
     const sum = $("#sched-summary");
     if (sum) sum.innerHTML = availabilitySummaryHtml(coachAvailability());
+    const line = $("#sched-hours-line");
+    if (line) line.textContent = availabilityLine(coachAvailability());
     renderGoogleCard();
     renderCoachSeries();
     renderCoachBookings();
@@ -12104,9 +12121,20 @@
   function renderCoachBookings() {
     const host = $("#sched-bookings"); if (!host) return;
     const now = Date.now();
+    // Only the NEXT session of each weekly series. "Weekly regulars" above
+    // already says Thursdays at 4, twelve left — listing all twelve underneath
+    // it is the same fact twelve more times, and it was burying the one-offs,
+    // which are the ones that actually need a glance.
+    const seenSeries = new Set();
     const upcoming = _coachBookings
       .filter((b) => b.status === "booked" && +new Date(b.start_at) >= now - 3600000)
       .sort((a, b) => String(a.start_at).localeCompare(String(b.start_at)))
+      .filter((b) => {
+        if (!b.series_id) return true;
+        if (seenSeries.has(b.series_id)) return false;
+        seenSeries.add(b.series_id);
+        return true;
+      })
       .slice(0, 12);
     if (!upcoming.length) {
       host.innerHTML = `<div class="sched-book-head">Upcoming bookings</div><p class="sched-empty">Nothing booked yet.</p>`;
@@ -12200,12 +12228,28 @@
     };
     const first = coachDaySlots(iso, draft.mins)[0];
     if (first) draft.time = zonedHM(first.startMs, tz);
-    else { draft.time = "09:00"; draft.custom = true; }
+    else {
+      // No published hours going spare that day. On today that usually means
+      // they have already been and gone, so start from the next half hour
+      // rather than a flat 9am the coach would have to correct.
+      draft.custom = true;
+      if (iso === todayISO()) {
+        const t = new Date(Date.now() + 30 * 60000);
+        t.setSeconds(0, 0);
+        t.setMinutes(t.getMinutes() < 30 ? 0 : 30);
+        draft.time = zonedHM(+t, tz);
+      } else {
+        draft.time = "09:00";
+      }
+    }
 
     const summaryText = () => {
       const c = clients.find((x) => x.id === draft.athleteId);
       const hm = parseHM(draft.time);
-      if (!c || !hm) return "Pick an athlete and a time.";
+      // Nothing to read back until there's an athlete. The box hides itself
+      // rather than nagging: the empty roster above it already says what's
+      // missing, and "Book it" says so again if it's tapped anyway.
+      if (!c || !hm) return "";
       const starts = weeklyOccurrences(draft.iso, hm.hh, hm.mm, tz, draft.weeks || 1);
       const when = fmtSlotTime(starts[0], tz);
       if (!draft.weeks) return `${c.name} · ${fmtSlotDay(draft.iso)} at ${when} · ${draft.mins} min`;
@@ -13356,6 +13400,8 @@
   function renderMessagesView() {
     const host = $("#msg-recipients");
     if (!host) return;
+    // The bulletin board sits on this page now, so it gets drawn with it.
+    renderBulletinBoard();
     const clients = [...(state.trainerData.clients || [])]
       .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
     // Drop any selections for athletes that no longer exist.
@@ -13717,6 +13763,10 @@
     const host = $("#bulletin-active");
     if (!host) return;
     const list = activeCoachBulletins();
+    // The board is a closed fold on the Messages page now, so the count on the
+    // summary is the only thing that says a notice is live.
+    const n = $("#bulletin-count");
+    if (n) n.textContent = list.length ? String(list.length) : "";
     if (!list.length) {
       host.innerHTML = `<p class="muted" style="padding:0.5rem 0 0;font-size:0.85rem">No active notices.</p>`;
       return;

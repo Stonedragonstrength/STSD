@@ -3148,7 +3148,9 @@ input.trial-input {
      hold nowrap text (timestamps, times, athlete names) whose min-content is
      wider than the rail. That doesn't make the page scroll — it silently
      clips the right-hand side off screen, buttons included. */
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  /* One column since the bulletin board moved to Messages: two would leave a
+     hole where it used to sit. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
   margin-top: 1.1rem;
   align-items: start;
@@ -11166,7 +11168,11 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 .cbk-weeks label { display: flex; align-items: center; gap: 0.6em; font-size: 0.85rem; margin: 0; }
 .cbk-weeks select { margin-top: 0; flex: 1 1 auto; }
 .cbk-note { margin-top: 0; }
-/* The whole booking in one sentence, right above the button that commits it. */
+/* The whole booking in one sentence, right above the button that commits it.
+   Absent until there is a booking to describe — a permanent "pick an athlete
+   and a time" is an instruction sitting where a read-back belongs, and it was
+   wrong about the time, which is always pre-picked. */
+.cbk-summary:empty { display: none; }
 .cbk-summary {
   border: 1px solid var(--border);
   border-left: 3px solid var(--primary);
@@ -11209,3 +11215,33 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
   .cbk-summary { font-size: 0.88rem; }
   .cbk-series-row { flex-wrap: wrap; }
 }
+
+/* Schedule card: the week's hours fold away behind one line. They are settings
+   written once, and seven rows of times were the tallest thing on a dashboard
+   whose job is "what is happening and who needs me". */
+.sched-hours { margin-bottom: 0.6rem; }
+.sched-hours > summary {
+  cursor: pointer; list-style: none;
+  display: flex; align-items: center; gap: 0.6em;
+  font-size: 0.7rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-soft);
+}
+.sched-hours > summary::-webkit-details-marker { display: none; }
+.sched-hours > summary::after { content: "▾"; margin-left: 0.2em; font-size: 0.8rem; }
+.sched-hours[open] > summary::after { content: "▴"; }
+.sched-hours > summary:hover { color: var(--text); }
+.sched-hours-line {
+  margin-left: auto;
+  text-transform: none; letter-spacing: 0; font-weight: 600;
+  color: var(--muted); font-size: 0.75rem;
+}
+.sched-hours .sched-summary { padding-top: 0.5rem; }
+
+/* Bulletin board, now a fold on the Messages page beside the broadcast. */
+.msg-bulletin-n {
+  margin-left: 0.5em;
+  background: var(--primary-soft); color: var(--primary-bright);
+  border-radius: 999px; padding: 0 0.5em; font-size: 0.72rem; font-weight: 800;
+}
+.msg-bulletin-n:empty { display: none; }
+.msg-bulletin .bulletin-compose { padding-top: 0.6rem; }

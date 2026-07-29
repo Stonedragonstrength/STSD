@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=book3" />
+  <link rel="stylesheet" href="styles.css?v=book8" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -292,29 +292,6 @@
             <div id="notif-log-scroll" class="notif-log-scroll"></div>
           </div>
 
-          <div class="card">
-            <div class="program-head">
-              <h3 style="margin:0">📌 Bulletin Board</h3>
-            </div>
-            <div class="bulletin-compose">
-              <textarea id="bulletin-text" class="msg-textarea" rows="2" maxlength="1000" placeholder="e.g. Gym closed next Monday for the holiday 🎉"></textarea>
-              <div class="bulletin-compose-row">
-                <label class="msg-duration">
-                  <span class="muted">Show for</span>
-                  <select id="bulletin-weeks" class="msg-select">
-                    <option value="1">1 week</option>
-                    <option value="2">2 weeks</option>
-                    <option value="3">3 weeks</option>
-                    <option value="4">4 weeks</option>
-                  </select>
-                </label>
-                <span class="muted" id="bulletin-status" style="margin-right:auto"></span>
-                <button class="btn btn-primary btn-sm" id="bulletin-post-btn" type="button">📌 Post</button>
-              </div>
-            </div>
-            <div id="bulletin-active" class="bulletin-active"></div>
-          </div>
-
           <!-- Scheduling: recurring availability, the bookings it produces,
                and the Google Calendar link. Open slots fold in at the bottom
                rather than getting their own card — since athletes book from
@@ -327,8 +304,15 @@
               <button class="btn slim-btn btn-sm" id="btn-book-athlete">＋ Book</button>
               <button class="btn slim-btn btn-sm" id="btn-edit-availability">Edit availability</button>
             </div>
-            <div id="sched-summary" class="sched-summary"></div>
-            <div id="sched-google" class="sched-google"></div>
+            <!-- The week's hours are settings you write once, not something to
+                 read every day, so they fold away behind a one-line summary. -->
+            <details class="sched-hours">
+              <summary>
+                <span>Your hours</span>
+                <span class="sched-hours-line" id="sched-hours-line"></span>
+              </summary>
+              <div id="sched-summary" class="sched-summary"></div>
+            </details>
             <!-- Standing weekly appointments, above the flat list they expand
                  into: a regular is a thing the coach manages, the individual
                  sessions are just what it produced. -->
@@ -377,6 +361,38 @@
             <button class="btn btn-primary" id="msg-send-btn" type="button">📣 Send</button>
           </div>
         </div>
+        </details>
+
+        <!-- The bulletin board lives here rather than on the dashboard: it is
+             the same job as the broadcast above it (say one thing to everyone),
+             just time-boxed, and it was one more permanent block on an Overview
+             that had too many. -->
+        <details class="msg-broadcast msg-bulletin">
+          <summary>
+            <span class="msg-broadcast-ico">📌</span>
+            <span class="msg-broadcast-text">
+              <span class="msg-broadcast-title">Bulletin board<span class="msg-bulletin-n" id="bulletin-count"></span></span>
+              <span class="msg-broadcast-sub">A notice on every athlete's home screen, until it expires</span>
+            </span>
+            <span class="msg-broadcast-chev">▸</span>
+          </summary>
+          <div class="bulletin-compose">
+            <textarea id="bulletin-text" class="msg-textarea" rows="2" maxlength="1000" placeholder="e.g. Gym closed next Monday for the holiday 🎉"></textarea>
+            <div class="bulletin-compose-row">
+              <label class="msg-duration">
+                <span class="muted">Show for</span>
+                <select id="bulletin-weeks" class="msg-select">
+                  <option value="1">1 week</option>
+                  <option value="2">2 weeks</option>
+                  <option value="3">3 weeks</option>
+                  <option value="4">4 weeks</option>
+                </select>
+              </label>
+              <span class="muted" id="bulletin-status" style="margin-right:auto"></span>
+              <button class="btn btn-primary btn-sm" id="bulletin-post-btn" type="button">📌 Post</button>
+            </div>
+          </div>
+          <div id="bulletin-active" class="bulletin-active"></div>
         </details>
       </div>
 
@@ -720,6 +736,13 @@
           <input type="file" id="import-data-input" accept="application/json,.json" hidden />
         </div>
         <p class="muted backup-note" id="backup-last"></p>
+
+        <!-- Google Calendar lives here, not on the Schedule card: it is set up
+             once and then never touched, so a permanent row about it on the
+             dashboard is a row about nothing. renderGoogleCard() fills this in
+             wherever it sits. -->
+        <h3 class="coach-profile-section">Connections</h3>
+        <div id="sched-google" class="sched-google"></div>
 
         <h3 class="coach-profile-section">Bug reports</h3>
         <p class="muted backup-intro">Reports filed from the athlete app (or by you) land here, each with a snapshot of recent errors and taps.</p>
@@ -1136,9 +1159,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="bugreport.js?v=bug1"></script>
   <script src="config.js?v=horm2"></script>
-  <script src="cloud.js?v=book3"></script>
+  <script src="cloud.js?v=book8"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=book3"></script>
+  <script src="app.js?v=book8"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
