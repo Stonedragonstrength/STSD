@@ -10691,22 +10691,26 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
     align-items: start;
   }
   #view-overview > #overview-today { grid-column: 1 / -1; }
-  #view-overview > .cal-nav,
-  #view-overview > #dash-cal-grid { grid-column: 1; }
+  /* Exactly one item per column, so neither can stretch the other's rows.
+     The nav and grid used to be separate items sharing rows with the rail,
+     and the rail's height got distributed across them — which is what opened
+     a gap between the month title and the month itself. */
+  #view-overview > .overview-cal-col {
+    grid-column: 1;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+  }
   #view-overview > .overview-bottom {
     grid-column: 2;
-    grid-row: 2 / span 2;
     grid-template-columns: 1fr;
     margin-top: 0;
   }
   .overview-bottom .notif-log-scroll { max-height: 20rem; }
-  /* The right rail is taller than the month grid, and a grid row sizes to its
-     tallest column — which left a dead area under the calendar. Let the grid
-     stretch into that instead, so the leftover height becomes taller day cells
-     (more room for the booking pills) rather than empty page. Everything else
-     stays top-aligned, hence align-self rather than a container-wide stretch. */
-  #view-overview > #dash-cal-grid {
-    align-self: stretch;
+  /* Whatever height the rail leaves over becomes taller day cells (more room
+     for booking pills) instead of dead space under the calendar. */
+  .overview-cal-col > #dash-cal-grid {
+    flex: 1;
     grid-auto-rows: minmax(68px, 1fr);
   }
 }
