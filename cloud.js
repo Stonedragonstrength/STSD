@@ -530,6 +530,54 @@
     } catch (e) { console.warn("[Cloud] saveAthletePrefs", e); return false; }
   }
 
+  // -------- Messages (two-way coach ↔ athlete thread) --------
+  // One row per message in `messages`, keyed by athlete. Both sides may append
+  // and read; RLS + a trigger keep each end from rewriting the other's words.
+  // Every call fails soft: offline just means the thread doesn't refresh.
+  async function sendMessage(athleteId, sender, body) {
+    if (!athleteId || !sender || !body) return null;
+    try {
+      const { data, error } = await sb.from("messages")
+        .insert({ athlete_id: athleteId, sender, body: String(body).slice(0, 2000) })
+        .select().single();
+      if (error) { console.warn("[Cloud] sendMessage", error.message); return null; }
+      return data;
+    } catch (e) { console.warn("[Cloud] sendMessage", e); return null; }
+  }
+  // One athlete's thread, oldest first — the order it reads in.
+  async function getMessages(athleteId, limit = 200) {
+    if (!athleteId) return [];
+    try {
+      const { data, error } = await sb.from("messages")
+        .select("*").eq("athlete_id", athleteId)
+        .order("created_at", { ascending: false }).limit(limit);
+      if (error) { console.warn("[Cloud] getMessages", error.message); return []; }
+      return (data || []).reverse();
+    } catch (e) { console.warn("[Cloud] getMessages", e); return []; }
+  }
+  // Every thread the coach can see, newest first. The coach's Messages view
+  // and unread badges are both built from this one call.
+  async function getAllMessages(limit = 500) {
+    try {
+      const { data, error } = await sb.from("messages")
+        .select("*").order("created_at", { ascending: false }).limit(limit);
+      if (error) { console.warn("[Cloud] getAllMessages", error.message); return []; }
+      return data || [];
+    } catch (e) { console.warn("[Cloud] getAllMessages", e); return []; }
+  }
+  // Stamp the other side's messages as read. The trigger on the table means
+  // this is the only column an update is allowed to touch.
+  async function markMessagesRead(ids) {
+    const list = (ids || []).filter(Boolean);
+    if (!list.length) return false;
+    try {
+      const { error } = await sb.from("messages")
+        .update({ read_at: new Date().toISOString() }).in("id", list);
+      if (error) { console.warn("[Cloud] markMessagesRead", error.message); return false; }
+      return true;
+    } catch (e) { console.warn("[Cloud] markMessagesRead", e); return false; }
+  }
+
   // Branded-food text search. Proxied through an Edge Function because the
   // USDA key is confidential and can't live in config.js — see
   // supabase/functions/food-search. Returns [] on any failure so the caller
@@ -742,6 +790,11 @@
     updateAthleteHideOpenSlots,
     updateAthleteProfileFields,
     updateCoachAvatar,
+    // Messages
+    sendMessage,
+    getMessages,
+    getAllMessages,
+    markMessagesRead,
     // Progress
     upsertProgress,
     getProgress,

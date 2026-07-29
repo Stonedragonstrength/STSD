@@ -2531,16 +2531,6 @@ input.trial-input {
 .msg-textarea:focus { outline: none; border-color: var(--primary); }
 .msg-compose-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.75rem; }
 .msg-compose-actions .muted { margin-right: auto; font-size: 0.8rem; }
-.msg-history-head { margin: 1.6rem 0 0.7rem; font-size: 0.95rem; color: var(--text-soft); }
-.msg-history { display: flex; flex-direction: column; gap: 0.55rem; max-width: 980px; }
-.msg-hist-item {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  padding: 0.65rem 0.8rem;
-}
-.msg-hist-text { color: var(--text); font-size: 0.9rem; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
-.msg-hist-meta { margin-top: 0.35em; font-size: 0.72rem; color: var(--muted); }
 .msg-duration { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; }
 .msg-select {
   border: 1px solid var(--border-strong);
@@ -10519,3 +10509,121 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 }
 .plate-size.on { border-color: var(--primary); background: rgba(var(--primary-rgb), 0.14); color: var(--text); }
 .plate-pop-foot { font-size: 0.7rem; color: var(--muted); line-height: 1.4; }
+
+
+/* ---- Two-way messaging ---- */
+/* Coach Messages view: one row per athlete, sorted so anyone waiting is first. */
+.msg-threads { display: flex; flex-direction: column; max-width: 980px; margin-bottom: 1.4rem; }
+.msg-thread-row {
+  display: grid;
+  grid-template-columns: minmax(6rem, 10rem) 1fr auto;
+  align-items: center;
+  gap: 0.8rem;
+  width: 100%;
+  padding: 0.7rem 0.2rem;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.msg-thread-row:hover { background: var(--surface-2); }
+.msg-thread-name { font-weight: 700; font-size: 0.9rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg-thread-last {
+  min-width: 0;
+  font-size: 0.85rem; color: var(--text-soft);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.msg-thread-none { color: var(--muted); font-style: italic; }
+.msg-thread-row.is-unread .msg-thread-last { color: var(--text); font-weight: 600; }
+.msg-thread-meta { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+.msg-thread-when { font-size: 0.72rem; color: var(--muted); }
+/* How many of their messages are still unanswered. */
+.msg-thread-dot {
+  min-width: 1.35em;
+  padding: 0.1em 0.4em;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #062131;
+  font-size: 0.7rem; font-weight: 800; text-align: center;
+}
+/* Broadcast is the exception now, so it folds away under the threads. */
+.msg-broadcast { max-width: 980px; border-top: 1px solid var(--border); }
+.msg-broadcast > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 0.75em;
+  padding: 0.95em 0;
+}
+.msg-broadcast > summary::-webkit-details-marker { display: none; }
+.msg-broadcast-ico { font-size: 1.1rem; line-height: 1; }
+.msg-broadcast-text { display: flex; flex-direction: column; gap: 0.1em; min-width: 0; }
+.msg-broadcast-title { font-size: 0.98rem; font-weight: 700; color: var(--text); }
+.msg-broadcast-sub { font-size: 0.8rem; color: var(--muted); }
+.msg-broadcast-chev { margin-left: auto; color: var(--text-soft); transition: transform 0.15s ease; }
+.msg-broadcast[open] .msg-broadcast-chev { transform: rotate(90deg); }
+
+/* The thread sheet — same component on both sides, sender decides the side. */
+.msg-sheet { display: flex; flex-direction: column; gap: 0.7rem; }
+.msg-thread {
+  display: flex; flex-direction: column; gap: 0.5rem;
+  max-height: min(52vh, 26rem);
+  overflow-y: auto;
+  padding-right: 0.2rem;
+}
+.msg-empty { color: var(--muted); font-size: 0.88rem; line-height: 1.5; margin: 0.4rem 0; }
+.msg-bubble {
+  max-width: 85%;
+  align-self: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 12px 12px 12px 4px;
+  background: var(--surface-2);
+  padding: 0.5rem 0.7rem;
+}
+.msg-bubble.is-mine {
+  align-self: flex-end;
+  border-radius: 12px 12px 4px 12px;
+  border-color: rgba(var(--primary-rgb), 0.45);
+  background: rgba(var(--primary-rgb), 0.13);
+}
+.msg-bubble-body { font-size: 0.9rem; line-height: 1.45; color: var(--text); white-space: pre-wrap; word-break: break-word; }
+.msg-bubble-when { margin-top: 0.25em; font-size: 0.68rem; color: var(--muted); }
+.msg-write { display: flex; align-items: flex-end; gap: 0.5rem; }
+.msg-write .msg-textarea { flex: 1; margin: 0; }
+.msg-write .btn { flex-shrink: 0; }
+
+/* Athlete Overview: the card is the doorway to the thread, not the thread. */
+.ovmsg-thread { cursor: pointer; }
+.ovmsg-thread:hover { border-color: var(--border-strong); }
+.ovmsg-empty { color: var(--text-soft); }
+.ovmsg-cta {
+  display: inline-block;
+  margin-top: 0.55rem;
+  font-size: 0.78rem; font-weight: 800;
+  letter-spacing: 0.03em;
+  color: var(--primary-bright);
+}
+/* Unanswered questions get a count on the coach's Messages nav item. */
+.coach-nav-count {
+  margin-left: auto;
+  min-width: 1.35em;
+  padding: 0.05em 0.4em;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #062131;
+  font-size: 0.68rem; font-weight: 800; text-align: center;
+}
+
+/* On a phone the three columns can't all fit: the name takes its own line and
+   the preview runs full width under it. */
+@media (max-width: 640px) {
+  .msg-thread-row {
+    grid-template-columns: 1fr auto;
+    gap: 0.15rem 0.6rem;
+    padding: 0.75rem 0.2rem;
+  }
+  .msg-thread-name { grid-column: 1; }
+  .msg-thread-meta { grid-column: 2; grid-row: 1; }
+  .msg-thread-last { grid-column: 1 / -1; white-space: normal; }
+}

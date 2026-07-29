@@ -11804,10 +11804,18 @@
   const NEEDS_QUIET_DAYS = 7;
   function coachNeedsRows() {
     const rows = [];
+    const unreadMsgs = coachUnreadByAthlete();
     (state.trainerData.clients || []).forEach((c) => {
       const ip = c.importedProgress || {};
       openRequestsFor(c).forEach((req) =>
         rows.push({ kind: "request", pri: 0, c, req, ts: req.requestedAt || 0 }));
+
+      // An unanswered question outranks everything but a purchase: someone is
+      // waiting on a person, not on the app.
+      if (unreadMsgs[c.id]) {
+        const last = unreadFrom(MSG.all, "athlete").filter((m) => m.athlete_id === c.id)[0];
+        rows.push({ kind: "message", pri: 0, c, n: unreadMsgs[c.id], ts: last?.created_at || 0 });
+      }
 
       Object.keys(ip.formChecks || {}).forEach((dayId) => {
         formChecksForDay(ip, dayId).forEach((clip, i) => {
@@ -11918,6 +11926,14 @@
           e.stopPropagation();
           declinePackageRequest(n.c, n.req.id);
         });
+      } else if (n.kind === "message") {
+        row.innerHTML = `
+          <span class="needs-icon" aria-hidden="true">💬</span>
+          <span class="needs-body"><span class="needs-name">${escapeHtml(n.c.name)}</span>
+            <span class="needs-text">sent ${n.n === 1 ? "a message" : n.n + " messages"}</span></span>
+          <span class="needs-when">${escapeHtml(notifWhen(n.ts))}</span>
+          <span class="needs-go">→</span>`;
+        jump(() => openMessageThread(n.c.id));
       } else if (n.kind === "formcheck") {
         row.innerHTML = `
           <span class="needs-icon" aria-hidden="true">🎥</span>
@@ -12005,6 +12021,17 @@
         });
       });
 
+      // Messages the athlete sent. Their half of the thread only: the log is a
+      // record of what athletes did, and the coach's own replies aren't news.
+      MSG.all.filter((m) => m.athlete_id === c.id && m.sender === "athlete").forEach((m) => {
+        out.push({
+          type: "message", icon: "💬",
+          ts: new Date(m.created_at).getTime(),
+          name: c.name, text: `messaged you · ${String(m.body).slice(0, 60)}`,
+          clientId: c.id, dayId: null, date: dateISO(new Date(m.created_at)),
+        });
+      });
+
       // Eating-habit signals. These are derived from the CURRENT log rather
       // than recorded when they fired, so a condition that has since cleared
       // drops off the list — same as every other row here.
@@ -12044,7 +12071,7 @@
     }
     host.innerHTML = items.map((it) => {
       const clickable = it.type === "workout" || it.type === "formcheck" ||
-        it.type === "nutrition" || it.type === "cardio";
+        it.type === "nutrition" || it.type === "cardio" || it.type === "message";
       return `<div class="notif-row${clickable ? " is-clickable" : ""}"${clickable
         ? ` data-kind="${escapeHtml(it.type)}" data-client="${escapeHtml(it.clientId)}" data-day="${escapeHtml(it.dayId || "")}" data-date="${escapeHtml(it.date)}"` : ""}>
         <span class="notif-icon" aria-hidden="true">${it.icon}</span>
@@ -12054,6 +12081,7 @@
     }).join("");
     host.querySelectorAll(".notif-row.is-clickable").forEach((row) => {
       row.addEventListener("click", () => {
+        if (row.dataset.kind === "message") return openMessageThread(row.dataset.client);
         if (row.dataset.kind === "nutrition") return openClientNutrition(row.dataset.client);
         // A cardio row has no workout day to land on — open their cardio log.
         if (row.dataset.kind === "cardio") { openClient(row.dataset.client); return setTab("logs"); }
@@ -12128,6 +12156,9 @@
       renderCoachToday();
       renderNotificationLog();
     }
+    // Same trip: pull the threads, so an unanswered question shows up on the
+    // nav badge and the Today board without a separate refresh path.
+    loadCoachMessages();
   }
 
   // ---- Coach → athlete announcements (Messages view) ---------------------
@@ -12162,34 +12193,229 @@
     }
     const cnt = $("#msg-recip-count");
     if (cnt) cnt.textContent = `${_msgSelected.size} selected`;
-    renderMessageHistory();
+    renderMessageThreads();
   }
 
-  function renderMessageHistory() {
-    const host = $("#msg-history");
-    if (!host) return;
-    // Collect every message this coach has sent, de-duped by message id, newest first.
-    const seen = new Map();
-    (state.trainerData.clients || []).forEach((c) => {
-      ensureSessionBank(c);
-      (c.sessionBank.messages || []).forEach((m) => {
-        const entry = seen.get(m.id) || { text: m.text, sentAt: m.sentAt, names: [] };
-        entry.names.push(c.name || "Unnamed");
-        seen.set(m.id, entry);
-      });
+  // ===== Two-way messaging =====================================================
+  // One thread per athlete in the `messages` table; both ends append. Before
+  // this existed, coach notes rode the coach-owned `sessionBank.messages`
+  // jsonb, which an athlete can't write — those are folded into the thread as
+  // read-only history so nobody's record splits in two.
+  const MSG = {
+    thread: [],   // athlete side: their own thread, oldest first
+    all: [],      // coach side: every row the coach can see
+    openId: null, // athlete id of the thread sheet currently open
+    loading: false,
+  };
+  function legacyCoachMessages(c) {
+    return (c?.sessionBank?.messages || []).map((m) => ({
+      id: "legacy:" + m.id,
+      athlete_id: c.id,
+      sender: "coach",
+      body: m.text || "",
+      created_at: m.sentAt || "",
+      read_at: m.sentAt || null, // history, never unread
+      legacy: true,
+    }));
+  }
+  // The full conversation with one athlete: live rows plus legacy notes, in
+  // the order they were written.
+  function messageThread(athleteId, rows, c) {
+    const live = (rows || []).filter((r) => r.athlete_id === athleteId);
+    return [...legacyCoachMessages(c), ...live]
+      .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  }
+  // Unread = the other side wrote it and nobody stamped it.
+  function unreadFrom(rows, sender) {
+    return (rows || []).filter((m) => m.sender === sender && !m.read_at && !m.legacy);
+  }
+
+  // ---- Athlete side ----
+  async function loadAthleteThread({ markRead = false } = {}) {
+    const id = state.clientData.program?.clientId;
+    if (!id || !window.Cloud?.enabled || state.previewMode) return;
+    MSG.thread = await window.Cloud.getMessages(id);
+    if (markRead) {
+      const ids = unreadFrom(MSG.thread, "coach").map((m) => m.id);
+      if (ids.length && await window.Cloud.markMessagesRead(ids)) {
+        const now = new Date().toISOString();
+        MSG.thread.forEach((m) => { if (ids.includes(m.id)) m.read_at = now; });
+      }
+    }
+    renderAthleteCoachMessages(state.clientData.program?.client);
+    if (MSG.openId) renderThreadSheet();
+  }
+
+  // ---- Coach side ----
+  async function loadCoachMessages() {
+    if (!window.Cloud?.enabled || !state.trainerData?.clients?.length) return;
+    MSG.all = await window.Cloud.getAllMessages();
+    renderCoachMsgBadge();
+    if ($("#view-messages") && !$("#view-messages").classList.contains("hidden")) renderMessagesView();
+    if (MSG.openId) renderThreadSheet();
+  }
+  // Unread athlete messages, per athlete id.
+  function coachUnreadByAthlete() {
+    const out = {};
+    unreadFrom(MSG.all, "athlete").forEach((m) => { out[m.athlete_id] = (out[m.athlete_id] || 0) + 1; });
+    return out;
+  }
+  function coachUnreadTotal() { return unreadFrom(MSG.all, "athlete").length; }
+  // A count on the Messages nav item, so an unanswered question is visible
+  // from anywhere in the coach app without a second activity feed.
+  function renderCoachMsgBadge() {
+    const btn = document.querySelector('#coach-nav [data-coach-nav="messages"]');
+    if (!btn) return;
+    const n = coachUnreadTotal();
+    let dot = btn.querySelector(".coach-nav-count");
+    if (!n) { dot?.remove(); return; }
+    if (!dot) {
+      dot = document.createElement("span");
+      dot.className = "coach-nav-count";
+      btn.appendChild(dot);
+    }
+    dot.textContent = n > 9 ? "9+" : String(n);
+  }
+
+  // ---- The thread sheet (both sides use it) ----
+  // Coach opens it against one athlete; the athlete opens their own. Same
+  // bubbles, same composer, different sender stamped on what it writes.
+  function openMessageThread(athleteId) {
+    // A live session is the coach on the athlete's screen. Writing from there
+    // would put the coach's words in the athlete's half of the thread, so the
+    // sheet simply doesn't open — the coach has their own Messages view.
+    if (state.previewMode) { toast("Open Messages to write to them."); return; }
+    const coachSide = state.mode === "trainer";
+    const id = athleteId || state.clientData.program?.clientId;
+    if (!id) return;
+    MSG.openId = id;
+    const who = coachSide
+      ? ((state.trainerData.clients || []).find((c) => c.id === id)?.name || "Athlete")
+      : "Your coach";
+    openModal({
+      title: who,
+      body: `<div class="msg-sheet">
+          <div class="msg-thread" id="msg-thread"></div>
+          <div class="msg-write">
+            <textarea id="msg-reply" class="msg-textarea" rows="2" maxlength="2000" placeholder="${coachSide ? "Write back…" : "Ask your coach anything…"}"></textarea>
+            <button class="btn btn-primary btn-sm" id="msg-reply-send" type="button">Send</button>
+          </div>
+        </div>`,
+      actions: [{ label: "Close", className: "btn", onClick: closeMessageThread }],
     });
-    const list = [...seen.values()].sort((a, b) => (b.sentAt || "").localeCompare(a.sentAt || ""));
-    if (!list.length) {
-      host.innerHTML = `<p class="muted" style="padding:0.4rem">No messages sent yet.</p>`;
+    // No Nav level: the sheet closes from three places (✕, backdrop, Close),
+    // and only one of them is ours. Every other modal in the app behaves the
+    // same way, so Back is consistent rather than half-wired.
+    renderThreadSheet();
+    $("#msg-reply-send")?.addEventListener("click", sendThreadReply);
+    $("#msg-reply")?.addEventListener("keydown", (e) => {
+      // Enter sends, Shift+Enter makes a new line — the messaging convention.
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendThreadReply(); }
+    });
+    // Opening the thread is reading it.
+    if (coachSide) markCoachThreadRead(id); else loadAthleteThread({ markRead: true });
+  }
+  function closeMessageThread() {
+    MSG.openId = null;
+    closeModal();
+  }
+  async function markCoachThreadRead(athleteId) {
+    const ids = unreadFrom(MSG.all, "athlete").filter((m) => m.athlete_id === athleteId).map((m) => m.id);
+    if (!ids.length) return;
+    if (await window.Cloud?.markMessagesRead(ids)) {
+      const now = new Date().toISOString();
+      MSG.all.forEach((m) => { if (ids.includes(m.id)) m.read_at = now; });
+      renderCoachMsgBadge();
+      renderMessagesView();
+      renderThreadSheet();
+    }
+  }
+  function renderThreadSheet() {
+    const host = $("#msg-thread");
+    if (!host || !MSG.openId) return;
+    const coachSide = state.mode === "trainer" && !state.previewMode;
+    const c = coachSide
+      ? (state.trainerData.clients || []).find((x) => x.id === MSG.openId)
+      : state.clientData.program?.client;
+    const rows = messageThread(MSG.openId, coachSide ? MSG.all : MSG.thread, c);
+    if (!rows.length) {
+      host.innerHTML = `<p class="msg-empty">${coachSide
+        ? "Nothing here yet. Say hello."
+        : "Nothing here yet. Ask about a lift, a weight, a sore shoulder — anything."}</p>`;
       return;
     }
-    host.innerHTML = list.slice(0, 25).map((m) => {
-      const who = m.names.length > 3 ? `${m.names.length} athletes` : m.names.join(", ");
-      return `<div class="msg-hist-item">
-        <div class="msg-hist-text">${escapeHtml(m.text)}</div>
-        <div class="msg-hist-meta">${escapeHtml(who)} · ${escapeHtml(msgWhen(m.sentAt))}</div>
-      </div>`;
-    }).join("");
+    // "Mine" is whichever end is looking at it.
+    const mine = coachSide ? "coach" : "athlete";
+    host.innerHTML = rows.map((m) => `
+      <div class="msg-bubble${m.sender === mine ? " is-mine" : ""}">
+        <div class="msg-bubble-body">${escapeHtml(m.body)}</div>
+        <div class="msg-bubble-when">${escapeHtml(msgWhen(m.created_at))}</div>
+      </div>`).join("");
+    host.scrollTop = host.scrollHeight; // newest is the point
+  }
+  async function sendThreadReply() {
+    const ta = $("#msg-reply");
+    const btn = $("#msg-reply-send");
+    const body = (ta?.value || "").trim();
+    if (!body || !MSG.openId) return;
+    if (!window.Cloud?.enabled) { toast("You're offline. Try again when you're back on."); return; }
+    const coachSide = state.mode === "trainer" && !state.previewMode;
+    if (btn) btn.disabled = true;
+    const row = await window.Cloud.sendMessage(MSG.openId, coachSide ? "coach" : "athlete", body);
+    if (btn) btn.disabled = false;
+    if (!row) { toast("Couldn't send. Check your connection."); return; }
+    if (ta) ta.value = "";
+    if (coachSide) {
+      MSG.all.unshift(row);
+      window.Cloud.sendPush?.([MSG.openId], "💬 Message from your coach", body.slice(0, 120), "./", "messages");
+      renderMessagesView();
+    } else {
+      MSG.thread.push(row);
+      renderAthleteCoachMessages(state.clientData.program?.client);
+    }
+    renderThreadSheet();
+  }
+
+  // The Messages view proper: one row per athlete, the last thing said, and a
+  // count when they're waiting on an answer. Replaces the old "Recently sent"
+  // log, which only ever showed the coach's own half of the conversation.
+  function renderMessageThreads() {
+    const host = $("#msg-threads");
+    if (!host) return;
+    const clients = [...(state.trainerData.clients || [])];
+    if (!clients.length) { host.innerHTML = ""; return; }
+    const unread = coachUnreadByAthlete();
+    const rows = clients.map((c) => {
+      ensureSessionBank(c);
+      const thread = messageThread(c.id, MSG.all, c);
+      return { c, last: thread[thread.length - 1] || null, n: unread[c.id] || 0 };
+    }).sort((a, b) => {
+      // Anyone waiting comes first, then most recently active, then by name.
+      if (!!b.n !== !!a.n) return b.n - a.n;
+      const at = a.last?.created_at || "", bt = b.last?.created_at || "";
+      if (at !== bt) return String(bt).localeCompare(String(at));
+      return (a.c.name || "").localeCompare(b.c.name || "");
+    });
+    const waiting = rows.filter((r) => r.n).length;
+    host.innerHTML = `
+      <div class="wp-head">
+        <h3>Threads</h3>
+        <span class="wp-head-count">${waiting ? `${waiting} waiting on you` : `${rows.length} ${rows.length === 1 ? "athlete" : "athletes"}`}</span>
+      </div>
+      ${rows.map((r) => `
+        <button class="msg-thread-row${r.n ? " is-unread" : ""}" type="button" data-cid="${escapeHtml(r.c.id)}">
+          <span class="msg-thread-name">${escapeHtml(r.c.name || "Unnamed")}</span>
+          <span class="msg-thread-last">${r.last
+            ? escapeHtml((r.last.sender === "coach" ? "You: " : "") + r.last.body.slice(0, 90))
+            : `<em class="msg-thread-none">No messages yet</em>`}</span>
+          <span class="msg-thread-meta">
+            ${r.n ? `<span class="msg-thread-dot">${r.n}</span>` : ""}
+            <span class="msg-thread-when">${escapeHtml(r.last ? msgWhen(r.last.created_at) : "")}</span>
+          </span>
+        </button>`).join("")}`;
+    host.querySelectorAll(".msg-thread-row").forEach((b) => {
+      b.addEventListener("click", () => openMessageThread(b.dataset.cid));
+    });
   }
 
   function msgWhen(iso) {
@@ -12199,27 +12425,27 @@
       ", " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   }
 
-  function sendCoachMessage() {
+  // Broadcast: the same note dropped into several threads at once. It lands as
+  // an ordinary coach message in each, so every athlete can just reply to it.
+  async function sendCoachMessage() {
     const ta = $("#msg-text");
     const statusEl = $("#msg-send-status");
+    const btn = $("#msg-send-btn");
     const text = (ta?.value || "").trim();
     if (!_msgSelected.size) { if (statusEl) statusEl.textContent = "Pick at least one athlete."; return; }
     if (!text) { if (statusEl) statusEl.textContent = "Write a message first."; return; }
-    const msg = { id: uid(), text, sentAt: new Date().toISOString() };
+    if (!window.Cloud?.enabled) { if (statusEl) statusEl.textContent = "You're offline. Try again when you're back on."; return; }
     const recipients = (state.trainerData.clients || []).filter((c) => _msgSelected.has(c.id));
-    recipients.forEach((c) => {
-      ensureSessionBank(c);
-      c.sessionBank.messages.push({ ...msg });
-      // Keep the stored history bounded so the jsonb doesn't grow forever.
-      if (c.sessionBank.messages.length > 50) c.sessionBank.messages = c.sessionBank.messages.slice(-50);
-    });
-    saveTrainer();
-    // Push each recipient's row directly (saveTrainer only debounces the current athlete).
-    if (window.Cloud?.enabled) {
-      recipients.forEach((c) => window.Cloud.upsertAthlete(c, state.trainerData.coachId));
-    }
+    if (btn) btn.disabled = true;
+    if (statusEl) statusEl.textContent = "Sending…";
+    const rows = await Promise.all(recipients.map((c) => window.Cloud.sendMessage(c.id, "coach", text)));
+    if (btn) btn.disabled = false;
+    const sent = rows.filter(Boolean);
+    if (!sent.length) { if (statusEl) statusEl.textContent = "Couldn't send. Check your connection."; return; }
+    MSG.all = [...sent, ...MSG.all];
+    window.Cloud.sendPush?.(sent.map((r) => r.athlete_id), "💬 Message from your coach", text.slice(0, 120), "./", "messages");
     if (ta) ta.value = "";
-    toast(`📣 Sent to ${recipients.length} athlete${recipients.length === 1 ? "" : "s"}`);
+    toast(`📣 Sent to ${sent.length} athlete${sent.length === 1 ? "" : "s"}`);
     if (statusEl) statusEl.textContent = "";
     renderMessagesView();
   }
@@ -13014,6 +13240,7 @@
     refreshAthleteAnatomyEdits();
     applyAthletePrefs();
     renderAthleteSettingsCards(); // renders the notifications fold too
+    loadAthleteThread();          // the coach thread, for the Overview card
     refreshPushSubscription();
     pullAthletePrefs(); // cloud copy wins, then re-renders the cards
     // First time on this device: one guided lap (never during a coach live
@@ -13070,25 +13297,43 @@
       }
     }
 
-    // ---- Targeted coach messages ----
+    // ---- The thread with the coach ----
+    // The card is the doorway, not the conversation: the last thing said, an
+    // unread count, and one button that opens the thread. An athlete can now
+    // write back, which is the whole point.
     if (!host) return;
-    const msgs = c ? [...(c.sessionBank?.messages || [])] : [];
-    if (!msgs.length) { host.innerHTML = ""; return; }
-    msgs.sort((a, b) => (b.sentAt || "").localeCompare(a.sentAt || ""));
-    const seen = state.clientData.progress?.seenMessages || {};
-
-    const items = msgs.slice(0, 8).map((m) => {
-      const fresh = !seen[m.id];
-      return `<div class="ovmsg-item${fresh ? " is-new" : ""}">
-        <div class="ovmsg-text">${escapeHtml(m.text)}</div>
-        <div class="ovmsg-meta">${fresh ? `<span class="ovmsg-new">New</span>` : ""}${escapeHtml(msgWhen(m.sentAt))}</div>
-      </div>`;
-    }).join("");
-    host.innerHTML = `<div class="ovmsg-card">
-      <div class="ovmsg-head"><span class="ovmsg-icon">📣</span><span>From your coach</span></div>
-      ${items}
+    const rows = messageThread(c?.id, MSG.thread, c);
+    const unread = unreadFrom(MSG.thread, "coach").length;
+    const last = rows[rows.length - 1] || null;
+    // In a live session this is the coach reading over the athlete's shoulder:
+    // show the history, but the thread itself belongs to the two of them.
+    if (state.previewMode) {
+      host.innerHTML = last ? `<div class="ovmsg-card ovmsg-thread">
+        <div class="ovmsg-head"><span class="ovmsg-icon">💬</span><span>Your coach</span></div>
+        <div class="ovmsg-item"><div class="ovmsg-text">${escapeHtml(last.body)}</div>
+          <div class="ovmsg-meta">${escapeHtml(msgWhen(last.created_at))}</div></div>
+      </div>` : "";
+      return;
+    }
+    host.innerHTML = `<div class="ovmsg-card ovmsg-thread${unread ? " is-new" : ""}" id="ov-thread-card" role="button" tabindex="0">
+      <div class="ovmsg-head"><span class="ovmsg-icon">💬</span><span>Your coach</span>
+        ${unread ? `<span class="ovmsg-new">${unread} new</span>` : ""}</div>
+      ${last
+        ? `<div class="ovmsg-item">
+             <div class="ovmsg-text">${escapeHtml((last.sender === "coach" ? "" : "You: ") + last.body)}</div>
+             <div class="ovmsg-meta">${escapeHtml(msgWhen(last.created_at))}</div>
+           </div>`
+        : `<div class="ovmsg-item"><div class="ovmsg-text ovmsg-empty">Got a question about a lift, a weight, or how you're feeling? Ask here.</div></div>`}
+      <span class="ovmsg-cta">${last ? "Open the thread" : "Message your coach"} →</span>
     </div>`;
-    // Mark all currently-shown messages as seen (persist locally).
+    const openThread = () => openMessageThread(c?.id);
+    $("#ov-thread-card")?.addEventListener("click", openThread);
+    $("#ov-thread-card")?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openThread(); }
+    });
+    // Legacy coach notes were marked seen locally; keep pruning that map so it
+    // can't outlive the messages it tracked.
+    const msgs = c ? [...(c.sessionBank?.messages || [])] : [];
     if (!state.clientData.progress) state.clientData.progress = {};
     if (!state.clientData.progress.seenMessages) state.clientData.progress.seenMessages = {};
     const seenMap = state.clientData.progress.seenMessages;
@@ -20680,6 +20925,8 @@
         title: "Welcome to Stone Dragon", text: "A quick lap around your training hub, about a minute. Skip any time. These tabs are everything." },
       { sel: '[data-ctab-panel="overview"]',
         title: "Overview", text: "The card up top is your next workout: the lifts in it, how long it runs, and one tap to start. Under it sit your streak, last workout, lifetime totals, charts and trophies. It fills in as you train. Tap ⋯ on the stats card to pick what shows, like cardio time, distance, or total push-ups and pull-ups." },
+      { sel: "#ov-thread-card", go: () => setClientTab("overview"),
+        title: "Talk to your coach", text: "Tap here to open your thread. Ask about a lift, a weight, a sore shoulder, anything. They see it on their side and write back." },
       { sel: '[data-ctab-panel="workouts"]', go: () => setClientTab("workouts"),
         title: "Your program", text: "Everything your coach wrote for you. Tap a day to open the session and start logging." },
       { sel: ".workout-detail-list .cex-rx", go: goDetail,
@@ -20737,7 +20984,7 @@
       { sel: "#view-programs", go: () => { state.currentClientId = null; renderProgramsList(); },
         title: "Programs", text: "Build programs and day templates once, reuse them across athletes. Built one straight into an athlete instead? Save to Library on their Program tab brings a copy back here." },
       { sel: "#view-messages", go: () => { switchCoachView("messages"); renderMessagesView(); },
-        title: "Messages", text: "Chat with your athletes, or post a bulletin everyone sees." },
+        title: "Messages", text: "One thread per athlete, and they can write back now. Anyone waiting on an answer sits at the top with a count. Open the fold at the bottom to send the same note to several at once." },
       { sel: "#btn-export-data", go: () => openCoachProfile(),
         title: "Back up your data", text: "Download everything — athletes, their programs and logged history, and your program library — as one file, and restore it here if you ever need to. Worth grabbing one now and then." },
       { sel: "#btn-tour-coach", go: () => showCoachOverview(),
@@ -21702,6 +21949,7 @@
           switchCoachView("messages");
           hideLibSidebar();
           renderMessagesView();
+          loadCoachMessages(); // fresh threads, then re-render
         } else if (target === "anatomy") {
           _programEditorId = null;
           state.currentClientId = null;
