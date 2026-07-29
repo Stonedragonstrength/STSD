@@ -9933,6 +9933,11 @@
     // Only re-render if still on the same month (avoid clobbering a nav that happened mid-fetch)
     if (state.dashCal && state.dashCal.year === year && state.dashCal.month === month) {
       renderDashboardCalendar();
+      // Today's board is built FROM these events, and this fetch is async — it
+      // lands after the first render. Without this, a session booked for today
+      // showed on the calendar but the day card said "nothing on the books"
+      // until something else happened to redraw it.
+      renderCoachToday();
     }
   }
 
@@ -12130,14 +12135,20 @@
 
   function renderCoachBookings() {
     const host = $("#sched-bookings"); if (!host) return;
-    const now = Date.now();
+    // From TOMORROW on. Today's sessions are the list directly above this one
+    // inside the same card, so anything today would print twice, two inches
+    // apart — which is exactly the repeat merging the cards was meant to end.
+    const tomorrow = new Date();
+    tomorrow.setHours(0, 0, 0, 0);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const from = +tomorrow;
     // Only the NEXT session of each weekly series. "Weekly regulars" above
     // already says Thursdays at 4, twelve left — listing all twelve underneath
     // it is the same fact twelve more times, and it was burying the one-offs,
     // which are the ones that actually need a glance.
     const seenSeries = new Set();
     const upcoming = _coachBookings
-      .filter((b) => b.status === "booked" && +new Date(b.start_at) >= now - 3600000)
+      .filter((b) => b.status === "booked" && +new Date(b.start_at) >= from)
       .sort((a, b) => String(a.start_at).localeCompare(String(b.start_at)))
       .filter((b) => {
         if (!b.series_id) return true;
@@ -12147,19 +12158,24 @@
       })
       .slice(0, 12);
     if (!upcoming.length) {
-      host.innerHTML = `<div class="sched-book-head">Upcoming bookings</div><p class="sched-empty">Nothing booked yet.</p>`;
+      host.innerHTML = `<div class="sched-book-head">Coming up</div><p class="sched-empty">Nothing booked after today.</p>`;
       return;
     }
     const clientOf = (id) => (state.trainerData.clients || []).find((c) => c.id === id) || null;
     const nameOf = (id) => clientOf(id)?.name || "Athlete";
-    host.innerHTML = `<div class="sched-book-head">Upcoming bookings <span class="sched-book-n">${upcoming.length}</span></div>` +
+    host.innerHTML = `<div class="sched-book-head">Coming up <span class="sched-book-n">${upcoming.length}</span></div>` +
       upcoming.map((b) => {
         const start = +new Date(b.start_at);
+        // Same shape as a weekly-regular row directly above: face, then name
+        // over when. Anything else wraps around the tile on a phone.
         return `<div class="sched-book-row">` +
-          `<span class="sched-book-when">${escapeHtml(new Date(start).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }))}` +
-          ` · ${escapeHtml(fmtSlotTime(start))}</span>` +
-          `<span class="sched-book-who">${athleteFaceHtml(clientOf(b.athlete_id), "xs")}${escapeHtml(nameOf(b.athlete_id))}` +
-            (b.series_id ? `<span class="cbk-weekly-tag" title="Part of a weekly series">weekly</span>` : "") +
+          `<span class="sched-book-face">${athleteFaceHtml(clientOf(b.athlete_id))}</span>` +
+          `<span class="sched-book-txt">` +
+            `<b>${escapeHtml(nameOf(b.athlete_id))}` +
+              (b.series_id ? `<span class="cbk-weekly-tag" title="Part of a weekly series">weekly</span>` : "") +
+            `</b>` +
+            `<span class="sched-book-when">${escapeHtml(new Date(start).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }))}` +
+            ` · ${escapeHtml(fmtSlotTime(start))}</span>` +
           `</span>` +
           `<button type="button" class="btn-delete-mini" data-cancel-booking="${escapeHtml(b.id)}" title="Cancel">×</button>` +
         `</div>`;
@@ -13085,6 +13101,9 @@
     return rows.sort((a, b) => a.pri - b.pri || (b.ts || 0) - (a.ts || 0));
   }
 
+  // Today's sessions, inside the day card the booking list also lives in. This
+  // fills the card's own slots rather than building a card, because the two
+  // used to be separate cards that repeated each other.
   function renderCoachToday() {
     const host = $("#overview-today");
     if (!host) return;
@@ -13092,16 +13111,13 @@
     const today = new Date();
     const todayLabel = today.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
 
-    // ---- Card 1: today's sessions ----
     const rows = coachTodayRows();
-    const sched = document.createElement("div");
-    sched.className = "card today-card";
-    sched.innerHTML = `<div class="program-head">
-        <h3 style="margin:0">🐉 Today <span class="overview-req-count">${rows.length || ""}</span></h3>
-        <span class="today-date">${escapeHtml(todayLabel)}</span>
-      </div>`;
+    const dateEl = $("#today-date");
+    if (dateEl) dateEl.textContent = todayLabel;
+    const cntEl = $("#today-count");
+    if (cntEl) cntEl.textContent = rows.length ? String(rows.length) : "";
     if (!rows.length) {
-      sched.insertAdjacentHTML("beforeend",
+      host.insertAdjacentHTML("beforeend",
         `<p class="today-empty">Nothing on the books today.</p>`);
     } else {
       const list = document.createElement("div");
@@ -13136,9 +13152,8 @@
         }
         list.appendChild(row);
       });
-      sched.appendChild(list);
+      host.appendChild(list);
     }
-    host.appendChild(sched);
 
     // "Needs you" is not a card here any more — it is the header pill, and the
     // list behind it. Keeping the count fresh is all this page owes it.
@@ -22605,10 +22620,12 @@
     return [
       { sel: "#coach-nav", go: () => showCoachOverview(),
         title: "Welcome, coach", text: "A quick lap around the app, about a minute. Skip any time. This nav is home base." },
-      { sel: "#overview-today",
-        title: "Today", text: "Who you're training today, and everything waiting on you: purchase requests, form videos to watch, athletes out of sessions or gone quiet. Tap a name to drop straight into their session." },
+      { sel: "#overview-hub",
+        title: "Your day", text: "Who you're training today, what's coming up after that, and your standing weekly regulars. Tap a name to drop straight into their session, or ＋ Book to add someone." },
+      { sel: "#btn-coach-inbox",
+        title: "What needs you", text: "Purchase requests, form videos to watch, athletes out of sessions or gone quiet, and everything your athletes have logged. The number is how many are waiting on you." },
       { sel: "#view-overview",
-        title: "The month", text: "Every athlete on one calendar: completed days, sessions and open slots. Tap a date to see exactly what each of them did. The notification log at the bottom keeps the full history." },
+        title: "The month", text: "Every athlete on one calendar: completed days, sessions and open slots. Tap any date to see what each of them did, or to book someone in on it." },
       { sel: "#client-grid", go: () => renderDashboard(),
         title: "Your athletes", text: "One card per athlete. Tap a card for their profile, program, nutrition, PRs and sessions." },
       { sel: "#client-grid .client-row-view",
