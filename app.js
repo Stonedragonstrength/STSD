@@ -7449,6 +7449,100 @@
     _attachOutsideClose(pop, anchorEl);
   }
 
+  // ── Athlete logging picker ──
+  // Tapping a number in a set row opens this instead of the phone keyboard.
+  // The first tab is a fine band around what's prescribed (2.5 lb, one rep,
+  // five seconds — the increments people actually load), because "a bit more
+  // or less than the plan" is the overwhelmingly common edit. The other tabs
+  // cover a real jump, and "Type it instead" hands the keyboard back for
+  // anything a grid can't say.
+  const LOG_PICK_SPAN = 10; // cells either side of the prescription
+  function logPickBand(seed, step, min) {
+    const base = Number.isFinite(seed) ? seed : min;
+    const out = [];
+    for (let i = -LOG_PICK_SPAN; i <= LOG_PICK_SPAN; i++) {
+      const v = Math.round((base + i * step) * 100) / 100;
+      if (v < min) continue;
+      out.push(String(v));
+    }
+    return out;
+  }
+  // The tab set for a field, given what's prescribed for it.
+  function logPickRanges(kind, seed, timed) {
+    if (kind === "weight") {
+      const s = Number.isFinite(seed) && seed > 0 ? seed : 45;
+      // 2.5 lb around the plan, then the coach picker's own 5 lb ranges for a
+      // real jump. The BW/BAR tab is skipped: those are prescription
+      // sentinels, and a log holds a number.
+      return [{ label: "Near", values: logPickBand(s, 2.5, 0) }, ...WEIGHT_RANGES.slice(1)];
+    }
+    if (timed) {
+      return [
+        { label: "Near", values: logPickBand(seed, 5, 5) },
+        { label: "5–60s", values: Array.from({ length: 12 }, (_, i) => String((i + 1) * 5)) },
+        { label: "65s+", values: Array.from({ length: 24 }, (_, i) => String(65 + i * 5)) },
+      ];
+    }
+    return [
+      { label: "Near", values: logPickBand(seed, 1, 1) },
+      { label: "1–15", values: Array.from({ length: 15 }, (_, i) => String(i + 1)) },
+      { label: "16–40", values: Array.from({ length: 25 }, (_, i) => String(i + 16)) },
+    ];
+  }
+  function openLogPicker(anchorEl, { current, ranges, onPick, onType }) {
+    document.querySelector(".grid-picker-pop")?.remove();
+    const pop = document.createElement("div");
+    pop.className = "grid-picker-pop grid-picker-pop-weight log-pick-pop";
+    pop.style.cssText = "position:fixed;z-index:9999;visibility:hidden";
+    const tabs = document.createElement("div");
+    tabs.className = "grid-picker-tabs";
+    const grid = document.createElement("div");
+    grid.className = "grid-picker-grid";
+    grid.style.gridTemplateColumns = "repeat(5, 1fr)";
+    // Open on the tab that already holds what's in the box, so the current
+    // value is on screen and one tap away from being confirmed.
+    let active = ranges.findIndex((r) => r.values.some((v) => String(v) === String(current)));
+    if (active < 0) active = 0;
+    const show = (i) => {
+      active = i;
+      tabs.querySelectorAll(".grid-picker-tab").forEach((t, n) => t.classList.toggle("active", n === i));
+      grid.innerHTML = "";
+      ranges[i].values.forEach((v) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "grid-picker-cell" + (String(v) === String(current) ? " active" : "");
+        b.textContent = String(v);
+        b.addEventListener("click", () => { pop.remove(); onPick(String(v)); });
+        grid.appendChild(b);
+      });
+      requestAnimationFrame(() => {
+        _positionPop(pop, anchorEl);
+        grid.querySelector(".grid-picker-cell.active")?.scrollIntoView({ block: "nearest" });
+      });
+    };
+    ranges.forEach((r, i) => {
+      const tab = document.createElement("button");
+      tab.type = "button";
+      tab.className = "grid-picker-tab";
+      tab.textContent = r.label;
+      tab.addEventListener("click", () => show(i));
+      tabs.appendChild(tab);
+    });
+    pop.appendChild(tabs);
+    pop.appendChild(grid);
+    if (onType) {
+      const t = document.createElement("button");
+      t.type = "button";
+      t.className = "log-pick-type";
+      t.textContent = "Type it instead";
+      t.addEventListener("click", () => { pop.remove(); onType(); });
+      pop.appendChild(t);
+    }
+    document.body.appendChild(pop);
+    show(active);
+    _attachOutsideClose(pop, anchorEl);
+  }
+
   // -------- Weeks/program --------
   function renderWeeks() {
     if (_programEditorId) {
@@ -16375,7 +16469,8 @@
     // Build a field as [− input +]. Steppers omitted when
     // withSteppers is false (e.g. the weight box on bodyweight lifts).
     // onUserEdit fires on any deliberate touch (step / tap-to-accept).
-    const mkStepField = (input, step, seed, withSteppers, onUserEdit) => {
+    // `kind` is "weight" or "reps" and drives which grid the number opens.
+    const mkStepField = (input, step, seed, withSteppers, onUserEdit, kind) => {
       const field = document.createElement("div");
       field.className = "cex-set-field";
       const mkBtn = (glyph, dir) => {
@@ -16424,7 +16519,41 @@
       input.addEventListener("beforeinput", () => {
         if (input.dataset.seeded) { delete input.dataset.seeded; input.value = ""; }
       });
-      input.addEventListener("blur", () => { delete input.dataset.seeded; markEdited(input); });
+      // Tapping the number opens a grid instead of the phone keyboard, so a
+      // set that didn't go to plan is still a tap rather than a typing job.
+      // inputMode "none" is what suppresses the on-screen keyboard; a physical
+      // keyboard is unaffected, so desktop typing still works as before.
+      // `typing` is the one-shot escape "Type it instead" sets.
+      let typing = false;
+      if (kind) {
+        input.inputMode = "none";
+        input.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (input.readOnly || input.disabled || typing) return;
+          openLogPicker(input, {
+            current: input.value !== "" ? input.value : (Number.isFinite(seed) ? String(seed) : ""),
+            ranges: logPickRanges(kind, seed, isTimed),
+            onPick: (v) => {
+              input.value = v;
+              delete input.dataset.seeded; // a picked value is deliberate
+              markEdited(input);
+              onUserEdit?.();
+              autoSave();
+            },
+            onType: () => {
+              typing = true;
+              input.inputMode = "decimal";
+              input.blur(); // the blur below leaves inputMode alone while typing
+              setTimeout(() => { input.focus(); typing = false; }, 0);
+            },
+          });
+        });
+      }
+      input.addEventListener("blur", () => {
+        delete input.dataset.seeded;
+        if (kind && !typing) input.inputMode = "none";
+        markEdited(input);
+      });
       return field;
     };
 
@@ -16454,9 +16583,9 @@
 
       const wItem = { wt, rp, skipped: false };
       col.appendChild(lbl);
-      col.appendChild(mkStepField(wt, 2.5, wSeed, w.weight !== "BW", () => fillSibling(rp, rSeed)));
+      col.appendChild(mkStepField(wt, 2.5, wSeed, w.weight !== "BW", () => fillSibling(rp, rSeed), w.weight !== "BW" ? "weight" : null));
       col.appendChild(setX());
-      col.appendChild(mkStepField(rp, isTimed ? 5 : 1, rSeed, true, () => fillSibling(wt, wSeed)));
+      col.appendChild(mkStepField(rp, isTimed ? 5 : 1, rSeed, true, () => fillSibling(wt, wSeed), "reps"));
       col.appendChild(mkDoneBtn(wItem, () => ({ w: wSeed, r: rSeed }), { rest: false }));
 
       setTable.appendChild(col);
@@ -16493,10 +16622,10 @@
 
       col.appendChild(lbl);
       // Weight field, ±2.5 lb (bodyweight lifts log reps only — no weight steppers).
-      col.appendChild(mkStepField(wt, 2.5, wSeedAt(s), !repsOnlyLog, () => fillSibling(rp, rSeedAt(s))));
+      col.appendChild(mkStepField(wt, 2.5, wSeedAt(s), !repsOnlyLog, () => fillSibling(rp, rSeedAt(s)), repsOnlyLog ? null : "weight"));
       col.appendChild(setX());
       // Reps field, ±1 (carries count seconds, ±5).
-      col.appendChild(mkStepField(rp, isTimed ? 5 : 1, rSeedAt(s), true, () => fillSibling(wt, wSeedAt(s))));
+      col.appendChild(mkStepField(rp, isTimed ? 5 : 1, rSeedAt(s), true, () => fillSibling(wt, wSeedAt(s)), "reps"));
       const doneBtn = mkDoneBtn(item, () => ({ w: wSeedAt(s), r: rSeedAt(s) }));
       col.appendChild(doneBtn);
 
@@ -21227,7 +21356,7 @@
       { sel: ".workout-detail-list .demo-btn", go: goDetail,
         title: "Not sure how it looks?", text: "Tap See how for a quick start-to-finish photo of the movement, so you can match the form before you lift." },
       { sel: ".workout-detail-list .cex-set-table", go: goDetail,
-        title: "Logging your sets", text: "One row per set. Finished it exactly as written? Tap the circle on the right: it fills in the target, checks off, and starts your rest. Did something different? Type it, or nudge with − and +. It saves as you go, no Submit button." },
+        title: "Logging your sets", text: "One row per set. Finished it exactly as written? Tap the circle on the right: it fills in the target, checks off, and starts your rest. Did something different? Tap the number for a grid of weights and reps around your target, or nudge with − and +. No keyboard, and it saves as you go." },
       { sel: ".workout-detail-list .cex-tools-btn", go: goDetail,
         title: "Missed something?", text: "Tap Tools to swap the exercise for another one, skip the last set(s), skip the whole exercise, or clear your entries. Honest data beats zeros, and the day can still complete." },
       { sel: ".workout-detail-list .cex-lock-btn", go: goDetail,

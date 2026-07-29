@@ -10861,3 +10861,19 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
   .sess-tile-v { font-size: 1.2rem; }
   .sess-tile-u { font-size: 0.54rem; letter-spacing: 0.05em; }
 }
+
+/* ── Athlete logging picker ────────────────────────────────────────────────
+   The grid that opens when a number in a set row is tapped, instead of the
+   phone keyboard. Same shell as the coach's weight picker, plus the "Type it
+   instead" escape along the bottom. */
+.log-pick-pop { min-width: 250px; max-width: min(92vw, 320px); }
+.log-pick-pop .grid-picker-grid { max-height: 46vh; }
+.log-pick-type {
+  display: block; width: 100%; margin-top: 0.45rem;
+  background: none; border: 1px dashed var(--border);
+  border-radius: var(--radius); padding: 0.4em 0.5em;
+  color: var(--text-soft); font-family: inherit;
+  font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; cursor: pointer;
+}
+.log-pick-type:hover { border-color: var(--primary); color: var(--primary-bright); }
