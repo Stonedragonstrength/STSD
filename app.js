@@ -9907,6 +9907,10 @@
       endAt: b.end_at,
       native: true,
       athleteId: b.athlete_id,
+      // Carried so the day sheet can cancel the booking, and can tell a weekly
+      // regular apart from a one-off without going back to the database.
+      bookingId: b.id,
+      seriesId: b.series_id || "",
     }));
     _dashCalSetmoreEvents = [...events, ...asEvents]
       .sort((a, b) => String(a.startAt).localeCompare(String(b.startAt)));
@@ -10151,11 +10155,14 @@
       const dayCount = entries.filter(e => !e.rest).length + setmoreEvents.length;
       if (dayCount) html += `<div class="dash-cal-count">${dayCount}</div>`;
       cell.innerHTML = html;
+      // EVERY day in the month opens, not just ones with something on them —
+      // an empty day is exactly where the coach wants to add a session, and a
+      // day that doesn't respond to a tap reads as broken. `has-log` still
+      // marks the ones with content so they keep their stronger hover.
       const workoutEntries = entries.filter(e => !e.rest);
-      if (workoutEntries.length || setmoreEvents.length) {
-        cell.classList.add("has-log");
-        cell.addEventListener("click", () => openDashboardDayModal(iso));
-      }
+      if (workoutEntries.length || setmoreEvents.length) cell.classList.add("has-log");
+      cell.classList.add("tappable");
+      cell.addEventListener("click", () => openDashboardDayModal(iso));
       grid.appendChild(cell);
     });
   }
@@ -10191,7 +10198,8 @@
             <div class="breakdown-sets">${time}
               ${missedUi}
               ${e.native
-                ? `<span class="booked-native-chip" title="Booked in the app by ${escapeHtml(athlete.name)}">in app</span>`
+                ? `<span class="booked-native-chip${e.seriesId ? " weekly" : ""}" title="${e.seriesId ? "Part of a weekly series" : "Booked in the app"}">${e.seriesId ? "weekly" : "in app"}</span>
+                   <button class="btn-delete-mini" type="button" data-cancel-native="${i}" title="Cancel this session">×</button>`
                 : `<button class="btn-unlink-setmore" type="button" data-unlink-booking="${i}" title="Unlink this booking from ${escapeHtml(athlete.name)}">Unlink</button>`}
               <span class="dash-booked-arrow">›</span>
             </div>
@@ -10249,7 +10257,24 @@
       body += `</div>`;
     });
     if (!body) body = `<p class="muted">Nothing scheduled or logged for this date.</p>`;
-    openModal({ title: iso, body, actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }] });
+    // Booking is the first thing in the sheet, not the last: on a phone this is
+    // the whole reason for tapping a day, and it must not sit under a scroll.
+    body = `<button type="button" class="btn btn-primary cbk-open" id="dash-book-btn">＋ Book an athlete</button>` + body;
+    openModal({
+      title: fmtSlotDay(iso),
+      body,
+      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
+    });
+    $("#dash-book-btn")?.addEventListener("click", () => openBookAthleteSheet(iso));
+    // Cancel one in-app booking straight from the day it sits on. A weekly one
+    // asks whether the coach means this week or the rest of them.
+    $$("[data-cancel-native]").forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const e = dayEvents[Number(btn.dataset.cancelNative)];
+        if (e?.bookingId) cancelBookingFlow(e.bookingId, e.seriesId, e.startAt);
+      });
+    });
     // Form-check clip → play via signed URL
     $$("[data-fc-dash]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -11965,7 +11990,10 @@
       const av = await window.Cloud.getCoachAvailability(coachId);
       if (av && typeof av === "object") { state.trainerData.availability = av; saveTrainer(); }
       const from = new Date(Date.now() - 86400000).toISOString();
-      const to = new Date(Date.now() + 60 * 86400000).toISOString();
+      // Far enough out to hold a full year-long weekly series, or "12 left,
+      // through October" would under-report the moment a series runs past the
+      // window. Booking rows are tiny and there is one query.
+      const to = new Date(Date.now() + 400 * 86400000).toISOString();
       const rows = await window.Cloud.getBookings(from, to);
       if (Array.isArray(rows)) _coachBookings = rows;
       _googleStatus = await window.Cloud.googleStatus();
@@ -11998,6 +12026,7 @@
     const sum = $("#sched-summary");
     if (sum) sum.innerHTML = availabilitySummaryHtml(coachAvailability());
     renderGoogleCard();
+    renderCoachSeries();
     renderCoachBookings();
   }
 
@@ -12090,22 +12119,449 @@
         return `<div class="sched-book-row">` +
           `<span class="sched-book-when">${escapeHtml(new Date(start).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }))}` +
           ` · ${escapeHtml(fmtSlotTime(start))}</span>` +
-          `<span class="sched-book-who">${escapeHtml(nameOf(b.athlete_id))}</span>` +
+          `<span class="sched-book-who">${escapeHtml(nameOf(b.athlete_id))}` +
+            (b.series_id ? `<span class="cbk-weekly-tag" title="Part of a weekly series">weekly</span>` : "") +
+          `</span>` +
           `<button type="button" class="btn-delete-mini" data-cancel-booking="${escapeHtml(b.id)}" title="Cancel">×</button>` +
         `</div>`;
       }).join("");
-    host.querySelectorAll("[data-cancel-booking]").forEach((btn) => btn.addEventListener("click", async () => {
-      if (!window.confirm("Cancel this booking? The athlete will see it disappear.")) return;
-      const id = btn.dataset.cancelBooking;
-      const ok = await window.Cloud?.cancelBooking?.(id);
-      if (!ok) { toast("Couldn't cancel that booking"); return; }
-      // Take the event off Google too. A failure here is a sync problem, not a
-      // booking problem, so it doesn't block or roll anything back.
-      window.Cloud?.googleCall?.("remove", { bookingId: id });
-      _coachBookings = _coachBookings.filter((b) => b.id !== id);
-      renderCoachBookings();
-      toast("Booking cancelled");
+    // Cancelling goes through the shared flow so a weekly session asks whether
+    // this week or the standing appointment is what's ending.
+    host.querySelectorAll("[data-cancel-booking]").forEach((btn) => btn.addEventListener("click", () => {
+      const b = _coachBookings.find((x) => x.id === btn.dataset.cancelBooking);
+      if (b) cancelBookingFlow(b.id, b.series_id || "", b.start_at);
     }));
+  }
+
+  // ---- Coach: book an athlete straight off the month grid ----
+  //
+  // The coach's own booking deliberately ignores two things the athlete's is
+  // bound by: published hours and the lead-time cutoff. Those rules exist to
+  // stop athletes booking at 4am or ten minutes before a session; they are not
+  // rules about what the coach may put on their own calendar. What the coach
+  // cannot do is double-book, and that is enforced where it always was — the
+  // partial unique index, not a check here.
+  const REPEAT_WEEKS = [4, 8, 12, 26, 52];
+  const SESSION_LENGTHS = [30, 45, 60, 75, 90, 120];
+
+  // The wall-clock time an instant reads as in `tz`, as "HH:MM".
+  function zonedHM(ms, tz) {
+    try {
+      return new Intl.DateTimeFormat("en-GB", {
+        timeZone: tz, hour12: false, hour: "2-digit", minute: "2-digit",
+      }).format(new Date(ms));
+    } catch (e) { return "09:00"; }
+  }
+
+  // Weekly, in WALL CLOCK. Stepping by 7 × 86400000 would move a 6am session to
+  // 5am the week the clocks change; every occurrence is recomputed from the
+  // calendar date it lands on instead. Pure — the Node harness covers the
+  // November fall-back week.
+  function weeklyOccurrences(firstISO, hh, mm, tz, count) {
+    const [y, m, d] = String(firstISO).split("-").map(Number);
+    const out = [];
+    for (let i = 0; i < count; i++) {
+      const day = new Date(Date.UTC(y, m - 1, d + i * 7));
+      out.push(zonedTimeToUtc(day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate(), hh, mm, tz));
+    }
+    return out;
+  }
+
+  // The coach's published hours for one day, as quick-pick times, minus what is
+  // already booked and minus anything already past. Advisory: "Other time"
+  // sits right beside them and takes anything.
+  function coachDaySlots(iso, mins) {
+    const a = normalizeAvailability(coachAvailability());
+    const tz = a.tz || localTz();
+    const [y, m, d] = iso.split("-").map(Number);
+    const dayStart = zonedTimeToUtc(y, m, d, 0, 0, tz);
+    const busy = _coachBookings
+      .filter((b) => b.status === "booked")
+      .map((b) => ({ start: b.start_at, end: b.end_at }));
+    // blackouts cleared too: a day off is a day athletes can't book, not one
+    // the coach is forbidden from putting a session on.
+    return generateSlots({ ...a, sessionMins: mins, leadHours: 0, blackouts: [] }, dayStart, 2, busy)
+      .filter((s) => zonedDateISO(s.startMs, tz) === iso && s.startMs > Date.now() - 60000);
+  }
+
+  function openBookAthleteSheet(iso) {
+    const clients = state.trainerData.clients || [];
+    if (!clients.length) { toast("Add an athlete first, then you can book them."); return; }
+    const a = normalizeAvailability(coachAvailability());
+    const tz = a.tz || localTz();
+    const draft = {
+      iso,
+      athleteId: clients.length === 1 ? clients[0].id : "",
+      time: "",
+      mins: a.sessionMins,
+      weeks: 0,          // 0 = just this day
+      custom: false,     // typing a time instead of picking a published one
+      q: "",             // athlete search
+    };
+    const first = coachDaySlots(iso, draft.mins)[0];
+    if (first) draft.time = zonedHM(first.startMs, tz);
+    else { draft.time = "09:00"; draft.custom = true; }
+
+    const summaryText = () => {
+      const c = clients.find((x) => x.id === draft.athleteId);
+      const hm = parseHM(draft.time);
+      if (!c || !hm) return "Pick an athlete and a time.";
+      const starts = weeklyOccurrences(draft.iso, hm.hh, hm.mm, tz, draft.weeks || 1);
+      const when = fmtSlotTime(starts[0], tz);
+      if (!draft.weeks) return `${c.name} · ${fmtSlotDay(draft.iso)} at ${when} · ${draft.mins} min`;
+      const dow = new Date(starts[0]).toLocaleDateString(undefined, { weekday: "long", timeZone: tz });
+      const last = fmtSlotDay(zonedDateISO(starts[starts.length - 1], tz));
+      return `${c.name} · ${dow}s at ${when} · ${draft.weeks} sessions, through ${last}`;
+    };
+    const paintSummary = () => {
+      const el = $("#cbk-summary");
+      if (el) el.textContent = summaryText();
+    };
+
+    // One scrolling roster rather than a wall of chips: a coach with thirty
+    // athletes can't pick out of thirty blocks, and the sheet has four other
+    // decisions under this one that must stay on screen.
+    const athleteRowsHtml = () => {
+      const q = draft.q.trim().toLowerCase();
+      const list = q ? clients.filter((c) => String(c.name || "").toLowerCase().includes(q)) : clients;
+      if (!list.length) return `<p class="cbk-ath-none">No athlete by that name.</p>`;
+      return list.map((c) => {
+        const sum = sessionBankSummary(c);
+        return `<button type="button" class="cbk-ath-row${c.id === draft.athleteId ? " on" : ""}" data-ath="${escapeHtml(c.id)}">` +
+          `<span class="cbk-ini">${escapeHtml(clientInitials(c.name))}</span>` +
+          `<span class="cbk-ath-name">${escapeHtml(c.name)}</span>` +
+          `<span class="cbk-bal${sum.remaining <= 0 ? " low" : ""}" title="Sessions left">${sum.remaining}</span>` +
+        `</button>`;
+      }).join("");
+    };
+    // Repaints only the roster, never the sheet: typing in the search box must
+    // not cost the coach the keyboard, and picking someone must not scroll the
+    // list back to the top.
+    const paintAthletes = () => {
+      const host = $("#cbk-ath-list"); if (!host) return;
+      const keepScroll = host.scrollTop;
+      host.innerHTML = athleteRowsHtml();
+      host.scrollTop = keepScroll;
+      host.querySelectorAll("[data-ath]").forEach((b) => b.addEventListener("click", () => {
+        draft.athleteId = b.dataset.ath;
+        paintAthletes();
+        paintSummary();
+      }));
+      paintSummary();
+    };
+
+    const draw = () => {
+      const body = $("#modal-body"); if (!body) return;
+      const slots = coachDaySlots(draft.iso, draft.mins);
+      // A longer session re-cuts the day, so a time that was a quick pick a
+      // moment ago may not be one now (5:00 PM survives 60-minute slots but not
+      // 90-minute ones). Drop to the time field rather than leaving a time that
+      // is set, shown in the summary, and impossible to see or edit.
+      const matches = slots.some((s) => zonedHM(s.startMs, tz) === draft.time);
+      if (!matches && slots.length && !draft.custom) draft.custom = true;
+      const picked = matches && !draft.custom;
+
+      body.innerHTML =
+        `<div class="cbk-sheet">` +
+          `<div class="cbk-sec">` +
+            `<div class="cbk-lab">Who</div>` +
+            (clients.length > 5
+              ? `<input type="search" id="cbk-search" class="cbk-search" placeholder="Search athletes" value="${escapeHtml(draft.q)}" />`
+              : "") +
+            `<div class="cbk-ath-list" id="cbk-ath-list">${athleteRowsHtml()}</div>` +
+          `</div>` +
+
+          `<div class="cbk-sec">` +
+            `<div class="cbk-lab">Day</div>` +
+            // Editable even when the sheet was opened by tapping a day: it is
+            // the only way in from the Schedule card, and it saves a close-and-
+            // retap after tapping the wrong square.
+            `<input type="date" id="cbk-date" class="cbk-date" value="${escapeHtml(draft.iso)}" />` +
+          `</div>` +
+
+          `<div class="cbk-sec">` +
+            `<div class="cbk-lab">Time <span class="cbk-lab-sub">${escapeHtml(fmtSlotDay(draft.iso))}</span></div>` +
+            (slots.length
+              ? `<div class="cbk-chips">${slots.map((s) => {
+                  const hm = zonedHM(s.startMs, tz);
+                  return `<button type="button" class="cbk-chip${picked && hm === draft.time ? " on" : ""}" data-time="${hm}">${escapeHtml(fmtSlotTime(s.startMs, tz))}</button>`;
+                }).join("")}` +
+                `<button type="button" class="cbk-chip cbk-chip-other${draft.custom ? " on" : ""}" data-other="1">Other time</button></div>`
+              : `<p class="cbk-hint">No published hours going spare that day. Set any time you like.</p>`) +
+            (draft.custom || !slots.length
+              ? `<div class="cbk-time-row"><input type="time" id="cbk-time" value="${escapeHtml(draft.time)}" /></div>`
+              : "") +
+          `</div>` +
+
+          `<div class="cbk-sec">` +
+            `<div class="cbk-lab">Length</div>` +
+            `<div class="cbk-chips">${SESSION_LENGTHS.map((n) =>
+              `<button type="button" class="cbk-chip cbk-chip-sm${n === draft.mins ? " on" : ""}" data-mins="${n}">${n}m</button>`).join("")}</div>` +
+          `</div>` +
+
+          `<div class="cbk-sec">` +
+            `<div class="cbk-lab">Repeats</div>` +
+            `<div class="cbk-seg">` +
+              `<button type="button" class="cbk-seg-btn${draft.weeks ? "" : " on"}" data-weeks="0">Just this day</button>` +
+              `<button type="button" class="cbk-seg-btn${draft.weeks ? " on" : ""}" data-weeks="12">Every week</button>` +
+            `</div>` +
+            (draft.weeks
+              ? `<div class="cbk-weeks"><label>for <select id="cbk-weeks">${REPEAT_WEEKS.map((n) =>
+                  `<option value="${n}"${n === draft.weeks ? " selected" : ""}>${n} weeks</option>`).join("")}</select></label>` +
+                 `<span class="cbk-hint">Extend it any time from the Schedule card.</span></div>`
+              : "") +
+          `</div>` +
+
+          `<input type="text" id="cbk-note" class="cbk-note" maxlength="120" placeholder="Note for this session (optional)" />` +
+          `<div class="cbk-summary" id="cbk-summary">${escapeHtml(summaryText())}</div>` +
+        `</div>`;
+
+      body.querySelectorAll("[data-ath]").forEach((b) => b.addEventListener("click", () => {
+        draft.athleteId = b.dataset.ath;
+        paintAthletes();
+        paintSummary();
+      }));
+      $("#cbk-search")?.addEventListener("input", (e) => {
+        draft.q = e.target.value;
+        paintAthletes();
+      });
+      body.querySelectorAll("[data-time]").forEach((b) => b.addEventListener("click", () => {
+        draft.time = b.dataset.time; draft.custom = false; draw();
+      }));
+      body.querySelector("[data-other]")?.addEventListener("click", () => {
+        draft.custom = true; draw();
+      });
+      body.querySelectorAll("[data-mins]").forEach((b) => b.addEventListener("click", () => {
+        draft.mins = +b.dataset.mins; draw();
+      }));
+      body.querySelectorAll("[data-weeks]").forEach((b) => b.addEventListener("click", () => {
+        draft.weeks = +b.dataset.weeks; draw();
+      }));
+      // Typed values write straight into the draft and repaint only the summary
+      // line — redrawing the sheet would take the keyboard away mid-entry.
+      $("#cbk-time")?.addEventListener("input", (e) => {
+        if (parseHM(e.target.value)) { draft.time = e.target.value; paintSummary(); }
+      });
+      $("#cbk-weeks")?.addEventListener("change", (e) => { draft.weeks = +e.target.value; paintSummary(); });
+      // A new day means new quick-pick times, so this one does redraw. The
+      // native date picker closes on choose, so nothing loses focus.
+      $("#cbk-date")?.addEventListener("change", (e) => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) return;
+        draft.iso = e.target.value;
+        const next = coachDaySlots(draft.iso, draft.mins)[0];
+        if (next && !draft.custom) draft.time = zonedHM(next.startMs, tz);
+        draw();
+      });
+    };
+
+    openModal({
+      title: "＋ Book a session",
+      body: "",
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Book it", className: "btn btn-primary", onClick: () => {
+          draft.note = $("#cbk-note")?.value || "";
+          saveCoachBooking(draft);
+        }},
+      ],
+    });
+    draw();
+  }
+
+  async function saveCoachBooking(draft) {
+    const c = (state.trainerData.clients || []).find((x) => x.id === draft.athleteId);
+    if (!c) { toast("Pick an athlete first."); return; }
+    const hm = parseHM(draft.time);
+    if (!hm) { toast("Pick a time first."); return; }
+    if (!window.Cloud?.enabled) {
+      // Never fake this one offline. The database is the only thing that can
+      // say whether a slot was free, so a local "booked" would be a guess the
+      // athlete might see and act on.
+      toast("Booking needs a connection. Try again once you're back online.", 5000);
+      return;
+    }
+    const a = normalizeAvailability(coachAvailability());
+    const tz = a.tz || localTz();
+    const starts = weeklyOccurrences(draft.iso, hm.hh, hm.mm, tz, draft.weeks || 1);
+    const seriesId = draft.weeks ? `sr_${uid()}` : null;
+    const note = String(draft.note || "").trim().slice(0, 120);
+    const rows = starts.map((ms) => ({
+      id: uid(),
+      // Sent for the not-null column; a BEFORE INSERT trigger replaces it with
+      // the athlete's real coach either way.
+      coach_id: state.trainerData.coachId || "",
+      athlete_id: c.id,
+      start_at: new Date(ms).toISOString(),
+      end_at: new Date(ms + draft.mins * 60000).toISOString(),
+      status: "booked",
+      created_by: "coach",
+      note: note || null,
+      series_id: seriesId,
+    }));
+    closeModal();
+    const res = await window.Cloud.createBookings(rows);
+    const made = (res?.created || []).length;
+    const skipped = (res?.taken || []).length;
+    if (!made) {
+      toast(skipped ? "That time is already booked. Pick another." : "Couldn't save that booking. Try again.", 5000);
+      return;
+    }
+    if (made === 1 && !seriesId) {
+      toast(`${c.name} booked · ${fmtSlotDay(draft.iso)} at ${fmtSlotTime(starts[0], tz)} ✓`, 4000);
+    } else {
+      toast(`${made} session${made === 1 ? "" : "s"} booked for ${c.name} ✓` +
+        (skipped ? ` · ${skipped} date${skipped === 1 ? " was" : "s were"} already taken` : ""), 5000);
+    }
+    // One call for a whole series rather than one per week. Google failing is a
+    // sync problem and never undoes a booking that already saved.
+    if (seriesId) window.Cloud.googleCall?.("push-series", { seriesId, from: rows[0].start_at });
+    else (res.created || []).forEach((id) => window.Cloud.googleCall?.("push", { bookingId: id }));
+    afterBookingChange();
+  }
+
+  // Both calendars have to catch up: the Schedule card owns the booking list,
+  // and the month grid is what mirrors bookings onto the athletes' own screens.
+  async function afterBookingChange() {
+    await refreshCoachSchedule();
+    _dashCalSetmoreFetchKey = null;
+    if (state.dashCal) await loadDashCalSetmoreEvents(state.dashCal.year, state.dashCal.month);
+  }
+
+  // Cancelling a weekly session is ambiguous — this week off, or stop the
+  // standing appointment? Ask, rather than picking one and being wrong half
+  // the time. Past sessions are never touched: they happened, and the session
+  // bank has already charged for them.
+  function cancelBookingFlow(bookingId, seriesId, startAt) {
+    const cancelOne = async () => {
+      const ok = await window.Cloud?.cancelBooking?.(bookingId);
+      if (!ok) { toast("Couldn't cancel that booking"); return; }
+      window.Cloud?.googleCall?.("remove", { bookingId });
+      toast("Booking cancelled");
+      afterBookingChange();
+    };
+    const cancelRest = async () => {
+      const ids = await window.Cloud?.cancelBookingSeries?.(seriesId, startAt || new Date().toISOString());
+      if (!ids?.length) { toast("Couldn't cancel those. Try again."); return; }
+      window.Cloud?.googleCall?.("remove-series", { seriesId, from: startAt || new Date().toISOString() });
+      toast(`${ids.length} session${ids.length === 1 ? "" : "s"} cancelled`);
+      afterBookingChange();
+    };
+    if (!seriesId) {
+      if (!window.confirm("Cancel this booking? The athlete will see it disappear.")) return;
+      cancelOne();
+      return;
+    }
+    openModal({
+      title: "This one, or the rest?",
+      body: `<p class="muted">This is a weekly session. Sessions already in the past stay on the books either way.</p>`,
+      actions: [
+        { label: "Keep it", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Just this one", className: "btn", onClick: () => { closeModal(); cancelOne(); } },
+        { label: "This and all future", className: "btn btn-primary", onClick: () => { closeModal(); cancelRest(); } },
+      ],
+    });
+  }
+
+  // The standing weekly appointments, grouped back out of the rows they were
+  // expanded into. Future only — a finished series is history, not a setting.
+  function bookingSeriesList() {
+    const now = Date.now();
+    const map = {};
+    _coachBookings.forEach((b) => {
+      if (b.status !== "booked" || !b.series_id) return;
+      if (+new Date(b.start_at) < now) return;
+      (map[b.series_id] = map[b.series_id] || []).push(b);
+    });
+    return Object.keys(map).map((id) => {
+      const rows = map[id].sort((x, y) => String(x.start_at).localeCompare(String(y.start_at)));
+      return { id, rows, first: rows[0], last: rows[rows.length - 1] };
+    }).sort((x, y) => String(x.first.start_at).localeCompare(String(y.first.start_at)));
+  }
+
+  function renderCoachSeries() {
+    const host = $("#sched-series"); if (!host) return;
+    const list = bookingSeriesList();
+    if (!list.length) { host.innerHTML = ""; return; }
+    const a = normalizeAvailability(coachAvailability());
+    const tz = a.tz || localTz();
+    const nameOf = (id) => (state.trainerData.clients || []).find((c) => c.id === id)?.name || "Athlete";
+    host.innerHTML = `<div class="sched-book-head">Weekly regulars <span class="sched-book-n">${list.length}</span></div>` +
+      list.map((s) => {
+        const startMs = +new Date(s.first.start_at);
+        const dow = new Date(startMs).toLocaleDateString(undefined, { weekday: "long", timeZone: tz });
+        return `<div class="cbk-series-row">` +
+          `<span class="cbk-series-txt">` +
+            `<b>${escapeHtml(nameOf(s.first.athlete_id))}</b>` +
+            `<span>${escapeHtml(dow)}s · ${escapeHtml(fmtSlotTime(startMs, tz))} · ${s.rows.length} left, through ${escapeHtml(fmtSlotDay(zonedDateISO(+new Date(s.last.start_at), tz)))}</span>` +
+          `</span>` +
+          `<span class="cbk-series-acts">` +
+            `<button type="button" class="btn btn-ghost btn-xs" data-extend="${escapeHtml(s.id)}">Extend</button>` +
+            `<button type="button" class="btn-delete-mini" data-end-series="${escapeHtml(s.id)}" title="End this weekly session">×</button>` +
+          `</span>` +
+        `</div>`;
+      }).join("");
+    host.querySelectorAll("[data-extend]").forEach((b) => b.addEventListener("click", () => {
+      const s = list.find((x) => x.id === b.dataset.extend);
+      if (s) openExtendSeries(s);
+    }));
+    host.querySelectorAll("[data-end-series]").forEach((b) => b.addEventListener("click", () => {
+      const s = list.find((x) => x.id === b.dataset.endSeries);
+      if (!s) return;
+      if (!window.confirm(`End this weekly session? The ${s.rows.length} sessions still to come will be cancelled.`)) return;
+      cancelBookingFlow(null, s.id, new Date().toISOString());
+    }));
+  }
+
+  // More weeks on the end of a series, continuing from the last one that exists
+  // so the pattern can't drift.
+  function openExtendSeries(s) {
+    let weeks = 12;
+    openModal({
+      title: "Add more weeks",
+      body: `<p class="muted">Carries on from ${escapeHtml(fmtSlotDay(zonedDateISO(+new Date(s.last.start_at), normalizeAvailability(coachAvailability()).tz || localTz())))}, same day and time.</p>` +
+        `<div class="cbk-seg" id="cbk-ext">${REPEAT_WEEKS.map((n) =>
+          `<button type="button" class="cbk-seg-btn${n === weeks ? " on" : ""}" data-ext="${n}">${n}</button>`).join("")}</div>` +
+        `<p class="cbk-hint">weeks</p>`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Add them", className: "btn btn-primary", onClick: () => { closeModal(); extendSeries(s, weeks); } },
+      ],
+    });
+    $$("[data-ext]").forEach((b) => b.addEventListener("click", () => {
+      weeks = +b.dataset.ext;
+      $$("[data-ext]").forEach((x) => x.classList.toggle("on", x === b));
+    }));
+  }
+
+  async function extendSeries(s, weeks) {
+    if (!window.Cloud?.enabled) { toast("Adding weeks needs a connection."); return; }
+    const a = normalizeAvailability(coachAvailability());
+    const tz = a.tz || localTz();
+    const lastMs = +new Date(s.last.start_at);
+    const mins = Math.max(15, Math.round((+new Date(s.last.end_at) - lastMs) / 60000));
+    const hm = parseHM(zonedHM(lastMs, tz)) || { hh: 9, mm: 0 };
+    // Generated from the last existing session and then dropped, so week one of
+    // the extension is the week after it.
+    const starts = weeklyOccurrences(zonedDateISO(lastMs, tz), hm.hh, hm.mm, tz, weeks + 1).slice(1);
+    const rows = starts.map((ms) => ({
+      id: uid(),
+      coach_id: state.trainerData.coachId || "",
+      athlete_id: s.first.athlete_id,
+      start_at: new Date(ms).toISOString(),
+      end_at: new Date(ms + mins * 60000).toISOString(),
+      status: "booked",
+      created_by: "coach",
+      note: s.last.note || null,
+      series_id: s.id,
+    }));
+    const res = await window.Cloud.createBookings(rows);
+    const made = (res?.created || []).length;
+    if (!made) { toast("Couldn't add those weeks. Try again.", 4000); return; }
+    const skipped = (res?.taken || []).length;
+    toast(`${made} more session${made === 1 ? "" : "s"} added ✓` +
+      (skipped ? ` · ${skipped} already taken` : ""), 4000);
+    window.Cloud.googleCall?.("push-series", { seriesId: s.id, from: rows[0].start_at });
+    afterBookingChange();
   }
 
   // The availability editor. One row per weekday, each holding any number of
@@ -23127,6 +23583,9 @@
     $("#btn-gift-session")?.addEventListener("click", openGiftSessionModal);
     $("#btn-post-open-slot")?.addEventListener("click", openPostSlotModal);
     $("#btn-edit-availability")?.addEventListener("click", openAvailabilityEditor);
+    // Booking without going via the calendar first. Opens on today; the day is
+    // whatever the coach picks in the sheet.
+    $("#btn-book-athlete")?.addEventListener("click", () => openBookAthleteSheet(todayISO()));
     $("#btn-redeem-session")?.addEventListener("click", openRedeemSessionModal);
     prefillRememberedEmails();
     $("#btn-export-sessions")?.addEventListener("click", () => {

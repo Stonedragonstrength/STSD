@@ -316,6 +316,52 @@
       return { ok: true };
     } catch (e) { console.warn("[Cloud] createBooking", e); return { ok: false, taken: false }; }
   }
+  // A whole series at once (the coach booking a weekly regular). Sent as one
+  // statement first because that is one round trip instead of fifty-two; but a
+  // single duplicate start time fails the entire statement, so a 23505 drops to
+  // a row at a time to find out exactly WHICH dates were already taken. The
+  // coach gets the rest booked and a list of what was skipped, rather than an
+  // all-or-nothing failure they have to unpick by hand.
+  async function createBookings(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    if (!list.length) return { created: [], taken: [] };
+    try {
+      const { error } = await sb.from("bookings").insert(list);
+      if (!error) return { created: list.map((r) => r.id), taken: [] };
+      if (error.code !== "23505") {
+        console.warn("[Cloud] createBookings", error.message);
+        return { created: [], taken: [], message: error.message };
+      }
+    } catch (e) {
+      console.warn("[Cloud] createBookings", e);
+      return { created: [], taken: [], message: String(e) };
+    }
+    const created = [], taken = [];
+    for (const r of list) {
+      try {
+        const { error } = await sb.from("bookings").insert(r);
+        if (!error) created.push(r.id);
+        else if (error.code === "23505") taken.push(r.start_at);
+        else console.warn("[Cloud] createBookings row", error.message);
+      } catch (e) { console.warn("[Cloud] createBookings row", e); }
+    }
+    return { created, taken };
+  }
+  // "This one and every one after it." Everything already in the past stays on
+  // the books — those sessions happened, and the session bank has charged for
+  // them. Returns the ids it cancelled so their calendar events can follow.
+  async function cancelBookingSeries(seriesId, fromISO) {
+    if (!seriesId) return [];
+    try {
+      const { data, error } = await sb.from("bookings")
+        .update({ status: "cancelled", cancelled_at: new Date().toISOString() })
+        .eq("series_id", seriesId).eq("status", "booked")
+        .gte("start_at", fromISO || new Date().toISOString())
+        .select("id");
+      if (error) { console.warn("[Cloud] cancelBookingSeries", error.message); return []; }
+      return (data || []).map((r) => r.id);
+    } catch (e) { console.warn("[Cloud] cancelBookingSeries", e); return []; }
+  }
   async function cancelBooking(id) {
     try {
       const { error } = await sb.from("bookings")
@@ -888,7 +934,9 @@
     getAvailabilityForAthlete,
     getBookedWindow,
     createBooking,
+    createBookings,
     cancelBooking,
+    cancelBookingSeries,
     getBookings,
     googleCall,
     googleStatus,

@@ -15,6 +15,8 @@
 //   freebusy    -> { from, to }         busy intervals, for hiding taken slots
 //   push        -> { bookingId }        create/update the event for a booking
 //   remove      -> { bookingId }        delete the event a booking owns
+//   push-series -> { seriesId, from }   same, for a whole weekly series
+//   remove-series -> { seriesId, from } delete a whole weekly series' events
 //
 // Only the coach may call any of them.
 //
@@ -232,57 +234,82 @@ Deno.serve(async (req) => {
       }
 
       case "push":
-      case "remove": {
-        const bookingId = String(body?.bookingId ?? "");
-        if (!bookingId) return json({ ok: false, error: "no booking" }, 400);
+      case "remove":
+      case "push-series":
+      case "remove-series": {
+        const series = action.endsWith("-series");
+        // A weekly booking is stored as one row per session, so a year-long
+        // series would otherwise be 52 round trips from the browser. The whole
+        // series is handled in one call instead, capped so a bad id can't spin.
+        let q = sb.from("bookings").select("*, athletes(name)").eq("coach_id", coachId);
+        if (series) {
+          const seriesId = String(body?.seriesId ?? "");
+          if (!seriesId) return json({ ok: false, error: "no series" }, 400);
+          q = q.eq("series_id", seriesId)
+            .gte("start_at", String(body?.from ?? new Date().toISOString()))
+            .order("start_at", { ascending: true }).limit(120);
+        } else {
+          const bookingId = String(body?.bookingId ?? "");
+          if (!bookingId) return json({ ok: false, error: "no booking" }, 400);
+          q = q.eq("id", bookingId);
+        }
         const row = await loadToken();
         if (!row) return json({ ok: true, connected: false });
-        const { data: bk } = await sb.from("bookings")
-          .select("*, athletes(name)").eq("id", bookingId).eq("coach_id", coachId).maybeSingle();
-        if (!bk) return json({ ok: false, error: "no such booking" }, 404);
+        const { data: rows } = await q;
+        const list = rows ?? [];
+        if (!list.length) return json({ ok: false, error: "no such booking" }, 404);
 
         try {
+          // One access token for the whole series — it is good for an hour and
+          // minting one per session would be 52 pointless calls to Google.
           const token = await accessToken(row.refresh_token, clientId, clientSecret);
           const cal = encodeURIComponent(row.calendar_id || "primary");
           const auth = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+          const wanted = action === "push" || action === "push-series";
+          let written = 0, removed = 0;
 
-          const shouldExist = action === "push" && bk.status === "booked";
-          if (!shouldExist) {
-            if (bk.google_event_id) {
-              await fetch(`${CAL_API}/calendars/${cal}/events/${encodeURIComponent(bk.google_event_id)}`,
-                { method: "DELETE", headers: auth });
-              await sb.from("bookings").update({ google_event_id: null }).eq("id", bookingId);
+          for (const bk of list) {
+            // A cancelled row never has an event, whichever action asked.
+            if (!wanted || bk.status !== "booked") {
+              if (bk.google_event_id) {
+                await fetch(`${CAL_API}/calendars/${cal}/events/${encodeURIComponent(bk.google_event_id)}`,
+                  { method: "DELETE", headers: auth });
+                await sb.from("bookings").update({ google_event_id: null }).eq("id", bk.id);
+                removed++;
+              }
+              continue;
             }
-            return json({ ok: true, removed: true });
-          }
-
-          const name = (bk as any).athletes?.name ?? "Athlete";
-          const event = {
-            summary: `Training: ${name}`,
-            description: bk.note ? String(bk.note) : "Booked in Stone Dragon.",
-            start: { dateTime: new Date(bk.start_at).toISOString() },
-            end: { dateTime: new Date(bk.end_at).toISOString() },
-          };
-          const url = bk.google_event_id
-            ? `${CAL_API}/calendars/${cal}/events/${encodeURIComponent(bk.google_event_id)}`
-            : `${CAL_API}/calendars/${cal}/events`;
-          const res = await fetch(url, {
-            method: bk.google_event_id ? "PATCH" : "POST",
-            headers: auth,
-            body: JSON.stringify(event),
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data?.error?.message ?? `event ${res.status}`);
-          if (!bk.google_event_id && data?.id) {
-            await sb.from("bookings").update({ google_event_id: data.id }).eq("id", bookingId);
+            const name = (bk as any).athletes?.name ?? "Athlete";
+            const event = {
+              summary: `Training: ${name}`,
+              description: bk.note ? String(bk.note) : "Booked in Stone Dragon.",
+              start: { dateTime: new Date(bk.start_at).toISOString() },
+              end: { dateTime: new Date(bk.end_at).toISOString() },
+            };
+            const url = bk.google_event_id
+              ? `${CAL_API}/calendars/${cal}/events/${encodeURIComponent(bk.google_event_id)}`
+              : `${CAL_API}/calendars/${cal}/events`;
+            const res = await fetch(url, {
+              method: bk.google_event_id ? "PATCH" : "POST",
+              headers: auth,
+              body: JSON.stringify(event),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data?.error?.message ?? `event ${res.status}`);
+            if (!bk.google_event_id && data?.id) {
+              await sb.from("bookings").update({ google_event_id: data.id }).eq("id", bk.id);
+            }
+            written++;
           }
           await sb.from("google_calendar").update({ last_error: null }).eq("coach_id", coachId);
-          return json({ ok: true, eventId: data?.id ?? bk.google_event_id });
+          return json({ ok: true, written, removed });
         } catch (e) {
           await noteError(String(e));
-          // The booking itself already succeeded in our database. Google
+          // The bookings themselves already succeeded in our database. Google
           // failing is a sync problem, not a booking problem, and must never
-          // roll the booking back.
+          // roll the booking back. A series that fails halfway leaves the
+          // events it did write; re-running the same push finds them by
+          // google_event_id and patches instead of duplicating.
           console.error("[google-calendar] push failed", e);
           return json({ ok: false, error: String(e), soft: true });
         }

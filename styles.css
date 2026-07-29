@@ -11050,3 +11050,162 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 .sched-os-body { padding-top: 0.6rem; }
 .sched-os-body > .slim-btn { margin-bottom: 0.5rem; }
 .sched-os-n.claimed { background: rgba(245, 158, 11, 0.18); color: var(--warn); }
+
+/* ============ Coach: book an athlete from the calendar ============
+   Phone first. Every control is a chip or a segment big enough to hit with a
+   thumb, the sheet is one column at any width, and nothing needs a keyboard
+   except the optional note — a coach booking someone in is usually standing on
+   the gym floor with a phone in one hand. */
+.cbk-open {
+  width: 100%;
+  margin-bottom: 0.9rem;
+  font-size: 0.9rem;
+}
+.cbk-sheet { display: flex; flex-direction: column; gap: 1.05rem; }
+.cbk-sec { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+.cbk-lab {
+  font-size: 0.7rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-soft);
+  display: flex; align-items: baseline; gap: 0.5em;
+}
+.cbk-lab-sub { text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--muted); }
+.cbk-hint { font-size: 0.78rem; color: var(--muted); margin: 0; }
+
+/* Chip rows wrap rather than scroll: a time you have to swipe to find is a
+   time you don't know is there. */
+.cbk-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.cbk-chip {
+  display: inline-flex; align-items: center; gap: 0.4em;
+  min-height: 44px;
+  padding: 0.5em 0.85em;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit; font-size: 0.85rem; font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.cbk-chip:hover { border-color: rgba(var(--primary-rgb), 0.6); }
+.cbk-chip.on {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary-bright);
+}
+.cbk-chip-sm { min-height: 40px; padding: 0.4em 0.75em; font-size: 0.8rem; }
+.cbk-chip-other { font-weight: 600; color: var(--text-soft); }
+
+/* Athletes: a searchable roster that soft-caps and scrolls, the same shape as
+   the Today / Needs-you lists. A grid of blocks stops working the moment there
+   are more than a handful, and it pushes the time and repeat controls — the
+   other four decisions in this sheet — off the screen. */
+.cbk-search { margin-top: 0; }
+.cbk-ath-list {
+  max-height: 13rem;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.cbk-ath-row {
+  display: flex; align-items: center; gap: 0.6em;
+  width: 100%;
+  min-height: 46px;
+  padding: 0.45em 0.7em;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font: inherit; font-size: 0.88rem; font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.cbk-ath-row:last-child { border-bottom: 0; }
+.cbk-ath-row:hover { background: var(--surface-3); }
+.cbk-ath-row.on { background: var(--primary-soft); color: var(--primary-bright); }
+.cbk-ath-row.on .cbk-ini { background: var(--primary); color: #0b0f14; }
+.cbk-ath-none { padding: 0.8em 0.7em; margin: 0; font-size: 0.82rem; color: var(--muted); }
+.cbk-ini {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--surface-3); color: var(--text-soft);
+  font-size: 0.62rem; font-weight: 800;
+}
+.cbk-ath-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; min-width: 0; }
+/* Sessions left. The coach needs it while picking, not after booking. */
+.cbk-bal {
+  font-size: 0.65rem; font-weight: 800;
+  background: var(--surface-3); color: var(--text-soft);
+  border-radius: 999px; padding: 0.05em 0.45em;
+}
+.cbk-bal.low { background: rgba(239, 68, 68, 0.18); color: #fca5a5; }
+.cbk-time-row, .cbk-date { margin-top: 0.1rem; }
+
+/* Repeats: two halves of one control, so "every week" reads as the other
+   option rather than as a setting hidden somewhere else. */
+.cbk-seg {
+  display: flex; gap: 0.35rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.25rem;
+}
+.cbk-seg-btn {
+  flex: 1 1 0; min-width: 0;
+  min-height: 42px;
+  border: 0; border-radius: calc(var(--radius) - 2px);
+  background: transparent; color: var(--text-soft);
+  font: inherit; font-size: 0.85rem; font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.cbk-seg-btn.on { background: var(--primary-soft); color: var(--primary-bright); }
+.cbk-weeks { display: flex; flex-direction: column; gap: 0.3rem; }
+.cbk-weeks label { display: flex; align-items: center; gap: 0.6em; font-size: 0.85rem; margin: 0; }
+.cbk-weeks select { margin-top: 0; flex: 1 1 auto; }
+.cbk-note { margin-top: 0; }
+/* The whole booking in one sentence, right above the button that commits it. */
+.cbk-summary {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  padding: 0.7em 0.9em;
+  font-size: 0.85rem; font-weight: 600; line-height: 1.45;
+  color: var(--text);
+}
+
+/* Weekly regulars, in the Schedule card. */
+.sched-series:empty { display: none; }
+.sched-series { margin-top: 0.9rem; }
+.cbk-series-row {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.cbk-series-row:last-child { border-bottom: 0; }
+.cbk-series-txt { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; flex: 1 1 auto; }
+.cbk-series-txt b { font-size: 0.88rem; }
+.cbk-series-txt span { font-size: 0.75rem; color: var(--muted); }
+.cbk-series-acts { display: flex; align-items: center; gap: 0.3rem; flex-shrink: 0; }
+.cbk-weekly-tag {
+  font-size: 0.6rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--primary-soft); color: var(--primary-bright);
+  border-radius: 999px; padding: 0.05em 0.45em; margin-left: 0.4em;
+}
+.booked-native-chip.weekly { background: var(--primary-soft); color: var(--primary-bright); }
+
+/* Every square of the month grid opens now, so they all have to look live. */
+.dash-cal-day.tappable { cursor: pointer; }
+.dash-cal-day.tappable:hover { border-color: rgba(var(--primary-rgb), 0.45); background: var(--surface-3); }
+
+@media (max-width: 720px) {
+  /* Shorter roster on a phone: the sheet has to keep the time and repeat
+     controls reachable without a long scroll past the athlete list. */
+  .cbk-ath-list { max-height: 11rem; }
+  .cbk-summary { font-size: 0.88rem; }
+  .cbk-series-row { flex-wrap: wrap; }
+}
