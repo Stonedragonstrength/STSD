@@ -4485,16 +4485,19 @@
   }
   function renderProfile() {
     const c = currentClient(); if (!c) return;
-    $("#prof-name").value = c.name;
-    $("#prof-age").value = c.age;
+    // ?? "" throughout: an athlete synced from an older shape can be missing
+    // any of these, and an undefined assigned to .value renders the literal
+    // word "undefined" in the box.
+    $("#prof-name").value = c.name ?? "";
+    $("#prof-age").value = c.age ?? "";
     const h = Number(c.heightIn) || 0;
     $("#prof-height-ft").value = h ? Math.floor(h / 12) : "";
     $("#prof-height-in").value = h ? Math.round(h % 12) : "";
     // Their newest weigh-in, so this field matches the card above it rather
     // than showing whatever was typed here months ago.
     $("#prof-weight").value = latestBodyweight(c.importedProgress, c) ?? "";
-    $("#prof-goals").value = c.goals;
-    $("#prof-notes").value = c.notes;
+    $("#prof-goals").value = c.goals ?? "";
+    $("#prof-notes").value = c.notes ?? "";
     if (!c.inviteCode) { c.inviteCode = makeInviteCode(); saveTrainer(); }
     $("#invite-code-display").textContent = c.inviteCode;
     setInviteCodeVisible(false); // code stays tucked away until "Show code"
@@ -19833,8 +19836,10 @@
     // stays blurred in the closed state too.
     const meta = $("#bw-fold-meta");
     if (meta) {
-      const latest = [...log].sort(bwSort)[0];
-      meta.textContent = latest ? `${latest.weightLb} lb` : "";
+      // A malformed or legacy row with no weight would otherwise read
+      // "undefined lb" on the closed fold.
+      const latest = [...log].sort(bwSort).find((e) => Number.isFinite(parseFloat(e?.weightLb)));
+      meta.textContent = latest ? `${parseFloat(latest.weightLb)} lb` : "";
     }
     renderBwCharts($("#bw-charts"), log);
     const wrap = $("#bw-history");

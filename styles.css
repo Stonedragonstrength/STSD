@@ -10627,3 +10627,77 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
   .msg-thread-meta { grid-column: 2; grid-row: 1; }
   .msg-thread-last { grid-column: 1 / -1; white-space: normal; }
 }
+
+
+/* ============ Wider screens ============ */
+/* The phone layout above is the baseline and stays untouched; everything here
+   only adds. The two sides want different things: athletes are on a phone or
+   a tablet, so their job is to never stretch a control out of thumb reach. A
+   coach may be on any of the three, so theirs is to use a laptop's width when
+   it's there and fall back to the same stacked layout when it isn't. */
+
+/* ---- Athlete: tablet and up ---- */
+@media (min-width: 760px) {
+  /* An athlete never needs a laptop's full width — long lines and stretched
+     controls are worse than margins. */
+  #screen-client .app-main { max-width: 940px; }
+
+  /* Two short cards that used to sit stacked: what's next, and the coach.
+     Everything else keeps the full column. Scoped to .active so the media
+     query can't un-hide an inactive panel. */
+  .tab-panel.active[data-ctab-panel="overview"] {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 1rem;
+    align-items: start;
+  }
+  .tab-panel.active[data-ctab-panel="overview"] > * { grid-column: 1 / -1; }
+  .tab-panel.active[data-ctab-panel="overview"] > #overview-hero { grid-column: 1; }
+  .tab-panel.active[data-ctab-panel="overview"] > #ov-messages { grid-column: 2; }
+  /* With no thread card (no program yet) the hero takes the whole row rather
+     than sitting at half width beside nothing. The hero comes first in the
+     DOM, so this needs :has() — where it's unsupported the rule is skipped and
+     the layout is merely a little roomy, never broken. (.ov-messages:empty is
+     already display:none globally.) */
+  .tab-panel.active[data-ctab-panel="overview"]:has(> #ov-messages:empty) > #overview-hero {
+    grid-column: 1 / -1;
+  }
+
+  /* Logging is the one place width actively hurts: a set row spread across a
+     tablet puts the ✓ an arm's length from the weight it confirms. The whole
+     detail view keeps a phone-shaped column, centred. */
+  .workout-detail { max-width: 640px; margin-left: auto; margin-right: auto; }
+}
+
+/* ---- Coach: laptop and up ---- */
+@media (min-width: 1200px) {
+  /* Below this the coach app keeps the tablet layout, which already works. */
+  #screen-app .app-main { max-width: 1400px; }
+  /* The roster is multicol (alphabetical DOWN each column, then across), so
+     the width buys a third column rather than a wider row. */
+  #screen-app .client-grid { column-count: 3; }
+}
+
+/* Coach Overview on a laptop: the month grid takes the left two thirds and the
+   notification log, bulletin board and open slots stack down the right, which
+   is where the empty space used to be. The log gets to be tall enough to read
+   instead of a three-row box. Below 1200px this all falls back to the stacked
+   tablet/phone layout untouched. */
+@media (min-width: 1200px) {
+  #view-overview {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(330px, 1fr);
+    column-gap: 1.1rem;
+    align-items: start;
+  }
+  #view-overview > #overview-today { grid-column: 1 / -1; }
+  #view-overview > .cal-nav,
+  #view-overview > #dash-cal-grid { grid-column: 1; }
+  #view-overview > .overview-bottom {
+    grid-column: 2;
+    grid-row: 2 / span 2;
+    grid-template-columns: 1fr;
+    margin-top: 0;
+  }
+  .overview-bottom .notif-log-scroll { max-height: 20rem; }
+}
