@@ -43,8 +43,24 @@ const SCOPES = [
   "https://www.googleapis.com/auth/calendar.readonly",
 ].join(" ");
 
+// CORS. The browser sends a preflight for this call (it carries Authorization
+// and a JSON content type), and a preflight never carries credentials — so the
+// gateway's verify_jwt must be OFF for this function or it answers the
+// preflight with a 401 and the real request never leaves the browser. That
+// costs nothing in safety: the handler below authenticates every call itself
+// and 401s an anonymous one. Deploy with --no-verify-jwt (and see config.toml).
+// Origin is "*" because access is decided by the JWT, not by where the page is.
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
 const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...CORS, "Content-Type": "application/json" },
+  });
 
 /** A short-lived access token, minted from the stored refresh token. */
 async function accessToken(refreshToken: string, clientId: string, clientSecret: string) {
@@ -69,6 +85,8 @@ async function accessToken(refreshToken: string, clientId: string, clientSecret:
 }
 
 Deno.serve(async (req) => {
+  // Answer the preflight before anything else — it has no body and no auth.
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   try {
     const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
     const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");

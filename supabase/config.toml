@@ -430,3 +430,12 @@ entrypoint = "./functions/sync-setmore/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/sync-setmore/*.html" ]
+
+# Google Calendar. verify_jwt is OFF deliberately: the browser's CORS preflight
+# carries no credentials, so a gateway JWT check answers it with 401 and the
+# real request never gets sent. The function authenticates every call itself
+# (auth.getUser, then a coaches row lookup) and 401s anonymous callers, so this
+# moves the check rather than removing it.
+[functions.google-calendar]
+verify_jwt = false
+entrypoint = "./functions/google-calendar/index.ts"
