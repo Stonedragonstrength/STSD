@@ -2770,7 +2770,7 @@
     renderDashboardCalendar();
     refreshCoachOpenSlots();
     renderBulletinBoard();
-    renderOverviewRequests();
+    renderCoachToday();
     renderNotificationLog();
   }
 
@@ -7564,9 +7564,9 @@
               .sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
             const sets = (entry?.sets || []).filter((s) => !s.skipped && (s.weight || s.reps));
             const pills = sets.length
-              ? sets.map((s, i) => `<span class="breakdown-set-pill">S${i + 1} ${s.weight ? prWeightLabel(ex.name, s.weight) : "—"} × ${escapeHtml(String(s.reps || "—"))}</span>`).join("")
+              ? sets.map((s, i) => `<span class="breakdown-set-pill">S${i + 1} ${s.weight ? prWeightLabel(exResolvedName(ex, c.importedProgress), s.weight) : "—"} × ${escapeHtml(String(s.reps || "—"))}</span>`).join("")
               : `<span class="oneoff-own-unlogged">Not logged</span>`;
-            return `<div class="breakdown-ex"><div class="breakdown-ex-name">${escapeHtml(ex.name)}</div><div class="breakdown-sets">${pills}</div></div>`;
+            return `<div class="breakdown-ex"><div class="breakdown-ex-name">${breakdownExNameHtml(ex, c.importedProgress)}</div><div class="breakdown-sets">${pills}</div></div>`;
           }).join("");
         }
         const note = ip.dayNotes?.[day.id];
@@ -8182,16 +8182,16 @@
     actionBar.appendChild(libBtn);
     if (!opts.hideDelete) actionBar.appendChild(delDayBtn);
 
-    // Table header
+    // Row legend. The old version was a 6-column grid over a flex row, so the
+    // labels never sat above their controls — and "Goal" labelled nothing at
+    // all (goalWeight/goalReps have had no UI since auto-progression replaced
+    // weight ranges). It's a legend for the flex flow now, not a fake table.
     const tableHead = document.createElement("div");
     tableHead.className = "ex-table-head";
     tableHead.innerHTML = `
-      <span class="ex-th-handle"></span>
       <span class="ex-th-name">Exercise</span>
-      <span class="ex-th-sets">Sets</span>
-      <span class="ex-th-cur">Current</span>
-      <span class="ex-th-goal">Goal</span>
-      <span class="ex-th-act"></span>`;
+      <span class="ex-th-metrics">Sets @ Weight × Reps</span>
+      <span class="ex-th-extras">Extras</span>`;
 
     // Exercise list (drop zone)
     const list = document.createElement("div");
@@ -8440,6 +8440,7 @@
       const sum = warmupSummary(ex);
       warmupBtn.textContent = sum || "＋ Warm";
       warmupBtn.classList.toggle("empty", !sum);
+      refreshExtras();
     };
     refreshWarmupBtn();
     warmupBtn.addEventListener("click", (e) => { e.stopPropagation(); openWarmupPicker(ex, warmupBtn, refreshWarmupBtn); });
@@ -8452,6 +8453,7 @@
       const sum = finisherSummary(ex);
       finisherBtn.textContent = sum || "＋💥";
       finisherBtn.classList.toggle("empty", !sum);
+      refreshExtras();
     };
     refreshFinisherBtn();
     finisherBtn.addEventListener("click", (e) => { e.stopPropagation(); openFinisherPicker(ex, finisherBtn, refreshFinisherBtn); });
@@ -8465,6 +8467,7 @@
       pyrBtn.textContent = on ? pyramidLabel(ex, "🔺") : "＋🔺";
       pyrBtn.classList.toggle("empty", !on);
       wrapper.classList.toggle("pyramid-tint", on);
+      refreshExtras();
     };
     refreshPyrBtn();
     // The picker edits ex.sets too, so the Sets button has to follow it.
@@ -8481,6 +8484,7 @@
       const m = plMult(ex);
       plBtn.textContent = m > 1 ? `🅿️×${ex.plMult}` : "＋🅿️";
       plBtn.classList.toggle("empty", m === 1);
+      refreshExtras();
     };
     refreshPlBtn();
     plBtn.addEventListener("click", (e) => { e.stopPropagation(); openPowerPicker(ex, plBtn, refreshPlBtn); });
@@ -8521,9 +8525,81 @@
         + (r?.addSets ? ` ⊕${r.addSets}` : "")
         + (r?.backoff ? ` ↓${r.backoff}%` : "");
       progBtn.classList.toggle("empty", !r);
+      refreshExtras();
     };
     refreshProgBtn();
     progBtn.addEventListener("click", (e) => { e.stopPropagation(); openProgressionPicker(ex, progBtn, refreshProgBtn); });
+
+    // ── Extras: one ＋ button instead of five ──
+    // Warm-up, progression, pyramid, powerlifting and burnout used to sit on
+    // the row as five always-present ＋ buttons, which read as a debug panel.
+    // Now the row carries a read-only chip per extra that is actually SET (so
+    // the whole prescription is still visible at a glance) and everything is
+    // edited from one popover. Same pattern as the tag chips above: a chip is
+    // display only, tapping it opens the popover where it can be changed or
+    // cleared. refreshExtras() is called from the five refresh functions above,
+    // which run during build before extrasList exists — hence the null guard.
+    const extrasChips = document.createElement("div");
+    extrasChips.className = "ex-extras-chips";
+    // var, not let: the five refresh functions above call refreshExtras() while
+    // the row is still being built, which is before this line runs. var hoists
+    // to undefined and the guard below handles it; let would throw on the TDZ.
+    var extrasList = null;
+
+    const extrasBtn = document.createElement("button");
+    extrasBtn.className = "picker-btn picker-btn-sm ex-extras-btn";
+    extrasBtn.type = "button";
+    extrasBtn.textContent = "＋";
+    extrasBtn.title = "Warm-up, progression, pyramid, powerlifting, burnout";
+
+    function refreshExtras() {
+      if (!extrasList) return;
+      extrasChips.innerHTML = "";
+      extrasList.forEach((m) => {
+        if (m.btn.classList.contains("empty")) return;
+        const chip = document.createElement("span");
+        chip.className = "ex-extra-chip";
+        chip.textContent = m.btn.textContent;
+        chip.title = `${m.label} · tap to edit`;
+        chip.addEventListener("click", (e) => { e.stopPropagation(); openExtras(); });
+        extrasChips.appendChild(chip);
+      });
+      extrasBtn.classList.toggle("has-extras", !!extrasChips.childElementCount);
+    }
+
+    function openExtras() {
+      document.querySelector(".extras-pop")?.remove();
+      if (ex.locked) return;
+      const pop = document.createElement("div");
+      pop.className = "extras-pop";
+      pop.style.cssText = "position:fixed;z-index:9999;visibility:hidden";
+      const head = document.createElement("div");
+      head.className = "extras-pop-head";
+      head.textContent = "Extras";
+      pop.appendChild(head);
+      extrasList.forEach((m) => {
+        const opt = document.createElement("div");
+        opt.className = "extras-opt";
+        const lbl = document.createElement("span");
+        lbl.className = "extras-opt-lbl";
+        lbl.textContent = m.label;
+        opt.appendChild(lbl);
+        opt.appendChild(m.btn); // the real button — its picker is unchanged
+        pop.appendChild(opt);
+      });
+      document.body.appendChild(pop);
+      requestAnimationFrame(() => _positionPop(pop, extrasBtn));
+      // Nested pickers (grid/weight/reps/warm-up) render to the body too, so a
+      // click inside one must not close the menu that opened it.
+      const handler = (e) => {
+        if (pop.contains(e.target) || e.target === extrasBtn) return;
+        if (e.target.closest && e.target.closest(".grid-picker-pop, .warmup-pop")) return;
+        pop.remove();
+        document.removeEventListener("mousedown", handler, true);
+      };
+      document.addEventListener("mousedown", handler, true);
+    }
+    extrasBtn.addEventListener("click", (e) => { e.stopPropagation(); openExtras(); });
 
     // Expand (notes + video)
     const expandBtn = document.createElement("button");
@@ -8553,6 +8629,10 @@
       effortBtn.disabled = locked;
       progBtn.disabled = locked;
       pyrBtn.disabled = locked;
+      plBtn.disabled = locked;
+      extrasBtn.disabled = locked;
+      extrasChips.style.pointerEvents = locked ? "none" : "";
+      if (locked) document.querySelector(".extras-pop")?.remove();
       handle.style.opacity = locked ? "0.3" : "";
       handle.style.pointerEvents = locked ? "none" : "";
       moveUpBtn.disabled = locked;
@@ -8592,6 +8672,7 @@
       saveTrainer(); rerenderFn();
     });
 
+
     // Sets/weight/reps picker cluster — grouped so it wraps as one unit on
     // mobile instead of splitting a separator (@, –, ×) from its button.
     // Only the core sets/weight/reps cluster stays glued together (so a
@@ -8625,13 +8706,23 @@
     row.appendChild(nameInput);
     row.appendChild(chipsAfter);
     row.appendChild(modBtn);
-    if (!isMob) row.appendChild(warmupBtn); // warm-up/finisher don't apply to holds
     row.appendChild(metricsGroup);
-    if (!isMob) row.appendChild(progBtn); // auto-progression rides the working sets
-    if (!isMob) row.appendChild(pyrBtn);  // pyramid weight ladder
-    if (!isMob) row.appendChild(plBtn);   // powerlifting tonnage multiplier
-    if (!isMob) row.appendChild(finisherBtn);
-    if (isMob) row.appendChild(placeBtn); // warm-up ↔ finisher placement
+    // Holds have no warm-up/progression/pyramid/powerlifting/burnout, so they
+    // get the placement toggle where everyone else gets the extras menu.
+    if (isMob) {
+      row.appendChild(placeBtn); // warm-up ↔ finisher placement
+    } else {
+      extrasList = [
+        { btn: warmupBtn,   label: "Warm-up sets" },
+        { btn: progBtn,     label: "Auto-progression" },
+        { btn: pyrBtn,      label: "Pyramid" },
+        { btn: plBtn,       label: "Powerlifting" },
+        { btn: finisherBtn, label: "Burnout / dropset" },
+      ];
+      row.appendChild(extrasChips);
+      row.appendChild(extrasBtn);
+      refreshExtras();
+    }
     row.appendChild(expandBtn); row.appendChild(saveBtn); row.appendChild(editBtn); row.appendChild(ssBtn); row.appendChild(delBtn);
     row.appendChild(moveGroup);
 
@@ -9884,7 +9975,7 @@
         </div>`;
       day.exercises.forEach(ex => {
         const logEntry = (logs[ex.id] || []).find(l => l.date === iso);
-        body += `<div class="breakdown-ex"><div class="breakdown-ex-name">${escapeHtml(ex.name)}</div><div class="breakdown-sets">`;
+        body += `<div class="breakdown-ex"><div class="breakdown-ex-name">${breakdownExNameHtml(ex, c.importedProgress)}</div><div class="breakdown-sets">`;
         if (logEntry?.sets?.length) {
           logEntry.sets.forEach((s, i) => {
             if (s.weight || s.reps) body += `<span class="breakdown-set-pill">S${i+1} ${s.weight ? escapeHtml(String(s.weight)) + " lb" : "—"} × ${s.reps || "—"}</span>`;
@@ -10101,7 +10192,7 @@
     } else {
       day.exercises.forEach(ex => {
         const logEntry = (logs[ex.id] || []).find(l => l.date === iso);
-        bodyHtml += `<div class="breakdown-ex"><div class="breakdown-ex-name">${escapeHtml(ex.name)}</div><div class="breakdown-sets">`;
+        bodyHtml += `<div class="breakdown-ex"><div class="breakdown-ex-name">${breakdownExNameHtml(ex, c.importedProgress)}</div><div class="breakdown-sets">`;
         if (logEntry?.sets?.length) {
           logEntry.sets.forEach((s, i) => {
             if (s.weight || s.reps) bodyHtml += `<span class="breakdown-set-pill">S${i+1} ${s.weight ? escapeHtml(String(s.weight)) + " lb" : "—"} × ${s.reps || "—"}</span>`;
@@ -11560,46 +11651,203 @@
     if (state.currentClientId === c.id) renderCoachSessions();
     // Keep the athlete-card 🎟 chips fresh if the Athletes list is showing.
     if (!$("#view-dashboard").classList.contains("hidden")) renderClientGrid();
-    // Keep the Overview pending-requests inbox fresh if it's showing.
-    if (!$("#view-overview").classList.contains("hidden")) renderOverviewRequests();
+    // Keep the Overview Today board fresh if it's showing.
+    if (!$("#view-overview").classList.contains("hidden")) renderCoachToday();
   }
 
-  // Cross-athlete "pending purchase requests" inbox on the Overview page, so
-  // new requests greet the coach at sign-in. Renders nothing when empty.
-  function renderOverviewRequests() {
-    const host = $("#overview-requests");
+  // -------- Coach Today board (top of the Overview) --------
+  // Two cards: who's on the schedule today, and what's waiting on the coach.
+  // Deliberately NOT an activity feed — the notification log at the bottom of
+  // the page stays the only place "someone logged a workout" appears. A row
+  // here is either a session that is going to happen or a thing to action.
+
+  // One row per athlete: a Setmore booking and a self-scheduled day are the
+  // same session, not two. Unmatched bookings ride along under their raw
+  // booking name so an unlinked athlete still shows up.
+  function coachTodayRows() {
+    const today = todayISO();
+    const byClient = new Map();
+    const loose = [];
+    const put = (c, patch) => {
+      const cur = byClient.get(c.id) ||
+        { client: c, name: c.name, time: "", ts: Infinity, dayName: "", rest: false, done: false, booked: false };
+      byClient.set(c.id, Object.assign(cur, patch));
+    };
+
+    (dashCalSetmoreByDate()[today] || []).forEach((e) => {
+      const start = e.startAt ? new Date(e.startAt) : null;
+      const time = start ? start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+      const ts = start ? start.getTime() : Infinity;
+      const c = matchAthleteBySetmoreName(e.clientName);
+      if (c) put(c, { time, ts, booked: true });
+      else loose.push({ client: null, name: e.clientName || "Booking", time, ts, booked: true, unlinked: true });
+    });
+
+    (state.trainerData.clients || []).forEach((c) => {
+      const ip = c.importedProgress || {};
+      const entry = ip.selfSchedule?.[today];
+      if (entry?.rest) put(c, { rest: true });
+      else if (entry?.weekId) {
+        const wd = findWeekDay(c, entry.weekId, entry.dayId);
+        put(c, { dayName: wd?.day.name || "Workout", weekId: entry.weekId, dayId: entry.dayId });
+      }
+      // Only stamps rows that are already on the board — nobody lands here for
+      // having trained, or this would quietly become a second feed.
+      if (!byClient.has(c.id)) return;
+      const doneToday = Object.entries(ip.dayCompletions || {})
+        .some(([, dates]) => (Array.isArray(dates) ? dates : []).includes(today));
+      if (doneToday) put(c, { done: true });
+    });
+
+    return [...byClient.values(), ...loose].sort((a, b) =>
+      (a.ts - b.ts) || (a.name || "").localeCompare(b.name || ""));
+  }
+
+  // Everything waiting on the coach, most urgent kind first. Purchase requests
+  // carry their own approve/decline buttons; the rest are one-tap jumps.
+  const NEEDS_QUIET_DAYS = 7;
+  function coachNeedsRows() {
+    const rows = [];
+    (state.trainerData.clients || []).forEach((c) => {
+      const ip = c.importedProgress || {};
+      openRequestsFor(c).forEach((req) =>
+        rows.push({ kind: "request", pri: 0, c, req, ts: req.requestedAt || 0 }));
+
+      Object.keys(ip.formChecks || {}).forEach((dayId) => {
+        formChecksForDay(ip, dayId).forEach((clip, i) => {
+          if (clip?.uploadedAt && !clip.reviewed)
+            rows.push({ kind: "formcheck", pri: 1, c, dayId, idx: i, ts: clip.uploadedAt });
+        });
+      });
+
+      // Out of sessions, but only once they've ever had a package — a brand
+      // new athlete with an empty bank isn't a problem to solve.
+      const sum = sessionBankSummary(c);
+      if ((sum.granted > 0 || sum.used > 0) && sum.remaining <= 0)
+        rows.push({ kind: "nosessions", pri: 2, c, ts: 0 });
+
+      const last = lastActivityISO(ip);
+      if (last) {
+        const days = Math.floor((Date.now() - new Date(last + "T12:00:00").getTime()) / 86400000);
+        if (days >= NEEDS_QUIET_DAYS) rows.push({ kind: "quiet", pri: 3, c, days, ts: -days });
+      }
+    });
+    return rows.sort((a, b) => a.pri - b.pri || (b.ts || 0) - (a.ts || 0));
+  }
+
+  function renderCoachToday() {
+    const host = $("#overview-today");
     if (!host) return;
     host.innerHTML = "";
-    const open = [];
-    (state.trainerData.clients || []).forEach((c) =>
-      openRequestsFor(c).forEach((req) => open.push({ c, req })));
-    if (!open.length) return;
-    open.sort((a, b) => (b.req.requestedAt || 0) - (a.req.requestedAt || 0));
+    const today = new Date();
+    const todayLabel = today.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
 
+    // ---- Card 1: today's sessions ----
+    const rows = coachTodayRows();
+    const sched = document.createElement("div");
+    sched.className = "card today-card";
+    sched.innerHTML = `<div class="program-head">
+        <h3 style="margin:0">🐉 Today <span class="overview-req-count">${rows.length || ""}</span></h3>
+        <span class="today-date">${escapeHtml(todayLabel)}</span>
+      </div>`;
+    if (!rows.length) {
+      sched.insertAdjacentHTML("beforeend",
+        `<p class="today-empty">Nothing on the books today.</p>`);
+    } else {
+      const list = document.createElement("div");
+      list.className = "today-list";
+      rows.forEach((r) => {
+        const row = document.createElement("div");
+        row.className = "today-row" + (r.client ? " is-clickable" : "") + (r.done ? " is-done" : "");
+        const what = r.rest ? "Rest day" : (r.dayName || (r.booked ? "Session" : "Training"));
+        const avatar = r.client
+          ? avatarTileHtml(r.client, r.client.importedProgress, { size: "sm", colorIdx: athleteColorIdx(r.client) })
+          : `<span class="today-av-blank">?</span>`;
+        row.innerHTML = `
+          <span class="today-av">${avatar}</span>
+          <span class="today-main">
+            <span class="today-name">${escapeHtml(r.name)}${r.unlinked ? ` <span class="today-tag">unlinked</span>` : ""}</span>
+            <span class="today-what">${escapeHtml(what)}</span>
+          </span>
+          ${r.time ? `<span class="today-time">${escapeHtml(r.time)}</span>` : ""}
+          <span class="today-state">${r.done ? "✓" : (r.client ? "→" : "")}</span>`;
+        if (r.client) {
+          row.addEventListener("click", () => {
+            if (r.rest || !r.weekId) {
+              Nav.push(showCoachOverview);
+              return openClient(r.client.id);
+            }
+            // A scheduled workout drops straight into their live session on
+            // that day, which is what the coach wants at the top of the hour.
+            state.currentClientId = r.client.id;
+            Nav.push(exitPreview); // Back leaves the live session, same as the 🏋️ card button
+            previewAsAthlete({ weekId: r.weekId, dayId: r.dayId, date: todayISO() });
+          });
+        }
+        list.appendChild(row);
+      });
+      sched.appendChild(list);
+    }
+    host.appendChild(sched);
+
+    // ---- Card 2: needs you ----
+    const needs = coachNeedsRows();
+    if (!needs.length) return;
     const card = document.createElement("div");
-    card.className = "card overview-requests-card";
+    card.className = "card needs-card";
     card.innerHTML = `<div class="program-head">
-        <h3 style="margin:0">🎟 Purchase requests <span class="overview-req-count">${open.length}</span></h3>
-      </div>
-      <p class="muted" style="font-size:0.85rem">Confirm payment outside the app (Venmo, cash, Stripe link), then approve.</p>`;
-    open.forEach(({ c, req }) => {
+        <h3 style="margin:0">⚡ Needs you <span class="overview-req-count">${needs.length}</span></h3>
+      </div>`;
+    const list = document.createElement("div");
+    list.className = "needs-list";
+    needs.forEach((n) => {
       const row = document.createElement("div");
-      row.className = "pending-request-row";
-      row.innerHTML = `
-        <div>
-          <strong>${escapeHtml(c.name)}</strong> · ${escapeHtml(String(req.size))} sessions${req.price ? ` · $${escapeHtml(Number(req.price).toLocaleString())}` : ""}
-          <span class="muted"> · ${escapeHtml(req.requestedAt ? new Date(req.requestedAt).toLocaleDateString() : "")}</span>
-        </div>
-        <div class="pending-request-actions">
-          <button class="btn btn-ghost btn-sm" data-decline="${escapeHtml(req.id)}">Decline</button>
-          <button class="btn btn-primary btn-sm" data-approve="${escapeHtml(req.id)}">Approve &amp; mark paid</button>
-        </div>`;
-      row.querySelector("[data-approve]").addEventListener("click", () =>
-        approvePackageRequest(c, req.id, Number(req.size), Number(req.price) || 0));
-      row.querySelector("[data-decline]").addEventListener("click", () =>
-        declinePackageRequest(c, req.id));
-      card.appendChild(row);
+      row.className = "needs-row needs-" + n.kind;
+      const jump = (fn) => { row.classList.add("is-clickable"); row.addEventListener("click", fn); };
+
+      if (n.kind === "request") {
+        row.innerHTML = `
+          <span class="needs-icon" aria-hidden="true">🎟</span>
+          <span class="needs-body"><span class="needs-name">${escapeHtml(n.c.name)}</span>
+            <span class="needs-text">wants ${escapeHtml(String(n.req.size))} sessions</span></span>
+          <span class="needs-actions">
+            <button class="btn btn-ghost btn-sm" type="button" data-decline>Decline</button>
+            <button class="btn btn-primary btn-sm" type="button" data-approve>Approve &amp; mark paid</button>
+          </span>`;
+        row.querySelector("[data-approve]").addEventListener("click", (e) => {
+          e.stopPropagation();
+          approvePackageRequest(n.c, n.req.id, Number(n.req.size), Number(n.req.price) || 0);
+        });
+        row.querySelector("[data-decline]").addEventListener("click", (e) => {
+          e.stopPropagation();
+          declinePackageRequest(n.c, n.req.id);
+        });
+      } else if (n.kind === "formcheck") {
+        row.innerHTML = `
+          <span class="needs-icon" aria-hidden="true">🎥</span>
+          <span class="needs-body"><span class="needs-name">${escapeHtml(n.c.name)}</span>
+            <span class="needs-text">sent a form video</span></span>
+          <span class="needs-when">${escapeHtml(notifWhen(n.ts))}</span>
+          <span class="needs-go">→</span>`;
+        jump(() => openCompletedWorkout(n.c.id, n.dayId, dateISO(new Date(n.ts))));
+      } else if (n.kind === "nosessions") {
+        row.innerHTML = `
+          <span class="needs-icon" aria-hidden="true">🎫</span>
+          <span class="needs-body"><span class="needs-name">${escapeHtml(n.c.name)}</span>
+            <span class="needs-text">is out of sessions</span></span>
+          <span class="needs-go">→</span>`;
+        jump(() => { Nav.push(showCoachOverview); openClient(n.c.id); setTab("sessions"); });
+      } else {
+        row.innerHTML = `
+          <span class="needs-icon" aria-hidden="true">😴</span>
+          <span class="needs-body"><span class="needs-name">${escapeHtml(n.c.name)}</span>
+            <span class="needs-text">hasn't trained in ${n.days} days</span></span>
+          <span class="needs-go">→</span>`;
+        jump(() => { Nav.push(showCoachOverview); openClient(n.c.id); });
+      }
+      list.appendChild(row);
     });
+    card.appendChild(list);
     host.appendChild(card);
   }
 
@@ -11781,7 +12029,7 @@
     // workout" surfaces.
     if (!$("#view-dashboard").classList.contains("hidden")) renderClientGrid();
     if (!$("#view-overview").classList.contains("hidden")) {
-      renderOverviewRequests();
+      renderCoachToday();
       renderNotificationLog();
     }
   }
@@ -12124,7 +12372,7 @@
       err.classList.remove("hidden");
     }
   }
-  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {}, totalWorkoutMs: 0, workoutMoods: {}, addedExercises: {}, athleteDays: [], formChecks: {}, nutritionTargets: {}, foodLog: {}, customFoods: [], savedMeals: [], nutritionGame: {}, avatarId: "" }; }
+  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {}, totalWorkoutMs: 0, workoutMoods: {}, addedExercises: {}, athleteDays: [], formChecks: {}, swaps: {}, nutritionTargets: {}, foodLog: {}, customFoods: [], savedMeals: [], nutritionGame: {}, avatarId: "" }; }
   function ensureProgressShape(p) {
     if (typeof p.avatarId !== "string") p.avatarId = "";
     if (!p.exerciseLogs) p.exerciseLogs = {};
@@ -12141,6 +12389,7 @@
     if (!p.workoutMoods || typeof p.workoutMoods !== "object") p.workoutMoods = {};
     if (!Array.isArray(p.athleteDays)) p.athleteDays = [];
     if (!p.formChecks || typeof p.formChecks !== "object") p.formChecks = {};
+    if (!p.swaps || typeof p.swaps !== "object") p.swaps = {};
     if (!p.nutritionTargets || typeof p.nutritionTargets !== "object") p.nutritionTargets = {};
     if (!p.foodLog || typeof p.foodLog !== "object") p.foodLog = {};
     if (!Array.isArray(p.customFoods)) p.customFoods = [];
@@ -14697,7 +14946,103 @@
     sec.appendChild(h);
     return sec;
   }
-  function exerciseDisplayLabel(ex) {
+  // -------- Athlete exercise swap --------
+  // The machine's taken, or a joint says no. The athlete swaps the movement but
+  // the exercise KEEPS ITS ID, so the prescribed sets/weight/reps, the
+  // progression rule and everything already logged against it still apply —
+  // only which lift it is changes. Stored on progress, never on weeks: a coach
+  // upsert rewrites weeks wholesale and would wipe it. Swaps last until undone,
+  // which covers both "taken today" and "this one hurts" without two features.
+  function exSwapFor(ex, progress) {
+    const s = progress?.swaps?.[ex?.id];
+    return s && s.name ? s : null;
+  }
+  // The name everything downstream should use: display, charts, PR matching.
+  function exResolvedName(ex, progress) {
+    return exSwapFor(ex, progress)?.name || ex?.name || "";
+  }
+  // Which library shelf a prescribed exercise sits on, so the swap picker can
+  // lead with same-muscle alternatives. Matched on the library name appearing
+  // inside the prescribed one ("Row" in "Barbell Row"); longest match wins so
+  // "Chest-Supported Row" beats bare "Row".
+  function libraryCatFor(name) {
+    const n = exKey(name);
+    if (!n) return null;
+    let best = null;
+    EXERCISE_LIBRARY.forEach((g) => (g.ex || []).forEach((e) => {
+      const k = exKey(e);
+      if (!k || !n.includes(k)) return;
+      if (!best || k.length > best.len) best = { cat: g.cat, len: k.length };
+    }));
+    return best ? best.cat : null;
+  }
+
+  // Write (or clear) a swap. Same save path as an athlete-added exercise:
+  // it's their progress, so saveClient() pushes it to their row and the coach
+  // picks it up on the next pull.
+  function setExerciseSwap(ex, name) {
+    const p = state.clientData.progress;
+    if (!p || !ex) return;
+    if (!p.swaps || typeof p.swaps !== "object") p.swaps = {};
+    if (name) p.swaps[ex.id] = { name, from: ex.name || "", at: Date.now() };
+    else delete p.swaps[ex.id];
+    saveClient();
+    toast(name ? `Swapped to ${name}` : `Back to ${ex.name || "the prescribed exercise"}`);
+    renderWorkoutDetailUI();
+  }
+
+  // Swap picker: alternatives from the same muscle group first, then a search
+  // across the whole library for anything else in reach.
+  function openSwapPicker(ex) {
+    const cur = exKey(ex.name);
+    const cat = libraryCatFor(ex.name);
+    const all = [];
+    EXERCISE_LIBRARY.forEach((g) => (g.ex || []).forEach((e) => {
+      if (exKey(e) === cur) return; // no point swapping for itself
+      all.push({ name: e, cat: g.cat });
+    }));
+    const same = cat ? all.filter((e) => e.cat === cat) : [];
+    const rowHtml = (e) => `<button class="day-log-opt" type="button" data-swap-to="${escapeHtml(e.name)}">
+        <span class="day-log-name">${escapeHtml(e.name)}</span>
+        <span class="swap-opt-cat">${escapeHtml(e.cat)}</span>
+      </button>`;
+    const listHtml = (items) => items.length
+      ? items.map(rowHtml).join("")
+      : `<p class="muted" style="padding:0.4rem 0.2rem;margin:0">Nothing matches that.</p>`;
+
+    openModal({
+      title: `Swap ${escapeHtml(ex.name || "exercise")}`,
+      body: `
+        <p class="muted" style="margin-top:-0.4em">Same sets, weight and reps. Your coach sees what you actually did.</p>
+        <input type="text" id="swap-search" class="input" placeholder="Search all exercises…" autocomplete="off" />
+        <div class="swap-pick-list" id="swap-pick-list">${listHtml(same.length ? same : all)}</div>`,
+      actions: [{ label: "Cancel", className: "btn btn-ghost", onClick: closeModal }],
+    });
+
+    const listEl = $("#swap-pick-list");
+    const wire = () => $$("[data-swap-to]").forEach((b) => b.addEventListener("click", () => {
+      closeModal();
+      setExerciseSwap(ex, b.dataset.swapTo);
+    }));
+    wire();
+    $("#swap-search")?.addEventListener("input", (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      const items = q ? all.filter((x) => x.name.toLowerCase().includes(q)) : (same.length ? same : all);
+      listEl.innerHTML = listHtml(items);
+      wire();
+    });
+    setTimeout(() => $("#swap-search")?.focus(), 50);
+  }
+
+  // Exercise name for a coach-side breakdown: what the athlete actually did,
+  // with the prescribed movement noted when they swapped it. Returns HTML.
+  function breakdownExNameHtml(ex, progress) {
+    const s = exSwapFor(ex, progress);
+    return escapeHtml(exResolvedName(ex, progress)) +
+      (s ? ` <span class="breakdown-swap">⇄ for ${escapeHtml(ex.name || "prescribed")}</span>` : "");
+  }
+
+  function exerciseDisplayLabel(ex, progress) {
     const before = [];
     const after = [];
     orderedModifiers(ex).forEach((tag) => {
@@ -14705,7 +15050,8 @@
       if (!g) return;
       (g.group === "Style" || g.group === "Hold" ? after : before).push(tag);
     });
-    return [...before, ex.name || "(unnamed)", ...after].join(" ");
+    const nm = exResolvedName(ex, progress) || "(unnamed)";
+    return [...before, nm, ...after].join(" ");
   }
   // Mobility / stretching card: hold-for-time, no weight logging. The athlete
   // taps a checkmark per round; the row is "done" once every round is checked.
@@ -14941,8 +15287,18 @@
 
     const nameEl = document.createElement("span");
     nameEl.className = "cex-name";
-    nameEl.textContent = exerciseDisplayLabel(ex);
+    nameEl.textContent = exerciseDisplayLabel(ex, state.clientData.progress);
     nameBlock.appendChild(nameEl);
+    // Swapped out: say so, and say what it replaced, so neither the athlete
+    // nor the coach reading over their shoulder has to guess.
+    const swapNow = exSwapFor(ex, state.clientData.progress);
+    if (swapNow) {
+      const chip = document.createElement("span");
+      chip.className = "cex-swap-chip";
+      chip.textContent = "⇄ swapped";
+      chip.title = `Swapped in for ${ex.name || "the prescribed exercise"}`;
+      nameBlock.appendChild(chip);
+    }
 
     content.appendChild(nameBlock);
 
@@ -15150,6 +15506,10 @@
     // (±1). Empty fields seed from the prescription so the first tap lands on a
     // sensible number instead of 0. Collected so they disable when locked.
     const setSteppers = [];
+    // Per-row ✓ circles. There's no stored "done" flag — a set is done when it
+    // holds values — so each circle just re-reads that and repaints. Collected
+    // here and refreshed from updateExBar(), which every edit path already hits.
+    const doneSyncs = [];
     // Card fill line: fraction of working sets filled in (or skipped).
     // Locked cards read full.
     const setDoneNow = (it) => it.skipped || (it.rp.value && (it.wt.value || repsOnlyLog));
@@ -15173,12 +15533,21 @@
       const pct = total ? Math.min(100, Math.round((done / total) * 100)) : 0;
       exBarFill.style.width = pct + "%";
       exBar.classList.toggle("complete", pct >= 100);
+      doneSyncs.forEach((f) => f());
       updateDayProgressBar();
     };
     // Values that are actually filled in (typed, stepped, tapped-to-accept, or
     // restored from today's draft) render in the edited tint, so it's obvious
     // at a glance which fields hold real numbers vs. placeholder targets.
     const markEdited = (input) => input.classList.toggle("edited", input.value !== "");
+    // The × between a row's weight and reps, so "185 × 5" reads as one thing.
+    const setX = () => {
+      const x = document.createElement("span");
+      x.className = "cex-set-x";
+      x.textContent = "×";
+      x.setAttribute("aria-hidden", "true");
+      return x;
+    };
     // Editing either field of a set accepts the prescription in its sibling,
     // so one touch per set is enough when the athlete did what was written.
     const fillSibling = (other, seed) => {
@@ -15186,7 +15555,47 @@
       other.value = String(seed);
       markEdited(other);
     };
-    // Build a field as ▲ (top) / input / ▼ (bottom). Steppers omitted when
+
+    // The ✓ that ends each set row. It reads the same derived state as the fill
+    // line (a set is done when it holds values), so nothing new is persisted.
+    // Tapping an empty set accepts the prescription and rolls the rest timer —
+    // lift, tap, rest, next — which is the whole point of the row layout.
+    // Tapping a done set clears it again: the direct inverse, one tap to undo.
+    // Warm-ups pass rest:false; their rest is short and isn't the working rest.
+    const mkDoneBtn = (item, seedAt, { rest = true } = {}) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "cex-set-done";
+      const sync = () => {
+        const skipped = !!item.skipped;
+        const on = !skipped && !!setDoneNow(item);
+        b.classList.toggle("on", on);
+        b.classList.toggle("skipped", skipped);
+        b.textContent = skipped ? "⊘" : (on ? "✓" : "");
+        b.disabled = skipped || isLocked;
+        b.title = skipped ? "Skipped" : on ? "Logged. Tap to clear." : "Mark this set done";
+        b.setAttribute("aria-label", b.title);
+      };
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (isLocked || item.skipped) return;
+        if (setDoneNow(item)) {
+          item.wt.value = ""; item.rp.value = "";
+        } else {
+          const { w, r } = seedAt();
+          if (item.rp.value === "" && Number.isFinite(r)) item.rp.value = String(r);
+          if (item.wt.value === "" && !repsOnlyLog && Number.isFinite(w)) item.wt.value = String(w);
+          if (rest && restAutoStartOn()) startRestTimer(restDur());
+        }
+        markEdited(item.wt); markEdited(item.rp);
+        autoSave(); // repaints the circle via updateExBar → doneSyncs
+      });
+      doneSyncs.push(sync);
+      sync();
+      return b;
+    };
+
+    // Build a field as [− input +]. Steppers omitted when
     // withSteppers is false (e.g. the weight box on bodyweight lifts).
     // onUserEdit fires on any deliberate touch (step / tap-to-accept).
     const mkStepField = (input, step, seed, withSteppers, onUserEdit) => {
@@ -15214,9 +15623,11 @@
         setSteppers.push(b);
         return b;
       };
-      if (withSteppers) field.appendChild(mkBtn("▲", 1));
+      // − on the left, + on the right: the field reads as one horizontal
+      // control, and a set fits on one line instead of a four-row stack.
+      if (withSteppers) field.appendChild(mkBtn("−", -1));
       field.appendChild(input);
-      if (withSteppers) field.appendChild(mkBtn("▼", -1));
+      if (withSteppers) field.appendChild(mkBtn("+", 1));
       // Tapping an empty field accepts the prescription: the placeholder value
       // becomes the real value, so clicking off keeps it — no typing needed
       // when the athlete did exactly what was prescribed. No select() — the
@@ -15264,9 +15675,12 @@
       wt.addEventListener("input", () => { markEdited(wt); fillSibling(rp, rSeed); });
       rp.addEventListener("input", () => { markEdited(rp); fillSibling(wt, wSeed); });
 
+      const wItem = { wt, rp, skipped: false };
       col.appendChild(lbl);
       col.appendChild(mkStepField(wt, 2.5, wSeed, w.weight !== "BW", () => fillSibling(rp, rSeed)));
+      col.appendChild(setX());
       col.appendChild(mkStepField(rp, isTimed ? 5 : 1, rSeed, true, () => fillSibling(wt, wSeed)));
+      col.appendChild(mkDoneBtn(wItem, () => ({ w: wSeed, r: rSeed }), { rest: false }));
 
       setTable.appendChild(col);
       warmupInputs.push({ wt, rp });
@@ -15297,13 +15711,17 @@
         lbl.innerHTML = item.skipped ? `S${s + 1}<span class="cex-skip-mark">⊘</span>` : `S${s + 1}`;
         lbl.title = item.skipped ? "Skipped" : "";
         wt.disabled = item.skipped; rp.disabled = item.skipped;
+        doneSyncs.forEach((f) => f()); // the row's ✓ becomes ⊘ (and back)
       };
 
       col.appendChild(lbl);
-      // Weight field, ±2.5 lb (bodyweight lifts log reps only — no weight arrows).
+      // Weight field, ±2.5 lb (bodyweight lifts log reps only — no weight steppers).
       col.appendChild(mkStepField(wt, 2.5, wSeedAt(s), !repsOnlyLog, () => fillSibling(rp, rSeedAt(s))));
+      col.appendChild(setX());
       // Reps field, ±1 (carries count seconds, ±5).
       col.appendChild(mkStepField(rp, isTimed ? 5 : 1, rSeedAt(s), true, () => fillSibling(wt, wSeedAt(s))));
+      const doneBtn = mkDoneBtn(item, () => ({ w: wSeedAt(s), r: rSeedAt(s) }));
+      col.appendChild(doneBtn);
 
       setTable.appendChild(col);
       setInputs.push(item);
@@ -15551,9 +15969,29 @@
     clearItem.type = "button";
     clearItem.className = "cex-tools-item cex-tools-clear";
     clearItem.textContent = "⌫ Clear my numbers";
-    toolsMenu.append(skipRow, toolsDiv, skipExItem, clearItem);
 
-    const refreshToolsState = () => { clearItem.disabled = !draftHasData(); };
+    // Swap: same prescription, different movement. Undo restores the original.
+    const swapItem = document.createElement("button");
+    swapItem.type = "button";
+    swapItem.className = "cex-tools-item";
+    const refreshSwapItem = () => {
+      swapItem.textContent = exSwapFor(ex, state.clientData.progress)
+        ? "⇄ Undo swap" : "⇄ Swap exercise";
+    };
+    refreshSwapItem();
+    swapItem.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeToolsMenu();
+      if (exSwapFor(ex, state.clientData.progress)) { setExerciseSwap(ex, null); return; }
+      openSwapPicker(ex);
+    });
+
+    toolsMenu.append(skipRow, toolsDiv, swapItem, skipExItem, clearItem);
+
+    const refreshToolsState = () => {
+      clearItem.disabled = !draftHasData();
+      refreshSwapItem();
+    };
 
     function onToolsAway(e) {
       if (e.type === "scroll" || (!toolsMenu.contains(e.target) && !toolsWrap.contains(e.target))) closeToolsMenu();
@@ -19145,7 +19583,10 @@
     // Sessions outside the program ride along as a pseudo-week: their top sets
     // are real strength data and belong on the trend line.
     [...(client?.weeks || []), { days: sessionDays(client, progress) }].forEach((w) => (w.days || []).forEach((d) => (d.exercises || []).forEach((ex) => {
-      const name = (ex.name || "").trim();
+      // A swapped exercise's sets belong to the movement they actually did,
+      // not the one that was prescribed — otherwise the swap contaminates the
+      // original lift's trend line.
+      const name = exResolvedName(ex, progress).trim();
       // Timed carries are excluded — seconds would read as reps in e1RM math.
       if (!name || ex.kind === "mobility" || exIsTimed(ex)) return;
       (logs[ex.id] || []).forEach((l) => {
@@ -19682,7 +20123,8 @@
   // bodyweight lifts by reps. Matching uses exKey() so renames/typos don't
   // split history, and warm-ups/skipped sets never count.
   function detectAndCelebratePR(ex, entry, cardEl) {
-    const name = (ex.name || "").trim();
+    // Swapped lifts file their PR under what was actually done.
+    const name = exResolvedName(ex, state.clientData.progress).trim();
     // Timed carries are excluded — seconds would read as reps in e1RM math.
     if (!name || ex.kind === "mobility" || exIsTimed(ex)) return;
     const key = exKey(name);
@@ -19926,9 +20368,9 @@
       { sel: ".workout-detail-list .demo-btn", go: goDetail,
         title: "Not sure how it looks?", text: "Tap See how for a quick start-to-finish photo of the movement, so you can match the form before you lift." },
       { sel: ".workout-detail-list .cex-set-table", go: goDetail,
-        title: "Logging your sets", text: "One column per set. Tap a box to accept the target (it turns blue), or type your real numbers and nudge with ▲▼. It saves as you go — no Submit button." },
+        title: "Logging your sets", text: "One row per set. Finished it exactly as written? Tap the circle on the right: it fills in the target, checks off, and starts your rest. Did something different? Type it, or nudge with − and +. It saves as you go, no Submit button." },
       { sel: ".workout-detail-list .cex-tools-btn", go: goDetail,
-        title: "Missed something?", text: "Tap Tools to skip the last set(s), skip the whole exercise, or clear your entries. Honest data beats zeros, and the day can still complete." },
+        title: "Missed something?", text: "Tap Tools to swap the exercise for another one, skip the last set(s), skip the whole exercise, or clear your entries. Honest data beats zeros, and the day can still complete." },
       { sel: ".workout-detail-list .cex-lock-btn", go: goDetail,
         title: "Locking in", text: "Fill every set and it locks itself — green check, done. Tap 🔒 to lock early (blank boxes fill with the plan); ✎ reopens it. Finish every exercise and the whole day celebrates." },
       { sel: ".workout-detail-list .added-ex-addbtn", go: goDetail,
@@ -19936,7 +20378,7 @@
       { sel: "#detail-mood-btn", go: goDetail,
         title: "How did it feel?", text: "When you're done, tap 🫀 to log the vibe of the session — up to two. Your coach sees it, so they know when to push or back off." },
       { sel: "#rest-timer-btn", go: goDetail,
-        title: "Rest timer", text: "Tap Go to start your rest. It dings when it's time to lift, then rolls straight into the next rest until you stop it. The small time button picks the length, the bell mutes the ding." },
+        title: "Rest timer", text: "Checking off a set starts this on its own. You can also tap Go yourself. It dings when it's time to lift, then rolls straight into the next rest until you stop it. The small time button picks the length, the bell mutes the ding." },
       // Both of these live in the picker, so the tour has to close the day
       // detail first — a hidden target gets silently skipped.
       { sel: "#cardio-athlete-block", go: goPicker,
@@ -19965,8 +20407,10 @@
     return [
       { sel: "#coach-nav", go: () => showCoachOverview(),
         title: "Welcome, coach", text: "A quick lap around the app, about a minute. Skip any time. This nav is home base." },
+      { sel: "#overview-today",
+        title: "Today", text: "Who you're training today, and everything waiting on you: purchase requests, form videos to watch, athletes out of sessions or gone quiet. Tap a name to drop straight into their session." },
       { sel: "#view-overview",
-        title: "Overview", text: "Every athlete on one calendar: completed days, sessions, open slots and incoming requests. When someone logs a workout it shows up top under New activity." },
+        title: "The month", text: "Every athlete on one calendar: completed days, sessions and open slots. Tap a date to see exactly what each of them did. The notification log at the bottom keeps the full history." },
       { sel: "#client-grid", go: () => renderDashboard(),
         title: "Your athletes", text: "One card per athlete. Tap a card for their profile, program, nutrition, PRs and sessions." },
       { sel: "#client-grid .client-row-view",

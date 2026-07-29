@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=ov8" />
+  <link rel="stylesheet" href="styles.css?v=ov15" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -263,7 +263,12 @@
 
       <!-- Overview (dashboard calendar) -->
       <div id="view-overview" class="view hidden">
-        <div id="overview-requests" class="overview-requests"></div>
+        <!-- Today board: who's on the schedule today, and what's waiting on the
+             coach. Sits above the month grid so the first screen answers "what
+             now?" instead of opening on an empty calendar. Built by
+             renderCoachToday(). Not a second activity feed — the notification
+             log at the bottom stays the only one. -->
+        <div id="overview-today" class="overview-today"></div>
         <div class="cal-nav" style="margin-bottom:0.6rem">
           <button class="btn btn-ghost btn-sm" id="dash-cal-prev">‹</button>
           <h4 class="cal-title" id="dash-cal-title"></h4>
@@ -1096,9 +1101,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="bugreport.js?v=bug1"></script>
   <script src="config.js?v=horm2"></script>
-  <script src="cloud.js?v=horm2"></script>
+  <script src="cloud.js?v=ov15"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=ov8"></script>
+  <script src="app.js?v=ov15"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

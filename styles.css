@@ -2530,11 +2530,123 @@ input.trial-input {
 .bulletin-compose-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
 .bulletin-active { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.9rem; }
 
-/* Overview pending purchase-requests inbox — accent border so a new request
-   stands out at sign-in. Empty container renders nothing (no card). */
-.overview-requests:empty { display: none; }
-.overview-requests { margin-bottom: 1.25rem; }
-.overview-requests-card { border-left: 3px solid var(--primary); }
+/* Today board — the first thing on the coach Overview. Two cards side by side
+   on a wide screen, stacked on a phone. Empty container renders nothing. */
+.overview-today:empty { display: none; }
+.overview-today {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  align-items: start;
+}
+.today-card { border-left: 3px solid var(--primary); }
+.needs-card { border-left: 3px solid var(--warn); }
+.today-date {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.today-empty, .today-list, .needs-list { margin-top: 0.4rem; }
+.today-empty {
+  margin: 0.4rem 0 0;
+  padding: 0.4rem 0.2rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+}
+/* Both lists soft-cap and scroll rather than pushing the calendar off screen. */
+.today-list, .needs-list {
+  max-height: 13rem;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  -webkit-overflow-scrolling: touch;
+}
+.today-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.2rem;
+  border-bottom: 1px solid var(--border);
+}
+.today-row:last-child, .needs-row:last-child { border-bottom: none; }
+.today-row.is-clickable { cursor: pointer; transition: background 0.12s; }
+.today-row.is-clickable:hover { background: var(--surface-2); }
+.today-row.is-done .today-name, .today-row.is-done .today-what { color: var(--muted); }
+/* The avatar tile brings its own size (.av-sm); this just keeps it from
+   stretching and gives the unlinked-booking placeholder the same footprint. */
+.today-av { flex-shrink: 0; display: flex; }
+.today-av-blank {
+  display: grid;
+  place-items: center;
+  width: 26px; height: 36px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-weight: 800;
+}
+.today-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.today-name {
+  font-size: 0.9rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.today-what {
+  font-size: 0.75rem;
+  color: var(--text-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.today-tag {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 0.4em;
+}
+.today-time { flex-shrink: 0; font-size: 0.78rem; font-weight: 700; color: var(--text-soft); }
+.today-state { flex-shrink: 0; width: 1em; color: var(--muted); font-weight: 800; }
+.today-row.is-done .today-state { color: var(--accent); }
+
+.needs-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.2rem;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.needs-row.is-clickable { cursor: pointer; transition: background 0.12s; }
+.needs-row.is-clickable:hover { background: var(--surface-2); }
+.needs-icon { flex-shrink: 0; font-size: 0.95rem; }
+.needs-body {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.85rem;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.needs-name { font-weight: 700; color: var(--text); }
+.needs-text { color: var(--text-soft); }
+.needs-when { flex-shrink: 0; color: var(--muted); font-size: 0.72rem; }
+.needs-go { flex-shrink: 0; color: var(--muted); font-weight: 800; }
+/* A request keeps its buttons on the row until there's no room, then they
+   drop to their own line rather than squeezing the name to nothing. */
+.needs-actions { display: flex; gap: 0.4rem; margin-left: auto; flex-shrink: 0; }
+@media (max-width: 440px) {
+  .needs-actions { width: 100%; justify-content: flex-end; }
+}
+
 .overview-req-count {
   display: inline-flex;
   align-items: center;
@@ -5043,6 +5155,11 @@ input:focus, textarea:focus, select:focus {
 
 /* ---- Workout detail view ---- */
 .workout-detail { animation: detailIn 0.35s cubic-bezier(0.22, 0.85, 0.34, 1); }
+/* Room under the last exercise for the floating rest timer (bottom:78px) and
+   the day-progress bar below it. Without it the final set row can never be
+   scrolled out from under them — and now that every set row runs the full
+   width, the ✓ that the timer covers is a control, not just a number. */
+.workout-detail { padding-bottom: 8.5rem; }
 @keyframes detailIn {
   0%   { opacity: 0; transform: translateX(20px); }
   100% { opacity: 1; transform: translateX(0); }
@@ -5580,49 +5697,89 @@ input.pyr-weight-input { -moz-appearance: textfield; appearance: textfield; }
   gap: 0.3rem;
 }
 
-/* set table replaces old cex-inputs */
+/* Rep sheet: one ROW per set — "S1  − 185 +  ×  − 5 +  ✓". The old layout gave
+   each set a column with the steppers stacked ▲/input/▼, which made a single
+   3-set exercise about 300px tall and cost the athlete a screen per lift. Same
+   controls and touch targets, laid out across instead of down. */
 .cex-set-table {
   display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  gap: 0.35rem 0.6rem;
-  align-items: flex-start;
-  align-self: flex-start;
+  flex-direction: column;
+  gap: 0.3rem;
+  align-self: stretch;
+  width: 100%;
 }
 .cex-set-col {
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  /* Shrinkable so many columns (warm-ups + working sets + dropset) compress
-     to fit before wrapping/scrolling, instead of jamming. */
-  flex: 0 1 54px;
-  min-width: 44px;
-  /* Query container so the input/label font scales with the column width —
-     text shrinks right along with the columns. */
-  container-type: inline-size;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
 }
-/* Weight or reps input with a ▲ button above it and a ▼ button below it,
-   spaced equally from the box. */
+/* Weight or reps input with − to its left and + to its right. */
 .cex-set-field {
   display: flex;
-  flex-direction: column;
-  gap: 6px; /* breathing room between the arrows and the input box */
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  /* The two fields split the row evenly and shrink together, so a 3-digit
+     weight and a 2-digit rep count stay on one line at any width. */
+  flex: 1 1 0;
+  min-width: 0;
 }
 .cex-set-field .cex-input { margin: 0; }
-/* Extra room between the weight field and the reps field so the reps ▲ and
-   the weight ▼ (which sit right next to each other) aren't easy to mis-tap. */
-.cex-set-field + .cex-set-field { margin-top: 0.3rem; }
+.cex-set-x {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
 .cex-set-lbl {
-  font-size: clamp(0.55rem, 28cqw, 0.75rem); /* scales with column width */
+  flex-shrink: 0;
+  width: 1.75rem;
+  font-size: 0.68rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-soft);
-  text-align: center;
+  text-align: left;
   /* Plain S1/S2… marker (gains an ⊘ when skipped from the Tools menu). */
   padding: 0;
   font-family: inherit;
 }
+
+/* The ✓ that closes each row. Empty circle until the set holds numbers, then
+   it fills in. Tapping it accepts the prescription and starts the rest timer. */
+.cex-set-done {
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  background: transparent;
+  color: var(--accent);
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+  font-family: inherit;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.cex-set-done:hover:not(:disabled) { border-color: var(--accent); }
+.cex-set-done.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.cex-set-done.skipped {
+  border-color: var(--warn);
+  color: var(--warn);
+  font-size: 1.05rem;
+}
+.cex-set-done:disabled { cursor: default; }
+.cex-set-done:disabled:not(.on):not(.skipped) { opacity: 0.4; }
 /* Skipped set — amber ⊘ column, inputs muted, steppers inert. */
 .cex-set-col.skipped .cex-set-lbl { color: var(--warn); }
 /* The ⊘ marker reads a touch bigger than the S# label it trails. */
@@ -5647,15 +5804,11 @@ input.pyr-weight-input { -moz-appearance: textfield; appearance: textfield; }
   margin: 0;
   padding: 0.3rem 0;
 }
-/* Tablet & desktop: the exercise card is full width, so the set columns pack
-   into ONE row that stretches across it — columns grow to soak up the real
-   estate instead of hugging small and wrapping onto a second row. Applies to
-   every rep-sheet context (workout detail, all-weeks cards, coach live log). */
+/* Tablet & desktop: the card is far wider than a set row needs, and stretching
+   one set across 900px reads absurd. Cap the sheet and let it sit left, which
+   also stops the numbers drifting away from the exercise name above them. */
 @media (min-width: 601px) {
-  .cex-set-table { align-self: stretch; width: 100%; flex-wrap: nowrap; overflow-x: auto; }
-  /* Capped narrow: wide tablet columns read bloated, so they stay compact and
-     the row simply leaves free space on the right. */
-  .cex-set-col { flex: 1 1 0; min-width: 40px; max-width: 76px; }
+  .cex-set-table { max-width: 30rem; }
 }
 @media (min-width: 721px) {
   /* Small gap between top-level cards (standalone exercises + whole superset
@@ -5895,18 +6048,20 @@ input.pyr-weight-input { -moz-appearance: textfield; appearance: textfield; }
 .mood-rollup-lbl { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-soft); }
 .mood-rollup-item { display: inline-flex; align-items: center; gap: 0.25em; font-weight: 800; font-size: 0.9rem; color: var(--text); }
 .mood-rollup-n { color: var(--primary-bright); font-variant-numeric: tabular-nums; }
-/* The ▲ / ▼ buttons above and below each weight/reps box (weight ±2.5 lb,
-   reps ±1). Full width of the field, short height. */
+/* The − / + buttons either side of each weight/reps box (weight ±2.5 lb,
+   reps ±1). Square, thumb-sized, and they never shrink below that. */
 .cex-step {
-  width: 100%;
+  flex: 0 0 auto;
+  width: 1.7rem;
+  height: 1.7rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0.2em 0;
-  font-size: 0.6rem;
+  padding: 0;
+  font-size: 0.95rem;
   line-height: 1;
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: 6px;
   background: var(--surface-2);
   color: var(--text-soft);
   cursor: pointer;
@@ -5929,38 +6084,30 @@ input.pyr-weight-input { -moz-appearance: textfield; appearance: textfield; }
 }
 .cex-edit-btn:hover { color: var(--primary); }
 @media (max-width: 600px) {
-  /* Shrink set columns so 5-6 sets fit on one row instead of wrapping
-     and growing the card's height. */
-  /* Full width so the growable columns have space to fill (was shrink-to-content
-     via align-self:flex-start, which left them pinned small with empty space). */
-  .cex-set-table { gap: 0.3rem 0.22rem; flex-wrap: nowrap; overflow-x: auto; width: 100%; align-self: stretch; }
-  /* Columns GROW to fill the card comfortably when there are only a few sets
-     (up to a cap), and only shrink toward the min — then scroll — once there
-     are enough columns (warm-ups + sets + dropset) to fill the row. Previously
-     flex-grow:0 pinned them at a cramped 36px even with acres of empty space. */
-  .cex-set-col { flex: 1 1 44px; min-width: 30px; max-width: 64px; width: auto; }
-  /* Font now scales with column width via container queries (see base rules),
-     so no fixed mobile font-size override — just tighten the input padding. */
-  .cex-set-col .cex-input { padding: 0.3em 0.05em; }
-  /* Tighter vertical gaps so the taller stacked fields don't balloon the row. */
-  .cex-set-col { gap: 0.35rem; }
-  .cex-set-field { gap: 4px; }
-  /* The "See all weeks" cards sit one level deeper (inside .week-body),
-     which eats extra horizontal space the workout-detail cards don't
-     lose — trim that padding and shrink columns a bit more so all 6
-     sets are visible without needing to scroll. */
+  /* Phones: every set is its own row, so the only thing to manage is keeping
+     one row on one line. Tighten the gaps and let the two fields share what's
+     left after the label and the ✓. */
+  .cex-set-col { gap: 0.3rem; }
+  .cex-set-field { gap: 3px; }
+  .cex-set-lbl { width: 1.5rem; font-size: 0.62rem; }
+  .cex-set-done { width: 1.85rem; height: 1.85rem; }
+  /* The "See all weeks" cards sit one level deeper (inside .week-body), which
+     eats horizontal space the workout-detail cards don't lose. */
   .week-body { padding: 0.6rem; }
-  .client-day-card .cex-set-col { width: 36px; }
 }
 .cex-set-col .cex-input {
-  width: 100%;
+  /* Takes what's left of the field after the two steppers, down to a floor
+     that still fits a 3-digit weight. */
+  flex: 1 1 0;
+  min-width: 2.4rem;
+  width: auto;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text);
-  font-size: clamp(0.72rem, 37cqw, 1rem); /* scales with column width */
+  font-size: 0.95rem;
   font-weight: 700;
-  padding: 0.38em 0.05em; /* minimal side padding so 3-digit numbers have room */
+  padding: 0.34em 0.1em;
   box-sizing: border-box;
   -webkit-appearance: none;
   appearance: none;
@@ -6773,11 +6920,11 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   border-radius: 4px;
 }
 
-/* Exercise table header */
+/* Exercise row legend — flex, like the rows it labels. */
 .ex-table-head {
-  display: grid;
-  grid-template-columns: 22px 1fr 46px 190px 190px 58px;
-  gap: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 0.3rem 1rem;
   border-bottom: 1px solid var(--border);
   font-size: 0.68rem;
@@ -6786,7 +6933,57 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   letter-spacing: 0.08em;
   color: var(--muted);
 }
-.ex-th-cur, .ex-th-goal { padding-left: 4px; }
+.ex-th-name { flex: 1; min-width: 0; }
+.ex-th-metrics, .ex-th-extras { flex-shrink: 0; }
+/* On a phone the row wraps onto several lines, so a single-line legend above
+   it would point at nothing. Name only. */
+@media (max-width: 720px) {
+  .ex-th-metrics, .ex-th-extras { display: none; }
+}
+
+/* Extras: chips for what's set, one ＋ to edit any of them. */
+.ex-extras-chips { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.ex-extra-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15em 0.5em;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-soft);
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ex-extra-chip:hover { border-color: var(--border-strong); color: var(--text); }
+.ex-extras-btn { flex-shrink: 0; }
+.ex-extras-btn.has-extras { color: var(--primary-bright); }
+
+.extras-pop {
+  min-width: 232px;
+  padding: 0.5rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-elevate);
+  box-shadow: var(--shadow-lg);
+}
+.extras-pop-head {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0 0.15rem 0.4rem;
+}
+.extras-opt {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.28rem 0.15rem;
+}
+.extras-opt-lbl { flex: 1; min-width: 0; font-size: 0.82rem; color: var(--text-soft); }
+.extras-opt .picker-btn { flex-shrink: 0; margin-left: auto; }
 
 /* Exercise rows */
 .ex-compact-list {
@@ -10144,4 +10341,49 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
   .pr-sum-chips { order: 3; margin-left: auto; flex: 0 1 auto; justify-content: flex-start; }
   .pr-chip { padding: 0.15em 0.4em; }
   .pr-chip-v { font-size: 0.82rem; }
+}
+
+/* ===== Athlete exercise swap ===== */
+/* Card badge: this isn't the lift the coach wrote. */
+.cex-swap-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.4em;
+  padding: 0.1em 0.45em;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--primary-rgb), 0.5);
+  background: var(--primary-soft);
+  color: var(--primary-bright);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+/* Coach breakdown: "Chest-Supported Row ⇄ for Barbell Row". */
+.breakdown-swap {
+  color: var(--muted);
+  font-size: 0.78em;
+  font-weight: 600;
+}
+/* Swap picker list — same rows as the other athlete pickers, capped so the
+   whole library scrolls inside the modal rather than growing it. */
+.swap-pick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  max-height: 46vh;
+  overflow-y: auto;
+  margin-top: 0.6rem;
+  -webkit-overflow-scrolling: touch;
+}
+.swap-opt-cat {
+  margin-left: auto;
+  padding-left: 0.6rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
