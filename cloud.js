@@ -267,6 +267,99 @@
     } catch (e) { console.warn(e); return null; }
   }
 
+  // -------- Scheduling: availability, bookings, Google Calendar --------
+  async function updateCoachAvailability(coachId, availability) {
+    if (!coachId) return false;
+    try {
+      const { error } = await sb.from("coaches").update({ availability: availability || {} }).eq("id", coachId);
+      if (error) console.warn("[Cloud] updateCoachAvailability error", error.message);
+      return !error;
+    } catch (e) { console.warn("[Cloud] updateCoachAvailability", e); return false; }
+  }
+  async function getCoachAvailability(coachId) {
+    if (!coachId) return null;
+    try {
+      const { data, error } = await sb.from("coaches").select("availability").eq("id", coachId).maybeSingle();
+      if (error || !data) return null;
+      return data.availability && typeof data.availability === "object" ? data.availability : {};
+    } catch (e) { console.warn("[Cloud] getCoachAvailability", e); return null; }
+  }
+  // Athlete reads their coach's availability through a definer RPC — the
+  // coaches table's RLS won't let them read the row itself.
+  async function getAvailabilityForAthlete() {
+    try {
+      const { data, error } = await sb.rpc("availability_for_athlete");
+      if (error) { console.warn("[Cloud] getAvailabilityForAthlete", error.message); return null; }
+      return data && typeof data === "object" ? data : {};
+    } catch (e) { console.warn(e); return null; }
+  }
+  // Start/end pairs only, for the window being offered. This is the ONLY way an
+  // athlete learns another athlete's time is taken — never who took it.
+  async function getBookedWindow(fromISO, toISO) {
+    try {
+      const { data, error } = await sb.rpc("booked_starts_for_athlete", { from_at: fromISO, to_at: toISO });
+      if (error) { console.warn("[Cloud] getBookedWindow", error.message); return null; }
+      return (data || []).map((r) => ({ start: r.start_at, end: r.end_at }));
+    } catch (e) { console.warn(e); return null; }
+  }
+  // Returns { ok } or { ok:false, taken:true } when someone else got there
+  // first — 23505 from the partial unique index is the race being caught, and
+  // it is the authority on who won, not any check we do beforehand.
+  async function createBooking(row) {
+    try {
+      const { error } = await sb.from("bookings").insert(row);
+      if (error) {
+        const taken = error.code === "23505";
+        if (!taken) console.warn("[Cloud] createBooking", error.message);
+        return { ok: false, taken, message: error.message };
+      }
+      return { ok: true };
+    } catch (e) { console.warn("[Cloud] createBooking", e); return { ok: false, taken: false }; }
+  }
+  async function cancelBooking(id) {
+    try {
+      const { error } = await sb.from("bookings")
+        .update({ status: "cancelled", cancelled_at: new Date().toISOString() }).eq("id", id);
+      if (error) console.warn("[Cloud] cancelBooking", error.message);
+      return !error;
+    } catch (e) { console.warn("[Cloud] cancelBooking", e); return false; }
+  }
+  // Whole rows. RLS narrows this to the caller's own bookings for an athlete
+  // and to every athlete's for the coach, so both sides use the same call.
+  async function getBookings(fromISO, toISO) {
+    try {
+      let q = sb.from("bookings").select("*").eq("status", "booked").order("start_at", { ascending: true });
+      if (fromISO) q = q.gte("start_at", fromISO);
+      if (toISO) q = q.lt("start_at", toISO);
+      const { data, error } = await q;
+      if (error) { console.warn("[Cloud] getBookings", error.message); return null; }
+      return data || [];
+    } catch (e) { console.warn(e); return null; }
+  }
+
+  // ---- Google Calendar ----
+  // Every call goes through the Edge Function: the refresh token lives in a
+  // table no browser role can read, and the client secret is a function secret.
+  async function googleCall(action, payload) {
+    try {
+      const { data, error } = await sb.functions.invoke("google-calendar", {
+        body: { action, ...(payload || {}) },
+      });
+      if (error) { console.warn("[Cloud] googleCall", action, error.message); return null; }
+      return data || null;
+    } catch (e) { console.warn("[Cloud] googleCall", action, e); return null; }
+  }
+  // What the browser may know: connected or not, and which account. Not the token.
+  async function googleStatus() {
+    try {
+      const { data, error } = await sb.rpc("google_calendar_status");
+      if (error) { console.warn("[Cloud] googleStatus", error.message); return null; }
+      const row = (data || [])[0];
+      return row ? { connected: true, email: row.account_email || "", calendarId: row.calendar_id || "primary", lastError: row.last_error || "" }
+                 : { connected: false };
+    } catch (e) { console.warn(e); return null; }
+  }
+
   // -------- Open slots (coach broadcasts appointment openings) --------
   async function updateCoachOpenSlots(coachId, openSlots) {
     if (!coachId) return false;
@@ -779,6 +872,16 @@
     getCoachOpenSlots,
     getOpenSlotsForAthlete,
     claimOpenSlot,
+    // Scheduling
+    updateCoachAvailability,
+    getCoachAvailability,
+    getAvailabilityForAthlete,
+    getBookedWindow,
+    createBooking,
+    cancelBooking,
+    getBookings,
+    googleCall,
+    googleStatus,
     // Athlete
     upsertAthlete,
     deleteAthlete,

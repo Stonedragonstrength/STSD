@@ -2004,6 +2004,12 @@
   if (!Array.isArray(state.trainerData.openSlots)) {
     state.trainerData.openSlots = [];
   }
+  // Recurring availability the booking slots are generated from. Empty until
+  // the coach fills it in, which is what makes booking unavailable rather than
+  // wide open on an account that has never set hours.
+  if (!state.trainerData.availability || typeof state.trainerData.availability !== "object") {
+    state.trainerData.availability = {};
+  }
   if (!Array.isArray(state.trainerData.programTemplates)) {
     state.trainerData.programTemplates = [];
   }
@@ -2570,6 +2576,9 @@
         inviteCode: athlete.inviteCode,
         sessionBank: athlete.sessionBank || { packages: [], redemptions: [] },
         nutrition: athlete.nutrition || { current: null, history: [] },
+        // Carried for the bookings insert. A trigger overrides it server-side,
+        // so this is only ever a hint, never the authority.
+        _coachId: athlete._coachId || null,
       },
     };
   }
@@ -2816,6 +2825,9 @@
     // they belonged to is gone — the notification log shows everything, with
     // nothing to dismiss — so the stored key is simply ignored.)
     state.trainerData.openSlots = coach.open_slots || [];
+    if (coach.availability && typeof coach.availability === "object") {
+      state.trainerData.availability = coach.availability;
+    }
     if (coach.anatomy_edits && typeof coach.anatomy_edits === "object") {
       state.trainerData.anatomyEdits = coach.anatomy_edits;
     }
@@ -2877,6 +2889,7 @@
     hideLibSidebar();
     renderDashboardCalendar();
     refreshCoachOpenSlots();
+    refreshCoachSchedule();
     renderBulletinBoard();
     renderCoachToday();
     renderNotificationLog();
@@ -9831,7 +9844,7 @@
       if (already) return;
       const count = _dashCalSetmoreEvents.filter((e) =>
         dateISO(new Date(e.startAt)).slice(0, 7) === monthKey &&
-        matchAthleteBySetmoreName(e.clientName) === c
+        matchAthleteForEvent(e) === c
       ).length;
       if (!count) return;
       const m = membershipById(c.sessionBank.membership);
@@ -9875,10 +9888,28 @@
     if (!window.Cloud?.enabled || !state.trainerData.coachId) return;
     const rangeStart = new Date(year, month, 1 - 7);
     const rangeEnd = new Date(year, month + 1, 7);
-    const events = await window.Cloud.getSetmoreEvents(
-      state.trainerData.coachId, rangeStart.toISOString(), rangeEnd.toISOString()
-    );
-    _dashCalSetmoreEvents = events;
+    const [events, native] = await Promise.all([
+      window.Cloud.getSetmoreEvents(state.trainerData.coachId, rangeStart.toISOString(), rangeEnd.toISOString()),
+      window.Cloud.getBookings(rangeStart.toISOString(), rangeEnd.toISOString()),
+    ]);
+    // In-app bookings join the calendar in the same shape as Setmore's, so the
+    // month grid, the auto-redeem walker, the unlink control and the athlete
+    // "upcoming" mirror all keep working without knowing where a session came
+    // from. Both sources run side by side until Setmore is switched off.
+    // The uid is prefixed so a native booking can never collide with a Setmore
+    // external_uid — redemptions are keyed on it.
+    const nameOf = (id) => (state.trainerData.clients || []).find((c) => c.id === id)?.name || "Athlete";
+    const asEvents = (native || []).filter((b) => b.status === "booked").map((b) => ({
+      uid: `stsd:${b.id}`,
+      clientName: nameOf(b.athlete_id),
+      title: "Booked in app",
+      startAt: b.start_at,
+      endAt: b.end_at,
+      native: true,
+      athleteId: b.athlete_id,
+    }));
+    _dashCalSetmoreEvents = [...events, ...asEvents]
+      .sort((a, b) => String(a.startAt).localeCompare(String(b.startAt)));
     autoRedeemFinishedBookings();
     runAutoRenewGrants(year, month);
     syncUpcomingBookingsToAthletes();
@@ -9903,6 +9934,15 @@
     ) || null;
   }
 
+  // The athlete a calendar event belongs to. An in-app booking already knows —
+  // it was made by that athlete — so it never goes near the name matching that
+  // Setmore needs, and can't be mismatched by a nickname or an alias.
+  function matchAthleteForEvent(e) {
+    if (!e) return null;
+    if (e.athleteId) return (state.trainerData.clients || []).find((c) => c.id === e.athleteId) || null;
+    return matchAthleteBySetmoreName(e.clientName);
+  }
+
   // Auto-spend a session token for each matched booking that has finished.
   // Guards: never charges bookings that ended before the feature was enabled
   // (autoRedeemSince watermark), one redemption per booking (setmoreUid),
@@ -9917,7 +9957,7 @@
       if (!e.uid) return;
       const end = new Date(e.endAt || e.startAt).getTime();
       if (!(end > since && end <= now)) return;
-      const c = matchAthleteBySetmoreName(e.clientName);
+      const c = matchAthleteForEvent(e);
       if (!c) return;
       ensureSessionBank(c);
       const date = dateISO(new Date(e.startAt));
@@ -9964,7 +10004,7 @@
     _dashCalSetmoreEvents.forEach((e) => {
       if (!e.uid || !e.startAt) return;
       if (new Date(e.startAt).getTime() <= now) return; // future only
-      const c = matchAthleteBySetmoreName(e.clientName);
+      const c = matchAthleteForEvent(e);
       if (!c) return;
       (byAthlete[c.id] = byAthlete[c.id] || []).push({
         uid: e.uid, date: dateISO(new Date(e.startAt)), time: fmtSetmoreTime(e.startAt), startAt: e.startAt,
@@ -10134,7 +10174,7 @@
       body += `<div class="dash-breakdown-client">
         <div class="dash-breakdown-header"><strong>📅 Booked sessions</strong></div>`;
       dayEvents.forEach((e, i) => {
-        const athlete = matchAthleteBySetmoreName(e.clientName);
+        const athlete = matchAthleteForEvent(e);
         const time = `<span class="breakdown-set-pill">${escapeHtml(fmtSetmoreTime(e.startAt))}</span>`;
         if (athlete) {
           const sum = sessionBankSummary(athlete);
@@ -10150,7 +10190,9 @@
             </div>
             <div class="breakdown-sets">${time}
               ${missedUi}
-              <button class="btn-unlink-setmore" type="button" data-unlink-booking="${i}" title="Unlink this booking from ${escapeHtml(athlete.name)}">Unlink</button>
+              ${e.native
+                ? `<span class="booked-native-chip" title="Booked in the app by ${escapeHtml(athlete.name)}">in app</span>`
+                : `<button class="btn-unlink-setmore" type="button" data-unlink-booking="${i}" title="Unlink this booking from ${escapeHtml(athlete.name)}">Unlink</button>`}
               <span class="dash-booked-arrow">›</span>
             </div>
           </div>`;
@@ -10245,7 +10287,7 @@
       btn.addEventListener("click", (ev) => {
         ev.stopPropagation();
         const e = dayEvents[Number(btn.getAttribute(`data-${attr}`))];
-        const a = e && matchAthleteBySetmoreName(e.clientName);
+        const a = e && matchAthleteForEvent(e);
         if (e && a) fn(e, a);
       });
     });
@@ -11140,6 +11182,19 @@
          </div>`;
     container.appendChild(memCard);
 
+    // Book a session — the coach's recurring availability, minus what's taken.
+    // Goes in the always-visible host next to the balance, NOT in `container`:
+    // that one lives inside the "Package balance & history" fold, and booking
+    // is the everyday reason to open this tab, not an archive.
+    const bookCard = document.createElement("div");
+    bookCard.className = "card book-card";
+    bookCard.id = "athlete-book-card";
+    if (balHost) balHost.appendChild(bookCard); else container.appendChild(bookCard);
+    renderAthleteBooking();
+    // Only hit the network on the first paint of this tab; every later
+    // re-render draws from what's already loaded.
+    if (_athleteSlots === null) refreshAthleteBooking();
+
     // Open slots posted by the coach (skip entirely if this athlete is muted).
     if (!prog.client.hideOpenSlots) {
       const visible = athleteOpenSlots().filter((s) => s.status !== "closed");
@@ -11598,6 +11653,551 @@
     });
   }
 
+  // ================= Scheduling =================
+  // The coach writes recurring WALL-CLOCK windows ("Mondays 06:00-11:00") plus
+  // the zone they mean them in, never instants — that is what makes the
+  // schedule survive a DST change instead of sliding an hour. Bookable slots
+  // are generated from those windows on demand, on whichever side is asking,
+  // and both sides must agree exactly, so `generateSlots` is pure.
+  const DEFAULT_AVAILABILITY = {
+    tz: "",
+    sessionMins: 60,
+    bufferMins: 0,
+    leadHours: 12,   // an athlete may not book closer than this to the start
+    horizonDays: 21, // how far ahead slots are offered
+    weekly: {},      // { "1": [{ start:"06:00", end:"11:00" }] }, 0 = Sunday
+    blackouts: [],   // ["2026-08-03"] whole days off
+    extra: [],       // [{ date:"2026-08-09", start:"08:00", end:"10:00" }] one-offs
+  };
+  const DOW_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  function localTz() {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (e) { return "UTC"; }
+  }
+  // How far `tz` sits from UTC at a given instant, in ms.
+  function tzOffsetMs(utcMs, tz) {
+    try {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: tz, hour12: false,
+        year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", second: "2-digit",
+      }).formatToParts(new Date(utcMs));
+      const p = Object.fromEntries(parts.map((x) => [x.type, x.value]));
+      return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - utcMs;
+    } catch (e) { return 0; }
+  }
+  // The instant at which the wall clock in `tz` reads this date and time.
+  // Guess, then correct by the offset the guess actually lands in — the second
+  // pass is what gets the DST boundaries right.
+  function zonedTimeToUtc(y, m, d, hh, mm, tz) {
+    const guess = Date.UTC(y, m - 1, d, hh, mm);
+    const once = guess - tzOffsetMs(guess, tz);
+    return guess - tzOffsetMs(once, tz);
+  }
+  // The calendar date an instant falls on, as read in `tz`.
+  function zonedDateISO(utcMs, tz) {
+    try {
+      const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+        timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+      }).formatToParts(new Date(utcMs)).map((x) => [x.type, x.value]));
+      return `${p.year}-${p.month}-${p.day}`;
+    } catch (e) { return new Date(utcMs).toISOString().slice(0, 10); }
+  }
+  function parseHM(s) {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || "").trim());
+    if (!m) return null;
+    const hh = +m[1], mm = +m[2];
+    if (hh > 23 || mm > 59) return null;
+    return { hh, mm };
+  }
+  function normalizeAvailability(av) {
+    const a = { ...DEFAULT_AVAILABILITY, ...(av || {}) };
+    a.tz = a.tz || localTz();
+    a.sessionMins = Math.max(15, Math.min(240, parseInt(a.sessionMins, 10) || 60));
+    a.bufferMins = Math.max(0, Math.min(120, parseInt(a.bufferMins, 10) || 0));
+    a.leadHours = Math.max(0, Math.min(168, parseFloat(a.leadHours) || 0));
+    a.horizonDays = Math.max(1, Math.min(90, parseInt(a.horizonDays, 10) || 21));
+    a.weekly = a.weekly && typeof a.weekly === "object" ? a.weekly : {};
+    a.blackouts = Array.isArray(a.blackouts) ? a.blackouts : [];
+    a.extra = Array.isArray(a.extra) ? a.extra : [];
+    return a;
+  }
+  // True once the coach has written any window at all — nothing is bookable
+  // before that, and the athlete gets told so rather than shown an empty list.
+  function availabilityIsSet(av) {
+    const a = normalizeAvailability(av);
+    return Object.values(a.weekly).some((w) => Array.isArray(w) && w.length) || a.extra.length > 0;
+  }
+
+  // Every slot the availability implies in [fromMs, fromMs + days), minus the
+  // lead time and minus anything in `busy` (existing bookings, and the coach's
+  // Google Calendar when it's connected). Pure — see the Node harness.
+  function generateSlots(av, fromMs, days, busy) {
+    const a = normalizeAvailability(av);
+    const tz = a.tz;
+    const lenMs = a.sessionMins * 60000;
+    const stepMs = (a.sessionMins + a.bufferMins) * 60000;
+    const earliest = fromMs + a.leadHours * 3600000;
+    const blackouts = new Set(a.blackouts);
+    const seen = new Set();
+    const out = [];
+    for (let i = 0; i < days; i++) {
+      const dayISO = zonedDateISO(fromMs + i * 86400000, tz);
+      if (blackouts.has(dayISO)) continue;
+      const [y, m, d] = dayISO.split("-").map(Number);
+      // Day of week for that calendar date, computed off a UTC noon so no
+      // offset can push it onto the neighbouring day.
+      const dow = new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay();
+      const windows = [
+        ...(Array.isArray(a.weekly[String(dow)]) ? a.weekly[String(dow)] : []),
+        ...a.extra.filter((e) => e && e.date === dayISO),
+      ];
+      windows.forEach((w) => {
+        const s = parseHM(w && w.start), e = parseHM(w && w.end);
+        if (!s || !e) return;
+        const winStart = zonedTimeToUtc(y, m, d, s.hh, s.mm, tz);
+        const winEnd = zonedTimeToUtc(y, m, d, e.hh, e.mm, tz);
+        if (winEnd <= winStart) return;
+        for (let t = winStart; t + lenMs <= winEnd; t += stepMs) {
+          if (t < earliest || seen.has(t)) continue;
+          seen.add(t);
+          out.push({ startMs: t, endMs: t + lenMs });
+        }
+      });
+    }
+    const busyList = (busy || [])
+      .map((b) => ({ s: +new Date(b.start), e: +new Date(b.end) }))
+      .filter((b) => isFinite(b.s) && isFinite(b.e) && b.e > b.s);
+    return out
+      .filter((o) => !busyList.some((b) => o.startMs < b.e && b.s < o.endMs))
+      .sort((x, z) => x.startMs - z.startMs);
+  }
+
+  // Slots grouped into the days they fall on, for rendering.
+  function groupSlotsByDay(slots, tz) {
+    const zone = tz || localTz();
+    const days = [];
+    const byISO = {};
+    slots.forEach((s) => {
+      const iso = zonedDateISO(s.startMs, zone);
+      if (!byISO[iso]) { byISO[iso] = { iso, slots: [] }; days.push(byISO[iso]); }
+      byISO[iso].slots.push(s);
+    });
+    return days;
+  }
+  function fmtSlotTime(ms, tz) {
+    return new Date(ms).toLocaleTimeString(undefined, {
+      hour: "numeric", minute: "2-digit", timeZone: tz || undefined,
+    });
+  }
+  function fmtSlotDay(iso, tz) {
+    return new Date(iso + "T12:00:00Z").toLocaleDateString(undefined, {
+      weekday: "long", month: "short", day: "numeric", timeZone: "UTC",
+    });
+  }
+
+  // ---- Athlete: book a session from the coach's availability ----
+  // The slot list is generated locally from the coach's availability and then
+  // has three things subtracted: everyone's existing bookings, the coach's
+  // Google busy time, and the lead-time cutoff. It is advisory only — the
+  // partial unique index on `bookings` is what actually stops a double booking.
+  let _athleteSlots = null;      // null = not loaded yet
+  let _athleteBookings = [];
+  let _athleteAvailability = null;
+  let _bookingBusy = false;      // an insert is in flight
+
+  async function refreshAthleteBooking() {
+    // Offline, the cached copy still shows the schedule and what's booked.
+    // Booking itself needs the network — the unique index is the only thing
+    // that can decide who got a slot, and it lives in the database.
+    if (!window.Cloud?.enabled) {
+      _athleteAvailability = state.clientData.availability || {};
+      const off = normalizeAvailability(_athleteAvailability);
+      _athleteSlots = availabilityIsSet(off) ? generateSlots(off, Date.now(), off.horizonDays + 1, []) : [];
+      renderAthleteBooking();
+      return;
+    }
+    const av = await window.Cloud.getAvailabilityForAthlete();
+    _athleteAvailability = av || {};
+    // Cached so a reopen shows the schedule before the network answers.
+    state.clientData.availability = _athleteAvailability;
+    saveClient();
+    const a = normalizeAvailability(_athleteAvailability);
+    const from = Date.now();
+    const toMs = from + (a.horizonDays + 1) * 86400000;
+    const [taken, mine] = await Promise.all([
+      window.Cloud.getBookedWindow(new Date(from).toISOString(), new Date(toMs).toISOString()),
+      window.Cloud.getBookings(new Date(from - 86400000).toISOString(), new Date(toMs).toISOString()),
+    ]);
+    _athleteBookings = Array.isArray(mine) ? mine : [];
+    // +1 day of horizon because an instant near midnight still reads as the
+    // previous calendar day in the coach's zone, so day 0 can be yesterday.
+    _athleteSlots = availabilityIsSet(a)
+      ? generateSlots(a, from, a.horizonDays + 1, (taken || []).map((t) => ({ start: t.start, end: t.end })))
+      : [];
+    renderAthleteBooking();
+  }
+
+  function renderAthleteBooking() {
+    const host = $("#athlete-book-card"); if (!host) return;
+    const a = normalizeAvailability(_athleteAvailability);
+    const mine = _athleteBookings
+      .filter((b) => b.status === "booked" && +new Date(b.start_at) >= Date.now() - 3600000)
+      .sort((x, y) => String(x.start_at).localeCompare(String(y.start_at)));
+
+    let html = `<h4 style="margin-top:0">🗓️ Book a session</h4>`;
+
+    if (mine.length) {
+      html += `<div class="book-mine">${mine.map((b) => {
+        const s = +new Date(b.start_at);
+        return `<div class="book-mine-row">` +
+          `<span class="book-mine-when">${escapeHtml(new Date(s).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }))} · ${escapeHtml(fmtSlotTime(s))}</span>` +
+          `<button type="button" class="btn btn-ghost btn-xs" data-cancel-mine="${escapeHtml(b.id)}">Cancel</button>` +
+        `</div>`;
+      }).join("")}</div>`;
+    }
+
+    if (_athleteSlots === null) {
+      html += `<p class="muted">Loading times…</p>`;
+    } else if (!availabilityIsSet(a)) {
+      html += `<p class="muted">Your coach hasn't posted their hours yet. Message them to set something up.</p>`;
+    } else if (!_athleteSlots.length) {
+      html += `<p class="muted">Nothing open in the next ${a.horizonDays} days. Check back, or message your coach.</p>`;
+    } else {
+      const days = groupSlotsByDay(_athleteSlots, a.tz).slice(0, 14);
+      html += `<div class="book-days">${days.map((d) =>
+        `<div class="book-day">` +
+          `<div class="book-day-name">${escapeHtml(fmtSlotDay(d.iso))}</div>` +
+          `<div class="book-slots">${d.slots.map((s) =>
+            `<button type="button" class="book-slot" data-start="${s.startMs}" data-end="${s.endMs}">${escapeHtml(fmtSlotTime(s.startMs, a.tz))}</button>`).join("")}</div>` +
+        `</div>`).join("")}</div>`;
+      if (!window.Cloud?.enabled) {
+        html += `<p class="book-offline">These are your coach's usual hours. You'll need a connection to actually book one.</p>`;
+      }
+    }
+    host.innerHTML = html;
+
+    host.querySelectorAll("[data-start]").forEach((btn) => btn.addEventListener("click", () => {
+      confirmBooking(+btn.dataset.start, +btn.dataset.end, btn);
+    }));
+    host.querySelectorAll("[data-cancel-mine]").forEach((btn) => btn.addEventListener("click", async () => {
+      if (!window.confirm("Cancel this session?")) return;
+      const ok = await window.Cloud?.cancelBooking?.(btn.dataset.cancelMine);
+      if (!ok) { toast("Couldn't cancel that. Try again."); return; }
+      toast("Session cancelled");
+      refreshAthleteBooking();
+    }));
+  }
+
+  function confirmBooking(startMs, endMs, btn) {
+    const a = normalizeAvailability(_athleteAvailability);
+    const when = `${fmtSlotDay(zonedDateISO(startMs, a.tz))} at ${fmtSlotTime(startMs, a.tz)}`;
+    const client = state.clientData.program?.client;
+    const sum = client ? sessionBankSummary(client) : null;
+    openModal({
+      title: "Book this session?",
+      body: `<p class="book-confirm-when">${escapeHtml(when)}</p>` +
+        `<p class="muted">${a.sessionMins} minutes with your coach.</p>` +
+        (sum && sum.remaining <= 0
+          ? `<p class="book-confirm-warn">You have no sessions left in your balance. Your coach will sort it out with you.</p>`
+          : ""),
+      actions: [
+        { label: "Not now", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Book it", className: "btn btn-primary", onClick: () => doBook(startMs, endMs, btn) },
+      ],
+    });
+  }
+
+  async function doBook(startMs, endMs, btn) {
+    if (_bookingBusy) return;
+    _bookingBusy = true;
+    if (btn) btn.disabled = true;
+    closeModal();
+    const client = state.clientData.program?.client;
+    const row = {
+      id: uid(),
+      // Sent for the not-null column, but a BEFORE INSERT trigger overwrites it
+      // with the athlete's real coach — the browser doesn't get to name it.
+      coach_id: client?._coachId || "",
+      athlete_id: client?.id,
+      start_at: new Date(startMs).toISOString(),
+      end_at: new Date(endMs).toISOString(),
+      status: "booked",
+      created_by: "athlete",
+    };
+    const res = await window.Cloud?.createBooking?.(row);
+    _bookingBusy = false;
+    if (!res?.ok) {
+      // `taken` is the unique index firing: somebody else booked this exact
+      // slot between the list being drawn and the tap landing.
+      toast(res?.taken ? "Someone just took that one. Pick another time." : "Couldn't book that. Try again.", 4000);
+      refreshAthleteBooking();
+      return;
+    }
+    toast("Booked ✓");
+    // Put it on the coach's Google Calendar. The booking is already saved, so a
+    // failure here is a sync problem and never undoes the booking.
+    window.Cloud?.googleCall?.("push", { bookingId: row.id });
+    refreshAthleteBooking();
+  }
+
+  // ---- Coach: availability editor + bookings + Google Calendar ----
+  function coachAvailability() {
+    if (!state.trainerData.availability || typeof state.trainerData.availability !== "object") {
+      state.trainerData.availability = {};
+    }
+    return state.trainerData.availability;
+  }
+  async function saveCoachAvailability(av) {
+    state.trainerData.availability = av;
+    saveTrainer();
+    const coachId = state.trainerData.coachId;
+    if (window.Cloud?.enabled && coachId) await window.Cloud.updateCoachAvailability(coachId, av);
+    renderCoachSchedule();
+  }
+
+  let _coachBookings = [];
+  let _googleStatus = null;
+
+  async function refreshCoachSchedule() {
+    const coachId = state.trainerData.coachId;
+    if (window.Cloud?.enabled && coachId) {
+      const av = await window.Cloud.getCoachAvailability(coachId);
+      if (av && typeof av === "object") { state.trainerData.availability = av; saveTrainer(); }
+      const from = new Date(Date.now() - 86400000).toISOString();
+      const to = new Date(Date.now() + 60 * 86400000).toISOString();
+      const rows = await window.Cloud.getBookings(from, to);
+      if (Array.isArray(rows)) _coachBookings = rows;
+      _googleStatus = await window.Cloud.googleStatus();
+    }
+    renderCoachSchedule();
+  }
+
+  function availabilitySummaryHtml(av) {
+    const a = normalizeAvailability(av);
+    if (!availabilityIsSet(a)) {
+      return `<p class="sched-empty">No availability set yet. Athletes can't book until you add the hours you work.</p>`;
+    }
+    const rows = DOW_NAMES.map((name, i) => {
+      const wins = Array.isArray(a.weekly[String(i)]) ? a.weekly[String(i)] : [];
+      if (!wins.length) return "";
+      return `<div class="sched-day"><span class="sched-day-name">${name}</span>` +
+        `<span class="sched-day-wins">${wins.map((w) =>
+          `<span class="sched-win">${escapeHtml(w.start)}&ndash;${escapeHtml(w.end)}</span>`).join("")}</span></div>`;
+    }).filter(Boolean).join("");
+    const meta = `${a.sessionMins} min sessions` +
+      (a.bufferMins ? ` · ${a.bufferMins} min gap` : "") +
+      (a.leadHours ? ` · closes ${a.leadHours}h before` : " · no booking cutoff") +
+      ` · ${a.horizonDays} days out`;
+    const extras = a.extra.length ? `<div class="sched-note">${a.extra.length} one-off window${a.extra.length === 1 ? "" : "s"}</div>` : "";
+    const blocked = a.blackouts.length ? `<div class="sched-note">${a.blackouts.length} day${a.blackouts.length === 1 ? "" : "s"} blocked off</div>` : "";
+    return `<div class="sched-days">${rows}</div><div class="sched-meta">${escapeHtml(meta)}</div>${extras}${blocked}`;
+  }
+
+  function renderCoachSchedule() {
+    const sum = $("#sched-summary");
+    if (sum) sum.innerHTML = availabilitySummaryHtml(coachAvailability());
+    renderGoogleCard();
+    renderCoachBookings();
+  }
+
+  function renderGoogleCard() {
+    const host = $("#sched-google"); if (!host) return;
+    const g = _googleStatus;
+    const connected = !!g?.connected;
+    host.innerHTML =
+      `<div class="sched-google-row ${connected ? "on" : ""}">` +
+        `<span class="sched-google-ico">📆</span>` +
+        `<span class="sched-google-txt">` +
+          `<b>Google Calendar</b>` +
+          `<span>${connected
+            ? escapeHtml(g.email || "Connected") + ". Bookings appear on it, and times you're busy there stop showing as free."
+            : "Not connected. Connect it and every booking lands on your calendar."}</span>` +
+          (connected && g.lastError ? `<span class="sched-google-err">Last sync error: ${escapeHtml(g.lastError)}</span>` : "") +
+        `</span>` +
+        `<button type="button" class="btn slim-btn btn-sm" id="sched-google-btn">${connected ? "Disconnect" : "Connect"}</button>` +
+      `</div>`;
+    $("#sched-google-btn").addEventListener("click", () => connected ? disconnectGoogle() : connectGoogle());
+  }
+
+  async function connectGoogle() {
+    const res = await window.Cloud?.googleCall?.("auth-url");
+    if (!res?.ok || !res.url) {
+      toast(res?.needsSetup
+        ? "Google isn't set up on the server yet. See the notes in the google-calendar function."
+        : "Couldn't start the Google connection.", 5000);
+      return;
+    }
+    // The code comes back on the app's own URL and is handed straight to the
+    // Edge Function; the client secret never leaves the server.
+    sessionStorage.setItem("stsd_google_pending", "1");
+    window.location.href = res.url;
+  }
+  async function disconnectGoogle() {
+    if (!window.confirm("Disconnect Google Calendar? Existing events stay on your calendar.")) return;
+    await window.Cloud?.googleCall?.("disconnect");
+    _googleStatus = { connected: false };
+    renderGoogleCard();
+    toast("Google Calendar disconnected");
+  }
+  // Called at boot: if we came back from the consent screen there's a ?code= to
+  // trade in. Runs before anything else reads the connection status.
+  async function finishGoogleConnectIfReturning() {
+    const url = new URL(window.location.href);
+    const code = url.searchParams.get("code");
+    if (!code || !sessionStorage.getItem("stsd_google_pending")) return false;
+    sessionStorage.removeItem("stsd_google_pending");
+    // Clear the code out of the address bar before anything can copy it.
+    url.searchParams.delete("code");
+    url.searchParams.delete("scope");
+    url.searchParams.delete("state");
+    url.searchParams.delete("authuser");
+    url.searchParams.delete("prompt");
+    window.history.replaceState({}, "", url.toString());
+    const res = await window.Cloud?.googleCall?.("exchange", { code });
+    if (res?.ok) toast(`Google Calendar connected${res.email ? " · " + res.email : ""} ✓`, 4000);
+    else toast("Google wouldn't complete the connection. Try again.", 5000);
+    return true;
+  }
+
+  function renderCoachBookings() {
+    const host = $("#sched-bookings"); if (!host) return;
+    const now = Date.now();
+    const upcoming = _coachBookings
+      .filter((b) => b.status === "booked" && +new Date(b.start_at) >= now - 3600000)
+      .sort((a, b) => String(a.start_at).localeCompare(String(b.start_at)))
+      .slice(0, 12);
+    if (!upcoming.length) {
+      host.innerHTML = `<div class="sched-book-head">Upcoming bookings</div><p class="sched-empty">Nothing booked yet.</p>`;
+      return;
+    }
+    const nameOf = (id) => (state.trainerData.clients || []).find((c) => c.id === id)?.name || "Athlete";
+    host.innerHTML = `<div class="sched-book-head">Upcoming bookings <span class="sched-book-n">${upcoming.length}</span></div>` +
+      upcoming.map((b) => {
+        const start = +new Date(b.start_at);
+        return `<div class="sched-book-row">` +
+          `<span class="sched-book-when">${escapeHtml(new Date(start).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }))}` +
+          ` · ${escapeHtml(fmtSlotTime(start))}</span>` +
+          `<span class="sched-book-who">${escapeHtml(nameOf(b.athlete_id))}</span>` +
+          `<button type="button" class="btn-delete-mini" data-cancel-booking="${escapeHtml(b.id)}" title="Cancel">×</button>` +
+        `</div>`;
+      }).join("");
+    host.querySelectorAll("[data-cancel-booking]").forEach((btn) => btn.addEventListener("click", async () => {
+      if (!window.confirm("Cancel this booking? The athlete will see it disappear.")) return;
+      const id = btn.dataset.cancelBooking;
+      const ok = await window.Cloud?.cancelBooking?.(id);
+      if (!ok) { toast("Couldn't cancel that booking"); return; }
+      // Take the event off Google too. A failure here is a sync problem, not a
+      // booking problem, so it doesn't block or roll anything back.
+      window.Cloud?.googleCall?.("remove", { bookingId: id });
+      _coachBookings = _coachBookings.filter((b) => b.id !== id);
+      renderCoachBookings();
+      toast("Booking cancelled");
+    }));
+  }
+
+  // The availability editor. One row per weekday, each holding any number of
+  // windows, plus the session shape underneath.
+  function openAvailabilityEditor() {
+    const a = normalizeAvailability(coachAvailability());
+    const draft = JSON.parse(JSON.stringify(a));
+    if (!draft.tz) draft.tz = localTz();
+
+    const draw = () => {
+      const body = $("#modal-body"); if (!body) return;
+      body.innerHTML =
+        `<p class="muted" style="margin-top:-0.4em">The hours you work each week. Athletes see these split into ${draft.sessionMins}-minute slots, minus anything already booked.</p>` +
+        `<div class="av-days">${DOW_NAMES.map((name, i) => {
+          const wins = Array.isArray(draft.weekly[String(i)]) ? draft.weekly[String(i)] : [];
+          return `<div class="av-day">` +
+            `<div class="av-day-head"><span class="av-day-name">${name}</span>` +
+              `<button type="button" class="av-add" data-add="${i}">+ Add hours</button></div>` +
+            (wins.length
+              ? `<div class="av-wins">${wins.map((w, n) =>
+                  `<div class="av-win">` +
+                    `<input type="time" value="${escapeHtml(w.start || "")}" data-d="${i}" data-n="${n}" data-f="start" />` +
+                    `<span class="av-dash">to</span>` +
+                    `<input type="time" value="${escapeHtml(w.end || "")}" data-d="${i}" data-n="${n}" data-f="end" />` +
+                    `<button type="button" class="btn-delete-mini" data-rm="${i}:${n}" title="Remove">×</button>` +
+                  `</div>`).join("")}</div>`
+              : `<p class="av-off">Off</p>`) +
+          `</div>`;
+        }).join("")}</div>` +
+        `<div class="av-shape">` +
+          `<label>Session length<select id="av-len">${[30, 45, 60, 75, 90, 120].map((n) =>
+            `<option value="${n}"${n === draft.sessionMins ? " selected" : ""}>${n} min</option>`).join("")}</select></label>` +
+          `<label>Gap between<select id="av-buf">${[0, 5, 10, 15, 30].map((n) =>
+            `<option value="${n}"${n === draft.bufferMins ? " selected" : ""}>${n ? n + " min" : "None"}</option>`).join("")}</select></label>` +
+          `<label>Cutoff<select id="av-lead">${[0, 2, 4, 8, 12, 24, 48].map((n) =>
+            `<option value="${n}"${n === draft.leadHours ? " selected" : ""}>${n ? n + "h ahead" : "Any time"}</option>`).join("")}</select></label>` +
+          `<label>Book out to<select id="av-hor">${[7, 14, 21, 28, 60].map((n) =>
+            `<option value="${n}"${n === draft.horizonDays ? " selected" : ""}>${n} days</option>`).join("")}</select></label>` +
+        `</div>` +
+        `<div class="av-block">` +
+          `<div class="av-block-head">Days off</div>` +
+          `<div class="av-block-list">${draft.blackouts.length
+            ? draft.blackouts.slice().sort().map((d) =>
+                `<span class="av-block-chip">${escapeHtml(fmtSlotDay(d))}<button type="button" data-unblock="${escapeHtml(d)}">×</button></span>`).join("")
+            : `<span class="muted">None</span>`}</div>` +
+          `<div class="av-block-add"><input type="date" id="av-block-date" /><button type="button" class="btn btn-ghost btn-sm" id="av-block-btn">Block this day</button></div>` +
+        `</div>` +
+        `<p class="muted av-tz">Times are ${escapeHtml(draft.tz)}.</p>`;
+
+      body.querySelectorAll("[data-add]").forEach((b) => b.addEventListener("click", () => {
+        const i = String(b.dataset.add);
+        if (!Array.isArray(draft.weekly[i])) draft.weekly[i] = [];
+        draft.weekly[i].push({ start: "09:00", end: "17:00" });
+        draw();
+      }));
+      body.querySelectorAll("[data-rm]").forEach((b) => b.addEventListener("click", () => {
+        const [i, n] = b.dataset.rm.split(":");
+        draft.weekly[i].splice(+n, 1);
+        if (!draft.weekly[i].length) delete draft.weekly[i];
+        draw();
+      }));
+      // Typed times write straight into the draft — no redraw, or the input
+      // loses focus mid-entry.
+      body.querySelectorAll(".av-win input").forEach((inp) => inp.addEventListener("change", () => {
+        const w = draft.weekly[inp.dataset.d]?.[+inp.dataset.n];
+        if (w) w[inp.dataset.f] = inp.value;
+      }));
+      $("#av-len").addEventListener("change", (e) => { draft.sessionMins = +e.target.value; draw(); });
+      $("#av-buf").addEventListener("change", (e) => { draft.bufferMins = +e.target.value; });
+      $("#av-lead").addEventListener("change", (e) => { draft.leadHours = +e.target.value; });
+      $("#av-hor").addEventListener("change", (e) => { draft.horizonDays = +e.target.value; });
+      $("#av-block-btn").addEventListener("click", () => {
+        const d = $("#av-block-date").value;
+        if (!d) { toast("Pick a date to block"); return; }
+        if (!draft.blackouts.includes(d)) draft.blackouts.push(d);
+        draw();
+      });
+      body.querySelectorAll("[data-unblock]").forEach((b) => b.addEventListener("click", () => {
+        draft.blackouts = draft.blackouts.filter((d) => d !== b.dataset.unblock);
+        draw();
+      }));
+    };
+
+    openModal({
+      title: "🗓️ Your availability",
+      body: "",
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Save", className: "btn btn-primary", onClick: async () => {
+          // Drop anything half-filled rather than saving a window that would
+          // silently generate nothing.
+          Object.keys(draft.weekly).forEach((k) => {
+            draft.weekly[k] = (draft.weekly[k] || []).filter((w) => parseHM(w.start) && parseHM(w.end) && w.end > w.start);
+            if (!draft.weekly[k].length) delete draft.weekly[k];
+          });
+          closeModal();
+          await saveCoachAvailability(normalizeAvailability(draft));
+          toast("Availability saved ✓");
+        }},
+      ],
+    });
+    draw();
+  }
+
   // ---- Open Slots (coach broadcasts appointment openings; athletes claim) ----
   function ensureOpenSlots() {
     if (!Array.isArray(state.trainerData.openSlots)) state.trainerData.openSlots = [];
@@ -11885,7 +12485,7 @@
       const start = e.startAt ? new Date(e.startAt) : null;
       const time = start ? start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
       const ts = start ? start.getTime() : Infinity;
-      const c = matchAthleteBySetmoreName(e.clientName);
+      const c = matchAthleteForEvent(e);
       if (c) put(c, { time, ts, booked: true });
       else loose.push({ client: null, name: e.clientName || "Booking", time, ts, booked: true, unlinked: true });
     });
@@ -22504,6 +23104,7 @@
     $("#btn-add-package")?.addEventListener("click", openAddPackageModal);
     $("#btn-gift-session")?.addEventListener("click", openGiftSessionModal);
     $("#btn-post-open-slot")?.addEventListener("click", openPostSlotModal);
+    $("#btn-edit-availability")?.addEventListener("click", openAvailabilityEditor);
     $("#btn-redeem-session")?.addEventListener("click", openRedeemSessionModal);
     prefillRememberedEmails();
     $("#btn-export-sessions")?.addEventListener("click", () => {
@@ -22681,6 +23282,10 @@
       try {
         const session = await window.Cloud.getSession();
         if (session) {
+          // Coming back from the Google consent screen with a ?code= to trade
+          // in. Has to run before the coach view renders, or the schedule card
+          // paints "not connected" and then silently disagrees with reality.
+          await finishGoogleConnectIfReturning();
           const userId = session.user.id;
           // Fast path: valid local data + session → auto-login, but still
           // refresh templates/athletes from the cloud first so anything

@@ -10877,3 +10877,131 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
   letter-spacing: 0.05em; cursor: pointer;
 }
 .log-pick-type:hover { border-color: var(--primary); color: var(--primary-bright); }
+
+/* ── Scheduling ───────────────────────────────────────────────────────────
+   Coach: the availability summary, the Google link, and upcoming bookings.
+   Athlete: the slot picker. */
+.sched-empty { color: var(--muted); font-size: 0.85rem; margin: 0.3rem 0; }
+.sched-days { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 0.5rem; }
+.sched-day { display: flex; align-items: baseline; gap: 0.7em; }
+.sched-day-name {
+  flex: 0 0 2.4em; font-size: 0.7rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-soft);
+}
+.sched-day-wins { display: flex; flex-wrap: wrap; gap: 0.3em; }
+.sched-win {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 0.1em 0.55em;
+  font-size: 0.75rem; font-weight: 700; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.sched-meta, .sched-note { font-size: 0.75rem; color: var(--muted); }
+.sched-note { margin-top: 0.2rem; }
+
+.sched-google-row {
+  display: flex; align-items: center; gap: 0.7em;
+  margin: 0.8rem 0; padding: 0.6em 0.75em;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
+}
+.sched-google-row.on { border-color: rgba(16, 185, 129, 0.4); }
+.sched-google-ico { font-size: 1.2rem; line-height: 1; }
+.sched-google-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15em; }
+.sched-google-txt b { font-size: 0.88rem; }
+.sched-google-txt span { font-size: 0.75rem; color: var(--text-soft); line-height: 1.35; }
+.sched-google-err { color: var(--warn) !important; }
+
+.sched-book-head {
+  font-size: 0.7rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-soft);
+  margin: 0.9rem 0 0.4rem; display: flex; align-items: center; gap: 0.5em;
+}
+.sched-book-n {
+  background: var(--primary-soft); color: var(--primary-bright);
+  border-radius: 999px; padding: 0 0.5em; font-size: 0.72rem;
+}
+.sched-book-row {
+  display: flex; align-items: center; gap: 0.7em;
+  padding: 0.4em 0; border-top: 1px solid var(--border);
+}
+.sched-book-when { font-size: 0.82rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sched-book-who { flex: 1; min-width: 0; font-size: 0.82rem; color: var(--text-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The availability editor */
+.av-days { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.9rem; }
+.av-day { border: 1px solid var(--border); border-radius: 12px; padding: 0.45em 0.6em; background: var(--surface-2); }
+.av-day-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5em; }
+.av-day-name { font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
+.av-add {
+  background: none; border: none; color: var(--primary-bright);
+  font-family: inherit; font-size: 0.72rem; font-weight: 800; cursor: pointer;
+  text-transform: uppercase; letter-spacing: 0.04em; padding: 0.2em 0;
+}
+.av-off { margin: 0.2em 0 0; font-size: 0.75rem; color: var(--muted); }
+.av-wins { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.4rem; }
+.av-win { display: flex; align-items: center; gap: 0.4em; }
+.av-win input[type="time"] { flex: 1; min-width: 0; margin: 0; }
+.av-dash { font-size: 0.72rem; color: var(--muted); }
+.av-shape { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem 0.7rem; margin-bottom: 0.9rem; }
+.av-shape label { margin: 0; }
+.av-block-head {
+  font-size: 0.7rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-soft); margin-bottom: 0.35rem;
+}
+.av-block-list { display: flex; flex-wrap: wrap; gap: 0.3em; margin-bottom: 0.5rem; font-size: 0.8rem; }
+.av-block-chip {
+  display: inline-flex; align-items: center; gap: 0.35em;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 0.15em 0.3em 0.15em 0.65em; font-size: 0.75rem; font-weight: 700;
+}
+.av-block-chip button {
+  background: none; border: none; color: var(--muted);
+  font-family: inherit; font-size: 0.9rem; line-height: 1; cursor: pointer; padding: 0 0.2em;
+}
+.av-block-chip button:hover { color: var(--danger); }
+.av-block-add { display: flex; gap: 0.4em; align-items: center; }
+.av-block-add input { flex: 1; margin: 0; }
+.av-tz { font-size: 0.72rem; margin: 0.8rem 0 0; }
+
+/* Athlete slot picker */
+.book-mine { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.7rem; }
+.book-mine-row {
+  display: flex; align-items: center; gap: 0.6em;
+  padding: 0.45em 0.7em; border-radius: 999px;
+  background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35);
+}
+.book-mine-when { flex: 1; min-width: 0; font-size: 0.82rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.book-days { display: flex; flex-direction: column; gap: 0.6rem; max-height: 22rem; overflow-y: auto; }
+.book-day-name {
+  font-size: 0.7rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-soft); margin-bottom: 0.3rem;
+}
+.book-slots { display: flex; flex-wrap: wrap; gap: 0.35em; }
+.book-slot {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 0.4em 0.8em;
+  color: var(--text); font-family: inherit; font-size: 0.8rem; font-weight: 700;
+  cursor: pointer; white-space: nowrap; font-variant-numeric: tabular-nums;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.book-slot:hover { border-color: var(--primary); color: var(--primary-bright); background: var(--surface); }
+.book-slot[disabled] { opacity: 0.4; pointer-events: none; }
+.book-confirm-when { font-size: 1.05rem; font-weight: 800; margin: -0.2em 0 0.2em; }
+.book-confirm-warn {
+  font-size: 0.8rem; color: var(--warn);
+  background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 10px; padding: 0.5em 0.7em; margin-top: 0.6em;
+}
+@media (max-width: 420px) {
+  .av-shape { grid-template-columns: 1fr; }
+  .sched-day { flex-direction: column; gap: 0.15em; align-items: flex-start; }
+}
+
+.book-offline { font-size: 0.75rem; color: var(--muted); margin: 0.6rem 0 0; }
+
+/* Marks a dashboard booking that came from in-app scheduling rather than Setmore. */
+.booked-native-chip {
+  font-size: 0.6rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--primary-bright); background: var(--primary-soft);
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.3);
+  border-radius: 999px; padding: 0.1em 0.5em; white-space: nowrap;
+}
