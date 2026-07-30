@@ -9096,9 +9096,22 @@ body.live-log-mode #screen-client .header-right { display: none; }
 .water-goal-note { margin: 0.4em 0 0; font-size: 0.76rem; }
 .target-split-note { margin: 0.7em 0 0; font-size: 0.79rem; line-height: 1.5; }
 
+/* The week sheet. Borrows the coach chart's classes on purpose — same data,
+   same picture, so a conversation about last week has one reference. */
+.week-read { margin: 1.1em 0 0; font-size: 0.9rem; line-height: 1.5; }
+.week-bw { margin: 0.4em 0 0; font-size: 0.82rem; }
+.week-hint { margin: 0.9em 0 0; font-size: 0.75rem; }
+
 /* Week dots + today's score, tucked under the meters. */
 .food-hud-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.6em; }
-.food-week-dots { display: flex; gap: 4px; }
+/* A button now, since it opens the week — but it has to keep reading as a row
+   of dots, so everything a button brings with it is stripped back off. */
+.food-week-dots {
+  display: flex; gap: 4px; align-items: center;
+  background: none; border: 0; padding: 0.25em 0.15em; margin: -0.25em -0.15em;
+  cursor: pointer; border-radius: 6px;
+}
+.food-week-dots:hover { background: var(--surface-2); }
 .food-week-dot {
   width: 7px; height: 7px; border-radius: 50%;
   background: var(--surface-3); border: 1px solid var(--border);

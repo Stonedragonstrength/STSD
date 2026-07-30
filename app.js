@@ -21137,7 +21137,120 @@
       const label = d.perfect ? "perfect day" : d.logged ? `${d.score ?? "?"} out of 100` : "nothing logged";
       dots.push(`<span class="food-week-dot ${cls}" title="${escapeHtml(foodDateLabel(date))}: ${label}"></span>`);
     }
-    return `<div class="food-week-dots" role="img" aria-label="Last seven days">${dots.join("")}</div>`;
+    // The dots already stand for the week, so they are the way into it rather
+    // than another button competing for the same idea.
+    return `<button type="button" class="food-week-dots" id="food-week-btn"
+      aria-label="Last seven days. Open the week.">${dots.join("")}</button>`;
+  }
+
+  // -------- The week --------
+  // The athlete only ever sees one day at a time; the body answers to the week.
+  // Reads the same rollup the coach reads, so a conversation about "how was
+  // last week" is both of them looking at identical arithmetic, and borrows the
+  // coach chart's classes so it reads as one system rather than a second style.
+  function openFoodWeekSheet() {
+    openModal({
+      title: "This week",
+      body: `<div id="food-week-sheet"></div>`,
+      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
+    });
+    renderFoodWeek();
+  }
+
+  // Bodyweight across the same window. Needs two readings inside it — one
+  // weigh-in is a number, not a direction.
+  function bodyweightDeltaOver(progress, days) {
+    const start = addDaysISO(todayISO(), -(days - 1));
+    const rows = (progress?.bodyweightLog || [])
+      .filter((e) => e && e.date >= start && parseFloat(e.weightLb) > 0)
+      .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    if (rows.length < 2) return null;
+    const first = parseFloat(rows[0].weightLb);
+    const last = parseFloat(rows[rows.length - 1].weightLb);
+    return { delta: Math.round((last - first) * 10) / 10, from: rows[0].date };
+  }
+
+  function renderFoodWeek() {
+    const el = $("#food-week-sheet"); if (!el) return;
+    const client = state.clientData.program?.client;
+    const progress = state.clientData.progress;
+    const roll = nutritionRollup(client, progress, 7);
+
+    if (!roll.logged) {
+      el.innerHTML = `<p class="muted" style="margin-top:0">Nothing logged in the last seven days.
+        Log a couple of days and this fills in with how the week actually went.</p>`;
+      return;
+    }
+
+    const peak = Math.max(roll.calTarget * 1.4, ...roll.rows.map((r) => r.kcal), 1);
+    const targetPct = roll.calTarget ? (roll.calTarget / peak) * 100 : 0;
+    const off = roll.calTarget ? roll.avgKcal - roll.calTarget : 0;
+    // Averaged over logged days only: a blank day is a day they didn't tell us
+    // about, not a day they ate nothing, and averaging zeroes in would libel
+    // them. Same rule the coach's rollup follows.
+    // The stat tiles can show a low "on target" next to an average that lands,
+    // which looks like a contradiction until it's said out loud — and saying it
+    // is the whole reason the week is worth showing.
+    const onPct = Math.round((roll.onTarget / roll.logged) * 100);
+    const read = !roll.calTarget
+      ? `You averaged ${roll.avgKcal.toLocaleString()} kcal across the ${roll.logged} day${roll.logged === 1 ? "" : "s"} you logged.`
+      : Math.abs(off) <= roll.calTarget * ADH_ON
+        ? (onPct < 50
+          ? `You averaged ${roll.avgKcal.toLocaleString()} against ${roll.calTarget.toLocaleString()}. Individual days swung a long way either side, but the week itself lands, and the week is what your body answers to.`
+          : `You averaged ${roll.avgKcal.toLocaleString()} against ${roll.calTarget.toLocaleString()}. That lands, and steady days are what make it stick.`)
+        : `You averaged ${roll.avgKcal.toLocaleString()} against ${roll.calTarget.toLocaleString()}, about ${Math.abs(off).toLocaleString()} ${off > 0 ? "over" : "under"} a day.`;
+    const bw = bodyweightDeltaOver(progress, 7);
+
+    el.innerHTML = `
+      <div class="adh-stats">
+        <div class="adh-stat">
+          <div class="adh-stat-num">${roll.logged}<span class="adh-stat-of">/7</span></div>
+          <div class="adh-stat-lbl">days logged</div>
+        </div>
+        <div class="adh-stat">
+          <div class="adh-stat-num">${roll.avgKcal ? roll.avgKcal.toLocaleString() : "—"}</div>
+          <div class="adh-stat-lbl">avg kcal${roll.calTarget ? ` of ${roll.calTarget.toLocaleString()}` : ""}</div>
+        </div>
+        <div class="adh-stat">
+          <div class="adh-stat-num">${roll.avgProtein || "—"}<span class="adh-stat-of">g</span></div>
+          <div class="adh-stat-lbl">avg protein${roll.proTarget ? ` of ${roll.proTarget}` : ""}</div>
+        </div>
+        <div class="adh-stat">
+          <div class="adh-stat-num">${roll.calTarget ? onPct + "%" : "—"}</div>
+          <div class="adh-stat-lbl">on target</div>
+        </div>
+      </div>
+      <div class="adh-chart">
+        <div class="adh-cols" role="list">
+          ${roll.calTarget ? `<div class="adh-target-line" style="bottom:${targetPct.toFixed(1)}%"><span>${roll.splits ? "avg target" : "target"}</span></div>` : ""}
+          ${roll.rows.map((r) => {
+            const h = r.logged ? Math.max((r.kcal / peak) * 100, 2) : 0;
+            const label = r.logged ? `${Math.round(r.kcal).toLocaleString()} kcal` : "not logged";
+            return `<button type="button" role="listitem" class="adh-bar ${adhDayClass(r, r.calTarget)}"
+              data-weekday="${escapeHtml(r.date)}"
+              title="${escapeHtml(foodDateLabel(r.date))}${r.training ? " (training day)" : ""} · ${escapeHtml(label)}"
+              aria-label="${escapeHtml(foodDateLabel(r.date))}, ${escapeHtml(label)}">
+              <span class="adh-bar-fill" style="height:${h.toFixed(1)}%"></span>
+            </button>`;
+          }).join("")}
+        </div>
+        <div class="adh-dows" aria-hidden="true">
+          ${roll.rows.map((r) => `<span class="adh-dow${r.training ? " is-training" : ""}">${escapeHtml(
+            new Date(r.date + "T12:00:00").toLocaleDateString(undefined, { weekday: "narrow" }))}</span>`).join("")}
+        </div>
+      </div>
+      <p class="week-read">${escapeHtml(read)}</p>
+      ${bw ? `<p class="muted week-bw">Bodyweight ${bw.delta === 0 ? "hasn't moved" :
+        `is ${bw.delta > 0 ? "up" : "down"} ${Math.abs(bw.delta)} lb`} since ${escapeHtml(foodDateLabel(bw.from))}.</p>` : ""}
+      <p class="muted week-hint">Tap a day to open it.</p>`;
+
+    el.querySelectorAll("[data-weekday]").forEach((b) => {
+      b.addEventListener("click", () => {
+        _foodDate = b.dataset.weekday;
+        closeModal();
+        renderFoodDay();
+      });
+    });
   }
 
   // A row of cups you tap to fill. Tapping an empty one fills up to it, tapping
@@ -21285,6 +21398,7 @@
 
       <div class="food-more">
         <button type="button" id="food-targets-btn">Targets</button>
+        <button type="button" id="food-week-more">This week</button>
         ${savedCount ? `<button type="button" id="food-myfoods-btn">My foods <span class="myfoods-count">${savedCount}</span></button>` : ""}
         <button type="button" id="food-copy-yesterday">Copy yesterday</button>
       </div>`;
@@ -21322,6 +21436,10 @@
     const mf = $("#food-myfoods-btn");
     if (mf) mf.addEventListener("click", openMyFoodsSheet);
     $("#food-copy-yesterday").addEventListener("click", copyYesterday);
+    // Two ways in, one sheet: the dots for anyone who reads them as the week,
+    // the labelled button for anyone who doesn't.
+    $("#food-week-btn")?.addEventListener("click", openFoodWeekSheet);
+    $("#food-week-more").addEventListener("click", openFoodWeekSheet);
   }
 
   function copyYesterday() {
