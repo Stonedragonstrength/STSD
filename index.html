@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=cyc1" />
+  <link rel="stylesheet" href="styles.css?v=snap2" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -312,20 +312,12 @@
              the morning glance is for. renderIncomeCard() fills every
              .income-host; CSS shows exactly one. -->
         <div class="income-host income-host-rail"></div>
-
-        <!-- The standing arrangements the calendar is generated from. Settings
-             more than news, so everything but the regulars folds away. -->
-        <div class="card" id="overview-hub">
-          <div id="sched-series" class="sched-series"></div>
-          <details class="sched-hours">
-            <summary>
-              <span>Your hours</span>
-              <span class="sched-hours-line" id="sched-hours-line"></span>
-            </summary>
-            <div id="sched-summary" class="sched-summary"></div>
-            <button class="btn slim-btn btn-sm" id="btn-edit-availability">Edit availability</button>
-          </details>
-        </div>
+        <!-- Weekly regulars + "Your hours" used to sit here. Both are standing
+             arrangements the calendar is generated FROM, and the calendar beside
+             them already draws every session they produce — so the card restated
+             what was on screen. They live on the coach Profile now, next to the
+             Google connection, for the same reason it does: set once, then never
+             touched. -->
         </div>
       </div>
 
@@ -534,11 +526,28 @@
           <button class="tab" data-tab="archive">Archive</button>
         </div>
 
-        <!-- Profile -->
+        <!-- Profile. Opening an athlete used to land on an edit form, with
+             everything worth KNOWING about them spread over six other tabs. The
+             snapshot answers "how is this person doing" without a single tab
+             change; the form it replaced is folded away below, because a name
+             and a height get typed once and then never again. Built by
+             renderClientSnapshot(). -->
         <div class="tab-panel active" data-tab-panel="profile">
-          <div class="card profile-card">
+          <div id="client-snapshot"></div>
+          <!-- Everything below the snapshot is set-once admin, so it folds. The
+               .profile-card class stays on the <details> because setProfileLocked
+               keys its read-only styling off it. -->
+          <div class="card pref-card client-admin">
+          <details class="pref-fold profile-card" id="cprof-fold-details">
+            <summary>
+              <span class="pref-fold-ico">✎</span>
+              <span class="pref-fold-text">
+                <span class="pref-fold-title">Details</span>
+                <span class="pref-fold-sub">Name, age, height, membership and rate</span>
+              </span>
+              <span class="pref-fold-chev">▸</span>
+            </summary>
             <div class="profile-card-head">
-              <h3>Profile</h3>
               <div class="profile-card-actions">
                 <span class="saved-flag" id="prof-saved">Saved ✓</span>
                 <button class="btn btn-ghost btn-sm" id="btn-profile-edit">✎ Edit</button>
@@ -579,6 +588,9 @@
                 <input type="checkbox" id="prof-autorenew" /> 🔁 Auto-renew
               </label>
             </div>
+            <!-- Goals and coach notes are EDITED here and READ on the snapshot,
+                 which is where they matter: "no overhead press" is worth seeing
+                 before you open their program, not after opening a fold. -->
             <div class="profile-notes-grid">
               <label>Overall goals
                 <textarea id="prof-goals" rows="2" placeholder="e.g. Add 30 lb to squat, build lean mass, cut 10 lb"></textarea>
@@ -587,17 +599,38 @@
                 <textarea id="prof-notes" rows="2" placeholder="Injury history, preferences, schedule constraints…"></textarea>
               </label>
             </div>
-          </div>
-          <div class="invite-code-bar">
-            <span class="invite-code-bar-label">🔑 Invite</span>
-            <button class="btn btn-primary btn-sm" id="btn-email-invite" title="Email an invite link that fills the code in automatically">✉️ Email invite</button>
-            <button class="btn btn-ghost btn-sm" id="btn-show-invite">Show code</button>
-            <span class="invite-code-display hidden" id="invite-code-display">XXXX-XXXX</span>
-            <button class="btn btn-ghost btn-sm hidden" id="btn-copy-invite">Copy</button>
-            <button class="btn btn-ghost btn-sm hidden" id="btn-regen-invite" title="Regenerate code">↻</button>
-          </div>
-          <div class="profile-danger-row">
-            <button class="btn btn-danger btn-sm" id="btn-delete-client">🗑 Delete athlete</button>
+          </details>
+          <details class="pref-fold" id="cprof-fold-invite">
+            <summary>
+              <span class="pref-fold-ico">🔑</span>
+              <span class="pref-fold-text">
+                <span class="pref-fold-title">Invite code</span>
+                <span class="pref-fold-sub" id="cprof-invite-sub">How they claim their account</span>
+              </span>
+              <span class="pref-fold-chev">▸</span>
+            </summary>
+            <div class="invite-code-bar">
+              <span class="invite-code-bar-label">🔑 Invite</span>
+              <button class="btn btn-primary btn-sm" id="btn-email-invite" title="Email an invite link that fills the code in automatically">✉️ Email invite</button>
+              <button class="btn btn-ghost btn-sm" id="btn-show-invite">Show code</button>
+              <span class="invite-code-display hidden" id="invite-code-display">XXXX-XXXX</span>
+              <button class="btn btn-ghost btn-sm hidden" id="btn-copy-invite">Copy</button>
+              <button class="btn btn-ghost btn-sm hidden" id="btn-regen-invite" title="Regenerate code">↻</button>
+            </div>
+          </details>
+          <details class="pref-fold" id="cprof-fold-danger">
+            <summary>
+              <span class="pref-fold-ico">⚠️</span>
+              <span class="pref-fold-text">
+                <span class="pref-fold-title">Remove athlete</span>
+                <span class="pref-fold-sub">Deletes them and everything they've logged</span>
+              </span>
+              <span class="pref-fold-chev">▸</span>
+            </summary>
+            <div class="profile-danger-row">
+              <button class="btn btn-danger btn-sm" id="btn-delete-client">🗑 Delete athlete</button>
+            </div>
+          </details>
           </div>
         </div>
 
@@ -751,6 +784,23 @@
           <input type="file" id="import-data-input" accept="application/json,.json" hidden />
         </div>
         <p class="muted backup-note" id="backup-last"></p>
+
+        <!-- Scheduling: the standing arrangements the Overview calendar is
+             generated from. Off the Overview since 2026-07-30 — the calendar
+             already drew every session these produce. Extend and End a series
+             live nowhere else, which is why the list moved rather than went. -->
+        <h3 class="coach-profile-section">Scheduling</h3>
+        <div class="card" id="coach-sched-hub">
+          <div id="sched-series" class="sched-series"></div>
+          <details class="sched-hours">
+            <summary>
+              <span>Your hours</span>
+              <span class="sched-hours-line" id="sched-hours-line"></span>
+            </summary>
+            <div id="sched-summary" class="sched-summary"></div>
+            <button class="btn slim-btn btn-sm" id="btn-edit-availability">Edit availability</button>
+          </details>
+        </div>
 
         <!-- Google Calendar lives here, not on the Schedule card: it is set up
              once and then never touched, so a permanent row about it on the
@@ -1191,7 +1241,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=cyc1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=cyc4"></script>
+  <script src="app.js?v=snap2"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

@@ -3144,12 +3144,13 @@
     if (cnt) cnt.textContent = String(state.trainerData.clients?.length || 0);
     renderCoachAvatarPicker();
     renderThemePicker($("#coach-theme-picker"), "coach");
-    // The Google row lives on this page now, so it has to be drawn here too —
-    // Overview's refresh is no longer guaranteed to have run first.
-    renderGoogleCard();
-    // Same reason: on a phone this page is where expected income lives, so the
-    // figures have to be current whether or not Overview drew them first.
-    renderIncomeCard();
+    // Scheduling (hours + weekly regulars), the Google row and — on a phone —
+    // expected income all live on this page, so they have to be drawn here:
+    // Overview's refresh is no longer guaranteed to have run first. Paint from
+    // what's cached, then go and get the current bookings; without the refresh
+    // the regulars list is empty for a coach who lands here before Overview.
+    renderCoachSchedule();
+    refreshCoachSchedule();
     renderBackupNote();
   }
 
@@ -4612,6 +4613,7 @@
     $("#client-meta-display").textContent = clientMetaText(c);
     renderCoachCycleChip();
     setTab("profile");
+    renderClientSnapshot();
     renderProfile();
     renderWeeks();
     renderDiet();
@@ -4640,12 +4642,221 @@
     if (!changed) return;
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
     if (state.currentClientId === c.id) {
+      // The snapshot is built entirely out of importedProgress, so it is stale
+      // by definition until this lands. Redraw it first — it's the panel the
+      // coach is looking at while the pull is in flight.
+      renderClientSnapshot();
       renderClientLogs();
       renderCoachCalendar();
       renderCoachPRs();
       renderDiet(); // food log and body weight both live on the Nutrition tab
     }
   }
+  // -------- Coach: the athlete snapshot --------
+  // Opening an athlete used to land on an edit form, and answering "how is this
+  // person actually doing" meant visiting four tabs and reading three of them
+  // sideways. Every tile here is a number the coach already had, just never in
+  // one place — and every tile is a door, so the tab you wanted is one tap away
+  // instead of a hunt. Nothing here is new data; it is the same objects the
+  // other tabs render, summarised.
+  //
+  // Deliberately NOT here: anything from the inbox. Purchase requests, unread
+  // messages and form checks have one home and it is the header pill; a second
+  // copy on this page would be the "blurbs on coach cards" mistake again.
+  const SNAP_QUIET_DAYS = 10; // no activity for this long dims the last-session tile
+
+  function snapDaysAgo(iso) {
+    if (!iso) return null;
+    return Math.round((new Date(todayISO() + "T12:00:00") - new Date(iso + "T12:00:00")) / 86400000);
+  }
+  function snapAgoLabel(days) {
+    if (days === null) return "";
+    if (days <= 0) return "Today";
+    if (days === 1) return "Yesterday";
+    if (days < 7) return days + " days ago";
+    if (days < 14) return "Last week";
+    return Math.floor(days / 7) + " weeks ago";
+  }
+  // The day a completion belongs to, so the tile can say WHICH session it was
+  // rather than just when. Walks program weeks and one-offs alike.
+  function snapLastSession(c) {
+    const ip = c.importedProgress || {};
+    const dc = ip.dayCompletions || {};
+    let best = null; // { date, dayId }
+    Object.entries(dc).forEach(([dayId, dates]) => (Array.isArray(dates) ? dates : []).forEach((d) => {
+      if (d && (!best || d > best.date)) best = { date: d, dayId };
+    }));
+    if (!best) return null;
+    let name = "";
+    [...(c.weeks || []), { days: c.oneOffDays || [] }].forEach((w) => (w.days || []).forEach((d) => {
+      if (d.id === best.dayId) name = d.name || "";
+    }));
+    (ip.athleteDays || []).forEach((d) => { if (d.id === best.dayId) name = d.name || ""; });
+    return { ...best, name, days: snapDaysAgo(best.date) };
+  }
+  // Completions inside the current Mon-start week, against how many days the
+  // athlete's program actually holds in a week (not a hardcoded 7).
+  function snapThisWeek(c) {
+    const ip = c.importedProgress || {};
+    const from = weekStartISO(todayISO());
+    const done = completionDateList(ip).filter((d) => d >= from).length;
+    const weeks = (c.weeks || []).filter((w) => (w.days || []).length);
+    const per = weeks.length
+      ? Math.round(weeks.reduce((n, w) => n + w.days.length, 0) / weeks.length) : 0;
+    return { done, per };
+  }
+  function snapTileHtml(o) {
+    const tag = o.go ? "button" : "div";
+    return `<${tag} type="button" class="snap-tile${o.dim ? " is-dim" : ""}${o.go ? " is-door" : ""}"${o.go ? ` data-go="${escapeHtml(o.go)}"` : ""}${o.title ? ` title="${escapeHtml(o.title)}"` : ""}>
+      <span class="snap-in">
+        <span class="sr-lbl">${escapeHtml(o.label)}</span>
+        <span class="snap-val"><span class="sr-val">${o.value}</span>${o.unit ? `<span class="sr-unit">${escapeHtml(o.unit)}</span>` : ""}</span>
+        ${o.sub ? `<span class="snap-sub">${o.sub}</span>` : ""}
+      </span>
+    </${tag}>`;
+  }
+  function renderClientSnapshot() {
+    const host = $("#client-snapshot");
+    if (!host) return;
+    const c = currentClient();
+    if (!c) { host.innerHTML = ""; return; }
+    const ip = c.importedProgress || {};
+
+    // A brand-new athlete has nothing to summarise, and two empty tiles say
+    // less than the two things that actually need doing. The snapshot only
+    // earns its space once there is something in it.
+    if (!(c.weeks || []).some((w) => (w.days || []).length) && !lastActivityISO(ip)) {
+      host.innerHTML = `
+        <div class="card snap-card snap-fresh">
+          <p class="snap-fresh-lead"><b>${escapeHtml(c.name || "This athlete")}</b> hasn't started yet. Two things get them going:</p>
+          <div class="snap-fresh-acts">
+            <button type="button" class="btn btn-primary btn-sm slim-btn" data-fresh="program">📋 Build their program</button>
+            <button type="button" class="btn btn-ghost btn-sm slim-btn" data-fresh="invite">🔑 Send their invite</button>
+          </div>
+        </div>`;
+      host.querySelector('[data-fresh="program"]')?.addEventListener("click", () => setTab("program"));
+      host.querySelector('[data-fresh="invite"]')?.addEventListener("click", () => {
+        const fold = $("#cprof-fold-invite");
+        if (fold) { fold.open = true; fold.scrollIntoView({ behavior: "smooth", block: "center" }); }
+      });
+      return;
+    }
+
+    const tiles = [];
+
+    // 1. Last session — the first question anyone opening an athlete has.
+    const last = snapLastSession(c);
+    if (last) {
+      const rdy = dayReadiness(ip, last.dayId);
+      const moods = dayMoods(ip, last.dayId);
+      tiles.push(snapTileHtml({
+        label: "Last session", value: escapeHtml(snapAgoLabel(last.days)),
+        sub: `${escapeHtml(last.name || "Session")}${rdy ? " " + readinessChipHtml(rdy, true) : ""}${moods.length ? " " + moodChipsHtml(moods, true) : ""}`,
+        dim: last.days >= SNAP_QUIET_DAYS, title: last.date,
+      }));
+    } else {
+      tiles.push(snapTileHtml({ label: "Last session", value: "—", sub: "Nothing logged yet", dim: true }));
+    }
+
+    // 2. This week, against their own program's shape.
+    const wk = snapThisWeek(c);
+    tiles.push(snapTileHtml({
+      label: "This week", value: String(wk.done), unit: wk.per ? "of " + wk.per : "sessions",
+      sub: wk.per
+        ? `<span class="snap-pips">${Array.from({ length: wk.per }, (_, i) =>
+            `<span class="snap-pip${i < wk.done ? " on" : ""}"></span>`).join("")}</span>`
+        : "",
+      go: "program",
+    }));
+
+    // 3. Sessions left. Dimmed at zero rather than shouted — the inbox already
+    //    raises "out of sessions" as something needing the coach.
+    const bank = sessionBankSummary(c);
+    if (bank.granted || bank.used) {
+      tiles.push(snapTileHtml({
+        label: "Sessions", value: String(bank.remaining), unit: "left",
+        sub: bank.pendingCount ? `${bank.pendingCount} package waiting` : `${bank.used} used`,
+        dim: bank.remaining <= 0, go: "sessions",
+      }));
+    }
+
+    // 4. Eating, last 7 days, judged against the target that applied each day.
+    const roll = nutritionRollup(c, ip, 7);
+    if (roll.logged) {
+      const pct = roll.calTarget ? Math.round((roll.avgKcal / roll.calTarget) * 100) : 0;
+      tiles.push(snapTileHtml({
+        label: "Eating · 7d", value: roll.avgKcal.toLocaleString(),
+        unit: roll.calTarget ? "of " + roll.calTarget.toLocaleString() : "kcal avg",
+        sub: `${roll.logged}/7 days logged${roll.proTarget ? ` · protein ${roll.avgProtein}/${roll.proTarget}g` : ""}`,
+        dim: !roll.calTarget, title: pct ? pct + "% of target" : "", go: "diet",
+      }));
+    }
+
+    // 5. Body weight, with the direction of travel. The number on its own says
+    //    nothing; "down 4 lb over a month" is the whole point of tracking it.
+    const bwLog = [...(ip.bodyweightLog || [])].filter((b) => isFinite(parseFloat(b.weightLb)));
+    if (bwLog.length) {
+      bwLog.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      const now = parseFloat(bwLog[bwLog.length - 1].weightLb);
+      const monthAgo = addDaysISO(todayISO(), -30);
+      const then = bwLog.filter((b) => b.date <= monthAgo).pop() || bwLog[0];
+      const delta = Math.round((now - parseFloat(then.weightLb)) * 10) / 10;
+      const arrow = Math.abs(delta) < 0.1 ? "neutral" : delta < 0 ? "down" : "up";
+      tiles.push(snapTileHtml({
+        label: "Body weight", value: String(Math.round(now * 10) / 10), unit: "lb",
+        sub: bwLog.length > 1
+          ? `<span class="sr-trend ${arrow}">${arrow === "neutral" ? "▬" : delta < 0 ? "▼" : "▲"} ${Math.abs(delta)}</span> since ${escapeHtml(snapAgoLabel(snapDaysAgo(then.date)).toLowerCase())}`
+          : "one weigh-in",
+        go: "diet",
+      }));
+    }
+
+    // 6. Heaviest lift on record, from the coach's PR board or their own logs.
+    const pr = highestPR(c, ip);
+    if (pr) {
+      tiles.push(snapTileHtml({
+        // prWeightLabel, not "N lb" — a dumbbell lift reads "80s", never "80 lb".
+        label: "Top lift", value: prWeightLabel(pr.name, pr.weight),
+        sub: escapeHtml(pr.name), go: "prs",
+      }));
+    }
+
+    // 7. Where they are in the program, and a door straight into that day's
+    //    editor — the single most common reason to open an athlete at all.
+    const cur = athleteCurrentDay(c);
+    let curDay = null;
+    if (cur) {
+      const w = (c.weeks || []).find((x) => x.id === cur.weekId);
+      const d = (w?.days || []).find((x) => x.id === cur.dayId);
+      if (w && d) curDay = { week: w, day: d };
+    }
+    if (curDay) {
+      tiles.push(snapTileHtml({
+        label: "Up next", value: escapeHtml(curDay.day.name || "Day"),
+        sub: escapeHtml(curDay.week.label || ""), go: "editday",
+        title: "Open this day in the program editor",
+      }));
+    }
+
+    const notes = String(c.notes || "").trim();
+    const goals = String(c.goals || "").trim();
+    host.innerHTML = `
+      <div class="card snap-card">
+        <div class="snap-grid">${tiles.join("")}</div>
+        ${notes || goals ? `<div class="snap-notes">
+          ${goals ? `<p class="snap-note"><span class="snap-note-ico">🎯</span><span>${escapeHtml(goals)}</span></p>` : ""}
+          ${notes ? `<p class="snap-note is-coach"><span class="snap-note-ico">📌</span><span>${escapeHtml(notes)}</span></p>` : ""}
+        </div>` : ""}
+      </div>`;
+
+    host.querySelectorAll("[data-go]").forEach((el) => el.addEventListener("click", () => {
+      const to = el.dataset.go;
+      if (to === "editday" && curDay) { editClientDay(c.id, curDay.week.id, curDay.day.id); return; }
+      setTab(to);
+      $(".tabs")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }));
+  }
+
   function clientMetaText(c) {
     const parts = [];
     if (c.age) parts.push(`${c.age} yrs`);
@@ -4800,6 +5011,8 @@
     renderIncomeCard();
     $("#client-name-display").textContent = c.name || "(unnamed)";
     $("#client-meta-display").textContent = clientMetaText(c);
+    // Goals, notes, membership and rate all read on the snapshot above.
+    renderClientSnapshot();
     flashSaved($("#prof-saved"));
     setProfileLocked(true);
   }
@@ -24563,9 +24776,11 @@
         title: "Welcome, coach", text: "A quick lap around the app, about a minute. Skip any time. This nav is home base." },
       { sel: "#dash-cal-modes",
         title: "Day, week, month", text: "One calendar at three distances. Day opens on who you're training and what they logged, Week is the next seven at a glance, Month is the whole picture. Tap any day at any zoom to open it, or ＋ Book to add someone." },
-      { sel: "#overview-hub",
-        title: "Standing arrangements", text: "Your weekly regulars, what's coming up after today, the hours athletes can book, and any slots you've posted." },
-      { sel: "#btn-coach-inbox",
+      // Moved off the Overview with the card it used to point at. Kept as a
+      // step because Extend and End-a-series live nowhere else in the app.
+      { sel: "#coach-sched-hub", go: () => openCoachProfile(),
+        title: "Standing arrangements", text: "Your weekly regulars and the hours athletes can book. Set these once: the calendar on Overview draws every session they produce, so this page is only for changing them." },
+      { sel: "#btn-coach-inbox", go: () => showCoachOverview(),
         title: "What needs you", text: "Purchase requests, form videos to watch, athletes out of sessions or gone quiet, and everything your athletes have logged. The number is how many are waiting on you." },
       { sel: "#client-grid", go: () => renderDashboard(),
         title: "Your athletes", text: "One card per athlete. Tap a card for their profile, program, nutrition, PRs and sessions." },

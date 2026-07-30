@@ -3044,7 +3044,7 @@ input.trial-input {
 .dash-cal-day-name { overflow: hidden; text-overflow: ellipsis; flex: 1; }
 .dash-cal-more { font-size: 0.6rem; color: var(--muted); padding: 0 0.2em; }
 
-#overview-hub { min-width: 0; }
+#coach-sched-hub { min-width: 0; }
 
 /* Permanent notification log — small scrolling box, ~3 rows visible at once */
 .notif-log-scroll {
@@ -11362,11 +11362,11 @@ body.scroll-locked {
 /* Sections inside the schedule card: the weekly regulars, then the hours behind
    a fold. Each gets a hairline above it — never above the first one, where a
    border reads as a stray line with a gap over it. */
-#overview-hub .sched-series { border-top: 1px solid var(--border); padding-top: 0.7rem; }
-#overview-hub .sched-series:empty { border-top: 0; padding-top: 0; }
-#overview-hub > :first-child { border-top: 0; padding-top: 0; }
-#overview-hub .sched-hours { margin-top: 0.9rem; }
-#overview-hub .sched-hours .slim-btn { margin-top: 0.6rem; }
+#coach-sched-hub .sched-series { border-top: 1px solid var(--border); padding-top: 0.7rem; }
+#coach-sched-hub .sched-series:empty { border-top: 0; padding-top: 0; }
+#coach-sched-hub > :first-child { border-top: 0; padding-top: 0; }
+#coach-sched-hub .sched-hours { margin-top: 0.9rem; }
+#coach-sched-hub .sched-hours .slim-btn { margin-top: 0.6rem; }
 
 /* Expected income has one home per width. Phone and tablet: the coach Profile,
    because the Overview is a single stack there and money is not what the
@@ -12025,3 +12025,96 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
 .bw-cyc-key > .bw-cyc-swatch:first-child { margin-left: 0; }
 .bw-cyc-swatch.period { background: rgba(224, 86, 107, 0.45); }
 .bw-cyc-swatch.late   { background: rgba(155, 110, 232, 0.4); }
+
+/* ============ Coach: the athlete snapshot ============
+   The landing panel when a coach opens an athlete. Same racing-stat language as
+   the athlete's own overview rows (skew, left accent, glow on the number), but
+   laid out as a grid: these are read side by side, not scanned down a column.
+   Every tile with a `go` is a door into the tab that owns it. */
+.snap-card { margin-bottom: 1rem; }
+/* auto-FILL, not auto-fit: a fresh athlete has two tiles, and auto-fit would
+   stretch those two across the whole width of a desktop card. Empty tracks keep
+   every tile the same size whether there are two of them or seven. */
+.snap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
+  gap: 0.45rem;
+}
+.snap-tile {
+  transform: skewX(-15deg);
+  border-radius: 5px;
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.28);
+  border-left: 3px solid var(--primary-bright);
+  background:
+    linear-gradient(100deg, rgba(var(--primary-rgb), 0.3) 0%, rgba(var(--primary-rgb), 0.07) 50%, rgba(var(--primary-rgb), 0) 85%),
+    linear-gradient(180deg, var(--surface-2), var(--surface));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+  margin: 0 3px;
+  padding: 0;
+  min-width: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+/* Un-skew the contents, exactly as .ov-stat-row .sr-in does. */
+.snap-in {
+  transform: skewX(15deg);
+  display: flex; flex-direction: column; gap: 0.12em;
+  padding: 0.5em 1.05em 0.55em;
+  min-width: 0;
+}
+.snap-val { display: flex; align-items: baseline; gap: 0.1em; min-width: 0; }
+/* The value can be a day name ("Upper Body A"), not just a number, so it has to
+   be allowed to shrink and clip rather than blow the grid track open. */
+.snap-tile .sr-val {
+  font-size: 1.1rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.snap-sub {
+  font-size: 0.68rem; color: var(--muted); line-height: 1.4;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.snap-sub .rdy-chip, .snap-sub .mood-chip { vertical-align: -0.15em; }
+/* Quiet athletes, zeroed banks, targets never set: present but not shouting. */
+.snap-tile.is-dim {
+  border-color: var(--border); border-left-color: var(--muted);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+}
+.snap-tile.is-dim .sr-val { color: var(--text-soft); text-shadow: none; }
+.snap-tile.is-door { cursor: pointer; }
+.snap-tile.is-door:hover {
+  border-color: var(--primary-bright);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 14px rgba(var(--primary-rgb), 0.22);
+}
+/* One pip per day the program holds in a week, filled as they're completed. */
+.snap-pips { display: inline-flex; gap: 3px; vertical-align: middle; }
+.snap-pip {
+  width: 13px; height: 5px; border-radius: 2px;
+  background: var(--surface-3); border: 1px solid var(--border);
+}
+.snap-pip.on { background: var(--primary-bright); border-color: var(--primary-bright); }
+
+/* Goals and coach notes, read-only. "No overhead press" belongs where you see
+   it before opening their program, not inside the fold where it gets typed. */
+.snap-notes {
+  margin-top: 0.85rem; padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 0.45em;
+}
+.snap-note {
+  margin: 0; display: flex; gap: 0.55em;
+  font-size: 0.83rem; line-height: 1.5; color: var(--text-soft);
+}
+.snap-note-ico { flex: none; line-height: 1.5; }
+.snap-note.is-coach { color: var(--text); }
+
+/* The set-once admin below the snapshot, folded. Reuses the athlete Profile's
+   fold chrome so both sides of the app read as one system. */
+.client-admin { padding-top: 0.35rem; padding-bottom: 0.35rem; }
+.client-admin .profile-card-head { border-bottom: 0; margin-bottom: 0.2em; justify-content: flex-end; }
+.client-admin .invite-code-bar, .client-admin .profile-danger-row { margin: 0.2em 0 0.9em; }
+
+/* A brand-new athlete: no numbers to show, so show the two next steps instead. */
+.snap-fresh-lead { margin: 0 0 0.8em; font-size: 0.9rem; color: var(--text-soft); }
+.snap-fresh-acts { display: flex; flex-wrap: wrap; gap: 0.5em; }
