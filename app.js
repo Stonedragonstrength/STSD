@@ -3075,6 +3075,7 @@
     // the Overview page.
     renderDashboard();
     showCoachOverview();
+    refreshCycleShares(); // only athletes who opted in come back from this
     // First time on this device: one guided lap. Skippable, never repeats.
     if (!localStorage.getItem(KEY_TOUR_COACH)) {
       setTimeout(() => { if (state.mode === "trainer") startTour(coachTourSteps(), KEY_TOUR_COACH); }, 800);
@@ -4609,6 +4610,7 @@
     updateHeaderBreadcrumb(c);
     $("#client-name-display").textContent = c.name;
     $("#client-meta-display").textContent = clientMetaText(c);
+    renderCoachCycleChip();
     setTab("profile");
     renderProfile();
     renderWeeks();
@@ -9576,6 +9578,16 @@
   const NUT_RUN_DAYS = 5;     // consecutive on-target days worth a well done
   const NUT_ANCHOR_DAYS = 45; // lookback used only to pin a stable start date
 
+  // True when this athlete shares their cycle and is in the stretch where
+  // eating more is the expected thing. Only ever true for athletes who opted
+  // in — a private athlete's signals are unchanged, because we know nothing.
+  function cycleSuppressesAppetiteSignal(client) {
+    const share = client?.id ? coachCycleShare(client.id) : null;
+    if (!share) return false;
+    const info = cyclePhaseOn(share.periods, todayISO());
+    return !!info && (info.id === "late" || info.id === "luteal");
+  }
+
   function nutritionSignals(client) {
     const progress = client?.importedProgress;
     const log = progress?.foodLog || {};
@@ -9622,7 +9634,10 @@
       if (anchor) out.push({ type: "under", anchor, tone: "warn", icon: lineIco("lu:salad"),
         text: `eating well under target · ${roll.avgKcal.toLocaleString()} vs ${roll.calTarget.toLocaleString()} kcal` });
     } else if (hit.filter(over).length >= NUT_BAD_DAYS) {
-      const anchor = runStart(over);
+      // Appetite climbs in the back half of a cycle. Where the athlete shares
+      // their phase, don't hand the coach "eating over target" on the days it
+      // is most expected — that is a normal week being reported as a problem.
+      const anchor = cycleSuppressesAppetiteSignal(client) ? null : runStart(over);
       if (anchor) out.push({ type: "over", anchor, tone: "warn", icon: lineIco("lu:pizza"),
         text: `eating over target · ${roll.avgKcal.toLocaleString()} vs ${roll.calTarget.toLocaleString()} kcal` });
     }
@@ -15269,6 +15284,538 @@
       (compact ? "" : `<span class="rdy-chip-txt">${escapeHtml(lvl.label)}</span>`) + `</span>`;
   }
 
+  // ================= Cycle tracking =================
+  // Opt-in from Profile, private by default, and deliberately not gated on a
+  // gender field: the target calculator already asks for sex, so the toggle is
+  // simply surfaced more loudly when that answer is female. Anyone can switch
+  // it on, and nobody has to state an identity to reach a feature.
+  //
+  // Two rules run through everything below:
+  //   1. DESCRIPTIVE, NEVER PRESCRIPTIVE. The evidence for training by phase is
+  //      weak and mixed. This shows where someone is and what they logged. It
+  //      never tells them (or their coach) to deload, push, or change anything.
+  //   2. PRIVATE MEANS PRIVATE. The data lives in its own table with no coach
+  //      policy at all, and the sharing level is enforced server-side by the
+  //      cycle_shares_for_coach RPC — not by which parts we choose to render.
+  const KEY_CYCLE = "trainerpro_cycle_v1";
+  const CYCLE_DEFAULT_LEN = 28;
+  const CYCLE_DEFAULT_BLEED = 5;
+  const CYCLE_MIN_LEN = 15;      // a gap outside these bounds isn't one cycle,
+  const CYCLE_MAX_LEN = 60;      // so it never drags the average around
+  const CYCLE_LATE_DAYS = 5;     // "late luteal" — where water weight shows up
+  const CYCLE_GAP_DAYS = 60;     // no period this long: a quiet word, athlete-only
+  const CYCLE_SHARES = [
+    { id: "private", emoji: "🔒", label: "Private",
+      hint: "Only you. Your coach sees nothing at all." },
+    { id: "phase",   emoji: "🌙", label: "Phase only",
+      hint: "Your coach sees the day and the phase. Never flow, symptoms or notes." },
+    { id: "all",     emoji: "🤝", label: "Everything",
+      hint: "Your coach also sees flow and anything you write down." },
+  ];
+  const CYCLE_PHASES = {
+    period:     { id: "period",     emoji: "🩸", label: "Period",      color: "#e0566b" },
+    follicular: { id: "follicular", emoji: "🌱", label: "Follicular",  color: "#3fb27f" },
+    ovulation:  { id: "ovulation",  emoji: "✨", label: "Ovulation",   color: "#e8b33c" },
+    luteal:     { id: "luteal",     emoji: "🌗", label: "Luteal",      color: "#6f86e8" },
+    late:       { id: "late",       emoji: "🌘", label: "Late luteal", color: "#9b6ee8" },
+    overdue:    { id: "overdue",    emoji: "❔", label: "Overdue",     color: "#8b90a0" },
+  };
+  const CYCLE_FLOWS = [
+    { id: "light",  label: "Light" },
+    { id: "medium", label: "Medium" },
+    { id: "heavy",  label: "Heavy" },
+  ];
+
+  // -------- Cycle math (pure — no DOM, no state) --------
+  function cycleDaysBetween(aISO, bISO) {
+    return Math.round((new Date(bISO + "T12:00:00") - new Date(aISO + "T12:00:00")) / 86400000);
+  }
+  function cycleSortedPeriods(list) {
+    return (Array.isArray(list) ? list : [])
+      .filter((p) => p && /^\d{4}-\d{2}-\d{2}$/.test(p.start))
+      .slice().sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
+  }
+  function cycleStarts(list) {
+    return [...new Set(cycleSortedPeriods(list).map((p) => p.start))];
+  }
+  // Gaps between consecutive starts. Anything wildly out of range is dropped:
+  // irregularity is common in athletes, and one 90-day gap shouldn't quietly
+  // become part of "your average cycle".
+  function cycleLengths(list) {
+    const starts = cycleStarts(list);
+    const out = [];
+    for (let i = 1; i < starts.length; i++) {
+      const n = cycleDaysBetween(starts[i - 1], starts[i]);
+      if (n >= CYCLE_MIN_LEN && n <= CYCLE_MAX_LEN) out.push(n);
+    }
+    return out;
+  }
+  function cycleAvgLength(list) {
+    const lens = cycleLengths(list).slice(-3);
+    if (!lens.length) return null;
+    return Math.round(lens.reduce((a, b) => a + b, 0) / lens.length);
+  }
+  function cycleLenOrDefault(list) { return cycleAvgLength(list) || CYCLE_DEFAULT_LEN; }
+  // Fewer than two measured cycles is a guess, and it gets labelled as one.
+  function cycleLearning(list) { return cycleLengths(list).length < 2; }
+  function cycleBleedLength(list) {
+    const spans = cycleSortedPeriods(list)
+      .filter((p) => p.end && p.end >= p.start)
+      .map((p) => cycleDaysBetween(p.start, p.end) + 1)
+      .filter((n) => n >= 1 && n <= 12)
+      .slice(-3);
+    if (!spans.length) return CYCLE_DEFAULT_BLEED;
+    return Math.round(spans.reduce((a, b) => a + b, 0) / spans.length);
+  }
+  // Where a date sits in the cycle: day number, phase, and how long the phase
+  // model thinks the cycle is. null when there is nothing to measure from.
+  function cyclePhaseOn(list, iso) {
+    const starts = cycleStarts(list);
+    if (!starts.length) return null;
+    const from = [...starts].reverse().find((s) => s <= iso);
+    if (!from) return null;                        // date predates anything logged
+    const day = cycleDaysBetween(from, iso) + 1;   // day 1 = first day of bleeding
+    if (day > CYCLE_MAX_LEN * 2) return null;      // stale history, not a live cycle
+    const len = cycleLenOrDefault(list);
+    const rec = cycleSortedPeriods(list).find((p) => p.start === from);
+    const bleed = rec?.end && rec.end >= rec.start
+      ? Math.min(12, cycleDaysBetween(rec.start, rec.end) + 1)
+      : cycleBleedLength(list);
+    // Anchor ovulation to the END of the cycle, not the start: the luteal phase
+    // is the stable ~14 days: it's the follicular phase that stretches.
+    const ov = Math.max(bleed + 1, len - 14);
+    let phase;
+    if (day <= bleed) phase = CYCLE_PHASES.period;
+    else if (day >= ov - 1 && day <= ov + 1) phase = CYCLE_PHASES.ovulation;
+    else if (day < ov - 1) phase = CYCLE_PHASES.follicular;
+    else if (day > len) phase = CYCLE_PHASES.overdue;
+    else if (day > len - CYCLE_LATE_DAYS) phase = CYCLE_PHASES.late;
+    else phase = CYCLE_PHASES.luteal;
+    return { ...phase, day, len, bleed, start: from, learning: cycleLearning(list) };
+  }
+  function cycleNextStart(list) {
+    const starts = cycleStarts(list);
+    if (!starts.length) return null;
+    return addDaysISO(starts[starts.length - 1], cycleLenOrDefault(list));
+  }
+  // Days since the last logged start. Missing periods are a genuine red flag in
+  // a hard-training athlete (low energy availability), which is exactly why this
+  // is computed for the athlete's eyes only and never travels to the coach.
+  function cycleGapConcern(list, iso) {
+    const starts = cycleStarts(list);
+    if (!starts.length) return null;
+    const since = starts[starts.length - 1];
+    const gap = cycleDaysBetween(since, iso || todayISO());
+    return gap >= CYCLE_GAP_DAYS ? { gap, since } : null;
+  }
+  // Shaded bands for the body-comp charts. Two kinds, because those are the two
+  // the scale actually reacts to: the bleed itself, and the days before the next
+  // one. Runs off logged starts and, for the current cycle, the prediction.
+  function cycleBands(list) {
+    const starts = cycleStarts(list);
+    if (!starts.length) return [];
+    const len = cycleLenOrDefault(list);
+    const bands = [];
+    starts.forEach((s, i) => {
+      const rec = cycleSortedPeriods(list).find((p) => p.start === s);
+      const bleed = rec?.end && rec.end >= rec.start
+        ? Math.min(12, cycleDaysBetween(s, rec.end) + 1)
+        : cycleBleedLength(list);
+      bands.push({ kind: "period", from: s, to: addDaysISO(s, bleed - 1) });
+      const next = starts[i + 1] || addDaysISO(s, len);
+      // Only shade a run-up that actually belongs to this cycle — a six-month
+      // gap in the log shouldn't paint a phantom band across half the chart.
+      if (cycleDaysBetween(s, next) <= CYCLE_MAX_LEN) {
+        bands.push({ kind: "late", from: addDaysISO(next, -CYCLE_LATE_DAYS), to: addDaysISO(next, -1) });
+      }
+    });
+    return bands;
+  }
+
+  // -------- Cycle state (athlete's own device + their own cloud row) --------
+  function athleteSelfId() {
+    return state.clientData?.program?.clientId || state.clientData?.program?.client?.id || null;
+  }
+  const CYCLE_DEFAULT = { enabled: false, share: "private", periods: [], notes: {} };
+  let _cycle = null;
+  function cycleState() {
+    if (!_cycle) {
+      let saved = null;
+      try { saved = JSON.parse(localStorage.getItem(KEY_CYCLE) || "null"); } catch (e) {}
+      _cycle = Object.assign({}, CYCLE_DEFAULT, saved || {});
+      if (!Array.isArray(_cycle.periods)) _cycle.periods = [];
+      if (!_cycle.notes || typeof _cycle.notes !== "object") _cycle.notes = {};
+    }
+    return _cycle;
+  }
+  // A coach previewing an athlete is on the coach's own device and is not that
+  // athlete — the tracker is invisible there, whatever is in local storage.
+  function cycleOn() {
+    return !state.previewMode && state.mode === "client" && cycleState().enabled;
+  }
+  function saveCycle() {
+    const c = cycleState();
+    try { localStorage.setItem(KEY_CYCLE, JSON.stringify(c)); } catch (e) {}
+    const id = athleteSelfId();
+    if (id && !state.previewMode && window.Cloud?.enabled) {
+      window.Cloud.debounce(`cycle:${id}`, () => window.Cloud.saveMyCycle(id, c));
+    }
+  }
+  async function pullCycle() {
+    const id = athleteSelfId();
+    if (!id || state.previewMode || !window.Cloud?.enabled) return;
+    const remote = await window.Cloud.getMyCycle(id);
+    if (!remote) return;               // no row yet: nothing to merge, don't seed one
+    _cycle = Object.assign({}, CYCLE_DEFAULT, remote);
+    try { localStorage.setItem(KEY_CYCLE, JSON.stringify(_cycle)); } catch (e) {}
+    renderAthleteSettingsCards();
+    renderCycleCard();
+    renderAthleteProgressTab();
+  }
+  // Signing out has to clear it: this is the one thing in the app that must not
+  // survive on a shared device into somebody else's session.
+  function forgetCycleLocally() {
+    _cycle = null;
+    try { localStorage.removeItem(KEY_CYCLE); } catch (e) {}
+  }
+  function cycleLogStart(dateISOv) {
+    const c = cycleState();
+    const d = dateISOv || todayISO();
+    if (c.periods.some((p) => p.start === d)) return false;
+    c.periods.push({ id: uid(), start: d, end: null, flow: null });
+    saveCycle();
+    return true;
+  }
+  function cycleCurrentPeriod() {
+    const c = cycleState();
+    const open = cycleSortedPeriods(c.periods).filter((p) => !p.end);
+    return open.length ? open[open.length - 1] : null;
+  }
+  function cycleLogEnd(dateISOv) {
+    const p = cycleCurrentPeriod();
+    if (!p) return false;
+    const d = dateISOv || todayISO();
+    if (d < p.start) return false;
+    p.end = d;
+    saveCycle();
+    return true;
+  }
+
+  // -------- Cycle: the chip both sides read --------
+  // Deliberately says only where they are. No advice, no verdict, no colour
+  // coding that implies "bad week" — the phases carry their own hues and that
+  // is the whole of the interpretation.
+  function cycleChipHtml(info, compact) {
+    if (!info) return "";
+    const txt = `Day ${info.day} · ${info.label}`;
+    return `<span class="cyc-chip ${info.id}" style="--cyc-color:${info.color}" ` +
+      `title="${escapeHtml(txt)}${info.learning ? " (still learning this cycle's length)" : ""}">` +
+      `<span class="cyc-chip-emo">${info.emoji}</span>` +
+      `<span class="cyc-chip-txt">${escapeHtml(compact ? "Day " + info.day : txt)}</span></span>`;
+  }
+  // The athlete's own phase for a date, or null when tracking is off.
+  function myCyclePhase(iso) {
+    if (!cycleOn()) return null;
+    return cyclePhaseOn(cycleState().periods, iso || todayISO());
+  }
+
+  // -------- Cycle: the card on the Progress tab --------
+  function renderCycleCard() {
+    const host = $("#prog-cycle");
+    if (!host) return;
+    if (!cycleOn()) { host.innerHTML = ""; return; }
+    const c = cycleState();
+    const today = todayISO();
+    const info = cyclePhaseOn(c.periods, today);
+    const open = cycleCurrentPeriod();
+    const share = CYCLE_SHARES.find((s) => s.id === c.share) || CYCLE_SHARES[0];
+    // Computed before the branch on purpose: a gap long enough to fall off the
+    // end of cyclePhaseOn (over ~4 months) is the case this note exists FOR,
+    // and it used to vanish there along with the rest of the live-cycle UI.
+    const concern = cycleGapConcern(c.periods, today);
+
+    if (!info) {
+      const ever = cycleStarts(c.periods).length > 0;
+      host.innerHTML = `
+        <div class="card cyc-card">
+          <div class="cyc-head">
+            <span class="cyc-head-ico">🌙</span>
+            <span class="cyc-headtext"><span class="cyc-kicker">Cycle</span><span class="cyc-phase">${ever ? "Nothing recent" : "Nothing logged yet"}</span></span>
+            <span class="cyc-share ${share.id}" title="${escapeHtml(share.hint)}">${share.emoji} ${escapeHtml(share.label)}</span>
+          </div>
+          <p class="cyc-empty">${ever
+            ? "It's been long enough that there's no current cycle to place you in. Log the next start and it picks up from there."
+            : "Tap the day your period starts. That one tap is enough to work out your cycle length, where you are in it, and roughly when the next one is due."}</p>
+          ${cycleLogRowHtml(open, today)}
+          ${concern ? cycleConcernHtml(concern) : ""}
+          ${cycleHistoryHtml(c.periods)}
+        </div>`;
+      wireCycleCard();
+      return;
+    }
+
+    const next = cycleNextStart(c.periods);
+    const til = next ? cycleDaysBetween(today, next) : null;
+    const avg = cycleAvgLength(c.periods);
+    // The track is the whole cycle laid end to end, with today's marker on it.
+    const seg = (from, to, kind) => {
+      const a = Math.max(0, Math.min(1, (from - 1) / info.len));
+      const b = Math.max(0, Math.min(1, to / info.len));
+      return b > a
+        ? `<span class="cyc-seg ${kind}" style="left:${(a * 100).toFixed(2)}%;width:${((b - a) * 100).toFixed(2)}%"></span>`
+        : "";
+    };
+    const ov = Math.max(info.bleed + 1, info.len - 14);
+    const mark = Math.max(0, Math.min(1, (info.day - 0.5) / info.len)) * 100;
+
+    host.innerHTML = `
+      <div class="card cyc-card" style="--cyc-color:${info.color}">
+        <div class="cyc-head">
+          <span class="cyc-head-ico">${info.emoji}</span>
+          <span class="cyc-headtext">
+            <span class="cyc-kicker">Cycle · day ${info.day}</span>
+            <span class="cyc-phase">${escapeHtml(info.label)}</span>
+          </span>
+          <span class="cyc-share ${share.id}" title="${escapeHtml(share.hint)}">${share.emoji} ${escapeHtml(share.label)}</span>
+        </div>
+        <div class="cyc-track" aria-hidden="true">
+          ${seg(1, info.bleed, "period")}
+          ${seg(info.bleed + 1, ov - 2, "follicular")}
+          ${seg(ov - 1, ov + 1, "ovulation")}
+          ${seg(ov + 2, info.len - CYCLE_LATE_DAYS, "luteal")}
+          ${seg(info.len - CYCLE_LATE_DAYS + 1, info.len, "late")}
+          <span class="cyc-mark" style="left:${mark.toFixed(2)}%"></span>
+        </div>
+        <div class="cyc-facts">
+          ${til !== null ? `<span class="cyc-fact"><b>${til <= 0 ? "Due now" : til + (til === 1 ? " day" : " days")}</b>${til > 0 ? `<span>until the next one${info.learning ? ", roughly" : ""}</span>` : "<span>by the last few cycles</span>"}</span>` : ""}
+          <span class="cyc-fact"><b>${avg ? avg + " days" : "—"}</b><span>${avg ? "your average cycle" : "cycle length"}</span></span>
+        </div>
+        ${info.learning ? `<p class="cyc-learning">Still learning. Predictions get real once a couple of cycles are logged. Irregular cycles are common in athletes, so a date here is never a promise.</p>` : ""}
+        ${cycleLogRowHtml(open, today)}
+        ${concern ? cycleConcernHtml(concern) : ""}
+        ${cycleHistoryHtml(c.periods)}
+      </div>`;
+    wireCycleCard();
+  }
+  // Missed periods are a real red flag in someone training hard (low energy
+  // availability), and a strength coach's app is a place it will actually get
+  // noticed. Non-diagnostic, non-alarmist, and athlete-only: this never travels
+  // to the coach, at any sharing level.
+  function cycleConcernHtml(concern) {
+    return `
+      <div class="cyc-concern">
+        <p><b>It's been ${concern.gap} days</b> since your last logged period. That can just mean a missed tap, and it can also be perfectly normal. But when it keeps happening in someone training hard, it's worth a word with a doctor.</p>
+        <p class="cyc-concern-sub">This note is yours alone. Your coach is never told about it, whatever your sharing is set to.</p>
+      </div>`;
+  }
+  // One row: the date, and the two things there are to say about it.
+  function cycleLogRowHtml(open, today) {
+    return `
+      <div class="cyc-log">
+        <label class="cyc-date" title="Which day?">
+          <span class="cyc-date-txt">📅 <span id="cyc-date-label">Today</span></span>
+          <input type="date" id="cyc-date" value="${escapeHtml(today)}" max="${escapeHtml(today)}" aria-label="Date" />
+        </label>
+        <button type="button" class="btn btn-primary btn-sm slim-btn" id="btn-cyc-start">🩸 Period started</button>
+        ${open ? `<button type="button" class="btn btn-ghost btn-sm slim-btn" id="btn-cyc-end">✓ It's ended</button>` : ""}
+      </div>`;
+  }
+  function cycleHistoryHtml(list) {
+    const sorted = cycleSortedPeriods(list).slice(-6).reverse();
+    if (!sorted.length) return "";
+    const starts = cycleStarts(list);
+    const rows = sorted.map((p) => {
+      const i = starts.indexOf(p.start);
+      const nextStart = starts[i + 1];
+      const len = nextStart ? cycleDaysBetween(p.start, nextStart) : null;
+      const bleed = p.end && p.end >= p.start ? cycleDaysBetween(p.start, p.end) + 1 : null;
+      const when = new Date(p.start + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      return `<div class="cyc-row" data-pid="${escapeHtml(p.id)}">
+        <span class="cyc-row-date">${escapeHtml(when)}</span>
+        <span class="cyc-row-meta">${bleed ? escapeHtml(bleed + (bleed === 1 ? " day" : " days")) : "<i>open</i>"}${len ? ` · ${escapeHtml(String(len))}-day cycle` : ""}</span>
+        <span class="cyc-row-flow">${CYCLE_FLOWS.map((f) =>
+          `<button type="button" class="cyc-flow${p.flow === f.id ? " on" : ""}" data-flow="${f.id}" title="${escapeHtml(f.label)} flow">${escapeHtml(f.label[0])}</button>`).join("")}</span>
+        <button type="button" class="cyc-row-del" title="Delete this entry" aria-label="Delete">✕</button>
+      </div>`;
+    }).join("");
+    return `<details class="cyc-hist"><summary>Recent periods</summary><div class="cyc-rows">${rows}</div></details>`;
+  }
+  function wireCycleCard() {
+    const dateEl = $("#cyc-date");
+    const label = $("#cyc-date-label");
+    const pickedDate = () => dateEl?.value || todayISO();
+    dateEl?.addEventListener("change", () => {
+      if (!label) return;
+      const v = pickedDate();
+      label.textContent = v === todayISO()
+        ? "Today"
+        : new Date(v + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    });
+    $("#btn-cyc-start")?.addEventListener("click", () => {
+      if (!cycleLogStart(pickedDate())) { toast("Already logged for that day"); return; }
+      afterCycleChange();
+      toast("Logged 🩸");
+    });
+    $("#btn-cyc-end")?.addEventListener("click", () => {
+      if (!cycleLogEnd(pickedDate())) { toast("Pick a day on or after it started"); return; }
+      afterCycleChange();
+      toast("Noted ✓");
+    });
+    $$("#prog-cycle .cyc-row").forEach((row) => {
+      const p = cycleState().periods.find((x) => x.id === row.dataset.pid);
+      if (!p) return;
+      row.querySelectorAll(".cyc-flow").forEach((b) => b.addEventListener("click", () => {
+        p.flow = p.flow === b.dataset.flow ? null : b.dataset.flow;
+        saveCycle();
+        afterCycleChange();
+      }));
+      row.querySelector(".cyc-row-del")?.addEventListener("click", () => {
+        if (!window.confirm("Delete this entry?")) return;
+        const c = cycleState();
+        c.periods = c.periods.filter((x) => x.id !== p.id);
+        saveCycle();
+        afterCycleChange();
+      });
+    });
+  }
+  // Anything that moves a period date moves the phase bands on the body-comp
+  // charts and the chip on the workout header, so they redraw together.
+  function afterCycleChange() {
+    renderCycleCard();
+    renderBwCharts($("#prog-bw"), state.clientData.progress?.bodyweightLog || []);
+    if (state.workoutView?.mode === "detail") renderWorkoutDetailUI({ keepScroll: true });
+  }
+
+  // -------- Cycle: the Profile fold --------
+  function cycleFoldSub() {
+    const c = cycleState();
+    if (!c.enabled) {
+      // Louder for someone whose target calculator says female, without ever
+      // making that answer a gate — the fold is here for everyone.
+      return state.clientData.progress?.nutritionTargets?.calc?.sex === "female"
+        ? "Track your period, privately" : "Off";
+    }
+    const share = CYCLE_SHARES.find((s) => s.id === c.share) || CYCLE_SHARES[0];
+    const info = cyclePhaseOn(c.periods, todayISO());
+    return info ? `Day ${info.day} · ${share.label.toLowerCase()}` : share.label;
+  }
+  function cycleFoldHtml() {
+    const c = cycleState();
+    const detail = c.enabled ? `
+      <div class="cyc-share-pick">
+        <p class="pref-hint cyc-share-lead">What your coach can see:</p>
+        ${CYCLE_SHARES.map((s) => `
+          <label class="cyc-share-opt${c.share === s.id ? " on" : ""}">
+            <input type="radio" name="cyc-share" value="${s.id}"${c.share === s.id ? " checked" : ""} />
+            <span class="cyc-share-emo">${s.emoji}</span>
+            <span class="cyc-share-text"><span class="pref-label">${escapeHtml(s.label)}</span><span class="pref-hint">${escapeHtml(s.hint)}</span></span>
+          </label>`).join("")}
+      </div>
+      <p class="pref-foot">Change this whenever you like. Sharing only ever shows what the level allows, and turning it back to private takes it away again.</p>
+      <div class="pref-actions">
+        <button class="btn btn-ghost btn-sm slim-btn" id="btn-cyc-erase" type="button">🗑 Delete everything I've tracked</button>
+      </div>` : `
+      <p class="pref-foot">One tap on the day it starts. The app works out your cycle length, marks the phases on your weight chart so a few pounds of water read as water, and keeps the whole thing private unless you say otherwise.</p>`;
+    return `
+      <details class="pref-fold" id="pref-fold-cycle">
+        <summary>
+          <span class="pref-fold-ico">🌙</span>
+          <span class="pref-fold-text">
+            <span class="pref-fold-title">Cycle tracking</span>
+            <span class="pref-fold-sub">${escapeHtml(cycleFoldSub())}</span>
+          </span>
+          <span class="pref-fold-chev">▸</span>
+        </summary>
+        <div class="pref-list">
+          <label class="pref-row">
+            <span class="pref-text"><span class="pref-label">Track my cycle</span><span class="pref-hint">Private until you choose otherwise. Your coach can't see it, and can't see that it's on.</span></span>
+            <input type="checkbox" class="pref-toggle" id="cyc-enable"${c.enabled ? " checked" : ""} />
+          </label>
+        </div>
+        ${detail}
+      </details>`;
+  }
+  // Rebuilt in place like the notifications fold: switching sharing changes
+  // which controls exist, and the fold must not slam shut under the finger.
+  function renderCycleFold() {
+    const fold = $("#pref-fold-cycle");
+    if (!fold) return;
+    const wasOpen = fold.open;
+    fold.outerHTML = cycleFoldHtml();
+    const next = $("#pref-fold-cycle");
+    if (next) { next.open = wasOpen; wireCycleFold(next); }
+  }
+  function wireCycleFold(host) {
+    host.querySelector("#cyc-enable")?.addEventListener("change", (e) => {
+      const c = cycleState();
+      c.enabled = e.target.checked;
+      if (!c.enabled) c.share = "private"; // switching off can't leave sharing on
+      saveCycle();
+      renderCycleFold();
+      renderCycleCard();
+      renderBwCharts($("#prog-bw"), state.clientData.progress?.bodyweightLog || []);
+      toast(c.enabled ? "Cycle tracking on 🌙" : "Cycle tracking off");
+    });
+    host.querySelectorAll('input[name="cyc-share"]').forEach((r) => r.addEventListener("change", () => {
+      const c = cycleState();
+      c.share = r.value;
+      saveCycle();
+      renderCycleFold();
+      renderCycleCard();
+      toast(r.value === "private" ? "Private again 🔒" : "Sharing updated");
+    }));
+    host.querySelector("#btn-cyc-erase")?.addEventListener("click", async () => {
+      if (!window.confirm("Delete every period you've logged? This can't be undone.")) return;
+      const id = athleteSelfId();
+      const c = cycleState();
+      // Clear the data, keep the switch. They asked to erase a history, not to
+      // stop tracking — and having to re-enable after fixing a mistyped log
+      // would read as the app punishing them for it. The row is dropped rather
+      // than blanked, so nothing lingers server-side; the next thing they log
+      // writes a fresh one.
+      _cycle = Object.assign({}, CYCLE_DEFAULT, { enabled: c.enabled, share: c.share });
+      try { localStorage.setItem(KEY_CYCLE, JSON.stringify(_cycle)); } catch (e) {}
+      if (id && !state.previewMode && window.Cloud?.enabled) await window.Cloud.deleteMyCycle(id);
+      renderCycleFold();
+      renderCycleCard();
+      renderBwCharts($("#prog-bw"), state.clientData.progress?.bodyweightLog || []);
+      toast("Deleted ✓");
+    });
+  }
+
+  // -------- Cycle: what reaches the coach --------
+  // Populated once per coach sign-in from the redacting RPC. Athletes who chose
+  // private never appear in it at all, so there is nothing here to leak.
+  let _cycleShares = {};
+  async function refreshCycleShares() {
+    if (!window.Cloud?.enabled || state.mode !== "trainer") return;
+    const rows = await window.Cloud.getCycleShares();
+    _cycleShares = {};
+    (rows || []).forEach((r) => { _cycleShares[r.athleteId] = r; });
+    if (state.currentClientId) renderCoachCycleChip();
+  }
+  function coachCycleShare(athleteId) { return _cycleShares[athleteId] || null; }
+  // A quiet marker beside the athlete's details, so a PR test doesn't get
+  // programmed into the worst week of someone's month and a flat week isn't
+  // read as slacking. It states the day and the phase; it advises nothing.
+  function renderCoachCycleChip() {
+    const host = $("#client-cycle-chip");
+    if (!host) return;
+    const c = currentClient();
+    const share = c ? coachCycleShare(c.id) : null;
+    if (!share) { host.innerHTML = ""; return; }
+    const info = cyclePhaseOn(share.periods, todayISO());
+    if (!info) { host.innerHTML = ""; return; }
+    const extra = share.share === "all" ? coachCycleFlowNote(share, info) : "";
+    host.innerHTML = cycleChipHtml(info) +
+      (extra ? `<span class="cyc-coach-extra">${escapeHtml(extra)}</span>` : "");
+  }
+  function coachCycleFlowNote(share, info) {
+    const rec = cycleSortedPeriods(share.periods).find((p) => p.start === info.start);
+    const flow = CYCLE_FLOWS.find((f) => f.id === rec?.flow);
+    return flow ? `${flow.label.toLowerCase()} flow` : "";
+  }
+
   // -------- Post-workout mood check-in ("How was your workout?") --------
   // Athlete taps up to 2 feelings when they finish a day; the picks show on
   // that day's card and feed the coach's per-day chips + program roll-up.
@@ -15600,6 +16147,7 @@
     loadAthleteThread();          // the coach thread, for the Overview card
     refreshPushSubscription();
     pullAthletePrefs(); // cloud copy wins, then re-renders the cards
+    pullCycle();        // their own private row, same deal
     // First time on this device: one guided lap (never during a coach live
     // session — that's the coach's screen, not the athlete's).
     if (!state.previewMode && !localStorage.getItem(KEY_TOUR_ATHLETE)) {
@@ -16216,6 +16764,9 @@
     state.mode = null;
     sessionStorage.removeItem(KEY_SESSION);
     _signOutOnLeave = false;
+    // The one thing that must not survive a sign-out on a shared phone. It's
+    // pulled back from their own row on the next sign-in, so nothing is lost.
+    forgetCycleLocally();
     if (window.Cloud?.enabled) window.Cloud.signOut();
     showLoginScreen("#login-role");
   }
@@ -17565,11 +18116,16 @@
       : new Date(state.workoutView.date + "T12:00:00Z").toLocaleDateString(undefined, {
           month: "short", day: "numeric", timeZone: "UTC",
         });
+    // Phase beside the session, so a heavy day in the worst week of the month
+    // reads as context rather than as failure. It says where they are, nothing
+    // more — no suggestion to back off, and no colour that implies one.
+    const cycHtml = cycleChipHtml(myCyclePhase(state.workoutView.date), true);
     head.innerHTML = `
       <div class="detail-head-top">
         ${week.phaseLabel ? `<span class="phase-badge">${escapeHtml(week.phaseLabel)}</span>` : ""}
         <span class="dh-week">${escapeHtml(week.label)}${focus}</span>
         ${progHtml}
+        ${cycHtml}
         <label class="dh-date" title="Date these logs are for">
           <span class="dh-date-txt">📅 ${escapeHtml(dateTxt)}</span>
           <input type="date" class="detail-log-date" id="detail-log-date" value="${escapeHtml(state.workoutView.date)}" aria-label="Date these logs are for" />
@@ -20734,6 +21290,9 @@
     syncHoard(c, progress);
     renderHoardCard($("#prog-hoard"), c, progress);
     renderVolumeChart(progress, $("#prog-volume"));
+    // Sits directly above the body-comp charts it explains: the phase bands on
+    // those charts are why a late-luteal 3 lb reads as water, not as a bulk.
+    renderCycleCard();
     renderBwCharts($("#prog-bw"), progress.bodyweightLog || []);
     renderStrengthProgress($("#athlete-strength-charts"), c, progress);
   }
@@ -22611,6 +23170,12 @@
     // TARGET_DRIFT_LB of movement instead of nagging every open.
     const seen = Number(progress.nutritionTargets.driftSeenAt) || was;
     if (Math.abs(now - seen) < TARGET_DRIFT_LB) return null;
+    // A late-luteal water swing can clear 5 lb on its own, and rebuilding
+    // someone's calories off it would bake a temporary number into their
+    // targets for the rest of the month. Hold the nudge until it passes; a real
+    // gain or loss is still there in a week and asks again then.
+    const phase = myCyclePhase(todayISO());
+    if (phase && (phase.id === "late" || phase.id === "period")) return null;
     return { was, now, delta: now - was };
   }
 
@@ -23056,6 +23621,14 @@
     head.className = "bw-charts-head";
     head.innerHTML = `<h4>Body composition trends</h4>
       <div class="bw-range" role="group" aria-label="Time range">${BW_RANGES.map((r) => `<button type="button" class="bw-range-btn${r.k === bwChartRange ? " on" : ""}" data-r="${r.k}">${r.label}</button>`).join("")}</div>`;
+    // The single strongest reason to track a cycle inside a strength app: a
+    // 3 lb jump in the last week before a period is water, and shading it says
+    // so without anyone having to remember the dates.
+    if (cycleOn() && cycleStarts(cycleState().periods).length) {
+      head.insertAdjacentHTML("beforeend",
+        `<p class="bw-cyc-key"><span class="bw-cyc-swatch period"></span>period` +
+        `<span class="bw-cyc-swatch late"></span>the days before one</p>`);
+    }
     head.querySelectorAll(".bw-range-btn").forEach((b) => b.addEventListener("click", () => {
       bwChartRange = b.dataset.r;
       renderBwCharts(container, log);
@@ -23080,6 +23653,17 @@
     const lastPt = xy[xy.length - 1];
     const gid = "bwg-" + spec.key + "-" + Math.random().toString(36).slice(2, 7);
     const arrow = Math.abs(delta) < 0.05 ? "▬" : (delta > 0 ? "▲" : "▼");
+    // Cycle bands sit behind the trend line, clipped to the visible range.
+    // Athlete-only and only while tracking is on — cycleOn() is false in a
+    // coach preview, so this never paints on someone else's screen.
+    const bands = (cycleOn() ? cycleBands(cycleState().periods) : []).map((b) => {
+      const t0 = new Date(b.from + "T12:00:00").getTime();
+      const t1 = new Date(b.to + "T12:00:00").getTime();
+      if (t1 < tMin || t0 > tMax) return "";
+      const x0 = xOf(Math.max(t0, tMin)), x1 = xOf(Math.min(t1, tMax));
+      return x1 - x0 < 0.5 ? ""
+        : `<rect class="bw-cyc-band ${b.kind}" x="${x0.toFixed(1)}" y="0" width="${(x1 - x0).toFixed(1)}" height="${H}"/>`;
+    }).join("");
 
     const card = document.createElement("div");
     card.className = "bw-chart-card";
@@ -23095,6 +23679,7 @@
             <stop offset="0" stop-color="currentColor" stop-opacity="0.22"/>
             <stop offset="1" stop-color="currentColor" stop-opacity="0"/>
           </linearGradient></defs>
+          ${bands}
           <path d="${area}" fill="url(#${gid})" stroke="none"/>
           <path d="${line}" fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>
         </svg>
@@ -24658,6 +25243,7 @@
             ${prefSwitchHtml("simple", "Simple mode", "Hides ranks, XP, trophies and streaks. Your workouts, stats and trials stay.", p.simple)}
           </div>
         </details>
+        ${cycleFoldHtml()}
         <details class="pref-fold">
           <summary>
             <span class="pref-fold-ico">🔒</span>
@@ -24693,6 +25279,10 @@
     // The notifications fold brings its own switches, times and master button.
     const notifyFold = host.querySelector("#pref-fold-notify");
     if (notifyFold) wireNotifyFold(notifyFold);
+    // Cycle tracking owns its own toggle and radios (not [data-pref] switches —
+    // it doesn't live in athlete_prefs and must never be sent to that table).
+    const cycleFold = host.querySelector("#pref-fold-cycle");
+    if (cycleFold) wireCycleFold(cycleFold);
     $("#btn-export-my-data")?.addEventListener("click", exportMyData);
     $("#btn-signout-everywhere")?.addEventListener("click", signOutEverywhere);
     $("#btn-purge-form-checks")?.addEventListener("click", purgeMyFormChecks);
@@ -24708,6 +25298,9 @@
       program: { weeks: c?.weeks || [], oneOffDays: c?.oneOffDays || [], schedule: c?.schedule || {} },
       progress: state.clientData.progress || {},
       preferences: athletePrefs(),
+      // "Everything this app holds about them" has to mean everything, and this
+      // is the part they'd most want a copy of if they ever walked away.
+      ...(cycleState().enabled || cycleState().periods.length ? { cycle: cycleState() } : {}),
     };
     const name = (c?.name || "my").trim().split(/\s+/)[0].toLowerCase();
     downloadFile(`stone-dragon-${name}-${todayISO()}.json`,
@@ -24742,6 +25335,7 @@
     const id = state.clientData.program?.clientId || state.clientData.program?.client?.id;
     await unsubscribePush();
     if (id) await window.Cloud?.deleteAllPushSubscriptions?.(id);
+    forgetCycleLocally();
     await window.Cloud?.signOutEverywhere?.();
     // Reload rather than swapping screens: a global sign-out invalidates the
     // session mid-flight, and a fresh boot lands on the sign-in screen with

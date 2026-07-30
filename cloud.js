@@ -683,6 +683,65 @@
     } catch (e) { console.warn("[Cloud] saveAthletePrefs", e); return false; }
   }
 
+  // -------- Cycle tracking (private by default) --------
+  // Its own table with no coach policy at all — see the migration. The athlete
+  // reads and writes their own row; a coach gets nothing here, and reaches
+  // sharing athletes only through cycle_shares_for_coach(), which redacts
+  // server-side to the level each athlete picked.
+  async function getMyCycle(athleteId) {
+    if (!athleteId) return null;
+    try {
+      const { data, error } = await sb.from("cycle_logs")
+        .select("*").eq("athlete_id", athleteId).maybeSingle();
+      if (error) { console.warn("[Cloud] getMyCycle", error.message); return null; }
+      if (!data) return null;
+      return {
+        enabled: !!data.enabled,
+        share: data.share_level || "private",
+        periods: Array.isArray(data.periods) ? data.periods : [],
+        notes: data.notes && typeof data.notes === "object" ? data.notes : {},
+      };
+    } catch (e) { console.warn("[Cloud] getMyCycle", e); return null; }
+  }
+  async function saveMyCycle(athleteId, cycle) {
+    if (!athleteId || !cycle) return false;
+    try {
+      const { error } = await sb.from("cycle_logs").upsert({
+        athlete_id: athleteId,
+        enabled: !!cycle.enabled,
+        share_level: cycle.share || "private",
+        periods: cycle.periods || [],
+        notes: cycle.notes || {},
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "athlete_id" });
+      if (error) { console.warn("[Cloud] saveMyCycle", error.message); return false; }
+      return true;
+    } catch (e) { console.warn("[Cloud] saveMyCycle", e); return false; }
+  }
+  // Athlete-initiated erase: "delete everything I've tracked". Drops the row,
+  // not just its contents, so nothing lingers server-side.
+  async function deleteMyCycle(athleteId) {
+    if (!athleteId) return false;
+    try {
+      const { error } = await sb.from("cycle_logs").delete().eq("athlete_id", athleteId);
+      if (error) { console.warn("[Cloud] deleteMyCycle", error.message); return false; }
+      return true;
+    } catch (e) { console.warn("[Cloud] deleteMyCycle", e); return false; }
+  }
+  // Coach side. Only athletes who opted in appear at all.
+  async function getCycleShares() {
+    try {
+      const { data, error } = await sb.rpc("cycle_shares_for_coach");
+      if (error) { console.warn("[Cloud] getCycleShares", error.message); return []; }
+      return (data || []).map((r) => ({
+        athleteId: r.athlete_id,
+        share: r.share_level,
+        periods: Array.isArray(r.periods) ? r.periods : [],
+        notes: r.notes && typeof r.notes === "object" ? r.notes : {},
+      }));
+    } catch (e) { console.warn("[Cloud] getCycleShares", e); return []; }
+  }
+
   // -------- Messages (two-way coach ↔ athlete thread) --------
   // One row per message in `messages`, keyed by athlete. Both sides may append
   // and read; RLS + a trigger keep each end from rewriting the other's words.
@@ -955,6 +1014,11 @@
     updateAthleteHideOpenSlots,
     updateAthleteProfileFields,
     updateCoachAvatar,
+    // Cycle tracking
+    getMyCycle,
+    saveMyCycle,
+    deleteMyCycle,
+    getCycleShares,
     // Messages
     sendMessage,
     getMessages,

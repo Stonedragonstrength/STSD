@@ -11866,3 +11866,162 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
 /* The eating signals are coloured chips — the mark takes the chip's colour, not
    the muted body colour the activity rows give it. */
 .adh-signal .ln-ico { vertical-align: -0.24em; }
+
+/* ============ Cycle tracking ============
+   Opt-in, athlete-owned, private by default. Everything here is descriptive:
+   the phase hues name where someone is in their month and carry no verdict, so
+   nothing in this block should ever read as "good week / bad week". */
+.cyc-card { --cyc-color: var(--primary); margin-top: 1rem; }
+.cyc-head { display: flex; align-items: center; gap: 0.7em; }
+.cyc-head-ico {
+  font-size: 1.5rem; line-height: 1; flex: none;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--cyc-color) 55%, transparent));
+}
+.cyc-headtext { display: flex; flex-direction: column; gap: 0.1em; min-width: 0; }
+.cyc-kicker {
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--text-soft);
+}
+.cyc-phase { font-size: 1.15rem; font-weight: 800; color: var(--cyc-color); letter-spacing: 0.01em; }
+.cyc-share {
+  margin-left: auto; flex: none;
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.02em;
+  padding: 0.3em 0.65em; border-radius: 999px;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text-soft);
+}
+.cyc-share.phase, .cyc-share.all { color: var(--primary-bright); border-color: rgba(var(--primary-rgb), 0.5); }
+
+/* The whole cycle laid end to end, with today's marker on it. */
+.cyc-track {
+  position: relative; height: 10px; margin: 0.9em 0 0.2em;
+  border-radius: 999px; overflow: hidden; background: var(--surface-2);
+}
+.cyc-seg { position: absolute; top: 0; bottom: 0; }
+.cyc-seg.period     { background: rgba(224, 86, 107, 0.85); }
+.cyc-seg.follicular { background: rgba(63, 178, 127, 0.55); }
+.cyc-seg.ovulation  { background: rgba(232, 179, 60, 0.8); }
+.cyc-seg.luteal     { background: rgba(111, 134, 232, 0.55); }
+.cyc-seg.late       { background: rgba(155, 110, 232, 0.7); }
+.cyc-mark {
+  position: absolute; top: -3px; bottom: -3px; width: 3px;
+  background: var(--text); border-radius: 2px;
+  box-shadow: 0 0 0 2px var(--surface), 0 0 8px rgba(255, 255, 255, 0.5);
+}
+
+/* Two facts, read at a glance — the same big-number-over-caption rhythm the
+   rest of the athlete's stats use. */
+.cyc-facts { display: flex; gap: 1.4em; flex-wrap: wrap; margin-top: 0.9em; }
+.cyc-fact { display: flex; flex-direction: column; gap: 0.1em; min-width: 0; }
+.cyc-fact b { font-size: 1.05rem; font-weight: 800; color: var(--text); letter-spacing: 0.01em; }
+.cyc-fact span { font-size: 0.75rem; color: var(--muted); }
+.cyc-learning, .cyc-empty {
+  font-size: 0.78rem; line-height: 1.5; color: var(--muted); margin: 0.8em 0 0;
+}
+
+/* Log row: which day, and the two things there are to say about it. */
+.cyc-log { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em; margin-top: 1em; }
+.cyc-date {
+  position: relative; display: inline-flex; align-items: center;
+  font-size: 0.78rem; font-weight: 600; color: var(--text-soft);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 0.34em 0.75em; cursor: pointer; margin: 0;
+  text-transform: none; letter-spacing: normal;
+}
+.cyc-date input[type="date"] {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; margin: 0; padding: 0; border: none; cursor: pointer;
+}
+.cyc-date-txt { white-space: nowrap; }
+
+/* Recent periods: a date, what it came to, flow, and a way to undo a mistap. */
+.cyc-hist { margin-top: 1em; }
+.cyc-hist > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  font-size: 0.78rem; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--text-soft);
+}
+.cyc-hist > summary::-webkit-details-marker { display: none; }
+.cyc-hist > summary::before { content: "▸ "; display: inline-block; transition: transform 0.15s ease; }
+.cyc-hist[open] > summary::before { transform: rotate(90deg); }
+.cyc-rows { margin-top: 0.6em; }
+.cyc-row {
+  display: flex; align-items: center; gap: 0.6em;
+  padding: 0.5em 0; border-bottom: 1px solid var(--border);
+}
+.cyc-row:last-child { border-bottom: none; }
+.cyc-row-date { font-size: 0.85rem; font-weight: 700; color: var(--text); flex: none; min-width: 4.2em; }
+.cyc-row-meta {
+  font-size: 0.75rem; color: var(--muted); flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cyc-row-flow { display: inline-flex; gap: 2px; flex: none; }
+.cyc-flow {
+  width: 1.5rem; height: 1.5rem; padding: 0; cursor: pointer;
+  font: inherit; font-size: 0.68rem; font-weight: 700;
+  background: var(--surface-2); border: 1px solid var(--border);
+  color: var(--muted); border-radius: 50%;
+}
+.cyc-flow.on { background: rgba(224, 86, 107, 0.9); border-color: rgba(224, 86, 107, 0.9); color: #fff; }
+.cyc-row-del {
+  flex: none; background: none; border: none; cursor: pointer;
+  color: var(--muted); font-size: 0.85rem; padding: 0.2em 0.3em; line-height: 1;
+}
+.cyc-row-del:hover { color: var(--danger); }
+
+/* Missed periods. Deliberately soft — this is a nudge toward a doctor, not a
+   diagnosis, and it is the athlete's alone. Never styled as an alarm. */
+.cyc-concern {
+  margin-top: 1em; padding: 0.8em 0.9em;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-left: 3px solid var(--warn); border-radius: var(--radius);
+}
+.cyc-concern p { margin: 0; font-size: 0.82rem; line-height: 1.55; color: var(--text-soft); }
+.cyc-concern-sub { margin-top: 0.5em !important; font-size: 0.75rem !important; color: var(--muted) !important; }
+
+/* The chip both sides read. Says the day and the phase, and nothing else. */
+.cyc-chip {
+  display: inline-flex; align-items: center; gap: 0.3em;
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.02em;
+  padding: 0.22em 0.6em; border-radius: 999px; white-space: nowrap;
+  background: color-mix(in srgb, var(--cyc-color) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cyc-color) 45%, transparent);
+  color: var(--cyc-color);
+}
+.cyc-chip-emo { font-size: 0.85em; line-height: 1; }
+.client-cycle-chip { display: flex; align-items: center; gap: 0.5em; margin-top: 0.35em; }
+.client-cycle-chip:empty { display: none; }
+.cyc-coach-extra { font-size: 0.72rem; color: var(--muted); }
+
+/* Sharing picker in Profile: three levels, one tap apart, always reversible. */
+.cyc-share-lead { margin: 0.9em 0 0.5em; }
+.cyc-share-opt {
+  display: flex; align-items: flex-start; gap: 0.7em;
+  padding: 0.6em 0.7em; margin: 0 0 0.4em; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius); font-weight: 400;
+  text-transform: none; letter-spacing: normal;
+}
+.cyc-share-opt.on { border-color: var(--primary); background: var(--primary-soft); }
+.cyc-share-opt input[type="radio"] { margin: 0.25em 0 0; accent-color: var(--primary); flex: none; }
+.cyc-share-emo { font-size: 1rem; line-height: 1.3; flex: none; }
+.cyc-share-text { display: flex; flex-direction: column; gap: 0.1em; min-width: 0; }
+
+/* Phase bands behind the body-comp trend: the single best reason to track a
+   cycle inside a strength app — a late-luteal jump on the scale is water, and
+   the shading says so without anyone having to remember the dates. */
+.bw-cyc-band.period { fill: rgba(224, 86, 107, 0.16); }
+.bw-cyc-band.late   { fill: rgba(155, 110, 232, 0.14); }
+/* The head is a two-item flex row; only the key needs it to wrap. */
+.bw-charts-head:has(.bw-cyc-key) { flex-wrap: wrap; }
+.bw-cyc-key {
+  flex-basis: 100%; order: 3; margin: 0.1em 0 0;
+  display: flex; align-items: center; gap: 0.35em;
+  font-size: 0.7rem; color: var(--muted);
+}
+.bw-cyc-swatch {
+  width: 0.8em; height: 0.8em; border-radius: 3px; flex: none;
+  margin-left: 0.5em;
+}
+.bw-cyc-key > .bw-cyc-swatch:first-child { margin-left: 0; }
+.bw-cyc-swatch.period { background: rgba(224, 86, 107, 0.45); }
+.bw-cyc-swatch.late   { background: rgba(155, 110, 232, 0.4); }

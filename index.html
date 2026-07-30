@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=nut7" />
+  <link rel="stylesheet" href="styles.css?v=cyc1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -517,6 +517,10 @@
               <button class="client-nudge-btn" id="btn-nudge-athlete" title="Send a push notification to this athlete's phone" aria-label="Nudge athlete">🔔</button>
             </div>
             <div class="muted" id="client-meta-display"></div>
+            <!-- Cycle phase, ONLY for athletes who chose to share it. Filled by
+                 renderCoachCycleChip() from the redacting RPC; empty otherwise,
+                 and empty is indistinguishable from "not tracking". -->
+            <div id="client-cycle-chip" class="client-cycle-chip"></div>
           </div>
         </div>
 
@@ -1005,6 +1009,9 @@
       <div class="tab-panel" data-ctab-panel="prs">
         <div id="prog-hoard"></div>
         <div id="prog-volume"></div>
+        <!-- Cycle card, above the charts it explains. Empty unless the athlete
+             turned tracking on in Profile; never rendered in a coach preview. -->
+        <div id="prog-cycle"></div>
         <!-- bw-secret: a private body weight stays blurred here too. -->
         <div id="prog-bw" class="bw-secret"></div>
         <div id="athlete-strength-charts"></div>
@@ -1182,9 +1189,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="bugreport.js?v=bug1"></script>
   <script src="config.js?v=horm2"></script>
-  <script src="cloud.js?v=nut1"></script>
+  <script src="cloud.js?v=cyc1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=nut8"></script>
+  <script src="app.js?v=cyc4"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
