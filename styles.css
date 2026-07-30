@@ -10667,17 +10667,23 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
   color: var(--muted); font-size: 0.8rem; cursor: pointer;
 }
 .rdy-skip:hover { background: var(--surface-2); color: var(--text); }
-.rdy-qs { display: flex; flex-direction: column; gap: 0.4rem; }
-.rdy-q { display: flex; align-items: center; gap: 0.6em; }
+.rdy-qs { display: flex; flex-direction: column; gap: 0.3rem; }
+/* The question sits ON TOP of its answers, not beside them. Beside them it had
+   to be short enough to fit a label column, which is how "Soreness" ended up
+   over a button reading "Some" — and under 380px the column was dropped
+   entirely, leaving an emoji and three words that answered nothing. Stacked,
+   the question is never the thing that gets cut. Kept tight on purpose: a
+   small question line and short answers, so this costs one line per row. */
+.rdy-q { display: flex; flex-direction: column; align-items: stretch; gap: 0.2em; }
 .rdy-q-lbl {
-  flex: 0 0 5.9em; display: inline-flex; align-items: center; gap: 0.35em;
-  font-size: 0.72rem; font-weight: 800; text-transform: uppercase;
-  letter-spacing: 0.04em; color: var(--text-soft);
+  display: inline-flex; align-items: center; gap: 0.35em;
+  font-size: 0.72rem; font-weight: 700; line-height: 1.2;
+  color: var(--text-soft);
 }
 .rdy-q-ico { font-size: 0.95rem; }
-.rdy-q-opts { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.3em; }
+.rdy-q-opts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.3em; }
 .rdy-opt {
-  padding: 0.45em 0.2em; min-height: 2.1rem;
+  padding: 0.35em 0.2em; min-height: 1.95rem;
   background: var(--surface-2); border: 1px solid var(--border);
   border-radius: 999px; color: var(--text-soft);
   font-size: 0.72rem; font-weight: 800; cursor: pointer;
@@ -10743,8 +10749,6 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 
 /* Narrow phones: the option labels are the first thing to give. */
 @media (max-width: 380px) {
-  .rdy-q-lbl { flex-basis: 1.4em; }
-  .rdy-q-txt { display: none; }
   .rdy-opt { font-size: 0.66rem; padding-left: 0.1em; padding-right: 0.1em; }
   .rdy-done-ans { font-size: 0.62rem; gap: 0.15em 0.4em; }
 }

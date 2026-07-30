@@ -15074,10 +15074,17 @@
   // penalise, and a high score does nothing at all. Same reasoning as RIR only
   // ever accelerating - an answer has to be safe to give honestly, or nobody
   // gives it honestly. RIR already owns the accelerator; this owns the brake.
+  // `ask` is what the athlete is answering; `label` is the same thing as a
+  // noun, for the answered summary ("Soreness: A bit"). They are separate
+  // because a question reads wrong in a summary and a noun reads wrong as a
+  // prompt — "Soreness" over three buttons reading Wrecked / Some / Fresh left
+  // "Some" meaning nothing at all.
   const READINESS_QS = [
-    { id: "sleep",  icon: "😴", label: "Sleep",    opts: ["Rough", "Okay", "Great"] },
-    { id: "sore",   icon: "💪", label: "Soreness", opts: ["Wrecked", "Some", "Fresh"] },
-    { id: "stress", icon: "🧠", label: "Stress",   opts: ["Fried", "Some", "Calm"] },
+    // Soreness and stress deliberately share one scale: the question above the
+    // row is what they answer, so the buttons stay short and the block compact.
+    { id: "sleep",  icon: "😴", label: "Sleep",    ask: "How did you sleep?",    opts: ["Badly", "Okay", "Great"] },
+    { id: "sore",   icon: "💪", label: "Soreness", ask: "How sore are you?",     opts: ["Very", "A bit", "Not at all"] },
+    { id: "stress", icon: "🧠", label: "Stress",   ask: "How stressed are you?", opts: ["Very", "A bit", "Not at all"] },
   ];
   // At or below this the day reads as "beat up" and stalls stop counting. The
   // neutral score is 6 (all three answered "okay"), so this is genuinely below
@@ -17326,7 +17333,10 @@
             `<span class="rdy-done-emo">${lvl.emoji}</span>` +
             `<span class="rdy-done-lbl">${escapeHtml(lvl.label)}</span>` +
             `<span class="rdy-done-ans">${READINESS_QS.map((q) =>
-              `<span class="rdy-done-a"><span class="rdy-done-i">${q.icon}</span>${escapeHtml(q.opts[rec[q.id] - 1] || "?")}</span>`).join("")}</span>` +
+              // The emoji names the topic in the collapsed row; the title spells
+              // it out, because "A bit" is only clear next to what it answers.
+              `<span class="rdy-done-a" title="${escapeHtml(q.label)}: ${escapeHtml(q.opts[rec[q.id] - 1] || "?")}">` +
+                `<span class="rdy-done-i">${q.icon}</span>${escapeHtml(q.opts[rec[q.id] - 1] || "?")}</span>`).join("")}</span>` +
             (canAnswer ? `<span class="rdy-done-edit">Change</span>` : "") +
           `</button>` +
           (lvl.id === "low"
@@ -17355,7 +17365,7 @@
         `</div>` +
         `<div class="rdy-qs">${READINESS_QS.map((q) =>
           `<div class="rdy-q" data-q="${q.id}">` +
-            `<span class="rdy-q-lbl"><span class="rdy-q-ico">${q.icon}</span><span class="rdy-q-txt">${escapeHtml(q.label)}</span></span>` +
+            `<span class="rdy-q-lbl"><span class="rdy-q-ico">${q.icon}</span><span class="rdy-q-txt">${escapeHtml(q.ask || q.label)}</span></span>` +
             `<div class="rdy-q-opts">${q.opts.map((o, i) =>
               `<button type="button" class="rdy-opt l${i + 1}${draft[q.id] === i + 1 ? " on" : ""}" data-v="${i + 1}">${escapeHtml(o)}</button>`).join("")}</div>` +
           `</div>`).join("")}</div>`;
