@@ -9026,6 +9026,15 @@ body.live-log-mode #screen-client .header-right { display: none; }
 }
 .macro-bar-row.is-done .macro-bar-val { color: var(--gold); }
 .macro-bar-val.is-over { color: var(--warn); }
+/* Fiber: a companion line under the macro meters, never a fourth one of them.
+   Slimmer track, no notches and its own green rather than the earned-it gold,
+   so "this doesn't count toward your score" reads before the tooltip does. */
+.macro-bar-row.is-fiber { margin-top: 0.05em; }
+.macro-bar-row.is-fiber .macro-bar-track { height: 5px; }
+.macro-bar-row.is-fiber .macro-bar-name,
+.macro-bar-row.is-fiber .macro-bar-val { font-size: 0.63rem; color: var(--muted); }
+.macro-bar-row.is-fiber.is-hit .macro-bar-name,
+.macro-bar-row.is-fiber.is-hit .macro-bar-val { color: #22c55e; }
 
 /* Week dots + today's score, tucked under the meters. */
 .food-hud-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.6em; }
@@ -9248,6 +9257,9 @@ body.live-log-mode #screen-client .header-right { display: none; }
 }
 .portion-kcal { font-size: 1.35rem; font-weight: 800; color: var(--text); }
 .portion-macros { font-size: 0.82rem; color: var(--text-soft); }
+/* Why the box already says 2 and not 1. Without this the prefill reads as a
+   bug rather than as the app remembering. */
+.portion-last { margin: 0.55em 0 0; font-size: 0.76rem; color: var(--muted); }
 .quick-add-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6em 0.9em; margin-top: 0.6em; }
 
 /* Target calculator */

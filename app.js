@@ -19877,7 +19877,8 @@
       protein: t.protein + (Number(e.p) || 0),
       carbs: t.carbs + (Number(e.c) || 0),
       fat: t.fat + (Number(e.f) || 0),
-    }), { kcal: 0, protein: 0, carbs: 0, fat: 0 });
+      fiber: t.fiber + (Number(e.fib) || 0),
+    }), { kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 });
   }
   function recentDateKeys(n) {
     const out = [];
@@ -19917,18 +19918,82 @@
     saveFoodLog();
   }
 
+  // One food's identity across the log: the same yogurt picked from the USDA
+  // list is the same food every time, but a "Quick add" called Lunch out isn't
+  // the same as a database row that happens to share a name.
+  function foodKey(e) { return `${e.src}:${e.ref || ""}:${e.name}`; }
+
   // Most-logged foods from the recent past, so the usual breakfast is one tap.
   function recentFoods(progress, limit = 12) {
     const tally = new Map();
     for (const d of recentDateKeys(45)) {
       for (const e of progress.foodLog?.[d] || []) {
-        const key = `${e.src}:${e.ref || ""}:${e.name}`;
+        const key = foodKey(e);
         const prev = tally.get(key);
         if (prev) { prev.n++; continue; }
         tally.set(key, { n: 1, entry: e });
       }
     }
     return [...tally.values()].sort((a, b) => b.n - a.n).slice(0, limit).map((x) => x.entry);
+  }
+
+  // The last amount they logged of this exact food. Someone who eats two eggs
+  // every morning shouldn't retype "2" every morning, so the portion step opens
+  // on what they actually eat instead of on 1. Read straight off the log rather
+  // than kept as its own field: nothing extra to store, nothing to sync, and it
+  // can't drift out of step with what's really there.
+  function lastPortionFor(progress, key) {
+    const log = progress?.foodLog || {};
+    for (const d of Object.keys(log).sort().reverse()) {
+      const list = log[d] || [];
+      for (let i = list.length - 1; i >= 0; i--) {
+        if (foodKey(list[i]) === key) return { qty: Number(list[i].qty) || 0, unit: list[i].unit || "" };
+      }
+    }
+    return null;
+  }
+
+  // 1.5 → "1½". A remembered amount reads back the way it was picked, and it
+  // matches a grid cell exactly so the picker opens with it already
+  // highlighted. Anything without a tidy fraction stays a decimal.
+  const AMOUNT_FRACTIONS = [[0.25, "¼"], [1 / 3, "⅓"], [0.5, "½"], [2 / 3, "⅔"], [0.75, "¾"]];
+  function fmtAmount(n) {
+    const v = Number(n);
+    if (!Number.isFinite(v) || v <= 0) return "";
+    const whole = Math.floor(v + 1e-9);
+    const frac = v - whole;
+    if (frac > 1e-9) {
+      const hit = AMOUNT_FRACTIONS.find(([f]) => Math.abs(frac - f) < 0.02);
+      if (hit) return whole ? `${whole}${hit[1]}` : hit[1];
+    }
+    return String(Math.round(v * 100) / 100);
+  }
+
+  // Amounts for the tap grid, shaped by what the unit is. Weight units get
+  // round gram and ounce steps; a household measure ("1 cup") gets the
+  // fractions people actually think in, because nobody eats 0.67 of a cup.
+  function portionPickRanges(unitLabel) {
+    if (unitLabel === "g") {
+      // Bands don't share an endpoint: a value in two tabs would highlight in
+      // the first one found and look like the other tab had lost it.
+      return [
+        { label: "5–100", values: [5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 75, 80, 90, 100].map(String) },
+        { label: "125–500", values: Array.from({ length: 16 }, (_, i) => String(125 + i * 25)) },
+        { label: "550+", values: Array.from({ length: 15 }, (_, i) => String(550 + i * 50)) },
+      ];
+    }
+    // Ounces are written as fractions, not decimals, so that a remembered
+    // amount formats back to exactly the cell it came from and opens
+    // highlighted. fmtAmount turns 0.5 into "½", so the grid must say "½".
+    if (unitLabel === "oz") {
+      return [
+        { label: "Ounces", values: ["½", "1", "1½", "2", "2½", "3", "3½", "4", "4½", "5", "6", "7", "8", "10", "12", "16"] },
+      ];
+    }
+    return [
+      { label: "Amount", values: ["¼", "⅓", "½", "⅔", "¾", "1", "1¼", "1⅓", "1½", "1¾", "2", "2½", "3", "3½", "4"] },
+      { label: "More", values: Array.from({ length: 16 }, (_, i) => String(i + 5)) },
+    ];
   }
 
   // ---- The game layer ----
@@ -20786,9 +20851,13 @@
   }
 
   // People think in fractions for cups and spoons, so every amount box accepts
-  // "1/2" and "1 1/2" as well as "1.5".
+  // "1/2" and "1 1/2" as well as "1.5" — and "1½", which is what the tap grid
+  // writes. In Barlow at grid size the space in "1 1/4" all but disappears and
+  // the cell reads as eleven-quarters, so the grid uses the vulgar glyphs and
+  // this expands them back to the plain form the matchers below understand.
+  const VULGAR = { "¼": "1/4", "⅓": "1/3", "½": "1/2", "⅔": "2/3", "¾": "3/4" };
   function parseAmount(raw) {
-    const s = String(raw ?? "").trim();
+    const s = String(raw ?? "").trim().replace(/[¼⅓½⅔¾]/g, (g) => " " + VULGAR[g]).trim();
     if (!s) return NaN;
     let m = s.match(/^(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/); // "1 1/2"
     if (m) { const d = Number(m[3]); return d ? Number(m[1]) + Number(m[2]) / d : NaN; }
@@ -20836,6 +20905,19 @@
     </button>`;
   }
 
+  // Fiber rides along under the macros but is deliberately never scored. It
+  // only comes from whole-food database rows, so a day logged mostly through
+  // Quick add would read as a fiber failure when it's really missing data —
+  // grading that would be libel. The goal is the common 14 g per 1000 kcal
+  // guideline, derived rather than entered, so there's something to aim at
+  // without another number for the coach to keep up to date.
+  const FIBER_PER_1000 = 14;
+  const FIBER_COLOR = "#22c55e";
+  function fiberGoal(plan) {
+    const cal = Number(plan?.calories) || 0;
+    return cal > 0 ? Math.round((cal / 1000) * FIBER_PER_1000) : 0;
+  }
+
   // Macro bars as segmented XP meters: ten notches each, gold and checked once
   // the macro lands in its band. Protein leads because it's the one that moves
   // the needle, and it's the one they should chase first.
@@ -20855,7 +20937,25 @@
         </span>
         <span class="macro-bar-val ${over ? "is-over" : ""}">${done ? "✓ " : ""}${Math.round(eaten)}${target ? `/${Math.round(target)}` : ""}</span>
       </div>`;
-    }).join("");
+    }).join("") + fiberBarHtml(totals, plan);
+  }
+
+  // No notches and no gold: it reads as a companion to the macro meters rather
+  // than a fourth one that counts, which is exactly what it is.
+  function fiberBarHtml(totals, plan) {
+    const eaten = Math.round(totals.fiber || 0);
+    const goal = fiberGoal(plan);
+    if (!eaten && !goal) return "";
+    const pct = goal > 0 ? Math.min(eaten / goal, 1) * 100 : 0;
+    const hit = goal > 0 && eaten >= goal;
+    return `<div class="macro-bar-row is-fiber ${hit ? "is-hit" : ""}"
+        title="Fiber counts only what came from the food list, so it reads low on a day logged by hand. Not part of your score.">
+      <span class="macro-bar-name">FIB</span>
+      <span class="macro-bar-track">
+        <span class="macro-bar-fill" style="width:${pct.toFixed(1)}%;background:${FIBER_COLOR}"></span>
+      </span>
+      <span class="macro-bar-val">${hit ? "✓ " : ""}${eaten}${goal ? `/${goal}` : ""} g</span>
+    </div>`;
   }
 
   // Seven dots, oldest to today: filled for a perfect day, half for logged,
@@ -20878,9 +20978,12 @@
     // single serving reads as the label alone rather than "1 × 1 cup".
     const n = Number(e.qty) || 0;
     const unit = e.unit || "serving";
-    const qty = (unit === "g" || unit === "oz") ? `${Math.round(n * 10) / 10} ${unit}`
+    // Read back the way it was picked: 2½, not 2.5. Grams stay decimal — a
+    // gram is a gram and nobody weighs out two and a half of one.
+    const qty = unit === "g" ? `${Math.round(n * 10) / 10} g`
+      : unit === "oz" ? `${fmtAmount(n)} oz`
       : n === 1 ? unit
-      : `${Math.round(n * 100) / 100} × ${unit}`;
+      : `${fmtAmount(n)} × ${unit}`;
     return `<div class="food-entry" data-entry="${escapeHtml(e.id)}">
       <div class="food-entry-main">
         <span class="food-entry-name">${escapeHtml(e.name)}</span>
@@ -21195,13 +21298,21 @@
     } else {
       units.push({ label: pick.food.servingLabel || "serving", grams: 0 });
     }
-    const defaultIdx = 0;
+    // Open on the amount and unit they used the last time they logged this
+    // exact food, so the common case is no input at all. Falls back to 1 of the
+    // first unit when it's new, or when the unit they used isn't offered here.
+    const memKey = isDb ? `db:${pick.row[F.ID]}:${name}` : `custom:${pick.food.id}:${name}`;
+    const last = lastPortionFor(state.clientData.progress, memKey);
+    const lastIdx = last && last.qty > 0 ? units.findIndex((u) => u.label === last.unit) : -1;
+    const remembered = lastIdx >= 0;
+    const defaultIdx = remembered ? lastIdx : 0;
     openModal({
       title: name.length > 48 ? name.slice(0, 47) + "…" : name,
       body: `
         <div class="portion-row">
           <label>Amount
-            <input type="text" id="portion-qty" value="1" inputmode="decimal" autocomplete="off" placeholder="1 1/2" />
+            <input type="text" id="portion-qty" value="${escapeHtml(remembered ? fmtAmount(last.qty) : "1")}"
+              inputmode="none" autocomplete="off" placeholder="1½" />
           </label>
           <label>Unit
             <select id="portion-unit">
@@ -21209,6 +21320,7 @@
             </select>
           </label>
         </div>
+        ${remembered ? `<p class="portion-last">Filled in from the last time you logged this.</p>` : ""}
         <div id="portion-preview" class="portion-preview"></div>`,
       actions: [
         { label: "Back", className: "btn btn-ghost", onClick: () => openAddFoodModal(mealKey, opts) },
@@ -21237,10 +21349,14 @@
           p: Math.round(pick.row[F.P] * k * 10) / 10,
           c: Math.round(pick.row[F.C] * k * 10) / 10,
           f: Math.round(pick.row[F.FAT] * k * 10) / 10,
+          fib: round1((pick.row[F.FIBER] || 0) * k),
           src: "db", ref: pick.row[F.ID],
         };
       }
       const f = pick.food;
+      // Fiber is only written when the source actually carries a number.
+      // A hand-entered food with the box left blank is unknown, not zero.
+      const fib = (mul) => (Number(f.fib) > 0 ? { fib: round1(f.fib * mul) } : {});
       if (per100) {
         const grams = qty * unit.grams;
         const k = grams / 100;
@@ -21248,6 +21364,7 @@
           name, meal: mealKey, qty, unit: unit.label, grams: Math.round(grams * 10) / 10,
           kcal: Math.round(f.kcal * k),
           p: round1((f.p || 0) * k), c: round1((f.c || 0) * k), f: round1((f.f || 0) * k),
+          ...fib(k),
           src: "custom", ref: f.id,
         };
       }
@@ -21257,6 +21374,7 @@
         p: Math.round((f.p || 0) * qty * 10) / 10,
         c: Math.round((f.c || 0) * qty * 10) / 10,
         f: Math.round((f.f || 0) * qty * 10) / 10,
+        ...fib(qty),
         src: "custom", ref: f.id,
       };
     }
@@ -21265,12 +21383,35 @@
       $("#portion-preview").innerHTML = v
         ? `<span class="portion-kcal">${v.kcal.toLocaleString()} kcal</span>
            <span class="portion-macros">P ${v.p} · C ${v.c} · F ${v.f}</span>`
-        : `<span class="muted">Enter an amount</span>`;
+        : `<span class="muted">Pick an amount</span>`;
     };
-    $("#portion-qty").addEventListener("input", refresh);
-    $("#portion-unit").addEventListener("change", refresh);
+    const qtyEl = $("#portion-qty");
+    const unitEl = $("#portion-unit");
+    // Tapping the amount opens the same grid the set rows use instead of the
+    // phone keyboard — logging a food is the most repeated thing in the app and
+    // it shouldn't cost a keyboard. `inputMode` is what suppresses it; a
+    // physical keyboard is unaffected, so desktop typing still works, and
+    // "Type it instead" is the one-shot escape for an amount off the grid.
+    let typing = false;
+    qtyEl.addEventListener("click", () => {
+      if (typing) return;
+      const unit = units[Number(unitEl.value)] || units[0];
+      openLogPicker(qtyEl, {
+        current: qtyEl.value,
+        ranges: portionPickRanges(unit.label),
+        onPick: (v) => { qtyEl.value = v; refresh(); },
+        onType: () => {
+          typing = true;
+          qtyEl.inputMode = "decimal";
+          qtyEl.blur();
+          setTimeout(() => { qtyEl.focus(); typing = false; }, 0);
+        },
+      });
+    });
+    qtyEl.addEventListener("blur", () => { if (!typing) qtyEl.inputMode = "none"; });
+    qtyEl.addEventListener("input", refresh);
+    unitEl.addEventListener("change", refresh);
     refresh();
-    $("#portion-qty").select();
   }
 
   function openQuickAddModal(mealKey, opts = {}) {
@@ -21320,6 +21461,7 @@
           <label>Protein g <input type="number" id="cf-p" min="0" inputmode="numeric" /></label>
           <label>Carbs g <input type="number" id="cf-c" min="0" inputmode="numeric" /></label>
           <label>Fat g <input type="number" id="cf-f" min="0" inputmode="numeric" /></label>
+          <label>Fiber g <input type="number" id="cf-fib" min="0" inputmode="numeric" placeholder="optional" /></label>
         </div>`,
       actions: [
         { label: "Back", className: "btn btn-ghost", onClick: () => openAddFoodModal(mealKey, opts) },
@@ -21333,11 +21475,13 @@
             if (!kcal && !p && !c && !f) { toast("Enter at least the calories"); return; }
             const progress = state.clientData.progress;
             ensureFoodLog(progress);
+            const fib = Number($("#cf-fib").value) || 0;
             const food = {
               id: uid(), name,
               servingLabel: ($("#cf-serving").value || "").trim() || "serving",
               kcal: kcal || Math.round(p * 4 + c * 4 + f * 9),
               p, c, f, uses: 0, createdAt: todayISO(),
+              ...(fib > 0 ? { fib } : {}),
             };
             progress.customFoods.push(food);
             saveFoodLog();
