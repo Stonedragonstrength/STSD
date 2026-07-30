@@ -8957,6 +8957,19 @@ body.live-log-mode #screen-client .header-right { display: none; }
   background: none; border: none; padding: 0; cursor: pointer;
   color: var(--primary-bright); font-size: 0.75rem; font-weight: 700;
 }
+/* Only present when the coach has split training and rest days. The athlete
+   has to be told why today's number moved, or the ring looks broken. */
+.food-daytype {
+  padding: 0.12em 0.6em; border-radius: 999px;
+  font-size: 0.64rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.food-daytype.is-training {
+  background: var(--primary-soft); color: var(--primary-bright);
+  border: 1px solid rgba(var(--primary-rgb), 0.5);
+}
+.food-daytype.is-rest {
+  background: var(--surface-3); color: var(--text-soft); border: 1px solid var(--border);
+}
 .food-nav {
   flex: 0 0 auto; width: 38px; height: 38px; border-radius: 50%;
   background: var(--surface-2); border: 1px solid var(--border);
@@ -9290,6 +9303,31 @@ body.live-log-mode #screen-client .header-right { display: none; }
 }
 .nut-lock-row input { width: auto; margin-top: 0.2em; flex: 0 0 auto; }
 .nut-lock-row span.muted { display: block; font-size: 0.8rem; margin-top: 0.1em; }
+
+/* Training-day split: indented under its toggle so it reads as belonging to
+   it, and so an athlete without the split has one fewer thing on the page. */
+.nut-split-fields {
+  margin: 0.6em 0 0 1.9em; padding: 0.8em 0.9em;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.nut-split-lbl {
+  margin: 0 0 0.5em; font-size: 0.72rem; font-weight: 800;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-soft);
+}
+.dow-pills { display: flex; flex-wrap: wrap; gap: 0.35em; }
+.dow-pill {
+  flex: 1 1 auto; min-width: 2.9em; padding: 0.42em 0.2em;
+  background: var(--surface-3); color: var(--text-soft);
+  border: 1px solid var(--border); border-radius: 999px;
+  font-size: 0.76rem; font-weight: 700; cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.dow-pill:hover { border-color: var(--border-strong); }
+.dow-pill.is-on {
+  background: var(--primary-soft); color: var(--primary-bright);
+  border-color: rgba(var(--primary-rgb), 0.55);
+}
+.nut-split-note { margin: 0.6em 0 0; font-size: 0.78rem; line-height: 1.45; }
 .nut-active-line { display: flex; align-items: center; gap: 0.5em; font-size: 0.86rem; margin: 0 0 0.7em; }
 .nut-active-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
 .nut-active-dot.is-own { background: var(--warn); }
@@ -9351,6 +9389,10 @@ body.live-log-mode #screen-client .header-right { display: none; }
 .adh-bar.is-over .adh-bar-fill { background: var(--warn); }
 .adh-bar.is-on .adh-bar-fill { background: var(--accent); }
 .adh-bar.is-blank { background: transparent; border: 1px dashed var(--border); }
+/* A training day is marked on the weekday letter, not in the bar's color: the
+   color already means over/under/on and has to keep meaning only that. The bar
+   itself clips overflow, so a marker can't live inside it anyway. */
+.adh-dow.is-training { color: var(--primary-bright); font-weight: 800; }
 .adh-bar:hover { outline: 1px solid var(--border-strong); }
 .adh-bar.is-open { outline: 2px solid var(--primary); }
 .adh-dows { display: flex; gap: 3px; margin-top: 0.35em; }

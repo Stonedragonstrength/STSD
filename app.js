@@ -9384,6 +9384,7 @@
     const bits = [];
     if (Number(p?.calories) > 0) bits.push(`${Number(p.calories).toLocaleString()} kcal`);
     MACROS.forEach((m) => { if (Number(p?.[m.key]) > 0) bits.push(`${m.label[0]} ${p[m.key]}g`); });
+    if (planSplits(p)) bits.push(`+${Number(p.trainingBump).toLocaleString()} on training days`);
     return bits.join(" · ") || "—";
   }
 
@@ -9475,6 +9476,44 @@
     return { ...base, plan: null, source: null };
   }
 
+  // -------- Training days vs rest days --------
+  // Opt-in per athlete, off unless the coach turns it on: a beginner does not
+  // need two sets of numbers, and one target that is right most of the time
+  // beats two the athlete has to think about.
+  //
+  // It is a single number, not a second macro form. A training-day bump is
+  // carbs in practice — nobody cycles their protein — so the coach enters the
+  // extra calories and they land as carbohydrate. The plan stays internally
+  // consistent and there is one box to fill instead of four.
+  //
+  // The weekdays are picked explicitly rather than read off completed
+  // workouts. A target has to be knowable in the morning, when the athlete is
+  // deciding what to eat, and a day that is already scored must never re-score
+  // itself because a workout got logged late in the evening.
+  function planSplits(plan) {
+    return !!(plan && plan.splitDays && Number(plan.trainingBump) > 0
+      && (plan.trainingDows || []).length);
+  }
+
+  // Resolve a plan that may carry a split down to the numbers that apply on
+  // one date. A plan without a split resolves to itself, so every caller can
+  // run through here unconditionally. The resolved result carries
+  // splitDays:false, which makes a second pass a no-op and stops a plan
+  // already resolved for one date from being re-resolved against another.
+  function planForDate(plan, dateKey) {
+    if (!planSplits(plan) || !dateKey) return plan;
+    const dow = new Date(dateKey + "T12:00:00").getDay();
+    if (!plan.trainingDows.includes(dow)) return plan;
+    const bump = Number(plan.trainingBump) || 0;
+    return {
+      ...plan,
+      splitDays: false,
+      isTrainingDay: true,
+      calories: (Number(plan.calories) || 0) + bump,
+      carbs: Math.round((Number(plan.carbs) || 0) + bump / 4),
+    };
+  }
+
   // -------- Nutrition rollup (coach adherence view + eating-habit signals) --------
   // Both read the same window over progress.foodLog, so the thresholds that
   // decide "missed", "over" and "on point" live in exactly one place.
@@ -9488,22 +9527,37 @@
   function nutritionRollup(client, progress, days = 7, endISO) {
     const end = endISO || todayISO();
     const plan = effectiveTargets(client, progress).plan;
-    const calTarget = Number(plan?.calories) || 0;
-    const proTarget = Number(plan?.protein) || 0;
     const log = progress?.foodLog || {};
     const rows = [];
     for (let i = days - 1; i >= 0; i--) {
       const date = addDaysISO(end, -i);
       const entries = log[date] || [];
-      rows.push({ date, count: entries.length, logged: entries.length > 0, ...foodDayTotals(entries) });
+      // Each row carries the target that actually applied that day. With a
+      // training/rest split one window-wide number would mark every training
+      // day as an overshoot and every rest day as a miss.
+      const dp = planForDate(plan, date);
+      rows.push({
+        date, count: entries.length, logged: entries.length > 0,
+        calTarget: Number(dp?.calories) || 0,
+        proTarget: Number(dp?.protein) || 0,
+        training: !!dp?.isTrainingDay,
+        ...foodDayTotals(entries),
+      });
     }
     const hit = rows.filter((r) => r.logged);
     const avg = (k) => (hit.length ? Math.round(hit.reduce((s, r) => s + r[k], 0) / hit.length) : 0);
+    // The headline targets are the window's average, so "avg kcal of X"
+    // compares an average against an average rather than against one of two
+    // numbers. Without a split every row is identical and this is a no-op.
+    const meanTarget = (k) => (rows.length
+      ? Math.round(rows.reduce((s, r) => s + r[k], 0) / rows.length) : 0);
     return {
-      rows, plan, calTarget, proTarget, days,
+      rows, plan, days,
+      calTarget: meanTarget("calTarget"), proTarget: meanTarget("proTarget"),
+      splits: planSplits(plan),
       logged: hit.length,
       avgKcal: avg("kcal"), avgProtein: avg("protein"), avgCarbs: avg("carbs"), avgFat: avg("fat"),
-      onTarget: calTarget ? hit.filter((r) => Math.abs(r.kcal - calTarget) <= calTarget * ADH_ON).length : 0,
+      onTarget: hit.filter((r) => r.calTarget && Math.abs(r.kcal - r.calTarget) <= r.calTarget * ADH_ON).length,
     };
   }
 
@@ -9557,9 +9611,11 @@
       }
       return start;
     };
-    const under = (r) => r.kcal < roll.calTarget * ADH_UNDER;
-    const over = (r) => r.kcal > roll.calTarget * ADH_OVER;
-    const lowProtein = (r) => roll.proTarget > 0 && r.protein < roll.proTarget * ADH_UNDER;
+    // Judged against the target that applied on that day, not the window
+    // average — otherwise a split plan reports four "under" days a week.
+    const under = (r) => r.calTarget > 0 && r.kcal < r.calTarget * ADH_UNDER;
+    const over = (r) => r.calTarget > 0 && r.kcal > r.calTarget * ADH_OVER;
+    const lowProtein = (r) => r.proTarget > 0 && r.protein < r.proTarget * ADH_UNDER;
 
     if (hit.filter(under).length >= NUT_BAD_DAYS) {
       const anchor = runStart(under);
@@ -9581,7 +9637,7 @@
     let run = 0, runFrom = null;
     for (let i = wide.rows.length - 1; i >= 0; i--) {
       const r = wide.rows[i];
-      if (!r.logged || Math.abs(r.kcal - roll.calTarget) > roll.calTarget * ADH_ON) break;
+      if (!r.logged || !r.calTarget || Math.abs(r.kcal - r.calTarget) > r.calTarget * ADH_ON) break;
       run++; runFrom = r.date;
     }
     if (run >= NUT_RUN_DAYS) {
@@ -9646,6 +9702,11 @@
     const cur = c.nutrition.current || {};
 
     const initPct = planPercents(cur);
+    // Mutated by the weekday pills below and read back on save. Defaults to a
+    // three-day week rather than nothing, so switching the split on and typing
+    // one number is a complete plan.
+    const splitDows = Array.isArray(cur.trainingDows) && cur.trainingDows.length
+      ? cur.trainingDows.slice() : [1, 3, 5];
     const card = document.createElement("div");
     card.className = "card";
     card.innerHTML = `
@@ -9670,6 +9731,23 @@
       </label>
       <div id="nut-chart-preview">${macroDonutHtml(cur)}</div>
       <label class="nut-lock-row">
+        <input type="checkbox" id="nut-split" ${cur.splitDays ? "checked" : ""} />
+        <span>
+          <strong>Different targets on training days</strong>
+          <span class="muted">Off by default. Turn it on for someone ready to eat around their sessions, and the numbers above become their rest days.</span>
+        </span>
+      </label>
+      <div id="nut-split-fields" class="nut-split-fields${cur.splitDays ? "" : " hidden"}">
+        <p class="nut-split-lbl">Which days do they train?</p>
+        <div class="dow-pills" id="nut-dows">
+          ${DOW_LABELS.map((d, i) => `<button type="button" class="dow-pill${splitDows.includes(i) ? " is-on" : ""}" data-dow="${i}" aria-pressed="${splitDows.includes(i)}">${d}</button>`).join("")}
+        </div>
+        <label style="margin-top:0.6em">Extra calories on those days
+          <input type="number" min="0" step="50" id="nut-bump" placeholder="e.g. 400" value="${escapeHtml(String(cur.trainingBump ?? ""))}" />
+        </label>
+        <p class="muted nut-split-note" id="nut-split-note"></p>
+      </div>
+      <label class="nut-lock-row">
         <input type="checkbox" id="nut-lock" ${cur.locked ? "checked" : ""} />
         <span>
           <strong>Lock these targets</strong>
@@ -9690,9 +9768,41 @@
       $("#nut-calc").innerHTML = macroCalcHtml(cal, pcts);
       $("#nut-chart-preview").innerHTML = macroDonutHtml({ calories: cal, ...pctToGrams(cal, pcts) });
     };
-    ["nut-cal", "nut-protein-pct", "nut-carbs-pct", "nut-fat-pct"].forEach((id) => {
-      $("#" + id).addEventListener("input", refreshCalc);
+    // Spells out both sets in full, because "+400" on its own doesn't tell the
+    // coach what the athlete will actually see on either kind of day.
+    const refreshSplit = () => {
+      const note = $("#nut-split-note");
+      const bump = Number($("#nut-bump").value) || 0;
+      const cal = Number($("#nut-cal").value) || 0;
+      const carbs = Number(pctToGrams($("#nut-cal").value.trim(), readPcts()).carbs) || 0;
+      if (!cal) { note.textContent = "Set a calorie target above first."; return; }
+      if (!bump || !splitDows.length) {
+        note.textContent = "Pick their training days and how many extra calories those days get.";
+        return;
+      }
+      note.textContent =
+        `Training days ${(cal + bump).toLocaleString()} kcal, carbs ${Math.round(carbs + bump / 4)} g. `
+        + `Rest days ${cal.toLocaleString()} kcal, carbs ${carbs} g. Protein and fat stay the same.`;
+    };
+    $("#nut-split").addEventListener("change", (e) => {
+      $("#nut-split-fields").classList.toggle("hidden", !e.target.checked);
+      refreshSplit();
     });
+    $("#nut-bump").addEventListener("input", refreshSplit);
+    $("#nut-dows").querySelectorAll("[data-dow]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const n = Number(b.dataset.dow);
+        const at = splitDows.indexOf(n);
+        if (at < 0) splitDows.push(n); else splitDows.splice(at, 1);
+        b.classList.toggle("is-on", at < 0);
+        b.setAttribute("aria-pressed", at < 0);
+        refreshSplit();
+      });
+    });
+    ["nut-cal", "nut-protein-pct", "nut-carbs-pct", "nut-fat-pct"].forEach((id) => {
+      $("#" + id).addEventListener("input", () => { refreshCalc(); refreshSplit(); });
+    });
+    refreshSplit();
     $("#btn-save-nutrition").addEventListener("click", () => {
       const calories = $("#nut-cal").value.trim();
       const pcts = readPcts();
@@ -9702,17 +9812,28 @@
       if (sumPct !== 100) {
         if (!window.confirm(`Your macros add up to ${sumPct}%, not 100%. Save anyway?`)) return;
       }
+      const splitOn = $("#nut-split").checked;
+      const bump = Number($("#nut-bump").value) || 0;
+      if (splitOn && (!bump || !splitDows.length)) {
+        toast("Pick training days and an extra calorie amount, or switch the split off");
+        return;
+      }
       const plan = {
         calories,
         proteinPct: pcts.protein, carbsPct: pcts.carbs, fatPct: pcts.fat,
         protein: grams.protein, carbs: grams.carbs, fat: grams.fat,
         notes: $("#nut-notes").value.trim(),
         locked: $("#nut-lock").checked,
+        splitDays: splitOn,
+        trainingDows: splitOn ? splitDows.slice().sort((a, b) => a - b) : [],
+        trainingBump: splitOn ? bump : 0,
         effectiveFrom: todayISO(),
       };
       const prev = c.nutrition.current;
-      const changed = !prev || ["calories", "proteinPct", "carbsPct", "fatPct", "notes", "locked"].some(
-        (k) => String(prev[k] ?? "") !== String(plan[k] ?? ""));
+      const changed = !prev || ["calories", "proteinPct", "carbsPct", "fatPct", "notes", "locked",
+        "splitDays", "trainingBump"].some(
+        (k) => String(prev[k] ?? "") !== String(plan[k] ?? ""))
+        || String((prev.trainingDows || []).join()) !== String(plan.trainingDows.join());
       if (!changed) { toast("No changes to save"); return; }
       // Same-day edits are corrections, not a new era — don't spam history.
       if (prev && prev.effectiveFrom !== plan.effectiveFrom && (prev.calories || prev.protein)) {
@@ -9890,19 +10011,19 @@
           : `<span class="adh-trend-arrow">${delta > 0 ? "▲" : "▼"}</span> ${Math.abs(delta).toLocaleString()} kcal a day vs the ${_adhRange} days before.`}</p>`}
         <div class="adh-chart">
           <div class="adh-cols" role="list">
-            ${roll.calTarget ? `<div class="adh-target-line" style="bottom:${targetPct.toFixed(1)}%"><span>target</span></div>` : ""}
+            ${roll.calTarget ? `<div class="adh-target-line" style="bottom:${targetPct.toFixed(1)}%"><span>${roll.splits ? "avg target" : "target"}</span></div>` : ""}
             ${roll.rows.map((r) => {
               const h = r.logged ? Math.max((r.kcal / peak) * 100, 2) : 0;
               const label = r.logged ? `${Math.round(r.kcal).toLocaleString()} kcal` : "not logged";
-              return `<button type="button" role="listitem" class="adh-bar ${adhDayClass(r, roll.calTarget)}${r.date === _adhOpenDay ? " is-open" : ""}"
-                data-day="${escapeHtml(r.date)}" title="${escapeHtml(r.date)} · ${escapeHtml(label)}"
+              return `<button type="button" role="listitem" class="adh-bar ${adhDayClass(r, r.calTarget)}${r.date === _adhOpenDay ? " is-open" : ""}"
+                data-day="${escapeHtml(r.date)}" title="${escapeHtml(r.date)}${r.training ? " (training day)" : ""} · ${escapeHtml(label)}"
                 aria-label="${escapeHtml(r.date)}, ${escapeHtml(label)}">
                 <span class="adh-bar-fill" style="height:${h.toFixed(1)}%"></span>
               </button>`;
             }).join("")}
           </div>
           <div class="adh-dows" aria-hidden="true">
-            ${roll.rows.map((r) => `<span class="adh-dow">${escapeHtml(
+            ${roll.rows.map((r) => `<span class="adh-dow${r.training ? " is-training" : ""}">${escapeHtml(
               new Date(r.date + "T12:00:00").toLocaleDateString(undefined, { weekday: "narrow" }))}</span>`).join("")}
           </div>
         </div>
@@ -20022,7 +20143,11 @@
   }
 
   // { score, parts:{key:0-100|null}, perfect, logged, totals }
-  function dayScore(progress, plan, dateKey) {
+  function dayScore(progress, basePlan, dateKey) {
+    // Resolved here rather than by the caller, so every score, dot, streak day
+    // and XP award in the game layer is judged against the numbers that
+    // actually applied on its own date.
+    const plan = planForDate(basePlan, dateKey);
     const entries = foodDayEntries(progress, dateKey);
     const totals = foodDayTotals(entries);
     const parts = {
@@ -20051,9 +20176,9 @@
 
   // A day only holds the streak if they actually ate on the record, not if they
   // logged a single apple to keep the flame alive.
-  function streakDay(progress, plan, dateKey) {
+  function streakDay(progress, basePlan, dateKey) {
     const t = foodDayTotals(foodDayEntries(progress, dateKey));
-    const target = Number(plan?.calories) || 0;
+    const target = Number(planForDate(basePlan, dateKey)?.calories) || 0;
     if (!t.kcal) return false;
     return target > 0 ? t.kcal >= target * 0.5 : t.kcal >= 800;
   }
@@ -21003,11 +21128,16 @@
     const client = state.clientData.program?.client;
     const progress = state.clientData.progress;
     const eff = effectiveTargets(client, progress);
-    const plan = eff.plan;
+    // basePlan may carry a training/rest split; `plan` is it resolved for the
+    // day on screen. Anything that walks a range of dates (the week dots, the
+    // XP walker) must get basePlan so each date resolves for itself.
+    const basePlan = eff.plan;
+    const plan = planForDate(basePlan, _foodDate);
+    const splits = planSplits(basePlan);
     const entries = foodDayEntries(progress, _foodDate);
     const totals = foodDayTotals(entries);
     const isToday = _foodDate === todayISO();
-    const day = dayScore(progress, plan, _foodDate);
+    const day = dayScore(progress, basePlan, _foodDate);
     const game = syncNutritionGame(client, progress);
     const inZone = day.parts.calories === 100;
     const mealKey = _foodMeal || (_foodMeal = defaultMealKey());
@@ -21034,6 +21164,8 @@
         <button class="food-nav" id="food-prev" aria-label="Previous day">‹</button>
         <div class="food-day-title">
           <strong>${escapeHtml(foodDateLabel(_foodDate))}</strong>
+          ${splits ? `<span class="food-daytype ${plan.isTrainingDay ? "is-training" : "is-rest"}">${
+            plan.isTrainingDay ? "Training day" : "Rest day"}</span>` : ""}
           ${isToday ? "" : `<button class="food-today-btn" id="food-today">Back to today</button>`}
         </div>
         <button class="food-nav" id="food-next" aria-label="Next day" ${isToday ? "disabled" : ""}>›</button>
@@ -21044,7 +21176,7 @@
         <div class="food-hud-side">
           <div class="macro-bars">${macroBarsHtml(totals, plan, day.parts)}</div>
           <div class="food-hud-foot">
-            ${weekDotsHtml(progress, plan)}
+            ${weekDotsHtml(progress, basePlan)}
             ${day.perfect
               ? `<span class="food-score is-perfect">★ Perfect</span>`
               : `<span class="food-score">${day.score == null ? "—" : day.score}<i>/100</i></span>`}
