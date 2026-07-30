@@ -7371,7 +7371,18 @@
     "sd:undo": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.6 8.4h6.2M3.6 8.4V3.6"/><path d="M3.6 8.4a8.6 8.6 0 1 1-1.1 6"/></svg>',
     "sd:calx": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.3" y="5.2" width="17.4" height="15.5" rx="3"/><path d="M3.3 10.1h17.4M8.1 3.3v3.6M15.9 3.3v3.6"/><path d="m10.2 13.6 3.6 3.6M13.8 13.6l-3.6 3.6"/></svg>',
     "sd:unlink": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.4 14.6 7 17a3.7 3.7 0 0 1-5.2-5.2l2.4-2.4"/><path d="m14.6 9.4 2.4-2.4a3.7 3.7 0 0 1 5.2 5.2l-2.4 2.4"/><path d="M12.5 4.2V1.8M19.8 11.5h2.4M4.2 12.5H1.8M11.5 19.8v2.4"/></svg>',
+    // The activity column's own kinds. A stroked barbell rather than the solid
+    // eq:dumbbell, so the whole column is one weight.
+    // Tall plates on purpose: a barbell is a wide, flat shape, and drawn to its
+    // natural proportions it reads half-size next to the other marks.
+    "sd:lift": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.7 8.6v6.8M6.2 4.6v14.8M17.8 4.6v14.8M21.3 8.6v6.8"/><path d="M6.2 12h11.6"/></svg>',
+    "sd:video": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.6" y="6.4" width="12.6" height="11.2" rx="2.6"/><path d="m15.2 11.3 5.4-3.1v7.6l-5.4-3.1z"/></svg>',
+    "sd:chat": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 11.6a8.2 8.2 0 0 1-11.9 7.4l-5.3 1.2 1.2-5.3A8.2 8.2 0 1 1 20.6 11.6Z"/></svg>',
+    "sd:ticket": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.6" y="6.4" width="18.8" height="11.2" rx="2.6"/><path d="M9.4 6.4v11.2" stroke-dasharray="2 2.3"/></svg>',
   };
+  // One line icon sized to sit on a line of text, for the places that used to
+  // put an emoji mid-sentence (the coach activity column, the eating signals).
+  function lineIco(token) { return `<span class="ln-ico">${dayIconHtml(token)}</span>`; }
   function isSvgIcon(v) { return typeof v === "string" && Object.prototype.hasOwnProperty.call(DAY_ICON_SVGS, v); }
   function dayIconHtml(v) { return isSvgIcon(v) ? DAY_ICON_SVGS[v] : escapeHtml(v || ""); }
   function setDayIcon(el, v) { if (isSvgIcon(v)) el.innerHTML = DAY_ICON_SVGS[v]; else el.textContent = v || ""; }
@@ -9353,7 +9364,7 @@
     if (gap >= NUT_STOP_DAYS) {
       // Anchored on the last day they logged, which doesn't move while the
       // gap grows, so this stays one notification rather than a daily nag.
-      return [{ type: "stopped", anchor: last, tone: "warn", icon: "🍽️",
+      return [{ type: "stopped", anchor: last, tone: "warn", icon: lineIco("lu:soup"),
         text: `hasn't logged food in ${gap} days` }];
     }
 
@@ -9382,16 +9393,16 @@
 
     if (hit.filter(under).length >= NUT_BAD_DAYS) {
       const anchor = runStart(under);
-      if (anchor) out.push({ type: "under", anchor, tone: "warn", icon: "🥗",
+      if (anchor) out.push({ type: "under", anchor, tone: "warn", icon: lineIco("lu:salad"),
         text: `eating well under target · ${roll.avgKcal.toLocaleString()} vs ${roll.calTarget.toLocaleString()} kcal` });
     } else if (hit.filter(over).length >= NUT_BAD_DAYS) {
       const anchor = runStart(over);
-      if (anchor) out.push({ type: "over", anchor, tone: "warn", icon: "🍔",
+      if (anchor) out.push({ type: "over", anchor, tone: "warn", icon: lineIco("lu:pizza"),
         text: `eating over target · ${roll.avgKcal.toLocaleString()} vs ${roll.calTarget.toLocaleString()} kcal` });
     }
     if (roll.proTarget && hit.filter(lowProtein).length >= NUT_BAD_DAYS) {
       const anchor = runStart(lowProtein);
-      if (anchor) out.push({ type: "protein", anchor, tone: "warn", icon: "🥩",
+      if (anchor) out.push({ type: "protein", anchor, tone: "warn", icon: lineIco("lu:beef"),
         text: `missing protein · ${roll.avgProtein} vs ${roll.proTarget} g a day` });
     }
 
@@ -9404,7 +9415,7 @@
       run++; runFrom = r.date;
     }
     if (run >= NUT_RUN_DAYS) {
-      out.push({ type: "onpoint", anchor: runFrom, tone: "good", icon: "🎯",
+      out.push({ type: "onpoint", anchor: runFrom, tone: "good", icon: lineIco("lu:target"),
         text: `${run} days on target` });
     }
     return out;
@@ -10362,7 +10373,7 @@
       `<span class="dvs-face">${c ? athleteFaceHtml(c, "md") : `<span class="av-tile av-md av-empty">?</span>`}</span>` +
       `<span class="dvs-id"><b>${escapeHtml(row.name)}</b>` +
         `<span>${escapeHtml(fmtSlotDay(iso))}${row.time ? " · " + escapeHtml(row.time) : ""}</span>` +
-        (sum ? `<span class="dvs-bal${sum.remaining <= 0 ? " low" : ""}">🎟 ${sum.remaining} left</span>` : "") +
+        (sum ? `<span class="dvs-bal${sum.remaining <= 0 ? " low" : ""}">${lineIco("sd:ticket")} ${sum.remaining} left</span>` : "") +
       `</span></div>`;
 
     // The day this session is about: what they scheduled, or failing that the
@@ -10397,7 +10408,9 @@
     if (!c && e) acts.push(act("link", "sd:athlete", "Link to an athlete…"));
     if (mark) {
       body += `<div class="dvs-mark ${mark.type === "closecall" ? "closecall" : "charged"}">` +
-        `${mark.type === "closecall" ? "🤝 Close call — not charged" : "✕ Missed — charged"}</div>`;
+        `${mark.type === "closecall"
+          ? lineIco("sd:waive") + " Close call — not charged"
+          : lineIco("sd:missed") + " Missed — charged"}</div>`;
     }
     if (e?.seriesId) body += `<div class="dvs-note">Part of a weekly series.</div>`;
     body += `<div class="dvs-acts">${acts.join("")}</div>`;
@@ -13667,7 +13680,7 @@
         row.innerHTML = `
           <span class="needs-face">${athleteFaceHtml(n.c)}</span>
           <span class="needs-body"><span class="needs-name">${escapeHtml(n.c.name)}</span>
-            <span class="needs-text">🎟 wants ${escapeHtml(String(n.req.size))} sessions</span></span>
+            <span class="needs-text">${lineIco("sd:ticket")} wants ${escapeHtml(String(n.req.size))} sessions</span></span>
           <span class="needs-actions">
             <button class="btn btn-ghost btn-sm" type="button" data-decline>Decline</button>
             <button class="btn btn-primary btn-sm" type="button" data-approve>Approve &amp; mark paid</button>
@@ -13686,7 +13699,7 @@
         row.innerHTML = `
           <span class="needs-face">${athleteFaceHtml(n.c)}</span>
           <span class="needs-body"><span class="needs-name">${escapeHtml(n.c.name)}</span>
-            <span class="needs-text">💬 sent ${n.n === 1 ? "a message" : n.n + " messages"}</span></span>
+            <span class="needs-text">${lineIco("sd:chat")} sent ${n.n === 1 ? "a message" : n.n + " messages"}</span></span>
           <span class="needs-when">${escapeHtml(notifWhen(n.ts))}</span>
           <span class="needs-go">→</span>`;
         jump(() => openMessageThread(n.c.id));
@@ -13694,7 +13707,7 @@
         row.innerHTML = `
           <span class="needs-face">${athleteFaceHtml(n.c)}</span>
           <span class="needs-body"><span class="needs-name">${escapeHtml(n.c.name)}</span>
-            <span class="needs-text">🎥 sent a form video</span></span>
+            <span class="needs-text">${lineIco("sd:video")} sent a form video</span></span>
           <span class="needs-when">${escapeHtml(notifWhen(n.ts))}</span>
           <span class="needs-go">→</span>`;
         jump(() => openCompletedWorkout(n.c.id, n.dayId, dateISO(new Date(n.ts))));
@@ -13702,14 +13715,14 @@
         row.innerHTML = `
           <span class="needs-face">${athleteFaceHtml(n.c)}</span>
           <span class="needs-body"><span class="needs-name">${escapeHtml(n.c.name)}</span>
-            <span class="needs-text">🎫 is out of sessions</span></span>
+            <span class="needs-text">${lineIco("sd:ticket")} is out of sessions</span></span>
           <span class="needs-go">→</span>`;
         jump(() => { Nav.push(showCoachOverview); openClient(n.c.id); setTab("sessions"); });
       } else {
         row.innerHTML = `
           <span class="needs-face">${athleteFaceHtml(n.c)}</span>
           <span class="needs-body"><span class="needs-name">${escapeHtml(n.c.name)}</span>
-            <span class="needs-text">😴 hasn't trained in ${n.days} days</span></span>
+            <span class="needs-text">${lineIco("lu:bed")} hasn't trained in ${n.days} days</span></span>
           <span class="needs-go">→</span>`;
         jump(() => { Nav.push(showCoachOverview); openClient(n.c.id); });
       }
@@ -13739,7 +13752,7 @@
         (Array.isArray(dates) ? dates : []).forEach((date) => {
           if (!date) return;
           out.push({
-            type: "workout", icon: "🏋️",
+            type: "workout", icon: lineIco("sd:lift"),
             ts: new Date(date + "T12:00:00").getTime(),
             name: c.name, text: `logged ${dayNames[dayId] || "a workout"}`,
             clientId: c.id, dayId, date,
@@ -13752,7 +13765,7 @@
         (Array.isArray(clips) ? clips : []).forEach((clip) => {
           if (!clip || !clip.uploadedAt) return;
           out.push({
-            type: "formcheck", icon: "🎥",
+            type: "formcheck", icon: lineIco("sd:video"),
             ts: clip.uploadedAt,
             name: c.name, text: `sent a form video · ${dayNames[dayId] || "a workout"}`,
             clientId: c.id, dayId, date: dateISO(new Date(clip.uploadedAt)),
@@ -13766,9 +13779,8 @@
         if (!log || !log.date) return;
         const miles = Number(log.miles) ? ` · ${cardioMiLabel(Number(log.miles))} mi` : "";
         out.push({
-          // The log's icon column is a line-icon column everywhere else; the
-          // emoji the athlete's own cardio picker uses looked pasted in here.
-          type: "cardio", icon: `<span class="notif-ico">${dayIconHtml("sd:pulse")}</span>`,
+          // The athlete's own cardio picker keeps its emoji; this column doesn't.
+          type: "cardio", icon: lineIco("sd:pulse"),
           ts: new Date(log.date + "T12:00:00").getTime(),
           name: c.name,
           text: `logged ${String(log.type || "cardio").toLowerCase()} · ${log.minutes || 0} min${miles}`,
@@ -13780,7 +13792,7 @@
       // record of what athletes did, and the coach's own replies aren't news.
       MSG.all.filter((m) => m.athlete_id === c.id && m.sender === "athlete").forEach((m) => {
         out.push({
-          type: "message", icon: "💬",
+          type: "message", icon: lineIco("sd:chat"),
           ts: new Date(m.created_at).getTime(),
           name: c.name, text: `messaged you · ${String(m.body).slice(0, 60)}`,
           clientId: c.id, dayId: null, date: dateISO(new Date(m.created_at)),

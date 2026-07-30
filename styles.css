@@ -11734,7 +11734,14 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
 
 /* The activity log's cardio mark, sized to sit on the text baseline beside the
    emoji the other kinds still use. */
-/* A little larger than 1em: the mark is a wide flat line, so at text size it
-   reads thinner than the emoji the other kinds still use. */
-.notif-ico { display: inline-flex; width: 1.2em; height: 1.2em; vertical-align: -0.28em; color: var(--text-soft); }
-.notif-ico svg { width: 100%; height: 100%; }
+/* A line icon sitting mid-sentence, where the coach lists used to put an emoji.
+   Slightly over 1em because a stroked mark reads lighter than an emoji glyph at
+   the same size; it inherits colour, so it dims with the text around it. */
+.ln-ico {
+  display: inline-flex; flex-shrink: 0;
+  width: 1.2em; height: 1.2em; vertical-align: -0.28em;
+}
+.ln-ico svg { width: 100%; height: 100%; }
+/* The eating signals are coloured chips — the mark takes the chip's colour, not
+   the muted body colour the activity rows give it. */
+.adh-signal .ln-ico { vertical-align: -0.24em; }
