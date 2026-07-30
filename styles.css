@@ -11386,6 +11386,116 @@ body.scroll-locked {
 .wk-chip-plan { border-style: dashed; color: var(--text-soft); }
 .wk-none { color: var(--muted); font-size: 0.8rem; }
 
+/* Week as a timetable (>=1000px, set in JS by WEEK_GRID_MQ): days across, the
+   clock down. The agenda above is what a phone gets — this one needs the width
+   to give seven columns anything to say. */
+.dash-cal-week-view.is-grid { display: block; }
+.wkg {
+  --wkg-gutter: 3.2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.wkg-headrow, .wkg-allday {
+  display: grid;
+  grid-template-columns: var(--wkg-gutter) repeat(7, minmax(0, 1fr));
+}
+.wkg-headrow { border-bottom: 1px solid var(--border); }
+.wkg-head {
+  display: flex; align-items: baseline; justify-content: center; gap: 0.35em;
+  padding: 0.45em 0.2em;
+  border: 0; border-left: 1px solid var(--border);
+  background: none; color: inherit; font: inherit; cursor: pointer;
+}
+.wkg-head:hover { background: var(--surface-3); }
+.wkg-head b {
+  font-size: 0.62rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-soft);
+}
+.wkg-head span { font-size: 1rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.wkg-head.is-today span { color: var(--primary-bright); }
+.wkg-head.is-today b { color: var(--primary-bright); }
+
+/* Programmed workouts have no clock, so they sit above the grid rather than
+   being parked at an invented hour. */
+.wkg-allday { border-bottom: 1px solid var(--border); background: var(--surface); }
+.wkg-allday-lbl {
+  align-self: center; padding-left: 0.4em;
+  font-size: 0.56rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--muted);
+}
+.wkg-allday-cell {
+  display: flex; flex-wrap: wrap; gap: 0.2rem; min-width: 0;
+  padding: 0.25em; border-left: 1px solid var(--border);
+}
+.wkg-allday-cell .wk-chip { font-size: 0.66rem; padding: 0.1em 0.4em; }
+
+.wkg-body { display: flex; position: relative; }
+.wkg-gutter {
+  width: var(--wkg-gutter); flex: 0 0 auto;
+  display: flex; flex-direction: column;
+}
+.wkg-hour {
+  flex: 1 1 0; min-height: 0;
+  padding-right: 0.4em; text-align: right;
+  font-size: 0.62rem; font-weight: 700; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  /* Sits ON the hour line it names, not inside the box below it. */
+  transform: translateY(-0.4em);
+}
+.wkg-cols {
+  position: relative; flex: 1 1 auto; min-width: 0;
+  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+.wkg-col { position: relative; border-left: 1px solid var(--border); cursor: pointer; }
+.wkg-col.is-today { background: rgba(var(--primary-rgb), 0.06); }
+/* 38px is WK_HOUR_PX in app.js — the body height and every session's top are
+   computed from it, so the two have to move together. */
+.wkg-slot { height: 38px; border-top: 1px solid var(--border); opacity: 0.5; }
+.wkg-slot:first-child { border-top: 0; }
+
+.wkg-ev {
+  position: absolute; z-index: 2;
+  display: flex; flex-direction: column; gap: 0.05em;
+  overflow: hidden;
+  padding: 0.15em 0.35em;
+  border: 1px solid rgba(var(--primary-rgb), 0.55);
+  border-left: 3px solid var(--primary-bright);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.34), rgba(var(--primary-rgb), 0.18));
+  color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.wkg-ev:hover { border-color: var(--primary-bright); background: rgba(var(--primary-rgb), 0.42); }
+/* A session that came from Setmore rather than the app reads quieter. */
+.wkg-ev.is-external {
+  border-color: var(--border); border-left-color: var(--text-soft);
+  background: var(--surface-3);
+}
+.wkg-ev-time {
+  font-size: 0.6rem; font-weight: 800; color: var(--primary-bright);
+  font-variant-numeric: tabular-nums; line-height: 1.1;
+}
+.wkg-ev.is-external .wkg-ev-time { color: var(--text-soft); }
+.wkg-ev-name {
+  display: flex; align-items: center; gap: 0.25em; min-width: 0;
+  font-size: 0.7rem; font-weight: 700; line-height: 1.15;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* A half-hour block is too short for two lines: time and name share one. */
+.wkg-ev.is-short { flex-direction: row; align-items: center; gap: 0.35em; padding-top: 0; padding-bottom: 0; }
+.wkg-ev.is-short .wkg-ev-time { flex: 0 0 auto; }
+.wkg-ev.is-short .wkg-ev-name { flex: 1 1 auto; }
+/* Now, on a week that contains today. */
+.wkg-now {
+  position: absolute; left: 0; right: 0; z-index: 3;
+  height: 0; border-top: 2px solid var(--warn); pointer-events: none;
+}
+.wkg-now::before {
+  content: ""; position: absolute; left: -3px; top: -4px;
+  width: 6px; height: 6px; border-radius: 50%; background: var(--warn);
+}
+
 
 /* ============ Day view: one line per athlete ============
    The day used to wear every control on its sleeve — close call, missed,

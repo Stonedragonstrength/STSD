@@ -10397,12 +10397,164 @@
     }));
   }
 
-  // Week: seven days at a glance, each a tap into that day. An agenda rather
-  // than an hour grid — a coach runs a handful of sessions a day, so a time
-  // grid would be mostly empty space, and empty space is the one thing a phone
-  // cannot spare.
+  // Week has two shapes. On a desktop it is a timetable: the seven days across,
+  // the clock down, so the shape of the week is visible — where the gaps are,
+  // what stacks up at 5pm. On a phone that grid would be mostly empty space,
+  // and empty space is the one thing a phone cannot spare, so it stays the
+  // agenda: seven rows, each a tap into that day.
+  const WEEK_GRID_MQ = "(min-width: 1000px)";
+  function weekGridWanted() {
+    return window.matchMedia?.(WEEK_GRID_MQ).matches ?? false;
+  }
   function renderCalWeekView(host, iso) {
     if (!host) return;
+    host.classList.toggle("is-grid", weekGridWanted());
+    if (weekGridWanted()) return renderCalWeekGrid(host, iso);
+    return renderCalWeekAgenda(host, iso);
+  }
+
+  // The timetable. Hours are rows of a fixed height and every session is placed
+  // by its real start and length, so two athletes at the same hour sit side by
+  // side and a 90-minute session is visibly longer than a 45.
+  // Short enough that a 6am-to-9pm week fits a laptop screen without scrolling
+  // it twice, tall enough that a 45-minute session is still a readable block.
+  const WK_HOUR_PX = 38;
+  const WK_DAY_START = 6;   // 6 AM, unless something is booked earlier
+  const WK_DAY_END = 21;    // 9 PM, unless something runs later
+  function renderCalWeekGrid(host, iso) {
+    const today = todayISO();
+    const byDate = dashCalSetmoreByDate();
+    const clients = state.trainerData.clients || [];
+    const days = weekDatesOf(iso);
+
+    // Placed sessions, per day, in minutes from midnight.
+    const perDay = days.map((d) => {
+      const evs = (byDate[d] || []).slice().sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
+      return evs.map((e) => {
+        const s = new Date(e.startAt);
+        const startMin = s.getHours() * 60 + s.getMinutes();
+        const end = e.endAt ? new Date(e.endAt) : null;
+        const endMin = end && +end > +s ? end.getHours() * 60 + end.getMinutes() : startMin + 60;
+        return { e, startMin, endMin, athlete: matchAthleteForEvent(e) };
+      });
+    });
+
+    // The window only stretches for what is actually booked: an early riser at
+    // 5am or a 9pm session pulls the edge out, nothing else does.
+    let from = WK_DAY_START * 60, to = WK_DAY_END * 60;
+    perDay.flat().forEach((p) => {
+      from = Math.min(from, Math.floor(p.startMin / 60) * 60);
+      to = Math.max(to, Math.ceil(p.endMin / 60) * 60);
+    });
+    const hours = [];
+    for (let h = from / 60; h < to / 60; h++) hours.push(h);
+    const bodyH = hours.length * WK_HOUR_PX;
+    const yOf = (min) => ((min - from) / 60) * WK_HOUR_PX;
+
+    const hourLabel = (h) => {
+      const ampm = h < 12 ? "AM" : "PM";
+      const h12 = h % 12 === 0 ? 12 : h % 12;
+      // The meridiem only where it changes, so the column reads 6 AM, 7, 8 … 12 PM.
+      return (h === from / 60 || h === 12 || h === 0) ? `${h12} ${ampm}` : String(h12);
+    };
+
+    const heads = days.map((d) => {
+      const dd = new Date(d + "T12:00:00");
+      return `<button type="button" class="wkg-head${d === today ? " is-today" : ""}" data-wk-day="${d}">` +
+        `<b>${dd.toLocaleDateString(undefined, { weekday: "short" })}</b>` +
+        `<span>${dd.getDate()}</span>` +
+      `</button>`;
+    }).join("");
+
+    // Programmed workouts have no clock — they are what the athlete plans to do
+    // that day, not an appointment — so they ride a strip above the grid.
+    const allDay = days.map((d) => {
+      const planned = clients.filter((c) => c.importedProgress?.selfSchedule?.[d]?.weekId);
+      return `<div class="wkg-allday-cell">` + planned.map((c) =>
+        `<span class="wk-chip wk-chip-plan">${athleteFaceHtml(c, "xs")}${escapeHtml(c.name)}</span>`).join("") + `</div>`;
+    }).join("");
+    const anyPlanned = clients.some((c) => days.some((d) => c.importedProgress?.selfSchedule?.[d]?.weekId));
+
+    const cols = days.map((d, i) => {
+      const placed = layOutWeekColumn(perDay[i]);
+      const sessions = placed.map(({ p, lane, lanes }) => {
+        const top = yOf(p.startMin);
+        const h = Math.max(22, yOf(p.endMin) - top);
+        const w = 100 / lanes;
+        // Under two rows' worth of height, the time and the name share a line
+        // instead of one of them being clipped away.
+        const short = h < 32 ? " is-short" : "";
+        return `<button type="button" class="wkg-ev${p.e.native ? "" : " is-external"}${short}" ` +
+          `style="top:${top}px;height:${h}px;left:${lane * w}%;width:calc(${w}% - 3px)" ` +
+          `data-wk-day="${d}" title="${escapeHtml((p.athlete?.name || p.e.clientName || "Session") + " · " + fmtSetmoreTime(p.e.startAt))}">` +
+          `<span class="wkg-ev-time">${escapeHtml(fmtSetmoreTime(p.e.startAt))}</span>` +
+          `<span class="wkg-ev-name">${p.athlete ? athleteFaceHtml(p.athlete, "xs") : ""}` +
+            `${escapeHtml(p.athlete?.name || p.e.clientName || "Session")}</span>` +
+        `</button>`;
+      }).join("");
+      // Clicking empty space in a column is the same "show me this day" the
+      // agenda's row was.
+      return `<div class="wkg-col${d === today ? " is-today" : ""}" data-wk-col="${d}">` +
+        hours.map(() => `<div class="wkg-slot"></div>`).join("") +
+        sessions +
+      `</div>`;
+    }).join("");
+
+    // Where the day is right now, but only when this week contains today.
+    const nowMin = (() => {
+      const n = new Date();
+      const mins = n.getHours() * 60 + n.getMinutes();
+      return days.includes(dateISO(n)) && mins >= from && mins <= to ? mins : null;
+    })();
+    const nowLine = nowMin == null ? ""
+      : `<div class="wkg-now" style="top:${yOf(nowMin)}px"></div>`;
+
+    host.innerHTML =
+      `<div class="wkg">` +
+        `<div class="wkg-headrow"><span class="wkg-gutter-head"></span>${heads}</div>` +
+        (anyPlanned ? `<div class="wkg-allday"><span class="wkg-allday-lbl">Planned</span>${allDay}</div>` : "") +
+        `<div class="wkg-body" style="height:${bodyH}px">` +
+          `<div class="wkg-gutter">` +
+            hours.map((h) => `<span class="wkg-hour">${escapeHtml(hourLabel(h))}</span>`).join("") +
+          `</div>` +
+          `<div class="wkg-cols">${cols}${nowLine}</div>` +
+        `</div>` +
+      `</div>`;
+
+    const toDay = (d) => { dashCal().date = d; setCalMode("day"); };
+    host.querySelectorAll("[data-wk-day]").forEach((b) =>
+      b.addEventListener("click", (ev) => { ev.stopPropagation(); toDay(b.dataset.wkDay); }));
+    host.querySelectorAll("[data-wk-col]").forEach((col) =>
+      col.addEventListener("click", () => toDay(col.dataset.wkCol)));
+  }
+
+  // Overlapping sessions share the column: each one gets a lane, and the lane
+  // count is per overlap cluster so a lone session still spans the full width.
+  function layOutWeekColumn(items) {
+    const out = [];
+    let cluster = [], clusterEnd = -1;
+    const flush = () => {
+      const lanes = [];
+      cluster.forEach((p) => {
+        let lane = lanes.findIndex((endMin) => endMin <= p.startMin);
+        if (lane < 0) { lane = lanes.length; lanes.push(0); }
+        lanes[lane] = p.endMin;
+        out.push({ p, lane, lanes: 0 });
+      });
+      const width = lanes.length;
+      out.slice(out.length - cluster.length).forEach((o) => { o.lanes = width; });
+      cluster = []; clusterEnd = -1;
+    };
+    items.slice().sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin).forEach((p) => {
+      if (cluster.length && p.startMin >= clusterEnd) flush();
+      cluster.push(p);
+      clusterEnd = Math.max(clusterEnd, p.endMin);
+    });
+    if (cluster.length) flush();
+    return out;
+  }
+
+  function renderCalWeekAgenda(host, iso) {
     const today = todayISO();
     const byDate = dashCalSetmoreByDate();
     const clients = state.trainerData.clients || [];
@@ -24139,6 +24291,14 @@
     $$("#dash-cal-modes .cal-mode-btn").forEach((b) =>
       b.addEventListener("click", () => setCalMode(b.dataset.calMode)));
     $("#dash-cal-refresh")?.addEventListener("click", refreshDashCalSetmore);
+    // Week is a timetable on a wide screen and an agenda on a narrow one, so
+    // crossing the breakpoint (rotating a tablet, resizing a window) has to
+    // redraw it — nothing else would.
+    window.matchMedia?.(WEEK_GRID_MQ).addEventListener?.("change", () => {
+      if (dashCal().mode === "week" && !$("#view-overview")?.classList.contains("hidden")) {
+        renderDashboardCalendar();
+      }
+    });
 
     $$(".tab[data-tab]").forEach((t) => t.addEventListener("click", () => setTab(t.dataset.tab)));
     $$(".tab[data-ctab]").forEach((t) => t.addEventListener("click", () => {
