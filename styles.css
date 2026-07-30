@@ -10940,7 +10940,28 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 /* Open slots: a pill next to Book, because it is the other way a session gets
    filled — not a settings fold at the bottom of the card. The list opens in a
    sheet; only the badge stays on screen. */
-.cal-os-btn { display: inline-flex; align-items: center; gap: 0.45em; }
+.cal-os-btn { display: inline-flex; align-items: center; gap: 0.45em; flex: none; white-space: nowrap; }
+/* On a phone the wording gives way to the badge — the count is the part that
+   says something is waiting on the coach. But only when there IS a badge: a
+   lone 📣 pill next to Book explains nothing, so with nothing outstanding the
+   words stay. The button keeps its aria-label either way. */
+@media (max-width: 560px) {
+  .cal-os-btn:has(.sched-os-n:not(:empty)) .cal-os-lbl { display: none; }
+}
+/* Narrower than any current phone: the wording goes either way, because below
+   here keeping it would push ＋ Book off the edge. */
+@media (max-width: 400px) {
+  .cal-os-lbl { display: none; }
+}
+/* Last resort for a 320px-class viewport: the pills give up side padding so
+   Book still lands inside the screen rather than under its right edge. */
+@media (max-width: 340px) {
+  .cal-nav-modes { gap: 0.35rem; }
+  .cal-nav-modes .slim-btn { padding-left: 0.55em; padding-right: 0.55em; }
+  /* Down here even the megaphone has to go when there's a count to show: the
+     amber badge alone is what keeps Book on screen. */
+  .cal-os-btn:has(.sched-os-n:not(:empty)) .cal-os-ico { display: none; }
+}
 .sched-os-n {
   background: var(--primary-soft); color: var(--primary-bright);
   border-radius: 999px; padding: 0 0.5em; font-size: 0.72rem; font-weight: 800;
@@ -11233,16 +11254,23 @@ body.scroll-locked {
    plus a card repeating today. The mode row sits above the date row so the
    two questions — how close am I looking, and at what — never share a line
    and wrap into each other on a phone. */
-/* Zoom segment plus two action pills: wraps rather than overflowing once a
-   phone runs out of room for all three. */
-.cal-nav-modes { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem; }
+/* Zoom segment plus two action pills, and they stay on ONE row at every width.
+   Wrapping was worse than it sounds: a "2 claimed" badge is enough to push
+   ＋ Book onto a second line on a phone, so the two things a coach reaches for
+   ended up stacked and half a screen apart. Instead the segment is allowed to
+   shrink and Open slots drops its wording (below), which keeps all three on the
+   row down to the narrowest phone. */
+.cal-nav-modes { display: flex; align-items: center; flex-wrap: nowrap; gap: 0.5rem; margin-bottom: 0.5rem; min-width: 0; }
+.cal-nav-modes > * { min-width: 0; }
 .cal-nav-date { margin-bottom: 0.6rem; }
 /* Open slots and Book ride together on the right; the auto margin goes on
    whichever of them comes first. */
 .cal-os-btn { margin-left: auto; }
 .cal-os-btn + .cal-book-btn { margin-left: 0; }
-.cal-book-btn { margin-left: auto; }
+.cal-book-btn { margin-left: auto; flex: none; white-space: nowrap; }
+/* The segment is the one thing on the row allowed to give up width. */
 .cal-modes {
+  flex: 0 1 auto; min-width: 0;
   display: inline-flex; gap: 0.2rem;
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -11260,6 +11288,13 @@ body.scroll-locked {
 }
 .cal-mode-btn.on { background: var(--primary-soft); color: var(--primary-bright); }
 .cal-mode-btn:hover:not(.on) { color: var(--text); }
+/* On a phone the segment gives up padding rather than clipping "Month" in half.
+   Once it is this tight it stops shrinking — below here the row is only as wide
+   as its three labels, the 📣 badge and Book, which still fits at 320px. */
+@media (max-width: 560px) {
+  .cal-modes { flex: 0 0 auto; padding: 0.15rem; }
+  .cal-mode-btn { padding: 0 0.5em; font-size: 0.74rem; min-height: 32px; }
+}
 
 /* Day view: the same detail a month cell used to open in a sheet. */
 .dash-cal-day-view .dash-day-empty {
