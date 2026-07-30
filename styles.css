@@ -11018,6 +11018,35 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 .cbk-weeks { display: flex; flex-direction: column; gap: 0.3rem; }
 .cbk-weeks label { display: flex; align-items: center; gap: 0.6em; font-size: 0.85rem; margin: 0; }
 .cbk-weeks select { margin-top: 0; flex: 1 1 auto; }
+.cbk-from { margin-top: 0.55rem; }
+.cbk-from label { display: flex; align-items: center; gap: 0.6em; font-size: 0.85rem; margin: 0; }
+.cbk-from input { margin-top: 0; flex: 1 1 auto; min-width: 0; }
+/* Which days a repeat lands on: seven equal targets, all on one row even on the
+   narrowest phone, so the whole pattern is visible while it is being built.
+   The single letter is what shows at that width; the short name takes over as
+   soon as there is room, because S/T/T on their own are ambiguous. */
+.cbk-dows { display: flex; gap: 0.3rem; }
+.cbk-dow {
+  flex: 1 1 0; min-width: 0;
+  min-height: 46px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface-2); color: var(--text-soft);
+  font: inherit; font-size: 0.8rem; font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.cbk-dow:hover { border-color: rgba(var(--primary-rgb), 0.6); }
+.cbk-dow.on {
+  background: var(--primary-soft);
+  border-color: rgba(var(--primary-rgb), 0.65);
+  color: var(--primary-bright);
+}
+.cbk-dow-s { display: none; }
+@media (min-width: 420px) {
+  .cbk-dow-l { display: none; }
+  .cbk-dow-s { display: inline; }
+}
 .cbk-note { margin-top: 0; }
 /* The whole booking in one sentence, right above the button that commits it.
    Absent until there is a booking to describe — a permanent "pick an athlete

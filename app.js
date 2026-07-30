@@ -12368,6 +12368,45 @@
     return out;
   }
 
+  // The weekday a plain calendar date falls on (0 = Sunday). Read off a UTC
+  // noon so no offset can push it onto the neighbouring day.
+  function dowOfISO(iso) {
+    const [y, m, d] = String(iso).split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay();
+  }
+  // The first date on or after `fromISO` that lands on weekday `dow`.
+  function nextDowISO(fromISO, dow) {
+    const [y, m, d] = String(fromISO).split("-").map(Number);
+    const delta = (((dow - dowOfISO(fromISO)) % 7) + 7) % 7;
+    const t = new Date(Date.UTC(y, m - 1, d + delta, 12));
+    return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}-${String(t.getUTCDate()).padStart(2, "0")}`;
+  }
+  // Every start instant a weekly pattern implies: for each weekday chosen, the
+  // first such day on or after `fromISO`, then `weeks` weekly occurrences of
+  // it. This is what makes "Tuesdays and Thursdays at 6am" expressible without
+  // the coach hunting for a Tuesday on the calendar first.
+  function patternOccurrences(fromISO, dows, hh, mm, tz, weeks) {
+    const list = (dows || []).slice().sort((a, b) => a - b);
+    const out = [];
+    list.forEach((dow) => {
+      out.push(...weeklyOccurrences(nextDowISO(fromISO, dow), hh, mm, tz, weeks));
+    });
+    return out.sort((a, b) => a - b);
+  }
+  // "Tuesdays and Thursdays", "every day", "weekdays" — the pattern read back in
+  // words, because a row of highlighted letters is not something to double-check
+  // a standing appointment against.
+  const DOW_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  function dowsPhrase(dows) {
+    const list = (dows || []).slice().sort((a, b) => a - b);
+    if (!list.length) return "";
+    if (list.length === 7) return "every day";
+    if (list.length === 5 && list.join() === "1,2,3,4,5") return "weekdays";
+    const names = list.map((d) => DOW_LONG[d] + "s");
+    if (names.length === 1) return names[0];
+    return names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+  }
+
   // The coach's published hours for one day, as quick-pick times, minus what is
   // already booked and minus anything already past. Advisory: "Other time"
   // sits right beside them and takes anything.
@@ -12396,8 +12435,18 @@
       time: "",
       mins: a.sessionMins,
       weeks: 0,          // 0 = just this day
+      // Which weekdays a repeat lands on. Seeded from the day tapped, so the
+      // common case is still one tap, but the pattern is now the thing being
+      // edited rather than a side effect of the date.
+      dows: [dowOfISO(iso)],
       custom: false,     // typing a time instead of picking a published one
       q: "",             // athlete search
+    };
+    // In weekly mode the quick-pick times come from the first day the pattern
+    // actually lands on, not the day that happened to be tapped.
+    const anchorISO = () => {
+      if (!draft.weeks || !draft.dows.length) return draft.iso;
+      return draft.dows.map((d) => nextDowISO(draft.iso, d)).sort()[0];
     };
     const first = coachDaySlots(iso, draft.mins)[0];
     if (first) draft.time = zonedHM(first.startMs, tz);
@@ -12423,12 +12472,15 @@
       // rather than nagging: the empty roster above it already says what's
       // missing, and "Book it" says so again if it's tapped anyway.
       if (!c || !hm) return "";
-      const starts = weeklyOccurrences(draft.iso, hm.hh, hm.mm, tz, draft.weeks || 1);
-      const when = fmtSlotTime(starts[0], tz);
-      if (!draft.weeks) return `${c.name} · ${fmtSlotDay(draft.iso)} at ${when} · ${draft.mins} min`;
-      const dow = new Date(starts[0]).toLocaleDateString(undefined, { weekday: "long", timeZone: tz });
+      if (!draft.weeks) {
+        const one = weeklyOccurrences(draft.iso, hm.hh, hm.mm, tz, 1);
+        return `${c.name} · ${fmtSlotDay(draft.iso)} at ${fmtSlotTime(one[0], tz)} · ${draft.mins} min`;
+      }
+      if (!draft.dows.length) return "";
+      const starts = patternOccurrences(draft.iso, draft.dows, hm.hh, hm.mm, tz, draft.weeks);
       const last = fmtSlotDay(zonedDateISO(starts[starts.length - 1], tz));
-      return `${c.name} · ${dow}s at ${when} · ${draft.weeks} sessions, through ${last}`;
+      return `${c.name} · ${dowsPhrase(draft.dows)} at ${fmtSlotTime(starts[0], tz)} · ` +
+        `${starts.length} sessions, through ${last}`;
     };
     const paintSummary = () => {
       const el = $("#cbk-summary");
@@ -12469,7 +12521,8 @@
 
     const draw = () => {
       const body = $("#modal-body"); if (!body) return;
-      const slots = coachDaySlots(draft.iso, draft.mins);
+      const timeISO = anchorISO();
+      const slots = coachDaySlots(timeISO, draft.mins);
       // A longer session re-cuts the day, so a time that was a quick pick a
       // moment ago may not be one now (5:00 PM survives 60-minute slots but not
       // 90-minute ones). Drop to the time field rather than leaving a time that
@@ -12488,23 +12541,46 @@
             `<div class="cbk-ath-list" id="cbk-ath-list">${athleteRowsHtml()}</div>` +
           `</div>` +
 
+          // How often comes before when, because it decides what "when" even
+          // means: one date, or a set of weekdays.
           `<div class="cbk-sec">` +
-            `<div class="cbk-lab">Day</div>` +
-            // Editable even when the sheet was opened by tapping a day: it is
-            // the only way in from the Schedule card, and it saves a close-and-
-            // retap after tapping the wrong square.
-            `<input type="date" id="cbk-date" class="cbk-date" value="${escapeHtml(draft.iso)}" />` +
+            `<div class="cbk-lab">How often</div>` +
+            `<div class="cbk-seg">` +
+              `<button type="button" class="cbk-seg-btn${draft.weeks ? "" : " on"}" data-weeks="0">Just once</button>` +
+              `<button type="button" class="cbk-seg-btn${draft.weeks ? " on" : ""}" data-weeks="12">Every week</button>` +
+            `</div>` +
           `</div>` +
 
+          (draft.weeks
+            // A repeat is authored as the weekdays it lands on. Several at once:
+            // an athlete who trains Tuesday and Thursday is one standing
+            // appointment, not two that have to be managed separately.
+            ? `<div class="cbk-sec">` +
+                `<div class="cbk-lab">Which days</div>` +
+                `<div class="cbk-dows">${DOW_NAMES.map((name, i) =>
+                  `<button type="button" class="cbk-dow${draft.dows.includes(i) ? " on" : ""}" data-dow="${i}" aria-pressed="${draft.dows.includes(i)}">` +
+                    `<span class="cbk-dow-l">${escapeHtml(name[0])}</span>` +
+                    `<span class="cbk-dow-s">${escapeHtml(name)}</span>` +
+                  `</button>`).join("")}</div>` +
+                (draft.dows.length ? "" : `<p class="cbk-hint">Pick at least one day.</p>`) +
+              `</div>`
+            : `<div class="cbk-sec">` +
+                `<div class="cbk-lab">Day</div>` +
+                // Editable even when the sheet was opened by tapping a day: it is
+                // the only way in from the Schedule card, and it saves a close-and-
+                // retap after tapping the wrong square.
+                `<input type="date" id="cbk-date" class="cbk-date" value="${escapeHtml(draft.iso)}" />` +
+              `</div>`) +
+
           `<div class="cbk-sec">` +
-            `<div class="cbk-lab">Time <span class="cbk-lab-sub">${escapeHtml(fmtSlotDay(draft.iso))}</span></div>` +
+            `<div class="cbk-lab">Time <span class="cbk-lab-sub">${escapeHtml(draft.weeks ? dowsPhrase(draft.dows) || "each week" : fmtSlotDay(draft.iso))}</span></div>` +
             (slots.length
               ? `<div class="cbk-chips">${slots.map((s) => {
                   const hm = zonedHM(s.startMs, tz);
                   return `<button type="button" class="cbk-chip${picked && hm === draft.time ? " on" : ""}" data-time="${hm}">${escapeHtml(fmtSlotTime(s.startMs, tz))}</button>`;
                 }).join("")}` +
                 `<button type="button" class="cbk-chip cbk-chip-other${draft.custom ? " on" : ""}" data-other="1">Other time</button></div>`
-              : `<p class="cbk-hint">No published hours going spare that day. Set any time you like.</p>`) +
+              : `<p class="cbk-hint">No published hours going spare${draft.weeks ? "" : " that day"}. Set any time you like.</p>`) +
             (draft.custom || !slots.length
               ? `<div class="cbk-time-row"><input type="time" id="cbk-time" value="${escapeHtml(draft.time)}" /></div>`
               : "") +
@@ -12516,18 +12592,18 @@
               `<button type="button" class="cbk-chip cbk-chip-sm${n === draft.mins ? " on" : ""}" data-mins="${n}">${n}m</button>`).join("")}</div>` +
           `</div>` +
 
-          `<div class="cbk-sec">` +
-            `<div class="cbk-lab">Repeats</div>` +
-            `<div class="cbk-seg">` +
-              `<button type="button" class="cbk-seg-btn${draft.weeks ? "" : " on"}" data-weeks="0">Just this day</button>` +
-              `<button type="button" class="cbk-seg-btn${draft.weeks ? " on" : ""}" data-weeks="12">Every week</button>` +
-            `</div>` +
-            (draft.weeks
-              ? `<div class="cbk-weeks"><label>for <select id="cbk-weeks">${REPEAT_WEEKS.map((n) =>
+          (draft.weeks
+            ? `<div class="cbk-sec">` +
+                `<div class="cbk-lab">How long</div>` +
+                `<div class="cbk-weeks"><label>for <select id="cbk-weeks">${REPEAT_WEEKS.map((n) =>
                   `<option value="${n}"${n === draft.weeks ? " selected" : ""}>${n} weeks</option>`).join("")}</select></label>` +
-                 `<span class="cbk-hint">Extend it any time from the Schedule card.</span></div>`
-              : "") +
-          `</div>` +
+                 `<span class="cbk-hint">Extend it any time from the Schedule card.</span></div>` +
+                // The pattern starts from the day the sheet was opened on. Worth
+                // showing, and worth being able to change, but it is no longer
+                // the thing that decides which weekday the sessions land on.
+                `<div class="cbk-from"><label>starting <input type="date" id="cbk-date" class="cbk-date" value="${escapeHtml(draft.iso)}" /></label></div>` +
+              `</div>`
+            : "") +
 
           `<input type="text" id="cbk-note" class="cbk-note" maxlength="120" placeholder="Note for this session (optional)" />` +
           `<div class="cbk-summary" id="cbk-summary">${escapeHtml(summaryText())}</div>` +
@@ -12552,7 +12628,16 @@
         draft.mins = +b.dataset.mins; draw();
       }));
       body.querySelectorAll("[data-weeks]").forEach((b) => b.addEventListener("click", () => {
-        draft.weeks = +b.dataset.weeks; draw();
+        draft.weeks = +b.dataset.weeks;
+        // Switching to a repeat with nothing ticked would show an unusable
+        // sheet, so the day that was tapped comes back as the starting pattern.
+        if (draft.weeks && !draft.dows.length) draft.dows = [dowOfISO(draft.iso)];
+        draw();
+      }));
+      body.querySelectorAll("[data-dow]").forEach((b) => b.addEventListener("click", () => {
+        const d = +b.dataset.dow;
+        draft.dows = draft.dows.includes(d) ? draft.dows.filter((x) => x !== d) : draft.dows.concat(d).sort((x, y) => x - y);
+        draw();
       }));
       // Typed values write straight into the draft and repaint only the summary
       // line — redrawing the sheet would take the keyboard away mid-entry.
@@ -12565,7 +12650,10 @@
       $("#cbk-date")?.addEventListener("change", (e) => {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) return;
         draft.iso = e.target.value;
-        const next = coachDaySlots(draft.iso, draft.mins)[0];
+        // Tapping a date in "just once" mode is also picking a weekday, so the
+        // repeat picker follows it rather than keeping a stale tick.
+        if (!draft.weeks) draft.dows = [dowOfISO(draft.iso)];
+        const next = coachDaySlots(anchorISO(), draft.mins)[0];
         if (next && !draft.custom) draft.time = zonedHM(next.startMs, tz);
         draw();
       });
@@ -12597,9 +12685,15 @@
       toast("Booking needs a connection. Try again once you're back online.", 5000);
       return;
     }
+    if (draft.weeks && !(draft.dows || []).length) { toast("Pick which days of the week."); return; }
     const a = normalizeAvailability(coachAvailability());
     const tz = a.tz || localTz();
-    const starts = weeklyOccurrences(draft.iso, hm.hh, hm.mm, tz, draft.weeks || 1);
+    // One series id for the whole pattern, however many weekdays it spans:
+    // "Tuesdays and Thursdays" is one standing appointment, so Extend and
+    // "this and all future" act on all of it at once.
+    const starts = draft.weeks
+      ? patternOccurrences(draft.iso, draft.dows, hm.hh, hm.mm, tz, draft.weeks)
+      : weeklyOccurrences(draft.iso, hm.hh, hm.mm, tz, 1);
     const seriesId = draft.weeks ? `sr_${uid()}` : null;
     const note = String(draft.note || "").trim().slice(0, 120);
     const rows = starts.map((ms) => ({
@@ -12689,9 +12783,16 @@
       if (+new Date(b.start_at) < now) return;
       (map[b.series_id] = map[b.series_id] || []).push(b);
     });
+    const tz = normalizeAvailability(coachAvailability()).tz || localTz();
     return Object.keys(map).map((id) => {
       const rows = map[id].sort((x, y) => String(x.start_at).localeCompare(String(y.start_at)));
-      return { id, rows, first: rows[0], last: rows[rows.length - 1] };
+      // A series can span several weekdays, so the weekdays it lands on are read
+      // back off the rows rather than assumed from the first one. The last row
+      // PER WEEKDAY is what an extension has to continue from.
+      const lastByDow = {};
+      rows.forEach((b) => { lastByDow[dowOfISO(zonedDateISO(+new Date(b.start_at), tz))] = b; });
+      const dows = Object.keys(lastByDow).map(Number).sort((x, y) => x - y);
+      return { id, rows, first: rows[0], last: rows[rows.length - 1], dows, lastByDow };
     }).sort((x, y) => String(x.first.start_at).localeCompare(String(y.first.start_at)));
   }
 
@@ -12706,12 +12807,12 @@
     host.innerHTML = `<div class="sched-book-head">Weekly regulars <span class="sched-book-n">${list.length}</span></div>` +
       list.map((s) => {
         const startMs = +new Date(s.first.start_at);
-        const dow = new Date(startMs).toLocaleDateString(undefined, { weekday: "long", timeZone: tz });
+        const dow = dowsPhrase(s.dows) || new Date(startMs).toLocaleDateString(undefined, { weekday: "long", timeZone: tz }) + "s";
         return `<div class="cbk-series-row">` +
           `<span class="cbk-series-face">${athleteFaceHtml(clientOf(s.first.athlete_id))}</span>` +
           `<span class="cbk-series-txt">` +
             `<b>${escapeHtml(nameOf(s.first.athlete_id))}</b>` +
-            `<span>${escapeHtml(dow)}s · ${escapeHtml(fmtSlotTime(startMs, tz))} · ${s.rows.length} left, through ${escapeHtml(fmtSlotDay(zonedDateISO(+new Date(s.last.start_at), tz)))}</span>` +
+            `<span>${escapeHtml(dow)} · ${escapeHtml(fmtSlotTime(startMs, tz))} · ${s.rows.length} left, through ${escapeHtml(fmtSlotDay(zonedDateISO(+new Date(s.last.start_at), tz)))}</span>` +
           `</span>` +
           `<span class="cbk-series-acts">` +
             `<button type="button" class="btn btn-ghost btn-xs" data-extend="${escapeHtml(s.id)}">Extend</button>` +
@@ -12737,7 +12838,7 @@
     let weeks = 12;
     openModal({
       title: "Add more weeks",
-      body: `<p class="muted">Carries on from ${escapeHtml(fmtSlotDay(zonedDateISO(+new Date(s.last.start_at), normalizeAvailability(coachAvailability()).tz || localTz())))}, same day and time.</p>` +
+      body: `<p class="muted">Carries on where ${escapeHtml(dowsPhrase(s.dows) || "this session")} leaves off, at the same time.</p>` +
         `<div class="cbk-seg" id="cbk-ext">${REPEAT_WEEKS.map((n) =>
           `<button type="button" class="cbk-seg-btn${n === weeks ? " on" : ""}" data-ext="${n}">${n}</button>`).join("")}</div>` +
         `<p class="cbk-hint">weeks</p>`,
@@ -12756,23 +12857,32 @@
     if (!window.Cloud?.enabled) { toast("Adding weeks needs a connection."); return; }
     const a = normalizeAvailability(coachAvailability());
     const tz = a.tz || localTz();
-    const lastMs = +new Date(s.last.start_at);
-    const mins = Math.max(15, Math.round((+new Date(s.last.end_at) - lastMs) / 60000));
-    const hm = parseHM(zonedHM(lastMs, tz)) || { hh: 9, mm: 0 };
-    // Generated from the last existing session and then dropped, so week one of
-    // the extension is the week after it.
-    const starts = weeklyOccurrences(zonedDateISO(lastMs, tz), hm.hh, hm.mm, tz, weeks + 1).slice(1);
-    const rows = starts.map((ms) => ({
-      id: uid(),
-      coach_id: state.trainerData.coachId || "",
-      athlete_id: s.first.athlete_id,
-      start_at: new Date(ms).toISOString(),
-      end_at: new Date(ms + mins * 60000).toISOString(),
-      status: "booked",
-      created_by: "coach",
-      note: s.last.note || null,
-      series_id: s.id,
-    }));
+    // Every weekday in the pattern grows by the same number of weeks, each one
+    // continuing from its OWN last session so a Tuesday can't drift onto a
+    // Wednesday and the two stay in step.
+    const rows = [];
+    (s.dows.length ? s.dows : [dowOfISO(zonedDateISO(+new Date(s.last.start_at), tz))]).forEach((dow) => {
+      const anchor = s.lastByDow?.[dow] || s.last;
+      const lastMs = +new Date(anchor.start_at);
+      const mins = Math.max(15, Math.round((+new Date(anchor.end_at) - lastMs) / 60000));
+      const hm = parseHM(zonedHM(lastMs, tz)) || { hh: 9, mm: 0 };
+      // Generated from the last existing session and then dropped, so week one of
+      // the extension is the week after it.
+      weeklyOccurrences(zonedDateISO(lastMs, tz), hm.hh, hm.mm, tz, weeks + 1).slice(1).forEach((ms) => {
+        rows.push({
+          id: uid(),
+          coach_id: state.trainerData.coachId || "",
+          athlete_id: anchor.athlete_id,
+          start_at: new Date(ms).toISOString(),
+          end_at: new Date(ms + mins * 60000).toISOString(),
+          status: "booked",
+          created_by: "coach",
+          note: anchor.note || null,
+          series_id: s.id,
+        });
+      });
+    });
+    rows.sort((x, y) => x.start_at.localeCompare(y.start_at));
     const res = await window.Cloud.createBookings(rows);
     const made = (res?.created || []).length;
     if (!made) { toast("Couldn't add those weeks. Try again.", 4000); return; }
