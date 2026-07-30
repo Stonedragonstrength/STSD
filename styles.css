@@ -9049,6 +9049,53 @@ body.live-log-mode #screen-client .header-right { display: none; }
 .macro-bar-row.is-fiber.is-hit .macro-bar-name,
 .macro-bar-row.is-fiber.is-hit .macro-bar-val { color: #22c55e; }
 
+/* Water: one tap per cup, sitting under the HUD rather than inside it. It is
+   not scored, so it must not look like another meter. */
+.water-row {
+  display: flex; align-items: center; gap: 0.6em;
+  padding: 0.5rem 0; border-bottom: 1px solid var(--border);
+}
+.water-lbl {
+  flex: 0 0 auto; font-size: 0.63rem; font-weight: 800;
+  letter-spacing: 0.06em; color: var(--muted);
+}
+.water-cups { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: nowrap; gap: 0.25em; }
+.water-cup {
+  flex: 1 1 0; min-width: 0; max-width: 2.1em; aspect-ratio: 1;
+  display: grid; place-items: center; padding: 0; cursor: pointer;
+  font-size: 0.78rem; line-height: 1;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.water-cup:hover { border-color: var(--border-strong); }
+.water-cup.is-full { background: rgba(14, 165, 196, 0.22); border-color: rgba(14, 165, 196, 0.6); }
+.water-over { align-self: center; font-size: 0.68rem; font-weight: 800; color: var(--primary-bright); }
+.water-count {
+  flex: 0 0 auto; font-size: 0.74rem; font-weight: 800; color: var(--text-soft);
+  font-variant-numeric: tabular-nums;
+}
+.water-count i { font-style: normal; font-weight: 700; color: var(--muted); }
+.water-count.is-hit { color: var(--primary-bright); }
+
+/* Water goal, in the targets sheet. Never coach-locked — a coach sets calories
+   and macros, not how much water someone drinks. */
+.water-goal-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.6em;
+  margin-top: 1em; padding-top: 0.9em; border-top: 1px solid var(--border);
+}
+.water-goal-lbl { font-size: 0.86rem; font-weight: 700; }
+.water-goal-step { display: flex; align-items: center; gap: 0.5em; font-size: 0.86rem; }
+.water-goal-step strong { min-width: 1.4em; text-align: center; font-size: 1.05rem; }
+.water-goal-step .muted { font-size: 0.78rem; }
+.water-goal-btn {
+  width: 28px; height: 28px; border-radius: 50%; cursor: pointer;
+  background: var(--surface-3); border: 1px solid var(--border);
+  color: var(--text); font-size: 1rem; font-weight: 700; line-height: 1;
+}
+.water-goal-btn:hover { border-color: var(--border-strong); }
+.water-goal-note { margin: 0.4em 0 0; font-size: 0.76rem; }
+.target-split-note { margin: 0.7em 0 0; font-size: 0.79rem; line-height: 1.5; }
+
 /* Week dots + today's score, tucked under the meters. */
 .food-hud-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.6em; }
 .food-week-dots { display: flex; gap: 4px; }

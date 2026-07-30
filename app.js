@@ -14850,7 +14850,7 @@
       err.classList.remove("hidden");
     }
   }
-  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {}, totalWorkoutMs: 0, workoutMoods: {}, addedExercises: {}, athleteDays: [], formChecks: {}, swaps: {}, nutritionTargets: {}, foodLog: {}, customFoods: [], savedMeals: [], nutritionGame: {}, avatarId: "" }; }
+  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {}, totalWorkoutMs: 0, workoutMoods: {}, addedExercises: {}, athleteDays: [], formChecks: {}, swaps: {}, nutritionTargets: {}, foodLog: {}, customFoods: [], savedMeals: [], waterLog: {}, nutritionGame: {}, avatarId: "" }; }
   function ensureProgressShape(p) {
     if (typeof p.avatarId !== "string") p.avatarId = "";
     if (!p.exerciseLogs) p.exerciseLogs = {};
@@ -14873,6 +14873,7 @@
     if (!p.foodLog || typeof p.foodLog !== "object") p.foodLog = {};
     if (!Array.isArray(p.customFoods)) p.customFoods = [];
     if (!Array.isArray(p.savedMeals)) p.savedMeals = [];
+    if (!p.waterLog || typeof p.waterLog !== "object") p.waterLog = {};
     if (!p.nutritionGame || typeof p.nutritionGame !== "object") p.nutritionGame = {};
     return p;
   }
@@ -19987,6 +19988,7 @@
     if (!progress.foodLog || typeof progress.foodLog !== "object") progress.foodLog = {};
     if (!Array.isArray(progress.customFoods)) progress.customFoods = [];
     if (!Array.isArray(progress.savedMeals)) progress.savedMeals = [];
+    if (!progress.waterLog || typeof progress.waterLog !== "object") progress.waterLog = {};
     ensureNutritionTargets(progress);
   }
   function foodDayEntries(progress, dateKey) {
@@ -20013,6 +20015,9 @@
     for (const k of Object.keys(progress.foodLog || {})) {
       if (k < cutoff) delete progress.foodLog[k];
     }
+    for (const k of Object.keys(progress.waterLog || {})) {
+      if (k < cutoff) delete progress.waterLog[k];
+    }
   }
   function saveFoodLog() {
     const p = state.clientData.progress;
@@ -20036,6 +20041,43 @@
     if (i < 0) return;
     list.splice(i, 1);
     if (!list.length) delete p.foodLog[dateKey];
+    saveFoodLog();
+  }
+
+  // ---- Water ----
+  // A count of cups per day and nothing else. A glass of water has no
+  // properties worth keeping, and one number per date keeps the progress row
+  // light next to foodLog, which the coach's sync upserts whole.
+  //
+  // Deliberately outside the day score and outside XP. The score is macros, and
+  // water is self-reported with nothing to check it against, so folding it in
+  // would let someone tap ten glasses to lift a nutrition score. It is a habit
+  // tracker that sits beside the numbers rather than one of them.
+  const WATER_CUP_OZ = 8;
+  const WATER_MIN_CUPS = 8, WATER_MAX_CUPS = 16;
+  const WATER_MAX_LOG = 24;   // ceiling on one day's count, so a stuck tap can't run away
+
+  // Half an ounce per pound of bodyweight, the usual rule of thumb, clamped at
+  // both ends so neither a very light nor a very heavy athlete gets a silly
+  // number. Whatever they set in Targets wins over the derived one.
+  function waterGoalCups(client, progress) {
+    const own = Number(progress?.nutritionTargets?.waterGoal) || 0;
+    if (own > 0) return Math.min(own, WATER_MAX_LOG);
+    // latestBodyweight already falls back to the coach's figure on the client.
+    const lb = Number(latestBodyweight(progress, client)) || 0;
+    if (!lb) return 10;
+    return Math.max(WATER_MIN_CUPS, Math.min(WATER_MAX_CUPS, Math.round((lb * 0.5) / WATER_CUP_OZ)));
+  }
+  function waterFor(progress, dateKey) {
+    return Math.max(0, Number(progress?.waterLog?.[dateKey]) || 0);
+  }
+  function setWater(dateKey, cups) {
+    const p = state.clientData.progress;
+    ensureFoodLog(p);
+    const n = Math.max(0, Math.min(WATER_MAX_LOG, Math.round(cups)));
+    // A zero day is an absent key, not a stored 0 — the row syncs whole and
+    // there is no reason to ship an empty day across the wire.
+    if (n) p.waterLog[dateKey] = n; else delete p.waterLog[dateKey];
     saveFoodLog();
   }
 
@@ -21098,6 +21140,32 @@
     return `<div class="food-week-dots" role="img" aria-label="Last seven days">${dots.join("")}</div>`;
   }
 
+  // A row of cups you tap to fill. Tapping an empty one fills up to it, tapping
+  // the last full one empties it — so one tap adds a glass and one tap takes it
+  // back, without a separate minus button to hunt for.
+  //
+  // Over the goal the extras render as a "+N" chip rather than more cups: the
+  // row has to stay one line on a phone, and past the goal the exact count
+  // stops mattering.
+  function waterRowHtml(client, progress, dateKey) {
+    const goal = waterGoalCups(client, progress);
+    const cups = waterFor(progress, dateKey);
+    const shown = Math.min(goal, 12);
+    const pips = Array.from({ length: shown }, (_, i) => {
+      const full = i < cups;
+      return `<button type="button" class="water-cup${full ? " is-full" : ""}" data-cup="${i + 1}"
+        aria-label="${full ? `${i + 1} cups logged, tap to set ${i}` : `Log ${i + 1} cups`}">
+        <span aria-hidden="true">${full ? "💧" : ""}</span>
+      </button>`;
+    }).join("");
+    const over = cups > shown;
+    return `<div class="water-row" role="group" aria-label="Water">
+      <span class="water-lbl">WATER</span>
+      <span class="water-cups">${pips}${over ? `<span class="water-over">+${cups - shown}</span>` : ""}</span>
+      <span class="water-count${cups >= goal ? " is-hit" : ""}">${cups}<i>/${goal}</i></span>
+    </div>`;
+  }
+
   function foodEntryRowHtml(e) {
     // Household portion labels already carry their own count ("1 cup"), so a
     // single serving reads as the label alone rather than "1 × 1 cup".
@@ -21197,6 +21265,8 @@
         </div>
       </div>
 
+      ${waterRowHtml(client, progress, _foodDate)}
+
       ${plan ? targetDriftHtml(client, progress) : `<p class="muted food-no-target">No targets yet. Tap the ring to set them and this all fills in.</p>`}
 
       <div class="food-tiles">${tiles}</div>
@@ -21237,6 +21307,15 @@
     });
     el.querySelectorAll("[data-savemeal]").forEach((b) => {
       b.addEventListener("click", () => openSaveMealModal(b.dataset.savemeal));
+    });
+    el.querySelectorAll("[data-cup]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const n = Number(b.dataset.cup);
+        // Tapping the cup that is currently the last full one empties it,
+        // which is how a mis-tap gets taken back.
+        setWater(_foodDate, waterFor(progress, _foodDate) === n ? n - 1 : n);
+        renderFoodDay();
+      });
     });
     $("#food-ring").addEventListener("click", openTargetsSheet);
     $("#food-targets-btn").addEventListener("click", openTargetsSheet);
@@ -22288,8 +22367,10 @@
         <div class="target-actions">
           <button class="btn btn-primary btn-sm slim-btn" id="btn-calc-targets">Calculate for me</button>
           <button class="btn btn-ghost btn-sm slim-btn" id="btn-edit-targets">Enter my own</button>
-        </div>`;
+        </div>
+        ${waterGoalRowHtml(client, progress)}`;
       wireTargetButtons();
+      wireWaterGoal();
       return;
     }
 
@@ -22300,6 +22381,7 @@
     el.innerHTML = `
       <p class="muted" style="margin:0 0 0.7em">${escapeHtml(whose)}</p>
       ${targetStripHtml(plan)}
+      ${splitNoteHtml(plan)}
       ${plan.notes ? `<div class="client-instructions" style="margin-top:0.8em">${escapeHtml(plan.notes)}</div>` : ""}
       ${eff.locked ? `<p class="muted target-locked">🔒 Your coach has locked these. Talk to them if they need changing.</p>` : `
         <div class="target-actions">
@@ -22307,8 +22389,58 @@
           <button class="btn btn-ghost btn-sm slim-btn" id="btn-edit-targets">${eff.ownPlan ? "Edit my targets" : "Set my own"}</button>
           ${canSwitch && eff.coachPlan && eff.ownPlan ? `<button class="btn btn-ghost btn-sm slim-btn" id="btn-switch-targets">
             ${eff.source === "own" ? "Use coach's targets" : "Use my targets"}</button>` : ""}
-        </div>`}`;
+        </div>`}
+      ${waterGoalRowHtml(client, progress)}`;
     if (!eff.locked) wireTargetButtons();
+    // Outside the lock on purpose: a coach sets calories and macros, never how
+    // much water someone drinks, so this stays the athlete's to set either way.
+    wireWaterGoal();
+  }
+
+  // The strip above shows the base plan, which is the rest-day set once a split
+  // is on. Without this the sheet says 2,500 on a day the ring says 2,900 and
+  // the athlete has no way to tell which one is lying.
+  function splitNoteHtml(plan) {
+    if (!planSplits(plan)) return "";
+    const bump = Number(plan.trainingBump) || 0;
+    const cal = Number(plan.calories) || 0;
+    const carbs = Number(plan.carbs) || 0;
+    const days = plan.trainingDows.slice().sort((a, b) => a - b).map((d) => DOW_LABELS[d]).join(", ");
+    return `<p class="muted target-split-note">Those are your rest days. On ${escapeHtml(days)} you get
+      ${(cal + bump).toLocaleString()} kcal and ${Math.round(carbs + bump / 4)} g carbs, the extra all
+      from carbs to fuel the session. Protein and fat stay the same.</p>`;
+  }
+
+  function waterGoalRowHtml(client, progress) {
+    const goal = waterGoalCups(client, progress);
+    const own = Number(progress?.nutritionTargets?.waterGoal) || 0;
+    return `
+      <div class="water-goal-row">
+        <span class="water-goal-lbl">Water goal</span>
+        <span class="water-goal-step">
+          <button type="button" class="water-goal-btn" id="wg-down" aria-label="One cup less">−</button>
+          <strong>${goal}</strong>
+          <button type="button" class="water-goal-btn" id="wg-up" aria-label="One cup more">+</button>
+          <span class="muted">cups a day</span>
+        </span>
+      </div>
+      <p class="muted water-goal-note">${own
+        ? `Your own number. ${goal * WATER_CUP_OZ} oz.`
+        : `Worked out from your bodyweight, about half an ounce a pound. ${goal * WATER_CUP_OZ} oz.`}</p>`;
+  }
+
+  function wireWaterGoal() {
+    const progress = state.clientData.progress;
+    const client = state.clientData.program?.client;
+    const step = (d) => {
+      const next = Math.max(1, Math.min(WATER_MAX_LOG, waterGoalCups(client, progress) + d));
+      ensureFoodLog(progress);
+      progress.nutritionTargets.waterGoal = next;
+      saveClient();
+      renderClientTargets();
+    };
+    $("#wg-down")?.addEventListener("click", () => step(-1));
+    $("#wg-up")?.addEventListener("click", () => step(1));
   }
 
   function wireTargetButtons() {
