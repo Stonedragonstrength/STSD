@@ -12226,7 +12226,6 @@
     if (line) line.textContent = availabilityLine(coachAvailability());
     renderGoogleCard();
     renderCoachSeries();
-    renderCoachBookings();
     renderIncomeCard();
   }
 
@@ -12299,63 +12298,6 @@
     if (res?.ok) toast(`Google Calendar connected${res.email ? " · " + res.email : ""} ✓`, 4000);
     else toast("Google wouldn't complete the connection. Try again.", 5000);
     return true;
-  }
-
-  function renderCoachBookings() {
-    const host = $("#sched-bookings"); if (!host) return;
-    // From TOMORROW on. Today's sessions are the list directly above this one
-    // inside the same card, so anything today would print twice, two inches
-    // apart — which is exactly the repeat merging the cards was meant to end.
-    const tomorrow = new Date();
-    tomorrow.setHours(0, 0, 0, 0);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const from = +tomorrow;
-    // Only the NEXT session of each weekly series. "Weekly regulars" above
-    // already says Thursdays at 4, twelve left — listing all twelve underneath
-    // it is the same fact twelve more times, and it was burying the one-offs,
-    // which are the ones that actually need a glance.
-    const seenSeries = new Set();
-    const upcoming = _coachBookings
-      .filter((b) => b.status === "booked" && +new Date(b.start_at) >= from)
-      .sort((a, b) => String(a.start_at).localeCompare(String(b.start_at)))
-      .filter((b) => {
-        if (!b.series_id) return true;
-        if (seenSeries.has(b.series_id)) return false;
-        seenSeries.add(b.series_id);
-        return true;
-      })
-      // Five. Past that, Week and Month views are the better answer, and a
-      // long list here just makes the card tall again.
-      .slice(0, 5);
-    if (!upcoming.length) {
-      host.innerHTML = `<div class="sched-book-head">Coming up</div><p class="sched-empty">Nothing booked after today.</p>`;
-      return;
-    }
-    const clientOf = (id) => (state.trainerData.clients || []).find((c) => c.id === id) || null;
-    const nameOf = (id) => clientOf(id)?.name || "Athlete";
-    host.innerHTML = `<div class="sched-book-head">Coming up <span class="sched-book-n">${upcoming.length}</span></div>` +
-      upcoming.map((b) => {
-        const start = +new Date(b.start_at);
-        // Same shape as a weekly-regular row directly above: face, then name
-        // over when. Anything else wraps around the tile on a phone.
-        return `<div class="sched-book-row">` +
-          `<span class="sched-book-face">${athleteFaceHtml(clientOf(b.athlete_id))}</span>` +
-          `<span class="sched-book-txt">` +
-            `<b>${escapeHtml(nameOf(b.athlete_id))}` +
-              (b.series_id ? `<span class="cbk-weekly-tag" title="Part of a weekly series">weekly</span>` : "") +
-            `</b>` +
-            `<span class="sched-book-when">${escapeHtml(new Date(start).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }))}` +
-            ` · ${escapeHtml(fmtSlotTime(start))}</span>` +
-          `</span>` +
-          `<button type="button" class="btn-delete-mini" data-cancel-booking="${escapeHtml(b.id)}" title="Cancel">×</button>` +
-        `</div>`;
-      }).join("");
-    // Cancelling goes through the shared flow so a weekly session asks whether
-    // this week or the standing appointment is what's ending.
-    host.querySelectorAll("[data-cancel-booking]").forEach((btn) => btn.addEventListener("click", () => {
-      const b = _coachBookings.find((x) => x.id === btn.dataset.cancelBooking);
-      if (b) cancelBookingFlow(b.id, b.series_id || "", b.start_at);
-    }));
   }
 
   // ---- Coach: expected income ----

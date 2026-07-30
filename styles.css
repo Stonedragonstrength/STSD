@@ -10856,17 +10856,9 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
   background: var(--primary-soft); color: var(--primary-bright);
   border-radius: 999px; padding: 0 0.5em; font-size: 0.72rem;
 }
-.sched-book-row {
-  display: flex; align-items: center; gap: 0.7em;
-  padding: 0.4em 0; border-top: 1px solid var(--border);
-}
-.sched-book-face { flex-shrink: 0; display: flex; }
-.sched-book-txt { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; flex: 1 1 auto; }
-.sched-book-txt b { font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sched-book-when {
-  font-size: 0.75rem; font-weight: 600; color: var(--muted);
-  font-variant-numeric: tabular-nums; white-space: nowrap;
-}
+/* .sched-book-head / -n are the section heading; Weekly regulars uses them. The
+   row styles went with "Coming up" — the calendar itself is the list of what's
+   next now. */
 
 /* The availability editor */
 .av-days { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.9rem; }
@@ -11241,16 +11233,12 @@ body.scroll-locked {
 .breakdown-ex-name .av-tile { vertical-align: middle; margin-right: 0.4em; }
 .coach-inbox .needs-row, .coach-inbox .notif-row { align-items: center; }
 
-/* Sections inside the merged day card. Each gets a hairline above it so the
-   card reads as three answers to the same question (today / coming up / the
-   settings behind them) rather than one long run of rows. */
-#overview-hub .sched-series,
-#overview-hub .sched-bookings { border-top: 1px solid var(--border); padding-top: 0.7rem; }
+/* Sections inside the schedule card: the weekly regulars, then the hours behind
+   a fold. Each gets a hairline above it — never above the first one, where a
+   border reads as a stray line with a gap over it. */
+#overview-hub .sched-series { border-top: 1px solid var(--border); padding-top: 0.7rem; }
 #overview-hub .sched-series:empty { border-top: 0; padding-top: 0; }
-/* A rule between sections, never above the first one — a border at the top of
-   a card reads as a stray line with a gap over it. */
 #overview-hub > :first-child { border-top: 0; padding-top: 0; }
-#overview-hub .sched-series:empty + .sched-bookings { border-top: 0; padding-top: 0; }
 #overview-hub .sched-hours { margin-top: 0.9rem; }
 #overview-hub .sched-hours .slim-btn { margin-top: 0.6rem; }
 
