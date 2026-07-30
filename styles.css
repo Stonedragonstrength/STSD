@@ -2415,18 +2415,6 @@ input.trial-input {
 .ovmsg-item:first-of-type { border-top: none; padding-top: 0; }
 .ovmsg-text { color: var(--text); font-size: 0.92rem; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
 .ovmsg-meta { display: flex; align-items: center; gap: 0.45rem; margin-top: 0.3em; font-size: 0.72rem; color: var(--muted); }
-.ovmsg-new {
-  background: var(--primary);
-  color: #062131;
-  font-weight: 700;
-  font-size: 0.62rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 0.1em 0.45em;
-  border-radius: 999px;
-}
-:root[data-theme="white"] .ovmsg-new { color: #fff; }
-
 /* ---- Coach messaging view ---- */
 .msg-compose {
   border: 1px solid var(--border);
@@ -10618,17 +10606,6 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 .msg-write .msg-textarea { flex: 1; margin: 0; }
 .msg-write .btn { flex-shrink: 0; }
 
-/* Athlete Overview: the card is the doorway to the thread, not the thread. */
-.ovmsg-thread { cursor: pointer; }
-.ovmsg-thread:hover { border-color: var(--border-strong); }
-.ovmsg-empty { color: var(--text-soft); }
-.ovmsg-cta {
-  display: inline-block;
-  margin-top: 0.55rem;
-  font-size: 0.78rem; font-weight: 800;
-  letter-spacing: 0.03em;
-  color: var(--primary-bright);
-}
 /* Unanswered questions get a count on the coach's Messages nav item. */
 .coach-nav-count {
   margin-left: auto;
@@ -11713,7 +11690,18 @@ body.scroll-locked {
   color: var(--rank-color);
   text-shadow: 0 0 calc(var(--rank-glow) * 10px) color-mix(in srgb, var(--rank-color) 45%, transparent);
 }
-.hoard-ton { font-size: 0.78rem; color: var(--text-soft); }
+/* The lifetime figure moved out of the stacked headtext and onto the right of
+   the head, which drops a whole line off the card. */
+.hoard-ton {
+  margin-left: auto; flex: none; text-align: right;
+  font-size: 1rem; font-weight: 800; color: var(--text);
+  font-variant-numeric: tabular-nums; line-height: 1.15;
+}
+.hoard-ton small {
+  display: block;
+  font-size: 0.62rem; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--muted);
+}
 .hoard-track {
   margin-top: 0.85rem; height: 8px; border-radius: 999px;
   background: var(--surface-2); overflow: hidden;
@@ -11723,55 +11711,49 @@ body.scroll-locked {
   background: var(--rank-color);
   box-shadow: 0 0 calc(var(--rank-glow) * 9px) color-mix(in srgb, var(--rank-color) 55%, transparent);
 }
-.hoard-next {
-  margin-top: 0.35rem;
-  font-size: 0.74rem; font-weight: 700; color: var(--text-soft);
+/* The trophy case. Twelve rows became twelve tiles: the earned ones burn in
+   their own tier colour, the current one is ringed, the rest sit dark. Tapping
+   any of them fills the line underneath with what it costs. */
+.hoard-case {
+  margin-top: 0.9rem; padding-top: 0.8rem;
+  border-top: 1px solid var(--border);
+  display: flex; flex-wrap: wrap; gap: 0.4rem;
+}
+.hoard-tile {
+  flex: none; width: 42px; height: 42px; padding: 0; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.15rem; line-height: 1;
+  border-radius: 11px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+.hoard-tile:hover { transform: translateY(-2px); }
+/* Locked ranks are a silhouette, not a spoiler: you can see there is something
+   there and how far along the shelf it sits, which is the whole point of a case. */
+.hoard-tile.locked .hoard-tile-ico { filter: grayscale(1) brightness(0.55); }
+.hoard-tile.done {
+  background: color-mix(in srgb, var(--step-color) 16%, var(--surface-2));
+  border-color: color-mix(in srgb, var(--step-color) 50%, transparent);
+}
+.hoard-tile.on {
+  background: color-mix(in srgb, var(--step-color) 22%, var(--surface-2));
+  border-color: var(--step-color);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--step-color) 45%, transparent);
+}
+/* The selected tile is which one the line below is talking about — a different
+   job from , which is the rank they are actually climbing. */
+.hoard-tile.sel { outline: 2px solid var(--text); outline-offset: 2px; }
+.hoard-detail {
+  margin: 0.75rem 0 0; min-height: 2.4em;
+  font-size: 0.8rem; line-height: 1.5; color: var(--text-soft);
   font-variant-numeric: tabular-nums;
 }
-/* The ladder. Locked rows stay flat and grey; earned rows take their own tier
-   colour, so scrolling the list reads as the climb it is. */
-.hoard-ladder {
-  margin-top: 0.9rem;
-  display: flex; flex-direction: column; gap: 0.25rem;
-  border-top: 1px solid var(--border); padding-top: 0.7rem;
-}
-.hoard-step {
-  display: flex; align-items: center; gap: 0.6rem;
-  padding: 0.32rem 0.5rem;
-  border-radius: 8px;
-  min-width: 0;
-  opacity: 0.5;
-}
-.hoard-step-ico { flex: none; width: 1.4em; text-align: center; font-size: 0.95rem; }
-.hoard-step-name {
-  font-size: 0.82rem; font-weight: 700; color: var(--text-soft);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
-}
-.hoard-step-meta {
-  margin-left: auto; flex: none;
-  font-size: 0.7rem; font-weight: 700; color: var(--muted);
-  font-variant-numeric: tabular-nums; white-space: nowrap;
-}
-.hoard-step.done { opacity: 1; }
-.hoard-step.done .hoard-step-name { color: var(--step-color); }
-.hoard-step.on {
-  opacity: 1;
-  background: color-mix(in srgb, var(--step-color) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--step-color) 40%, transparent);
-  padding: 0.42rem 0.5rem;
-}
-.hoard-step.on .hoard-step-name { color: var(--step-color); font-weight: 800; }
-.hoard-step.on .hoard-step-meta { color: var(--text-soft); }
-/* The in-progress row carries its own thin bar between name and numbers. */
-.hoard-step-bar {
-  flex: 1 1 60px; min-width: 40px; height: 5px;
-  border-radius: 999px; background: var(--surface-2); overflow: hidden;
-}
-.hoard-step-fill {
-  display: block; height: 100%; border-radius: 999px; background: var(--step-color);
-}
-@media (max-width: 420px) {
-  .hoard-step-bar { display: none; }
+.hoard-detail b { color: var(--text); font-weight: 800; }
+.hoard-detail-name {
+  display: block;
+  font-size: 0.68rem; font-weight: 800; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--step-color, var(--text-soft));
 }
 
 /* The volume chart and the body-comp trend arrive on Progress as bare content

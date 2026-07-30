@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=snap3" />
+  <link rel="stylesheet" href="styles.css?v=case1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -943,6 +943,15 @@
           <span class="hs-top"><span class="hs-ico">🎟️</span><span class="hs-num"></span></span><span class="hs-lbl">Sessions</span>
           <span class="tab-badge hs-slot-badge hidden" id="ctab-sessions-badge"></span>
         </button>
+        <!-- The thread with the coach. It was a full card on the Overview
+             restating the last thing said; the only part that ever needed to be
+             on screen was "is there something new", which is a badge. Same pill
+             as the coach's inbox, and it rides the header on every tab, so the
+             thread is reachable from inside a workout too. -->
+        <button class="btn btn-ghost btn-sm hdr-inbox hidden" id="btn-client-messages" type="button" title="Message your coach">
+          <span class="hdr-inbox-ico">💬</span>
+          <span class="hdr-inbox-n" id="client-msg-count"></span>
+        </button>
         <button class="btn btn-ghost btn-sm tour-help-btn" id="btn-tour-client" title="Quick tour of the app">?</button>
         <button class="btn btn-ghost btn-sm" id="btn-client-logout">Exit</button>
       </div>
@@ -986,6 +995,9 @@
         <div id="overview-greeting"></div>
         <div id="ov-bulletin" class="ov-messages"></div>
         <div id="overview-hero"></div>
+        <!-- The coach thread used to be a card here. It is the 💬 pill in the
+             header now; this host only carries the read-only last line a coach
+             sees while running a live session. -->
         <div id="ov-messages" class="ov-messages"></div>
         <div class="session-calendar">
           <div class="calendar-head">
@@ -1300,7 +1312,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=cyc1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=snap3"></script>
+  <script src="app.js?v=case2"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

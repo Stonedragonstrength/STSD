@@ -16397,6 +16397,9 @@
     const bulletinHost = $("#ov-bulletin");
     const host = $("#ov-messages");
     const now = Date.now();
+    // First, unconditionally: the header pill is the thread now, and it has to
+    // settle (or hide) whether or not the rest of this function runs.
+    renderClientHeaderMessages();
 
     // ---- Bulletin board: pinned at the very top, athlete-clearable ----
     // The coach's board mirrors onto every athlete's sessionBank.bulletins.
@@ -16447,29 +16450,19 @@
     // In a live session this is the coach reading over the athlete's shoulder:
     // show the history, but the thread itself belongs to the two of them.
     if (state.previewMode) {
-      host.innerHTML = last ? `<div class="ovmsg-card ovmsg-thread">
+      host.innerHTML = last ? `<div class="ovmsg-card">
         <div class="ovmsg-head"><span class="ovmsg-icon">💬</span><span>Your coach</span></div>
         <div class="ovmsg-item"><div class="ovmsg-text">${escapeHtml(last.body)}</div>
           <div class="ovmsg-meta">${escapeHtml(msgWhen(last.created_at))}</div></div>
       </div>` : "";
       return;
     }
-    host.innerHTML = `<div class="ovmsg-card ovmsg-thread${unread ? " is-new" : ""}" id="ov-thread-card" role="button" tabindex="0">
-      <div class="ovmsg-head"><span class="ovmsg-icon">💬</span><span>Your coach</span>
-        ${unread ? `<span class="ovmsg-new">${unread} new</span>` : ""}</div>
-      ${last
-        ? `<div class="ovmsg-item">
-             <div class="ovmsg-text">${escapeHtml((last.sender === "coach" ? "" : "You: ") + last.body)}</div>
-             <div class="ovmsg-meta">${escapeHtml(msgWhen(last.created_at))}</div>
-           </div>`
-        : `<div class="ovmsg-item"><div class="ovmsg-text ovmsg-empty">Got a question about a lift, a weight, or how you're feeling? Ask here.</div></div>`}
-      <span class="ovmsg-cta">${last ? "Open the thread" : "Message your coach"} →</span>
-    </div>`;
-    const openThread = () => openMessageThread(c?.id);
-    $("#ov-thread-card")?.addEventListener("click", openThread);
-    $("#ov-thread-card")?.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openThread(); }
-    });
+    // The thread is the 💬 pill in the header. A whole card here restated the
+    // last thing said, on a screen the athlete opens to see their training —
+    // and it only lived on Overview, so a question that occurred to them
+    // mid-workout meant backing out of the day to ask it.
+    host.innerHTML = "";
+    renderClientHeaderMessages();
     // Legacy coach notes were marked seen locally; keep pruning that map so it
     // can't outlive the messages it tracked.
     const msgs = c ? [...(c.sessionBank?.messages || [])] : [];
@@ -16957,6 +16950,30 @@
     const numEl = chip.querySelector(".hs-num"); if (numEl) numEl.textContent = n;
     chip.title = `${n} session${n === 1 ? "" : "s"} left · tap to view`;
     if (!chip.dataset.wired) { chip.dataset.wired = "1"; chip.addEventListener("click", () => setClientTab("sessions")); }
+  }
+  // The coach thread, as a header pill. Mirrors the coach's inbox pill: the
+  // count is the only thing that has to be on screen, and living in the header
+  // means an athlete can ask a question from inside a workout instead of
+  // backing out to Overview to find a card.
+  function renderClientHeaderMessages() {
+    const btn = $("#btn-client-messages"); if (!btn) return;
+    const c = state.clientData.program?.client;
+    // A live session is the coach on the athlete's screen. The thread belongs
+    // to the two of them, and the coach has the whole of it on their own
+    // Messages page — so no pill here, same call the old card made.
+    if (!c || state.previewMode) { btn.classList.add("hidden"); return; }
+    const unread = unreadFrom(MSG.thread, "coach").length;
+    btn.classList.remove("hidden");
+    btn.classList.toggle("has-needs", unread > 0);
+    const n = btn.querySelector(".hdr-inbox-n");
+    if (n) n.textContent = unread ? String(unread) : "";
+    btn.title = unread
+      ? `${unread} new message${unread === 1 ? "" : "s"} from your coach`
+      : "Message your coach";
+    if (!btn.dataset.wired) {
+      btn.dataset.wired = "1";
+      btn.addEventListener("click", () => openMessageThread(state.clientData.program?.client?.id));
+    }
   }
   // -------- Athlete self-service profile (name / age / height / weight / goals) --------
   function renderAthleteProfileFields() {
@@ -21474,24 +21491,18 @@
     let floor = 0;
     for (let L = 1; L < first; L++) floor += hoardLbForLevel(L);
 
-    const rows = [];
+    // A twelve-row ladder was the tallest thing on the Progress tab, and eleven
+    // of those rows said the same thing: "not yet". It's a shelf of tiles now —
+    // the case you can see at a glance — and tapping one says what that rank
+    // costs. Same numbers, a fifth of the height.
+    const tiles = [];
     let at = floor;
     for (let i = 0; i < count; i++) {
       const L = first + i;
-      const r = hoardRankForLevel(L);
-      const lk = hoardLook(L);
-      const state = L < lvl.level ? "done" : L === lvl.level ? "on" : "";
-      const meta = L === lvl.level
-        ? `${Math.round(lvl.into).toLocaleString()} / ${lvl.need.toLocaleString()} lb`
-        : L < lvl.level ? "earned" : hoardLbLabel(at);
-      rows.push(`<div class="hoard-step ${state}" style="--step-color:${lk.color}">` +
-        `<span class="hoard-step-ico">${r.icon}</span>` +
-        `<span class="hoard-step-name">${escapeHtml(r.name)}</span>` +
-        (L === lvl.level
-          ? `<span class="hoard-step-bar"><span class="hoard-step-fill" style="width:${pct.toFixed(1)}%"></span></span>`
-          : "") +
-        `<span class="hoard-step-meta">${escapeHtml(meta)}</span>` +
-      `</div>`);
+      // `at` is the lifetime tonnage you ARRIVE at this rank on, accumulated
+      // from the bottom of the lap — not the cost of the rank itself.
+      tiles.push({ L, rank: hoardRankForLevel(L), look: hoardLook(L), at,
+        state: L < lvl.level ? "done" : L === lvl.level ? "on" : "locked" });
       at += hoardLbForLevel(L);
     }
 
@@ -21501,13 +21512,46 @@
         <span class="hoard-headtext">
           <span class="hoard-kicker">The Hoard</span>
           <span class="hoard-rank">${escapeHtml(rank.name)}</span>
-          <span class="hoard-ton">${escapeHtml(hoardLbLabel(lb))} moved, all time</span>
         </span>
+        <span class="hoard-ton">${escapeHtml(hoardLbLabel(lb))}<small>moved, all time</small></span>
       </div>
       <div class="hoard-track"><span class="hoard-fill" style="width:${pct.toFixed(1)}%"></span></div>
-      <div class="hoard-next">${escapeHtml(left.toLocaleString())} lb to ${escapeHtml(next.name)}</div>
-      <div class="hoard-ladder">${rows.join("")}</div>
+      <div class="hoard-case" role="group" aria-label="Ranks">
+        ${tiles.map((t, i) => `
+          <button type="button" class="hoard-tile ${t.state}" data-i="${i}"
+                  style="--step-color:${t.look.color}"
+                  aria-label="${escapeHtml(t.rank.name)}" title="${escapeHtml(t.rank.name)}">
+            <span class="hoard-tile-ico">${t.rank.icon}</span>
+          </button>`).join("")}
+      </div>
+      <p class="hoard-detail" id="hoard-detail"></p>
     </div>`;
+
+    // Tapping a tile answers the only question the ladder's extra rows were
+    // answering: what does that one cost? Opens on the rank they're climbing.
+    const detail = host.querySelector("#hoard-detail");
+    const showTile = (i) => {
+      const t = tiles[i]; if (!t || !detail) return;
+      host.querySelectorAll(".hoard-tile").forEach((b, n) => b.classList.toggle("sel", n === i));
+      detail.style.setProperty("--step-color", t.look.color);
+      let body;
+      if (t.state === "on") {
+        body = `${Math.round(lvl.into).toLocaleString()} of ${lvl.need.toLocaleString()} lb in. ` +
+          `<b>${left.toLocaleString()} lb</b> to ${escapeHtml(next.name)}.`;
+      } else if (t.state === "done") {
+        // t.at is where the rank STARTS, so clearing it is that plus its cost.
+        body = `Earned. You cleared it at ${escapeHtml(hoardLbLabel(t.at + hoardLbForLevel(t.L)))} lifetime.`;
+      } else {
+        // hoardLbLabel on both halves: one sentence should not say "276 tons"
+        // and "65,000 lb" about the same ladder.
+        body = `Starts at ${escapeHtml(hoardLbLabel(t.at))} lifetime. ` +
+          `<b>${escapeHtml(hoardLbLabel(Math.max(0, t.at - lb)))}</b> from here.`;
+      }
+      detail.innerHTML = `<span class="hoard-detail-name">${escapeHtml(t.rank.name)}</span>${body}`;
+    };
+    host.querySelectorAll(".hoard-tile").forEach((b) =>
+      b.addEventListener("click", () => showTile(Number(b.dataset.i))));
+    showTile(tiles.findIndex((t) => t.state === "on"));
   }
 
   // -------- Athlete: the Progress tab --------
@@ -24745,8 +24789,10 @@
         title: "Welcome to Stone Dragon", text: "A quick lap around your training hub, about a minute. Skip any time. These tabs are everything." },
       { sel: '[data-ctab-panel="overview"]',
         title: "Overview", text: "The card up top is your next workout: the lifts in it, how long it runs, and one tap to start. Under it sit your streak, last workout, lifetime totals, charts and trophies. It fills in as you train. Tap ⋯ on the stats card to pick what shows, like cardio time, distance, or total push-ups and pull-ups." },
-      { sel: "#ov-thread-card", go: () => setClientTab("overview"),
-        title: "Talk to your coach", text: "Tap here to open your thread. Ask about a lift, a weight, a sore shoulder, anything. They see it on their side and write back." },
+      // The card became a header pill, so the step follows it. No `go`: the
+      // pill is in the header on every tab, which is the point of the move.
+      { sel: "#btn-client-messages",
+        title: "Talk to your coach", text: "Tap here to open your thread. Ask about a lift, a weight, a sore shoulder, anything. It's in the header on every screen, so you can ask mid-workout. A number on it means they've written back." },
       { sel: '[data-ctab-panel="workouts"]', go: () => setClientTab("workouts"),
         title: "Your program", text: "Everything your coach wrote for you. Tap a day to open the session and start logging." },
       { sel: ".workout-detail-list .rdy-block", go: goDetail,
