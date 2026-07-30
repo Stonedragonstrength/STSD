@@ -415,6 +415,13 @@
       date: seed?.date || todayISO(),
       notes: seed?.notes || "",
       auto: !!seed?.auto, // detected from logged sets vs. hand-entered
+      // Which LIFT this belongs to (see liftKey). Absent on records filed
+      // before lift identity existed — every reader falls back to the bare
+      // name for those, so old PRs keep working untouched.
+      lift: seed?.lift || "",
+      // A pair of dumbbells reads "80s", one reads "80 lb", and both label as
+      // "Dumbbell" — so the plurality has to be recorded, not re-read.
+      pair: seed?.pair === undefined ? undefined : !!seed.pair,
     };
   }
   // Estimated 1-rep max (Epley): weight × (1 + reps/30). One comparable number
@@ -516,6 +523,120 @@
       return i < 0 ? NAME_GROUP_ORDER.length : i;
     };
     return tags.slice().sort((a, b) => rank(a) - rank(b));
+  }
+
+  // ── Lift identity ──────────────────────────────────────────────────────
+  // "Squats" is not one lift. Barbell squats and dumbbell squats load on
+  // completely different scales, and until now every matcher in the app keyed
+  // on the bare name, so they shared one progression chain, one "Last:" line
+  // and one PR ladder — a 315 barbell squat permanently buried every dumbbell
+  // squat PR the athlete would ever set.
+  //
+  // A lift's identity is its name plus the tags that change what you can
+  // actually lift: the implement, whether it's one limb, and how the body is
+  // arranged. Alternation, Style and Hold are how you PERFORM the reps, not
+  // what you're lifting — a paused squat is still a squat, and splitting it
+  // off would fragment history for no gain.
+  const LIFT_ID_GROUPS = ["Equipment", "Unilateral", "Position", "Grip"];
+  function liftTags(ex) {
+    return orderedModifiers(ex || {}).filter((t) =>
+      LIFT_ID_GROUPS.includes(groupForTag(t)?.group));
+  }
+  // The matching key. Built from the RAW tags, never the long form, because
+  // DB and DBs both read "Dumbbell" but one dumbbell and two are not the same
+  // lift. Bare part and tag part stay separable so a legacy PR filed under the
+  // bare name can still be matched back (see prLiftKey / groupPRs).
+  function liftKey(ex, progress) {
+    const bare = exKey(exResolvedName(ex, progress) || ex?.name || "");
+    if (!bare) return "";
+    const tags = liftTags(ex).map((t) => t.toLowerCase()).sort().join("+");
+    return tags ? `${bare}|${tags}` : bare;
+  }
+  function liftKeyBare(key) { return String(key || "").split("|")[0]; }
+  // What that identity is CALLED — the long-form name, minus the Style/Hold
+  // tags, which describe the set rather than the lift.
+  function liftLabel(ex, progress) {
+    const nm = exResolvedName(ex, progress) || ex?.name || "";
+    if (!nm) return "";
+    return [...nameOrderedTags(liftTags(ex)).map(tagLong), nm].join(" ");
+  }
+  // A stored PR's lift. Records filed before identity existed have only a bare
+  // name — those key on the name alone, exactly as they always did, and the
+  // merge pass in groupPRs folds them into the tagged lift when there's only
+  // one candidate. Nothing is lost by not migrating; migrating just resolves
+  // the ambiguous cases.
+  function prLiftKey(p) { return (p && p.lift) || exKey(p && p.name); }
+  // Does a stored PR belong to this lift? Exact identity, or a legacy record
+  // whose bare name matches this lift's bare name.
+  function prMatchesLift(p, key) {
+    const k = prLiftKey(p);
+    if (!k || !key) return false;
+    if (k === key) return true;
+    return !(p && p.lift) && k === liftKeyBare(key);
+  }
+
+  // Attribute PRs filed before lift identity existed. groupPRs already folds an
+  // unambiguous legacy record into its tagged lift, so this only has to earn
+  // its keep on the case that pass CAN'T resolve: two variants sharing a bare
+  // name ("Squats"+BB and "Squats"+DBs), where the name alone says nothing.
+  //
+  // The evidence is the log. An auto PR was written the day a specific set was
+  // locked, so the exercise whose log on that date actually contains that
+  // weight × reps is the one it belongs to. Falling back, in order: the only
+  // candidate; the most-logged candidate; leave it bare (still grouped by
+  // name, exactly as it is today — never guessed wrong on purpose).
+  //
+  // Runs athlete-side only, on the athlete's own progress. The coach never
+  // writes it: an open coach session would clobber the athlete's copy, and
+  // every reader tolerates an unmigrated record anyway.
+  function migratePRLifts(client, progress) {
+    const prs = progress?.personalRecords;
+    if (!Array.isArray(prs) || !prs.length) return false;
+    if (prs.every((p) => p && p.lift)) return false;
+
+    // Every program exercise, bucketed by the bare name a legacy PR would have.
+    const byBare = new Map();
+    const logs = progress.exerciseLogs || {};
+    [...(client?.weeks || []), { days: sessionDays(client, progress) }]
+      .forEach((w) => (w.days || []).forEach((d) => (d.exercises || []).forEach((ex) => {
+        if (!ex || ex.kind === "mobility") return;
+        const key = liftKey(ex);
+        if (!key) return;
+        const bare = liftKeyBare(key);
+        const bucket = byBare.get(bare) || new Map();
+        const cur = bucket.get(key) || { key, label: liftLabel(ex), pair: usesDumbbellPair(ex), exs: [], n: 0 };
+        cur.exs.push(ex);
+        cur.n += (logs[ex.id] || []).length;
+        bucket.set(key, cur);
+        byBare.set(bare, bucket);
+      })));
+
+    let changed = false;
+    prs.forEach((p) => {
+      if (!p || p.lift || !p.name) return;
+      const bucket = byBare.get(exKey(p.name));
+      if (!bucket || !bucket.size) return;
+      const cands = [...bucket.values()];
+      let pick = null;
+      if (cands.length === 1) pick = cands[0];
+      if (!pick && p.date) {
+        // The set this PR was written from, if it is still in the log.
+        const hits = cands.filter((c) => c.exs.some((ex) => (logs[ex.id] || []).some((l) =>
+          l.date === p.date && (l.sets || []).some((s) => !s.skipped &&
+            String(s.weight) === String(p.weight) && String(s.reps) === String(p.reps)))));
+        if (hits.length === 1) pick = hits[0];
+      }
+      if (!pick) {
+        const ranked = cands.slice().sort((a, b) => b.n - a.n);
+        if (ranked[0]?.n > 0 && ranked[0].n !== ranked[1]?.n) pick = ranked[0];
+      }
+      if (!pick) return;
+      p.lift = pick.key;
+      if (pick.label) p.name = pick.label;
+      if (p.pair === undefined) p.pair = pick.pair;
+      changed = true;
+    });
+    return changed;
   }
 
   // Tags that contradict each other and can't be held at once, even inside a
@@ -1035,7 +1156,9 @@
     };
   }
 
-  // Walk this exercise's copies (matched by name) in program order up to the
+  // Walk this exercise's copies (matched by LIFT — name plus the tags that
+  // change what you can lift, so a barbell week and a dumbbell week never
+  // chain into each other) in program order up to the
   // given instance, chaining BOTH legs of double progression:
   //   - reps climb: hit every set at ≥ the current rep target → next target =
   //     worst set + 1 (capped at the ceiling);
@@ -1049,7 +1172,7 @@
   function effectiveProgression(weeks, ex, logsMap, readyMap) {
     const rule = progressionRule(ex);
     if (!rule) return null;
-    const name = String(ex.name || "").trim().toLowerCase();
+    const name = liftKey(ex);
     if (!name) return null;
     if (rule.bw) {
       // Bodyweight rep ladder: worst set + 1 on a hit. Without graduation it
@@ -1064,7 +1187,7 @@
       for (const w of weeks || []) {
         for (const d of w.days || []) {
           for (const e of d.exercises || []) {
-            if (String(e.name || "").trim().toLowerCase() !== name) continue;
+            if (liftKey(e) !== name) continue;
             if (e.currentWeight !== "BW") continue; // ladder only chains BW copies
             const f = parseInt(e.currentReps, 10);
             if (!f) continue;
@@ -1088,7 +1211,7 @@
     for (const w of weeks || []) {
       for (const d of w.days || []) {
         for (const e of d.exercises || []) {
-          if (String(e.name || "").trim().toLowerCase() !== name) continue;
+          if (liftKey(e) !== name) continue;
           const written = parseFloat(e.currentWeight);
           if (!isFinite(written)) continue; // skip BW/blank copies
           // A hand-edited written weight re-bases the whole chain, so the coach
@@ -7883,7 +8006,7 @@
               .sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
             const sets = (entry?.sets || []).filter((s) => !s.skipped && (s.weight || s.reps));
             const pills = sets.length
-              ? sets.map((s, i) => `<span class="breakdown-set-pill">S${i + 1} ${s.weight ? prWeightLabel(exResolvedName(ex, c.importedProgress), s.weight) : "—"} × ${escapeHtml(String(s.reps || "—"))}</span>`).join("")
+              ? sets.map((s, i) => `<span class="breakdown-set-pill">S${i + 1} ${s.weight ? prWeightLabel(liftLabel(ex, c.importedProgress), s.weight, usesDumbbellPair(ex)) : "—"} × ${escapeHtml(String(s.reps || "—"))}</span>`).join("")
               : `<span class="oneoff-own-unlogged">Not logged</span>`;
             return `<div class="breakdown-ex"><div class="breakdown-ex-name">${breakdownExNameHtml(ex, c.importedProgress)}</div><div class="breakdown-sets">${pills}</div></div>`;
           }).join("");
@@ -11028,13 +11151,27 @@
 
   // -------- Personal Records --------
   function groupPRs(prs) {
-    // Group by lowercase name, retain original-case display name from first entry
+    // Group by lift identity, keeping the original-case name from the first
+    // entry as the card's title.
     const groups = new Map();
     prs.forEach((p) => {
       if (!p.name) return;
-      const k = exKey(p.name);
-      if (!groups.has(k)) groups.set(k, { displayName: p.name.trim(), entries: [] });
+      const k = prLiftKey(p);
+      if (!groups.has(k)) groups.set(k, { key: k, displayName: p.name.trim(), entries: [] });
       groups.get(k).entries.push(p);
+    });
+    // Merge pass: a legacy record has a bare key ("squats") where a tagged one
+    // has "squats|bb". If exactly ONE tagged lift shares that bare name, the
+    // legacy records can only have belonged to it, so fold them in rather than
+    // showing "Squats" and "Barbell Squats" as two ladders for the same lift.
+    // Two or more candidates is genuinely ambiguous — leave those alone.
+    [...groups.keys()].forEach((k) => {
+      if (k.includes("|")) return;
+      const tagged = [...groups.keys()].filter((o) => o !== k && liftKeyBare(o) === k);
+      if (tagged.length !== 1) return;
+      const into = groups.get(tagged[0]);
+      into.entries.push(...groups.get(k).entries);
+      groups.delete(k);
     });
     return Array.from(groups.values()).sort((a, b) => a.displayName.localeCompare(b.displayName));
   }
@@ -11045,16 +11182,21 @@
   }
   // Dumbbell lifts read as a pair: "80s" means two 80 lb dumbbells.
   function isDumbbellLift(name) { return /\b(dbs?|dumbbells?)\b/i.test(String(name || "")); }
-  // HTML-safe weight label for a lift: "80s" for dumbbell lifts, "225 lb" otherwise.
-  function prWeightLabel(name, w) {
+  // HTML-safe weight label for a lift: "80s" for dumbbell lifts, "225 lb"
+  // otherwise. `pair` wins when the caller knows: both the DB and DBs tags
+  // read "Dumbbell" in a lift's name, so the name alone can no longer tell one
+  // dumbbell from two. Undefined falls back to reading the name, which is
+  // still right for every hand-typed lift and every record filed before this.
+  function prWeightLabel(name, w, pair) {
     if (!w) return "— lb";
-    return isDumbbellLift(name) ? `${escapeHtml(w)}s` : `${escapeHtml(w)} lb`;
+    const plural = pair === undefined ? isDumbbellLift(name) : !!pair;
+    return plural ? `${escapeHtml(w)}s` : `${escapeHtml(w)} lb`;
   }
   // "225 lb × 5" ("80s × 5" for dumbbells), or "5 reps" for bodyweight entries.
   function prValueLabel(p) {
     return prIsRepOnly(p)
       ? `${escapeHtml(p.reps || "?")} reps`
-      : `${prWeightLabel(p.name, p.weight)} × ${escapeHtml(p.reps || "?")}`;
+      : `${prWeightLabel(p.name, p.weight, p.pair)} × ${escapeHtml(p.reps || "?")}`;
   }
   function renderPRGroup(group) {
     const sorted = [...group.entries].sort((a, b) => prSortKey(b) - prSortKey(a));
@@ -11079,7 +11221,7 @@
         const row = document.createElement("div");
         row.className = "pr-row" + (idx === 0 ? " is-best" : "");
         row.innerHTML = `
-          <div><span class="pr-weight">${prIsRepOnly(p) ? (p.weight === "BW" ? "BW" : "—") : prWeightLabel(p.name, p.weight)}</span> <span class="pr-reps">× ${escapeHtml(p.reps || "—")} reps</span>${p.auto ? `<span class="pr-auto" title="Auto-detected from your logged sets">auto</span>` : ""}</div>
+          <div><span class="pr-weight">${prIsRepOnly(p) ? (p.weight === "BW" ? "BW" : "—") : prWeightLabel(p.name, p.weight, p.pair)}</span> <span class="pr-reps">× ${escapeHtml(p.reps || "—")} reps</span>${p.auto ? `<span class="pr-auto" title="Auto-detected from your logged sets">auto</span>` : ""}</div>
           <div class="pr-date">${escapeHtml(p.date || "")}</div>
           <span class="pr-author ${p._author || "coach"}">${(p._author || "coach")}</span>
           <button class="pr-delete" data-id="${p.id}" data-author="${p._author || ""}" title="Delete">×</button>
@@ -11098,15 +11240,21 @@
   }
 
   // Best weight actually logged for ≥1 / ≥2 / ≥3 reps of a lift, across every
-  // program copy of it (matched by exKey, same as auto-PR detection). Drafts
-  // (locked === false) and skipped sets don't count; holds and timed carries
-  // have no lb × reps to report.
+  // program copy of it. Drafts (locked === false) and skipped sets don't
+  // count; holds and timed carries have no lb × reps to report.
+  //
+  // The name here is FREE TEXT — a lift the coach or athlete picked off the
+  // library list to track ("Barbell Squat"), not a program exercise. So it
+  // matches either the bare name the coach typed into the program ("Squats")
+  // or the lift's full name ("Barbell Squats"), which is how a tracked lift
+  // finally connects to a tagged exercise instead of silently finding nothing.
   function bestLoggedByReps(name, weeks, logsMap) {
     const key = exKey(name);
     if (!key) return null;
     const best = { 1: null, 2: null, 3: null };
     (weeks || []).forEach((wk) => (wk.days || []).forEach((d) => (d.exercises || []).forEach((ex) => {
-      if (exKey(ex.name) !== key || ex.kind === "mobility" || exIsTimed(ex)) return;
+      const hit = exKey(ex.name) === key || exKey(liftLabel(ex)) === key;
+      if (!hit || ex.kind === "mobility" || exIsTimed(ex)) return;
       ((logsMap || {})[ex.id] || []).forEach((l) => {
         if (l.locked === false || l.skipped) return;
         (l.sets || []).forEach((s) => {
@@ -15084,12 +15232,13 @@
     return best;
   }
 
-  // PRs stamped today that belong to a lift in this day. Scoped by name so a
+  // PRs stamped today that belong to a lift in this day. Scoped by lift so a
   // PR logged from somewhere else on the same date doesn't get claimed here.
   function dayPRsOn(day, progress, onDate) {
     const exs = [...(day?.exercises || []), ...((progress?.addedExercises?.[day?.id]) || [])];
-    const names = new Set(exs.map((e) => exKey(exResolvedName(e, progress))).filter(Boolean));
-    return (progress?.personalRecords || []).filter((pr) => pr.date === onDate && names.has(exKey(pr.name)));
+    const keys = exs.map((e) => liftKey(e, progress)).filter(Boolean);
+    return (progress?.personalRecords || []).filter((pr) =>
+      pr.date === onDate && keys.some((k) => prMatchesLift(pr, k)));
   }
 
   // The block that makes finishing a day worth screenshotting: what got moved,
@@ -15124,7 +15273,7 @@
     const prHtml = prs.length
       ? `<div class="sess-prs">${prs.map((pr) => {
           const bw = String(pr.weight) === "BW";
-          const load = bw ? `${escapeHtml(String(pr.reps))} reps` : `${escapeHtml(prWeightLabel(pr.name, pr.weight))} × ${escapeHtml(String(pr.reps))}`;
+          const load = bw ? `${escapeHtml(String(pr.reps))} reps` : `${escapeHtml(prWeightLabel(pr.name, pr.weight, pr.pair))} × ${escapeHtml(String(pr.reps))}`;
           return `<div class="sess-pr"><span class="sess-pr-ico">🏆</span><span class="sess-pr-name">${escapeHtml(pr.name)}</span><span class="sess-pr-load">${load}</span></div>`;
         }).join("")}</div>`
       : "";
@@ -15268,6 +15417,11 @@
     if (!state.clientData.progress) state.clientData.progress = emptyProgress();
     ensureProgressShape(state.clientData.progress);
     const prog = state.clientData.program;
+    // Attribute PRs filed before lift identity existed. Athlete-side only, and
+    // only ever writes records that had no lift, so it is safe to re-run and a
+    // coach preview (which shares this path) never rewrites more than the
+    // athlete's own next open would have.
+    if (migratePRLifts(prog?.client, state.clientData.progress)) saveClient();
     $("#client-portal-name").textContent = prog.client.name;
     renderClientHeaderSessions();
     renderClientHeaderRank();
@@ -17866,10 +18020,10 @@
       : (jumpTo?.dayId === day.id ? jumpTo.date : todayISO());
     // "Last:" = the previous SESSION of this exercise — the most recent
     // completed (locked; legacy entries pass) log from any copy of this
-    // exercise across the program (matched by name, like progression does),
+    // exercise across the program (matched by lift, like progression does),
     // strictly before the date being logged. Never today's own numbers.
     const lastLog = (() => {
-      const name = String(ex.name || "").trim().toLowerCase();
+      const name = liftKey(ex);
       const logsMap = state.clientData.progress?.exerciseLogs || {};
       const candidates = [];
       // Sessions outside the program compare against other such sessions only,
@@ -17881,7 +18035,7 @@
       for (const w of dayPool) {
         for (const d of w.days || []) {
           for (const e of d.exercises || []) {
-            if (String(e.name || "").trim().toLowerCase() !== name) continue;
+            if (liftKey(e) !== name) continue;
             (logsMap[e.id] || []).forEach((l) => {
               if (l.locked === false || l.skipped || String(l.date) >= logDate) return;
               // Skipped sets aren't real numbers — show only what was lifted.
@@ -22433,7 +22587,9 @@
       // A swapped exercise's sets belong to the movement they actually did,
       // not the one that was prescribed — otherwise the swap contaminates the
       // original lift's trend line.
-      const name = exResolvedName(ex, progress).trim();
+      // Keyed by the full lift, so a barbell squat's trend line isn't a
+      // sawtooth made of dumbbell squats plotted against it.
+      const name = liftLabel(ex, progress).trim();
       // Timed carries are excluded — seconds would read as reps in e1RM math.
       if (!name || ex.kind === "mobility" || exIsTimed(ex)) return;
       (logs[ex.id] || []).forEach((l) => {
@@ -22489,7 +22645,7 @@
       const repOnly = prIsRepOnly(p);
       const v = repOnly ? (parseInt(p.reps, 10) || 0) : Number(p.weight);
       if (!v || !isFinite(v)) return;
-      const k = exKey(p.name);
+      const k = prLiftKey(p);
       (byName[k] = byName[k] || { name: p.name.trim(), bw: repOnly, pts: [] })
         .pts.push({ t: new Date(p.date + "T12:00:00").getTime(), v, reps: parseInt(p.reps, 10) || 0, date: p.date });
     });
@@ -22962,19 +23118,21 @@
 
   // -------- Auto-PR detection at lock-in --------
   // Compares the just-locked top set against every earlier session of the
-  // same exercise NAME (weeks duplicate exercises under new ids). A heavier
+  // same LIFT (weeks duplicate exercises under new ids, and "Squats"+BB is a
+  // different lift from "Squats"+DBs — see liftKey). A heavier
   // top set — or more reps at the same weight — celebrates on the spot and
   // writes an entry into the athlete's PR list.
   // Decide whether the just-locked entry set a personal record, and if so file
   // one. Weighted lifts are judged by estimated 1RM (so rep PRs count too);
-  // bodyweight lifts by reps. Matching uses exKey() so renames/typos don't
-  // split history, and warm-ups/skipped sets never count.
+  // bodyweight lifts by reps. Matching normalises the name so renames/typos
+  // don't split history, and warm-ups/skipped sets never count.
   function detectAndCelebratePR(ex, entry, cardEl) {
     // Swapped lifts file their PR under what was actually done.
-    const name = exResolvedName(ex, state.clientData.progress).trim();
+    const prog = state.clientData.progress;
+    const name = liftLabel(ex, prog).trim();
     // Timed carries are excluded — seconds would read as reps in e1RM math.
     if (!name || ex.kind === "mobility" || exIsTimed(ex)) return;
-    const key = exKey(name);
+    const key = liftKey(ex, prog);
     const logs = state.clientData.progress.exerciseLogs || {};
     const workingSets = (l) => (l.sets || []).filter((s) => !s.skipped);
     // Written "BW", but once a BW lift graduates the athlete logs real weight —
@@ -23002,7 +23160,7 @@
     // against program history, and program lifts are judged against session bests.
     let prev = null;
     [...(state.clientData.program?.client?.weeks || []), { days: sessionDays(state.clientData.program?.client, state.clientData.progress) }].forEach((wk) => (wk.days || []).forEach((d) => (d.exercises || []).forEach((e2) => {
-      if (exKey(e2.name) !== key) return;
+      if (liftKey(e2, prog) !== key) return;
       (logs[e2.id] || []).forEach((l) => {
         if (e2.id === ex.id && l.date === entry.date) return; // the set being judged
         workingSets(l).forEach((s) => {
@@ -23019,10 +23177,11 @@
     if (!bw && cur.score > prev * 1.4) return;
 
     const prs = state.clientData.progress.personalRecords || (state.clientData.progress.personalRecords = []);
-    if (prs.some((p) => exKey(p.name) === key && p.date === entry.date && String(p.weight) === String(cur.weight) && String(p.reps) === String(cur.reps))) return;
-    prs.push(makePR({ name, weight: cur.weight, reps: String(cur.reps), date: entry.date, notes: "Auto-detected during workout 🎉", auto: true }));
+    if (prs.some((p) => prLiftKey(p) === key && p.date === entry.date && String(p.weight) === String(cur.weight) && String(p.reps) === String(cur.reps))) return;
+    const pair = usesDumbbellPair(ex);
+    prs.push(makePR({ name, lift: key, pair, weight: cur.weight, reps: String(cur.reps), date: entry.date, notes: "Auto-detected during workout 🎉", auto: true }));
     if (cardEl) celebrateElement(cardEl, "pr-celebrate");
-    toast(`🎉 New PR · ${name}: ${bw ? cur.reps + " reps" : cur.weight + (isDumbbellLift(name) ? "s × " : " lb × ") + cur.reps}!`, 3500);
+    toast(`🎉 New PR · ${name}: ${bw ? cur.reps + " reps" : cur.weight + (pair ? "s × " : " lb × ") + cur.reps}!`, 3500);
   }
 
   // -------- Guided tour (spotlight walkthrough) --------
