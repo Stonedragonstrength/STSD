@@ -11708,3 +11708,33 @@ body.scroll-locked {
 }
 #prog-volume .ov-volchart { margin-top: 0; }
 #prog-bw .bw-charts-head { margin-top: 0; }
+
+
+/* --- Jumping into an athlete from the schedule --- */
+/* A day inferred from where the program has them, not one they scheduled: the
+   softer claim gets the softer weight. */
+.dv-what.is-next { color: var(--muted); font-style: italic; }
+
+/* Actions carry a line icon and, where it helps, the week or day they land on.
+   The sub sits on the right so the labels still line up down the left edge. */
+.dvs-act:has(.dvs-ico) { display: flex; align-items: center; gap: 0.55rem; }
+.dvs-ico { flex-shrink: 0; display: inline-flex; width: 1.15em; height: 1.15em; }
+.dvs-ico svg { width: 100%; height: 100%; }
+.dvs-sub {
+  margin-left: auto; padding-left: 0.6rem;
+  font-size: 0.75rem; font-weight: 600; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.dvs-act.primary .dvs-sub { color: var(--primary-bright); opacity: 0.75; }
+
+/* A name in the timetable is a button now (it opens that session), so it has to
+   shed the button chrome the chip never had. */
+button.wk-chip { font: inherit; font-size: 0.75rem; font-weight: 600; color: inherit; cursor: pointer; }
+button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(--text); }
+
+/* The activity log's cardio mark, sized to sit on the text baseline beside the
+   emoji the other kinds still use. */
+/* A little larger than 1em: the mark is a wide flat line, so at text size it
+   reads thinner than the emoji the other kinds still use. */
+.notif-ico { display: inline-flex; width: 1.2em; height: 1.2em; vertical-align: -0.28em; color: var(--text-soft); }
+.notif-ico svg { width: 100%; height: 100%; }

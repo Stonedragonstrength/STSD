@@ -7356,6 +7356,21 @@
     // UI-only, deliberately left out of DAY_ICON_CATEGORIES so it never shows
     // up as a pickable day icon.
     "lu:search": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>',
+    // Also UI-only, and drawn in-house rather than borrowed: the sd: family's
+    // 1.9 round stroke, so they sit next to sd:claw and sd:flame as one hand.
+    // "sd:program" is the program editor seen from above — the week tab strip
+    // across the top, the day rows under it. "sd:pulse" is a heartbeat that
+    // climbs, which is what a cardio log is.
+    "sd:program": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.2" y="4" width="17.6" height="16" rx="3.2"/><path d="M3.2 9.2h17.6"/><path d="M7.4 13.2h9.2M7.4 16.4h5.6"/></svg>',
+    "sd:pulse": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.6 13.4h3.5l2.1-5.2 3.1 9.6 2.4-6.2 1.6 3.4h5.7"/></svg>',
+    // The rest of the session sheet's action column, so it reads as one hand
+    // rather than three line icons above three emoji.
+    "sd:athlete": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8.2" r="3.7"/><path d="M4.9 20.4a7.1 7.1 0 0 1 14.2 0"/></svg>',
+    "sd:waive": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.8"/><path d="M8.2 12h7.6"/></svg>',
+    "sd:missed": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.8"/><path d="m9.4 9.4 5.2 5.2M14.6 9.4l-5.2 5.2"/></svg>',
+    "sd:undo": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.6 8.4h6.2M3.6 8.4V3.6"/><path d="M3.6 8.4a8.6 8.6 0 1 1-1.1 6"/></svg>',
+    "sd:calx": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.3" y="5.2" width="17.4" height="15.5" rx="3"/><path d="M3.3 10.1h17.4M8.1 3.3v3.6M15.9 3.3v3.6"/><path d="m10.2 13.6 3.6 3.6M13.8 13.6l-3.6 3.6"/></svg>',
+    "sd:unlink": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.4 14.6 7 17a3.7 3.7 0 0 1-5.2-5.2l2.4-2.4"/><path d="m14.6 9.4 2.4-2.4a3.7 3.7 0 0 1 5.2 5.2l-2.4 2.4"/><path d="M12.5 4.2V1.8M19.8 11.5h2.4M4.2 12.5H1.8M11.5 19.8v2.4"/></svg>',
   };
   function isSvgIcon(v) { return typeof v === "string" && Object.prototype.hasOwnProperty.call(DAY_ICON_SVGS, v); }
   function dayIconHtml(v) { return isSvgIcon(v) ? DAY_ICON_SVGS[v] : escapeHtml(v || ""); }
@@ -10265,6 +10280,19 @@
       const done = Object.entries(ip.dayCompletions || {})
         .some(([, dates]) => (Array.isArray(dates) ? dates : []).includes(iso));
       if (done) put(c, { done: true });
+      // Where they actually are in the program right now. A booked session
+      // usually has nothing scheduled against it — the athlete books the time,
+      // the program says what the time is for — so without this the row reads
+      // "Session" and the sheet has nothing to open. It never overwrites a day
+      // they picked themselves; it only fills the blank.
+      const row = byClient.get(c.id);
+      if (!row.rest && !row.weekId) {
+        const cur = athleteCurrentDay(c);
+        if (cur) {
+          const wd = findWeekDay(c, cur.weekId, cur.dayId);
+          put(c, { curWeekId: cur.weekId, curDayId: cur.dayId, curDayName: wd?.day.name || "" });
+        }
+      }
     });
     return [...byClient.values(), ...loose].sort((a, b) =>
       (a.ts - b.ts) || (a.name || "").localeCompare(b.name || ""));
@@ -10296,12 +10324,17 @@
       `<div class="dv-now"><span class="dv-now-lbl">${escapeHtml(fmtSlotTime(nowMs))}</span></div>`;
 
     host.innerHTML = `<div class="dv-list">${rows.map((r, i) => {
-      const what = r.rest ? "Rest day" : (r.dayName || (r.events.length ? "Session" : "Training"));
+      // Nothing scheduled falls back to where they are in the program, marked
+      // as the softer claim it is: this is what's next for them, not something
+      // they committed to on this date.
+      const guess = !r.rest && !r.dayName && !!r.curDayName;
+      const what = r.rest ? "Rest day"
+        : (r.dayName || r.curDayName || (r.events.length ? "Session" : "Training"));
       return (i === nowAt ? nowHtml : "") +
         `<button type="button" class="dv-row${r.done ? " is-done" : ""}" data-dv="${i}">` +
         `<span class="dv-face">${r.client ? athleteFaceHtml(r.client) : `<span class="av-tile av-sm av-empty">?</span>`}</span>` +
         `<span class="dv-name">${escapeHtml(r.name)}${r.unlinked ? ` <span class="dv-tag">unlinked</span>` : ""}</span>` +
-        `<span class="dv-what">${escapeHtml(what)}</span>` +
+        `<span class="dv-what${guess ? " is-next" : ""}">${escapeHtml(what)}</span>` +
         (r.time ? `<span class="dv-time">${escapeHtml(r.time)}</span>` : "") +
         `<span class="dv-state">${r.done ? "✓" : "›"}</span>` +
       `</button>`;
@@ -10332,19 +10365,36 @@
         (sum ? `<span class="dvs-bal${sum.remaining <= 0 ? " low" : ""}">🎟 ${sum.remaining} left</span>` : "") +
       `</span></div>`;
 
+    // The day this session is about: what they scheduled, or failing that the
+    // day the program has them on. Everything below hangs off it, so a booking
+    // with nothing scheduled against it still opens onto real work.
+    const weekId = row.weekId || row.curWeekId || "";
+    const dayId = row.dayId || row.curDayId || "";
+    const wdRow = c && weekId ? findWeekDay(c, weekId, dayId) : null;
+
     // What the coach can do, as full-width rows rather than icon buttons.
     const acts = [];
-    if (c && row.weekId) acts.push(`<button type="button" class="dvs-act primary" data-act="live">🏋️ Log this session with them</button>`);
-    if (c) acts.push(`<button type="button" class="dvs-act" data-act="profile">👤 Open ${escapeHtml(c.name.split(" ")[0])}'s profile</button>`);
+    if (c && weekId) {
+      acts.push(`<button type="button" class="dvs-act primary" data-act="live">` +
+        `<span class="dvs-ico">${dayIconHtml("eq:dumbbell")}</span>Log this session with them` +
+        `${wdRow ? `<span class="dvs-sub">${escapeHtml(wdRow.day.name)}</span>` : ""}</button>`);
+      acts.push(`<button type="button" class="dvs-act" data-act="program">` +
+        `<span class="dvs-ico">${dayIconHtml("sd:program")}</span>To program` +
+        `${wdRow ? `<span class="dvs-sub">${escapeHtml(wdRow.week.label)}</span>` : ""}</button>`);
+    }
+    const act = (id, ico, label, cls) =>
+      `<button type="button" class="dvs-act${cls ? " " + cls : ""}" data-act="${id}">` +
+      `<span class="dvs-ico">${dayIconHtml(ico)}</span>${label}</button>`;
+    if (c) acts.push(act("profile", "sd:athlete", `Open ${escapeHtml(c.name.split(" ")[0])}'s profile`));
     if (c && e) {
       acts.push(mark
-        ? `<button type="button" class="dvs-act" data-act="unmark">↺ Undo "${mark.type === "closecall" ? "close call" : "missed"}"</button>`
-        : `<button type="button" class="dvs-act" data-act="cc">🤝 Close call · free missed session</button>` +
-          `<button type="button" class="dvs-act" data-act="charge">✕ Missed · still charged</button>`);
-      if (e.native && e.bookingId) acts.push(`<button type="button" class="dvs-act danger" data-act="cancel">× Cancel this session</button>`);
-      else if (!e.native) acts.push(`<button type="button" class="dvs-act" data-act="unlink">Unlink this booking</button>`);
+        ? act("unmark", "sd:undo", `Undo &ldquo;${mark.type === "closecall" ? "close call" : "missed"}&rdquo;`)
+        : act("cc", "sd:waive", "Close call · free missed session") +
+          act("charge", "sd:missed", "Missed · still charged"));
+      if (e.native && e.bookingId) acts.push(act("cancel", "sd:calx", "Cancel this session", "danger"));
+      else if (!e.native) acts.push(act("unlink", "sd:unlink", "Unlink this booking"));
     }
-    if (!c && e) acts.push(`<button type="button" class="dvs-act" data-act="link">Link to an athlete…</button>`);
+    if (!c && e) acts.push(act("link", "sd:athlete", "Link to an athlete…"));
     if (mark) {
       body += `<div class="dvs-mark ${mark.type === "closecall" ? "closecall" : "charged"}">` +
         `${mark.type === "closecall" ? "🤝 Close call — not charged" : "✕ Missed — charged"}</div>`;
@@ -10352,9 +10402,11 @@
     if (e?.seriesId) body += `<div class="dvs-note">Part of a weekly series.</div>`;
     body += `<div class="dvs-acts">${acts.join("")}</div>`;
 
-    // What they actually did, read-only, under the actions.
-    if (c && row.weekId) {
-      const wd = findWeekDay(c, row.weekId, row.dayId);
+    // What they actually did, read-only, under the actions. On a day nothing
+    // was scheduled for, this is the same list read forwards: every exercise
+    // says "Not logged", which is the session sheet for the work ahead.
+    if (c && weekId) {
+      const wd = wdRow;
       if (wd) {
         const logs = c.importedProgress?.exerciseLogs || {};
         body += `<div class="dvs-log"><div class="dvs-log-head">${escapeHtml(wd.week.label)} · ${escapeHtml(wd.day.name)}</div>`;
@@ -10397,8 +10449,9 @@
       closeModal();
       state.currentClientId = c.id;
       Nav.push(exitPreview); // Back leaves the live session, same as the 🏋️ card button
-      previewAsAthlete({ weekId: row.weekId, dayId: row.dayId, date: iso });
+      previewAsAthlete({ weekId, dayId, date: iso });
     });
+    on("program", () => { closeModal(); openClientProgram(c.id, weekId, dayId); });
     on("profile", () => { closeModal(); openClient(c.id); });
     on("cc", () => { closeModal(); markBookingMissed(e, c, "closecall"); });
     on("charge", () => { closeModal(); markBookingMissed(e, c, "charged"); });
@@ -10407,10 +10460,27 @@
     on("unlink", () => { closeModal(); unlinkSetmoreBooking(e.clientName); });
     on("link", () => { closeModal(); openLinkSetmoreNameModal(e.clientName); });
     root.querySelectorAll("[data-fc]").forEach((btn) => btn.addEventListener("click", () => {
-      const wd = findWeekDay(c, row.weekId, row.dayId);
-      const clip = formChecksForDay(c.importedProgress, wd?.day.id)[Number(btn.dataset.fc)];
+      const clip = formChecksForDay(c.importedProgress, wdRow?.day.id)[Number(btn.dataset.fc)];
       if (clip) playFormCheck(clip.path);
     }));
+  }
+
+  // Open an athlete's program already on the week and day you came from, rather
+  // than on Profile at week 1 with the hunt still ahead of you. openClient()
+  // resets both indices on purpose (a stale editor id used to show the wrong
+  // program), so the position is set after it, not before.
+  function openClientProgram(clientId, weekId, dayId) {
+    openClient(clientId);
+    const c = currentClient(); if (!c) return;
+    const wIdx = (c.weeks || []).findIndex((w) => w.id === weekId);
+    if (wIdx >= 0) {
+      _coachActiveWeekIdx = wIdx;
+      _coachOneOffTab = false;
+      const dIdx = (c.weeks[wIdx].days || []).findIndex((d) => d.id === dayId);
+      if (dIdx >= 0) c.weeks[wIdx]._activeDayIdx = dIdx;
+    }
+    setTab("program");
+    renderWeeks();
   }
 
   // Week has two shapes. On a desktop it is a timetable: the seven days across,
@@ -10487,7 +10557,8 @@
     const allDay = days.map((d) => {
       const planned = clients.filter((c) => c.importedProgress?.selfSchedule?.[d]?.weekId);
       return `<div class="wkg-allday-cell">` + planned.map((c) =>
-        `<span class="wk-chip wk-chip-plan">${athleteFaceHtml(c, "xs")}${escapeHtml(c.name)}</span>`).join("") + `</div>`;
+        `<button type="button" class="wk-chip wk-chip-plan" data-wk-ev="${d}" data-wk-cid="${escapeHtml(c.id)}">` +
+        `${athleteFaceHtml(c, "xs")}${escapeHtml(c.name)}</button>`).join("") + `</div>`;
     }).join("");
     const anyPlanned = clients.some((c) => days.some((d) => c.importedProgress?.selfSchedule?.[d]?.weekId));
 
@@ -10502,7 +10573,8 @@
         const short = h < 32 ? " is-short" : "";
         return `<button type="button" class="wkg-ev${p.e.native ? "" : " is-external"}${short}" ` +
           `style="top:${top}px;height:${h}px;left:${lane * w}%;width:calc(${w}% - 3px)" ` +
-          `data-wk-day="${d}" title="${escapeHtml((p.athlete?.name || p.e.clientName || "Session") + " · " + fmtSetmoreTime(p.e.startAt))}">` +
+          `data-wk-ev="${d}" data-wk-cid="${escapeHtml(p.athlete?.id || "")}" data-wk-nm="${escapeHtml(p.e.clientName || "")}" ` +
+          `title="${escapeHtml((p.athlete?.name || p.e.clientName || "Session") + " · " + fmtSetmoreTime(p.e.startAt))}">` +
           `<span class="wkg-ev-time">${escapeHtml(fmtSetmoreTime(p.e.startAt))}</span>` +
           `<span class="wkg-ev-name">${p.athlete ? athleteFaceHtml(p.athlete, "xs") : ""}` +
             `${escapeHtml(p.athlete?.name || p.e.clientName || "Session")}</span>` +
@@ -10540,6 +10612,16 @@
     const toDay = (d) => { dashCal().date = d; setCalMode("day"); };
     host.querySelectorAll("[data-wk-day]").forEach((b) =>
       b.addEventListener("click", (ev) => { ev.stopPropagation(); toDay(b.dataset.wkDay); }));
+    // A name in the timetable is the session itself, so it opens the session
+    // rather than making you land in day view and find the same name again.
+    host.querySelectorAll("[data-wk-ev]").forEach((b) => b.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const d = b.dataset.wkEv, cid = b.dataset.wkCid, nm = b.dataset.wkNm;
+      const rows = dayRows(d);
+      const row = (cid ? rows.find((r) => r.client?.id === cid) : null) ||
+        rows.find((r) => !r.client && r.name === nm);
+      if (row) openDaySessionSheet(d, row); else toDay(d);
+    }));
     host.querySelectorAll("[data-wk-col]").forEach((col) =>
       col.addEventListener("click", () => toDay(col.dataset.wkCol)));
   }
@@ -13684,7 +13766,9 @@
         if (!log || !log.date) return;
         const miles = Number(log.miles) ? ` · ${cardioMiLabel(Number(log.miles))} mi` : "";
         out.push({
-          type: "cardio", icon: cardioIcon(log.type),
+          // The log's icon column is a line-icon column everywhere else; the
+          // emoji the athlete's own cardio picker uses looked pasted in here.
+          type: "cardio", icon: `<span class="notif-ico">${dayIconHtml("sd:pulse")}</span>`,
           ts: new Date(log.date + "T12:00:00").getTime(),
           name: c.name,
           text: `logged ${String(log.type || "cardio").toLowerCase()} · ${log.minutes || 0} min${miles}`,
