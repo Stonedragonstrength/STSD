@@ -984,12 +984,14 @@
   // At or above PROG_RIR_EASY the set was submaximal: climb faster, and don't
   // let a miss at that effort count as a strength stall.
   const PROG_RIR_EASY = 4;
+  // Gauges, not faces: this measures the set, it doesn't ask how the athlete
+  // feels about it. The number is the answer, so it's on the button.
   const RIR_OPTS = [
-    { v: 0, icon: "😮‍💨", label: "All out",
+    { v: 0, icon: "sd:tank1", label: "None", timedLabel: "None",
       hint: "Nothing left in the tank.", timedHint: "Nothing left. Could not have held it a second longer." },
-    { v: 2, icon: "💪", label: "Hard",
+    { v: 2, icon: "sd:tank2", label: "About 2", timedLabel: "A few sec",
       hint: "About 2 good reps left.", timedHint: "Could have held it a few seconds longer." },
-    { v: PROG_RIR_EASY, icon: "🙂", label: "Easy",
+    { v: PROG_RIR_EASY, icon: "sd:tank3", label: "4 or more", timedLabel: "Plenty",
       hint: "4 or more reps left. Your targets will climb faster.", timedHint: "Plenty left. Your targets will climb faster." },
   ];
 
@@ -7539,6 +7541,14 @@
     "sd:video": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.6" y="6.4" width="12.6" height="11.2" rx="2.6"/><path d="m15.2 11.3 5.4-3.1v7.6l-5.4-3.1z"/></svg>',
     "sd:chat": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 11.6a8.2 8.2 0 0 1-11.9 7.4l-5.3 1.2 1.2-5.3A8.2 8.2 0 1 1 20.6 11.6Z"/></svg>',
     "sd:ticket": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.6" y="6.4" width="18.8" height="11.2" rx="2.6"/><path d="M9.4 6.4v11.2" stroke-dasharray="2 2.3"/></svg>',
+    // How much is left in the tank, as a gauge. RIR is a MEASUREMENT of the set
+    // — how many reps were still there — but with a face on it, it read as a
+    // third "how do you feel?" in a session that already has two. A filling
+    // gauge says the same thing without pretending to be a mood, and it works
+    // for a timed hold, where "reps" is the wrong noun anyway.
+    "sd:tank1": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><rect x="2.4" y="14.6" width="5.2" height="6.4" rx="1.2" fill="currentColor" stroke="none"/><rect x="9.4" y="9.4" width="5.2" height="11.6" rx="1.2"/><rect x="16.4" y="4.2" width="5.2" height="16.8" rx="1.2"/></svg>',
+    "sd:tank2": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><rect x="2.4" y="14.6" width="5.2" height="6.4" rx="1.2" fill="currentColor" stroke="none"/><rect x="9.4" y="9.4" width="5.2" height="11.6" rx="1.2" fill="currentColor" stroke="none"/><rect x="16.4" y="4.2" width="5.2" height="16.8" rx="1.2"/></svg>',
+    "sd:tank3": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><rect x="2.4" y="14.6" width="5.2" height="6.4" rx="1.2" fill="currentColor" stroke="none"/><rect x="9.4" y="9.4" width="5.2" height="11.6" rx="1.2" fill="currentColor" stroke="none"/><rect x="16.4" y="4.2" width="5.2" height="16.8" rx="1.2" fill="currentColor" stroke="none"/></svg>',
   };
   // One line icon sized to sit on a line of text, for the places that used to
   // put an emoji mid-sentence (the coach activity column, the eating signals).
@@ -15140,16 +15150,28 @@
   // -------- Post-workout mood check-in ("How was your workout?") --------
   // Athlete taps up to 2 feelings when they finish a day; the picks show on
   // that day's card and feed the coach's per-day chips + program roll-up.
+  // A verdict on the SESSION, not another reading of the body. The readiness
+  // check-in already asked about sleep, soreness and stress before the first
+  // set — so "Tired", "Weak" and "Dead" were the same question a second time,
+  // forty minutes later, which is what made the two feel redundant. What's left
+  // is what readiness cannot know because it hasn't happened yet: how the work
+  // actually went.
+  //
+  // `retired` options are no longer offered but still resolve, so days already
+  // tagged with them keep their chips and keep counting in the coach roll-up.
+  // Nothing an athlete has recorded is rewritten or lost.
   const WORKOUT_MOODS = [
     { id: "energized",  emoji: "⚡", label: "Energized" },
-    { id: "tired",      emoji: "🥱", label: "Tired" },
     { id: "strong",     emoji: "💪", label: "Strong" },
-    { id: "weak",       emoji: "🫠", label: "Weak" },
-    { id: "brutalized", emoji: "💥", label: "Brutalized" },
     { id: "wantmore",   emoji: "🔥", label: "Wanting more" },
+    { id: "brutalized", emoji: "💥", label: "Brutalized" },
+    { id: "flat",       emoji: "🫠", label: "Flat" },
     { id: "sick",       emoji: "🤢", label: "Sick" },
-    { id: "dead",       emoji: "💀", label: "Dead" },
+    { id: "tired",      emoji: "🥱", label: "Tired",  retired: true },
+    { id: "weak",       emoji: "🫠", label: "Weak",   retired: true },
+    { id: "dead",       emoji: "💀", label: "Dead",   retired: true },
   ];
+  const MOOD_CHOICES = WORKOUT_MOODS.filter((m) => !m.retired);
   const MAX_MOODS = 2;
   const moodById = (id) => WORKOUT_MOODS.find((m) => m.id === id) || null;
   // Latest mood pick list for a day, from any progress object (athlete-local or
@@ -15307,9 +15329,9 @@
     const draw = () => {
       const body = $("#modal-body"); if (!body) return;
       body.innerHTML = `
-        <p class="mood-sheet-sub">Tap up to ${MAX_MOODS}.</p>
+        <p class="mood-sheet-sub">How did that session go? Tap up to ${MAX_MOODS}.</p>
         <div class="mood-grid">
-          ${WORKOUT_MOODS.map((m) => `<button type="button" class="mood-opt${sel.includes(m.id) ? " on" : ""}" data-mood="${m.id}">
+          ${MOOD_CHOICES.map((m) => `<button type="button" class="mood-opt${sel.includes(m.id) ? " on" : ""}" data-mood="${m.id}">
               <span class="mood-opt-emo">${m.emoji}</span><span class="mood-opt-lbl">${escapeHtml(m.label)}</span>
             </button>`).join("")}
         </div>`;
@@ -18717,13 +18739,14 @@
     if (prog) {
       const rirLbl = document.createElement("span");
       rirLbl.className = "cex-rir-lbl";
-      rirLbl.textContent = isTimed ? "Left in the tank?" : "Reps left in the tank?";
+      rirLbl.textContent = isTimed ? "Time left in the tank" : "Reps left in the tank";
       rirRow.appendChild(rirLbl);
       RIR_OPTS.forEach((o) => {
         const b = document.createElement("button");
         b.type = "button";
         b.className = "cex-rir-btn" + (rirValue === o.v ? " on" : "");
-        b.innerHTML = `<span class="cex-rir-ico">${o.icon}</span><span>${escapeHtml(o.label)}</span>`;
+        b.innerHTML = `<span class="cex-rir-ico">${dayIconHtml(o.icon)}</span>` +
+          `<span>${escapeHtml(isTimed ? (o.timedLabel || o.label) : o.label)}</span>`;
         b.title = isTimed ? o.timedHint : o.hint;
         b.addEventListener("click", (e) => {
           e.stopPropagation();

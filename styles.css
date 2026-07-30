@@ -5471,7 +5471,10 @@ input:focus, textarea:focus, select:focus {
   background: rgba(var(--primary-bright-rgb), 0.14);
   font-weight: 800;
 }
-.cex-rir-ico { font-size: 0.95rem; line-height: 1; }
+/* A gauge, not a face — see RIR_OPTS. It inherits the chip's colour, so the
+   picked one fills with the same bright the chip does. */
+.cex-rir-ico { display: inline-flex; width: 0.95rem; height: 0.95rem; line-height: 1; }
+.cex-rir-ico svg { width: 100%; height: 100%; }
 /* On a phone the label and three chips don't share a line without orphaning
    one of them, so give the label its own row and keep the chips together. */
 @media (max-width: 520px) {
