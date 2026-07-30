@@ -473,7 +473,7 @@
   const EXERCISE_MODIFIERS = [
     { group: "Unilateral",  tags: ["1A", "1L"] },
     { group: "Alternation", tags: ["Alternating", "Non-Alternating"] },
-    { group: "Equipment",   tags: ["BB", "DB", "DBs", "KB", "EZ Bar", "Cable", "Rope", "Wide Bar", "Band", "Machine", "Landmine", "Bench", "Bench Assisted"], multi: true },
+    { group: "Equipment",   tags: ["BB", "DB", "DBs", "KB", "EZ Bar", "Cable", "Rope", "Wide Bar", "Band", "Machine", "Landmine", "Slider", "Bench", "Bench Assisted"], multi: true },
     { group: "Position",    tags: ["Incline", "Decline", "Elevated", "Seated", "Standing", "Kneeling", "Raised", "Supported", "Wide", "Lying"] },
     { group: "Grip",        tags: ["Supinated", "Neutral", "Pronated"] },
     { group: "Style",       tags: ["Pause", "Tempo", "Explosive", "Isometric"] },
@@ -481,6 +481,42 @@
   ];
   // Hold (seconds) tags only apply alongside the Isometric tag.
   const HOLD_TAGS = ["1S", "2S", "3S", "4S", "5S"];
+
+  // The coach's tags are shorthand — they have to be, because they render as
+  // chips in a crowded editor row. The athlete reads a sentence, not a chip,
+  // and "BB Squats" is a note to yourself, not an instruction to someone else.
+  // So the name they see spells the shorthand out. Tags not listed here are
+  // already words ("Cable", "Incline") and pass through unchanged.
+  //
+  // "DBs" is a PAIR but still expands to the singular "Dumbbell": the plural
+  // lives in the weight ("50s", see usesDumbbellPair), and "Dumbbells Bench
+  // Press" is not English.
+  const TAG_LONG = {
+    "1A": "One-Arm",
+    "1L": "One-Leg",
+    "BB": "Barbell",
+    "DB": "Dumbbell",
+    "DBs": "Dumbbell",
+    "KB": "Kettlebell",
+    "EZ Bar": "EZ-Bar",
+    "1S": "1s Hold", "2S": "2s Hold", "3S": "3s Hold",
+    "4S": "4s Hold", "5S": "5s Hold",
+  };
+  function tagLong(tag) { return TAG_LONG[tag] || tag; }
+
+  // Chips are ordered by EXERCISE_MODIFIERS so the coach's row reads the same
+  // regardless of click order. A NAME is a sentence, and the sentence wants a
+  // different order: gym English puts the position first and the implement
+  // last — "Standing Kettlebell Swing", not "Kettlebell Standing Swing".
+  // Groups missing from this list keep their EXERCISE_MODIFIERS position.
+  const NAME_GROUP_ORDER = ["Position", "Alternation", "Grip", "Unilateral", "Equipment"];
+  function nameOrderedTags(tags) {
+    const rank = (t) => {
+      const i = NAME_GROUP_ORDER.indexOf(groupForTag(t)?.group);
+      return i < 0 ? NAME_GROUP_ORDER.length : i;
+    };
+    return tags.slice().sort((a, b) => rank(a) - rank(b));
+  }
 
   // Tags that contradict each other and can't be held at once, even inside a
   // multi-select group like Equipment (where Cable + Rope etc. is legitimate).
@@ -649,6 +685,7 @@
     "Band":      { color: "#4ade80", bg: "rgba(74,222,128,0.18)"  },
     "Machine":   { color: "#facc15", bg: "rgba(250,204,21,0.18)"  },
     "Landmine":  { color: "#d97706", bg: "rgba(217,119,6,0.18)"   },
+    "Slider":    { color: "#67e8f9", bg: "rgba(103,232,249,0.18)" },
     "Bench Assisted": { color: "#7dd3fc", bg: "rgba(125,211,252,0.18)" },
     "Incline":   { color: "#fbbf24", bg: "rgba(251,191,36,0.18)"  },
     "Decline":   { color: "#f97316", bg: "rgba(249,115,22,0.18)"  },
@@ -15555,7 +15592,7 @@
     let sets = 0, doneSets = 0;
     const lifts = [];
     list.forEach((ex) => {
-      lifts.push(exResolvedName(ex, progress) || ex.name || "");
+      lifts.push(exerciseDisplayLabel(ex, progress) || ex.name || "");
       const n = parseInt(ex.sets, 10) || 0;
       const warm = ex.kind === "mobility" ? 0 : Math.min(3, (ex.warmups || []).length);
       sets += n + warm;
@@ -17579,7 +17616,7 @@
       (g.group === "Style" || g.group === "Hold" ? after : before).push(tag);
     });
     const nm = exResolvedName(ex, progress) || "(unnamed)";
-    return [...before, nm, ...after].join(" ");
+    return [...nameOrderedTags(before).map(tagLong), nm, ...after.map(tagLong)].join(" ");
   }
   // Bar + rack picker behind the plate readout. The bar is per exercise (the
   // app's guess is only a guess, and one gym's "Row" is another's Smith rack);
