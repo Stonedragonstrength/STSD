@@ -11402,3 +11402,108 @@ body.scroll-locked {
   letter-spacing: 0.06em; color: var(--text-soft); margin-bottom: 0.4rem;
 }
 .dvs-notlogged { font-size: 0.8rem; color: var(--muted); }
+
+
+/* ============ The Hoard, full size (athlete Progress tab) ============
+   The header crest is a status badge with no room to explain itself; this is
+   the ladder. One heat colour drives the crest, the bar and every earned row,
+   so the whole card intensifies together as the rank climbs. */
+.hoard-card { padding: 1rem 1.05rem 0.9rem; }
+.hoard-head { display: flex; align-items: center; gap: 0.8rem; }
+.hoard-crest {
+  flex: none;
+  width: 52px; height: 52px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.7rem; line-height: 1;
+  border-radius: 14px;
+  background: var(--surface-2);
+  border: 1px solid color-mix(in srgb, var(--rank-color) 55%, transparent);
+  box-shadow: 0 0 calc(var(--rank-glow) * 14px) color-mix(in srgb, var(--rank-color) 40%, transparent);
+}
+.hoard-headtext { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.hoard-kicker {
+  font-size: 0.62rem; font-weight: 800; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--muted);
+}
+.hoard-rank {
+  font-size: 1.3rem; font-weight: 800; line-height: 1.1;
+  color: var(--rank-color);
+  text-shadow: 0 0 calc(var(--rank-glow) * 10px) color-mix(in srgb, var(--rank-color) 45%, transparent);
+}
+.hoard-ton { font-size: 0.78rem; color: var(--text-soft); }
+.hoard-track {
+  margin-top: 0.85rem; height: 8px; border-radius: 999px;
+  background: var(--surface-2); overflow: hidden;
+}
+.hoard-fill {
+  display: block; height: 100%; border-radius: 999px;
+  background: var(--rank-color);
+  box-shadow: 0 0 calc(var(--rank-glow) * 9px) color-mix(in srgb, var(--rank-color) 55%, transparent);
+}
+.hoard-next {
+  margin-top: 0.35rem;
+  font-size: 0.74rem; font-weight: 700; color: var(--text-soft);
+  font-variant-numeric: tabular-nums;
+}
+/* The ladder. Locked rows stay flat and grey; earned rows take their own tier
+   colour, so scrolling the list reads as the climb it is. */
+.hoard-ladder {
+  margin-top: 0.9rem;
+  display: flex; flex-direction: column; gap: 0.25rem;
+  border-top: 1px solid var(--border); padding-top: 0.7rem;
+}
+.hoard-step {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.32rem 0.5rem;
+  border-radius: 8px;
+  min-width: 0;
+  opacity: 0.5;
+}
+.hoard-step-ico { flex: none; width: 1.4em; text-align: center; font-size: 0.95rem; }
+.hoard-step-name {
+  font-size: 0.82rem; font-weight: 700; color: var(--text-soft);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.hoard-step-meta {
+  margin-left: auto; flex: none;
+  font-size: 0.7rem; font-weight: 700; color: var(--muted);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.hoard-step.done { opacity: 1; }
+.hoard-step.done .hoard-step-name { color: var(--step-color); }
+.hoard-step.on {
+  opacity: 1;
+  background: color-mix(in srgb, var(--step-color) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--step-color) 40%, transparent);
+  padding: 0.42rem 0.5rem;
+}
+.hoard-step.on .hoard-step-name { color: var(--step-color); font-weight: 800; }
+.hoard-step.on .hoard-step-meta { color: var(--text-soft); }
+/* The in-progress row carries its own thin bar between name and numbers. */
+.hoard-step-bar {
+  flex: 1 1 60px; min-width: 40px; height: 5px;
+  border-radius: 999px; background: var(--surface-2); overflow: hidden;
+}
+.hoard-step-fill {
+  display: block; height: 100%; border-radius: 999px; background: var(--step-color);
+}
+@media (max-width: 420px) {
+  .hoard-step-bar { display: none; }
+}
+
+/* The volume chart and the body-comp trend arrive on Progress as bare content
+   (they used to sit inside someone else's card). Given the same card chrome as
+   the Hoard and the strength chart so the tab reads as one stack, and only when
+   they actually have something to draw. */
+#prog-volume:not(:empty),
+#prog-bw:not(:empty) {
+  display: block;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.1rem 1.2rem;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--shadow-sm);
+}
+#prog-volume .ov-volchart { margin-top: 0; }
+#prog-bw .bw-charts-head { margin-top: 0; }

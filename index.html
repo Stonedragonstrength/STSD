@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=dock2" />
+  <link rel="stylesheet" href="styles.css?v=prog2" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -972,14 +972,19 @@
               <span class="muted">Renpho: Profile → Settings → Export Data, then upload the CSV.</span>
               <input type="file" id="scale-csv-input" accept=".csv,text/csv" hidden />
             </div>
-            <div id="bw-charts" class="bw-secret"></div>
             <div id="bw-history" class="bw-secret"></div>
           </div>
         </details>
       </div>
 
-      <!-- Progress: PRs and the strength charts behind them -->
+      <!-- Progress: the record of the work. The Hoard, weekly volume and the
+           body-comp trend all moved here from tabs where they were doubling up
+           with something else. Built by renderAthleteProgressTab(). -->
       <div class="tab-panel" data-ctab-panel="prs">
+        <div id="prog-hoard"></div>
+        <div id="prog-volume"></div>
+        <!-- bw-secret: a private body weight stays blurred here too. -->
+        <div id="prog-bw" class="bw-secret"></div>
         <div id="athlete-strength-charts"></div>
         <div id="athlete-pr-archive"></div>
         <div id="athlete-pr-container"></div>
@@ -1157,7 +1162,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=day1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=dock2"></script>
+  <script src="app.js?v=prog2"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

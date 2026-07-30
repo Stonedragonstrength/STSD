@@ -15192,16 +15192,13 @@
     const draw = () => {
       const selDefs = sel.map((id) => RACING_LIB.find((s) => s.id === id)).filter(Boolean);
       const poolDefs = RACING_LIB.filter((s) => !sel.includes(s.id));
-      const chartOn = progress.showVolChart !== false;
+      // No volume-chart switch here any more: the chart has a permanent home on
+      // the Progress tab, so an option to also print it inside the stats bar
+      // only ever produced the same chart twice.
       $("#modal-body").innerHTML = `
         <p class="muted stat-cust-intro">Choose the stats for your stats bar and reorder them with the arrows.</p>
         <div class="stat-cust-list">${selDefs.map((d, i) => rowHtml(d, true, i, selDefs.length)).join("") || `<p class="muted" style="padding:0.3em 0">Nothing selected yet.</p>`}</div>
-        ${poolDefs.length ? `<div class="stat-cust-sub">Add more</div><div class="stat-cust-list">${poolDefs.map((d) => rowHtml(d, false)).join("")}</div>` : ""}
-        <div class="stat-cust-sub">Chart</div>
-        <div class="stat-cust-list"><div class="stat-cust-row${chartOn ? " on" : ""}">
-          <span class="stat-cust-name"><span class="stat-cust-ico">📊</span>Volume chart</span>
-          <span class="stat-cust-ctrls"><button class="btn ${chartOn ? "btn-ghost" : "btn-primary"} btn-sm" data-chart>${chartOn ? "Remove" : "Add"}</button></span>
-        </div></div>`;
+        ${poolDefs.length ? `<div class="stat-cust-sub">Add more</div><div class="stat-cust-list">${poolDefs.map((d) => rowHtml(d, false)).join("")}</div>` : ""}`;
       $("#modal-body").querySelectorAll(".stat-cust-row[data-id]").forEach((row) => {
         const id = row.dataset.id;
         row.querySelectorAll("[data-act]").forEach((btn) => btn.addEventListener("click", () => {
@@ -15211,9 +15208,6 @@
           else if (btn.dataset.act === "down" && idx >= 0 && idx < sel.length - 1) { [sel[idx + 1], sel[idx]] = [sel[idx], sel[idx + 1]]; }
           commit(); draw();
         }));
-      });
-      $("#modal-body").querySelector("[data-chart]")?.addEventListener("click", () => {
-        progress.showVolChart = !chartOn; saveClient(); renderAthleteOverview(); draw();
       });
     };
     openModal({ title: "Customize stats", body: "", actions: [{ label: "Done", className: "btn btn-primary", onClick: closeModal }] });
@@ -15344,7 +15338,6 @@
         <div class="ov-liftstats-body">
           <div class="ov-recap-head"><h4>Your stats</h4><div class="ov-recap-actions"><button class="btn btn-ghost btn-sm" id="btn-racing-customize" type="button" title="Customize these stats" aria-label="Customize these stats">⋯</button><button class="btn btn-ghost btn-sm" id="btn-share-recap" type="button">📤 Share</button></div></div>
           <div class="ov-stats-list racing-vp" id="racing-vp">${renderRacingRows(racingCtx)}</div>
-          <div id="ov-volchart-host"></div>
         </div>
       </details>` : "";
     const badges = computeBadges(progress, c);
@@ -15435,8 +15428,6 @@
       if (e.target.open) wireRacingCap();
     });
     wireRacingCap();
-    if (progress.showVolChart === false) { const vh = $("#ov-volchart-host"); if (vh) vh.innerHTML = ""; }
-    else renderVolumeChart(progress);
   }
   // Sessions-remaining chip in the athlete header, right of the profile name.
   // The rank in the app header. The logo becomes the crest: a gold arc for
@@ -15757,6 +15748,9 @@
     $$(".tab-panel[data-ctab-panel]").forEach((p) => p.classList.toggle("active", p.dataset.ctabPanel === name));
     // The racing bar's soft cap can only measure once its panel is visible.
     if (name === "overview") wireRacingCap();
+    // Progress is built on arrival: the Hoard, the volume chart and the trend
+    // all read logs that a workout may have changed since the last visit.
+    if (name === "prs") renderAthleteProgressTab();
     // Rest timer only floats over the workouts tab (and only in day detail)
     if (name !== "workouts") { hideRestTimer(); WorkoutClock.leave(); }
     else if (state.workoutView?.mode === "detail") showRestTimer();
@@ -19874,6 +19868,90 @@
     return `${tons < 10 ? tons.toFixed(1) : Math.round(tons).toLocaleString()} tons`;
   }
 
+  // The Hoard, at full size, on the Progress tab. The header crest says which
+  // rank the athlete is wearing but has no room to say what the ladder even is;
+  // this is where the whole climb is visible. Twelve rows, the earned ones lit
+  // in their own heat colour, the current one carrying the bar. Past HOARD the
+  // ladder switches to the current prestige lap, so the rows always mean
+  // "what's next" rather than "what you finished a year ago".
+  function renderHoardCard(host, client, progress) {
+    if (!host) return;
+    const lb = Number(progress?.hoard?.lb) || 0;
+    // Nothing lifted yet: no empty ladder. The tab still has the PR cards, and
+    // a locked twelve-row list is a worse first impression than no card.
+    if (!lb) { host.innerHTML = ""; return; }
+    const lvl = hoardLevelFromLb(lb);
+    const rank = hoardRankForLevel(lvl.level);
+    const next = hoardRankForLevel(lvl.level + 1);
+    const look = hoardLook(lvl.level);
+    const pct = lvl.need > 0 ? Math.max(0, Math.min(100, (lvl.into / lvl.need) * 100)) : 0;
+    const left = Math.max(0, Math.round(lvl.need - lvl.into));
+
+    // Which slice of the ladder to show. Base climb → all twelve ranks. Past
+    // HOARD → the lap the athlete is on, which is one bare numeral plus its ten
+    // metals.
+    const inPrestige = lvl.level >= HOARD_RANKS.length;
+    const past = lvl.level - HOARD_RANKS.length;
+    const first = inPrestige ? HOARD_RANKS.length + Math.floor(past / HOARD_CYCLE) * HOARD_CYCLE : 1;
+    const count = inPrestige ? HOARD_CYCLE : HOARD_RANKS.length;
+    // Cumulative pounds to REACH each level, accumulated from the bottom.
+    let floor = 0;
+    for (let L = 1; L < first; L++) floor += hoardLbForLevel(L);
+
+    const rows = [];
+    let at = floor;
+    for (let i = 0; i < count; i++) {
+      const L = first + i;
+      const r = hoardRankForLevel(L);
+      const lk = hoardLook(L);
+      const state = L < lvl.level ? "done" : L === lvl.level ? "on" : "";
+      const meta = L === lvl.level
+        ? `${Math.round(lvl.into).toLocaleString()} / ${lvl.need.toLocaleString()} lb`
+        : L < lvl.level ? "earned" : hoardLbLabel(at);
+      rows.push(`<div class="hoard-step ${state}" style="--step-color:${lk.color}">` +
+        `<span class="hoard-step-ico">${r.icon}</span>` +
+        `<span class="hoard-step-name">${escapeHtml(r.name)}</span>` +
+        (L === lvl.level
+          ? `<span class="hoard-step-bar"><span class="hoard-step-fill" style="width:${pct.toFixed(1)}%"></span></span>`
+          : "") +
+        `<span class="hoard-step-meta">${escapeHtml(meta)}</span>` +
+      `</div>`);
+      at += hoardLbForLevel(L);
+    }
+
+    host.innerHTML = `<div class="card hoard-card" style="--rank-color:${look.color};--rank-glow:${look.glow}">
+      <div class="hoard-head">
+        <span class="hoard-crest" aria-hidden="true">${rank.icon}</span>
+        <span class="hoard-headtext">
+          <span class="hoard-kicker">The Hoard</span>
+          <span class="hoard-rank">${escapeHtml(rank.name)}</span>
+          <span class="hoard-ton">${escapeHtml(hoardLbLabel(lb))} moved, all time</span>
+        </span>
+      </div>
+      <div class="hoard-track"><span class="hoard-fill" style="width:${pct.toFixed(1)}%"></span></div>
+      <div class="hoard-next">${escapeHtml(left.toLocaleString())} lb to ${escapeHtml(next.name)}</div>
+      <div class="hoard-ladder">${rows.join("")}</div>
+    </div>`;
+  }
+
+  // -------- Athlete: the Progress tab --------
+  // It used to be the thinnest tab in the app — a strength chart, PR cards, then
+  // nothing. Each of these three has exactly one home now: the Hoard ladder is
+  // new, the volume chart came off the Overview stats fold, and the body-comp
+  // trend came off Diet and Comp, which keeps the weigh-in form and the number.
+  function renderAthleteProgressTab() {
+    const c = state.clientData.program?.client;
+    const progress = state.clientData.progress;
+    if (!c || !progress) return;
+    // Same choke point the Overview uses, so the tonnage here and the header
+    // crest can never disagree.
+    syncHoard(c, progress);
+    renderHoardCard($("#prog-hoard"), c, progress);
+    renderVolumeChart(progress, $("#prog-volume"));
+    renderBwCharts($("#prog-bw"), progress.bodyweightLog || []);
+    renderStrengthProgress($("#athlete-strength-charts"), c, progress);
+  }
+
   // One slim row at the top of the athlete's overview: badge, rank, a thin
   // track and the size of the pile. Deliberately a single line — the food tab's
   // rank plate is two rows with a chunky meter, and stacking a second block of
@@ -21672,7 +21750,9 @@
       const latest = [...log].sort(bwSort).find((e) => Number.isFinite(parseFloat(e?.weightLb)));
       meta.textContent = latest ? `${parseFloat(latest.weightLb)} lb` : "";
     }
-    renderBwCharts($("#bw-charts"), log);
+    // The trend charts live on the Progress tab now. This fold is where a
+    // weigh-in gets entered and listed; reading the trend is a different job.
+    renderBwCharts($("#prog-bw"), log);
     const wrap = $("#bw-history");
     wrap.innerHTML = "";
     if (!log.length) { wrap.innerHTML = `<p class="muted">No weight entries yet.</p>`; return; }
@@ -22227,8 +22307,8 @@
     });
     return last12;
   }
-  function renderVolumeChart(progress) {
-    const host = $("#ov-volchart-host");
+  function renderVolumeChart(progress, hostEl) {
+    const host = hostEl || $("#prog-volume");
     if (!host) return;
     const mode = localStorage.getItem(KEY_VOLMODE) === "month" ? "month" : "week";
     const buckets = volumeBuckets(progress, mode);
@@ -22250,7 +22330,7 @@
     </div>`;
     host.querySelectorAll("[data-volmode]").forEach((b) => b.addEventListener("click", () => {
       localStorage.setItem(KEY_VOLMODE, b.dataset.volmode);
-      renderVolumeChart(progress);
+      renderVolumeChart(progress, host);
     }));
   }
 
