@@ -10209,12 +10209,166 @@
     renderCalMonthGrid(grid, year, month);
   }
 
-  // Day: the full detail for one date, the same description a month cell opens.
+  // One line per athlete on a date. A booking and a programmed workout are the
+  // same person's day, not two entries, so they merge into one row.
+  function dayRows(iso) {
+    const byClient = new Map();
+    const loose = [];
+    const put = (c, patch) => {
+      const cur = byClient.get(c.id) ||
+        { client: c, name: c.name, time: "", ts: Infinity, dayName: "", rest: false, done: false, events: [] };
+      byClient.set(c.id, Object.assign(cur, patch));
+    };
+    (dashCalSetmoreByDate()[iso] || []).forEach((e) => {
+      const start = e.startAt ? new Date(e.startAt) : null;
+      const time = start ? fmtSetmoreTime(e.startAt) : "";
+      const ts = start ? start.getTime() : Infinity;
+      const c = matchAthleteForEvent(e);
+      if (c) { put(c, { time, ts }); byClient.get(c.id).events.push(e); }
+      else loose.push({ client: null, name: e.clientName || "Booking", time, ts, unlinked: true, events: [e] });
+    });
+    (state.trainerData.clients || []).forEach((c) => {
+      const ip = c.importedProgress || {};
+      const entry = ip.selfSchedule?.[iso];
+      if (entry?.rest) put(c, { rest: true });
+      else if (entry?.weekId) {
+        const wd = findWeekDay(c, entry.weekId, entry.dayId);
+        put(c, { dayName: wd?.day.name || "Workout", weekId: entry.weekId, dayId: entry.dayId });
+      }
+      if (!byClient.has(c.id)) return;
+      const done = Object.entries(ip.dayCompletions || {})
+        .some(([, dates]) => (Array.isArray(dates) ? dates : []).includes(iso));
+      if (done) put(c, { done: true });
+    });
+    return [...byClient.values(), ...loose].sort((a, b) =>
+      (a.ts - b.ts) || (a.name || "").localeCompare(b.name || ""));
+  }
+
+  // Day: one line each, and nothing else. Every control the day used to wear on
+  // its sleeve — close call, missed, cancel, unlink, the jump arrows — now
+  // lives behind a tap on the session it belongs to. A row of competing tap
+  // targets is easy to hit by accident and hard to read at a glance; this is
+  // the opposite of both.
   function renderCalDayView(host, iso) {
     if (!host) return;
-    const { html, dayEvents } = dayDetailHtml(iso);
-    host.innerHTML = html;
-    wireDayDetail(host, iso, dayEvents);
+    const rows = dayRows(iso);
+    if (!rows.length) {
+      host.innerHTML = `<p class="muted dash-day-empty">Nothing scheduled or logged for this date.</p>`;
+      return;
+    }
+    host.innerHTML = `<div class="dv-list">${rows.map((r, i) => {
+      const what = r.rest ? "Rest day" : (r.dayName || (r.events.length ? "Session" : "Training"));
+      return `<button type="button" class="dv-row${r.done ? " is-done" : ""}" data-dv="${i}">` +
+        `<span class="dv-face">${r.client ? athleteFaceHtml(r.client) : `<span class="av-tile av-sm av-empty">?</span>`}</span>` +
+        `<span class="dv-name">${escapeHtml(r.name)}${r.unlinked ? ` <span class="dv-tag">unlinked</span>` : ""}</span>` +
+        `<span class="dv-what">${escapeHtml(what)}</span>` +
+        (r.time ? `<span class="dv-time">${escapeHtml(r.time)}</span>` : "") +
+        `<span class="dv-state">${r.done ? "✓" : "›"}</span>` +
+      `</button>`;
+    }).join("")}</div>`;
+    host.querySelectorAll("[data-dv]").forEach((b) => b.addEventListener("click", () =>
+      openDaySessionSheet(iso, rows[Number(b.dataset.dv)])));
+  }
+
+  // Everything about one athlete's day, and everything you can do about it.
+  // Reached by tapping their line, so the list stays readable and no action is
+  // one stray thumb away.
+  function openDaySessionSheet(iso, row) {
+    if (!row) return;
+    const c = row.client;
+    const e = row.events[0] || null;
+    const sum = c ? sessionBankSummary(c) : null;
+    const mark = c && e?.uid
+      ? (c.sessionBank?.missedSessions || []).find((m) => m.setmoreUid === e.uid)
+      : null;
+
+    let body = `<div class="dvs">`;
+    body += `<div class="dvs-head">` +
+      `<span class="dvs-face">${c ? athleteFaceHtml(c, "md") : `<span class="av-tile av-md av-empty">?</span>`}</span>` +
+      `<span class="dvs-id"><b>${escapeHtml(row.name)}</b>` +
+        `<span>${escapeHtml(fmtSlotDay(iso))}${row.time ? " · " + escapeHtml(row.time) : ""}</span>` +
+        (sum ? `<span class="dvs-bal${sum.remaining <= 0 ? " low" : ""}">🎟 ${sum.remaining} left</span>` : "") +
+      `</span></div>`;
+
+    // What the coach can do, as full-width rows rather than icon buttons.
+    const acts = [];
+    if (c && row.weekId) acts.push(`<button type="button" class="dvs-act primary" data-act="live">🏋️ Log this session with them</button>`);
+    if (c) acts.push(`<button type="button" class="dvs-act" data-act="profile">👤 Open ${escapeHtml(c.name.split(" ")[0])}'s profile</button>`);
+    if (c && e) {
+      acts.push(mark
+        ? `<button type="button" class="dvs-act" data-act="unmark">↺ Undo "${mark.type === "closecall" ? "close call" : "missed"}"</button>`
+        : `<button type="button" class="dvs-act" data-act="cc">🤝 Close call · free missed session</button>` +
+          `<button type="button" class="dvs-act" data-act="charge">✕ Missed · still charged</button>`);
+      if (e.native && e.bookingId) acts.push(`<button type="button" class="dvs-act danger" data-act="cancel">× Cancel this session</button>`);
+      else if (!e.native) acts.push(`<button type="button" class="dvs-act" data-act="unlink">Unlink this booking</button>`);
+    }
+    if (!c && e) acts.push(`<button type="button" class="dvs-act" data-act="link">Link to an athlete…</button>`);
+    if (mark) {
+      body += `<div class="dvs-mark ${mark.type === "closecall" ? "closecall" : "charged"}">` +
+        `${mark.type === "closecall" ? "🤝 Close call — not charged" : "✕ Missed — charged"}</div>`;
+    }
+    if (e?.seriesId) body += `<div class="dvs-note">Part of a weekly series.</div>`;
+    body += `<div class="dvs-acts">${acts.join("")}</div>`;
+
+    // What they actually did, read-only, under the actions.
+    if (c && row.weekId) {
+      const wd = findWeekDay(c, row.weekId, row.dayId);
+      if (wd) {
+        const logs = c.importedProgress?.exerciseLogs || {};
+        body += `<div class="dvs-log"><div class="dvs-log-head">${escapeHtml(wd.week.label)} · ${escapeHtml(wd.day.name)}</div>`;
+        wd.day.exercises.forEach((ex) => {
+          const le = (logs[ex.id] || []).find((l) => l.date === iso);
+          body += `<div class="breakdown-ex"><div class="breakdown-ex-name">${breakdownExNameHtml(ex, c.importedProgress)}</div><div class="breakdown-sets">`;
+          if (le?.sets?.length) {
+            le.sets.forEach((s, n) => {
+              if (s.weight || s.reps) body += `<span class="breakdown-set-pill">S${n + 1} ${s.weight ? escapeHtml(String(s.weight)) + " lb" : "—"} × ${s.reps || "—"}</span>`;
+            });
+          } else if (le?.weight || le?.reps) {
+            body += `<span class="breakdown-set-pill">${le.weight ? escapeHtml(String(le.weight)) + " lb" : "—"} × ${le.reps || "—"}</span>`;
+          } else {
+            body += `<span class="dvs-notlogged">Not logged</span>`;
+          }
+          body += `</div></div>`;
+        });
+        const note = c.importedProgress?.dayNotes?.[wd.day.id];
+        if (note) body += `<div class="breakdown-note"><span class="breakdown-note-label">Session note</span><p>${escapeHtml(note)}</p></div>`;
+        const clips = formChecksForDay(c.importedProgress, wd.day.id);
+        if (clips.length) {
+          body += `<div class="breakdown-note"><span class="breakdown-note-label">🎥 Form videos</span><div class="fc-dash-row">` +
+            clips.map((clip, n) => `<button type="button" class="btn btn-ghost btn-sm" data-fc="${n}">▶ Watch${clip.reviewed ? " ✓" : ""}</button>`).join("") +
+          `</div></div>`;
+        }
+        body += `</div>`;
+      }
+    }
+    body += `</div>`;
+
+    openModal({
+      title: row.rest ? "Rest day" : "Session",
+      body,
+      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
+    });
+
+    const root = $("#modal-body");
+    const on = (act, fn) => root.querySelector(`[data-act="${act}"]`)?.addEventListener("click", fn);
+    on("live", () => {
+      closeModal();
+      state.currentClientId = c.id;
+      Nav.push(exitPreview); // Back leaves the live session, same as the 🏋️ card button
+      previewAsAthlete({ weekId: row.weekId, dayId: row.dayId, date: iso });
+    });
+    on("profile", () => { closeModal(); openClient(c.id); });
+    on("cc", () => { closeModal(); markBookingMissed(e, c, "closecall"); });
+    on("charge", () => { closeModal(); markBookingMissed(e, c, "charged"); });
+    on("unmark", () => { closeModal(); unmarkBookingMissed(e, c); });
+    on("cancel", () => { closeModal(); cancelBookingFlow(e.bookingId, e.seriesId, e.startAt); });
+    on("unlink", () => { closeModal(); unlinkSetmoreBooking(e.clientName); });
+    on("link", () => { closeModal(); openLinkSetmoreNameModal(e.clientName); });
+    root.querySelectorAll("[data-fc]").forEach((btn) => btn.addEventListener("click", () => {
+      const wd = findWeekDay(c, row.weekId, row.dayId);
+      const clip = formChecksForDay(c.importedProgress, wd?.day.id)[Number(btn.dataset.fc)];
+      if (clip) playFormCheck(clip.path);
+    }));
   }
 
   // Week: seven days at a glance, each a tap into that day. An agenda rather
@@ -10327,177 +10481,6 @@
 
   function fmtSetmoreTime(iso) {
     return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  }
-
-  // Everything that happened, or is booked, on one date. Returned rather than
-  // rendered so the same detail can be the Day view inline and the sheet a
-  // month cell opens — one description of a day, two places to read it.
-  function dayDetailHtml(iso) {
-    const clients = state.trainerData.clients || [];
-    let body = "";
-    const dayEvents = (dashCalSetmoreByDate()[iso] || [])
-      .slice()
-      .sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
-    if (dayEvents.length) {
-      body += `<div class="dash-breakdown-client">
-        <div class="dash-breakdown-header"><strong>📅 Booked sessions</strong></div>`;
-      dayEvents.forEach((e, i) => {
-        const athlete = matchAthleteForEvent(e);
-        const time = `<span class="breakdown-set-pill">${escapeHtml(fmtSetmoreTime(e.startAt))}</span>`;
-        if (athlete) {
-          const sum = sessionBankSummary(athlete);
-          const mark = (athlete.sessionBank?.missedSessions || []).find((m) => e.uid && m.setmoreUid === e.uid);
-          const missedUi = mark
-            ? `<span class="missed-chip ${mark.type === "closecall" ? "closecall" : "charged"}">${mark.type === "closecall" ? "🤝 Close call" : "✕ Missed · charged"}</span>
-               <button class="btn-missed-mark" type="button" data-unmark-missed="${i}" title="Remove this mark">↺</button>`
-            : `<button class="btn-missed-mark cc" type="button" data-miss-cc="${i}" title="Close call: use their free missed session for this month (no charge)">🤝</button>
-               <button class="btn-missed-mark chg" type="button" data-miss-charge="${i}" title="Missed: session is still charged">✕</button>`;
-          body += `<div class="breakdown-ex dash-booked-row dash-booked-linked" data-open-athlete="${escapeHtml(athlete.id)}">
-            <div class="breakdown-ex-name">${athleteFaceHtml(athlete, "xs")}${escapeHtml(athlete.name)}
-              <span class="booked-balance-chip${sum.remaining <= 0 ? " low" : ""}">🎟 ${sum.remaining} left</span>
-            </div>
-            <div class="breakdown-sets">${time}
-              ${missedUi}
-              ${e.native
-                ? `<span class="booked-native-chip${e.seriesId ? " weekly" : ""}" title="${e.seriesId ? "Part of a weekly series" : "Booked in the app"}">${e.seriesId ? "weekly" : "in app"}</span>
-                   <button class="btn-delete-mini" type="button" data-cancel-native="${i}" title="Cancel this session">×</button>`
-                : `<button class="btn-unlink-setmore" type="button" data-unlink-booking="${i}" title="Unlink this booking from ${escapeHtml(athlete.name)}">Unlink</button>`}
-              <span class="dash-booked-arrow">›</span>
-            </div>
-          </div>`;
-        } else {
-          body += `<div class="breakdown-ex dash-booked-row">
-            <div class="breakdown-ex-name">${escapeHtml(e.clientName)}</div>
-            <div class="breakdown-sets">${time}
-              <button class="btn btn-ghost btn-sm" type="button" data-link-booking="${escapeHtml(String(i))}">Link…</button>
-            </div>
-          </div>`;
-        }
-      });
-      body += `</div>`;
-    }
-    clients.forEach(c => {
-      const entry = c.importedProgress?.selfSchedule?.[iso];
-      if (!entry || !entry.weekId) return;
-      const wd = findWeekDay(c, entry.weekId, entry.dayId);
-      if (!wd) return;
-      const { week, day } = wd;
-      const dIdx = getDayIdx(c, entry.weekId, entry.dayId);
-      const dc = getDayColor(dIdx);
-      const logs = c.importedProgress?.exerciseLogs || {};
-      // Logging alongside them is the thing a coach does at the top of the
-      // hour, so it stays one tap from the day — it was the best part of the
-      // Today card this view replaced.
-      body += `<div class="dash-breakdown-client">
-        <div class="dash-breakdown-header">
-          <span class="dash-breakdown-dot" style="background:${dc.color}"></span>
-          ${athleteFaceHtml(c, "xs")}
-          <strong>${escapeHtml(c.name)}</strong>
-          <span class="muted dash-breakdown-day">${escapeHtml(week.label)} · ${escapeHtml(day.name)}</span>
-          <button type="button" class="btn btn-ghost btn-xs dash-live-btn" title="Log this session with them"
-            data-live="${escapeHtml(c.id)}|${escapeHtml(entry.weekId)}|${escapeHtml(entry.dayId)}">🏋️</button>
-        </div>`;
-      day.exercises.forEach(ex => {
-        const logEntry = (logs[ex.id] || []).find(l => l.date === iso);
-        body += `<div class="breakdown-ex"><div class="breakdown-ex-name">${breakdownExNameHtml(ex, c.importedProgress)}</div><div class="breakdown-sets">`;
-        if (logEntry?.sets?.length) {
-          logEntry.sets.forEach((s, i) => {
-            if (s.weight || s.reps) body += `<span class="breakdown-set-pill">S${i+1} ${s.weight ? escapeHtml(String(s.weight)) + " lb" : "—"} × ${s.reps || "—"}</span>`;
-          });
-        } else if (logEntry?.weight || logEntry?.reps) {
-          body += `<span class="breakdown-set-pill">${logEntry.weight ? escapeHtml(String(logEntry.weight)) + " lb" : "—"} × ${logEntry.reps || "—"}</span>`;
-        } else {
-          body += `<span style="font-size:0.8rem;color:var(--muted)">Not logged</span>`;
-        }
-        body += `</div></div>`;
-      });
-      const dayNote = c.importedProgress?.dayNotes?.[day.id];
-      if (dayNote) body += `<div class="breakdown-note"><span class="breakdown-note-label">Session note</span><p>${escapeHtml(dayNote)}</p></div>`;
-      const fcClips = formChecksForDay(c.importedProgress, day.id);
-      if (fcClips.length) {
-        body += `<div class="breakdown-note"><span class="breakdown-note-label">🎥 Form videos</span><div class="fc-dash-row">`;
-        fcClips.forEach((clip, i) => {
-          body += `<button type="button" class="btn btn-ghost btn-sm" data-fc-dash="${escapeHtml(c.id)}|${escapeHtml(day.id)}|${i}">▶ Watch${clip.reviewed ? " ✓" : ""}</button>`;
-        });
-        body += `</div></div>`;
-      }
-      body += `</div>`;
-    });
-    if (!body) body = `<p class="muted dash-day-empty">Nothing scheduled or logged for this date.</p>`;
-    return { html: body, dayEvents };
-  }
-
-  // Wires one rendered day detail. Scoped to its root, because the Day view and
-  // a sheet can both be in the document at once and a document-wide query would
-  // bind the same handler twice.
-  function wireDayDetail(root, iso, dayEvents, { inSheet = false } = {}) {
-    if (!root) return;
-    const $$r = (sel) => [...root.querySelectorAll(sel)];
-    const leave = () => { if (inSheet) closeModal(); };
-    // Cancel one in-app booking straight from the day it sits on. A weekly one
-    // asks whether the coach means this week or the rest of them.
-    $$r("[data-cancel-native]").forEach((btn) => {
-      btn.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        const e = dayEvents[Number(btn.dataset.cancelNative)];
-        if (e?.bookingId) cancelBookingFlow(e.bookingId, e.seriesId, e.startAt);
-      });
-    });
-    // 🏋️ → straight into their live session on this date.
-    $$r("[data-live]").forEach((btn) => {
-      btn.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        const [cid, weekId, dayId] = String(btn.dataset.live).split("|");
-        leave();
-        state.currentClientId = cid;
-        Nav.push(exitPreview); // Back leaves the live session, same as the 🏋️ card button
-        previewAsAthlete({ weekId, dayId, date: iso });
-      });
-    });
-    // Form-check clip → play via signed URL
-    $$r("[data-fc-dash]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const [cid, did, idxS] = String(btn.dataset.fcDash).split("|");
-        const cc = state.trainerData.clients.find((x) => x.id === cid);
-        const clip = formChecksForDay(cc?.importedProgress, did)[Number(idxS)];
-        if (clip) playFormCheck(clip.path);
-      });
-    });
-    // Matched booking → jump to that athlete's profile
-    $$r("[data-open-athlete]").forEach((row) => {
-      row.addEventListener("click", () => {
-        leave();
-        openClient(row.dataset.openAthlete);
-      });
-    });
-    // Unmatched booking → save an alias on the right athlete
-    $$r("[data-link-booking]").forEach((btn) => {
-      btn.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        const e = dayEvents[Number(btn.dataset.linkBooking)];
-        if (e) openLinkSetmoreNameModal(e.clientName);
-      });
-    });
-    // Matched-by-alias booking → unlink (remove the alias that caused the match)
-    $$r("[data-unlink-booking]").forEach((btn) => {
-      btn.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        const e = dayEvents[Number(btn.dataset.unlinkBooking)];
-        if (e) unlinkSetmoreBooking(e.clientName);
-      });
-    });
-    // Missed-session marks: close call (free) / missed but charged / undo
-    const missedHandler = (attr, fn) => $$r(`[data-${attr}]`).forEach((btn) => {
-      btn.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        const e = dayEvents[Number(btn.getAttribute(`data-${attr}`))];
-        const a = e && matchAthleteForEvent(e);
-        if (e && a) fn(e, a);
-      });
-    });
-    missedHandler("miss-cc", (e, a) => markBookingMissed(e, a, "closecall"));
-    missedHandler("miss-charge", (e, a) => markBookingMissed(e, a, "charged"));
-    missedHandler("unmark-missed", (e, a) => unmarkBookingMissed(e, a));
   }
 
   // Disconnect a Setmore booking name from an athlete by removing the alias
