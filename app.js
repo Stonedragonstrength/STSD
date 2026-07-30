@@ -13040,20 +13040,40 @@
     if (window.Cloud?.enabled && coachId) window.Cloud.updateCoachOpenSlots(coachId, state.trainerData.openSlots);
   }
 
+  // The badge on the Open slots pill. The list itself lives in a sheet, so this
+  // is the only part on screen most of the time and it has to carry anything
+  // waiting on the coach. Claims first — those are the ones needing an answer.
+  function paintOpenSlotsPill() {
+    const count = $("#open-slots-count"); if (!count) return;
+    const slots = ensureOpenSlots();
+    const claimed = slots.filter((s) => s.status === "claimed").length;
+    const open = slots.filter((s) => s.status === "open" && !slotBookingClosed(s)).length;
+    count.textContent = claimed ? `${claimed} claimed` : open ? String(open) : "";
+    count.classList.toggle("claimed", claimed > 0);
+    count.classList.toggle("hidden", !claimed && !open);
+  }
+
+  // Opens the sheet the pill leads to. The list is built fresh into the modal
+  // each time, so there is only ever one #open-slots-container in the document
+  // and `renderCoachOpenSlots` can keep finding it by id.
+  function openOpenSlotsSheet() {
+    openModal({
+      title: "📣 Open slots",
+      body: `<p class="muted" style="margin-top:-0.4em">Sessions you are offering. Athletes claim them first come, and you see who did.</p>` +
+        `<button class="btn slim-btn btn-sm" id="btn-post-open-slot">+ Post open slot</button>` +
+        `<div id="open-slots-container"></div>`,
+      actions: [{ label: "Done", className: "btn btn-primary", onClick: closeModal }],
+    });
+    $("#btn-post-open-slot")?.addEventListener("click", openPostSlotModal);
+    renderCoachOpenSlots();
+  }
+
   function renderCoachOpenSlots() {
+    // The pill is always on screen; the list only while the sheet is open.
+    paintOpenSlotsPill();
     const container = $("#open-slots-container"); if (!container) return;
     container.innerHTML = "";
     const slots = ensureOpenSlots();
-    // Open slots live behind a fold now, so anything needing attention has to
-    // show on the closed summary or it may as well not exist. Claims first,
-    // since those are the ones waiting on the coach.
-    const count = $("#open-slots-count");
-    if (count) {
-      const claimed = slots.filter((s) => s.status === "claimed").length;
-      const open = slots.filter((s) => s.status === "open" && !slotBookingClosed(s)).length;
-      count.textContent = claimed ? `${claimed} claimed` : open ? String(open) : "";
-      count.classList.toggle("claimed", claimed > 0);
-    }
     if (!slots.length) {
       container.insertAdjacentHTML("beforeend", `<p class="muted" style="font-size:0.85rem">No open slots posted.</p>`);
     } else {
@@ -13131,7 +13151,7 @@
     openModal({
       title: "📣 Post an open slot",
       body: `
-        <p class="muted" style="margin-top:-0.4em">Athletes see this and can claim it first-come. You confirm and book it in Setmore.</p>
+        <p class="muted" style="margin-top:-0.4em">Athletes see this and can claim it first come. You confirm it, then book them in.</p>
         <div class="grid-2">
           <label>Date <input type="date" id="slot-date" value="${todayISO()}" /></label>
           <label>Time <input type="time" id="slot-time" /></label>
@@ -13140,8 +13160,10 @@
           <select id="slot-cutoff">${cutoffOpts}</select>
         </label>
         <label>Note (optional) <input type="text" id="slot-note" placeholder="e.g. 45-min session, upper body" /></label>`,
+      // Both ways out land back on the list this was opened from, rather than
+      // closing the coach out of open slots altogether.
       actions: [
-        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Cancel", className: "btn btn-ghost", onClick: () => { closeModal(); openOpenSlotsSheet(); } },
         { label: "Post slot 📣", className: "btn btn-primary", onClick: () => {
           const date = $("#slot-date").value;
           const time = $("#slot-time").value;
@@ -13153,6 +13175,7 @@
           const label = formatSlotLabel(startAt);
           mutateOpenSlots((arr) => [{ id: uid(), label, note, startAt, cutoffHours, status: "open", createdAt: Date.now() }, ...arr]);
           closeModal();
+          openOpenSlotsSheet();
           toast("Open slot posted 📣");
         }},
       ],
@@ -16859,12 +16882,29 @@
       : doneEx > 0
         ? `<span class="dh-progress going">${doneEx}/${totalEx} logged</span>`
         : `<span class="dh-progress">${totalEx} exercise${totalEx === 1 ? "" : "s"}</span>`;
+    // The kicker used to hold four things and lose the fight on a phone: the
+    // week label collapsed to "W..." and a raw date input sat in the header
+    // looking like a form field. Two fixes. The focus is dropped when it just
+    // repeats the phase badge above it (a HYPERTROPHY badge beside "WEEK 1 ·
+    // HYPERTROPHY" said it twice), and the date is a chip reading "Today" with
+    // the input laid over it invisibly, so tapping still opens the native
+    // picker on every browser.
+    const focus = week.focus && week.focus.toLowerCase() !== String(week.phaseLabel || "").toLowerCase()
+      ? " · " + escapeHtml(week.focus) : "";
+    const dateTxt = state.workoutView.date === todayISO()
+      ? "Today"
+      : new Date(state.workoutView.date + "T12:00:00Z").toLocaleDateString(undefined, {
+          month: "short", day: "numeric", timeZone: "UTC",
+        });
     head.innerHTML = `
       <div class="detail-head-top">
         ${week.phaseLabel ? `<span class="phase-badge">${escapeHtml(week.phaseLabel)}</span>` : ""}
-        <span class="dh-week">${escapeHtml(week.label)}${week.focus ? " · " + escapeHtml(week.focus) : ""}</span>
+        <span class="dh-week">${escapeHtml(week.label)}${focus}</span>
         ${progHtml}
-        <input type="date" class="detail-log-date" id="detail-log-date" value="${escapeHtml(state.workoutView.date)}" title="Date these logs are for" />
+        <label class="dh-date" title="Date these logs are for">
+          <span class="dh-date-txt">📅 ${escapeHtml(dateTxt)}</span>
+          <input type="date" class="detail-log-date" id="detail-log-date" value="${escapeHtml(state.workoutView.date)}" aria-label="Date these logs are for" />
+        </label>
       </div>
       <div class="detail-head-main">
         <button class="day-check-toggle ${checked ? "checked" : ""}" id="detail-toggle" aria-label="Mark whole day complete">${checked ? "✓" : ""}</button>
@@ -23902,7 +23942,8 @@
 
     $("#btn-add-package")?.addEventListener("click", openAddPackageModal);
     $("#btn-gift-session")?.addEventListener("click", openGiftSessionModal);
-    $("#btn-post-open-slot")?.addEventListener("click", openPostSlotModal);
+    // The post button now lives inside the Open slots sheet, wired when it opens.
+    $("#btn-open-slots")?.addEventListener("click", openOpenSlotsSheet);
     $("#btn-edit-availability")?.addEventListener("click", openAvailabilityEditor);
     // Booking without going via the calendar first. Opens on today; the day is
     // whatever the coach picks in the sheet.

@@ -5043,11 +5043,10 @@ input:focus, textarea:focus, select:focus {
 
 /* ---- Workout detail view ---- */
 .workout-detail { animation: detailIn 0.35s cubic-bezier(0.22, 0.85, 0.34, 1); }
-/* Room under the last exercise for the floating rest timer (bottom:78px) and
-   the day-progress bar below it. Without it the final set row can never be
-   scrolled out from under them — and now that every set row runs the full
-   width, the ✓ that the timer covers is a control, not just a number. */
-.workout-detail { padding-bottom: 8.5rem; }
+/* Room under the last exercise for the workout dock. One bar instead of two
+   floaters needs a third less room, and because the dock has a hard top edge
+   this clearance is now the whole story — nothing sits over the content. */
+.workout-detail { padding-bottom: 5.5rem; }
 @keyframes detailIn {
   0%   { opacity: 0; transform: translateX(20px); }
   100% { opacity: 1; transform: translateX(0); }
@@ -5080,6 +5079,10 @@ input:focus, textarea:focus, select:focus {
 .detail-head-top {
   display: flex;
   gap: 0.5em;
+  row-gap: 0.35em;
+  /* Wraps rather than truncating: on a phone the week label used to lose the
+     fight with the pill and the date and read "W...". */
+  flex-wrap: wrap;
   align-items: center;
   margin-bottom: 0.4em;
   min-width: 0;
@@ -5097,17 +5100,36 @@ input:focus, textarea:focus, select:focus {
 }
 /* Exercise-count pill sits in the kicker now; it + the date group to the right. */
 .detail-head-top .dh-progress { margin-left: auto; }
-.detail-head-top .detail-log-date {
+/* The log date as a chip. The real input is laid over the chip at zero opacity
+   rather than replaced by a showPicker() call, so the native picker opens on
+   any browser and the chip is what the athlete actually sees. */
+.dh-date {
+  position: relative;
   flex: none;
-  width: auto;
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text-soft);
-  font-family: inherit;
-  font-size: 0.72rem;
-  font-weight: 700;
-  padding: 0.2em 0.45em;
+  border-radius: 999px;
+  padding: 0.26em 0.65em;
+  cursor: pointer;
+}
+.dh-date:hover { border-color: var(--border-strong); }
+.dh-date-txt {
+  font-size: 0.7rem; font-weight: 800; letter-spacing: 0.03em;
+  color: var(--text-soft); white-space: nowrap;
+}
+.detail-head-top input.detail-log-date {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
   cursor: pointer;
   color-scheme: dark;
 }
@@ -7726,25 +7748,45 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   font-size: 0.85rem; padding: 0.35em 0.5em; max-width: 60%;
 }
 
-/* Rest timer — floats over the workout detail */
-.rest-timer { position: fixed; right: 16px; bottom: 78px; z-index: 60; display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem; }
-/* ===== Day progress (floating bar pinned to the bottom of the screen) ===== */
-.day-progress {
+/* ===== The workout dock =====
+   Set progress and the rest timer, side by side in one bar across the bottom.
+   Both used to float: the timer sat over the bottom-right of the content, which
+   is where a set row's ✓ lives, so mid-scroll it covered the control you were
+   reaching for. A bar has a bottom edge the content can be padded clear of.
+   The dock itself is transparent and inert until one of the two is showing —
+   :has() is what gives it a background only when there is something in it. */
+.workout-dock {
   position: fixed;
-  left: 12px;
-  right: 12px;
-  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
-  z-index: 55;
+  left: 0; right: 0;
+  bottom: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.5rem 12px calc(0.5rem + env(safe-area-inset-bottom, 0px));
+  pointer-events: none;
+}
+.workout-dock > * { pointer-events: auto; }
+.workout-dock:has(> :not(.hidden)) {
+  background: rgba(10, 14, 24, 0.9);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+/* Nothing showing: no padding either, so the bar cannot leave a strip of chrome
+   or eat a row of taps on a screen that has neither control. */
+.workout-dock:not(:has(> :not(.hidden))) { padding: 0; }
+/* Rest timer — the right half of the dock. Relative so the length popover can
+   hang above it instead of stretching the bar. */
+.rest-timer { position: relative; display: flex; align-items: center; gap: 0.4rem; }
+/* ===== Day progress (the left half of the dock, taking the spare width) ===== */
+.day-progress {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.4rem 0.8rem;
-  background: rgba(10, 14, 24, 0.88);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
 }
 .day-progress-track {
   flex: 1;
@@ -7785,9 +7827,9 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 /* 🔔/🔕 end-of-rest ding toggle riding beside the pill */
 .rest-sound-btn {
   border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
-  width: 40px; height: 40px; border-radius: 999px; font-size: 0.95rem;
+  width: 36px; height: 36px; border-radius: 999px; font-size: 0.9rem;
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
 }
 .rest-sound-btn.off { opacity: 0.6; }
 
@@ -7857,16 +7899,18 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 .tour-card.caret-none::before { display: none; }
 /* ? replay button in both headers */
 .tour-help-btn { min-width: 2.1em; font-weight: 800; }
+/* Sized to keep the dock a slim bar. It no longer needs a drop shadow to lift
+   it off the content — the dock's own edge does that. */
 .rest-timer-btn {
   border: 1px solid var(--primary); background: var(--surface-2); color: var(--primary-bright);
-  font-weight: 800; font-size: 1rem; padding: 0.65em 1.05em; border-radius: 999px;
-  cursor: pointer; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); white-space: nowrap;
+  font-weight: 800; font-size: 0.95rem; padding: 0.5em 1em; border-radius: 999px;
+  cursor: pointer; white-space: nowrap; font-family: inherit;
 }
 /* Small companion button showing the chosen rest length; tap to change it */
 .rest-opt-btn {
   border: 1px solid var(--border); background: var(--surface-2); color: var(--text-soft);
-  font-weight: 700; font-size: 0.78rem; padding: 0.55em 0.7em; border-radius: 999px;
-  cursor: pointer; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); white-space: nowrap;
+  font-weight: 700; font-size: 0.78rem; padding: 0.5em 0.7em; border-radius: 999px;
+  cursor: pointer; white-space: nowrap;
   font-family: inherit;
 }
 .rest-opt-btn:hover { border-color: var(--primary); color: var(--primary-bright); }
@@ -7881,7 +7925,9 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   border-color: var(--gold, #fde047);
   color: #241a02;
 }
+/* Opens upward out of the dock, right-aligned under the button that toggles it. */
 .rest-timer-pop {
+  position: absolute; bottom: calc(100% + 0.5rem); right: 0;
   display: flex; gap: 0.4rem; padding: 0.45rem;
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
@@ -10891,26 +10937,17 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 
 /* Marks a dashboard booking that came from in-app scheduling rather than Setmore. */
 
-/* Open slots, folded into the Schedule card. */
-.sched-openslots { margin-top: 0.9rem; border-top: 1px solid var(--border); padding-top: 0.6rem; }
-.sched-openslots > summary {
-  cursor: pointer; list-style: none;
-  font-size: 0.7rem; font-weight: 800; text-transform: uppercase;
-  letter-spacing: 0.06em; color: var(--text-soft);
-  display: flex; align-items: center; gap: 0.5em;
-}
-.sched-openslots > summary::-webkit-details-marker { display: none; }
-.sched-openslots > summary::after { content: "▾"; margin-left: auto; font-size: 0.8rem; }
-.sched-openslots[open] > summary::after { content: "▴"; }
-.sched-openslots > summary:hover { color: var(--text); }
+/* Open slots: a pill next to Book, because it is the other way a session gets
+   filled — not a settings fold at the bottom of the card. The list opens in a
+   sheet; only the badge stays on screen. */
+.cal-os-btn { display: inline-flex; align-items: center; gap: 0.45em; }
 .sched-os-n {
   background: var(--primary-soft); color: var(--primary-bright);
-  border-radius: 999px; padding: 0 0.5em; font-size: 0.72rem;
+  border-radius: 999px; padding: 0 0.5em; font-size: 0.72rem; font-weight: 800;
 }
 .sched-os-n:empty { display: none; }
-.sched-os-body { padding-top: 0.6rem; }
-.sched-os-body > .slim-btn { margin-bottom: 0.5rem; }
 .sched-os-n.claimed { background: rgba(245, 158, 11, 0.18); color: var(--warn); }
+#open-slots-container { margin-top: 0.6rem; }
 
 /* ============ Coach: book an athlete from the calendar ============
    Phone first. Every control is a chip or a segment big enough to hit with a
@@ -11196,8 +11233,14 @@ body.scroll-locked {
    plus a card repeating today. The mode row sits above the date row so the
    two questions — how close am I looking, and at what — never share a line
    and wrap into each other on a phone. */
-.cal-nav-modes { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem; }
+/* Zoom segment plus two action pills: wraps rather than overflowing once a
+   phone runs out of room for all three. */
+.cal-nav-modes { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem; }
 .cal-nav-date { margin-bottom: 0.6rem; }
+/* Open slots and Book ride together on the right; the auto margin goes on
+   whichever of them comes first. */
+.cal-os-btn { margin-left: auto; }
+.cal-os-btn + .cal-book-btn { margin-left: 0; }
 .cal-book-btn { margin-left: auto; }
 .cal-modes {
   display: inline-flex; gap: 0.2rem;

@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=dow1" />
+  <link rel="stylesheet" href="styles.css?v=dock2" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -283,6 +283,10 @@
               <button type="button" class="cal-mode-btn" data-cal-mode="week">Week</button>
               <button type="button" class="cal-mode-btn" data-cal-mode="month">Month</button>
             </div>
+            <!-- Open slots reads as an action beside Book, not a settings fold
+                 at the bottom of the card: it is the other way a session gets
+                 filled. The badge carries anything waiting on the coach. -->
+            <button class="btn slim-btn btn-sm cal-os-btn" id="btn-open-slots">📣 Open slots<span class="sched-os-n" id="open-slots-count"></span></button>
             <button class="btn slim-btn btn-sm cal-book-btn" id="btn-book-athlete">＋ Book</button>
           </div>
           <div class="cal-nav cal-nav-date">
@@ -310,13 +314,6 @@
             </summary>
             <div id="sched-summary" class="sched-summary"></div>
             <button class="btn slim-btn btn-sm" id="btn-edit-availability">Edit availability</button>
-          </details>
-          <details class="sched-openslots">
-            <summary>📣 Open slots<span class="sched-os-n" id="open-slots-count"></span></summary>
-            <div class="sched-os-body">
-              <button class="btn slim-btn btn-sm" id="btn-post-open-slot">+ Post open slot</button>
-              <div id="open-slots-container"></div>
-            </div>
           </details>
         </div>
       </div>
@@ -899,7 +896,18 @@
           <div id="workout-detail-head" class="workout-detail-head"></div>
           <div id="workout-detail-list" class="workout-detail-list"></div>
         </div>
-        <!-- Floating rest timer — visible only while a day detail is open -->
+        <!-- The workout dock: one bar along the bottom holding the day's set
+             progress on the left and the rest timer on the right. They used to
+             float separately over the content, and the timer sat exactly where
+             the last set row's ✓ is. As a bar, the detail's padding clears it
+             and nothing is ever underneath it. -->
+        <div id="workout-dock" class="workout-dock">
+        <!-- Floating whole-day progress — fills as sets are completed -->
+        <div id="day-progress" class="day-progress hidden">
+          <div class="day-progress-track"><div class="day-progress-fill" id="day-progress-fill"></div></div>
+          <span class="day-progress-label" id="day-progress-label"></span>
+        </div>
+        <!-- Rest timer — visible only while a day detail is open -->
         <div id="rest-timer" class="rest-timer hidden">
           <div id="rest-timer-pop" class="rest-timer-pop hidden">
             <button type="button" data-rest="15">0:15</button>
@@ -935,10 +943,6 @@
             <button id="rest-timer-btn" class="rest-timer-btn" type="button">▶ Go</button>
           </div>
         </div>
-        <!-- Floating whole-day progress — fills as sets are completed -->
-        <div id="day-progress" class="day-progress hidden">
-          <div class="day-progress-track"><div class="day-progress-fill" id="day-progress-fill"></div></div>
-          <span class="day-progress-label" id="day-progress-label"></span>
         </div>
       </div>
 
@@ -1153,7 +1157,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=day1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=dow1"></script>
+  <script src="app.js?v=dock2"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
