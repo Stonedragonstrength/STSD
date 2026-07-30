@@ -70,7 +70,12 @@
       btn.style.setProperty("--sw", t.swatch);
       btn.title = t.name;
       btn.innerHTML = `<span class="theme-swatch-dot"></span><span class="theme-swatch-name">${t.name}</span>`;
-      btn.addEventListener("click", () => { setThemeForRole(role, t.id); renderThemePicker(container, role); });
+      btn.addEventListener("click", () => {
+        setThemeForRole(role, t.id);
+        renderThemePicker(container, role);
+        // The coach fold's summary names the current scheme, so it has to follow.
+        if (role === "coach") renderCoachSettingsSubs?.();
+      });
       container.appendChild(btn);
     });
   }
@@ -13032,11 +13037,27 @@
   function renderCoachSchedule() {
     const sum = $("#sched-summary");
     if (sum) sum.innerHTML = availabilitySummaryHtml(coachAvailability());
-    const line = $("#sched-hours-line");
-    if (line) line.textContent = availabilityLine(coachAvailability());
     renderGoogleCard();
     renderCoachSeries();
     renderIncomeCard();
+    renderCoachSettingsSubs(); // the fold summaries quote all three
+  }
+
+  // What each collapsed row on the coach Profile says about itself. This is the
+  // whole reason the page can be a list of folds: a closed row that still tells
+  // you your hours are set and Google is connected is not hidden information,
+  // it is the same information in one line instead of ten.
+  function renderCoachSettingsSubs() {
+    const set = (sel, text) => { const el = $(sel); if (el) el.textContent = text; };
+    const regulars = bookingSeriesList().length;
+    set("#cs-sub-sched", availabilityLine(coachAvailability()) +
+      (regulars ? ` · ${regulars} weekly regular${regulars === 1 ? "" : "s"}` : ""));
+    const g = _googleStatus;
+    set("#cs-sub-google", g?.connected
+      ? "Google Calendar · " + (g.email || "connected")
+      : "Google Calendar not connected");
+    const theme = THEMES.find((t) => t.id === currentThemeForRole("coach"));
+    set("#cs-sub-theme", theme ? theme.name : "Colour scheme");
   }
 
   function renderGoogleCard() {

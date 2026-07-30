@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=snap2" />
+  <link rel="stylesheet" href="styles.css?v=snap3" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -739,12 +739,14 @@
       </div>
 
       <!-- Appearance / color theme -->
+      <!-- Coach Profile. Seven headings, seven dividers and seven blocks of
+           always-open content became one identity card and one list of folds:
+           every one of these is set once and then left alone, so none of them
+           earns permanent height. Each summary carries its own live status line
+           (renderCoachSettingsSubs), which is what makes the closed state
+           useful rather than just smaller. No page title — the identity card
+           below says whose profile this is better than the word "Profile". -->
       <div id="view-settings" class="view hidden">
-        <div class="view-head">
-          <div>
-            <h2>Profile</h2>
-          </div>
-        </div>
         <div class="coach-profile-card">
           <div class="coach-profile-id">
             <div class="coach-profile-avatar" id="coach-profile-avatar"></div>
@@ -758,62 +760,119 @@
             <span class="coach-profile-stat-lbl">athletes</span>
           </div>
         </div>
-        <details class="avatar-fold" id="coach-avatar-fold">
-          <summary>
-            <span class="avatar-fold-tile" id="coach-avatar-current"></span>
-            <span class="avatar-fold-text">
-              <strong>Your avatar</strong>
-              <span class="avatar-fold-now" id="coach-avatar-current-name">None</span>
-            </span>
-          </summary>
-          <div class="avatar-picker" id="coach-avatar-picker"></div>
-        </details>
-        <!-- On a phone this is where expected income lives (see the rail host on
-             the Overview). Empty at wide widths, where the rail has it. -->
-        <h3 class="coach-profile-section income-section">Money</h3>
-        <div class="income-host income-host-profile"></div>
+        <div class="card pref-card coach-settings">
 
-        <h3 class="coach-profile-section">Appearance</h3>
-        <div class="theme-picker" id="coach-theme-picker"></div>
-
-        <h3 class="coach-profile-section">Backup</h3>
-        <p class="muted backup-intro">Download everything — athletes, their programs and logged history, and your program library — as a single file. Keep a copy somewhere safe.</p>
-        <div class="backup-actions">
-          <button class="btn btn-primary" id="btn-export-data" type="button">⬇ Download backup</button>
-          <button class="btn btn-ghost" id="btn-import-data" type="button">⬆ Restore from backup…</button>
-          <input type="file" id="import-data-input" accept="application/json,.json" hidden />
-        </div>
-        <p class="muted backup-note" id="backup-last"></p>
-
-        <!-- Scheduling: the standing arrangements the Overview calendar is
-             generated from. Off the Overview since 2026-07-30 — the calendar
-             already drew every session these produce. Extend and End a series
-             live nowhere else, which is why the list moved rather than went. -->
-        <h3 class="coach-profile-section">Scheduling</h3>
-        <div class="card" id="coach-sched-hub">
-          <div id="sched-series" class="sched-series"></div>
-          <details class="sched-hours">
+          <!-- Money. Phone and tablet only: at 1200px+ expected income moves to
+               the Overview rail, and the whole fold goes with it rather than
+               leaving an empty row behind. -->
+          <details class="pref-fold income-section" id="cs-fold-money">
             <summary>
-              <span>Your hours</span>
-              <span class="sched-hours-line" id="sched-hours-line"></span>
+              <span class="pref-fold-ico">💷</span>
+              <span class="pref-fold-text">
+                <span class="pref-fold-title">Money</span>
+                <span class="pref-fold-sub">Booked sessions against your rates</span>
+              </span>
+              <span class="pref-fold-chev">▸</span>
             </summary>
-            <div id="sched-summary" class="sched-summary"></div>
-            <button class="btn slim-btn btn-sm" id="btn-edit-availability">Edit availability</button>
+            <div class="income-host income-host-profile"></div>
           </details>
-        </div>
 
-        <!-- Google Calendar lives here, not on the Schedule card: it is set up
-             once and then never touched, so a permanent row about it on the
-             dashboard is a row about nothing. renderGoogleCard() fills this in
-             wherever it sits. -->
-        <h3 class="coach-profile-section">Connections</h3>
-        <div id="sched-google" class="sched-google"></div>
+          <!-- Scheduling: the standing arrangements the Overview calendar is
+               generated from. Off the Overview since 2026-07-30 — the calendar
+               already drew every session these produce. Extend and End a series
+               live nowhere else, which is why the list moved rather than went. -->
+          <details class="pref-fold" id="cs-fold-sched">
+            <summary>
+              <span class="pref-fold-ico">🗓️</span>
+              <span class="pref-fold-text">
+                <span class="pref-fold-title">Scheduling</span>
+                <span class="pref-fold-sub" id="cs-sub-sched">Your hours and weekly regulars</span>
+              </span>
+              <span class="pref-fold-chev">▸</span>
+            </summary>
+            <div id="coach-sched-hub">
+              <div id="sched-series" class="sched-series"></div>
+              <div id="sched-summary" class="sched-summary"></div>
+              <button class="btn slim-btn btn-sm" id="btn-edit-availability">Edit availability</button>
+            </div>
+          </details>
 
-        <h3 class="coach-profile-section">Bug reports</h3>
-        <p class="muted backup-intro">Reports filed from the athlete app (or by you) land here, each with a snapshot of recent errors and taps.</p>
-        <div class="backup-actions">
-          <button class="btn btn-primary" id="btn-view-bug-reports" type="button">🐞 View reports</button>
-          <button class="btn btn-ghost" id="btn-coach-bug-report" type="button">Report a problem</button>
+          <!-- Google Calendar lives here, not on the Schedule card: it is set up
+               once and then never touched, so a permanent row about it on the
+               dashboard is a row about nothing. renderGoogleCard() fills this in
+               wherever it sits. -->
+          <details class="pref-fold" id="cs-fold-google">
+            <summary>
+              <span class="pref-fold-ico">🔌</span>
+              <span class="pref-fold-text">
+                <span class="pref-fold-title">Connections</span>
+                <span class="pref-fold-sub" id="cs-sub-google">Google Calendar</span>
+              </span>
+              <span class="pref-fold-chev">▸</span>
+            </summary>
+            <div id="sched-google" class="sched-google"></div>
+          </details>
+
+          <details class="pref-fold" id="cs-fold-theme">
+            <summary>
+              <span class="pref-fold-ico">🎨</span>
+              <span class="pref-fold-text">
+                <span class="pref-fold-title">Appearance</span>
+                <span class="pref-fold-sub" id="cs-sub-theme">Colour scheme</span>
+              </span>
+              <span class="pref-fold-chev">▸</span>
+            </summary>
+            <div class="theme-picker" id="coach-theme-picker"></div>
+          </details>
+
+          <!-- The tile in the summary is the live avatar, so this row shows what
+               you picked without opening it. The two ids are load-bearing:
+               renderAvatarFoldSummary() builds its selectors as
+               `#${who}-avatar-current`, so renaming them silently breaks it. -->
+          <details class="pref-fold" id="cs-fold-avatar">
+            <summary>
+              <span class="pref-fold-ico avatar-fold-tile" id="coach-avatar-current"></span>
+              <span class="pref-fold-text">
+                <span class="pref-fold-title">Your avatar</span>
+                <span class="pref-fold-sub" id="coach-avatar-current-name">None</span>
+              </span>
+              <span class="pref-fold-chev">▸</span>
+            </summary>
+            <div class="avatar-picker" id="coach-avatar-picker"></div>
+          </details>
+
+          <details class="pref-fold" id="cs-fold-backup">
+            <summary>
+              <span class="pref-fold-ico">💾</span>
+              <span class="pref-fold-text">
+                <span class="pref-fold-title">Backup</span>
+                <span class="pref-fold-sub" id="backup-last"></span>
+              </span>
+              <span class="pref-fold-chev">▸</span>
+            </summary>
+            <p class="pref-foot">Everything: athletes, their programs and logged history, and your program library, as a single file. Keep a copy somewhere safe.</p>
+            <div class="pref-actions">
+              <button class="btn btn-primary btn-sm slim-btn" id="btn-export-data" type="button">⬇ Download backup</button>
+              <button class="btn btn-ghost btn-sm slim-btn" id="btn-import-data" type="button">⬆ Restore from backup…</button>
+              <input type="file" id="import-data-input" accept="application/json,.json" hidden />
+            </div>
+          </details>
+
+          <details class="pref-fold" id="cs-fold-bugs">
+            <summary>
+              <span class="pref-fold-ico">🐞</span>
+              <span class="pref-fold-text">
+                <span class="pref-fold-title">Bug reports</span>
+                <span class="pref-fold-sub">Anything filed from your app or theirs</span>
+              </span>
+              <span class="pref-fold-chev">▸</span>
+            </summary>
+            <p class="pref-foot">Each report carries a snapshot of recent errors and taps, so a problem can be fixed from what it says rather than from a description of it.</p>
+            <div class="pref-actions">
+              <button class="btn btn-primary btn-sm slim-btn" id="btn-view-bug-reports" type="button">🐞 View reports</button>
+              <button class="btn btn-ghost btn-sm slim-btn" id="btn-coach-bug-report" type="button">Report a problem</button>
+            </div>
+          </details>
         </div>
       </div>
 
@@ -1241,7 +1300,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=cyc1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=snap2"></script>
+  <script src="app.js?v=snap3"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
