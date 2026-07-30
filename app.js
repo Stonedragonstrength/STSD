@@ -2984,6 +2984,9 @@
     // The Google row lives on this page now, so it has to be drawn here too —
     // Overview's refresh is no longer guaranteed to have run first.
     renderGoogleCard();
+    // Same reason: on a phone this page is where expected income lives, so the
+    // figures have to be current whether or not Overview drew them first.
+    renderIncomeCard();
     renderBackupNote();
   }
 
@@ -12356,17 +12359,11 @@
   function incomeShown() {
     return sessionStorage.getItem(KEY_INCOME_SHOWN) === "1";
   }
-  function renderIncomeCard() {
-    const card = $("#income-card"); const host = $("#income-figs");
-    if (!card || !host) return;
+  // One card, two hosts (the Overview rail and the coach Profile). Both are
+  // filled; CSS decides which width shows which, so there is never a second
+  // copy of the figures on screen.
+  function incomeCardHtml() {
     const shown = incomeShown();
-    card.classList.toggle("is-hidden", !shown);
-    const eye = $("#btn-income-eye");
-    if (eye) {
-      eye.innerHTML = shown ? EYE_SVG : EYE_OFF_SVG;
-      eye.setAttribute("aria-label", shown ? "Hide income" : "Show income");
-      eye.setAttribute("aria-pressed", shown ? "true" : "false");
-    }
     const f = incomeForecast();
     const rows = [
       ["Today", money(f.day), ""],
@@ -12376,10 +12373,27 @@
     const note = f.unpriced
       ? `<p class="income-note">${f.unpriced} booked session${f.unpriced === 1 ? "" : "s"} with no rate set. Add one on their Profile.</p>`
       : "";
-    host.innerHTML = rows.map(([lbl, val, sub]) =>
-      `<div class="income-row"><span class="income-lbl">${escapeHtml(lbl)}` +
-      (sub ? `<span class="income-sub">${escapeHtml(sub)}</span>` : "") +
-      `</span><span class="income-val">${escapeHtml(val)}</span></div>`).join("") + note;
+    return `<div class="card income-card${shown ? "" : " is-hidden"}">` +
+      `<div class="income-head">` +
+        `<span class="income-title">Expected income</span>` +
+        `<button type="button" class="income-eye" aria-label="${shown ? "Hide" : "Show"} income" aria-pressed="${shown}">` +
+          (shown ? EYE_SVG : EYE_OFF_SVG) +
+        `</button>` +
+      `</div>` +
+      `<div class="income-figs">` +
+        rows.map(([lbl, val, sub]) =>
+          `<div class="income-row"><span class="income-lbl">${escapeHtml(lbl)}` +
+          (sub ? `<span class="income-sub">${escapeHtml(sub)}</span>` : "") +
+          `</span><span class="income-val">${escapeHtml(val)}</span></div>`).join("") +
+        note +
+      `</div>` +
+    `</div>`;
+  }
+  function renderIncomeCard() {
+    $$(".income-host").forEach((host) => {
+      host.innerHTML = incomeCardHtml();
+      host.querySelector(".income-eye")?.addEventListener("click", toggleIncomeShown);
+    });
   }
   function toggleIncomeShown() {
     sessionStorage.setItem(KEY_INCOME_SHOWN, incomeShown() ? "0" : "1");
@@ -24077,7 +24091,6 @@
     // The post button now lives inside the Open slots sheet, wired when it opens.
     $("#btn-open-slots")?.addEventListener("click", openOpenSlotsSheet);
     $("#btn-edit-availability")?.addEventListener("click", openAvailabilityEditor);
-    $("#btn-income-eye")?.addEventListener("click", toggleIncomeShown);
     // Booking without going via the calendar first. Opens on today; the day is
     // whatever the coach picks in the sheet.
     $("#btn-book-athlete")?.addEventListener("click", () => openBookAthleteSheet(dashCal().date || todayISO()));

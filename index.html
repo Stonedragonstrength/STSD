@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=inc3" />
+  <link rel="stylesheet" href="styles.css?v=inc5" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -306,15 +306,12 @@
              calendar is generated from. -->
         <div class="overview-rail">
 
-        <!-- Expected income. Blurred until the eye is tapped, and it starts
-             blurred on every device: the gym floor is not private. -->
-        <div class="card income-card is-hidden" id="income-card">
-          <div class="income-head">
-            <span class="income-title">Expected income</span>
-            <button type="button" class="income-eye" id="btn-income-eye" aria-label="Show income" aria-pressed="false"></button>
-          </div>
-          <div class="income-figs" id="income-figs"></div>
-        </div>
+        <!-- Expected income has ONE home per width: this rail on a wide screen,
+             where there is space beside the calendar, and the coach Profile on a
+             phone, where the Overview is a single stack and money is not what
+             the morning glance is for. renderIncomeCard() fills every
+             .income-host; CSS shows exactly one. -->
+        <div class="income-host income-host-rail"></div>
 
         <!-- The standing arrangements the calendar is generated from. Settings
              more than news, so everything but the regulars folds away. -->
@@ -734,6 +731,11 @@
           </summary>
           <div class="avatar-picker" id="coach-avatar-picker"></div>
         </details>
+        <!-- On a phone this is where expected income lives (see the rail host on
+             the Overview). Empty at wide widths, where the rail has it. -->
+        <h3 class="coach-profile-section income-section">Money</h3>
+        <div class="income-host income-host-profile"></div>
+
         <h3 class="coach-profile-section">Appearance</h3>
         <div class="theme-picker" id="coach-theme-picker"></div>
 
@@ -1182,7 +1184,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=day1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=inc3"></script>
+  <script src="app.js?v=inc5"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

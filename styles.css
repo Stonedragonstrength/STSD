@@ -10618,7 +10618,12 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
      grid puts it back on the right here. */
   #view-overview > .overview-rail { grid-column: 2; grid-row: 1; }
   #view-overview > .overview-rail > .card { margin: 0; }
-  #view-overview > .overview-rail > .card + .card { margin-top: 1rem; }
+  /* Income moves out of the coach Profile and into the rail at this width. The
+     id prefix is load-bearing: the base `display:none` sits LATER in the file,
+     so an equally specific selector here would lose. */
+  #view-overview .income-host-rail { display: block; }
+  #view-overview .income-host-rail > .income-card { margin: 0 0 1rem; }
+  #view-settings .income-host-profile, #view-settings .income-section { display: none; }
   /* Exactly one item per column, so neither can stretch the other's rows.
      The nav and grid used to be separate items sharing rows with the rail,
      and the rail's height got distributed across them — which is what opened
@@ -11241,6 +11246,13 @@ body.scroll-locked {
 #overview-hub > :first-child { border-top: 0; padding-top: 0; }
 #overview-hub .sched-hours { margin-top: 0.9rem; }
 #overview-hub .sched-hours .slim-btn { margin-top: 0.6rem; }
+
+/* Expected income has one home per width. Phone and tablet: the coach Profile,
+   because the Overview is a single stack there and money is not what the
+   morning glance is for. Wide: the Overview rail, which has the room (the
+   swap is in the 1200px block above). */
+.income-host-rail { display: none; }
+.income-host-profile > .income-card { margin-bottom: 1rem; }
 
 /* ============ Expected income ============
    Quiet on purpose: no accent glow, no big number. It is a ledger he glances
