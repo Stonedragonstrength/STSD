@@ -2547,87 +2547,16 @@ input.trial-input {
 .bulletin-compose-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
 .bulletin-active { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.9rem; }
 
-/* Today board — the first thing on the coach Overview. Two cards side by side
-   on a wide screen, stacked on a phone. Empty container renders nothing. */
-/* Today's sessions, now a section INSIDE the day card rather than a card of
-   its own — it used to be a grid holding the Today and Needs-you cards. */
-.overview-today:empty { display: none; }
-.overview-today { margin-bottom: 0.9rem; }
-.today-card { border-left: 3px solid var(--primary); }
-.today-date {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.today-empty, .today-list, .needs-list { margin-top: 0.4rem; }
-.today-empty {
-  margin: 0.4rem 0 0;
-  padding: 0.4rem 0.2rem;
-  font-size: 0.85rem;
-  color: var(--muted);
-  border-top: 1px solid var(--border);
-}
-/* Both lists soft-cap and scroll rather than pushing the calendar off screen. */
-.today-list, .needs-list {
+/* The needs-you list, now inside the header-pill sheet. `.needs-list` kept its
+   soft cap from when it was a card on the Overview. */
+.needs-list {
   max-height: 13rem;
   overflow-y: auto;
   border-top: 1px solid var(--border);
   -webkit-overflow-scrolling: touch;
+  margin-top: 0.4rem;
 }
-.today-row {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.5rem 0.2rem;
-  border-bottom: 1px solid var(--border);
-}
-.today-row:last-child, .needs-row:last-child { border-bottom: none; }
-.today-row.is-clickable { cursor: pointer; transition: background 0.12s; }
-.today-row.is-clickable:hover { background: var(--surface-2); }
-.today-row.is-done .today-name, .today-row.is-done .today-what { color: var(--muted); }
-/* The avatar tile brings its own size (.av-sm); this just keeps it from
-   stretching and gives the unlinked-booking placeholder the same footprint. */
-.today-av { flex-shrink: 0; display: flex; }
-.today-av-blank {
-  display: grid;
-  place-items: center;
-  width: 26px; height: 36px;
-  border-radius: 8px;
-  background: var(--surface-2);
-  color: var(--muted);
-  font-weight: 800;
-}
-.today-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.today-name {
-  font-size: 0.9rem;
-  font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.today-what {
-  font-size: 0.75rem;
-  color: var(--text-soft);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.today-tag {
-  font-size: 0.62rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0 0.4em;
-}
-.today-time { flex-shrink: 0; font-size: 0.78rem; font-weight: 700; color: var(--text-soft); }
-.today-state { flex-shrink: 0; width: 1em; color: var(--muted); font-weight: 800; }
-.today-row.is-done .today-state { color: var(--accent); }
-
+.needs-row:last-child { border-bottom: none; }
 .needs-row {
   display: flex;
   align-items: center;
@@ -3136,10 +3065,6 @@ input.trial-input {
 .dash-cal-day-name { overflow: hidden; text-overflow: ellipsis; flex: 1; }
 .dash-cal-more { font-size: 0.6rem; color: var(--muted); padding: 0 0.2em; }
 
-/* The day card's head: title, the date beside it, and the one action the card
-   exists for pushed to the far end. */
-.overview-hub-head { align-items: center; }
-.overview-hub-head .slim-btn { margin-left: auto; }
 #overview-hub { min-width: 0; }
 
 /* Permanent notification log — small scrolling box, ~3 rows visible at once */
@@ -11285,5 +11210,108 @@ body.scroll-locked {
 #overview-hub .sched-series,
 #overview-hub .sched-bookings { border-top: 1px solid var(--border); padding-top: 0.7rem; }
 #overview-hub .sched-series:empty { border-top: 0; padding-top: 0; }
+/* A rule between sections, never above the first one — a border at the top of
+   a card reads as a stray line with a gap over it. */
+#overview-hub > :first-child { border-top: 0; padding-top: 0; }
+#overview-hub .sched-series:empty + .sched-bookings { border-top: 0; padding-top: 0; }
 #overview-hub .sched-hours { margin-top: 0.9rem; }
 #overview-hub .sched-hours .slim-btn { margin-top: 0.6rem; }
+
+/* ============ Calendar zoom: Day / Week / Month ============
+   One calendar the coach reads at three distances, instead of a month grid
+   plus a card repeating today. The mode row sits above the date row so the
+   two questions — how close am I looking, and at what — never share a line
+   and wrap into each other on a phone. */
+.cal-nav-modes { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem; }
+.cal-nav-date { margin-bottom: 0.6rem; }
+.cal-book-btn { margin-left: auto; }
+.cal-modes {
+  display: inline-flex; gap: 0.2rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.2rem;
+}
+.cal-mode-btn {
+  min-height: 34px;
+  padding: 0 0.85em;
+  border: 0; border-radius: calc(var(--radius) - 3px);
+  background: transparent; color: var(--text-soft);
+  font: inherit; font-size: 0.8rem; font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.cal-mode-btn.on { background: var(--primary-soft); color: var(--primary-bright); }
+.cal-mode-btn:hover:not(.on) { color: var(--text); }
+
+/* Day view: the same detail a month cell used to open in a sheet. */
+.dash-cal-day-view .dash-day-empty {
+  margin: 0; padding: 1.4rem 0.2rem; text-align: center; font-size: 0.88rem;
+}
+.dash-breakdown-day { font-size: 0.82rem; margin-left: auto; }
+.dash-live-btn { flex-shrink: 0; padding: 0.2em 0.5em; }
+
+/* Week view: seven rows, an agenda rather than an hour grid — a coach runs a
+   few sessions a day, so a time grid is mostly empty, and empty space is what
+   a phone has least of. */
+.dash-cal-week-view { display: flex; flex-direction: column; gap: 0.3rem; }
+.wk-row {
+  display: flex; align-items: flex-start; gap: 0.7rem;
+  width: 100%;
+  padding: 0.55rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: inherit; font: inherit; text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.wk-row:hover { border-color: rgba(var(--primary-rgb), 0.55); background: var(--surface-3); }
+.wk-row.is-today { border-color: rgba(var(--primary-rgb), 0.8); box-shadow: 0 0 0 1px rgba(var(--primary-rgb), 0.3); }
+.wk-row.is-empty { opacity: 0.55; }
+.wk-date {
+  flex-shrink: 0; width: 2.6rem;
+  display: flex; flex-direction: column; align-items: center; gap: 0.05rem;
+}
+.wk-date b {
+  font-size: 0.62rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-soft);
+}
+.wk-date span { font-size: 1.05rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.wk-row.is-today .wk-date span { color: var(--primary-bright); }
+.wk-items { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; min-width: 0; flex: 1 1 auto; }
+.wk-chip {
+  display: inline-flex; align-items: center; gap: 0.3em;
+  max-width: 100%;
+  padding: 0.2em 0.5em;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 0.75rem; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wk-chip b { font-variant-numeric: tabular-nums; }
+.wk-chip-plan { border-style: dashed; color: var(--text-soft); }
+.wk-none { color: var(--muted); font-size: 0.8rem; }
+
+/* A booked session in the Day view: one row, face first, controls at the end.
+   The default breakdown row stacks its name over its detail, which put the
+   avatar on a line of its own and wrapped the buttons onto a third — three
+   lines for what is really "who, when, and what to do about it". */
+.dash-booked-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.dash-booked-row .breakdown-ex-name {
+  display: flex; align-items: center; gap: 0.45em;
+  margin-bottom: 0; min-width: 0; flex: 1 1 9rem;
+}
+.dash-booked-row .breakdown-ex-name .av-tile { margin-right: 0; }
+.dash-booked-row .breakdown-sets { flex-wrap: wrap; margin-left: auto; }
+
+/* The programmed-workout header: face and name, the day on the right, and the
+   one action (log it with them) pinned to the end. */
+.dash-breakdown-header { display: flex; align-items: center; gap: 0.45em; flex-wrap: wrap; }
+.dash-breakdown-header .av-tile { flex-shrink: 0; }

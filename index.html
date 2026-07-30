@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=book17" />
+  <link rel="stylesheet" href="styles.css?v=cal6" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -271,27 +271,38 @@
 
       <!-- Overview (dashboard calendar) -->
       <div id="view-overview" class="view hidden">
-        <!-- ONE card answers the day: who is training, what is coming, and
-             the way to add someone. Today's sessions and the booking list
-             used to be two cards that repeated each other — a session booked
-             for today appeared in both. Built by renderCoachToday() +
-             renderCoachSchedule(). What needs the coach, and the activity
-             log, live behind the header pill. -->
-        <div class="card today-card" id="overview-hub">
-          <div class="program-head overview-hub-head">
-            <h3 style="margin:0">🐉 Today <span class="overview-req-count" id="today-count"></span></h3>
-            <span class="today-date" id="today-date"></span>
-            <button class="btn slim-btn btn-sm" id="btn-book-athlete">＋ Book</button>
+        <!-- ONE calendar at three zoom levels, and the schedule settings
+             behind it. Today used to be a card of its own repeating what the
+             month grid already knew; it is the Day view now. Built by
+             renderDashboardCalendar() + renderCoachSchedule(). What needs the
+             coach, and the activity log, live behind the header pill. -->
+        <div class="overview-cal-col">
+          <div class="cal-nav cal-nav-modes">
+            <div class="cal-modes" id="dash-cal-modes" role="group" aria-label="Calendar zoom">
+              <button type="button" class="cal-mode-btn" data-cal-mode="day">Day</button>
+              <button type="button" class="cal-mode-btn" data-cal-mode="week">Week</button>
+              <button type="button" class="cal-mode-btn" data-cal-mode="month">Month</button>
+            </div>
+            <button class="btn slim-btn btn-sm cal-book-btn" id="btn-book-athlete">＋ Book</button>
           </div>
-          <div id="overview-today" class="overview-today"></div>
-          <!-- Standing weekly appointments, above the flat list they expand
-               into: a regular is a thing the coach manages, the individual
-               sessions are just what it produced. -->
+          <div class="cal-nav cal-nav-date">
+            <button class="btn btn-ghost btn-sm" id="dash-cal-prev" aria-label="Previous">‹</button>
+            <h4 class="cal-title" id="dash-cal-title"></h4>
+            <button class="btn btn-ghost btn-sm" id="dash-cal-next" aria-label="Next">›</button>
+            <button class="btn btn-ghost btn-sm" id="dash-cal-today">Today</button>
+            <button class="btn btn-ghost btn-sm" id="dash-cal-refresh" style="margin-left:auto">🔄 Refresh</button>
+          </div>
+          <!-- Exactly one of these three is in the document at a time. -->
+          <div id="dash-cal-day" class="dash-cal-day-view hidden"></div>
+          <div id="dash-cal-week" class="dash-cal-week-view hidden"></div>
+          <div id="dash-cal-grid" class="cal-grid dash-cal-grid hidden"></div>
+        </div>
+
+        <!-- The standing arrangements the calendar is generated from. Settings
+             more than news, so everything but the regulars folds away. -->
+        <div class="card" id="overview-hub">
           <div id="sched-series" class="sched-series"></div>
           <div id="sched-bookings" class="sched-bookings"></div>
-          <!-- The week's hours are settings you write once, not something to
-               read every day, so they fold away behind a one-line summary,
-               with the editor inside the fold where it belongs. -->
           <details class="sched-hours">
             <summary>
               <span>Your hours</span>
@@ -307,20 +318,6 @@
               <div id="open-slots-container"></div>
             </div>
           </details>
-        </div>
-        <!-- The nav and the month grid are wrapped as ONE column. On a laptop
-             this sits beside the day card, and if they were two separate grid
-             items the card's height would be distributed across both of their
-             rows, pushing the calendar away from its own nav. -->
-        <div class="overview-cal-col">
-          <div class="cal-nav" style="margin-bottom:0.6rem">
-            <button class="btn btn-ghost btn-sm" id="dash-cal-prev">‹</button>
-            <h4 class="cal-title" id="dash-cal-title"></h4>
-            <button class="btn btn-ghost btn-sm" id="dash-cal-next">›</button>
-            <button class="btn btn-ghost btn-sm" id="dash-cal-today">Today</button>
-            <button class="btn btn-ghost btn-sm" id="dash-cal-refresh" style="margin-left:auto">🔄 Refresh</button>
-          </div>
-          <div id="dash-cal-grid" class="cal-grid dash-cal-grid"></div>
         </div>
       </div>
 
@@ -1154,9 +1151,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="bugreport.js?v=bug1"></script>
   <script src="config.js?v=horm2"></script>
-  <script src="cloud.js?v=book17"></script>
+  <script src="cloud.js?v=cal6"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=book17"></script>
+  <script src="app.js?v=cal6"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

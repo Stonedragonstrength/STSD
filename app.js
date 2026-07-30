@@ -2891,7 +2891,6 @@
     refreshCoachOpenSlots();
     refreshCoachSchedule();
     renderBulletinBoard();
-    renderCoachToday();
     refreshCoachInbox();
   }
 
@@ -9931,13 +9930,11 @@
     runAutoRenewGrants(year, month);
     syncUpcomingBookingsToAthletes();
     // Only re-render if still on the same month (avoid clobbering a nav that happened mid-fetch)
+    // Every view is built FROM these events and this fetch is async, landing
+    // after the first render — so the redraw is what puts a booking on screen
+    // at all, whichever zoom the coach is on.
     if (state.dashCal && state.dashCal.year === year && state.dashCal.month === month) {
       renderDashboardCalendar();
-      // Today's board is built FROM these events, and this fetch is async — it
-      // lands after the first render. Without this, a session booked for today
-      // showed on the calendar but the day card said "nothing on the books"
-      // until something else happened to redraw it.
-      renderCoachToday();
     }
   }
 
@@ -10105,16 +10102,156 @@
     toast("Calendar synced");
   }
 
-  function renderDashboardCalendar() {
+  // ---- Day / Week / Month ----
+  // One calendar, three zoom levels, rather than a month grid plus a separate
+  // card repeating today. The mode is remembered because a coach who works day
+  // by day should not have to re-pick it every time they open the app.
+  const KEY_CAL_MODE = "trainerpro_cal_mode_v1";
+
+  function dashCal() {
     if (!state.dashCal) { const n = new Date(); state.dashCal = { year: n.getFullYear(), month: n.getMonth() }; }
-    const { year, month } = state.dashCal;
+    const c = state.dashCal;
+    if (!c.mode) {
+      const saved = localStorage.getItem(KEY_CAL_MODE);
+      c.mode = saved === "week" || saved === "month" ? saved : "day";
+    }
+    if (!c.date) c.date = todayISO();
+    return c;
+  }
+  function setCalMode(mode) {
+    const c = dashCal();
+    c.mode = mode;
+    try { localStorage.setItem(KEY_CAL_MODE, mode); } catch (e) { /* private mode */ }
+    // Month keeps its own year/month; day and week follow the focused date, so
+    // switching zoom always lands on the period you were already looking at.
+    if (mode !== "month") {
+      const [y, m] = c.date.split("-").map(Number);
+      c.year = y; c.month = m - 1;
+    } else if (!isoInMonth(c.date, c.year, c.month)) {
+      c.date = dateISO(new Date(c.year, c.month, 1));
+    }
+    renderDashboardCalendar();
+  }
+  function isoInMonth(iso, year, month) {
+    const [y, m] = String(iso).split("-").map(Number);
+    return y === year && m - 1 === month;
+  }
+  // Sunday-start, to match the month grid's columns.
+  function weekStartOf(iso) {
+    const d = new Date(iso + "T12:00:00");
+    d.setDate(d.getDate() - d.getDay());
+    return dateISO(d);
+  }
+  function weekDatesOf(iso) {
+    const start = new Date(weekStartOf(iso) + "T12:00:00");
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      return dateISO(d);
+    });
+  }
+  // What the arrows do, and what the title says, both depend on the zoom.
+  function stepCal(dir) {
+    const c = dashCal();
+    if (c.mode === "month") {
+      let { year, month } = c;
+      month += dir;
+      if (month < 0) { month = 11; year--; }
+      if (month > 11) { month = 0; year++; }
+      c.year = year; c.month = month;
+    } else {
+      const d = new Date(c.date + "T12:00:00");
+      d.setDate(d.getDate() + dir * (c.mode === "week" ? 7 : 1));
+      c.date = dateISO(d);
+      c.year = d.getFullYear(); c.month = d.getMonth();
+    }
+    renderDashboardCalendar();
+  }
+  function calTitle() {
+    const c = dashCal();
+    if (c.mode === "month") return `${MONTH_NAMES[c.month]} ${c.year}`;
+    if (c.mode === "day") {
+      const d = new Date(c.date + "T12:00:00");
+      if (c.date === todayISO()) return "Today";
+      return d.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+    }
+    const days = weekDatesOf(c.date);
+    const a = new Date(days[0] + "T12:00:00"), b = new Date(days[6] + "T12:00:00");
+    const sameMonth = a.getMonth() === b.getMonth();
+    const fmt = (d, withMonth) => d.toLocaleDateString(undefined,
+      withMonth ? { month: "short", day: "numeric" } : { day: "numeric" });
+    return `${fmt(a, true)} – ${fmt(b, !sameMonth)}`;
+  }
+
+  function renderDashboardCalendar() {
+    const c = dashCal();
+    const { year, month } = c;
     const fetchKey = `${year}-${month}`;
     if (window.Cloud?.enabled && state.trainerData.coachId && _dashCalSetmoreFetchKey !== fetchKey) {
       _dashCalSetmoreFetchKey = fetchKey;
       loadDashCalSetmoreEvents(year, month);
     }
-    $("#dash-cal-title").textContent = `${MONTH_NAMES[month]} ${year}`;
+    $("#dash-cal-title").textContent = calTitle();
+    $$("#dash-cal-modes .cal-mode-btn").forEach((b) =>
+      b.classList.toggle("on", b.dataset.calMode === c.mode));
     const grid = $("#dash-cal-grid");
+    const dayHost = $("#dash-cal-day");
+    const weekHost = $("#dash-cal-week");
+    // Only the active mode is in the document, so nothing offscreen keeps
+    // handlers alive or answers a querySelector meant for the visible view.
+    [["month", grid], ["day", dayHost], ["week", weekHost]].forEach(([m, el]) => {
+      if (!el) return;
+      el.classList.toggle("hidden", m !== c.mode);
+      if (m !== c.mode) el.innerHTML = "";
+    });
+    if (c.mode === "day") return renderCalDayView(dayHost, c.date);
+    if (c.mode === "week") return renderCalWeekView(weekHost, c.date);
+    renderCalMonthGrid(grid, year, month);
+  }
+
+  // Day: the full detail for one date, the same description a month cell opens.
+  function renderCalDayView(host, iso) {
+    if (!host) return;
+    const { html, dayEvents } = dayDetailHtml(iso);
+    host.innerHTML = html;
+    wireDayDetail(host, iso, dayEvents);
+  }
+
+  // Week: seven days at a glance, each a tap into that day. An agenda rather
+  // than an hour grid — a coach runs a handful of sessions a day, so a time
+  // grid would be mostly empty space, and empty space is the one thing a phone
+  // cannot spare.
+  function renderCalWeekView(host, iso) {
+    if (!host) return;
+    const today = todayISO();
+    const byDate = dashCalSetmoreByDate();
+    const clients = state.trainerData.clients || [];
+    host.innerHTML = weekDatesOf(iso).map((d) => {
+      const dd = new Date(d + "T12:00:00");
+      const events = (byDate[d] || []).slice().sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
+      // Programmed days count too: a workout an athlete has scheduled is part
+      // of the week even when no session is booked around it.
+      const planned = clients.filter((c) => c.importedProgress?.selfSchedule?.[d]?.weekId);
+      const items = events.map((e) => {
+        const a = matchAthleteForEvent(e);
+        return `<span class="wk-chip">${a ? athleteFaceHtml(a, "xs") : ""}` +
+          `<b>${escapeHtml(fmtSetmoreTime(e.startAt))}</b> ${escapeHtml(a?.name || e.clientName || "Session")}</span>`;
+      }).join("") + planned.map((c) =>
+        `<span class="wk-chip wk-chip-plan">${athleteFaceHtml(c, "xs")}${escapeHtml(c.name)}</span>`).join("");
+      return `<button type="button" class="wk-row${d === today ? " is-today" : ""}${events.length || planned.length ? "" : " is-empty"}" data-wk-day="${d}">` +
+        `<span class="wk-date"><b>${dd.toLocaleDateString(undefined, { weekday: "short" })}</b>` +
+          `<span>${dd.getDate()}</span></span>` +
+        `<span class="wk-items">${items || `<span class="wk-none">—</span>`}</span>` +
+      `</button>`;
+    }).join("");
+    host.querySelectorAll("[data-wk-day]").forEach((b) => b.addEventListener("click", () => {
+      const c = dashCal();
+      c.date = b.dataset.wkDay;
+      setCalMode("day");
+    }));
+  }
+
+  function renderCalMonthGrid(grid, year, month) {
     grid.innerHTML = "";
     DOW_LABELS.forEach(d => {
       const el = document.createElement("div");
@@ -10180,7 +10317,10 @@
       const workoutEntries = entries.filter(e => !e.rest);
       if (workoutEntries.length || setmoreEvents.length) cell.classList.add("has-log");
       cell.classList.add("tappable");
-      cell.addEventListener("click", () => openDashboardDayModal(iso));
+      // Zoom in rather than open a sheet over the calendar: Day view already
+      // shows exactly what the sheet did, and two ways to read one date is the
+      // duplication this merge exists to remove.
+      cell.addEventListener("click", () => { dashCal().date = iso; setCalMode("day"); });
       grid.appendChild(cell);
     });
   }
@@ -10189,7 +10329,10 @@
     return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   }
 
-  function openDashboardDayModal(iso) {
+  // Everything that happened, or is booked, on one date. Returned rather than
+  // rendered so the same detail can be the Day view inline and the sheet a
+  // month cell opens — one description of a day, two places to read it.
+  function dayDetailHtml(iso) {
     const clients = state.trainerData.clients || [];
     let body = "";
     const dayEvents = (dashCalSetmoreByDate()[iso] || [])
@@ -10242,11 +10385,17 @@
       const dIdx = getDayIdx(c, entry.weekId, entry.dayId);
       const dc = getDayColor(dIdx);
       const logs = c.importedProgress?.exerciseLogs || {};
+      // Logging alongside them is the thing a coach does at the top of the
+      // hour, so it stays one tap from the day — it was the best part of the
+      // Today card this view replaced.
       body += `<div class="dash-breakdown-client">
         <div class="dash-breakdown-header">
           <span class="dash-breakdown-dot" style="background:${dc.color}"></span>
+          ${athleteFaceHtml(c, "xs")}
           <strong>${escapeHtml(c.name)}</strong>
-          <span class="muted" style="font-size:0.82rem;margin-left:auto">${escapeHtml(week.label)} · ${escapeHtml(day.name)}</span>
+          <span class="muted dash-breakdown-day">${escapeHtml(week.label)} · ${escapeHtml(day.name)}</span>
+          <button type="button" class="btn btn-ghost btn-xs dash-live-btn" title="Log this session with them"
+            data-live="${escapeHtml(c.id)}|${escapeHtml(entry.weekId)}|${escapeHtml(entry.dayId)}">🏋️</button>
         </div>`;
       day.exercises.forEach(ex => {
         const logEntry = (logs[ex.id] || []).find(l => l.date === iso);
@@ -10274,27 +10423,39 @@
       }
       body += `</div>`;
     });
-    if (!body) body = `<p class="muted">Nothing scheduled or logged for this date.</p>`;
-    // Booking is the first thing in the sheet, not the last: on a phone this is
-    // the whole reason for tapping a day, and it must not sit under a scroll.
-    body = `<button type="button" class="btn btn-primary cbk-open" id="dash-book-btn">＋ Book an athlete</button>` + body;
-    openModal({
-      title: fmtSlotDay(iso),
-      body,
-      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
-    });
-    $("#dash-book-btn")?.addEventListener("click", () => openBookAthleteSheet(iso));
+    if (!body) body = `<p class="muted dash-day-empty">Nothing scheduled or logged for this date.</p>`;
+    return { html: body, dayEvents };
+  }
+
+  // Wires one rendered day detail. Scoped to its root, because the Day view and
+  // a sheet can both be in the document at once and a document-wide query would
+  // bind the same handler twice.
+  function wireDayDetail(root, iso, dayEvents, { inSheet = false } = {}) {
+    if (!root) return;
+    const $$r = (sel) => [...root.querySelectorAll(sel)];
+    const leave = () => { if (inSheet) closeModal(); };
     // Cancel one in-app booking straight from the day it sits on. A weekly one
     // asks whether the coach means this week or the rest of them.
-    $$("[data-cancel-native]").forEach((btn) => {
+    $$r("[data-cancel-native]").forEach((btn) => {
       btn.addEventListener("click", (ev) => {
         ev.stopPropagation();
         const e = dayEvents[Number(btn.dataset.cancelNative)];
         if (e?.bookingId) cancelBookingFlow(e.bookingId, e.seriesId, e.startAt);
       });
     });
+    // 🏋️ → straight into their live session on this date.
+    $$r("[data-live]").forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const [cid, weekId, dayId] = String(btn.dataset.live).split("|");
+        leave();
+        state.currentClientId = cid;
+        Nav.push(exitPreview); // Back leaves the live session, same as the 🏋️ card button
+        previewAsAthlete({ weekId, dayId, date: iso });
+      });
+    });
     // Form-check clip → play via signed URL
-    $$("[data-fc-dash]").forEach((btn) => {
+    $$r("[data-fc-dash]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const [cid, did, idxS] = String(btn.dataset.fcDash).split("|");
         const cc = state.trainerData.clients.find((x) => x.id === cid);
@@ -10303,14 +10464,14 @@
       });
     });
     // Matched booking → jump to that athlete's profile
-    $$("[data-open-athlete]").forEach((row) => {
+    $$r("[data-open-athlete]").forEach((row) => {
       row.addEventListener("click", () => {
-        closeModal();
+        leave();
         openClient(row.dataset.openAthlete);
       });
     });
     // Unmatched booking → save an alias on the right athlete
-    $$("[data-link-booking]").forEach((btn) => {
+    $$r("[data-link-booking]").forEach((btn) => {
       btn.addEventListener("click", (ev) => {
         ev.stopPropagation();
         const e = dayEvents[Number(btn.dataset.linkBooking)];
@@ -10318,7 +10479,7 @@
       });
     });
     // Matched-by-alias booking → unlink (remove the alias that caused the match)
-    $$("[data-unlink-booking]").forEach((btn) => {
+    $$r("[data-unlink-booking]").forEach((btn) => {
       btn.addEventListener("click", (ev) => {
         ev.stopPropagation();
         const e = dayEvents[Number(btn.dataset.unlinkBooking)];
@@ -10326,7 +10487,7 @@
       });
     });
     // Missed-session marks: close call (free) / missed but charged / undo
-    const missedHandler = (attr, fn) => $$(`[data-${attr}]`).forEach((btn) => {
+    const missedHandler = (attr, fn) => $$r(`[data-${attr}]`).forEach((btn) => {
       btn.addEventListener("click", (ev) => {
         ev.stopPropagation();
         const e = dayEvents[Number(btn.getAttribute(`data-${attr}`))];
@@ -12156,7 +12317,9 @@
         seenSeries.add(b.series_id);
         return true;
       })
-      .slice(0, 12);
+      // Five. Past that, Week and Month views are the better answer, and a
+      // long list here just makes the card tall again.
+      .slice(0, 5);
     if (!upcoming.length) {
       host.innerHTML = `<div class="sched-book-head">Coming up</div><p class="sched-empty">Nothing booked after today.</p>`;
       return;
@@ -13010,55 +13173,7 @@
     // Keep the athlete-card 🎟 chips fresh if the Athletes list is showing.
     if (!$("#view-dashboard").classList.contains("hidden")) renderClientGrid();
     // Keep the Overview Today board fresh if it's showing.
-    if (!$("#view-overview").classList.contains("hidden")) renderCoachToday();
-  }
-
-  // -------- Coach Today board (top of the Overview) --------
-  // Two cards: who's on the schedule today, and what's waiting on the coach.
-  // Deliberately NOT an activity feed — the notification log at the bottom of
-  // the page stays the only place "someone logged a workout" appears. A row
-  // here is either a session that is going to happen or a thing to action.
-
-  // One row per athlete: a Setmore booking and a self-scheduled day are the
-  // same session, not two. Unmatched bookings ride along under their raw
-  // booking name so an unlinked athlete still shows up.
-  function coachTodayRows() {
-    const today = todayISO();
-    const byClient = new Map();
-    const loose = [];
-    const put = (c, patch) => {
-      const cur = byClient.get(c.id) ||
-        { client: c, name: c.name, time: "", ts: Infinity, dayName: "", rest: false, done: false, booked: false };
-      byClient.set(c.id, Object.assign(cur, patch));
-    };
-
-    (dashCalSetmoreByDate()[today] || []).forEach((e) => {
-      const start = e.startAt ? new Date(e.startAt) : null;
-      const time = start ? start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
-      const ts = start ? start.getTime() : Infinity;
-      const c = matchAthleteForEvent(e);
-      if (c) put(c, { time, ts, booked: true });
-      else loose.push({ client: null, name: e.clientName || "Booking", time, ts, booked: true, unlinked: true });
-    });
-
-    (state.trainerData.clients || []).forEach((c) => {
-      const ip = c.importedProgress || {};
-      const entry = ip.selfSchedule?.[today];
-      if (entry?.rest) put(c, { rest: true });
-      else if (entry?.weekId) {
-        const wd = findWeekDay(c, entry.weekId, entry.dayId);
-        put(c, { dayName: wd?.day.name || "Workout", weekId: entry.weekId, dayId: entry.dayId });
-      }
-      // Only stamps rows that are already on the board — nobody lands here for
-      // having trained, or this would quietly become a second feed.
-      if (!byClient.has(c.id)) return;
-      const doneToday = Object.entries(ip.dayCompletions || {})
-        .some(([, dates]) => (Array.isArray(dates) ? dates : []).includes(today));
-      if (doneToday) put(c, { done: true });
-    });
-
-    return [...byClient.values(), ...loose].sort((a, b) =>
-      (a.ts - b.ts) || (a.name || "").localeCompare(b.name || ""));
+    if (!$("#view-overview").classList.contains("hidden")) renderDashboardCalendar();
   }
 
   // Everything waiting on the coach, most urgent kind first. Purchase requests
@@ -13101,64 +13216,7 @@
     return rows.sort((a, b) => a.pri - b.pri || (b.ts || 0) - (a.ts || 0));
   }
 
-  // Today's sessions, inside the day card the booking list also lives in. This
-  // fills the card's own slots rather than building a card, because the two
-  // used to be separate cards that repeated each other.
-  function renderCoachToday() {
-    const host = $("#overview-today");
-    if (!host) return;
-    host.innerHTML = "";
-    const today = new Date();
-    const todayLabel = today.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
 
-    const rows = coachTodayRows();
-    const dateEl = $("#today-date");
-    if (dateEl) dateEl.textContent = todayLabel;
-    const cntEl = $("#today-count");
-    if (cntEl) cntEl.textContent = rows.length ? String(rows.length) : "";
-    if (!rows.length) {
-      host.insertAdjacentHTML("beforeend",
-        `<p class="today-empty">Nothing on the books today.</p>`);
-    } else {
-      const list = document.createElement("div");
-      list.className = "today-list";
-      rows.forEach((r) => {
-        const row = document.createElement("div");
-        row.className = "today-row" + (r.client ? " is-clickable" : "") + (r.done ? " is-done" : "");
-        const what = r.rest ? "Rest day" : (r.dayName || (r.booked ? "Session" : "Training"));
-        const avatar = r.client
-          ? avatarTileHtml(r.client, r.client.importedProgress, { size: "sm", colorIdx: athleteColorIdx(r.client) })
-          : `<span class="today-av-blank">?</span>`;
-        row.innerHTML = `
-          <span class="today-av">${avatar}</span>
-          <span class="today-main">
-            <span class="today-name">${escapeHtml(r.name)}${r.unlinked ? ` <span class="today-tag">unlinked</span>` : ""}</span>
-            <span class="today-what">${escapeHtml(what)}</span>
-          </span>
-          ${r.time ? `<span class="today-time">${escapeHtml(r.time)}</span>` : ""}
-          <span class="today-state">${r.done ? "✓" : (r.client ? "→" : "")}</span>`;
-        if (r.client) {
-          row.addEventListener("click", () => {
-            if (r.rest || !r.weekId) {
-              Nav.push(showCoachOverview);
-              return openClient(r.client.id);
-            }
-            // A scheduled workout drops straight into their live session on
-            // that day, which is what the coach wants at the top of the hour.
-            state.currentClientId = r.client.id;
-            Nav.push(exitPreview); // Back leaves the live session, same as the 🏋️ card button
-            previewAsAthlete({ weekId: r.weekId, dayId: r.dayId, date: todayISO() });
-          });
-        }
-        list.appendChild(row);
-      });
-      host.appendChild(list);
-    }
-
-    // "Needs you" is not a card here any more — it is the header pill, and the
-    // list behind it. Keeping the count fresh is all this page owes it.
-    renderCoachInboxCount();
-  }
 
   // One row of the inbox: something waiting on the coach. Returns an element
   // because a purchase request carries live buttons, not just a link.
@@ -13483,7 +13541,7 @@
     // where "someone logged a workout" surfaces. The pill is in the header on
     // every page, so its count is refreshed whatever view is showing.
     if (!$("#view-dashboard").classList.contains("hidden")) renderClientGrid();
-    if (!$("#view-overview").classList.contains("hidden")) renderCoachToday();
+    if (!$("#view-overview").classList.contains("hidden")) renderDashboardCalendar();
     refreshCoachInbox();
     // Same trip: pull the threads, so an unanswered question shows up on the
     // nav badge and the Today board without a separate refresh path.
@@ -22620,12 +22678,12 @@
     return [
       { sel: "#coach-nav", go: () => showCoachOverview(),
         title: "Welcome, coach", text: "A quick lap around the app, about a minute. Skip any time. This nav is home base." },
+      { sel: "#dash-cal-modes",
+        title: "Day, week, month", text: "One calendar at three distances. Day opens on who you're training and what they logged, Week is the next seven at a glance, Month is the whole picture. Tap any day at any zoom to open it, or ＋ Book to add someone." },
       { sel: "#overview-hub",
-        title: "Your day", text: "Who you're training today, what's coming up after that, and your standing weekly regulars. Tap a name to drop straight into their session, or ＋ Book to add someone." },
+        title: "Standing arrangements", text: "Your weekly regulars, what's coming up after today, the hours athletes can book, and any slots you've posted." },
       { sel: "#btn-coach-inbox",
         title: "What needs you", text: "Purchase requests, form videos to watch, athletes out of sessions or gone quiet, and everything your athletes have logged. The number is how many are waiting on you." },
-      { sel: "#view-overview",
-        title: "The month", text: "Every athlete on one calendar: completed days, sessions and open slots. Tap any date to see what each of them did, or to book someone in on it." },
       { sel: "#client-grid", go: () => renderDashboard(),
         title: "Your athletes", text: "One card per athlete. Tap a card for their profile, program, nutrition, PRs and sessions." },
       { sel: "#client-grid .client-row-view",
@@ -23755,7 +23813,7 @@
     $("#btn-edit-availability")?.addEventListener("click", openAvailabilityEditor);
     // Booking without going via the calendar first. Opens on today; the day is
     // whatever the coach picks in the sheet.
-    $("#btn-book-athlete")?.addEventListener("click", () => openBookAthleteSheet(todayISO()));
+    $("#btn-book-athlete")?.addEventListener("click", () => openBookAthleteSheet(dashCal().date || todayISO()));
     $("#btn-coach-inbox")?.addEventListener("click", openCoachInbox);
     $("#btn-redeem-session")?.addEventListener("click", openRedeemSessionModal);
     prefillRememberedEmails();
@@ -23789,22 +23847,17 @@
       renderAthleteCalendar();
     });
     // Dashboard overview calendar
-    $("#dash-cal-prev").addEventListener("click", () => {
-      if (!state.dashCal) { const n = new Date(); state.dashCal = { year: n.getFullYear(), month: n.getMonth() }; }
-      let { year, month } = state.dashCal;
-      month--; if (month < 0) { month = 11; year--; }
-      state.dashCal = { year, month }; renderDashboardCalendar();
-    });
-    $("#dash-cal-next").addEventListener("click", () => {
-      if (!state.dashCal) { const n = new Date(); state.dashCal = { year: n.getFullYear(), month: n.getMonth() }; }
-      let { year, month } = state.dashCal;
-      month++; if (month > 11) { month = 0; year++; }
-      state.dashCal = { year, month }; renderDashboardCalendar();
-    });
+    // The arrows step by whatever you are zoomed to: a day, a week, a month.
+    $("#dash-cal-prev").addEventListener("click", () => stepCal(-1));
+    $("#dash-cal-next").addEventListener("click", () => stepCal(1));
     $("#dash-cal-today").addEventListener("click", () => {
-      const n = new Date(); state.dashCal = { year: n.getFullYear(), month: n.getMonth() };
+      const c = dashCal();
+      const n = new Date();
+      c.date = todayISO(); c.year = n.getFullYear(); c.month = n.getMonth();
       renderDashboardCalendar();
     });
+    $$("#dash-cal-modes .cal-mode-btn").forEach((b) =>
+      b.addEventListener("click", () => setCalMode(b.dataset.calMode)));
     $("#dash-cal-refresh")?.addEventListener("click", refreshDashCalSetmore);
 
     $$(".tab[data-tab]").forEach((t) => t.addEventListener("click", () => setTab(t.dataset.tab)));
