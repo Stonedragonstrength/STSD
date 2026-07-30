@@ -11504,6 +11504,20 @@ body.scroll-locked {
    glance, so a line now says only who, what and when, and everything you can
    DO about it lives behind a tap. */
 .dv-list { display: flex; flex-direction: column; }
+/* "You are here" on today's list — the same line the week timetable draws,
+   sitting between what has been and what is next. */
+.dv-now {
+  display: flex; align-items: center; gap: 0.5em;
+  padding: 0.1rem 0.2rem;
+}
+.dv-now::after {
+  content: ""; flex: 1 1 auto; height: 0; border-top: 2px solid var(--warn);
+}
+.dv-now-lbl {
+  flex: 0 0 auto;
+  font-size: 0.6rem; font-weight: 800; letter-spacing: 0.04em;
+  color: var(--warn); font-variant-numeric: tabular-nums;
+}
 .dv-row {
   display: flex; align-items: center; gap: 0.6rem;
   width: 100%;

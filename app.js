@@ -10282,16 +10282,32 @@
       host.innerHTML = `<p class="muted dash-day-empty">Nothing scheduled or logged for this date.</p>`;
       return;
     }
+    // The same "you are here" line the week timetable draws, in the only shape
+    // a list can carry it: a marker between what has been and what is next. It
+    // needs at least one timed session to sit between, and only on today.
+    const nowMs = Date.now();
+    const timed = rows.filter((r) => Number.isFinite(r.ts));
+    const nowBefore = iso !== todayISO() || !timed.length ? -1
+      : rows.findIndex((r) => Number.isFinite(r.ts) && r.ts > nowMs);
+    // Every session is behind us: the line goes after the last timed row, ahead
+    // of the untimed ones rather than at the very bottom.
+    const nowAt = nowBefore >= 0 ? nowBefore : rows.indexOf(timed[timed.length - 1]) + 1;
+    const nowHtml = iso !== todayISO() || !timed.length ? "" :
+      `<div class="dv-now"><span class="dv-now-lbl">${escapeHtml(fmtSlotTime(nowMs))}</span></div>`;
+
     host.innerHTML = `<div class="dv-list">${rows.map((r, i) => {
       const what = r.rest ? "Rest day" : (r.dayName || (r.events.length ? "Session" : "Training"));
-      return `<button type="button" class="dv-row${r.done ? " is-done" : ""}" data-dv="${i}">` +
+      return (i === nowAt ? nowHtml : "") +
+        `<button type="button" class="dv-row${r.done ? " is-done" : ""}" data-dv="${i}">` +
         `<span class="dv-face">${r.client ? athleteFaceHtml(r.client) : `<span class="av-tile av-sm av-empty">?</span>`}</span>` +
         `<span class="dv-name">${escapeHtml(r.name)}${r.unlinked ? ` <span class="dv-tag">unlinked</span>` : ""}</span>` +
         `<span class="dv-what">${escapeHtml(what)}</span>` +
         (r.time ? `<span class="dv-time">${escapeHtml(r.time)}</span>` : "") +
         `<span class="dv-state">${r.done ? "✓" : "›"}</span>` +
       `</button>`;
-    }).join("")}</div>`;
+      // The whole day is done: the line lands at the bottom, which the map
+      // above can never reach.
+    }).join("") + (nowAt >= rows.length ? nowHtml : "")}</div>`;
     host.querySelectorAll("[data-dv]").forEach((b) => b.addEventListener("click", () =>
       openDaySessionSheet(iso, rows[Number(b.dataset.dv)])));
   }
