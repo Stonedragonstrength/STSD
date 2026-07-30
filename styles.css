@@ -3593,6 +3593,9 @@ input.trial-input {
   font-size: 0.8rem; color: var(--muted);
   flex: 1 1 220px; min-width: 0;
 }
+/* The rate is a two-or-three digit number, so it takes a narrow column instead
+   of the 220px the membership select needs. */
+.profile-membership-row > label.profile-field-rate { flex: 0 0 8.5rem; }
 #btn-grant-month { flex: 0 0 auto; white-space: nowrap; }
 #btn-grant-month:disabled { opacity: 0.5; cursor: default; }
 /* Auto-renew opt-in (recurring clients): package auto-granted each month,
@@ -10613,7 +10616,9 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
   /* The day card is the rail; the month grid takes the wide side. The card is
      first in the DOM so a phone gets "what now?" before the calendar, and the
      grid puts it back on the right here. */
-  #view-overview > #overview-hub { grid-column: 2; grid-row: 1; margin: 0; }
+  #view-overview > .overview-rail { grid-column: 2; grid-row: 1; }
+  #view-overview > .overview-rail > .card { margin: 0; }
+  #view-overview > .overview-rail > .card + .card { margin-top: 1rem; }
   /* Exactly one item per column, so neither can stretch the other's rows.
      The nav and grid used to be separate items sharing rows with the rail,
      and the rail's height got distributed across them — which is what opened
@@ -11248,6 +11253,43 @@ body.scroll-locked {
 #overview-hub .sched-series:empty + .sched-bookings { border-top: 0; padding-top: 0; }
 #overview-hub .sched-hours { margin-top: 0.9rem; }
 #overview-hub .sched-hours .slim-btn { margin-top: 0.6rem; }
+
+/* ============ Expected income ============
+   Quiet on purpose: no accent glow, no big number. It is a ledger he glances
+   at, not the thing that greets him, and it stays blurred until the eye is
+   tapped. */
+.income-card { padding: 0.7rem 0.85rem 0.75rem; }
+.income-head { display: flex; align-items: center; gap: 0.5em; }
+.income-title {
+  font-size: 0.66rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--text-soft);
+}
+.income-eye {
+  margin-left: auto; flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; padding: 0;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface-2); color: var(--text-soft); cursor: pointer;
+}
+.income-eye:hover { color: var(--text); border-color: var(--primary-bright); }
+.income-eye svg {
+  width: 16px; height: 16px; fill: none;
+  stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.income-figs { margin-top: 0.5rem; }
+.income-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem;
+  padding: 0.3em 0;
+}
+.income-row + .income-row { border-top: 1px solid var(--border); }
+.income-lbl { display: flex; flex-direction: column; font-size: 0.82rem; font-weight: 600; color: var(--text-soft); }
+.income-sub { font-size: 0.62rem; font-weight: 600; color: var(--muted); }
+.income-val { font-size: 1.02rem; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+.income-note { margin: 0.55em 0 0; font-size: 0.68rem; color: var(--muted); }
+/* Hidden: the figures blur, the card keeps its height so the rail doesn't jump,
+   and nothing under the blur is selectable. */
+.income-card.is-hidden .income-figs { filter: blur(8px); user-select: none; }
+.income-card.is-hidden .income-figs * { pointer-events: none; }
 
 /* ============ Calendar zoom: Day / Week / Month ============
    One calendar the coach reads at three distances, instead of a month grid

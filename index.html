@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=row6" />
+  <link rel="stylesheet" href="styles.css?v=inc2" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -302,6 +302,20 @@
           <div id="dash-cal-grid" class="cal-grid dash-cal-grid hidden"></div>
         </div>
 
+        <!-- The right rail: money first, then the standing arrangements the
+             calendar is generated from. -->
+        <div class="overview-rail">
+
+        <!-- Expected income. Blurred until the eye is tapped, and it starts
+             blurred on every device: the gym floor is not private. -->
+        <div class="card income-card is-hidden" id="income-card">
+          <div class="income-head">
+            <span class="income-title">Expected income</span>
+            <button type="button" class="income-eye" id="btn-income-eye" aria-label="Show income" aria-pressed="false"></button>
+          </div>
+          <div class="income-figs" id="income-figs"></div>
+        </div>
+
         <!-- The standing arrangements the calendar is generated from. Settings
              more than news, so everything but the regulars folds away. -->
         <div class="card" id="overview-hub">
@@ -315,6 +329,7 @@
             <div id="sched-summary" class="sched-summary"></div>
             <button class="btn slim-btn btn-sm" id="btn-edit-availability">Edit availability</button>
           </details>
+        </div>
         </div>
       </div>
 
@@ -552,6 +567,12 @@
             <div class="profile-membership-row">
               <label>Membership
                 <select id="prof-membership"></select>
+              </label>
+              <!-- What this athlete actually pays per session. Blank falls back
+                   to the tier's per-session price, so it only needs filling in
+                   when the deal is off-menu. Feeds Expected income. -->
+              <label class="profile-field-rate">Session rate ($)
+                <input type="number" id="prof-rate" min="0" step="1" inputmode="decimal" placeholder="tier price" />
               </label>
               <button class="btn btn-ghost btn-sm" id="btn-grant-month" type="button">＋ Grant this month's sessions</button>
               <label class="autorenew-toggle" title="On the first app open each month, grants a pending package sized to this athlete's booked sessions that month">
@@ -1162,7 +1183,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=day1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=row6"></script>
+  <script src="app.js?v=inc2"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

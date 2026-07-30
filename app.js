@@ -300,6 +300,9 @@
     // Coach bulletin board — the same time-boxed notice mirrored to every
     // athlete. The coach's board is the union of these across athletes.
     if (!Array.isArray(c.sessionBank.bulletins)) c.sessionBank.bulletins = [];
+    // What this athlete pays per session. 0 means "use the membership tier's
+    // per-session price" — see athleteSessionRate().
+    if (typeof c.sessionBank.rate !== "number") c.sessionBank.rate = 0;
   }
   function sessionBankSummary(c) {
     ensureSessionBank(c);
@@ -334,6 +337,9 @@
     p.sessionBank.missedSessions = structuredClone(c.sessionBank.missedSessions);
     p.sessionBank.membership = c.sessionBank.membership;
     p.sessionBank.autoRenew = c.sessionBank.autoRenew;
+    // A couple pays one rate for the slot they share, and the slot is booked
+    // under one of them, so mirroring the rate can't double-count it.
+    p.sessionBank.rate = c.sessionBank.rate;
     if (window.Cloud?.enabled) window.Cloud.debounce(`athlete:${p.id}`, () =>
       window.Cloud.upsertAthlete(p, state.trainerData.coachId));
   }
@@ -4505,7 +4511,7 @@
   }
   const PROFILE_FIELD_IDS = [
     "#prof-name", "#prof-age", "#prof-height-ft", "#prof-height-in",
-    "#prof-weight", "#prof-goals", "#prof-notes",
+    "#prof-weight", "#prof-goals", "#prof-notes", "#prof-rate",
   ];
   function setProfileLocked(locked) {
     PROFILE_FIELD_IDS.forEach((sel) => {
@@ -4541,7 +4547,18 @@
     populateMembershipSelect(c);
     const autoRenewBox = $("#prof-autorenew");
     if (autoRenewBox) autoRenewBox.checked = !!c.sessionBank?.autoRenew;
+    const rateBox = $("#prof-rate");
+    if (rateBox) rateBox.value = c.sessionBank?.rate ? String(c.sessionBank.rate) : "";
+    refreshRatePlaceholder(c);
     setProfileLocked(true);
+  }
+  // Empty means "whatever the tier works out to", so the placeholder has to say
+  // what that is — otherwise a blank box looks like a missing rate.
+  function refreshRatePlaceholder(c) {
+    const box = $("#prof-rate"); if (!box) return;
+    const m = membershipById($("#prof-membership")?.value || c?.sessionBank?.membership || "");
+    const per = membershipPerSession(m);
+    box.placeholder = per ? `${Math.round(per)} (tier)` : "per session";
   }
   function populateMembershipSelect(c) {
     const sel = $("#prof-membership"); if (!sel) return;
@@ -4609,8 +4626,11 @@
     c.heightIn = (ft * 12 + inch) || "";
     ensureSessionBank(c);
     c.sessionBank.membership = $("#prof-membership")?.value || "";
+    const rate = Number($("#prof-rate")?.value);
+    c.sessionBank.rate = rate > 0 ? rate : 0;
     bankMutated(c);
     saveTrainer();
+    renderIncomeCard();
     $("#client-name-display").textContent = c.name || "(unnamed)";
     $("#client-meta-display").textContent = clientMetaText(c);
     flashSaved($("#prof-saved"));
@@ -4668,7 +4688,10 @@
       $("#prof-name").focus();
     });
     $("#btn-profile-save").addEventListener("click", saveProfileFields);
-    $("#prof-membership")?.addEventListener("change", refreshGrantBtn);
+    $("#prof-membership")?.addEventListener("change", () => {
+      refreshGrantBtn();
+      refreshRatePlaceholder(currentClient());
+    });
     $("#btn-grant-month")?.addEventListener("click", grantMembershipMonth);
     $("#prof-autorenew")?.addEventListener("change", (e) => {
       const c = currentClient(); if (!c) return;
@@ -12204,6 +12227,7 @@
     renderGoogleCard();
     renderCoachSeries();
     renderCoachBookings();
+    renderIncomeCard();
   }
 
   function renderGoogleCard() {
@@ -12332,6 +12356,92 @@
       const b = _coachBookings.find((x) => x.id === btn.dataset.cancelBooking);
       if (b) cancelBookingFlow(b.id, b.series_id || "", b.start_at);
     }));
+  }
+
+  // ---- Coach: expected income ----
+  //
+  // Expected, not earned: it counts what is on the calendar (booked rows),
+  // because a session redeemed from the bank is money already in. The rate is
+  // per athlete — `sessionBank.rate`, riding the coach-write-only session_bank
+  // jsonb, no migration — and falls back to the membership tier's per-session
+  // price, so most athletes need nothing typed in.
+  //
+  // It starts blurred on every device, and showing it lasts the session only —
+  // he reads this from the gym floor with an athlete beside him, so the next
+  // time the app opens it is covered again. Same rule as a private body weight.
+  const KEY_INCOME_SHOWN = "stsd_income_shown";
+
+  function membershipPerSession(m) {
+    return m && m.price && m.sessions ? m.price / m.sessions : 0;
+  }
+  function athleteSessionRate(c) {
+    if (!c) return 0;
+    const own = Number(c.sessionBank?.rate);
+    if (own > 0) return own;
+    return membershipPerSession(membershipById(c.sessionBank?.membership || ""));
+  }
+  function money(n) {
+    return "$" + Math.round(n).toLocaleString();
+  }
+
+  // Today, this week (Sunday-start, to match the month grid's columns), and a
+  // yearly projection. The projection is the next four weeks averaged and
+  // multiplied out: summing only what is literally booked for the next twelve
+  // months would read absurdly low, since nobody books a year ahead.
+  function incomeForecast() {
+    const rates = new Map((state.trainerData.clients || []).map((c) => [c.id, athleteSessionRate(c)]));
+    const today = todayISO();
+    const wkStart = weekStartOf(today);
+    const wkEnd = addDaysISO(wkStart, 7);      // exclusive
+    const fourEnd = addDaysISO(wkStart, 28);   // exclusive
+    let day = 0, week = 0, four = 0, unpriced = 0, sessions = 0;
+    (_coachBookings || []).forEach((b) => {
+      if (b.status !== "booked") return;
+      const d = dateISO(new Date(b.start_at));
+      if (d < wkStart || d >= fourEnd) return;
+      const r = rates.get(b.athlete_id) || 0;
+      four += r;
+      if (!r) unpriced++;
+      if (d < wkEnd) { week += r; sessions++; }
+      if (d === today) day += r;
+    });
+    return { day, week, year: (four / 4) * 52, unpriced, sessions };
+  }
+
+  const EYE_SVG = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`;
+  const EYE_OFF_SVG = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.7 6.2A9.9 9.9 0 0 1 12 6c6.5 0 10 6 10 6a18 18 0 0 1-2.4 3.1M6.6 7.9A18 18 0 0 0 2 12s3.5 6 10 6a9.6 9.6 0 0 0 4-.8"/><path d="m3 3 18 18"/></svg>`;
+
+  function incomeShown() {
+    return sessionStorage.getItem(KEY_INCOME_SHOWN) === "1";
+  }
+  function renderIncomeCard() {
+    const card = $("#income-card"); const host = $("#income-figs");
+    if (!card || !host) return;
+    const shown = incomeShown();
+    card.classList.toggle("is-hidden", !shown);
+    const eye = $("#btn-income-eye");
+    if (eye) {
+      eye.innerHTML = shown ? EYE_SVG : EYE_OFF_SVG;
+      eye.setAttribute("aria-label", shown ? "Hide income" : "Show income");
+      eye.setAttribute("aria-pressed", shown ? "true" : "false");
+    }
+    const f = incomeForecast();
+    const rows = [
+      ["Today", money(f.day), ""],
+      ["This week", money(f.week), f.sessions ? `${f.sessions} session${f.sessions === 1 ? "" : "s"}` : "nothing booked"],
+      ["Year", money(f.year), "projected from the next 4 weeks"],
+    ];
+    const note = f.unpriced
+      ? `<p class="income-note">${f.unpriced} booked session${f.unpriced === 1 ? "" : "s"} with no rate set. Add one on their Profile.</p>`
+      : "";
+    host.innerHTML = rows.map(([lbl, val, sub]) =>
+      `<div class="income-row"><span class="income-lbl">${escapeHtml(lbl)}` +
+      (sub ? `<span class="income-sub">${escapeHtml(sub)}</span>` : "") +
+      `</span><span class="income-val">${escapeHtml(val)}</span></div>`).join("") + note;
+  }
+  function toggleIncomeShown() {
+    sessionStorage.setItem(KEY_INCOME_SHOWN, incomeShown() ? "0" : "1");
+    renderIncomeCard();
   }
 
   // ---- Coach: book an athlete straight off the month grid ----
@@ -24025,6 +24135,7 @@
     // The post button now lives inside the Open slots sheet, wired when it opens.
     $("#btn-open-slots")?.addEventListener("click", openOpenSlotsSheet);
     $("#btn-edit-availability")?.addEventListener("click", openAvailabilityEditor);
+    $("#btn-income-eye")?.addEventListener("click", toggleIncomeShown);
     // Booking without going via the calendar first. Opens on today; the day is
     // whatever the coach picks in the sheet.
     $("#btn-book-athlete")?.addEventListener("click", () => openBookAthleteSheet(dashCal().date || todayISO()));
