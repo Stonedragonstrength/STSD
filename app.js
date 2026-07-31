@@ -4840,9 +4840,10 @@
     renderProfile();
     renderWeeks();
     renderDiet();
-    renderClientLogs();
-    renderCoachPRs();
-    renderStrengthProgress($("#coach-strength-charts"), c, c.importedProgress || {});
+    renderTrialsSection(c); // on the Program tab now, so it draws with the program
+    renderPastPrograms();
+    // PRs, the strength chart and the cardio log are built when the Records
+    // sheet opens, not on every athlete open — nothing shows them until then.
     renderCoachSessions();
     const now = new Date();
     state.coachCal = { year: now.getFullYear(), month: now.getMonth() };
@@ -4869,10 +4870,18 @@
       // by definition until this lands. Redraw it first — it's the panel the
       // coach is looking at while the pull is in flight.
       renderClientSnapshot();
-      renderClientLogs();
       renderCoachCalendar();
-      renderCoachPRs();
       renderDiet(); // food log and body weight both live on the Nutrition tab
+      renderTrialsSection(c); // auto-scored off the progress that just landed
+      // PRs, the strength chart and cardio live in the Records sheet, which
+      // rebuilds both panes every time it opens — repainting them here would be
+      // painting something nobody is looking at. If it IS open, it's on screen
+      // and has to follow the new data.
+      if (isRecordsSheetOpen()) {
+        renderCoachPRs();
+        renderStrengthProgress($("#coach-strength-charts"), c, c.importedProgress || {});
+        renderClientLogs();
+      }
     }
   }
   // -------- Coach: the athlete snapshot --------
@@ -4928,6 +4937,43 @@
       ? Math.round(weeks.reduce((n, w) => n + w.days.length, 0) / weeks.length) : 0;
     return { done, per };
   }
+  // This week's cardio and the last few entries, so the tile answers "have they
+  // been doing their conditioning" without opening anything. `all` is only used
+  // to decide whether the tile exists at all: an athlete who has never logged
+  // cardio should not get a tile reading zero forever.
+  function snapCardio7d(ip) {
+    const today = todayISO();
+    const from = addDaysISO(today, -6);
+    const logs = [...(ip?.cardioLogs || [])].filter((l) => l && l.date)
+      .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    return {
+      all: cardioTotals(logs),
+      week: cardioTotals(logs.filter((l) => l.date >= from && l.date <= today)),
+      recent: logs.slice(0, 2),
+    };
+  }
+  // A bare trend line for a tile preview: no axes, no labels, no numbers. It is
+  // there to show the SHAPE of a series, which a single delta can't. Stretched
+  // to the tile's width via preserveAspectRatio, with a non-scaling stroke so
+  // the line doesn't fatten as it stretches. Flat series (every value equal)
+  // would divide by zero, so they draw down the middle.
+  function sparklineHtml(values) {
+    const v = (values || []).filter((n) => Number.isFinite(n));
+    if (v.length < 2) return "";
+    const min = Math.min(...v), max = Math.max(...v);
+    const span = max - min || 1;
+    const pts = v.map((n, i) => {
+      const x = (i / (v.length - 1)) * 100;
+      const y = 20 - ((n - min) / span) * 18 - 1; // 1px breathing room top and bottom
+      return `${Math.round(x * 10) / 10},${Math.round(y * 10) / 10}`;
+    }).join(" ");
+    const rising = v[v.length - 1] > v[0];
+    return `<span class="snap-spark${rising ? " is-up" : " is-down"}" aria-hidden="true">
+      <svg viewBox="0 0 100 20" preserveAspectRatio="none" focusable="false">
+        <polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="1.6"
+          stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+      </svg></span>`;
+  }
   function snapTileHtml(o) {
     const tag = o.go ? "button" : "div";
     return `<${tag} type="button" class="snap-tile${o.dim ? " is-dim" : ""}${o.go ? " is-door" : ""}"${o.go ? ` data-go="${escapeHtml(o.go)}"` : ""}${o.title ? ` title="${escapeHtml(o.title)}"` : ""}>
@@ -4935,6 +4981,7 @@
         <span class="sr-lbl">${escapeHtml(o.label)}</span>
         <span class="snap-val"><span class="sr-val">${o.value}</span>${o.unit ? `<span class="sr-unit">${escapeHtml(o.unit)}</span>` : ""}</span>
         ${o.sub ? `<span class="snap-sub">${o.sub}</span>` : ""}
+        ${o.preview ? `<span class="snap-preview">${o.preview}</span>` : ""}
       </span>
     </${tag}>`;
   }
@@ -5030,17 +5077,42 @@
         sub: bwLog.length > 1
           ? `<span class="sr-trend ${arrow}">${arrow === "neutral" ? "▬" : delta < 0 ? "▼" : "▲"} ${Math.abs(Math.round(dispNum(delta, unitOf(c)) * 10) / 10)}</span> since ${escapeHtml(snapAgoLabel(snapDaysAgo(then.date)).toLowerCase())}`
           : "one weigh-in",
+        // The shape of the last dozen weigh-ins. A single delta can't tell a
+        // steady drop from a bounce that happened to land low today, and that
+        // difference is the whole reason a coach looks at this number.
+        preview: sparklineHtml(bwLog.slice(-12).map((b) => parseFloat(b.weightLb))),
         go: "diet",
       }));
     }
 
     // 6. Heaviest lift on record, from the coach's PR board or their own logs.
+    //    The runners-up ride along: one number told you the ceiling, three tell
+    //    you what they are actually strong at, which is the reason to look.
     const pr = highestPR(c, ip);
     if (pr) {
+      const rest = topPRs(c, ip, 3).slice(1);
       tiles.push(snapTileHtml({
         // prWeightLabel, not "N lb" — a dumbbell lift reads "80s", never "80 lb".
         label: "Top lift", value: prWeightLabel(pr.name, pr.weight),
-        sub: escapeHtml(pr.name), go: "prs",
+        sub: escapeHtml(pr.name),
+        preview: rest.length
+          ? rest.map((p) => `<span class="snap-mini"><span class="snap-mini-k">${escapeHtml(p.name)}</span><span class="snap-mini-v">${prWeightLabel(p.name, p.weight)}</span></span>`).join("")
+          : "",
+        go: "prs", title: "Open records",
+      }));
+    }
+
+    // 7. Cardio, last 7 days. Its own tab for one read-only list was the
+    //    clearest case of travelling somewhere just to learn a number.
+    const cardio = snapCardio7d(ip);
+    if (cardio.all.n) {
+      tiles.push(snapTileHtml({
+        label: "Cardio · 7d", value: String(cardio.week.n), unit: cardio.week.n === 1 ? "session" : "sessions",
+        sub: cardio.week.n
+          ? `${escapeHtml(cardioMinLabel(cardio.week.min))}${cardio.week.mi ? ` · ${escapeHtml(cardioMiLabel(cardio.week.mi))} mi` : ""}`
+          : "nothing this week",
+        preview: cardio.recent.map((l) => `<span class="snap-mini"><span class="snap-mini-k">${escapeHtml(l.type || "Cardio")}</span><span class="snap-mini-v">${escapeHtml(String(l.minutes || 0))} min</span></span>`).join(""),
+        dim: !cardio.week.n, go: "cardio", title: "Open the cardio log",
       }));
     }
 
@@ -5054,9 +5126,17 @@
       if (w && d) curDay = { week: w, day: d };
     }
     if (curDay) {
+      // The first lifts of that day, so "Up next" says what the session IS and
+      // not just what it is called — the difference between recognising a day
+      // and having to open it to remember.
+      const upEx = (curDay.day.exercises || []).filter((e) => (e.name || "").trim()).slice(0, 2);
       tiles.push(snapTileHtml({
         label: "Up next", value: escapeHtml(curDay.day.name || "Day"),
         sub: escapeHtml(curDay.week.label || ""), go: "editday",
+        preview: upEx.map((e) => {
+          const w = exWeightLabel(e, e.currentWeight, unitOf(c));
+          return `<span class="snap-mini"><span class="snap-mini-k">${escapeHtml(e.name)}</span><span class="snap-mini-v">${w ? escapeHtml(w) : "—"}</span></span>`;
+        }).join(""),
         title: "Open this day in the program editor",
       }));
     }
@@ -5075,6 +5155,10 @@
     host.querySelectorAll("[data-go]").forEach((el) => el.addEventListener("click", () => {
       const to = el.dataset.go;
       if (to === "editday" && curDay) { editClientDay(c.id, curDay.week.id, curDay.day.id); return; }
+      // "prs" and "cardio" are no longer tabs — they open the Records sheet,
+      // which is why these tiles carry a preview: the sheet is for changing
+      // something, the tile is for knowing it.
+      if (to === "prs" || to === "cardio") { openRecordsSheet(to); return; }
       setTab(to);
       $(".tabs")?.scrollIntoView({ behavior: "smooth", block: "start" });
     }));
@@ -5095,13 +5179,64 @@
     state.currentTab = name;
     $$(".tab[data-tab]").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
     $$(".tab-panel[data-tab-panel]").forEach((p) => p.classList.toggle("active", p.dataset.tabPanel === name));
-    if (name === "program") { showLibSidebar(); } else { hideLibSidebar(); }
-    if (name === "archive") {
-      const c = currentClient();
-      renderArchiveSection(c);
-      const empty = $("#archive-empty");
-      if (empty) empty.classList.toggle("hidden", !!(c?.archivedPrograms?.length));
-    }
+    if (name === "program") { showLibSidebar(); renderPastPrograms(); } else { hideLibSidebar(); }
+  }
+
+  // Past programs, formerly the Archive tab. The fold's subtitle carries the
+  // count so the closed state still answers "is there anything in here" — the
+  // same trick the coach Profile folds use.
+  function renderPastPrograms() {
+    const c = currentClient();
+    const n = (c?.archivedPrograms || []).length;
+    renderArchiveSection(c);
+    const empty = $("#archive-empty");
+    if (empty) empty.classList.toggle("hidden", n > 0);
+    const sub = $("#past-programs-sub");
+    if (sub) sub.textContent = n ? `${n} archived program${n === 1 ? "" : "s"}` : "Nothing archived yet";
+    const fold = $("#past-programs-fold");
+    if (fold && !n) fold.open = false;
+  }
+
+  // ---- Records sheet: PRs, the strength chart and the cardio log -----------
+  // Three tabs became one sheet behind two Overview tiles. Everything in here
+  // is read far more often than it is edited, which is exactly the case for a
+  // door with a preview on it rather than a permanent destination.
+  function openRecordsSheet(pane) {
+    const c = currentClient();
+    const sheet = $("#coach-records-sheet");
+    if (!c || !sheet || !sheet.classList.contains("hidden")) return;
+    const kicker = $("#records-sheet-kicker");
+    if (kicker) kicker.textContent = c.name || "Athlete";
+    setRecordsPane(pane === "cardio" ? "cardio" : "prs");
+    // Both panes are built fresh on open: the sheet is not on screen while the
+    // cloud pull lands, so whatever it last rendered is stale by definition.
+    renderCoachPRs();
+    renderStrengthProgress($("#coach-strength-charts"), c, c.importedProgress || {});
+    renderClientLogs();
+    show(sheet);
+    document.body.classList.add("records-sheet-open");
+    lockPageScroll(true);
+    Nav.push(closeRecordsSheet); // phone Back closes the sheet, not the athlete
+  }
+
+  function setRecordsPane(pane) {
+    $$("#records-sheet-tabs .records-tab").forEach((b) => b.classList.toggle("active", b.dataset.rtab === pane));
+    $$("#records-sheet-body .records-pane").forEach((p) => p.classList.toggle("hidden", p.dataset.rpane !== pane));
+    const t = $("#records-sheet-title");
+    if (t) t.textContent = pane === "cardio" ? "Cardio" : "Records";
+  }
+
+  function isRecordsSheetOpen() {
+    const sheet = $("#coach-records-sheet");
+    return !!sheet && !sheet.classList.contains("hidden");
+  }
+
+  function closeRecordsSheet() {
+    const sheet = $("#coach-records-sheet");
+    if (!sheet || sheet.classList.contains("hidden")) return;
+    hide(sheet);
+    document.body.classList.remove("records-sheet-open");
+    lockPageScroll(false);
   }
 
   // -------- Profile --------
@@ -8910,13 +9045,11 @@
       return;
     }
     container.innerHTML = "";
-    const section = document.createElement("details");
+    // A plain container, not a <details>: the "Past programs" fold on the
+    // Program tab already collapses this, and a fold inside a fold made you
+    // open the same thing twice.
+    const section = document.createElement("div");
     section.className = "archive-section";
-    section.open = false;
-    const summary = document.createElement("summary");
-    summary.className = "archive-summary";
-    summary.textContent = `📁 Program Archive (${c.archivedPrograms.length})`;
-    section.appendChild(summary);
 
     c.archivedPrograms.forEach((prog, pIdx) => {
       const card = document.createElement("div");
@@ -12042,8 +12175,10 @@
     addBtn.addEventListener("click", addPRLift);
     container.appendChild(addBtn);
 
-    // Trials live under the PRs — both are "what are we chasing".
-    renderTrialsSection(c);
+    // Trials used to render off the back of this, because both sat on the PRs
+    // tab. Trials are now on Program (they are challenges you SET) and the PR
+    // board is in the Records sheet, so tying one render to the other would
+    // leave Trials blank until someone opened a sheet they had no reason to.
   }
 
   function addPRLift() {
@@ -14786,8 +14921,9 @@
         closeModal();
         if (row.dataset.kind === "message") return openMessageThread(row.dataset.client);
         if (row.dataset.kind === "nutrition") return openClientNutrition(row.dataset.client);
-        // A cardio row has no workout day to land on — open their cardio log.
-        if (row.dataset.kind === "cardio") { openClient(row.dataset.client); return setTab("logs"); }
+        // A cardio row has no workout day to land on — open their cardio log,
+        // which is the Records sheet's second pane now that the tab is gone.
+        if (row.dataset.kind === "cardio") { openClient(row.dataset.client); return openRecordsSheet("cardio"); }
         openCompletedWorkout(row.dataset.client, row.dataset.day, row.dataset.date);
       });
     });
@@ -24941,6 +25077,23 @@
     (progress?.personalRecords || []).forEach((p) => consider(p.name, p.weight));
     return best;
   }
+  // The heaviest `n` DISTINCT lifts, heaviest first. Same two sources as
+  // highestPR, deduped by lift so a coach entry and the athlete's own PR for
+  // the same lift don't fill the list with one movement. Feeds the Overview's
+  // Top lift tile, which shows the runners-up under the headline.
+  function topPRs(client, progress, n) {
+    const best = new Map(); // lowercased name -> { name, weight }
+    const consider = (name, w) => {
+      const val = parseFloat(w);
+      if (!isFinite(val) || val <= 0 || !name) return;
+      const key = String(name).trim().toLowerCase();
+      const cur = best.get(key);
+      if (!cur || val > cur.weight) best.set(key, { name: String(name).trim(), weight: val });
+    };
+    (client?.coachPRs || []).forEach((p) => consider(p.name, p.pr1));
+    (progress?.personalRecords || []).forEach((p) => consider(p.name, p.weight));
+    return [...best.values()].sort((a, b) => b.weight - a.weight).slice(0, n || 3);
+  }
   // Every rep ever logged for exercises whose name matches `rx`. Walks the
   // program to map exercise ids → names, the same way bestPullupReps does.
   // Passing no regex counts every logged rep.
@@ -25399,7 +25552,7 @@
       { sel: "#btn-coach-inbox", go: () => showCoachOverview(),
         title: "What needs you", text: "Purchase requests, form videos to watch, athletes out of sessions or gone quiet, and everything your athletes have logged. The number is how many are waiting on you." },
       { sel: "#client-grid", go: () => renderDashboard(),
-        title: "Your athletes", text: "One card per athlete. Tap a card for their profile, program, nutrition, PRs and sessions." },
+        title: "Your athletes", text: "One card per athlete. Tap a card to land on their Overview — how they're training, eating and moving, each tile a door into the thing behind it." },
       { sel: "#client-grid .client-row-view",
         title: "Live fill-out", text: "This button drops you into their workout to log sets together, rest timer included. Everything saves to their account." },
       { sel: "#view-programs", go: () => { state.currentClientId = null; renderProgramsList(); },
@@ -26516,6 +26669,15 @@
     $("#coach-day-sheet")?.querySelector("[data-cs-close]")
       ?.addEventListener("click", () => Nav.back(closeCoachDaySheet));
     $("#btn-coach-sheet-full")?.addEventListener("click", openFullProgramEditor);
+
+    // Records sheet. Every close path goes through Nav.back so the level this
+    // sheet pushed is popped exactly once — a bare close would strand it and
+    // the next phone Back would swallow a screen the coach did not ask to leave.
+    $("#btn-records-sheet-close")?.addEventListener("click", () => Nav.back(closeRecordsSheet));
+    $("#coach-records-sheet")?.querySelector("[data-rs-close]")
+      ?.addEventListener("click", () => Nav.back(closeRecordsSheet));
+    $$("#records-sheet-tabs .records-tab").forEach((b) =>
+      b.addEventListener("click", () => setRecordsPane(b.dataset.rtab)));
     $("#btn-load-program").addEventListener("click", openLoadProgramModal);
     $("#btn-load-program-empty").addEventListener("click", openLoadProgramModal);
     $("#btn-archive-program").addEventListener("click", archiveCurrentProgram);

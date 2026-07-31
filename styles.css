@@ -9727,6 +9727,65 @@ input.ownday-sheet-input { margin-top: 0.35em; }
   .coach-sheet-foot { padding: 0.7rem 1rem calc(0.7rem + env(safe-area-inset-bottom)); }
   .coach-sheet-foot .btn { flex: 1; }
 }
+
+/* ---- Records sheet -------------------------------------------------------
+   Reuses the day sheet's shell (centred card on desktop, bottom sheet on a
+   phone, its body the only scroller) with its own accent, because a green
+   hairline means "you are inside a live session" and this is not that. */
+.coach-sheet.is-records .coach-sheet-card { border-top-color: rgba(56, 189, 248, 0.5); }
+.coach-sheet.is-records .coach-sheet-card::before {
+  background: linear-gradient(90deg, var(--primary-bright), rgba(var(--primary-bright-rgb), 0.15));
+}
+.coach-sheet.is-records .coach-sheet-kicker { color: var(--primary-bright); }
+/* The sheet's own two panes. A segmented control, not a second tab bar: it
+   switches a pane inside one sheet rather than navigating anywhere. */
+.records-sheet-tabs {
+  display: flex;
+  gap: 0.35em;
+  padding: 0.7rem 1.3rem 0;
+  flex-shrink: 0;
+}
+.records-tab {
+  flex: 1;
+  min-height: 40px;
+  padding: 0.5em 0.9em;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-soft);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.records-tab:hover { color: var(--text); background: var(--surface-3); }
+.records-tab.active {
+  color: var(--primary-bright);
+  background: rgba(var(--primary-rgb), 0.14);
+  border-color: rgba(var(--primary-bright-rgb), 0.4);
+}
+.records-empty { margin: 0; padding: 1.4rem 0.2rem; text-align: center; font-size: 0.88rem; }
+/* The page underneath is already scroll-locked; this stops a phone's rest
+   timer and any sticky chrome from floating over the sheet. */
+body.records-sheet-open .rest-timer { display: none; }
+
+@media (max-width: 720px) {
+  .records-sheet-tabs { padding: 0.6rem 1rem 0; }
+}
+
+/* ---- Past programs, formerly the Archive tab ----------------------------
+   A fold on the Program tab. .pref-fold carries the summary layout but takes
+   its card from the surrounding .pref-card, which there is none of here. */
+.past-programs-fold {
+  margin-top: 1rem;
+  padding: 0 1.1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.past-programs-fold[open] { padding-bottom: 0.9rem; }
+.past-programs-empty { margin: 0.2rem 0 0.6rem; font-size: 0.85rem; }
 /* ==========================================================================
    Pixel avatars
    Full-body low-bit fantasy archetypes. Tiles are 2:3 so a standing figure
@@ -12026,6 +12085,45 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
 }
 .snap-sub .rdy-chip, .snap-sub .mood-chip { vertical-align: -0.15em; }
+/* The preview: the two or three rows behind the headline number, so a tile
+   answers the question instead of promising the answer is one tap away. Sits
+   under a hairline so it reads as detail belonging to the tile above it, not
+   as more subtitle. */
+.snap-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1em;
+  margin-top: 0.35em;
+  padding-top: 0.3em;
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  min-width: 0;
+}
+.snap-mini {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+  font-size: 0.68rem;
+  line-height: 1.45;
+  min-width: 0;
+}
+.snap-mini-k {
+  color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.snap-mini-v {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--text-soft);
+  font-variant-numeric: tabular-nums;
+}
+/* Body-weight trend line. Down is the direction most athletes are aiming, so
+   it takes the calm colour and rising takes the warm one — no verdict either
+   way, just enough contrast to read the direction without the numbers. */
+.snap-spark { display: block; width: 100%; height: 20px; color: var(--muted); }
+.snap-spark svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.snap-spark.is-down { color: #34d399; }
+.snap-spark.is-up { color: #fbbf24; }
 /* Quiet athletes, zeroed banks, targets never set: present but not shouting. */
 .snap-tile.is-dim {
   border-color: var(--border); border-left-color: var(--muted);
@@ -12179,4 +12277,17 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
   /* Every modal's ✕. Left at 32px through earlier passes as "out of scope";
      it is the single most-tapped control in the app that isn't a workout. */
   .icon-btn { width: 40px; height: 40px; }
+
+  /* Bare checkboxes and radios render at the UA default — 13×13 on a phone,
+     the smallest targets left in the app. Found on the coach's athlete
+     Overview folds (auto-renew, the membership radios) while rebuilding that
+     screen. Scaling the control keeps the native tick rather than rebuilding
+     these as styled boxes, and the surrounding label already carries the
+     row height. */
+  input[type="checkbox"]:not([class]),
+  input[type="radio"]:not([class]) {
+    width: 22px;
+    height: 22px;
+    accent-color: var(--primary);
+  }
 }

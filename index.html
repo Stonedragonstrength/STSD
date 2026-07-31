@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=pull2" />
+  <link rel="stylesheet" href="styles.css?v=ov3" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -517,14 +517,16 @@
           </div>
         </div>
 
+        <!-- Four tabs, down from seven. PRs, Cardio and Archive were each one
+             screen you had to travel to in order to KNOW something; they are
+             now a tile that previews the answer and a door to the detail. The
+             data-tab KEYS stay as they were ("profile", "diet") — renaming them
+             would break every setTab caller for a label change. -->
         <div class="tabs">
-          <button class="tab active" data-tab="profile">Profile</button>
+          <button class="tab active" data-tab="profile">Overview</button>
           <button class="tab" data-tab="program">Program</button>
           <button class="tab" data-tab="diet">Nutrition</button>
-          <button class="tab" data-tab="prs">PRs</button>
           <button class="tab" data-tab="sessions">Sessions</button>
-          <button class="tab" data-tab="logs">Cardio</button>
-          <button class="tab" data-tab="archive">Archive</button>
         </div>
 
         <!-- Profile. Opening an athlete used to land on an edit form, with
@@ -657,6 +659,25 @@
             </div>
           </div>
           <div id="oneoff-container"></div>
+          <!-- Trials are challenges the coach SETS, which is programming, so
+               they belong beside the program rather than filed under PRs where
+               they used to sit. -->
+          <div id="trials-container"></div>
+          <!-- Past programs. This was a whole tab that was empty for almost
+               every athlete; as a fold it costs one line until it has something
+               in it, and it sits next to the 📁 Archive button that fills it. -->
+          <details class="pref-fold past-programs-fold" id="past-programs-fold">
+            <summary>
+              <span class="pref-fold-ico">📁</span>
+              <span class="pref-fold-text">
+                <span class="pref-fold-title">Past programs</span>
+                <span class="pref-fold-sub" id="past-programs-sub">Nothing archived yet</span>
+              </span>
+              <span class="pref-fold-chev">▸</span>
+            </summary>
+            <div id="archive-container"></div>
+            <p class="muted past-programs-empty" id="archive-empty">Archive a program with the 📁 button above before replacing it, and it lands here.</p>
+          </details>
         </div>
 
         <!-- Diet -->
@@ -665,21 +686,6 @@
             <h3>Nutrition Plan</h3>
           </div>
           <div id="diet-container" class="weeks-container"></div>
-        </div>
-
-        <!-- PRs (coach) -->
-        <div class="tab-panel" data-tab-panel="prs">
-          <div class="program-head">
-            <h3>Personal Records</h3>
-          </div>
-          <div id="coach-strength-charts"></div>
-          <div id="coach-pr-container"></div>
-          <div id="trials-container"></div>
-          <div id="coach-pr-empty" class="empty-state hidden">
-            <div class="empty-emoji">🏆</div>
-            <h3>No PRs yet</h3>
-            <p>Add a personal record to start tracking strength milestones.</p>
-          </div>
         </div>
 
         <!-- Sessions + Calendar (coach, merged) -->
@@ -715,30 +721,6 @@
           </details>
         </div>
 
-        <!-- Cardio -->
-        <div class="tab-panel" data-tab-panel="logs">
-          <!-- No "Cardio" heading here: the tab above already says it, and
-               renderClientLogs() opens with the totals instead. -->
-          <div id="logs-container"></div>
-          <div id="logs-empty" class="empty-state">
-            <div class="empty-emoji">🏃</div>
-            <h3>No cardio logged yet</h3>
-            <p>Your athlete's cardio entries will show here automatically once they log them.</p>
-          </div>
-        </div>
-
-        <!-- Archive -->
-        <div class="tab-panel" data-tab-panel="archive">
-          <div class="program-head">
-            <h3>Program Archive</h3>
-          </div>
-          <div id="archive-container"></div>
-          <div id="archive-empty" class="empty-state hidden">
-            <div class="empty-emoji">📁</div>
-            <h3>No archived programs</h3>
-            <p>Archive a program from the Program tab before replacing it.</p>
-          </div>
-        </div>
       </div>
 
       <!-- Appearance / color theme -->
@@ -1282,6 +1264,40 @@
     </div>
   </div>
 
+  <!-- Records sheet: what the athlete has DONE. PRs, the strength chart and the
+       cardio log were three separate tabs answering the same kind of question,
+       and all three are read far more often than they are edited. They are one
+       sheet now, opened from the Overview tiles that preview them. Same shell as
+       the live-session day sheet — centred card on desktop, bottom sheet on a
+       phone — with its own accent so the two don't read as the same thing. -->
+  <div id="coach-records-sheet" class="coach-sheet is-records hidden" role="dialog" aria-modal="true" aria-labelledby="records-sheet-title">
+    <div class="coach-sheet-backdrop" data-rs-close></div>
+    <div class="coach-sheet-card">
+      <div class="coach-sheet-head">
+        <div class="coach-sheet-headtext">
+          <span class="coach-sheet-kicker" id="records-sheet-kicker"></span>
+          <h3 id="records-sheet-title">Records</h3>
+        </div>
+        <button class="icon-btn" id="btn-records-sheet-close" aria-label="Close">×</button>
+      </div>
+      <div class="records-sheet-tabs" id="records-sheet-tabs">
+        <button class="records-tab active" type="button" data-rtab="prs">Records</button>
+        <button class="records-tab" type="button" data-rtab="cardio">Cardio</button>
+      </div>
+      <div class="coach-sheet-body" id="records-sheet-body">
+        <div class="records-pane" data-rpane="prs">
+          <div id="coach-strength-charts"></div>
+          <div id="coach-pr-container"></div>
+          <p class="muted records-empty hidden" id="coach-pr-empty">No PRs yet. Add one to start tracking strength milestones.</p>
+        </div>
+        <div class="records-pane hidden" data-rpane="cardio">
+          <div id="logs-container"></div>
+          <p class="muted records-empty" id="logs-empty">No cardio logged yet. Entries show here automatically once your athlete logs them.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Exercise Library Drawer -->
   <div id="ex-library-overlay" class="ex-library-overlay hidden">
     <div class="ex-library-backdrop" id="ex-library-backdrop"></div>
@@ -1316,7 +1332,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=cyc1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=pull2"></script>
+  <script src="app.js?v=ov3"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
