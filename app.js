@@ -13447,17 +13447,40 @@
     const end = new Date(d.getFullYear(), d.getMonth() + 2, 1); // exclusive
     return { start: dateISO(start), end: dateISO(end), label: MONTH_NAMES[start.getMonth()] };
   }
-  // One pass over the bookings for the whole roster — the grid renders every
-  // athlete, so counting per card would walk the same rows N times.
+  // One pass for the whole roster — the grid renders every athlete, so counting
+  // per card would walk the same rows N times.
+  //
+  // Sessions reach this app down TWO independent paths and a ticket that reads
+  // only one of them is silently wrong for whoever books the other way:
+  //   1. `_coachBookings` — the in-app `bookings` table (in-app scheduling).
+  //   2. `sessionBank.upcomingBookings` — calendar events matched to an athlete
+  //      ([[setmore-athlete-sync]]), which is how a Setmore/Google booking
+  //      arrives. Populated only for months the dashboard calendar has loaded.
+  // Counted as a SET of slots rather than a running total, so a session that
+  // exists on both paths (the app pushes in-app bookings out to Google, and
+  // they can come back through the calendar feed) is one session, not two.
   function nextMonthSessionCounts() {
     const { start, end } = nextMonthBounds(todayISO());
-    const counts = new Map();
+    const slots = new Map(); // athlete id -> Set of "date|HH:MM"
+    const add = (athleteId, date, at) => {
+      if (!athleteId || !date || date < start || date >= end) return;
+      if (!slots.has(athleteId)) slots.set(athleteId, new Set());
+      slots.get(athleteId).add(`${date}|${at}`);
+    };
+    const hhmm = (d) => `${d.getHours()}:${d.getMinutes()}`;
     (_coachBookings || []).forEach((b) => {
-      if (b.status !== "booked") return;
-      const d = dateISO(new Date(b.start_at));
-      if (d < start || d >= end) return;
-      counts.set(b.athlete_id, (counts.get(b.athlete_id) || 0) + 1);
+      if (b.status !== "booked" || !b.start_at) return;
+      const d = new Date(b.start_at);
+      add(b.athlete_id, dateISO(d), hhmm(d));
     });
+    (state.trainerData.clients || []).forEach((c) => {
+      (c.sessionBank?.upcomingBookings || []).forEach((b) => {
+        if (!b || !b.date) return;
+        add(c.id, b.date, b.startAt ? hhmm(new Date(b.startAt)) : (b.time || ""));
+      });
+    });
+    const counts = new Map();
+    slots.forEach((set, id) => counts.set(id, set.size));
     return counts;
   }
 
