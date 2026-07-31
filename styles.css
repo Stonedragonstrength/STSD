@@ -2695,6 +2695,9 @@ input.trial-input {
 
 /* Token balance chip in the athlete calendar header */
 .cal-token-balance {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
   font-size: 0.78rem;
   font-weight: 700;
   color: #fbbf24;
@@ -2704,6 +2707,7 @@ input.trial-input {
   border-radius: 999px;
   white-space: nowrap;
 }
+.cal-token-balance .ln-ico { width: 1.05em; height: 1.05em; vertical-align: 0; }
 
 /* Redemption details modal */
 .redemption-note-list { margin: 0.6em 0 0; padding-left: 1.2em; }
@@ -2830,7 +2834,9 @@ input.trial-input {
 
 /* Booked-session rows in the dashboard day modal */
 .booked-balance-chip {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
   margin-left: 0.5em;
   font-size: 0.72rem;
   font-weight: 700;
@@ -2848,11 +2854,13 @@ input.trial-input {
   background: var(--danger-soft);
 }
 /* The green ticket: sessions already on the calendar for next month, so the
-   roster answers "what am I invoicing" without opening anything. Same shape as
-   the amber balance chip beside it, green because it is money coming rather
-   than credit owed, and the two must never be misread for each other. */
+   roster answers "what am I invoicing" without opening anything. Same pill and
+   the same ticket as the amber balance chip beside it, green because it is
+   money coming rather than credit owed. */
 .next-month-chip {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
   font-size: 0.72rem;
   font-weight: 700;
   color: #34d399;
@@ -2864,6 +2872,11 @@ input.trial-input {
   vertical-align: middle;
 }
 .client-row-sessions:hover .next-month-chip { filter: brightness(1.15); }
+/* The ticket is a stroked mark, not an emoji, so it takes the pill's colour.
+   Inside a flex pill it centres itself — the baseline nudge .ln-ico carries for
+   mid-sentence use would push it off. */
+.booked-balance-chip .ln-ico,
+.next-month-chip .ln-ico { width: 1.05em; height: 1.05em; vertical-align: 0; }
 
 /* Athlete day log / plan modal */
 .day-log-picker { display: flex; flex-direction: column; gap: 0.9rem; }

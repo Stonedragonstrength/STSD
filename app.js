@@ -4008,10 +4008,16 @@
       if (bank || booked > 0) {
         const sess = document.createElement("div");
         sess.className = "client-row-sessions";
+        // Both chips carry the SAME ticket, drawn as a line mark so it takes the
+        // pill's colour: amber for credit owed, green for next month. An emoji
+        // can't be tinted, so 🎟 stayed red inside the amber pill and 🎫 stayed
+        // yellow inside the green one — two different tickets, neither matching
+        // the pill around it. The count alone says what it counts here.
         if (bank) {
           const chip = document.createElement("span");
           chip.className = "booked-balance-chip" + (sum.remaining <= 1 ? " low" : "");
-          chip.textContent = `🎟 ${sum.remaining}`;
+          chip.title = `${sum.remaining} session${Math.abs(sum.remaining) === 1 ? "" : "s"} left in the bank`;
+          chip.innerHTML = `${lineIco("sd:ticket")} ${sum.remaining}`;
           sess.appendChild(chip);
         }
         if (pendingCount) {
@@ -4024,7 +4030,7 @@
           const green = document.createElement("span");
           green.className = "next-month-chip";
           green.title = `${booked} session${booked === 1 ? "" : "s"} booked for ${nextMonth.label}`;
-          green.textContent = `🎫 ${booked} session${booked === 1 ? "" : "s"}`;
+          green.innerHTML = `${lineIco("sd:ticket")} ${booked}`;
           sess.appendChild(green);
         }
         // Tapping the chips jumps straight to that athlete's Sessions tab,
@@ -17545,7 +17551,9 @@
     if (balEl) {
       const sum = sessionBankSummary(prog.client);
       if (sum.granted > 0 || sum.used > 0) {
-        balEl.textContent = `🎟 ${sum.remaining} session${Math.abs(sum.remaining) === 1 ? "" : "s"} left`;
+        // Same ticket as the roster chips, in the pill's own colour, and the
+        // word "sessions" comes off — a ticket count already says what it counts.
+        balEl.innerHTML = `${lineIco("sd:ticket")} ${sum.remaining} left`;
         show(balEl);
       } else {
         hide(balEl);
