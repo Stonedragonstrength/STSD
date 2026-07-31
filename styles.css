@@ -2505,7 +2505,10 @@ input.trial-input {
 .msg-textarea:focus { outline: none; border-color: var(--primary); }
 .msg-compose-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.75rem; }
 .msg-compose-actions .muted { margin-right: auto; font-size: 0.8rem; }
+/* "Show for" is two words that mean nothing apart, so it never breaks between
+   them; the row it sits in wraps instead. */
 .msg-duration { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; }
+.msg-duration > span { white-space: nowrap; }
 .msg-select {
   border: 1px solid var(--border-strong);
   border-radius: 8px;
@@ -10600,7 +10603,31 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
   font-size: 0.7rem; font-weight: 800; text-align: center;
 }
 /* Broadcast is the exception now, so it folds away under the threads. */
+/* The thread list already draws a rule under its last row, so the fold's own
+   border-top landed a second line 23px under the first with nothing between
+   them. The list gives its last rule up; this one is the separator. */
+.msg-threads .msg-thread-row:last-child { border-bottom: 0; }
 .msg-broadcast { max-width: 980px; border-top: 1px solid var(--border); }
+/* Where the announcement lands. Same segmented control as the calendar's
+   Day/Week/Month so the two read as one control, defined once. */
+.msg-modes {
+  display: inline-flex; gap: 0.2rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.2rem;
+  margin: 0.15rem 0 0.9rem;
+  max-width: 100%;
+}
+.msg-mode-btn {
+  min-height: 34px; padding: 0 0.9em;
+  border: 0; border-radius: calc(var(--radius) - 3px);
+  background: transparent; color: var(--text-soft);
+  font: inherit; font-size: 0.8rem; font-weight: 700;
+  cursor: pointer; white-space: nowrap;
+}
+.msg-mode-btn.on { background: var(--primary-soft); color: var(--primary-bright); }
+.msg-mode-btn:hover:not(.on) { color: var(--text); }
 .msg-broadcast > summary {
   list-style: none; cursor: pointer; user-select: none;
   display: flex; align-items: center; gap: 0.75em;
@@ -11277,13 +11304,7 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 }
 
 /* Bulletin board, now a fold on the Messages page beside the broadcast. */
-.msg-bulletin-n {
-  margin-left: 0.5em;
-  background: var(--primary-soft); color: var(--primary-bright);
-  border-radius: 999px; padding: 0 0.5em; font-size: 0.72rem; font-weight: 800;
-}
-.msg-bulletin-n:empty { display: none; }
-.msg-bulletin .bulletin-compose { padding-top: 0.6rem; }
+.msg-panel .bulletin-compose { padding-top: 0.6rem; }
 
 /* ============ Coach inbox: header pill + one merged list ============
    "Needs you" and the activity log were two permanent blocks on the Overview

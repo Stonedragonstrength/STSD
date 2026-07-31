@@ -15164,10 +15164,15 @@
     const host = $("#bulletin-active");
     if (!host) return;
     const list = activeCoachBulletins();
-    // The board is a closed fold on the Messages page now, so the count on the
-    // summary is the only thing that says a notice is live.
-    const n = $("#bulletin-count");
-    if (n) n.textContent = list.length ? String(list.length) : "";
+    // Broadcast and bulletin share one closed fold now, so its subtitle is the
+    // only thing that can say a notice is live. It describes the fold when
+    // nothing is pinned and reports the state when something is.
+    const sub = $("#msg-announce-sub");
+    if (sub) {
+      sub.textContent = list.length
+        ? `${list.length} notice${list.length > 1 ? "s" : ""} pinned right now`
+        : "A message in their threads, or a notice pinned to their home screen";
+    }
     if (!list.length) {
       host.innerHTML = `<p class="muted" style="padding:0.5rem 0 0;font-size:0.85rem">No active notices.</p>`;
       return;
@@ -25340,7 +25345,7 @@
       { sel: "#view-programs", go: () => { state.currentClientId = null; renderProgramsList(); },
         title: "Programs", text: "Build programs and day templates once, reuse them across athletes. Built one straight into an athlete instead? Save to Library on their Program tab brings a copy back here." },
       { sel: "#view-messages", go: () => { switchCoachView("messages"); renderMessagesView(); },
-        title: "Messages", text: "One thread per athlete, and they can write back now. Anyone waiting on an answer sits at the top with a count. Open the fold at the bottom to send the same note to several at once." },
+        title: "Messages", text: "One thread per athlete, and they can write back now. Anyone waiting on an answer sits at the top with a count. Tell everyone, at the bottom, says one thing to all of them at once: either a message in their threads or a notice pinned to their home screens." },
       { sel: "#btn-export-data", go: () => openCoachProfile(),
         title: "Back up your data", text: "Download everything — athletes, their programs and logged history, and your program library — as one file, and restore it here if you ever need to. Worth grabbing one now and then." },
       { sel: "#btn-tour-coach", go: () => showCoachOverview(),
@@ -26367,6 +26372,19 @@
       renderMessagesView();
     });
     $("#msg-clear-all")?.addEventListener("click", () => { _msgSelected.clear(); renderMessagesView(); });
+    $$("#msg-announce .msg-mode-btn").forEach((b) => {
+      b.addEventListener("click", () => {
+        const mode = b.dataset.msgMode;
+        $$("#msg-announce .msg-mode-btn").forEach((o) => {
+          const on = o === b;
+          o.classList.toggle("on", on);
+          o.setAttribute("aria-selected", String(on));
+        });
+        $$("#msg-announce .msg-panel").forEach((p) => {
+          p.classList.toggle("hidden", p.dataset.msgPanel !== mode);
+        });
+      });
+    });
     $("#bulletin-post-btn")?.addEventListener("click", postBulletin);
 
     // Program creator

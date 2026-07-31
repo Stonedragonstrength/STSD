@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=cprof3" />
+  <link rel="stylesheet" href="styles.css?v=msg2" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -324,66 +324,68 @@
       <div id="view-messages" class="view hidden">
         <!-- One row per athlete: their thread, newest line first. -->
         <div id="msg-threads" class="msg-threads"></div>
-        <details class="msg-broadcast">
+        <!-- Broadcast and bulletin were two folds asking the same question:
+             say one thing to everyone. They only ever differed in where it
+             lands and how long it stays, so that is what the switch inside
+             picks. Two headings, two subtitles and two chevrons became one
+             row, and the subtitle carries the live state the way the coach
+             Profile folds do — closed, it still tells you a notice is up. -->
+        <details class="msg-broadcast" id="msg-announce">
           <summary>
             <span class="msg-broadcast-ico">📣</span>
             <span class="msg-broadcast-text">
-              <span class="msg-broadcast-title">Send to several at once</span>
-              <span class="msg-broadcast-sub">The same note, dropped into each of their threads</span>
+              <span class="msg-broadcast-title">Tell everyone</span>
+              <span class="msg-broadcast-sub" id="msg-announce-sub">A message in their threads, or a notice pinned to their home screen</span>
             </span>
             <span class="msg-broadcast-chev">▸</span>
           </summary>
-        <div class="msg-compose">
-          <div class="msg-compose-field">
-            <label class="msg-label">To</label>
-            <div class="msg-recip-row">
-              <button class="btn btn-ghost msg-recip-all" id="msg-select-all" type="button">Select all</button>
-              <button class="btn btn-ghost msg-recip-all" id="msg-clear-all" type="button">Clear</button>
-              <span class="muted msg-recip-count" id="msg-recip-count">0 selected</span>
-            </div>
-            <div id="msg-recipients" class="msg-recipients"></div>
-          </div>
-          <div class="msg-compose-field">
-            <label class="msg-label" for="msg-text">Message</label>
-            <textarea id="msg-text" class="msg-textarea" rows="4" maxlength="1000" placeholder="Write your announcement…"></textarea>
-          </div>
-          <div class="msg-compose-actions">
-            <span class="muted" id="msg-send-status"></span>
-            <button class="btn btn-primary" id="msg-send-btn" type="button">📣 Send</button>
-          </div>
-        </div>
-        </details>
 
-        <!-- The bulletin board lives here rather than on the dashboard: it is
-             the same job as the broadcast above it (say one thing to everyone),
-             just time-boxed, and it was one more permanent block on an Overview
-             that had too many. -->
-        <details class="msg-broadcast msg-bulletin">
-          <summary>
-            <span class="msg-broadcast-ico">📌</span>
-            <span class="msg-broadcast-text">
-              <span class="msg-broadcast-title">Bulletin board<span class="msg-bulletin-n" id="bulletin-count"></span></span>
-              <span class="msg-broadcast-sub">A notice on every athlete's home screen, until it expires</span>
-            </span>
-            <span class="msg-broadcast-chev">▸</span>
-          </summary>
-          <div class="bulletin-compose">
-            <textarea id="bulletin-text" class="msg-textarea" rows="2" maxlength="1000" placeholder="e.g. Gym closed next Monday for the holiday 🎉"></textarea>
-            <div class="bulletin-compose-row">
-              <label class="msg-duration">
-                <span class="muted">Show for</span>
-                <select id="bulletin-weeks" class="msg-select">
-                  <option value="1">1 week</option>
-                  <option value="2">2 weeks</option>
-                  <option value="3">3 weeks</option>
-                  <option value="4">4 weeks</option>
-                </select>
-              </label>
-              <span class="muted" id="bulletin-status" style="margin-right:auto"></span>
-              <button class="btn btn-primary btn-sm" id="bulletin-post-btn" type="button">📌 Post</button>
+          <div class="msg-modes" role="tablist">
+            <button class="msg-mode-btn on" type="button" data-msg-mode="send" role="tab" aria-selected="true">Message them</button>
+            <button class="msg-mode-btn" type="button" data-msg-mode="pin" role="tab" aria-selected="false">Pin a notice</button>
+          </div>
+
+          <div class="msg-panel" data-msg-panel="send">
+            <div class="msg-compose">
+              <div class="msg-compose-field">
+                <label class="msg-label">To</label>
+                <div class="msg-recip-row">
+                  <button class="btn btn-ghost msg-recip-all" id="msg-select-all" type="button">Select all</button>
+                  <button class="btn btn-ghost msg-recip-all" id="msg-clear-all" type="button">Clear</button>
+                  <span class="muted msg-recip-count" id="msg-recip-count">0 selected</span>
+                </div>
+                <div id="msg-recipients" class="msg-recipients"></div>
+              </div>
+              <div class="msg-compose-field">
+                <label class="msg-label" for="msg-text">Message</label>
+                <textarea id="msg-text" class="msg-textarea" rows="4" maxlength="1000" placeholder="Write your announcement…"></textarea>
+              </div>
+              <div class="msg-compose-actions">
+                <span class="muted" id="msg-send-status"></span>
+                <button class="btn btn-primary" id="msg-send-btn" type="button">📣 Send</button>
+              </div>
             </div>
           </div>
-          <div id="bulletin-active" class="bulletin-active"></div>
+
+          <div class="msg-panel hidden" data-msg-panel="pin">
+            <div class="bulletin-compose">
+              <textarea id="bulletin-text" class="msg-textarea" rows="2" maxlength="1000" placeholder="e.g. Gym closed next Monday for the holiday 🎉"></textarea>
+              <div class="bulletin-compose-row">
+                <label class="msg-duration">
+                  <span class="muted">Show for</span>
+                  <select id="bulletin-weeks" class="msg-select">
+                    <option value="1">1 week</option>
+                    <option value="2">2 weeks</option>
+                    <option value="3">3 weeks</option>
+                    <option value="4">4 weeks</option>
+                  </select>
+                </label>
+                <span class="muted" id="bulletin-status" style="margin-right:auto"></span>
+                <button class="btn btn-primary btn-sm" id="bulletin-post-btn" type="button">📌 Post</button>
+              </div>
+            </div>
+            <div id="bulletin-active" class="bulletin-active"></div>
+          </div>
         </details>
       </div>
 
@@ -1314,7 +1316,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=cyc1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=cprof3"></script>
+  <script src="app.js?v=msg2"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
