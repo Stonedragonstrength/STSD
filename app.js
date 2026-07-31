@@ -5832,57 +5832,9 @@
     toast(wasEditing ? "Day updated" : "Day created 📚");
   }
 
-  function openLoadTemplateModal(week, day) {
-    const templates = state.trainerData.workoutTemplates || [];
-    if (!templates.length) {
-      toast("No templates yet. Create one in Workout Library");
-      return;
-    }
-    const list = templates
-      .slice()
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((t) => {
-        const icon = workoutIconFor(t.name);
-        return `
-          <button class="video-pick-btn" data-tpl="${t.id}" type="button">
-            <span class="video-pick-icon">${icon}</span>
-            <strong>${escapeHtml(t.name)}</strong>
-            ${t.focus ? `<span class="muted" style="margin-left:0.4em">· ${escapeHtml(t.focus)}</span>` : ""}
-            <span class="meta-pill" style="margin-left:auto">${t.exercises.length} ex</span>
-          </button>`;
-      })
-      .join("");
-    openModal({
-      title: `Load template into "${day.name}"`,
-      body: `
-        <p class="muted" style="margin-top:-0.4em">This replaces the day's exercises with the template. Day name and focus also update.</p>
-        <div class="video-pick-list">${list}</div>
-      `,
-      actions: [{ label: "Cancel", className: "btn btn-ghost", onClick: closeModal }],
-    });
-    document.querySelectorAll(".video-pick-btn[data-tpl]").forEach((b) => {
-      b.addEventListener("click", () => {
-        const t = templates.find((x) => x.id === b.dataset.tpl);
-        if (!t) return;
-        // Replace day contents — keep day id (so logs survive), refresh exercises with new ids
-        day.name = t.name;
-        if (t.focus && !week.focus) week.focus = t.focus;
-        day.exercises = t.exercises.map((e) => ({ ...makeExercise(), ...e, id: uid() }));
-        saveTrainer();
-        closeModal();
-        renderWeeks();
-        // Cloud sync the updated athlete
-        const c = currentClient();
-        if (window.Cloud?.enabled && c && state.trainerData.coachId) {
-          window.Cloud.upsertAthlete(c, state.trainerData.coachId);
-        }
-        toast(`Loaded "${t.name}"`);
-      });
-    });
-  }
-
   // Import a saved Day Template from the Workout Library into a week as a NEW
-  // day (as opposed to openLoadTemplateModal, which replaces an existing day).
+  // day. There was once a second door that replaced an existing day instead;
+  // nothing called it, so adding is the only way in.
   function openImportDayModal(week, rerenderFn) {
     const templates = state.trainerData.workoutTemplates || [];
     if (!templates.length) {
@@ -8666,7 +8618,7 @@
     const body = document.createElement("div");
     body.className = "coach-week-body";
 
-    // Day tabs (identical logic from old renderWeekCard)
+    // Day tabs
     if (week._activeDayIdx === undefined || week._activeDayIdx >= week.days.length) week._activeDayIdx = 0;
     const tabStrip  = document.createElement("div");
     tabStrip.className = "day-tab-strip";
@@ -8871,114 +8823,6 @@
       });
       card.appendChild(dayEl);
     });
-    return card;
-  }
-
-  function renderWeekCard(week, wIdx) {
-    const card = document.createElement("div");
-    card.className = "week-card";
-    if (week.phaseLabel) card.classList.add("phase-card");
-    if (wIdx === 0) card.classList.add("open");
-
-    const exerciseTotal = week.days.reduce((n, d) => n + d.exercises.length, 0);
-
-    // --- Compact header ---
-    const head = document.createElement("div");
-    head.className = "week-head";
-    head.innerHTML = `
-      <div class="week-head-left">
-        <span class="week-toggle-icon">▸</span>
-        <div>
-          <h4>${week.phaseLabel ? `<span class="phase-badge">${escapeHtml(week.phaseLabel)}</span>` : ""}${escapeHtml(week.label)}</h4>
-          <div class="week-info">${week.days.length} day${week.days.length === 1 ? "" : "s"} · ${exerciseTotal} exercise${exerciseTotal === 1 ? "" : "s"}${week.focus ? " · " + escapeHtml(week.focus) : ""}</div>
-        </div>
-      </div>
-      <div class="week-head-right">
-        <button class="btn-icon-mini" data-action="delete-week" title="Delete week">✕</button>
-      </div>`;
-
-    head.addEventListener("click", (e) => {
-      if (e.target.closest("[data-action]")) return;
-      card.classList.toggle("open");
-    });
-    head.querySelector('[data-action="delete-week"]').addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (!window.confirm(`Delete ${week.label}?`)) return;
-      if (_programEditorId) {
-        const tpl = currentProgramTemplate(); if (!tpl) return;
-        tpl.weeks = tpl.weeks.filter((w) => w.id !== week.id);
-        tpl.weeks.forEach((w, i) => { if (/^Week \d+$/.test(w.label)) w.label = `Week ${i + 1}`; });
-      } else {
-        const c = currentClient(); if (!c) return;
-        c.weeks = c.weeks.filter((w) => w.id !== week.id);
-        c.weeks.forEach((w, i) => { if (/^Week \d+$/.test(w.label)) w.label = `Week ${i + 1}`; });
-      }
-      saveTrainer();
-      renderWeeks(); if (!_programEditorId) { renderDiet(); renderCoachCalendar(); }
-    });
-
-    // --- Body ---
-    const body = document.createElement("div");
-    body.className = "week-body";
-
-    // Track active day index (transient — resets on full renderWeeks)
-    if (week._activeDayIdx === undefined || week._activeDayIdx >= week.days.length) {
-      week._activeDayIdx = 0;
-    }
-
-    const tabStrip  = document.createElement("div");
-    tabStrip.className = "day-tab-strip";
-    const dayContent = document.createElement("div");
-    dayContent.className = "day-content-area";
-
-    function renderDayTabs() {
-      tabStrip.innerHTML = "";
-      const moodClient = _programEditorId ? null : currentClient();
-      week.days.forEach((day, dIdx) => {
-        const tab = document.createElement("button");
-        tab.className = "day-tab" + (dIdx === week._activeDayIdx ? " active" : "");
-        const dm = moodClient ? dayMoods(moodClient.importedProgress, day.id) : [];
-        const dr = moodClient ? dayReadiness(moodClient.importedProgress, day.id) : null;
-        tab.innerHTML = `<span class="day-tab-name">${escapeHtml(day.name || `Day ${dIdx + 1}`)}</span>${readinessChipHtml(dr, true)}${dm.length ? moodChipsHtml(dm, true) : ""}`;
-        tab.addEventListener("click", () => {
-          week._activeDayIdx = dIdx;
-          renderDayTabs();
-          renderActiveDayContent();
-        });
-        tabStrip.appendChild(tab);
-      });
-      const addDayBtn = document.createElement("button");
-      addDayBtn.className = "day-tab day-tab-add";
-      addDayBtn.textContent = "+ Day";
-      addDayBtn.addEventListener("click", () => {
-        week.days.push(makeDay(week.days.length + 1));
-        week._activeDayIdx = week.days.length - 1;
-        saveTrainer(); renderDayTabs(); renderActiveDayContent();
-      });
-      tabStrip.appendChild(addDayBtn);
-    }
-
-    function renderActiveDayContent() {
-      dayContent.innerHTML = "";
-      if (!week.days.length) {
-        const p = document.createElement("p");
-        p.className = "muted"; p.style.padding = "1rem 0";
-        p.textContent = "No training days yet. Click + Day to add one.";
-        dayContent.appendChild(p);
-        return;
-      }
-      const dayIdx = Math.min(week._activeDayIdx, week.days.length - 1);
-      const rerender = () => { renderDayTabs(); renderActiveDayContent(); };
-      dayContent.appendChild(renderDayContent(week, week.days[dayIdx], rerender));
-    }
-
-    renderDayTabs();
-    renderActiveDayContent();
-
-    body.appendChild(tabStrip);
-    body.appendChild(dayContent);
-    card.appendChild(head);
-    card.appendChild(body);
     return card;
   }
 
@@ -10565,6 +10409,21 @@
     return cells;
   }
 
+  // Every month grid opens the same way: empty the host, lay down the seven
+  // day-of-week headers, hand back the month's cells. Only what goes INSIDE a
+  // cell differs between the dashboard, the coach's per-athlete calendar and
+  // the athlete's own, so that is all each caller writes.
+  function startMonthGrid(grid, year, month) {
+    grid.innerHTML = "";
+    DOW_LABELS.forEach((d) => {
+      const el = document.createElement("div");
+      el.className = "cal-dow";
+      el.textContent = d;
+      grid.appendChild(el);
+    });
+    return buildMonthGrid(year, month);
+  }
+
   const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
   const DOW_LABELS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
@@ -11464,14 +11323,7 @@
   }
 
   function renderCalMonthGrid(grid, year, month) {
-    grid.innerHTML = "";
-    DOW_LABELS.forEach(d => {
-      const el = document.createElement("div");
-      el.className = "cal-dow";
-      el.textContent = d;
-      grid.appendChild(el);
-    });
-    const cells = buildMonthGrid(year, month);
+    const cells = startMonthGrid(grid, year, month);
     const today = todayISO();
     const clients = state.trainerData.clients || [];
     const setmoreByDate = dashCalSetmoreByDate();
@@ -11570,14 +11422,7 @@
     const { year, month } = state.coachCal;
     $("#cal-title").textContent = `${MONTH_NAMES[month]} ${year}`;
     const grid = $("#cal-grid");
-    grid.innerHTML = "";
-    DOW_LABELS.forEach((d) => {
-      const el = document.createElement("div");
-      el.className = "cal-dow";
-      el.textContent = d;
-      grid.appendChild(el);
-    });
-    const cells = buildMonthGrid(year, month);
+    const cells = startMonthGrid(grid, year, month);
     const today = todayISO();
     const selfSched = c.importedProgress?.selfSchedule || {};
     const redsByDate = redemptionsByDate(c);
@@ -12061,6 +11906,30 @@
       <div class="pr-fold-body">${bodyHtml}</div>
     </details>`;
   }
+  // The 1RM/2RM/3RM field block. coachPRs is the shared list, so the coach's
+  // PR page and the athlete's render the same three slots off the same entry —
+  // each with its own value, date and lock, so one PR can be locked (read-only,
+  // safe from an accidental edit) without freezing the other two.
+  function prEditFieldsHtml(entry, best) {
+    const slot = (n, label, ph) => {
+      const lk = !!entry[`pr${n}Locked`];
+      const ro = lk ? "readonly" : "";
+      return `
+        <div class="pr-field-group${lk ? " is-locked" : ""}">
+          <label class="pr-field-label">${label}</label>
+          <input class="pr-${n}rm-input" type="number" min="0" step="any" placeholder="${ph}" value="${escapeHtml(dispW(entry[`pr${n}`] || ""))}" ${ro}>
+          <input class="pr-${n}rm-date pr-date-input" type="text" inputmode="numeric" maxlength="8" placeholder="mm/dd/yy" title="Date achieved" value="${escapeHtml(entry[`pr${n}Date`] || "")}" ${ro}>
+          <button class="pr-lock-btn${lk ? " is-locked" : ""}" data-slot="${n}" type="button" title="${lk ? "Locked. Tap to edit" : "Lock in"}" aria-label="${lk ? "Locked. Tap to edit" : "Lock in"}">${lk ? "🔒" : "🔓"}</button>
+          ${prLoggedChip(entry, n, best)}
+        </div>`;
+    };
+    return `
+      <div class="pr-edit-fields">
+        ${slot(1, `1 Rep PR (${unitLbl()})`, prPh(315))}
+        ${slot(2, `2 Rep PR (${unitLbl()})`, prPh(295))}
+        ${slot(3, `3 Rep PR (${unitLbl()})`, prPh(275))}
+      </div>`;
+  }
   function wirePRFold(card) {
     const det = card.querySelector(".pr-fold");
     if (!det) return;
@@ -12118,26 +11987,9 @@
         renderCoachPRs();
       });
     } else {
-      // Existing lift: autosave card with per-PR value + mm/dd/yy date + lock
-      // (same as the athlete side; coachPRs is the shared list).
-      const slot = (n, label, ph) => {
-        const lk = !!entry[`pr${n}Locked`];
-        const ro = lk ? "readonly" : "";
-        return `
-          <div class="pr-field-group${lk ? " is-locked" : ""}">
-            <label class="pr-field-label">${label}</label>
-            <input class="pr-${n}rm-input" type="number" min="0" step="any" placeholder="${ph}" value="${escapeHtml(dispW(entry[`pr${n}`] || ""))}" ${ro}>
-            <input class="pr-${n}rm-date pr-date-input" type="text" inputmode="numeric" maxlength="8" placeholder="mm/dd/yy" title="Date achieved" value="${escapeHtml(entry[`pr${n}Date`] || "")}" ${ro}>
-            <button class="pr-lock-btn${lk ? " is-locked" : ""}" data-slot="${n}" type="button" title="${lk ? "Locked. Tap to edit" : "Lock in"}" aria-label="${lk ? "Locked. Tap to edit" : "Lock in"}">${lk ? "🔒" : "🔓"}</button>
-            ${prLoggedChip(entry, n, best)}
-          </div>`;
-      };
+      // Existing lift: autosave card with per-PR value + mm/dd/yy date + lock.
       card.innerHTML = prFoldHtml(entry, entry.id || entry.name, `
-        <div class="pr-edit-fields">
-          ${slot(1, `1 Rep PR (${unitLbl()})`, prPh(315))}
-          ${slot(2, `2 Rep PR (${unitLbl()})`, prPh(295))}
-          ${slot(3, `3 Rep PR (${unitLbl()})`, prPh(275))}
-        </div>
+        ${prEditFieldsHtml(entry, best)}
         ${athletePR ? `
           <div class="pr-athlete-row">
             <span class="pr-author athlete">athlete</span>
@@ -12282,26 +12134,7 @@
       if (autoFillPRFromLogs(entry, best)) autoFilled = true;
       const card = document.createElement("div");
       card.className = "pr-edit-card pr-shared-card";
-      // Each PR (1RM/2RM/3RM) has its own value + date + lock, so one can be
-      // locked (read-only, can't be accidentally changed/cleared) on its own.
-      const slot = (n, label, ph) => {
-        const lk = !!entry[`pr${n}Locked`];
-        const ro = lk ? "readonly" : "";
-        return `
-          <div class="pr-field-group${lk ? " is-locked" : ""}">
-            <label class="pr-field-label">${label}</label>
-            <input class="pr-${n}rm-input" type="number" min="0" step="any" placeholder="${ph}" value="${escapeHtml(dispW(entry[`pr${n}`] || ""))}" ${ro}>
-            <input class="pr-${n}rm-date pr-date-input" type="text" inputmode="numeric" maxlength="8" placeholder="mm/dd/yy" title="Date achieved" value="${escapeHtml(entry[`pr${n}Date`] || "")}" ${ro}>
-            <button class="pr-lock-btn${lk ? " is-locked" : ""}" data-slot="${n}" type="button" title="${lk ? "Locked. Tap to edit" : "Lock in"}" aria-label="${lk ? "Locked. Tap to edit" : "Lock in"}">${lk ? "🔒" : "🔓"}</button>
-            ${prLoggedChip(entry, n, best)}
-          </div>`;
-      };
-      card.innerHTML = prFoldHtml(entry, entry.id || entry.name, `
-        <div class="pr-edit-fields">
-          ${slot(1, `1 Rep PR (${unitLbl()})`, prPh(315))}
-          ${slot(2, `2 Rep PR (${unitLbl()})`, prPh(295))}
-          ${slot(3, `3 Rep PR (${unitLbl()})`, prPh(275))}
-        </div>`);
+      card.innerHTML = prFoldHtml(entry, entry.id || entry.name, prEditFieldsHtml(entry, best));
       wirePRFold(card);
       [1, 2, 3].forEach((n) => {
         card.querySelector(`.pr-${n}rm-input`).addEventListener("input", (e) => { entry[`pr${n}`] = storeW(e.target.value); pushCoachPRs(); });
@@ -17619,14 +17452,7 @@
     const { year, month } = state.athleteCal;
     $("#ccal-title").textContent = `${MONTH_NAMES[month]} ${year}`;
     const grid = $("#ccal-grid");
-    grid.innerHTML = "";
-    DOW_LABELS.forEach((d) => {
-      const el = document.createElement("div");
-      el.className = "cal-dow";
-      el.textContent = d;
-      grid.appendChild(el);
-    });
-    const cells = buildMonthGrid(year, month);
+    const cells = startMonthGrid(grid, year, month);
     const today = todayISO();
     const selfSched = state.clientData.progress.selfSchedule || {};
     const redsByDate = redemptionsByDate(prog.client);
@@ -18090,6 +17916,43 @@
       days: sessionDays(client, state.clientData.progress),
     };
   }
+  // Both session lists — the coach's dated 1-offs and the athlete's own days —
+  // are the same card in the same grid, newest first. Only the fallbacks and
+  // what a tap does differ, so those come in as options instead of as a second
+  // copy of the card markup.
+  function sessionCardGrid(sessions, opts) {
+    const grid = document.createElement("div");
+    grid.className = "workout-grid";
+    [...sessions]
+      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
+      .forEach((day, idx) => {
+        const totalEx = (day.exercises || []).length;
+        const doneEx = (day.exercises || []).filter((ex) => hasAnyLog(ex)).length;
+        const checked = isDayChecked(day.id);
+        const card = document.createElement("button");
+        card.className = `workout-card ${opts.cardClass}`;
+        if (checked || (totalEx > 0 && doneEx >= totalEx)) card.classList.add("is-done");
+        else if (doneEx > 0) card.classList.add("is-partial");
+        card.style.animationDelay = `${idx * 60}ms`;
+        const dateLbl = day.date
+          ? new Date(day.date + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
+          : "";
+        const status = checked
+          ? `<span class="wc-status done">Done ✓</span>`
+          : opts.status(day, doneEx, totalEx);
+        card.innerHTML = `
+          <div class="workout-card-icon">${dayIconHtml(isSvgIcon(day.icon) ? day.icon : opts.fallbackIcon(day))}</div>
+          <div class="workout-card-body">
+            <h4 class="workout-card-title">${escapeHtml(day.name || opts.fallbackName)}</h4>
+            <div class="workout-card-meta">${dateLbl ? escapeHtml(dateLbl) + " · " : ""}${totalEx} exercise${totalEx === 1 ? "" : "s"} · ${status}</div>
+          </div>
+          <div class="workout-card-chevron">›</div>`;
+        card.addEventListener("click", () => opts.onOpen(day));
+        grid.appendChild(card);
+      });
+    return grid;
+  }
+
   function renderAthleteOneOffSection() {
     const host = $("#oneoff-athlete-container");
     if (!host) return;
@@ -18106,44 +17969,22 @@
     sec.innerHTML = `<div class="wp-head wp-head-coach">
       <span class="wp-head-title">🐉 Sessions with Coach</span>
     </div>`;
-    const grid = document.createElement("div");
-    grid.className = "workout-grid";
-    [...sessions]
-      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
-      .forEach((day, idx) => {
-        const totalEx = (day.exercises || []).length;
-        const doneEx = (day.exercises || []).filter((ex) => hasAnyLog(ex)).length;
-        const checked = isDayChecked(day.id);
-        const card = document.createElement("button");
-        card.className = "workout-card oneoff-workout-card";
-        if (checked || (totalEx > 0 && doneEx >= totalEx)) card.classList.add("is-done");
-        else if (doneEx > 0) card.classList.add("is-partial");
-        card.style.animationDelay = `${idx * 60}ms`;
-        const dateLbl = day.date
-          ? new Date(day.date + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
-          : "";
-        const status = checked
-          ? `<span class="wc-status done">Done ✓</span>`
-          : doneEx > 0
-            ? `<span class="wc-status progress">${doneEx}/${totalEx} logged</span>`
-            : (day.date >= today
-              ? `<span class="wc-status todo">Coming up</span>`
-              : `<span class="wc-status todo">Tap to log</span>`);
-        card.innerHTML = `
-          <div class="workout-card-icon">${dayIconHtml(isSvgIcon(day.icon) ? day.icon : "sd:flame")}</div>
-          <div class="workout-card-body">
-            <h4 class="workout-card-title">${escapeHtml(day.name || "Coach session")}</h4>
-            <div class="workout-card-meta">${dateLbl ? escapeHtml(dateLbl) + " · " : ""}${totalEx} exercise${totalEx === 1 ? "" : "s"} · ${status}</div>
-          </div>
-          <div class="workout-card-chevron">›</div>`;
-        card.addEventListener("click", () => {
-          state.workoutView = { mode: "detail", weekId: "oneoff", dayId: day.id, date: todayISO() };
-          Nav.push(backToWorkoutPicker);
-          renderWorkoutDetailUI();
-        });
-        grid.appendChild(card);
-      });
-    sec.appendChild(grid);
+    sec.appendChild(sessionCardGrid(sessions, {
+      cardClass: "oneoff-workout-card",
+      fallbackIcon: () => "sd:flame",
+      fallbackName: "Coach session",
+      status: (day, doneEx, totalEx) =>
+        doneEx > 0
+          ? `<span class="wc-status progress">${doneEx}/${totalEx} logged</span>`
+          : (day.date >= today
+            ? `<span class="wc-status todo">Coming up</span>`
+            : `<span class="wc-status todo">Tap to log</span>`),
+      onOpen: (day) => {
+        state.workoutView = { mode: "detail", weekId: "oneoff", dayId: day.id, date: todayISO() };
+        Nav.push(backToWorkoutPicker);
+        renderWorkoutDetailUI();
+      },
+    }));
     host.appendChild(sec);
   }
 
@@ -18186,40 +18027,18 @@
       return;
     }
 
-    const grid = document.createElement("div");
-    grid.className = "workout-grid";
-    [...sessions]
-      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
-      .forEach((day, idx) => {
-        const totalEx = (day.exercises || []).length;
-        const doneEx = (day.exercises || []).filter((ex) => hasAnyLog(ex)).length;
-        const checked = isDayChecked(day.id);
-        const card = document.createElement("button");
-        card.className = "workout-card ownday-workout-card";
-        if (checked || (totalEx > 0 && doneEx >= totalEx)) card.classList.add("is-done");
-        else if (doneEx > 0) card.classList.add("is-partial");
-        card.style.animationDelay = `${idx * 60}ms`;
-        const dateLbl = day.date
-          ? new Date(day.date + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
-          : "";
-        const status = checked
-          ? `<span class="wc-status done">Done ✓</span>`
-          : !totalEx
-            ? `<span class="wc-status todo">Add your lifts</span>`
-            : doneEx > 0
-              ? `<span class="wc-status progress">${doneEx}/${totalEx} logged</span>`
-              : `<span class="wc-status todo">Tap to log</span>`;
-        card.innerHTML = `
-          <div class="workout-card-icon">${dayIconHtml(isSvgIcon(day.icon) ? day.icon : workoutIconFor(day.name))}</div>
-          <div class="workout-card-body">
-            <h4 class="workout-card-title">${escapeHtml(day.name || "My session")}</h4>
-            <div class="workout-card-meta">${dateLbl ? escapeHtml(dateLbl) + " · " : ""}${totalEx} exercise${totalEx === 1 ? "" : "s"} · ${status}</div>
-          </div>
-          <div class="workout-card-chevron">›</div>`;
-        card.addEventListener("click", () => openOwnSession(day));
-        grid.appendChild(card);
-      });
-    sec.appendChild(grid);
+    sec.appendChild(sessionCardGrid(sessions, {
+      cardClass: "ownday-workout-card",
+      fallbackIcon: (day) => workoutIconFor(day.name),
+      fallbackName: "My session",
+      status: (day, doneEx, totalEx) =>
+        !totalEx
+          ? `<span class="wc-status todo">Add your lifts</span>`
+          : doneEx > 0
+            ? `<span class="wc-status progress">${doneEx}/${totalEx} logged</span>`
+            : `<span class="wc-status todo">Tap to log</span>`,
+      onOpen: openOwnSession,
+    }));
     host.appendChild(sec);
   }
 
@@ -19307,30 +19126,8 @@
     if (ex.notes || ex.videoUrl || mobDemoBtn) {
       const panel = document.createElement("div");
       panel.className = "cex-panel cex-mob-panel";
-      if (ex.notes) {
-        const notesEl = document.createElement("div");
-        notesEl.className = "cex-coach-note";
-        notesEl.textContent = ex.notes;
-        panel.appendChild(notesEl);
-      }
-      const ytId = getYouTubeId(ex.videoUrl);
-      if (ytId || ex.videoUrl || mobDemoBtn) {
-        const demoRow = document.createElement("div");
-        demoRow.className = "cex-demo-row";
-        if (ytId || ex.videoUrl) {
-          const vBtn = document.createElement("button");
-          vBtn.className = "btn btn-sm btn-ghost";
-          vBtn.textContent = "▶ Watch demo";
-          vBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            if (ytId) openVideoModal(ytId, ex.name || "Stretch");
-            else window.open(ex.videoUrl, "_blank", "noopener");
-          });
-          demoRow.appendChild(vBtn);
-        }
-        if (mobDemoBtn) demoRow.appendChild(mobDemoBtn);
-        panel.appendChild(demoRow);
-      }
+      appendCoachNote(panel, ex);
+      appendDemoRow(panel, ex, mobDemoBtn, "Stretch");
       wrapper.appendChild(panel);
     }
 
@@ -19343,6 +19140,36 @@
     }
 
     return wrapper;
+  }
+
+  // The coach's note on an exercise, and the "▶ Watch demo" / "See how" row
+  // under it. A mobility block and a lift card build both the same way — the
+  // only difference is what a video opens titled when the exercise is unnamed.
+  function appendCoachNote(panel, ex) {
+    if (!ex.notes) return;
+    const notesEl = document.createElement("div");
+    notesEl.className = "cex-coach-note";
+    notesEl.textContent = ex.notes;
+    panel.appendChild(notesEl);
+  }
+  function appendDemoRow(panel, ex, demoBtn, fallbackTitle) {
+    const ytId = getYouTubeId(ex.videoUrl);
+    if (!ytId && !ex.videoUrl && !demoBtn) return;
+    const demoRow = document.createElement("div");
+    demoRow.className = "cex-demo-row";
+    if (ytId || ex.videoUrl) {
+      const vBtn = document.createElement("button");
+      vBtn.className = "btn btn-sm btn-ghost";
+      vBtn.textContent = "▶ Watch demo";
+      vBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (ytId) openVideoModal(ytId, ex.name || fallbackTitle);
+        else window.open(ex.videoUrl, "_blank", "noopener");
+      });
+      demoRow.appendChild(vBtn);
+    }
+    if (demoBtn) demoRow.appendChild(demoBtn);
+    panel.appendChild(demoRow);
   }
 
   function renderClientExercise(week, day, ex, jumpTo) {
@@ -19580,32 +19407,8 @@
     const panel = document.createElement("div");
     panel.className = "cex-panel";
 
-    if (ex.notes) {
-      const notesEl = document.createElement("div");
-      notesEl.className = "cex-coach-note";
-      notesEl.textContent = ex.notes;
-      panel.appendChild(notesEl);
-    }
-
-    const ytId = getYouTubeId(ex.videoUrl);
-    const demoBtn = demoButton(ex);
-    if (ytId || ex.videoUrl || demoBtn) {
-      const demoRow = document.createElement("div");
-      demoRow.className = "cex-demo-row";
-      if (ytId || ex.videoUrl) {
-        const vBtn = document.createElement("button");
-        vBtn.className = "btn btn-sm btn-ghost";
-        vBtn.textContent = "▶ Watch demo";
-        vBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          if (ytId) openVideoModal(ytId, ex.name || "Exercise");
-          else window.open(ex.videoUrl, "_blank", "noopener");
-        });
-        demoRow.appendChild(vBtn);
-      }
-      if (demoBtn) demoRow.appendChild(demoBtn);
-      panel.appendChild(demoRow);
-    }
+    appendCoachNote(panel, ex);
+    appendDemoRow(panel, ex, demoButton(ex), "Exercise");
 
     // Log form (logDate computed at the top of the function)
     const logForm = document.createElement("div");

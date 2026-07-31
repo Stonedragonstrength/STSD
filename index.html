@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=tick3" />
+  <link rel="stylesheet" href="styles.css?v=sweep1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -52,7 +52,7 @@
         <button class="btn-link back-to-role">← Back</button>
         <h2 id="login-hello">Welcome back, Coach</h2>
         <p class="muted" id="login-hello-sub">Sign in with your email and password.</p>
-        <form id="form-coach-signin" autocomplete="on" onsubmit="return false">
+        <form autocomplete="on" onsubmit="return false">
           <label>Email
             <input type="email" id="login-email" autocomplete="email" placeholder="your@email.com" />
           </label>
@@ -101,7 +101,7 @@
         <button class="btn-link back-to-role">← Back</button>
         <h2>Create your profile</h2>
         <p class="muted">Program loaded! Set up your account to track progress across all your devices.</p>
-        <form id="form-athlete-setup" autocomplete="on" onsubmit="return false">
+        <form autocomplete="on" onsubmit="return false">
           <label>Your name
             <input type="text" id="athlete-setup-name" placeholder="e.g. Jamie Lee" autocomplete="name" />
           </label>
@@ -124,8 +124,8 @@
       <div id="login-athlete-signin" class="hidden">
         <button class="btn-link back-to-role">← Back</button>
         <h2 id="athlete-signin-heading">Welcome back</h2>
-        <p class="muted" id="athlete-signin-sub">Sign in to continue training.</p>
-        <form id="form-athlete-signin" autocomplete="on" onsubmit="return false">
+        <p class="muted">Sign in to continue training.</p>
+        <form autocomplete="on" onsubmit="return false">
           <label>Email
             <input type="email" id="athlete-signin-email" autocomplete="email" placeholder="your@email.com" />
           </label>
@@ -539,7 +539,7 @@
                .profile-card class stays on the <details> because setProfileLocked
                keys its read-only styling off it. -->
           <div class="card pref-card client-admin">
-          <details class="pref-fold profile-card" id="cprof-fold-details">
+          <details class="pref-fold profile-card">
             <summary>
               <span class="pref-fold-ico">✎</span>
               <span class="pref-fold-text">
@@ -608,7 +608,7 @@
               <span class="pref-fold-ico">🔑</span>
               <span class="pref-fold-text">
                 <span class="pref-fold-title">Invite code</span>
-                <span class="pref-fold-sub" id="cprof-invite-sub">How they claim their account</span>
+                <span class="pref-fold-sub">How they claim their account</span>
               </span>
               <span class="pref-fold-chev">▸</span>
             </summary>
@@ -621,7 +621,7 @@
               <button class="btn btn-ghost btn-sm hidden" id="btn-regen-invite" title="Regenerate code">↻</button>
             </div>
           </details>
-          <details class="pref-fold" id="cprof-fold-danger">
+          <details class="pref-fold">
             <summary>
               <span class="pref-fold-ico">⚠️</span>
               <span class="pref-fold-text">
@@ -768,7 +768,7 @@
           <!-- Money. Phone and tablet only: at 1200px+ expected income moves to
                the Overview rail, and the whole fold goes with it rather than
                leaving an empty row behind. -->
-          <details class="pref-fold income-section" id="cs-fold-money">
+          <details class="pref-fold income-section">
             <summary>
               <span class="pref-fold-ico">💷</span>
               <span class="pref-fold-text">
@@ -784,7 +784,7 @@
                generated from. Off the Overview since 2026-07-30 — the calendar
                already drew every session these produce. Extend and End a series
                live nowhere else, which is why the list moved rather than went. -->
-          <details class="pref-fold" id="cs-fold-sched">
+          <details class="pref-fold">
             <summary>
               <span class="pref-fold-ico">🗓️</span>
               <span class="pref-fold-text">
@@ -804,7 +804,7 @@
                once and then never touched, so a permanent row about it on the
                dashboard is a row about nothing. renderGoogleCard() fills this in
                wherever it sits. -->
-          <details class="pref-fold" id="cs-fold-google">
+          <details class="pref-fold">
             <summary>
               <span class="pref-fold-ico">🔌</span>
               <span class="pref-fold-text">
@@ -816,7 +816,7 @@
             <div id="sched-google" class="sched-google"></div>
           </details>
 
-          <details class="pref-fold" id="cs-fold-theme">
+          <details class="pref-fold">
             <summary>
               <span class="pref-fold-ico">🎨</span>
               <span class="pref-fold-text">
@@ -832,7 +832,7 @@
                you picked without opening it. The two ids are load-bearing:
                renderAvatarFoldSummary() builds its selectors as
                `#${who}-avatar-current`, so renaming them silently breaks it. -->
-          <details class="pref-fold" id="cs-fold-avatar">
+          <details class="pref-fold">
             <summary>
               <span class="pref-fold-ico avatar-fold-tile" id="coach-avatar-current"></span>
               <span class="pref-fold-text">
@@ -845,7 +845,7 @@
             <button class="btn btn-ghost btn-sm slim-btn avatar-more" id="coach-avatar-more" type="button">Show all</button>
           </details>
 
-          <details class="pref-fold" id="cs-fold-backup">
+          <details class="pref-fold">
             <summary>
               <span class="pref-fold-ico">💾</span>
               <span class="pref-fold-text">
@@ -862,7 +862,7 @@
             </div>
           </details>
 
-          <details class="pref-fold" id="cs-fold-bugs">
+          <details class="pref-fold">
             <summary>
               <span class="pref-fold-ico">🐞</span>
               <span class="pref-fold-text">
@@ -954,7 +954,7 @@
              thread is reachable from inside a workout too. -->
         <button class="btn btn-ghost btn-sm hdr-inbox hidden" id="btn-client-messages" type="button" title="Message your coach">
           <span class="hdr-inbox-ico">💬</span>
-          <span class="hdr-inbox-n" id="client-msg-count"></span>
+          <span class="hdr-inbox-n"></span>
         </button>
         <button class="btn btn-ghost btn-sm tour-help-btn" id="btn-tour-client" title="Quick tour of the app">?</button>
         <button class="btn btn-ghost btn-sm" id="btn-client-logout">Exit</button>
@@ -962,7 +962,7 @@
     </header>
 
     <div id="preview-banner" class="preview-banner hidden">
-      <span class="preview-banner-msg">🏋️ Live session: <strong id="preview-athlete-name"></strong></span>
+      <span class="preview-banner-msg"></span>
       <div class="preview-banner-actions">
         <button class="btn btn-sm" id="btn-preview-edit-day">✏️ Edit this day</button>
         <!-- Sheet markup lives at the end of the body, over every screen. -->
@@ -1174,7 +1174,7 @@
         </div>
         <div class="card profile-card">
           <div class="profile-card-head">
-            <h3 id="profile-name">My details</h3>
+            <h3>My details</h3>
             <span class="saved-flag" id="athlete-prof-saved">Saved ✓</span>
           </div>
           <p class="muted" style="margin:-0.3em 0 0.9em">Your coach can see this too. Keep it up to date.</p>
@@ -1210,7 +1210,7 @@
           <!-- Folded away by default: 32 tiles is a lot of screen for something
                you set once, and someone who wants no avatar shouldn't have to
                scroll past the whole roster every visit. -->
-          <details class="avatar-fold" id="athlete-avatar-fold">
+          <details class="avatar-fold">
             <summary>
               <span class="avatar-fold-tile" id="athlete-avatar-current"></span>
               <span class="avatar-fold-text">
@@ -1316,7 +1316,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=cyc1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=tick3"></script>
+  <script src="app.js?v=sweep1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
