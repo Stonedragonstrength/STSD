@@ -12108,12 +12108,32 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
    one rather than like the standalone .avatar-fold tile it came from. */
 .coach-settings .pref-fold-ico.avatar-fold-tile { display: flex; line-height: 1; }
 .coach-settings .pref-fold-ico .av-tile { width: 1.6rem; height: 1.6rem; font-size: 0.6rem; }
-/* These blocks used to sit on the page background with a heading over them; in
-   a fold they need their own top margin instead of the heading's. */
-.coach-settings .theme-picker,
-.coach-settings .income-host-profile,
-.coach-settings .sched-google { margin-top: 0.5rem; }
+/* Every icon sits in the same 1.6rem column, so the titles line up down the
+   list instead of drifting with each emoji's own width. */
+.coach-settings .pref-fold-ico {
+  width: 1.6rem; flex: none;
+  display: flex; align-items: center; justify-content: center;
+}
+/* One rule owns the rhythm of an open fold. Each block used to bring its own
+   margins to the party: five different gaps under the seven summaries, and a
+   bottom gap of zero on all of them, so open content sat directly on the
+   divider that belongs to the NEXT fold. Content also starts at the title
+   rather than at the icon, so an open fold reads as the answer to its own
+   heading. Drop a new block into a fold and it inherits all of this. */
+.coach-settings .pref-fold > summary ~ * { margin-left: 2.35rem; }
+.coach-settings .pref-fold[open] > summary + * { margin-top: 0.55rem; }
+.coach-settings .pref-fold[open] > :last-child { margin-bottom: 1.15rem; }
 .coach-settings .income-host-profile > .income-card { margin: 0; }
+/* 32 sprites is 460px of grid, more height than the whole rest of the list put
+   together, and opening it buried Backup and Bug reports off the bottom of the
+   screen. Capped to about two and a half rows; the picker scrolls in place. */
+.coach-settings .avatar-picker {
+  max-height: 17rem; overflow-y: auto; padding-right: 0.4em;
+}
+/* This row carries its own margins from where it used to sit on the Schedule
+   card; inside a fold they collapse through the wrapper and beat the rhythm
+   above by 4px. The fold sets the spacing, so the row gives it up. */
+.coach-settings .sched-google > .sched-google-row { margin: 0; }
 
 /* ============ Touch targets (2026-07-30) ============
    A sweep at 390px with a coarse pointer, measuring every interactive element
