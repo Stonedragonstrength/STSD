@@ -80,6 +80,11 @@ function portions(food) {
     // undetermined ("cup, chopped", "medium", "fl oz").
     let label = unit ? `${amount} ${unit}${mod ? ", " + mod : ""}` : `${amount} ${mod}`;
     label = label.replace(/\s+/g, " ").trim();
+    // USDA calls its standard portion a RACC (Reference Amount Customarily
+    // Consumed). That's lab shorthand nobody logging lunch would recognise, and
+    // it's the plain "one serving" of the food. Renamed before the dedupe below
+    // so a food that already lists a real "1 serving" collapses into one entry.
+    label = label.replace(/\bRACC\b/gi, "serving");
     if (!label || label === String(amount)) continue;
     if (label.length > 34) continue;
     const key = label.toLowerCase();

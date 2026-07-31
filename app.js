@@ -3393,6 +3393,21 @@
         renderCoachAvatarPicker();
       });
     });
+    syncCoachAvatarMore();
+  }
+
+  // The grid is clipped to a few rows so opening the fold doesn't bury the rest
+  // of the list. Deliberately a reveal and not a scroll box: a short scrollable
+  // area inside a page you're already scrolling steals the swipe on a phone.
+  function syncCoachAvatarMore() {
+    const host = $("#coach-avatar-picker");
+    const btn = $("#coach-avatar-more");
+    if (!host || !btn) return;
+    const open = host.classList.contains("is-open");
+    // Nothing to reveal if the grid already fits inside the cap.
+    const clipped = open || host.scrollHeight > host.clientHeight + 2;
+    btn.classList.toggle("hidden", !clipped);
+    btn.textContent = open ? "Show fewer" : `Show all ${AVATARS.length}`;
   }
 
   // -------- Backup / restore --------
@@ -21043,7 +21058,7 @@
   // The vendored USDA database is ~850 KB, so it loads on demand the first time
   // the athlete opens a food picker rather than on every boot. The service
   // worker caches it cache-first afterwards, so it's a one-time download.
-  const FOOD_DB_URL = "food-db.js?v=food1";
+  const FOOD_DB_URL = "food-db.js?v=food2";
   const MEALS = [
     { key: "breakfast", label: "Breakfast", icon: "🌅" },
     { key: "lunch", label: "Lunch", icon: "🥪" },
@@ -26428,6 +26443,10 @@
     $("#btn-archive-program").addEventListener("click", archiveCurrentProgram);
     $("#btn-save-program-to-library")?.addEventListener("click", saveClientProgramToLibrary);
     $("#btn-new-tpl-folder")?.addEventListener("click", openNewTemplateFolder);
+    $("#coach-avatar-more")?.addEventListener("click", () => {
+      $("#coach-avatar-picker")?.classList.toggle("is-open");
+      syncCoachAvatarMore();
+    });
     $("#btn-export-data")?.addEventListener("click", exportAllData);
     $("#btn-import-data")?.addEventListener("click", () => $("#import-data-input")?.click());
     $("#import-data-input")?.addEventListener("change", (e) => {
