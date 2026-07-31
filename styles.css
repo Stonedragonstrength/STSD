@@ -7323,28 +7323,40 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   /* Reorder: tap ▲/▼, not drag. */
   .ex-drag-handle { display: none; }
   .ex-move-btn { display: inline-flex; }
-  /* The four arrows form a 2x2 pad pinned to the row's right edge — a single
-     vertical stack would push every row past 110px tall. DOM order lands the
-     upward jumps (⤒ ▲) on the top row and the downward ones (▼ ⤓) below.
-     The row reserves padding-right so the pad never sits on the ✕/✎ buttons. */
-  .ex-row { position: relative; padding-right: 62px; }
+  /* The four arrows are one vertical rail down the row's LEFT edge, reading
+     the way the day does: ⤒ to the top, ▲ up one, ▼ down one, ⤓ to the
+     bottom. It was a 2x2 pad on the right, which put the reorder controls
+     next to the ✕ and gave every arrow an ambiguous partner; a rail on the
+     left is the same order as the list it moves things through, and it can
+     never be confused with delete. Rows already wrap onto three or four lines
+     on a phone, so the rail's height costs nothing. */
+  /* The rail is four 30px buttons — 126px — and it is centred on the row, so
+     the row has to be at least that tall or it reaches into its neighbours.
+     A phone row already wraps past this; a tablet row fits on one line at 60px
+     and does not, so it gets a floor. */
+  .ex-row { position: relative; padding-left: 46px; min-height: 134px; }
   .ex-move-group {
     display: grid;
-    grid-template-columns: repeat(2, auto);
-    gap: 1px;
+    grid-template-columns: 1fr;
+    gap: 2px;
     position: absolute;
-    right: 4px;
+    left: 4px;
     top: 50%;
     transform: translateY(-50%);
   }
-  /* Compact overrides the 32px .btn-icon-mini touch target below — four of
-     those would make the pad oversized. Still a 28px target. */
   .ex-move-group .btn-icon-mini {
-    min-width: 28px;
-    min-height: 28px;
+    min-width: 36px;
+    min-height: 30px;
     padding: 0;
     font-size: 0.8rem;
   }
+  /* ⤒/⤓ are line arrows next to solid ▲/▼ triangles, so at a matched size the
+     jumps look faded next to the steps. Sized up until all four carry the
+     same weight in the rail. */
+  .ex-move-group .ex-move-edge-btn { font-size: 1.15rem; }
+  /* The detail panel hangs under the row; indent it to clear the rail so the
+     two don't read as one column. */
+  .ex-detail-panel { padding-left: 46px; }
   /* "Drag exercises here" hints are dead weight on touch. */
   .ex-list-empty-drop,
   .ex-list-drop-hint { display: none; }
@@ -9570,6 +9582,31 @@ body.live-log-mode #screen-client .header-right { display: none; }
 .scan-status { font-size: 0.85rem; color: var(--text-soft); margin: 0.7em 0 0; text-align: center; }
 .scan-foot { display: flex; justify-content: center; margin-top: 0.7em; }
 .scan-credit { font-size: 0.68rem; color: var(--muted); margin: 0.8em 0 0; text-align: center; }
+/* Torch sits on the picture, top-right, where a thumb holding the phone
+   one-handed can reach it without covering the lens. */
+.scan-torch {
+  position: absolute; top: 0.5rem; right: 0.5rem;
+  width: 44px; height: 44px; border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.28); background: rgba(0, 0, 0, 0.45);
+  color: #fff; font-size: 1.2rem; line-height: 1; cursor: pointer; font-family: inherit;
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+}
+.scan-torch.on { background: var(--primary); border-color: var(--primary-bright); color: #fff; }
+/* Discrete zoom steps, not a slider: a phone held against a shelf is a
+   one-thumb tap, and most cameras can't focus close enough to fill the box
+   at 1x anyway. */
+.scan-zoom { display: flex; justify-content: center; gap: 0.4em; margin-top: 0.6em; }
+.scan-zoom-btn {
+  min-width: 52px; min-height: 40px; padding: 0 0.7em; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text-soft);
+  font-family: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+}
+.scan-zoom-btn.on { border-color: var(--primary); background: rgba(var(--primary-rgb), 0.16); color: var(--primary-bright); }
+/* Promoted once the camera has failed, or hunted for a while with nothing to
+   show — at that point typing the digits IS the fast path, not the fallback. */
+.scan-manual-hot { border-color: var(--primary); color: var(--primary-bright); }
+input.mb-code { font-size: 1.1rem; letter-spacing: 0.06em; }
 
 /* ---- Athlete-built sessions (their own one-off days) ---- */
 /* Same family as the coach's 🐉 one-offs, but keyed amber-red so an athlete can
@@ -12077,3 +12114,67 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
 .coach-settings .income-host-profile,
 .coach-settings .sched-google { margin-top: 0.5rem; }
 .coach-settings .income-host-profile > .income-card { margin: 0; }
+
+/* ============ Touch targets (2026-07-30) ============
+   A sweep at 390px with a coarse pointer, measuring every interactive element
+   against the 44px finger minimum. The controls below were 20-32px: small
+   enough that a miss is normal, not unlucky.
+
+   This block sits at the END of the file on purpose. Several of these classes
+   are also sized inside earlier `@media (max-width: 600px)` blocks, and a
+   later rule of equal specificity wins regardless of which media query it is
+   in — putting it here is what makes the overrides land on a phone.
+
+   Not everything under 44px is fixed here. Wide-but-short controls (a 345px
+   button 38px tall) are easy to hit and left alone; so are the ones where
+   growing the box would break the layout that makes them readable. */
+@media (pointer: coarse) {
+  /* ---- The logging card: the most-tapped surface in the app ---- */
+  /* − and + either side of every weight and rep box. They were 27px squares
+     with no horizontal slack in the row, so the growth goes where the slack
+     is: taller boxes, taller rows. */
+  .cex-step { width: 1.95rem; height: 2.5rem; }
+  .cex-set-col .cex-input { padding: 0.62em 0.1em; }
+  /* The ✓ that accepts a set and starts the rest timer. */
+  .cex-set-done { width: 2.5rem; height: 2.5rem; }
+  .cex-tools-btn { min-height: 36px; }
+  .cex-rir-btn { min-height: 38px; }
+  /* ---- Day header and readiness ---- */
+  .day-check-toggle { width: 38px; height: 38px; }
+  .detail-mood-btn { min-height: 36px; }
+  .rdy-skip { width: 2.2rem; height: 2.2rem; }
+  .rdy-opt { min-height: 40px; }
+  /* ---- The rest dock ---- */
+  .rest-sound-btn { width: 40px; height: 40px; }
+  .rest-opt-btn { min-height: 38px; }
+  /* ---- Food ---- */
+  /* Twelve cups across a phone can't each be 44px wide, so they get the height
+     instead and drop the square aspect. */
+  .water-cup { aspect-ratio: auto; min-height: 34px; max-width: 2.6em; }
+  .food-nav { width: 42px; height: 42px; }
+  /* The Targets / This week / Copy yesterday row under the day. Text links, so
+     they grow by padding rather than by box — the row stays a row. */
+  .food-more button { padding: 0.75em 0.4em; }
+  .food-more { gap: 0 0.6em; margin-top: 0.4rem; }
+  /* Reads as a row of dots and has to keep doing so; the target grows under it
+     with padding the dots don't see. */
+  .food-week-dots { padding: 0.85em 0.5em; margin: -0.85em -0.5em; }
+  /* ---- Anatomy browsing ---- */
+  .a-chip { min-height: 38px; }
+  .a-view-btn { min-height: 38px; }
+  .a-shelf-btn { min-height: 40px; }
+  /* ---- Coach side ---- */
+  /* The 🏋️ on a roster row — the door into a live session, so the one the
+     coach hits most often with an athlete already standing there. */
+  .client-row-view { width: 40px; height: 40px; }
+  /* Day / Week / Month. Taller only: the segment is deliberately narrow so
+     three labels, the 📣 badge and ＋ Book still fit at 320px. */
+  .cal-mode-btn { min-height: 38px; }
+  .roster-group-tab { min-height: 38px; }
+  /* The ‹ › either side of the calendar title were 22px wide. */
+  #dash-cal-prev, #dash-cal-next { min-width: 40px; min-height: 40px; }
+  /* ---- App-wide chrome ---- */
+  /* Every modal's ✕. Left at 32px through earlier passes as "out of scope";
+     it is the single most-tapped control in the app that isn't a workout. */
+  .icon-btn { width: 40px; height: 40px; }
+}

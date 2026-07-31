@@ -803,10 +803,35 @@
     { w: 25, label: "Trap bar", sub: "25" },
     { w: 0,  label: "No bar", sub: "plates only" },
   ];
-  function barOptions(u) { return isKg(u) ? BAR_OPTIONS_KG : BAR_OPTIONS_LB; }
+  // Trap bars are the one implement with no standard weight — an open/hex bar
+  // is 35-45, a loadable one with high handles runs 55-65, and the plate math
+  // is wrong by a whole plate if you guess. So a trap lift gets its own four
+  // instead of the generic list, where "Barbell 45" would be a lie.
+  const TRAP_BAR_OPTIONS_LB = [
+    { w: 35, label: "Open trap bar", sub: "35" },
+    { w: 45, label: "Light trap bar", sub: "45" },
+    { w: 55, label: "Standard trap bar", sub: "55" },
+    { w: 65, label: "Heavy trap bar", sub: "65" },
+    { w: 0,  label: "No bar", sub: "plates only" },
+  ];
+  const TRAP_BAR_OPTIONS_KG = [
+    { w: 15, label: "Open trap bar", sub: "15" },
+    { w: 20, label: "Light trap bar", sub: "20" },
+    { w: 25, label: "Standard trap bar", sub: "25" },
+    { w: 30, label: "Heavy trap bar", sub: "30" },
+    { w: 0,  label: "No bar", sub: "plates only" },
+  ];
+  function isTrapBarLift(name, mods) {
+    if ((mods || []).includes("Trap Bar")) return true;
+    return /\b(trap|hex)[- ]?bar\b/i.test(String(name || ""));
+  }
+  function barOptions(u, name, mods) {
+    if (isTrapBarLift(name, mods)) return isKg(u) ? TRAP_BAR_OPTIONS_KG : TRAP_BAR_OPTIONS_LB;
+    return isKg(u) ? BAR_OPTIONS_KG : BAR_OPTIONS_LB;
+  }
   // Each lb bar mapped to the kg bar that plays the same role, because the
   // trap bar in a kilo gym weighs 25 kg — not 55 lb rounded to 24.9.
-  const BAR_LB_TO_KG = { 45: 20, 35: 15, 25: 10, 55: 25, 0: 0 };
+  const BAR_LB_TO_KG = { 45: 20, 35: 15, 25: 10, 55: 25, 65: 30, 0: 0 };
   // Library lifts whose loading isn't obvious from the name alone.
   const BAR_BY_NAME = {
     "bench press": 45, "incline bench press": 45, "decline bench press": 45,
@@ -835,7 +860,9 @@
     const n = String(name || "").trim().toLowerCase();
     if (Object.prototype.hasOwnProperty.call(BAR_BY_NAME, n)) return BAR_BY_NAME[n];
     if (/\bsmith\b/.test(n)) return 25;
-    if (/\btrap bar\b/.test(n)) return 55;
+    // The commonest loadable trap bar. Only a default — the picker offers the
+    // other three, see TRAP_BAR_OPTIONS_LB.
+    if (isTrapBarLift(n, m)) return 55;
     if (/\bez[- ]?bar\b/.test(n)) return 25;
     if (/\bdumbbell|kettlebell|cable|band|machine\b/.test(n)) return null;
     if (/\bbarbell\b/.test(n)) return 45;
@@ -10872,15 +10899,12 @@
     });
   }
 
-  async function refreshDashCalSetmore() {
-    const btn = $("#dash-cal-refresh");
-    if (btn) { btn.disabled = true; btn.textContent = "Syncing…"; }
-    await window.Cloud?.refreshSetmoreSync?.();
-    _dashCalSetmoreFetchKey = null; // force the next render to re-fetch
-    if (state.dashCal) await loadDashCalSetmoreEvents(state.dashCal.year, state.dashCal.month);
-    if (btn) { btn.disabled = false; btn.textContent = "🔄 Refresh"; }
-    toast("Calendar synced");
-  }
+  // The calendar's 🔄 Refresh button lived here until 2026-07-30. Its whole job
+  // was kicking the Setmore sync, and bookings have been native since
+  // in-app scheduling shipped: they arrive on the calendar the moment they are
+  // made, so the button synced a source nothing writes to any more.
+  // loadDashCalSetmoreEvents stays — old Setmore events are still on the
+  // calendar, they just have nothing left to re-sync from.
 
   // ---- Day / Week / Month ----
   // One calendar, three zoom levels, rather than a month grid plus a separate
@@ -11113,13 +11137,15 @@
 
     // What the coach can do, as full-width rows rather than icon buttons.
     const acts = [];
+    // One door into the session, not two. This used to offer "To program"
+    // underneath, which opened the program EDITOR — but a booked athlete is
+    // standing in front of you, and what you want then is the day filled in,
+    // not the day rewritten. The editor is still a tap away inside the live
+    // session ("Edit this day") and from their profile.
     if (c && weekId) {
       acts.push(`<button type="button" class="dvs-act primary" data-act="live">` +
         `<span class="dvs-ico">${dayIconHtml("eq:dumbbell")}</span>Log this session with them` +
         `${wdRow ? `<span class="dvs-sub">${escapeHtml(wdRow.day.name)}</span>` : ""}</button>`);
-      acts.push(`<button type="button" class="dvs-act" data-act="program">` +
-        `<span class="dvs-ico">${dayIconHtml("sd:program")}</span>To program` +
-        `${wdRow ? `<span class="dvs-sub">${escapeHtml(wdRow.week.label)}</span>` : ""}</button>`);
     }
     const act = (id, ico, label, cls) =>
       `<button type="button" class="dvs-act${cls ? " " + cls : ""}" data-act="${id}">` +
@@ -11192,7 +11218,6 @@
       Nav.push(exitPreview); // Back leaves the live session, same as the 🏋️ card button
       previewAsAthlete({ weekId, dayId, date: iso });
     });
-    on("program", () => { closeModal(); openClientProgram(c.id, weekId, dayId); });
     on("profile", () => { closeModal(); openClient(c.id); });
     on("cc", () => { closeModal(); markBookingMissed(e, c, "closecall"); });
     on("charge", () => { closeModal(); markBookingMissed(e, c, "charged"); });
@@ -11206,23 +11231,9 @@
     }));
   }
 
-  // Open an athlete's program already on the week and day you came from, rather
-  // than on Profile at week 1 with the hunt still ahead of you. openClient()
-  // resets both indices on purpose (a stale editor id used to show the wrong
-  // program), so the position is set after it, not before.
-  function openClientProgram(clientId, weekId, dayId) {
-    openClient(clientId);
-    const c = currentClient(); if (!c) return;
-    const wIdx = (c.weeks || []).findIndex((w) => w.id === weekId);
-    if (wIdx >= 0) {
-      _coachActiveWeekIdx = wIdx;
-      _coachOneOffTab = false;
-      const dIdx = (c.weeks[wIdx].days || []).findIndex((d) => d.id === dayId);
-      if (dIdx >= 0) c.weeks[wIdx]._activeDayIdx = dIdx;
-    }
-    setTab("program");
-    renderWeeks();
-  }
+  // openClientProgram lived here until 2026-07-30 — it opened the editor
+  // already on the week and day you came from. Its only caller was the session
+  // sheet's "To program" row, which now goes straight into the live day.
 
   // Week has two shapes. On a desktop it is a timetable: the seven days across,
   // the clock down, so the shape of the week is visible — where the gaps are,
@@ -19027,15 +19038,16 @@
     _plateSheet = pop;
 
     const u = unitNow();
+    const isTrap = isTrapBarLift(name, mods);
     const render = () => {
       const cur = plateBarFor(name, mods, u);
       const own = (plateSettings()[plateExKey(u)] || {})[key];
       const inv = plateInventory(u);
       pop.innerHTML = `
         <div class="plate-pop-head">${escapeHtml(name || "This lift")}</div>
-        <div class="plate-pop-lbl">Bar (${unitLbl(u)})</div>
+        <div class="plate-pop-lbl">${isTrap ? "Which trap bar" : "Bar"} (${unitLbl(u)})</div>
         <div class="plate-pop-bars">
-          ${barOptions(u).map((b) => `<button type="button" class="plate-bar-opt${cur === b.w ? " on" : ""}" data-bar="${b.w}">
+          ${barOptions(u, name, mods).map((b) => `<button type="button" class="plate-bar-opt${cur === b.w ? " on" : ""}" data-bar="${b.w}">
             <span>${escapeHtml(b.label)}</span><em>${escapeHtml(b.sub)}</em></button>`).join("")}
           <button type="button" class="plate-bar-opt plate-bar-off${own === "off" ? " on" : ""}" data-bar="off">
             <span>Not a bar lift</span><em>hide</em></button>
@@ -19965,7 +19977,12 @@
     if (prog) {
       const rirLbl = document.createElement("span");
       rirLbl.className = "cex-rir-lbl";
-      rirLbl.textContent = isTimed ? "Time left in the tank" : "Reps left in the tank";
+      // Spelled out to the end: the question is about the LAST set, not the
+      // session. Tagged after the top set, "reps left in the tank" reads as an
+      // average across everything.
+      rirLbl.textContent = isTimed
+        ? "Time left in the tank after last set"
+        : "Reps left in the tank after last set";
       rirRow.appendChild(rirLbl);
       RIR_OPTS.forEach((o) => {
         const b = document.createElement("button");
@@ -23016,6 +23033,13 @@
   const ZX_FORMATS = ["EAN-13", "EAN-8", "UPC-A", "UPC-E", "Code128", "Code39", "ITF"];
   const SCAN_MAX_W = 640;   // downscale before decoding; plenty for a barcode
   const SCAN_INTERVAL = 240;
+  // The slice of the picture the vendored decoder actually reads, as fractions
+  // of what the athlete can see. Deliberately looser than the drawn guide box
+  // (inset 22% 10%) so lining up roughly still works, but tight enough that the
+  // 640px budget above lands on the barcode instead of the kitchen counter.
+  const SCAN_CROP = { x: 0.05, y: 0.14, w: 0.9, h: 0.72 };
+  const SCAN_NUDGE_MS = 12000;   // how long to hunt before offering the keypad
+  const SCAN_ZOOM_STEPS = [1, 2, 3];
 
   function onlineSearchAvailable() { return !!window.Cloud?.enabled; }
   function customFoodTag(f) { return f.barcode ? "Scanned" : f.fdcId ? "Online" : "My food"; }
@@ -23112,6 +23136,82 @@
     return food;
   }
 
+  // The rectangle of the CAMERA STREAM that the athlete can actually see. The
+  // video is drawn object-fit:cover inside a 4/3 box, so a 16/9 stream has its
+  // sides cut off on screen — cropping in raw stream coordinates would read a
+  // strip of picture nobody is aiming with. Everything here is source pixels.
+  function scanSourceRect(video) {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const bw = video.clientWidth || vw, bh = video.clientHeight || vh;
+    const scale = Math.max(bw / vw, bh / vh);        // object-fit: cover
+    const sw = Math.min(vw, bw / scale), sh = Math.min(vh, bh / scale);
+    const sx = (vw - sw) / 2, sy = (vh - sh) / 2;
+    return {
+      x: sx + SCAN_CROP.x * sw, y: sy + SCAN_CROP.y * sh,
+      w: SCAN_CROP.w * sw, h: SCAN_CROP.h * sh,
+    };
+  }
+
+  // Torch and zoom are the two things that decide whether a barcode reads in a
+  // real kitchen: a dim pantry shelf, and a phone that physically will not
+  // focus closer than a hand's width. Both are capability-gated — the controls
+  // simply aren't there on a camera that can't do them.
+  function wireScanControls(track) {
+    const caps = track.getCapabilities?.() || {};
+    const torchBtn = $("#scan-torch");
+    if (torchBtn && caps.torch) {
+      show(torchBtn);
+      let on = false;
+      torchBtn.addEventListener("click", async () => {
+        on = !on;
+        try { await track.applyConstraints({ advanced: [{ torch: on }] }); }
+        catch (err) { on = !on; return; }
+        torchBtn.classList.toggle("on", on);
+        torchBtn.setAttribute("aria-pressed", on ? "true" : "false");
+        torchBtn.setAttribute("aria-label", on ? "Turn the light off" : "Turn the light on");
+      });
+    }
+    const zoomRow = $("#scan-zoom");
+    const zMin = Number(caps.zoom?.min) || 1, zMax = Number(caps.zoom?.max) || 1;
+    if (!zoomRow || !caps.zoom || zMax <= zMin * 1.4) return;
+    const steps = SCAN_ZOOM_STEPS.filter((z) => z >= zMin && z <= zMax);
+    if (steps.length < 2) return;
+    zoomRow.innerHTML = steps
+      .map((z, i) => `<button class="scan-zoom-btn${i === 0 ? " on" : ""}" type="button" data-z="${z}">${z}×</button>`)
+      .join("");
+    show(zoomRow);
+    zoomRow.addEventListener("click", async (e) => {
+      const btn = e.target.closest(".scan-zoom-btn");
+      if (!btn) return;
+      try { await track.applyConstraints({ advanced: [{ zoom: Number(btn.dataset.z) }] }); }
+      catch (err) { return; }
+      $$(".scan-zoom-btn").forEach((b) => b.classList.toggle("on", b === btn));
+    });
+  }
+
+  // A phone that dims and locks itself mid-aim is the most annoying way to
+  // fail. Released by stopScan along with the camera.
+  async function scanWakeLock() {
+    try { return await navigator.wakeLock?.request("screen"); }
+    catch (err) { return null; }
+  }
+
+  // getUserMedia lumps every failure into one rejection, and a blocked
+  // permission looks exactly like a broken app unless it's named.
+  function cameraErrorText(err) {
+    const n = err?.name || "";
+    if (n === "NotAllowedError" || n === "SecurityError") {
+      return "Camera access is blocked. Allow the camera for this site, or type the number under the barcode.";
+    }
+    if (n === "NotFoundError" || n === "OverconstrainedError") {
+      return "No camera found on this device. Type the number under the barcode instead.";
+    }
+    if (n === "NotReadableError") {
+      return "Another app is using the camera. Close it and try again, or type the number instead.";
+    }
+    return "Couldn't start the camera. Type the number under the barcode instead.";
+  }
+
   function openScanModal(mealKey, opts = {}) {
     openModal({
       title: "Scan a barcode",
@@ -23119,10 +23219,13 @@
         <div class="scan-wrap">
           <video id="scan-video" playsinline muted autoplay></video>
           <div class="scan-frame" aria-hidden="true"></div>
+          <button class="scan-torch hidden" id="scan-torch" type="button"
+            aria-pressed="false" aria-label="Turn the light on">🔦</button>
         </div>
+        <div class="scan-zoom hidden" id="scan-zoom" role="group" aria-label="Camera zoom"></div>
         <p class="scan-status" id="scan-status">Starting the camera…</p>
         <div class="scan-foot">
-          <button class="btn btn-ghost btn-sm" id="scan-manual" type="button">Type the number instead</button>
+          <button class="btn btn-ghost" id="scan-manual" type="button">Type the number instead</button>
         </div>
         <p class="scan-credit">Packaged food data from Open Food Facts, licensed under the ODbL.</p>`,
       actions: [{ label: "Back", className: "btn btn-ghost", onClick: () => openAddFoodModal(mealKey, opts) }],
@@ -23133,13 +23236,15 @@
     const status = $("#scan-status");
     const say = (msg) => { if (document.body.contains(status)) status.textContent = msg; };
 
-    let stream = null, timer = null, done = false;
+    let stream = null, timer = null, nudge = null, lock = null, done = false;
     _scanStop = () => {
       done = true;
       if (timer) clearInterval(timer);
-      timer = null;
+      if (nudge) clearTimeout(nudge);
+      timer = nudge = null;
       if (stream) stream.getTracks().forEach((t) => t.stop());
       stream = null;
+      if (lock) { try { lock.release(); } catch (err) { /* already gone */ } lock = null; }
     };
 
     const onFound = (code) => {
@@ -23147,6 +23252,9 @@
       const clean = normalizeBarcode(code);
       if (!clean) return;
       stopScan();
+      // Confirmation you can feel — the phone is usually at arm's length
+      // against a shelf, not somewhere you can read a status line.
+      try { navigator.vibrate?.(60); } catch (err) {}
       say("Looking it up…");
       handleBarcode(clean, mealKey, opts);
     };
@@ -23155,15 +23263,34 @@
     // — say so instead of leaving "Starting the camera…" up forever.
     if (!navigator.mediaDevices?.getUserMedia) {
       say("This browser can't open the camera here. Type the number under the barcode instead.");
+      $("#scan-manual").classList.add("scan-manual-hot");
       return;
     }
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+    // Ask for a sharp frame. The decoder downscales to SCAN_MAX_W, but it does
+    // that AFTER cropping to the guide box, so extra sensor pixels land on the
+    // bars rather than being thrown away.
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+    })
       .then(async (s) => {
         if (done) { s.getTracks().forEach((t) => t.stop()); return; } // closed while asking
         stream = s;
         video.srcObject = s;
         await video.play().catch(() => {});
+        lock = await scanWakeLock();
+        if (done) { if (lock) { try { lock.release(); } catch (err) {} lock = null; } return; }
+        const track = s.getVideoTracks()[0];
+        if (track) {
+          // Keep the lens hunting; a fixed-focus frame at 10cm is a blur.
+          try { await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }); } catch (err) {}
+          wireScanControls(track);
+        }
         say("Point the camera at the barcode.");
+        nudge = setTimeout(() => {
+          if (done) return;
+          say("Still hunting. Try more light, or fill the box with the barcode.");
+          $("#scan-manual")?.classList.add("scan-manual-hot");
+        }, SCAN_NUDGE_MS);
 
         // The browser's own detector where it exists (Android Chrome), the
         // vendored decoder everywhere else (all iOS browsers, desktop Safari).
@@ -23184,10 +23311,11 @@
           const ctx = canvas.getContext("2d", { willReadFrequently: true });
           detect = async () => {
             if (!video.videoWidth) return null;
-            const scale = Math.min(1, SCAN_MAX_W / video.videoWidth);
-            canvas.width = Math.round(video.videoWidth * scale);
-            canvas.height = Math.round(video.videoHeight * scale);
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const r = scanSourceRect(video);
+            const scale = Math.min(1, SCAN_MAX_W / r.w);
+            canvas.width = Math.max(1, Math.round(r.w * scale));
+            canvas.height = Math.max(1, Math.round(r.h * scale));
+            ctx.drawImage(video, r.x, r.y, r.w, r.h, 0, 0, canvas.width, canvas.height);
             const out = await zx.readBarcodes(
               ctx.getImageData(0, 0, canvas.width, canvas.height),
               { formats: ZX_FORMATS, tryHarder: true });
@@ -23208,8 +23336,9 @@
           } finally { busy = false; }
         }, SCAN_INTERVAL);
       })
-      .catch(() => {
-        say("No camera access. Type the number under the barcode instead.");
+      .catch((err) => {
+        say(cameraErrorText(err));
+        $("#scan-manual")?.classList.add("scan-manual-hot");
       });
   }
 
@@ -23218,15 +23347,21 @@
       title: "Enter a barcode",
       body: `
         <p class="muted" style="margin-top:0">The number printed under the bars, digits only.</p>
-        <label>Barcode <input type="text" id="mb-code" inputmode="numeric" autocomplete="off" placeholder="e.g. 737628064502" /></label>`,
+        <label>Barcode <input type="text" id="mb-code" class="mb-code" inputmode="numeric" autocomplete="off" placeholder="e.g. 737628064502" /></label>`,
       actions: [
         { label: "Back", className: "btn btn-ghost", onClick: () => openAddFoodModal(mealKey, opts) },
-        { label: "Look up", className: "btn btn-primary", onClick: () => {
-            const code = normalizeBarcode($("#mb-code").value);
-            if (!code) { toast("That doesn't look like a barcode"); return; }
-            handleBarcode(code, mealKey, opts);
-          } },
+        { label: "Look up", className: "btn btn-primary", onClick: () => lookUp() },
       ],
+    });
+    const lookUp = () => {
+      const code = normalizeBarcode($("#mb-code").value);
+      if (!code) { toast("That doesn't look like a barcode"); return; }
+      handleBarcode(code, mealKey, opts);
+    };
+    // Thumb-typed on a numeric keypad, so the keypad's own go key has to work —
+    // reaching back up to the button for every attempt is the whole annoyance.
+    $("#mb-code").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); lookUp(); }
     });
     $("#mb-code").focus();
   }
@@ -26372,7 +26507,6 @@
     });
     $$("#dash-cal-modes .cal-mode-btn").forEach((b) =>
       b.addEventListener("click", () => setCalMode(b.dataset.calMode)));
-    $("#dash-cal-refresh")?.addEventListener("click", refreshDashCalSetmore);
     // Week is a timetable on a wide screen and an agenda on a narrow one, so
     // crossing the breakpoint (rotating a tablet, resizing a window) has to
     // redraw it — nothing else would.
