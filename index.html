@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=case1" />
+  <link rel="stylesheet" href="styles.css?v=kilo3" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -569,7 +569,7 @@
                   <span class="height-unit">in</span>
                 </div>
               </label>
-              <label>Body weight (lb)
+              <label>Body weight (<span class="unit-lbl">lb</span>)
                 <input type="number" id="prof-weight" step="0.1" min="0" />
               </label>
             </div>
@@ -593,13 +593,15 @@
                  before you open their program, not after opening a fold. -->
             <div class="profile-notes-grid">
               <label>Overall goals
-                <textarea id="prof-goals" rows="2" placeholder="e.g. Add 30 lb to squat, build lean mass, cut 10 lb"></textarea>
+                <textarea id="prof-goals" rows="2" placeholder="e.g. Add 30 to their squat, build lean mass, lean out a bit"></textarea>
               </label>
               <label>Coach notes
                 <textarea id="prof-notes" rows="2" placeholder="Injury history, preferences, schedule constraints…"></textarea>
               </label>
             </div>
           </details>
+          <!-- Weight units, rendered by renderCoachUnitsFold() -->
+          <div id="cprof-units-host"></div>
           <details class="pref-fold" id="cprof-fold-invite">
             <summary>
               <span class="pref-fold-ico">🔑</span>
@@ -1109,7 +1111,7 @@
               <label>Date
                 <input type="date" id="bw-date" />
               </label>
-              <label>Weight (lb)
+              <label>Weight (<span class="unit-lbl">lb</span>)
                 <input type="number" id="bw-weight" step="0.1" placeholder="e.g. 178.5" />
               </label>
               <button class="btn btn-primary" id="btn-log-bw">Log weight</button>
@@ -1189,13 +1191,13 @@
                 <span class="height-unit">in</span>
               </div>
             </label>
-            <label>Body weight (lb)
+            <label>Body weight (<span class="unit-lbl">lb</span>)
               <input type="number" id="ath-prof-weight" step="0.1" min="0" />
             </label>
           </div>
           <div class="profile-notes-grid">
             <label>My goals
-              <textarea id="ath-prof-goals" rows="2" placeholder="e.g. Add 30 lb to squat, build lean mass, cut 10 lb"></textarea>
+              <textarea id="ath-prof-goals" rows="2" placeholder="e.g. Add 30 to my squat, build lean mass, lean out a bit"></textarea>
             </label>
           </div>
         </div>
@@ -1312,7 +1314,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=cyc1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=case2"></script>
+  <script src="app.js?v=kilo3"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

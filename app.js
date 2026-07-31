@@ -271,6 +271,9 @@
     return {
       id: uid(), name: name || "New Athlete",
       age: "", heightIn: "", weightLb: "",
+      // Which unit this athlete reads and types in. Storage stays pounds
+      // either way — see the units block below weightToLb().
+      units: "lb",
       goals: "", notes: "",
       weeks: [],
       oneOffDays: [],
@@ -688,15 +691,86 @@
   function exIsTimed(ex) {
     return !!ex && (ex.timed === true || isCarryName(ex.name));
   }
+  // ── Units: pounds are the record, kilos are a lens ──────────────────────
+  // Every weight in storage stays in pounds, forever — programs, logs, PRs,
+  // bodyweight, lifetime tonnage. The Hoard's ranks are frozen against lb
+  // totals and PRs chain across years by raw number, so converting stored
+  // data would rewrite history the first time it ran wrong. kg is a display
+  // and input layer instead: one flag per athlete, converted at the edges,
+  // and two athletes on the same coach can be on different ones.
+  const LB_PER_KG = 2.20462262;
+  function kgFromLb(v) { return v / LB_PER_KG; }
+  function lbFromKg(v) { return v * LB_PER_KG; }
+  // Whose units are we rendering in? Anything that walks a list of people
+  // passes its own client in; everything inside one athlete's screens can let
+  // this resolve it. The coach reads each athlete in that athlete's unit.
+  function unitOf(c) { return c && c.units === "kg" ? "kg" : "lb"; }
+  function unitClient() {
+    if (state.mode === "trainer" && !state.previewMode) return currentClient();
+    return state.clientData?.program?.client || null;
+  }
+  function unitNow() { return unitOf(unitClient()); }
+  function isKg(u) { return (u || unitNow()) === "kg"; }
+  function unitLbl(u) { return isKg(u) ? "kg" : "lb"; }
+  // The nudge a stepper makes: a pair of the change plates people actually
+  // reach for. 2.5 is the pound habit, 1.25 the kilo one.
+  function unitStep(u) { return isKg(u) ? 1.25 : 2.5; }
+  // A stored pound number as it should READ. Quarter-kilo resolution: the
+  // smallest pair of change plates moves a bar 2.5 kg and micro plates 0.5,
+  // so quarters are finer than any bar ever gets loaded.
+  function dispNum(lb, u) {
+    const n = parseFloat(lb);
+    if (!Number.isFinite(n)) return null;
+    return isKg(u) ? Math.round(kgFromLb(n) * 4) / 4 : Math.round(n * 100) / 100;
+  }
+  // The other direction: what someone typed or tapped, back to pounds.
+  function storeNum(v, u) {
+    const n = parseFloat(v);
+    if (!Number.isFinite(n)) return null;
+    return isKg(u) ? Math.round(lbFromKg(n) * 100) / 100 : n;
+  }
+  // Weight fields carry two sentinels — "BW" (bodyweight) and "BAR" (the empty
+  // barbell). Neither is a number and neither converts.
+  function isWeightWord(v) { return v === "BW" || v === "BAR"; }
+  function dispW(v, u) {
+    if (isWeightWord(v)) return v;
+    if (v === "" || v == null) return "";
+    const n = dispNum(v, u);
+    return n == null ? "" : String(n);
+  }
+  function storeW(v, u) {
+    if (isWeightWord(v)) return v;
+    if (v === "" || v == null) return "";
+    const n = storeNum(v, u);
+    return n == null ? "" : String(n);
+  }
+  // "225 lb" / "102 kg". Not for dumbbell pairs — exWeightLabel and
+  // prWeightLabel own that, and a pair reads "80s" with no unit at all.
+  function wLabel(v, u) {
+    if (isWeightWord(v)) return v;
+    const s = dispW(v, u);
+    return s === "" ? "" : `${s} ${unitLbl(u)}`;
+  }
+  // Lifetime tonnage and session volume accumulate in pounds and the Hoard's
+  // ranks are frozen against those totals; only the label localises.
+  function tonNum(lb, u) {
+    const n = Number(lb) || 0;
+    return isKg(u) ? kgFromLb(n) : n;
+  }
+
   // "BAR" is a weight sentinel for the empty Olympic barbell: it displays as
-  // "BAR" everywhere but counts as 45 lb wherever weight becomes a number.
+  // "BAR" everywhere but counts as a real number wherever weight becomes one.
+  // A kg gym's bar is 20 kg, not a converted 45 lb, so the sentinel's weight
+  // depends on whose bar it is.
   const BAR_LB = 45;
-  function weightToLb(v) { return v === "BAR" ? BAR_LB : parseFloat(v); }
-  function exWeightLabel(ex, v) {
+  const BAR_KG = 20;
+  function barSentinelLb(u) { return isKg(u) ? lbFromKg(BAR_KG) : BAR_LB; }
+  function weightToLb(v, u) { return v === "BAR" ? barSentinelLb(u) : parseFloat(v); }
+  function exWeightLabel(ex, v, u) {
     if (!v) return null;
     if (v === "BW") return "BW";
     if (v === "BAR") return "BAR";
-    return usesDumbbellPair(ex) ? v + "s" : v + " lb";
+    return usesDumbbellPair(ex) ? dispW(v, u) + "s" : wLabel(v, u);
   }
 
   // ── Plate math ──────────────────────────────────────────────────────────
@@ -704,17 +778,35 @@
   // what to hang on each end. Everything here is display-only and local: the
   // bar and the plate rack live in localStorage, never in the program or the
   // cloud, so nothing new syncs and a coach upsert can't touch it.
+  // A kg rack is not a converted lb one — 20s and 15s exist, 45s and 35s
+  // don't, and the bar is 20 kg. So kg gets its own tables rather than a
+  // conversion, and everything below works in whichever unit the athlete uses.
   const KEY_PLATES = "trainerpro_plates_v1";
-  const PLATE_SIZES = [45, 35, 25, 10, 5, 2.5];
-  const PLATE_DEFAULT_INV = [45, 25, 10, 5, 2.5]; // 35s are the pair most racks skip
+  const PLATE_SIZES_LB = [45, 35, 25, 10, 5, 2.5];
+  const PLATE_DEFAULT_LB = [45, 25, 10, 5, 2.5]; // 35s are the pair most racks skip
+  const PLATE_SIZES_KG = [25, 20, 15, 10, 5, 2.5, 1.25];
+  const PLATE_DEFAULT_KG = [25, 20, 15, 10, 5, 2.5, 1.25];
+  function plateSizes(u) { return isKg(u) ? PLATE_SIZES_KG : PLATE_SIZES_LB; }
+  function plateDefaultInv(u) { return isKg(u) ? PLATE_DEFAULT_KG : PLATE_DEFAULT_LB; }
   // Bars offered in the picker. 0 = plate-loaded with no bar (leg press, sled).
-  const BAR_OPTIONS = [
-    { lb: 45, label: "Barbell", sub: "45" },
-    { lb: 35, label: "Light bar", sub: "35" },
-    { lb: 25, label: "EZ bar", sub: "25" },
-    { lb: 55, label: "Trap bar", sub: "55" },
-    { lb: 0,  label: "No bar", sub: "plates only" },
+  const BAR_OPTIONS_LB = [
+    { w: 45, label: "Barbell", sub: "45" },
+    { w: 35, label: "Light bar", sub: "35" },
+    { w: 25, label: "EZ bar", sub: "25" },
+    { w: 55, label: "Trap bar", sub: "55" },
+    { w: 0,  label: "No bar", sub: "plates only" },
   ];
+  const BAR_OPTIONS_KG = [
+    { w: 20, label: "Barbell", sub: "20" },
+    { w: 15, label: "Light bar", sub: "15" },
+    { w: 10, label: "EZ bar", sub: "10" },
+    { w: 25, label: "Trap bar", sub: "25" },
+    { w: 0,  label: "No bar", sub: "plates only" },
+  ];
+  function barOptions(u) { return isKg(u) ? BAR_OPTIONS_KG : BAR_OPTIONS_LB; }
+  // Each lb bar mapped to the kg bar that plays the same role, because the
+  // trap bar in a kilo gym weighs 25 kg — not 55 lb rounded to 24.9.
+  const BAR_LB_TO_KG = { 45: 20, 35: 15, 25: 10, 55: 25, 0: 0 };
   // Library lifts whose loading isn't obvious from the name alone.
   const BAR_BY_NAME = {
     "bench press": 45, "incline bench press": 45, "decline bench press": 45,
@@ -755,31 +847,46 @@
   function savePlateSettings(s) {
     try { localStorage.setItem(KEY_PLATES, JSON.stringify(s)); } catch {}
   }
+  // Rack and per-lift overrides are stored per unit, under their own keys: a
+  // "45" saved by a lb athlete means nothing to a kg one, and the flag can be
+  // flipped back and forth without either rack being lost.
+  function plateInvKey(u) { return isKg(u) ? "invKg" : "inv"; }
+  function plateExKey(u) { return isKg(u) ? "exKg" : "ex"; }
   // The rack: which plate sizes this gym actually has, biggest first.
-  function plateInventory() {
-    const inv = (plateSettings().inv || []).filter((p) => PLATE_SIZES.includes(p));
-    return (inv.length ? inv : PLATE_DEFAULT_INV).slice().sort((a, b) => b - a);
+  function plateInventory(u) {
+    const sizes = plateSizes(u);
+    const inv = (plateSettings()[plateInvKey(u)] || []).filter((p) => sizes.includes(p));
+    return (inv.length ? inv : plateDefaultInv(u)).slice().sort((a, b) => b - a);
+  }
+  // The bar a lift loads, in the athlete's own unit.
+  function guessBarIn(name, mods, u) {
+    const lb = guessBar(name, mods);
+    if (lb == null) return null;
+    if (!isKg(u)) return lb;
+    return BAR_LB_TO_KG[lb] != null ? BAR_LB_TO_KG[lb] : Math.round(kgFromLb(lb) * 2) / 2;
   }
   // An athlete's own pick for a lift always beats the guess. "off" hides it.
-  function plateBarFor(name, mods) {
-    const own = (plateSettings().ex || {})[String(name || "").trim().toLowerCase()];
+  function plateBarFor(name, mods, u) {
+    const own = (plateSettings()[plateExKey(u)] || {})[String(name || "").trim().toLowerCase()];
     if (own === "off") return null;
     if (Number.isFinite(own)) return own;
-    return guessBar(name, mods);
+    return guessBarIn(name, mods, u);
   }
-  function setPlateBarFor(name, val) {
+  function setPlateBarFor(name, val, u) {
     const s = plateSettings();
-    s.ex = s.ex || {};
+    const k = plateExKey(u);
+    s[k] = s[k] || {};
     const key = String(name || "").trim().toLowerCase();
-    if (val === null) delete s.ex[key]; else s.ex[key] = val;
+    if (val === null) delete s[k][key]; else s[k][key] = val;
     savePlateSettings(s);
   }
   // Greedy loader: the biggest plate that still fits, over and over. Returns
-  // one side's stack plus whatever the rack couldn't make.
-  function platesPerSide(totalLb, barLb, inv) {
-    const total = parseFloat(totalLb); // "" is not a weight; Number("") would be 0
-    if (!Number.isFinite(total) || !Number.isFinite(barLb)) return null;
-    let perSide = (total - barLb) / 2;
+  // one side's stack plus whatever the rack couldn't make. Unit-neutral —
+  // total, bar and rack all arrive in whichever unit the athlete reads.
+  function platesPerSide(totalW, barW, inv) {
+    const total = parseFloat(totalW); // "" is not a weight; Number("") would be 0
+    if (!Number.isFinite(total) || !Number.isFinite(barW)) return null;
+    let perSide = (total - barW) / 2;
     if (perSide < -1e-9) return { plates: [], leftover: 0, under: true };
     const plates = [];
     (inv || plateInventory()).forEach((p) => {
@@ -846,10 +953,14 @@
   // Burnout = 1 slot, Dropset = 2 slots. Each slot is a "drop-to" percentage of
   // the exercise's prescribed weight; the athlete logs the reps they hit.
   const FINISHER_PCTS = ["25", "50", "75"];
+  // Returns pounds, rounded to a whole number in whichever unit the athlete
+  // reads — a kg athlete gets 50 kg, not the 49.9 that 110 lb converts to.
   function finisherDropWeight(prescribedWeight, pct) {
-    const base = weightToLb(prescribedWeight); // "BAR" → 45
+    const base = weightToLb(prescribedWeight); // "BAR" → the empty bar
     if (!isFinite(base)) return null; // BW or unset — no computed number
-    return Math.round((base * (parseInt(pct, 10) / 100)));
+    const dropped = base * (parseInt(pct, 10) / 100);
+    if (!isKg()) return Math.round(dropped);
+    return Math.round(lbFromKg(Math.round(kgFromLb(dropped))) * 100) / 100;
   }
   function finisherSummary(ex) {
     const parts = [];
@@ -878,7 +989,14 @@
     if (!ex || ex.kind === "mobility" || !ex.pyramid) return false;
     return parseFloat(ex.pyramid.pct) > 0 || pyramidHasCustom(ex);
   }
-  function roundPlate5(v) { return Math.max(5, Math.round(v / 5) * 5); }
+  // Round a climbed weight to something loadable. The grain is the athlete's,
+  // not the number's: 5 lb in a pound gym, 2.5 kg in a kilo one — so the
+  // rounding happens in their unit and comes back as pounds.
+  function roundPlateStep(lb, u) {
+    if (!isKg(u)) return Math.max(5, Math.round(lb / 5) * 5);
+    const kg = Math.max(2.5, Math.round(kgFromLb(lb) / 2.5) * 2.5);
+    return Math.round(lbFromKg(kg) * 100) / 100;
+  }
   function pyramidWeights(ex, numSets) {
     if (!pyramidActive(ex) || !numSets) return null;
     const custom = pyramidCustom(ex);
@@ -891,7 +1009,7 @@
       const c = parseFloat(custom[i]);
       if (isFinite(c) && c > 0) cur = c;        // typed-in set wins and re-anchors
       else if (cur === null) return null;       // nothing to climb from yet
-      else if (i > 0) cur = roundPlate5(cur * (1 + step));
+      else if (i > 0) cur = roundPlateStep(cur * (1 + step));
       out.push(cur);
     }
     return out;
@@ -916,7 +1034,7 @@
     if (!ex.warmups?.length) return "";
     const s = usesDumbbellPair(ex) ? "s" : ""; // DB pair reads plural ("45s")
     return "W " + ex.warmups
-      .map((w) => (w.weight ? (w.weight === "BW" ? "BW" : w.weight === "BAR" ? "BAR" : w.weight + s) : "?"))
+      .map((w) => (w.weight ? (isWeightWord(w.weight) ? w.weight : dispW(w.weight) + s) : "?"))
       .join("·");
   }
 
@@ -1091,8 +1209,10 @@
   // programmed, so a lifter stuck at the starting number keeps counting stalls
   // and stays flagged rather than spiralling downward on its own.
   function progressionBackoff(st, rule, base) {
-    const unit = rule.inc || 5;
-    const cut = Math.max(base, Math.floor((st.weight * (1 - rule.backoff / 100)) / unit) * unit);
+    // Round down to the ladder's own jump size, so a kg ladder lands back on
+    // kg-clean numbers and a lb one on lb-clean ones without knowing which.
+    const grain = rule.inc || 5;
+    const cut = Math.max(base, Math.floor((st.weight * (1 - rule.backoff / 100)) / grain) * grain);
     const gaveBack = cut < st.weight - 0.01 || st.reps > rule.floor || st.extra > 0;
     st.weight = cut;
     st.reps = rule.floor;
@@ -1275,7 +1395,32 @@
   const PROG_TIME_CEIL_VALUES = [20, 30, 40, 45, 60, 75, 90, 120];
   const PROG_REPS_ONLY = 0; // "Then add" sentinel: no weight leg, reps climb and hold at the ceiling
   const PROG_BW_CEIL_VALUES = [10, 12, 15, 20, 25, 30, 40, 50];
-  const PROG_INC_VALUES = [2.5, 5, 10];
+  // Jump sizes, offered in the athlete's unit. The kg equivalent of a 5 lb
+  // jump is 2.5, not 2.27 — a kilo gym adds a pair of 1.25s, so these are
+  // the steps that exist rather than converted pound ones. `inc` is stored
+  // in pounds like every other weight, so the picker converts both ways.
+  const PROG_INC_VALUES_LB = [2.5, 5, 10];
+  const PROG_INC_VALUES_KG = [1.25, 2.5, 5];
+  // A ladder authored in the other unit lands between the standard steps —
+  // a +5 lb jump is 2.27 kg, which is neither 1.25 nor 2.5. Offer its real
+  // value alongside them so the row shows what the rule actually does rather
+  // than nothing lit at all, and one tap moves it onto a native step.
+  function progIncValues(u, inc) {
+    const base = isKg(u) ? PROG_INC_VALUES_KG : PROG_INC_VALUES_LB;
+    const cur = inc == null ? null : dispNum(inc, u);
+    if (cur && cur > 0 && !base.some((v) => Math.abs(v - cur) < 0.01)) {
+      return [...base, cur].sort((a, b) => a - b);
+    }
+    return base;
+  }
+  // What `inc` should read as: a stored 5.51 lb lights up the "+2.5 kg"
+  // button it came from.
+  function progIncShown(inc, u) {
+    const n = parseFloat(inc);
+    if (!Number.isFinite(n) || !n) return null;
+    return dispNum(n, u);
+  }
+  function progIncDefault(u) { return isKg(u) ? 2.5 : 5; }
 
   function openProgressionPicker(ex, anchorBtn, onChange) {
     document.querySelector(".prog-pop")?.remove();
@@ -1286,6 +1431,11 @@
     const floor = parseInt(ex.currentReps, 10) || 0;
     const isTimed = exIsTimed(ex);
     const isBW = ex.currentWeight === "BW";
+    // The increment rows are picked and read in the athlete's unit; `inc`
+    // itself is stored in pounds with everything else.
+    const u = unitNow();
+    const un = unitLbl(u);
+    const incStore = (v) => storeNum(v, u);
     // The ceiling / increment buttons rebuild ex.progression from scratch.
     // These knobs are independent of both, so they ride along instead of being
     // silently wiped every time the coach retunes the ladder. (progressionRule
@@ -1314,7 +1464,7 @@
               : `Time climbs from ${floor}s by ${PROG_TIME_STEP}s. When every set holds the ceiling, next week adds weight and time resets to ${p.reset || floor}s. Misses hold steady.`)
           : isBW
             ? (p.inc && parseInt(p.ceil, 10) !== PROG_NO_CAP
-                ? `Reps climb from ${floor} to ${p.ceil || "the cap"}. When every set hits the cap, next block adds ${p.inc} lb and reps reset to ${p.reset || floor} — bodyweight graduates to weighted, then keeps climbing.`
+                ? `Reps climb from ${floor} to ${p.ceil || "the cap"}. When every set hits the cap, next block adds ${progIncShown(p.inc, u)} ${un} and reps reset to ${p.reset || floor} — bodyweight graduates to weighted, then keeps climbing.`
                 : `Reps climb from ${floor} each week they hit the target (worst set + 1), and hold at the cap. No weight is added — stays bodyweight.`)
             : p.repsOnly
               ? `Reps climb from ${floor} each week they hit the target (worst set + 1), and hold at the ceiling. The weight stays as written.`
@@ -1353,12 +1503,12 @@
         // the "add weight" leg fires — progressionRule() sorts that out.
         section("Time ceiling", PROG_TIME_CEIL_VALUES.filter((v) => v > floor), parseInt(p.ceil, 10) || null,
           (v) => `${floor || "?"}→${v}s`,
-          (v) => { ex.progression = p.repsOnly ? { ceil: v, repsOnly: true, ...carry(p) } : { ceil: v, inc: parseFloat(p.inc) || 5, ...carry(p) }; saveTrainer(); onChange(); render(); });
-        section("Then add", [...PROG_INC_VALUES, PROG_REPS_ONLY], p.repsOnly ? PROG_REPS_ONLY : (parseFloat(p.inc) || null),
-          (v) => (v === PROG_REPS_ONLY ? "Time only" : `+${v} lb`),
+          (v) => { ex.progression = p.repsOnly ? { ceil: v, repsOnly: true, ...carry(p) } : { ceil: v, inc: parseFloat(p.inc) || incStore(progIncDefault(u)), ...carry(p) }; saveTrainer(); onChange(); render(); });
+        section("Then add", [...progIncValues(u, p.inc), PROG_REPS_ONLY], p.repsOnly ? PROG_REPS_ONLY : progIncShown(p.inc, u),
+          (v) => (v === PROG_REPS_ONLY ? "Time only" : `+${v} ${un}`),
           (v) => {
             const ceil = parseInt(p.ceil, 10) || PROG_TIME_CEIL_VALUES.find((c) => c > floor) || (floor + 15);
-            ex.progression = v === PROG_REPS_ONLY ? { ceil, repsOnly: true, ...carry(p) } : { ceil, inc: v, ...carry(p) };
+            ex.progression = v === PROG_REPS_ONLY ? { ceil, repsOnly: true, ...carry(p) } : { ceil, inc: incStore(v), ...carry(p) };
             saveTrainer(); onChange(); render();
           });
         // Optional: custom hold target (seconds) after a weight jump — defaults
@@ -1397,15 +1547,15 @@
           });
         // "Then add weight" — off = bodyweight forever; a weight = graduate at the
         // cap. Picking a weight with no finite cap yet defaults one from the list.
-        section("Then add weight", [PROG_REPS_ONLY, ...PROG_INC_VALUES],
-          p.inc && parseInt(p.ceil, 10) !== PROG_NO_CAP ? parseFloat(p.inc) : PROG_REPS_ONLY,
-          (v) => (v === PROG_REPS_ONLY ? "Stay BW" : `+${v} lb`),
+        section("Then add weight", [PROG_REPS_ONLY, ...progIncValues(u, p.inc)],
+          p.inc && parseInt(p.ceil, 10) !== PROG_NO_CAP ? progIncShown(p.inc, u) : PROG_REPS_ONLY,
+          (v) => (v === PROG_REPS_ONLY ? "Stay BW" : `+${v} ${un}`),
           (v) => {
             let ceil = parseInt(p.ceil, 10);
             if (!ceil || ceil === PROG_NO_CAP) ceil = PROG_BW_CEIL_VALUES.find((c) => c > floor) || floor + 7;
             ex.progression = v === PROG_REPS_ONLY
               ? { ceil, ...carry(p) }
-              : { ceil, inc: v, ...carry(p) };
+              : { ceil, inc: incStore(v), ...carry(p) };
             saveTrainer(); onChange(); render();
           });
         // Optional: reps after the weight jump (defaults to the floor). Only
@@ -1433,13 +1583,13 @@
       } else {
         section("Rep ceiling", PROG_CEIL_VALUES.filter((v) => v > floor), parseInt(p.ceil, 10) || null,
           (v) => `${floor || "?"}–${v}`,
-          (v) => { ex.progression = p.repsOnly ? { ceil: v, repsOnly: true, ...carry(p) } : { ceil: v, inc: parseFloat(p.inc) || 5, ...carry(p) }; saveTrainer(); onChange(); render(); });
+          (v) => { ex.progression = p.repsOnly ? { ceil: v, repsOnly: true, ...carry(p) } : { ceil: v, inc: parseFloat(p.inc) || incStore(progIncDefault(u)), ...carry(p) }; saveTrainer(); onChange(); render(); });
         // "Reps only" rides the increment row: same ladder, no weight leg.
-        section("Then add", [...PROG_INC_VALUES, PROG_REPS_ONLY], p.repsOnly ? PROG_REPS_ONLY : (parseFloat(p.inc) || null),
-          (v) => (v === PROG_REPS_ONLY ? "Reps only" : `+${v} lb`),
+        section("Then add", [...progIncValues(u, p.inc), PROG_REPS_ONLY], p.repsOnly ? PROG_REPS_ONLY : progIncShown(p.inc, u),
+          (v) => (v === PROG_REPS_ONLY ? "Reps only" : `+${v} ${un}`),
           (v) => {
             const ceil = parseInt(p.ceil, 10) || (floor + 4);
-            ex.progression = v === PROG_REPS_ONLY ? { ceil, repsOnly: true, ...carry(p) } : { ceil, inc: v, ...carry(p) };
+            ex.progression = v === PROG_REPS_ONLY ? { ceil, repsOnly: true, ...carry(p) } : { ceil, inc: incStore(v), ...carry(p) };
             saveTrainer(); onChange(); render();
           });
 
@@ -1600,7 +1750,7 @@
       const n = parseInt(ex.sets, 10) || 0;
 
       // ── 2. Weight per set ── typed numbers beat the computed ladder
-      const wLbl = sectionLabel("Weight per set");
+      const wLbl = sectionLabel(`Weight per set (${unitLbl()})`);
       const clearBtn = document.createElement("button");
       clearBtn.type = "button";
       clearBtn.className = "pyr-clear-btn";
@@ -1632,12 +1782,13 @@
         inp.type = "number";
         inp.inputMode = "decimal";
         inp.className = "pyr-weight-input";
-        inp.value = pyramidCustom(ex)[i] || "";
+        // Typed and read in the athlete's unit; stored in pounds like the rest.
+        inp.value = dispW(pyramidCustom(ex)[i] || "");
         inp.addEventListener("input", () => {
           ensurePyr();
           const arr = pyramidCustom(ex).slice();
           for (let k = 0; k < n; k++) if (arr[k] == null) arr[k] = ""; // no sparse holes into the DB
-          arr[i] = inp.value.trim();
+          arr[i] = storeW(inp.value.trim());
           ex.pyramid.weights = arr;
           // An all-blank array is the same as no override — don't keep the husk.
           if (!arr.some((v) => String(v).trim())) delete ex.pyramid.weights;
@@ -1709,11 +1860,11 @@
             ? "Bodyweight lifts have no weight ladder. Type a weight per set, or set a starting weight."
             : "Type a weight per set, or set a starting weight and a climb.";
         } else {
-          preview.textContent = w.map((wt, i) => `${wt}${r ? "×" + r[i] : ""}`).join(" · ");
+          preview.textContent = w.map((wt, i) => `${dispW(wt)}${r ? "×" + r[i] : ""}`).join(" · ");
         }
         // Blank cells show what the ladder would put there.
         cells.forEach((inp, i) => {
-          inp.placeholder = w && !String(inp.value).trim() ? String(w[i]) : "";
+          inp.placeholder = w && !String(inp.value).trim() ? dispW(w[i]) : "";
         });
       }
       refresh();
@@ -1783,7 +1934,8 @@
           : "Set weight, sets and reps to see what this lift is worth.";
       } else {
         const base = sets * reps * w;
-        preview.textContent = `${Math.round(base).toLocaleString()} lb → ${Math.round(base * plMult(ex)).toLocaleString()} lb per session`;
+        const un = unitLbl();
+        preview.textContent = `${Math.round(tonNum(base)).toLocaleString()} ${un} → ${Math.round(tonNum(base * plMult(ex))).toLocaleString()} ${un} per session`;
       }
       pop.appendChild(preview);
     }
@@ -2200,6 +2352,8 @@
     if (!Array.isArray(c.oneOffDays)) c.oneOffDays = [];
     if (!Array.isArray(c.trials)) c.trials = [];
     if (!Array.isArray(c.archivedPrograms)) c.archivedPrograms = [];
+    // Everyone filed before units existed was lifting in pounds.
+    if (c.units !== "kg") c.units = "lb";
     ensureSessionBank(c);
     if (!c.inviteCode) { c.inviteCode = makeInviteCode(); _trainerDataDirty = true; }
     // Migrate weekly diet targets → one standing nutrition plan: seed from the
@@ -2740,6 +2894,7 @@
         age: athlete.age,
         heightIn: athlete.heightIn,
         weightLb: athlete.weightLb,
+        units: athlete.units === "kg" ? "kg" : "lb",
         goals: athlete.goals,
         weeks: athlete.weeks || [],
         oneOffDays: athlete.oneOffDays || [],
@@ -3412,7 +3567,7 @@
     if (dress) {
       style += `;--rank-color:${dress.look.color};--rank-glow:${dress.look.glow}`;
       cls = " av-ranked" + (dress.look.hot ? " is-hot" : "");
-      title = ` title="${escapeHtml(dress.rank.name)} · ${escapeHtml(hoardLbLabel(dress.lb))} moved"`;
+      title = ` title="${escapeHtml(dress.rank.name)} · ${escapeHtml(hoardLbLabel(dress.lb, unitOf(client)))} moved"`;
     }
     if (!id) {
       // No pick yet — the initials tile they've always had, same shape so the
@@ -3541,7 +3696,7 @@
         chip.style.setProperty("--rank-color", look.color);
         chip.style.setProperty("--rank-glow", String(look.glow));
         chip.innerHTML = `<span class="bcr-ico">${rank.icon}</span><span class="bcr-name">${escapeHtml(rank.name)}</span>`;
-        chip.title = `${rank.name} · ${hoardLbLabel(lb)} moved`;
+        chip.title = `${rank.name} · ${hoardLbLabel(lb, unitOf(client))} moved`;
         nameEl.insertAdjacentElement("afterend", chip);
       }
     } else {
@@ -4808,9 +4963,9 @@
       const delta = Math.round((now - parseFloat(then.weightLb)) * 10) / 10;
       const arrow = Math.abs(delta) < 0.1 ? "neutral" : delta < 0 ? "down" : "up";
       tiles.push(snapTileHtml({
-        label: "Body weight", value: String(Math.round(now * 10) / 10), unit: "lb",
+        label: "Body weight", value: String(Math.round(dispNum(now, unitOf(c)) * 10) / 10), unit: unitLbl(unitOf(c)),
         sub: bwLog.length > 1
-          ? `<span class="sr-trend ${arrow}">${arrow === "neutral" ? "▬" : delta < 0 ? "▼" : "▲"} ${Math.abs(delta)}</span> since ${escapeHtml(snapAgoLabel(snapDaysAgo(then.date)).toLowerCase())}`
+          ? `<span class="sr-trend ${arrow}">${arrow === "neutral" ? "▬" : delta < 0 ? "▼" : "▲"} ${Math.abs(Math.round(dispNum(delta, unitOf(c)) * 10) / 10)}</span> since ${escapeHtml(snapAgoLabel(snapDaysAgo(then.date)).toLowerCase())}`
           : "one weigh-in",
         go: "diet",
       }));
@@ -4869,7 +5024,7 @@
     // Their newest weigh-in, not the number typed into the profile once. The
     // two are kept in step now, but the log wins if a sync hasn't landed yet.
     const w = latestBodyweight(c.importedProgress, c);
-    if (w) parts.push(`${Math.round(w * 10) / 10} lb`);
+    if (w) parts.push(`${Math.round(dispNum(w, unitOf(c)) * 10) / 10} ${unitLbl(unitOf(c))}`);
     return parts.join(" · ") || "Profile incomplete";
   }
   function currentClient() { return state.trainerData.clients.find((x) => x.id === state.currentClientId); }
@@ -4921,7 +5076,7 @@
     $("#prof-height-in").value = h ? Math.round(h % 12) : "";
     // Their newest weigh-in, so this field matches the card above it rather
     // than showing whatever was typed here months ago.
-    $("#prof-weight").value = latestBodyweight(c.importedProgress, c) ?? "";
+    $("#prof-weight").value = dispW(latestBodyweight(c.importedProgress, c) ?? "", unitOf(c));
     $("#prof-goals").value = c.goals ?? "";
     $("#prof-notes").value = c.notes ?? "";
     if (!c.inviteCode) { c.inviteCode = makeInviteCode(); saveTrainer(); }
@@ -4933,7 +5088,33 @@
     const rateBox = $("#prof-rate");
     if (rateBox) rateBox.value = c.sessionBank?.rate ? String(c.sessionBank.rate) : "";
     refreshRatePlaceholder(c);
+    renderCoachUnitsFold(c);
+    syncUnitLabels();
     setProfileLocked(true);
+  }
+  // The coach's copy of the athlete's unit. Programming for a kg gym means the
+  // weight picker has to speak kg while the program is being written, so the
+  // switch lives on both sides of the same flag.
+  function renderCoachUnitsFold(c) {
+    const host = $("#cprof-units-host");
+    if (!host || !c) return;
+    host.innerHTML = unitsFoldHtml(unitOf(c));
+    wireUnitsFold(host, (u) => {
+      c.units = u === "kg" ? "kg" : "lb";
+      saveTrainer();
+      // Their program, PR board, snapshot and profile weight are all read back
+      // through the new unit. Repainted piecemeal rather than through
+      // renderProfile(), which would re-lock the fields being edited.
+      renderCoachUnitsFold(c);
+      syncUnitLabels();
+      const wBox = $("#prof-weight");
+      if (wBox) wBox.value = dispW(latestBodyweight(c.importedProgress, c) ?? "", unitOf(c));
+      const meta = $("#client-meta-display");
+      if (meta) meta.textContent = clientMetaText(c); // the header carries their weight too
+      renderWeeks();
+      renderCoachPRs();
+      renderClientSnapshot();
+    });
   }
   // Empty means "whatever the tier works out to", so the placeholder has to say
   // what that is — otherwise a blank box looks like a missing rate.
@@ -5001,7 +5182,7 @@
     const c = currentClient(); if (!c) return;
     c.name = $("#prof-name").value;
     c.age = $("#prof-age").value;
-    c.weightLb = $("#prof-weight").value;
+    c.weightLb = storeW($("#prof-weight").value, unitOf(c));
     c.goals = $("#prof-goals").value;
     c.notes = $("#prof-notes").value;
     const ft = Number($("#prof-height-ft").value) || 0;
@@ -7550,7 +7731,10 @@
   // -------- Picker value tables --------
   const REPS_VALUES   = [...Array.from({ length: 30 }, (_, i) => String(i + 1)), "AMAP"];
   const SETS_VALUES   = ["1","2","3","4","5","6"];
-  const WEIGHT_RANGES = [
+  // The picker's cells are in the athlete's own unit — a kg gym counts in
+  // 2.5s off a 20 kg bar, and offering it 5 lb steps converted to 2.27 kg
+  // would be a grid of numbers nobody can load.
+  const WEIGHT_RANGES_LB = [
     { label: "BW · Bar", values: ["BW", "BAR"] },
     { label: "5–100",   values: Array.from({length:20}, (_,i) => String((i+1)*5)) },
     { label: "105–200", values: Array.from({length:20}, (_,i) => String(105+i*5)) },
@@ -7558,6 +7742,18 @@
     { label: "305–400", values: Array.from({length:20}, (_,i) => String(305+i*5)) },
     { label: "405+",    values: Array.from({length:80}, (_,i) => String(405+i*5)) },
   ];
+  const WEIGHT_RANGES_KG = [
+    { label: "BW · Bar", values: ["BW", "BAR"] },
+    { label: "2.5–50",   values: Array.from({length:20}, (_,i) => String((i+1)*2.5)) },
+    { label: "52.5–100", values: Array.from({length:20}, (_,i) => String(52.5+i*2.5)) },
+    { label: "102.5–150", values: Array.from({length:20}, (_,i) => String(102.5+i*2.5)) },
+    { label: "152.5–200", values: Array.from({length:20}, (_,i) => String(152.5+i*2.5)) },
+    { label: "205+",    values: Array.from({length:80}, (_,i) => String(205+i*2.5)) },
+  ];
+  function weightRanges(u) { return isKg(u) ? WEIGHT_RANGES_KG : WEIGHT_RANGES_LB; }
+  // The band boundaries each tab covers, so the picker can open on the tab
+  // holding the current weight.
+  function weightRangeTops(u) { return isKg(u) ? [50, 100, 150, 200] : [100, 200, 300, 400]; }
 
   function _positionPop(pop, anchor) {
     const r = anchor.getBoundingClientRect();
@@ -7862,6 +8058,9 @@
     _attachOutsideClose(pop, anchorEl);
   }
 
+  // `currentVal` arrives, and `cb` is handed back, in STORED pounds. The grid
+  // in between is the athlete's own unit — this is the one door every
+  // prescribed weight comes through, so it's the only place that converts.
   function openWeightPicker(currentVal, cb, anchorEl) {
     document.querySelector(".grid-picker-pop")?.remove();
     const pop = document.createElement("div");
@@ -7874,33 +8073,34 @@
     grid.className = "grid-picker-grid";
     grid.style.gridTemplateColumns = "repeat(5, 1fr)";
 
+    const u = unitNow();
+    const ranges = weightRanges(u);
+    const shown = dispW(currentVal, u); // the cell that should read as picked
+
     let activeRange = 0;
-    if (currentVal && currentVal !== "BW" && currentVal !== "BAR") {
-      const n = parseInt(currentVal, 10);
-      if (n > 400) activeRange = 5;
-      else if (n > 300) activeRange = 4;
-      else if (n > 200) activeRange = 3;
-      else if (n > 100) activeRange = 2;
-      else activeRange = 1;
+    if (currentVal && !isWeightWord(currentVal)) {
+      const n = parseFloat(shown);
+      const tops = weightRangeTops(u);
+      activeRange = 1 + tops.filter((t) => n > t).length;
     }
 
     function showRange(idx) {
       activeRange = idx;
       tabs.querySelectorAll(".grid-picker-tab").forEach((t, i) => t.classList.toggle("active", i === idx));
       grid.innerHTML = "";
-      const { values } = WEIGHT_RANGES[idx];
+      const { values } = ranges[idx];
       values.forEach(v => {
         const btn = document.createElement("button");
-        btn.className = "grid-picker-cell" + (String(v) === String(currentVal) ? " active" : "");
-        btn.textContent = v === "BW" ? "BW" : v === "BAR" ? "BAR" : v + " lb";
+        btn.className = "grid-picker-cell" + (String(v) === String(shown) ? " active" : "");
+        btn.textContent = isWeightWord(v) ? v : v + " " + unitLbl(u);
         btn.type = "button";
-        btn.addEventListener("click", () => { pop.remove(); cb(String(v)); });
+        btn.addEventListener("click", () => { pop.remove(); cb(storeW(String(v), u)); });
         grid.appendChild(btn);
       });
       requestAnimationFrame(() => _positionPop(pop, anchorEl));
     }
 
-    WEIGHT_RANGES.forEach((r, i) => {
+    ranges.forEach((r, i) => {
       const tab = document.createElement("button");
       tab.className = "grid-picker-tab";
       tab.textContent = r.label;
@@ -7937,11 +8137,14 @@
   // The tab set for a field, given what's prescribed for it.
   function logPickRanges(kind, seed, timed) {
     if (kind === "weight") {
-      const s = Number.isFinite(seed) && seed > 0 ? seed : 45;
-      // 2.5 lb around the plan, then the coach picker's own 5 lb ranges for a
-      // real jump. The BW/BAR tab is skipped: those are prescription
-      // sentinels, and a log holds a number.
-      return [{ label: "Near", values: logPickBand(s, 2.5, 0) }, ...WEIGHT_RANGES.slice(1)];
+      // The seed is already in the athlete's unit — the set inputs hold what
+      // they read, and only the save converts.
+      const u = unitNow();
+      const s = Number.isFinite(seed) && seed > 0 ? seed : (isKg(u) ? BAR_KG : BAR_LB);
+      // One change-plate pair around the plan, then the coach picker's own
+      // ranges for a real jump. The BW/BAR tab is skipped: those are
+      // prescription sentinels, and a log holds a number.
+      return [{ label: "Near", values: logPickBand(s, unitStep(u), 0) }, ...weightRanges(u).slice(1)];
     }
     if (timed) {
       return [
@@ -8594,7 +8797,7 @@
         row.className = "archive-ex-row";
         const rxParts = [];
         if (ex.sets) rxParts.push(ex.sets + " sets");
-        if (ex.currentWeight) rxParts.push(ex.currentWeight === "BW" ? "BW" : ex.currentWeight + " lb");
+        if (ex.currentWeight) rxParts.push(exWeightLabel(ex, ex.currentWeight));
         if (ex.currentReps) rxParts.push("× " + ex.currentReps);
         if (showTagChips) {
           const chips = orderedModifiers(ex).map((tag) => {
@@ -9188,11 +9391,12 @@
       : "Auto-progression: when every set hits the rep ceiling, next week's target adds weight";
     const refreshProgBtn = () => {
       const r = progressionRule(ex);
+      const inc = r ? progIncShown(r.inc) : null; // the jump, in the athlete's unit
       const ladder = !r ? "＋📈"
-        : r.timed ? `⏱${r.floor}→${r.ceil}s${r.repsOnly ? "" : ` +${r.inc}${r.reset !== r.floor ? "→" + r.reset + "s" : ""}`}`
-        : r.bw ? `📈${r.floor}→${r.ceil === PROG_NO_CAP ? "∞" : r.ceil}${r.graduate ? ` +${r.inc}` : ""}`
+        : r.timed ? `⏱${r.floor}→${r.ceil}s${r.repsOnly ? "" : ` +${inc}${r.reset !== r.floor ? "→" + r.reset + "s" : ""}`}`
+        : r.bw ? `📈${r.floor}→${r.ceil === PROG_NO_CAP ? "∞" : r.ceil}${r.graduate ? ` +${inc}` : ""}`
         : r.repsOnly ? `📈${r.floor}→${r.ceil} reps`
-        : `📈${r.floor}–${r.ceil} +${r.inc}${r.reset !== r.floor ? "→" + r.reset : ""}`;
+        : `📈${r.floor}–${r.ceil} +${inc}${r.reset !== r.floor ? "→" + r.reset : ""}`;
       // The autoregulation layers ride as short suffixes so the whole rule is
       // readable without opening the picker: ⊕ = extra sets, ↓ = stall back-off.
       progBtn.textContent = ladder
@@ -10952,10 +11156,10 @@
           body += `<div class="breakdown-ex"><div class="breakdown-ex-name">${breakdownExNameHtml(ex, c.importedProgress)}</div><div class="breakdown-sets">`;
           if (le?.sets?.length) {
             le.sets.forEach((s, n) => {
-              if (s.weight || s.reps) body += `<span class="breakdown-set-pill">S${n + 1} ${s.weight ? escapeHtml(String(s.weight)) + " lb" : "—"} × ${s.reps || "—"}</span>`;
+              if (s.weight || s.reps) body += `<span class="breakdown-set-pill">S${n + 1} ${s.weight ? escapeHtml(wLabel(s.weight, unitOf(c))) : "—"} × ${s.reps || "—"}</span>`;
             });
           } else if (le?.weight || le?.reps) {
-            body += `<span class="breakdown-set-pill">${le.weight ? escapeHtml(String(le.weight)) + " lb" : "—"} × ${le.reps || "—"}</span>`;
+            body += `<span class="breakdown-set-pill">${le.weight ? escapeHtml(wLabel(le.weight, unitOf(c))) : "—"} × ${le.reps || "—"}</span>`;
           } else {
             body += `<span class="dvs-notlogged">Not logged</span>`;
           }
@@ -11444,10 +11648,10 @@
         bodyHtml += `<div class="breakdown-ex"><div class="breakdown-ex-name">${breakdownExNameHtml(ex, c.importedProgress)}</div><div class="breakdown-sets">`;
         if (logEntry?.sets?.length) {
           logEntry.sets.forEach((s, i) => {
-            if (s.weight || s.reps) bodyHtml += `<span class="breakdown-set-pill">S${i+1} ${s.weight ? escapeHtml(String(s.weight)) + " lb" : "—"} × ${s.reps || "—"}</span>`;
+            if (s.weight || s.reps) bodyHtml += `<span class="breakdown-set-pill">S${i+1} ${s.weight ? escapeHtml(wLabel(s.weight, unitOf(c))) : "—"} × ${s.reps || "—"}</span>`;
           });
         } else if (logEntry?.weight || logEntry?.reps) {
-          bodyHtml += `<span class="breakdown-set-pill">${logEntry.weight ? escapeHtml(String(logEntry.weight)) + " lb" : "—"} × ${logEntry.reps || "—"}</span>`;
+          bodyHtml += `<span class="breakdown-set-pill">${logEntry.weight ? escapeHtml(wLabel(logEntry.weight, unitOf(c))) : "—"} × ${logEntry.reps || "—"}</span>`;
         } else {
           bodyHtml += `<span style="font-size:0.8rem;color:var(--muted)">Not logged</span>`;
         }
@@ -11551,10 +11755,10 @@
   // read "Dumbbell" in a lift's name, so the name alone can no longer tell one
   // dumbbell from two. Undefined falls back to reading the name, which is
   // still right for every hand-typed lift and every record filed before this.
-  function prWeightLabel(name, w, pair) {
-    if (!w) return "— lb";
+  function prWeightLabel(name, w, pair, u) {
+    if (!w) return `— ${unitLbl(u)}`;
     const plural = pair === undefined ? isDumbbellLift(name) : !!pair;
-    return plural ? `${escapeHtml(w)}s` : `${escapeHtml(w)} lb`;
+    return plural ? `${escapeHtml(dispW(w, u))}s` : escapeHtml(wLabel(w, u));
   }
   // "225 lb × 5" ("80s × 5" for dumbbells), or "5 reps" for bodyweight entries.
   function prValueLabel(p) {
@@ -11658,7 +11862,7 @@
     if (isFinite(cur) && cur >= b.weight) return "";
     const dt = shortFromISO(b.date);
     return `<button class="pr-logged-chip" data-slot="${n}" type="button"
-      title="Best from logged workouts. Tap to record it.">🏋️ ${b.weight}${isDumbbellLift(entry.name) ? "s" : ""}${dt ? " · " + dt : ""}</button>`;
+      title="Best from logged workouts. Tap to record it.">🏋️ ${dispW(b.weight)}${isDumbbellLift(entry.name) ? "s" : ""}${dt ? " · " + dt : ""}</button>`;
   }
   function wirePRLoggedChips(card, entry, best, onApply) {
     card.querySelectorAll(".pr-logged-chip").forEach((chip) => {
@@ -11749,7 +11953,7 @@
           <span class="pr-author athlete">athlete</span>
         </div>
         <div class="pr-view-value">
-          <span class="pr-weight">${escapeHtml(p.weight || "—")} lb</span>
+          <span class="pr-weight">${p.weight ? escapeHtml(wLabel(p.weight)) : "—"}</span>
           <span class="pr-reps">× ${escapeHtml(p.reps || "—")} reps</span>
           ${p.date ? `<span class="pr-date">${escapeHtml(p.date)}</span>` : ""}
         </div>`;
@@ -11788,6 +11992,11 @@
   // Which folds are open is remembered across re-renders (locking a slot or
   // auto-filling from logs re-renders the whole list).
   const _prOpen = new Set();
+  // "e.g. 315" only reads as an example if it's a number from the athlete's
+  // own world — a kg lifter has never put 315 on a bar.
+  function prPh(lb) {
+    return "e.g. " + (isKg() ? Math.round(kgFromLb(lb) / 2.5) * 2.5 : lb);
+  }
   function prSummaryHtml(entry, extra = "") {
     // Weight only. Dates live in the editor a tap away, and three of them on
     // one row pushed the third PR off the edge of a phone.
@@ -11834,16 +12043,16 @@
         <div class="pr-edit-name-row"><input class="pr-name-input" list="${prExerciseDatalist("coach")}" autocomplete="off" placeholder="Pick an exercise…" value="${escapeHtml(entry.name || "")}"></div>
         <div class="pr-edit-fields">
           <div class="pr-field-group">
-            <label class="pr-field-label">1 Rep PR (lb)</label>
-            <input class="pr-1rm-input" type="number" min="0" step="any" placeholder="e.g. 315">
+            <label class="pr-field-label">1 Rep PR (${unitLbl()})</label>
+            <input class="pr-1rm-input" type="number" min="0" step="any" placeholder="${prPh(315)}">
           </div>
           <div class="pr-field-group">
-            <label class="pr-field-label">2 Rep PR (lb)</label>
-            <input class="pr-2rm-input" type="number" min="0" step="any" placeholder="e.g. 295">
+            <label class="pr-field-label">2 Rep PR (${unitLbl()})</label>
+            <input class="pr-2rm-input" type="number" min="0" step="any" placeholder="${prPh(295)}">
           </div>
           <div class="pr-field-group">
-            <label class="pr-field-label">3 Rep PR (lb)</label>
-            <input class="pr-3rm-input" type="number" min="0" step="any" placeholder="e.g. 275">
+            <label class="pr-field-label">3 Rep PR (${unitLbl()})</label>
+            <input class="pr-3rm-input" type="number" min="0" step="any" placeholder="${prPh(275)}">
           </div>
         </div>
         <div class="pr-edit-actions">
@@ -11853,9 +12062,9 @@
 
       card.querySelector(".pr-save-btn").addEventListener("click", () => {
         const newName = card.querySelector(".pr-name-input")?.value.trim() || "";
-        const pr1 = card.querySelector(".pr-1rm-input").value.trim();
-        const pr2 = card.querySelector(".pr-2rm-input").value.trim();
-        const pr3 = card.querySelector(".pr-3rm-input").value.trim();
+        const pr1 = storeW(card.querySelector(".pr-1rm-input").value.trim());
+        const pr2 = storeW(card.querySelector(".pr-2rm-input").value.trim());
+        const pr3 = storeW(card.querySelector(".pr-3rm-input").value.trim());
         if (!newName) { toast("Enter a lift name"); return; }
         // No values is fine — they fill themselves from logged workouts.
         c.coachPRs.push({ id: uid(), name: newName, pr1, pr2, pr3 });
@@ -11876,7 +12085,7 @@
         return `
           <div class="pr-field-group${lk ? " is-locked" : ""}">
             <label class="pr-field-label">${label}</label>
-            <input class="pr-${n}rm-input" type="number" min="0" step="any" placeholder="${ph}" value="${escapeHtml(entry[`pr${n}`] || "")}" ${ro}>
+            <input class="pr-${n}rm-input" type="number" min="0" step="any" placeholder="${ph}" value="${escapeHtml(dispW(entry[`pr${n}`] || ""))}" ${ro}>
             <input class="pr-${n}rm-date pr-date-input" type="text" inputmode="numeric" maxlength="8" placeholder="mm/dd/yy" title="Date achieved" value="${escapeHtml(entry[`pr${n}Date`] || "")}" ${ro}>
             <button class="pr-lock-btn${lk ? " is-locked" : ""}" data-slot="${n}" type="button" title="${lk ? "Locked. Tap to edit" : "Lock in"}" aria-label="${lk ? "Locked. Tap to edit" : "Lock in"}">${lk ? "🔒" : "🔓"}</button>
             ${prLoggedChip(entry, n, best)}
@@ -11884,9 +12093,9 @@
       };
       card.innerHTML = prFoldHtml(entry, entry.id || entry.name, `
         <div class="pr-edit-fields">
-          ${slot(1, "1 Rep PR (lb)", "e.g. 315")}
-          ${slot(2, "2 Rep PR (lb)", "e.g. 295")}
-          ${slot(3, "3 Rep PR (lb)", "e.g. 275")}
+          ${slot(1, `1 Rep PR (${unitLbl()})`, prPh(315))}
+          ${slot(2, `2 Rep PR (${unitLbl()})`, prPh(295))}
+          ${slot(3, `3 Rep PR (${unitLbl()})`, prPh(275))}
         </div>
         ${athletePR ? `
           <div class="pr-athlete-row">
@@ -11897,7 +12106,7 @@
       wirePRFold(card);
 
       [1, 2, 3].forEach((n) => {
-        card.querySelector(`.pr-${n}rm-input`).addEventListener("input", (e) => { entry[`pr${n}`] = e.target.value; saveTrainer(); });
+        card.querySelector(`.pr-${n}rm-input`).addEventListener("input", (e) => { entry[`pr${n}`] = storeW(e.target.value); saveTrainer(); });
         card.querySelector(`.pr-${n}rm-date`).addEventListener("input", (e) => {
           e.target.value = formatShortDate(e.target.value); // auto mm/dd/yy
           entry[`pr${n}Date`] = e.target.value;
@@ -12040,7 +12249,7 @@
         return `
           <div class="pr-field-group${lk ? " is-locked" : ""}">
             <label class="pr-field-label">${label}</label>
-            <input class="pr-${n}rm-input" type="number" min="0" step="any" placeholder="${ph}" value="${escapeHtml(entry[`pr${n}`] || "")}" ${ro}>
+            <input class="pr-${n}rm-input" type="number" min="0" step="any" placeholder="${ph}" value="${escapeHtml(dispW(entry[`pr${n}`] || ""))}" ${ro}>
             <input class="pr-${n}rm-date pr-date-input" type="text" inputmode="numeric" maxlength="8" placeholder="mm/dd/yy" title="Date achieved" value="${escapeHtml(entry[`pr${n}Date`] || "")}" ${ro}>
             <button class="pr-lock-btn${lk ? " is-locked" : ""}" data-slot="${n}" type="button" title="${lk ? "Locked. Tap to edit" : "Lock in"}" aria-label="${lk ? "Locked. Tap to edit" : "Lock in"}">${lk ? "🔒" : "🔓"}</button>
             ${prLoggedChip(entry, n, best)}
@@ -12048,13 +12257,13 @@
       };
       card.innerHTML = prFoldHtml(entry, entry.id || entry.name, `
         <div class="pr-edit-fields">
-          ${slot(1, "1 Rep PR (lb)", "e.g. 315")}
-          ${slot(2, "2 Rep PR (lb)", "e.g. 295")}
-          ${slot(3, "3 Rep PR (lb)", "e.g. 275")}
+          ${slot(1, `1 Rep PR (${unitLbl()})`, prPh(315))}
+          ${slot(2, `2 Rep PR (${unitLbl()})`, prPh(295))}
+          ${slot(3, `3 Rep PR (${unitLbl()})`, prPh(275))}
         </div>`);
       wirePRFold(card);
       [1, 2, 3].forEach((n) => {
-        card.querySelector(`.pr-${n}rm-input`).addEventListener("input", (e) => { entry[`pr${n}`] = e.target.value; pushCoachPRs(); });
+        card.querySelector(`.pr-${n}rm-input`).addEventListener("input", (e) => { entry[`pr${n}`] = storeW(e.target.value); pushCoachPRs(); });
         card.querySelector(`.pr-${n}rm-date`).addEventListener("input", (e) => {
           e.target.value = formatShortDate(e.target.value); // auto mm/dd/yy
           entry[`pr${n}Date`] = e.target.value;
@@ -15933,6 +16142,77 @@
     const info = cyclePhaseOn(c.periods, todayISO());
     return info ? `Day ${info.day} · ${share.label.toLowerCase()}` : share.label;
   }
+  // ── Pounds or kilos ──
+  // Nothing in storage changes when this flips — every weight stays in pounds
+  // and gets converted on the way to the screen — so it's safe to switch back
+  // and forth, and switching is the whole promise the fold makes.
+  const UNIT_OPTS = [
+    { id: "lb", emoji: "🇺🇸", label: "Pounds", hint: "45 lb bar, plates in 45s and 25s." },
+    { id: "kg", emoji: "🌍", label: "Kilos", hint: "20 kg bar, plates in 20s and 15s, jumps of 2.5." },
+  ];
+  function unitsFoldHtml(cur, { id = "pref-fold-units", name = "unit-pick" } = {}) {
+    return `
+      <details class="pref-fold" id="${id}">
+        <summary>
+          <span class="pref-fold-ico">⚖️</span>
+          <span class="pref-fold-text">
+            <span class="pref-fold-title">Weight units</span>
+            <span class="pref-fold-sub">${cur === "kg" ? "Kilograms" : "Pounds"}</span>
+          </span>
+          <span class="pref-fold-chev">▸</span>
+        </summary>
+        <div class="cyc-share-pick">
+          ${UNIT_OPTS.map((o) => `
+            <label class="cyc-share-opt${cur === o.id ? " on" : ""}">
+              <input type="radio" name="${name}" value="${o.id}"${cur === o.id ? " checked" : ""} />
+              <span class="cyc-share-emo">${o.emoji}</span>
+              <span class="cyc-share-text"><span class="pref-label">${escapeHtml(o.label)}</span><span class="pref-hint">${escapeHtml(o.hint)}</span></span>
+            </label>`).join("")}
+        </div>
+        <p class="pref-foot">Switch any time. Nothing is rewritten — every weight already logged is just read back in the other unit, so history, PRs and the Hoard all stay exactly where they were.</p>
+      </details>`;
+  }
+  // The athlete's copy of their own unit. Rides the same vitals push as their
+  // name and age, so the coach's picker speaks the same language they do.
+  function setAthleteUnits(u) {
+    const c = state.clientData.program?.client;
+    if (!c) return;
+    c.units = u === "kg" ? "kg" : "lb";
+    saveClient();
+    const athleteId = state.clientData.program?.clientId;
+    if (window.Cloud?.enabled && athleteId) {
+      window.Cloud.debounce(`athleteProfile:${athleteId}`, () =>
+        window.Cloud.updateAthleteProfileFields(athleteId, { units: c.units }));
+    }
+  }
+  function wireUnitsFold(host, onPick) {
+    host.querySelectorAll('input[name="unit-pick"]').forEach((r) => r.addEventListener("change", () => {
+      onPick(r.value);
+      toast(r.value === "kg" ? "Switched to kilos ⚖️" : "Switched to pounds ⚖️");
+    }));
+  }
+  // Static "(lb)" labels in index.html wear .unit-lbl so one pass keeps them
+  // honest without every screen owning its own re-render.
+  function syncUnitLabels() {
+    const u = unitLbl();
+    document.querySelectorAll(".unit-lbl").forEach((el) => { el.textContent = u; });
+  }
+  // Every athlete screen that shows a weight, repainted where it stands.
+  // Deliberately not enterClientPortal(): that lands on Overview, and someone
+  // who just flipped the switch is sitting in their settings.
+  function repaintForUnits() {
+    syncUnitLabels();
+    renderAthleteProfileFields();
+    renderClientHeaderRank();
+    renderClientWorkouts();
+    renderClientProgress();
+    renderAthletePRs();
+    renderAthleteProgressTab();
+    renderStrengthProgress($("#athlete-strength-charts"), state.clientData.program?.client, state.clientData.progress);
+    renderAthleteOverview();
+    renderFoodDay();
+    renderAthleteSettingsCards();
+  }
   function cycleFoldHtml() {
     const c = cycleState();
     const detail = c.enabled ? `
@@ -16183,7 +16463,7 @@
     const ms = WorkoutClock.sessionMs();
     const mins = Math.round(ms / 60000);
     const tiles = [];
-    if (now.volume) tiles.push({ v: now.volume.toLocaleString(), u: "lb moved" });
+    if (now.volume) tiles.push({ v: Math.round(tonNum(now.volume)).toLocaleString(), u: `${unitLbl()} moved` });
     tiles.push({ v: String(now.sets), u: now.sets === 1 ? "set" : "sets" });
     if (mins >= 1) tiles.push({ v: String(mins), u: mins === 1 ? "minute" : "minutes" });
     else tiles.push({ v: String(now.reps), u: "reps" });
@@ -16355,6 +16635,7 @@
     // athlete's own next open would have.
     if (migratePRLifts(prog?.client, state.clientData.progress)) saveClient();
     $("#client-portal-name").textContent = prog.client.name;
+    syncUnitLabels(); // the static "(lb)" labels belong to whoever just opened
     renderClientHeaderSessions();
     renderClientHeaderRank();
     // Profile tab: editable details, avatar, theme picker
@@ -16523,17 +16804,17 @@
     { id: "highestpr", icon: "🏅", label: "Highest PR", get: (x) => {
         const top = highestPR(x.c, x.progress); if (!top) return null;
         const db = isDumbbellLift(top.name);
-        return { value: db ? `${top.weight}` : top.weight, unit: db ? "s" : "lb", when: top.name || undefined }; } },
+        return { value: dispW(top.weight), unit: db ? "s" : unitLbl(), when: top.name || undefined }; } },
     { id: "timetrained", icon: "⏳", label: "Time trained", get: (x) => {
         const ms = x.progress.totalWorkoutMs || 0; if (!ms) return null;
         return { value: formatWorkoutTime(ms) }; } },
-    { id: "lastworkout", icon: "⏱️", label: "Last workout", get: (x) => x.lastWk ? ({ value: formatTonnage(x.lastWk.volume), unit: "lb", when: x.lastWkLabel }) : null },
-    { id: "tonnage", icon: "🧮", label: "Total lifted", get: (x) => x.ton ? ({ value: formatTonnage(x.ton), unit: "lb" }) : null },
+    { id: "lastworkout", icon: "⏱️", label: "Last workout", get: (x) => x.lastWk ? ({ value: formatTonnage(tonNum(x.lastWk.volume)), unit: unitLbl(), when: x.lastWkLabel }) : null },
+    { id: "tonnage", icon: "🧮", label: "Total lifted", get: (x) => x.ton ? ({ value: formatTonnage(tonNum(x.ton)), unit: unitLbl() }) : null },
     { id: "volweek", icon: "📈", label: "Volume this week", get: (x) => {
         const b = volumeBuckets(x.progress, "week"); if (!b.length) return null;
         const cur = b[b.length - 1].v, prev = b.length > 1 ? b[b.length - 2].v : 0;
         const trend = prev ? (cur > prev ? "up" : cur < prev ? "down" : null) : null;
-        return { value: formatTonnage(cur), unit: "lb", trend }; } },
+        return { value: formatTonnage(tonNum(cur)), unit: unitLbl(), trend }; } },
     { id: "month", icon: "📆", label: "This month", get: (x) => {
         const ym = x.today.slice(0, 7);
         return { value: completionDateList(x.progress).filter((d) => d.slice(0, 7) === ym).length }; } },
@@ -16548,8 +16829,8 @@
         const prev = ref ? parseFloat(ref.weightLb) : null;
         const diff = prev != null ? cur - prev : 0;
         const trend = Math.abs(diff) < 0.1 ? null : (diff > 0 ? "up" : "down");
-        return { value: Math.round(cur), unit: "lb", trend, trendNeutral: true }; } },
-    { id: "bigthree", icon: "💪", label: "Top lift", get: (x) => { const b = bestBigThreeLift(x.progress, x.c); return b ? ({ value: b, unit: "lb" }) : null; } },
+        return { value: Math.round(dispNum(cur)), unit: unitLbl(), trend, trendNeutral: true }; } },
+    { id: "bigthree", icon: "💪", label: "Top lift", get: (x) => { const b = bestBigThreeLift(x.progress, x.c); return b ? ({ value: dispW(b), unit: unitLbl() }) : null; } },
     { id: "lastlift", icon: "💤", label: "Days since last lift", get: (x) => {
         const dates = completionDateList(x.progress); if (!dates.length) return null;
         const last = dates[dates.length - 1];
@@ -16923,7 +17204,7 @@
     title.textContent = rank.name;
     title.classList.add("is-rank");
     title.classList.toggle("is-hot", !!look.hot);
-    crest.title = `${rank.name} · ${hoardLbLabel(lb)} moved · ${Math.round(lvl.into).toLocaleString()} of ${lvl.need.toLocaleString()} lb to ${next.name}`;
+    crest.title = `${rank.name} · ${hoardLbLabel(lb)} moved · ${Math.round(tonNum(lvl.into)).toLocaleString()} of ${Math.round(tonNum(lvl.need)).toLocaleString()} ${unitLbl()} to ${next.name}`;
 
     // Sweep the arc by dash offset. The ring is a rounded rect hugging the
     // logo, not a circle — a circle big enough to clear a rounded square's
@@ -16984,7 +17265,7 @@
     const h = Number(c.heightIn) || 0;
     set("#ath-prof-height-ft", h ? Math.floor(h / 12) : "");
     set("#ath-prof-height-in", h ? Math.round(h % 12) : "");
-    set("#ath-prof-weight", latestBodyweight(state.clientData.progress, c) ?? "");
+    set("#ath-prof-weight", dispW(latestBodyweight(state.clientData.progress, c) ?? ""));
     set("#ath-prof-goals", c.goals || "");
   }
   function saveAthleteProfile() {
@@ -16992,7 +17273,7 @@
     const c = state.clientData.program?.client; if (!c) return;
     c.name = $("#ath-prof-name").value.trim();
     c.age = $("#ath-prof-age").value;
-    c.weightLb = $("#ath-prof-weight").value;
+    c.weightLb = storeW($("#ath-prof-weight").value);
     c.goals = $("#ath-prof-goals").value;
     const ft = Number($("#ath-prof-height-ft").value) || 0;
     const inch = Number($("#ath-prof-height-in").value) || 0;
@@ -18745,29 +19026,30 @@
     pop.className = "plate-pop";
     _plateSheet = pop;
 
+    const u = unitNow();
     const render = () => {
-      const cur = plateBarFor(name, mods);
-      const own = (plateSettings().ex || {})[key];
-      const inv = plateInventory();
+      const cur = plateBarFor(name, mods, u);
+      const own = (plateSettings()[plateExKey(u)] || {})[key];
+      const inv = plateInventory(u);
       pop.innerHTML = `
         <div class="plate-pop-head">${escapeHtml(name || "This lift")}</div>
-        <div class="plate-pop-lbl">Bar</div>
+        <div class="plate-pop-lbl">Bar (${unitLbl(u)})</div>
         <div class="plate-pop-bars">
-          ${BAR_OPTIONS.map((b) => `<button type="button" class="plate-bar-opt${cur === b.lb ? " on" : ""}" data-bar="${b.lb}">
+          ${barOptions(u).map((b) => `<button type="button" class="plate-bar-opt${cur === b.w ? " on" : ""}" data-bar="${b.w}">
             <span>${escapeHtml(b.label)}</span><em>${escapeHtml(b.sub)}</em></button>`).join("")}
           <button type="button" class="plate-bar-opt plate-bar-off${own === "off" ? " on" : ""}" data-bar="off">
             <span>Not a bar lift</span><em>hide</em></button>
         </div>
-        <div class="plate-pop-lbl">Plates in your gym</div>
+        <div class="plate-pop-lbl">Plates in your gym (${unitLbl(u)})</div>
         <div class="plate-pop-plates">
-          ${PLATE_SIZES.map((p) => `<button type="button" class="plate-size${inv.includes(p) ? " on" : ""}" data-plate="${p}">${p}</button>`).join("")}
+          ${plateSizes(u).map((p) => `<button type="button" class="plate-size${inv.includes(p) ? " on" : ""}" data-plate="${p}">${p}</button>`).join("")}
         </div>
         <div class="plate-pop-foot">The bar is per exercise. The plates apply everywhere.</div>`;
       pop.querySelectorAll("[data-bar]").forEach((b) => b.addEventListener("click", (e) => {
         e.stopPropagation();
         const v = b.dataset.bar;
-        if (v === "off") setPlateBarFor(name, own === "off" ? null : "off");
-        else setPlateBarFor(name, cur === Number(v) ? null : Number(v));
+        if (v === "off") setPlateBarFor(name, own === "off" ? null : "off", u);
+        else setPlateBarFor(name, cur === Number(v) ? null : Number(v), u);
         render();
         onChange?.();
       }));
@@ -18777,7 +19059,7 @@
         const next = inv.includes(p) ? inv.filter((x) => x !== p) : [...inv, p];
         if (!next.length) return; // an empty rack can't load anything
         const s = plateSettings();
-        s.inv = next.sort((a, z) => z - a);
+        s[plateInvKey(u)] = next.sort((a, z) => z - a);
         savePlateSettings(s);
         render();
         onChange?.();
@@ -19067,8 +19349,9 @@
     if (effSets) rxParts.push(effSets + " sets");
     if (pyrW) {
       // The whole ladder when it fits, first→last when it doesn't.
-      const s = usesDumbbellPair(ex) ? "s" : " lb";
-      rxParts.push((pyrW.length <= 4 ? pyrW.join("→") : `${pyrW[0]}→${pyrW[pyrW.length - 1]}`) + s);
+      const s = usesDumbbellPair(ex) ? "s" : " " + unitLbl();
+      const pyrD = pyrW.map((w) => dispW(w));
+      rxParts.push((pyrD.length <= 4 ? pyrD.join("→") : `${pyrD[0]}→${pyrD[pyrD.length - 1]}`) + s);
       if (pyrR) rxParts.push("× " + (pyrR[0] === pyrR[pyrR.length - 1] ? withT(String(pyrR[0])) : pyrR.join("/")));
     } else if (prog) {
       // Effective target: computed weight + this week's rep target (climbs
@@ -19089,14 +19372,14 @@
       const ladderTip = prog.timed
         ? ((prog.repsOnly || (prog.bw && !prog.graduate))
             ? `Time ladder ${prog.floor}→${prog.ceil}s: hold the target on every set and next week adds ${prog.step}s, up to ${prog.ceil}s. No weight added.`
-            : `Timed double progression ${prog.floor}→${prog.ceil}s: hold the target on every set to add ${prog.step}s next week; hold ${prog.ceil}s on all sets and the weight goes up ${prog.inc} lb (time resets to ${prog.reset}s).`)
+            : `Timed double progression ${prog.floor}→${prog.ceil}s: hold the target on every set to add ${prog.step}s next week; hold ${prog.ceil}s on all sets and the weight goes up ${progIncShown(prog.inc)} ${unitLbl()} (time resets to ${prog.reset}s).`)
         : prog.bw
         ? (prog.graduate
-            ? `Bodyweight rep ladder: hit every set at the target and next week asks for your worst set + 1, up to ${prog.ceil}. Hit ${prog.ceil} on all sets and it graduates — add ${prog.inc} lb, reps reset to ${prog.reset}.`
+            ? `Bodyweight rep ladder: hit every set at the target and next week asks for your worst set + 1, up to ${prog.ceil}. Hit ${prog.ceil} on all sets and it graduates — add ${progIncShown(prog.inc)} ${unitLbl()}, reps reset to ${prog.reset}.`
             : `Rep ladder: hit every set at the target and next week asks for your worst set + 1${prog.ceil === PROG_NO_CAP ? "" : `, up to ${prog.ceil}`}. No weight added.`)
         : prog.repsOnly
-          ? `Rep ladder ${prog.floor}→${prog.ceil}: hit every set at the target and next week asks for your worst set + 1, up to ${prog.ceil}. The weight stays at ${prog.weight} lb.`
-          : `Double progression ${prog.floor}–${prog.ceil}: hit every set at the target to move up a rep next week; hit ${prog.ceil} on all sets and the weight goes up ${prog.inc} lb (reps drop to ${prog.reset}).`;
+          ? `Rep ladder ${prog.floor}→${prog.ceil}: hit every set at the target and next week asks for your worst set + 1, up to ${prog.ceil}. The weight stays at ${wLabel(prog.weight)}.`
+          : `Double progression ${prog.floor}–${prog.ceil}: hit every set at the target to move up a rep next week; hit ${prog.ceil} on all sets and the weight goes up ${progIncShown(prog.inc)} ${unitLbl()} (reps drop to ${prog.reset}).`;
       // The optional layers only get explained when the coach turned them on.
       const extraTips = [];
       if (prog.addSets) extraTips.push(`At the top of the ladder a set gets added first (up to ${prog.addSets} extra) before the weight moves.`);
@@ -19109,7 +19392,7 @@
       const chip = document.createElement("span");
       chip.className = "cex-pyr-chip";
       chip.textContent = pyramidLabel(ex, "🔺");
-      chip.title = "Pyramid: the weight changes each set. " + pyrW.map((w, i) => `${w}${pyrR ? "×" + pyrR[i] : ""}`).join(" → ");
+      chip.title = "Pyramid: the weight changes each set. " + pyrW.map((w, i) => `${dispW(w)}${pyrR ? "×" + pyrR[i] : ""}`).join(" → ");
       rxEl.appendChild(chip);
     }
 
@@ -19119,7 +19402,7 @@
     if (prog && prog.gained > 0) {
       const chip = document.createElement("span");
       chip.className = "cex-prog-chip";
-      chip.textContent = `📈 +${prog.gained} lb`;
+      chip.textContent = `📈 +${dispNum(prog.gained)} ${unitLbl()}`;
       chip.title = "Auto-progression: you hit the rep ceiling on every set, so the target went up";
       rxEl.appendChild(chip);
     }
@@ -19157,12 +19440,12 @@
       if (lastLog.sets?.length) {
         // All working sets from the previous session. One weight → "135 lb × 9, 9, 8";
         // mixed weights → "135×9 · 130×8".
-        const wts = [...new Set(lastLog.sets.map((s) => s.weight || "BW"))];
+        const wts = [...new Set(lastLog.sets.map((s) => dispW(s.weight) || "BW"))];
         ll.textContent = wts.length === 1
-          ? `Last: ${wts[0] === "BW" ? "BW" : wts[0] + (dbS || " lb")} × ${lastLog.sets.map((s) => (s.reps ? s.reps + tS : "?")).join(", ")}`
-          : `Last: ${lastLog.sets.map((s) => `${s.weight ? s.weight + dbS : "BW"}×${s.reps ? s.reps + tS : "?"}`).join(" · ")}`;
+          ? `Last: ${wts[0] === "BW" ? "BW" : wts[0] + (dbS || " " + unitLbl())} × ${lastLog.sets.map((s) => (s.reps ? s.reps + tS : "?")).join(", ")}`
+          : `Last: ${lastLog.sets.map((s) => `${s.weight ? dispW(s.weight) + dbS : "BW"}×${s.reps ? s.reps + tS : "?"}`).join(" · ")}`;
       } else {
-        ll.textContent = `Last: ${lastLog.weight ? lastLog.weight + (dbS || " lb") : "BW"} × ${lastLog.reps ? lastLog.reps + tS : "?"}`;
+        ll.textContent = `Last: ${lastLog.weight ? dispW(lastLog.weight) + (dbS || " " + unitLbl()) : "BW"} × ${lastLog.reps ? lastLog.reps + tS : "?"}`;
       }
       ll.title = `Previous session (${lastLog.date})`;
       rxEl.appendChild(ll);
@@ -19229,10 +19512,19 @@
     logForm.className = "cex-log-form";
 
     const numSets = effSets;
+    // Every weight BOX on this card — value, placeholder, stepper, plate math
+    // and the ✓ that accepts the target — works in the athlete's own unit.
+    // Storage is pounds, so exactly two places convert: the prefill that fills
+    // these boxes, and the collectors that read them back out.
+    const wu = unitNow();
+    const inW = (lb) => dispW(lb, wu);          // stored → what the box shows
+    const outW = (v) => storeW(v, wu);          // what the box shows → stored
+    const inNum = (lb) => dispNum(lb, wu);      // same, as a number for maths
+    const wStep = unitStep(wu);
     // With a progression rule, placeholders/seeds use the computed target.
     // DB-pair exercises read plural ("50s") in placeholders, matching the rx.
     const pairS = usesDumbbellPair(ex) ? "s" : "";
-    const wtPh = prog && !prog.bw ? prog.weight + pairS : (ex.currentWeight && ex.currentWeight !== "BW" ? ex.currentWeight + pairS : "");
+    const wtPh = prog && !prog.bw ? inW(prog.weight) + pairS : (ex.currentWeight && ex.currentWeight !== "BW" ? inW(ex.currentWeight) + pairS : "");
     const repPh = prog ? `${prog.reps}${tS}+` : (ex.currentReps ? withT(ex.currentReps) : "");
 
     // Header row
@@ -19257,10 +19549,11 @@
 
     // Prescribed reps/weight seed the per-field steppers when a field is empty.
     const prescribedReps = prog ? prog.reps : parseInt(ex.currentReps, 10);
-    const weightBase = prog && !prog.bw ? prog.weight : weightToLb(ex.currentWeight); // "BAR" → 45
+    // Seeds are what a BOX should hold, so they're in the athlete's unit.
+    const weightBase = inNum(prog && !prog.bw ? prog.weight : weightToLb(ex.currentWeight, wu)); // "BAR" → the empty bar
     // Per-set targets: pyramid columns each have their own number, everything
     // else is flat across the sets.
-    const wSeedAt = (i) => (pyrW ? pyrW[i] : weightBase);
+    const wSeedAt = (i) => (pyrW ? inNum(pyrW[i]) : weightBase);
     const rSeedAt = (i) => (pyrR ? pyrR[i] : prescribedReps);
 
     const setInputs = [];
@@ -19462,9 +19755,9 @@
       lbl.className = "cex-set-lbl";
       lbl.textContent = `W${i + 1}`;
 
-      const wSeed = weightToLb(w.weight); // "BAR" → 45
+      const wSeed = inNum(weightToLb(w.weight, wu)); // "BAR" → the empty bar
       const rSeed = parseInt(w.reps, 10);
-      const wPh = w.weight === "BAR" ? "BAR" : (w.weight && w.weight !== "BW") ? w.weight + pairS : "lb";
+      const wPh = w.weight === "BAR" ? "BAR" : (w.weight && w.weight !== "BW") ? inW(w.weight) + pairS : unitLbl(wu);
       const wt = Object.assign(document.createElement("input"), { type: "number", step: "0.5", min: "0", placeholder: wPh, readOnly: isLocked });
       const rp = Object.assign(document.createElement("input"), { type: "number", min: "0", placeholder: w.reps ? withT(w.reps) : (isTimed ? "sec" : "reps"), readOnly: isLocked });
       wt.className = "cex-input"; rp.className = "cex-input";
@@ -19475,7 +19768,7 @@
 
       const wItem = { wt, rp, skipped: false };
       col.appendChild(lbl);
-      col.appendChild(mkStepField(wt, 2.5, wSeed, w.weight !== "BW", () => fillSibling(rp, rSeed), w.weight !== "BW" ? "weight" : null));
+      col.appendChild(mkStepField(wt, wStep, wSeed, w.weight !== "BW", () => fillSibling(rp, rSeed), w.weight !== "BW" ? "weight" : null));
       col.appendChild(setX());
       col.appendChild(mkStepField(rp, isTimed ? 5 : 1, rSeed, true, () => fillSibling(wt, wSeed), "reps"));
       col.appendChild(mkDoneBtn(wItem, () => ({ w: wSeed, r: rSeed }), { rest: false }));
@@ -19495,7 +19788,7 @@
       lbl.className = "cex-set-lbl";
       lbl.textContent = `S${s + 1}`;
 
-      const wt = Object.assign(document.createElement("input"), { type: "number", step: "0.5", min: "0", placeholder: pyrW ? pyrW[s] + pairS : (wtPh || "lb"), readOnly: isLocked });
+      const wt = Object.assign(document.createElement("input"), { type: "number", step: "0.5", min: "0", placeholder: pyrW ? inW(pyrW[s]) + pairS : (wtPh || unitLbl(wu)), readOnly: isLocked });
       const rp = Object.assign(document.createElement("input"), { type: "number", min: "0", placeholder: pyrR ? withT(String(pyrR[s])) : (repPh || (isTimed ? "sec" : "reps")), readOnly: isLocked });
       wt.className = "cex-input"; rp.className = "cex-input";
       wt.addEventListener("click", (e) => e.stopPropagation());
@@ -19513,8 +19806,9 @@
       };
 
       col.appendChild(lbl);
-      // Weight field, ±2.5 lb (bodyweight lifts log reps only — no weight steppers).
-      col.appendChild(mkStepField(wt, 2.5, wSeedAt(s), !repsOnlyLog, () => fillSibling(rp, rSeedAt(s)), repsOnlyLog ? null : "weight"));
+      // Weight field, one change-plate pair per tap (bodyweight lifts log reps
+      // only — no weight steppers).
+      col.appendChild(mkStepField(wt, wStep, wSeedAt(s), !repsOnlyLog, () => fillSibling(rp, rSeedAt(s)), repsOnlyLog ? null : "weight"));
       col.appendChild(setX());
       // Reps field, ±1 (carries count seconds, ±5).
       col.appendChild(mkStepField(rp, isTimed ? 5 : 1, rSeedAt(s), true, () => fillSibling(wt, wSeedAt(s)), "reps"));
@@ -19537,14 +19831,16 @@
     plateRow.tabIndex = 0;
     plateRow.title = "Tap to set the bar and which plates your gym has";
     const updatePlates = () => {
-      const bar = plateBarFor(plateName, ex.modifiers);
+      // The bar, the rack and every number below are in the athlete's unit —
+      // a kg lifter is told to hang 20s on a 20 kg bar, not converted 45s.
+      const bar = plateBarFor(plateName, ex.modifiers, wu);
       if (bar == null || repsOnlyLog) { hide(plateRow); plateRow.innerHTML = ""; return; }
-      const inv = plateInventory();
+      const inv = plateInventory(wu);
       // Every row that carries a weight, in the order they're lifted.
       const rows = [
         ...warmupInputs.map((it, i) => ({
           lbl: `W${i + 1}`,
-          lb: it.wt.value !== "" ? parseFloat(it.wt.value) : weightToLb(warmups[i]?.weight),
+          lb: it.wt.value !== "" ? parseFloat(it.wt.value) : inNum(weightToLb(warmups[i]?.weight, wu)),
         })),
         ...setInputs.map((it, s) => ({
           lbl: `S${s + 1}`,
@@ -19559,7 +19855,7 @@
         if (last && last.lb === r.lb) last.to = r.lbl;
         else groups.push({ from: r.lbl, to: null, lb: r.lb });
       });
-      const barLbl = bar ? `bar ${bar}` : "no bar";
+      const barLbl = bar ? `bar ${bar} ${unitLbl(wu)}` : "no bar";
       const lines = groups.map((g) => {
         const load = platesPerSide(g.lb, bar, inv);
         const span = g.to ? `${g.from}-${g.to}` : g.from;
@@ -19586,17 +19882,18 @@
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); openPlatePicker(plateRow); }
     });
 
-    // Pre-fill today's existing log so edits persist
+    // Pre-fill today's existing log so edits persist. Logged weights come out
+    // of storage in pounds — inW is the boundary back into the athlete's unit.
     if (todayLog?.sets?.length) {
       todayLog.sets.forEach((s, i) => {
         if (!setInputs[i]) return;
         if (s.skipped) { setInputs[i].skipped = true; setInputs[i].applySkip(); }
-        else { setInputs[i].wt.value = s.weight || ""; setInputs[i].rp.value = s.reps || ""; }
+        else { setInputs[i].wt.value = inW(s.weight || ""); setInputs[i].rp.value = s.reps || ""; }
       });
     }
     if (todayLog?.warmups?.length) {
       todayLog.warmups.forEach((w, i) => {
-        if (warmupInputs[i]) { warmupInputs[i].wt.value = w.weight || ""; warmupInputs[i].rp.value = w.reps || ""; }
+        if (warmupInputs[i]) { warmupInputs[i].wt.value = inW(w.weight || ""); warmupInputs[i].rp.value = w.reps || ""; }
       });
     }
     [...setInputs, ...warmupInputs].forEach(({ wt, rp }) => { markEdited(wt); markEdited(rp); });
@@ -19609,7 +19906,7 @@
     const addFinisherSlot = (kind, dropIdx, label, pct) => {
       // Drop % computes off the effective (progressed) weight when a rule is set.
       const target = finisherDropWeight(prog && !prog.bw ? String(prog.weight) : ex.currentWeight, pct);
-      const wtTxt = target != null ? ` · ${target} lb` : (ex.currentWeight === "BW" ? " · BW" : "");
+      const wtTxt = target != null ? ` · ${wLabel(target)}` : (ex.currentWeight === "BW" ? " · BW" : "");
       const fr = document.createElement("div");
       fr.className = "cex-finisher-row";
       const lbl = document.createElement("span");
@@ -19652,7 +19949,7 @@
     const warmupComplete = () => warmupInputs.every(({ wt, rp }, i) =>
       rp.value && (wt.value || repsOnlyLog || warmups[i]?.weight === "BW"));
     const collectWarmups = () => {
-      const arr = warmupInputs.map(({ wt, rp }) => ({ weight: wt.value, reps: rp.value }));
+      const arr = warmupInputs.map(({ wt, rp }) => ({ weight: outW(wt.value), reps: rp.value }));
       return arr.some((w) => w.weight || w.reps) ? { warmups: arr } : {};
     };
 
@@ -19709,7 +20006,7 @@
         _alt = setTimeout(() => { if (!isLocked && !manualUnlock) lockIn({ silent: true }); }, AUTOLOCK_MS);
       }
       _ast = setTimeout(() => {
-        const sets = setInputs.map(({ wt, rp, skipped }) => (skipped ? { weight: "", reps: "", skipped: true } : { weight: wt.value, reps: rp.value }))
+        const sets = setInputs.map(({ wt, rp, skipped }) => (skipped ? { weight: "", reps: "", skipped: true } : { weight: outW(wt.value), reps: rp.value }))
                               .filter(s => s.skipped || s.weight || s.reps);
         if (!sets.length && !finisherHasData() && !warmupHasData()) {
           if (state.clientData.progress.exerciseLogs[ex.id]) {
@@ -19945,12 +20242,12 @@
         // Warm-ups seed from their prescription too, so 🔒 stays one tap
         // when the athlete did exactly what was written.
         warmupInputs.forEach(({ wt, rp }, i) => {
-          const ws = weightToLb(warmups[i]?.weight), rs = parseInt(warmups[i]?.reps, 10); // "BAR" → 45
+          const ws = inNum(weightToLb(warmups[i]?.weight, wu)), rs = parseInt(warmups[i]?.reps, 10); // "BAR" → the empty bar
           if (rp.value === "" && Number.isFinite(rs)) { rp.value = String(rs); markEdited(rp); }
           if (wt.value === "" && !repsOnlyLog && Number.isFinite(ws)) { wt.value = String(ws); markEdited(wt); }
         });
       }
-      const sets = setInputs.map(({ wt, rp, skipped }) => (skipped ? { weight: "", reps: "", skipped: true } : { weight: wt.value, reps: rp.value }));
+      const sets = setInputs.map(({ wt, rp, skipped }) => (skipped ? { weight: "", reps: "", skipped: true } : { weight: outW(wt.value), reps: rp.value }));
       const complete = sets.every((s) => s.skipped || (s.reps && (s.weight || repsOnlyLog)));
       if (!complete) { if (!silent) toast("Fill in all sets before locking in."); return false; }
       if (!warmupComplete()) { if (!silent) toast("Fill in your warm-up sets before locking in."); return false; }
@@ -20080,8 +20377,8 @@
           : l.sets?.length
           ? l.sets.map((s, i) => s.skipped
               ? `<span class="cex-hist-set cex-hist-skip"><em>S${i+1}</em> ⊘</span>`
-              : `<span class="cex-hist-set"><em>S${i+1}</em> ${s.weight ? escapeHtml(s.weight) + dbS : "BW"} × ${escapeHtml(s.reps ? s.reps + tS : "?")}</span>`).join("")
-          : `<span class="cex-hist-set">${l.weight ? escapeHtml(l.weight) + (dbS || " lb") : "BW"} × ${escapeHtml(l.reps || "?")} ${isTimed ? "sec" : "reps"}</span>`;
+              : `<span class="cex-hist-set"><em>S${i+1}</em> ${s.weight ? escapeHtml(dispW(s.weight)) + dbS : "BW"} × ${escapeHtml(s.reps ? s.reps + tS : "?")}</span>`).join("")
+          : `<span class="cex-hist-set">${l.weight ? escapeHtml(dispW(l.weight)) + (dbS || " " + unitLbl()) : "BW"} × ${escapeHtml(l.reps || "?")} ${isTimed ? "sec" : "reps"}</span>`;
         const dateHtml = l.date === logDate ? "" : `<span class="cex-hist-date">${escapeHtml(l.date)}</span>`;
         item.innerHTML = `${dateHtml}
           <span class="cex-hist-sets">${setStr}</span>
@@ -21454,11 +21751,14 @@
 
   // "1,250 lb" under a ton, "12.5 tons" over it — a six-figure pound count is
   // unreadable and the whole point is bragging about the size of the pile.
-  function hoardLbLabel(lb) {
-    const n = Math.round(lb || 0);
-    if (n < 2000) return `${n.toLocaleString()} lb`;
-    const tons = n / 2000;
-    return `${tons < 10 ? tons.toFixed(1) : Math.round(tons).toLocaleString()} tons`;
+  // The ladder itself is scored on pounds forever (its awards are frozen); a
+  // kg athlete reads the same pile in kilos and metric tonnes.
+  function hoardLbLabel(lb, u) {
+    const n = Math.round(tonNum(lb || 0, u));
+    const big = isKg(u) ? 1000 : 2000;
+    if (n < big) return `${n.toLocaleString()} ${unitLbl(u)}`;
+    const tons = n / big;
+    return `${tons < 10 ? tons.toFixed(1) : Math.round(tons).toLocaleString()} ${isKg(u) ? "tonnes" : "tons"}`;
   }
 
   // The Hoard, at full size, on the Progress tab. The header crest says which
@@ -21536,8 +21836,8 @@
       detail.style.setProperty("--step-color", t.look.color);
       let body;
       if (t.state === "on") {
-        body = `${Math.round(lvl.into).toLocaleString()} of ${lvl.need.toLocaleString()} lb in. ` +
-          `<b>${left.toLocaleString()} lb</b> to ${escapeHtml(next.name)}.`;
+        body = `${Math.round(tonNum(lvl.into)).toLocaleString()} of ${Math.round(tonNum(lvl.need)).toLocaleString()} ${unitLbl()} in. ` +
+          `<b>${Math.round(tonNum(left)).toLocaleString()} ${unitLbl()}</b> to ${escapeHtml(next.name)}.`;
       } else if (t.state === "done") {
         // t.at is where the rank STARTS, so clearing it is that plus its cost.
         body = `Earned. You cleared it at ${escapeHtml(hoardLbLabel(t.at + hoardLbForLevel(t.L)))} lifetime.`;
@@ -21638,13 +21938,14 @@
     if (t.kind === "lift") {
       cur = bestLoggedWeightForLift(client, progress, t.lift, t.reps);
       const r = Math.max(1, parseInt(t.reps, 10) || 1);
-      label = `${Math.round(cur).toLocaleString()} / ${target.toLocaleString()} lb${r > 1 ? ` × ${r}` : ""}`;
+      const cu = unitOf(client);
+      label = `${dispNum(cur, cu)} / ${dispNum(target, cu)} ${unitLbl(cu)}${r > 1 ? ` × ${r}` : ""}`;
     } else if (t.kind === "workouts") {
       cur = completionDateList(progress).length;
       label = `${cur} / ${target} workouts`;
     } else if (t.kind === "tonnage") {
       cur = Number(progress?.hoard?.lb) || 0;
-      label = `${hoardLbLabel(cur)} / ${hoardLbLabel(target)}`;
+      label = `${hoardLbLabel(cur, unitOf(client))} / ${hoardLbLabel(target, unitOf(client))}`;
     } else if (t.kind === "streak") {
       cur = weeklyStreak(progress);
       label = `${cur} / ${target} weeks`;
@@ -21786,7 +22087,7 @@
       row2.className = "trial-row";
       if (t.kind === "lift") {
         row2.appendChild(field("Lift name", textIn(t.lift, "Back Squat", (v) => { t.lift = v; })));
-        row2.appendChild(field("Weight (lb)", numIn(t.weight, "315", (v) => { t.weight = v; })));
+        row2.appendChild(field(`Weight (${unitLbl()})`, numIn(dispW(t.weight), prPh(315).replace("e.g. ", ""), (v) => { t.weight = storeW(v); })));
         row2.appendChild(field("For reps", numIn(t.reps, "1", (v) => { t.reps = v; })));
       } else if (t.kind === "manual") {
         const mark = document.createElement("button");
@@ -21798,8 +22099,13 @@
         });
         row2.appendChild(field("Status", mark));
       } else {
-        const unit = t.kind === "workouts" ? "Workouts" : t.kind === "tonnage" ? "Pounds" : "Weeks";
-        row2.appendChild(field(unit, numIn(t.n, t.kind === "tonnage" ? "500000" : "100", (v) => { t.n = v; })));
+        // Tonnage is stored in pounds like every other weight, so a kg coach
+        // types kilos here and the number underneath stays comparable.
+        const isTon = t.kind === "tonnage";
+        const label = t.kind === "workouts" ? "Workouts" : isTon ? (isKg() ? "Kilos" : "Pounds") : "Weeks";
+        const shown = isTon ? dispW(t.n) : t.n;
+        const ph = isTon ? (isKg() ? "225000" : "500000") : "100";
+        row2.appendChild(field(label, numIn(shown, ph, (v) => { t.n = isTon ? storeW(v) : v; })));
       }
       body.appendChild(row2);
 
@@ -22078,7 +22384,7 @@
       </div>
       <p class="week-read">${escapeHtml(read)}</p>
       ${bw ? `<p class="muted week-bw">Bodyweight ${bw.delta === 0 ? "hasn't moved" :
-        `is ${bw.delta > 0 ? "up" : "down"} ${Math.abs(bw.delta)} lb`} since ${escapeHtml(foodDateLabel(bw.from))}.</p>` : ""}
+        `is ${bw.delta > 0 ? "up" : "down"} ${Math.abs(Math.round(dispNum(bw.delta) * 10) / 10)} ${unitLbl()}`} since ${escapeHtml(foodDateLabel(bw.from))}.</p>` : ""}
       <p class="muted week-hint">Tap a day to open it.</p>`;
 
     el.querySelectorAll("[data-weekday]").forEach((b) => {
@@ -23472,7 +23778,7 @@
       proteinPct: String(result.proteinPct), carbsPct: String(result.carbsPct), fatPct: String(result.fatPct),
       protein: result.protein, carbs: result.carbs, fat: result.fat,
     }, { ...inputs, bmr: result.bmr, tdee: result.tdee });
-    toast(`Targets updated for ${Math.round(d.now * 10) / 10} lb ✓`);
+    toast(`Targets updated for ${Math.round(dispNum(d.now) * 10) / 10} ${unitLbl()} ✓`);
   }
 
   function dismissTargetDrift() {
@@ -23488,10 +23794,10 @@
     const d = targetWeightDrift(client, progress);
     if (!d) return "";
     const dir = d.delta < 0 ? "down" : "up";
-    const amount = Math.abs(Math.round(d.delta * 10) / 10);
+    const amount = Math.abs(Math.round(dispNum(d.delta) * 10) / 10);
     return `
       <div class="target-drift">
-        <p class="target-drift-msg">You're ${dir} ${amount} lb since these targets were worked out.</p>
+        <p class="target-drift-msg">You're ${dir} ${amount} ${unitLbl()} since these targets were worked out.</p>
         <div class="target-drift-actions">
           <button type="button" class="btn btn-primary btn-sm slim-btn" id="btn-drift-update">Update them</button>
           <button type="button" class="btn btn-ghost btn-sm slim-btn" id="btn-drift-dismiss">Keep as is</button>
@@ -23557,7 +23863,7 @@
       body: `
         ${weightLb ? "" : `<p class="muted" style="margin-top:0">Log a bodyweight below and this gets more accurate.</p>`}
         <div class="calc-grid">
-          <label>Bodyweight lb <input type="number" id="tc-weight" min="0" inputmode="decimal" value="${escapeHtml(String(weightLb))}" /></label>
+          <label>Bodyweight ${unitLbl()} <input type="number" id="tc-weight" min="0" inputmode="decimal" value="${escapeHtml(dispW(weightLb))}" /></label>
           <label>Height in <input type="number" id="tc-height" min="0" inputmode="numeric" value="${escapeHtml(String(prev.heightIn ?? ""))}" placeholder="e.g. 70" /></label>
           <label>Age <input type="number" id="tc-age" min="0" inputmode="numeric" value="${escapeHtml(String(prev.age ?? ""))}" /></label>
           <label>Sex
@@ -23598,7 +23904,8 @@
 
     function readCalc() {
       const inputs = {
-        weightLb: Number($("#tc-weight").value) || 0,
+        // Mifflin-St Jeor runs on the stored pounds, whatever the box says.
+        weightLb: Number(storeNum($("#tc-weight").value)) || 0,
         heightIn: Number($("#tc-height").value) || 0,
         age: Number($("#tc-age").value) || 0,
         sex: $("#tc-sex").value,
@@ -23646,7 +23953,7 @@
     const toggleLabel = (open) => `${open ? "▾" : "▸"} ${metrics.length} metric${metrics.length === 1 ? "" : "s"}`;
     el.innerHTML = `
       <div class="bw-entry">
-        <span><span class="date">${escapeHtml(when)}</span> · <strong>${escapeHtml(b.weightLb)} lb</strong>${metrics.length ? ` <button class="bw-toggle" type="button">${toggleLabel(false)}</button>` : ""}</span>
+        <span><span class="date">${escapeHtml(when)}</span> · <strong>${escapeHtml(wLabel(b.weightLb))}</strong>${metrics.length ? ` <button class="bw-toggle" type="button">${toggleLabel(false)}</button>` : ""}</span>
         ${deletable ? `<button class="delete-bw" title="Delete">×</button>` : ""}
       </div>
       ${metrics.length ? `<div class="bw-metrics hidden">${metrics.map((m) => `<div class="bw-metric"><span>${escapeHtml(m.label)}</span><strong>${escapeHtml(String(m.value))}${m.unit ? " " + escapeHtml(m.unit) : ""}</strong></div>`).join("")}</div>` : ""}`;
@@ -23671,7 +23978,7 @@
       // A malformed or legacy row with no weight would otherwise read
       // "undefined lb" on the closed fold.
       const latest = [...log].sort(bwSort).find((e) => Number.isFinite(parseFloat(e?.weightLb)));
-      meta.textContent = latest ? `${parseFloat(latest.weightLb)} lb` : "";
+      meta.textContent = latest ? wLabel(latest.weightLb) : "";
     }
     // The trend charts live on the Progress tab now. This fold is where a
     // weigh-in gets entered and listed; reading the trend is a different job.
@@ -23730,7 +24037,7 @@
 
   function logBodyweight() {
     const date = $("#bw-date").value || todayISO();
-    const w = $("#bw-weight").value;
+    const w = storeW($("#bw-weight").value);
     if (!w) { toast("Enter a weight"); return; }
     state.clientData.progress.bodyweightLog.push({ id: uid(), date, weightLb: w });
     saveClient();
@@ -23855,10 +24162,13 @@
     { k: "90", label: "90d", days: 90 },
     { k: "all", label: "All", days: null },
   ];
+  // `unit: null` marks a series that IS a weight, so the chart takes both its
+  // label and its conversion from the athlete's setting. A percentage is a
+  // percentage in any country.
   const BW_CHART_SPECS = [
-    { key: "weight", title: "Weight", unit: "lb", val: (e) => { const v = parseFloat(e.weightLb); return isFinite(v) ? v : null; } },
+    { key: "weight", title: "Weight", unit: null, val: (e) => { const v = parseFloat(e.weightLb); return isFinite(v) ? v : null; } },
     { key: "bodyfat", title: "Body Fat", unit: "%", val: (e) => bwMetricVal(e, /^body fat perc/i) },
-    { key: "muscle", title: "Muscle Mass", unit: "lb", val: (e) => { const v = bwMetricVal(e, /^muscle mass/i); return v != null ? v : bwMetricVal(e, /^skeletal muscle mass/i); } },
+    { key: "muscle", title: "Muscle Mass", unit: null, val: (e) => { const v = bwMetricVal(e, /^muscle mass/i); return v != null ? v : bwMetricVal(e, /^skeletal muscle mass/i); } },
   ];
   function bwMetricVal(e, re) {
     if (!Array.isArray(e.metrics)) return null;
@@ -23886,8 +24196,12 @@
     const grid = document.createElement("div");
     grid.className = "bw-charts-grid";
     BW_CHART_SPECS.forEach((spec) => {
+      const isWeight = spec.unit == null;
       const pts = all
-        .map((e) => ({ t: bwEntryTime(e), v: spec.val(e), date: e.date, time: e.time }))
+        .map((e) => {
+          const raw = spec.val(e);
+          return { t: bwEntryTime(e), v: raw == null ? null : (isWeight ? dispNum(raw) : raw), date: e.date, time: e.time };
+        })
         .filter((p) => p.v != null && p.t >= cutoff)
         .sort((a, b) => a.t - b.t);
       if (pts.length < 2) return; // need at least two readings to draw a trend
@@ -23915,6 +24229,7 @@
     container.appendChild(grid);
   }
   function bwChartCard(spec, pts) {
+    const unit = spec.unit == null ? unitLbl() : spec.unit; // null = it's a weight
     const W = 320, H = 96, padL = 4, padR = 4, padT = 12, padB = 10;
     const last = pts[pts.length - 1].v;
     const delta = last - pts[0].v;
@@ -23950,7 +24265,7 @@
         <span class="bw-chart-title">${escapeHtml(spec.title)}</span>
         <span class="bw-chart-delta" title="Change over range">${arrow} ${Math.abs(delta).toFixed(1)}</span>
       </div>
-      <div class="bw-chart-val">${escapeHtml(String(round1(last)))}<span class="bw-chart-unit">${escapeHtml(spec.unit)}</span></div>
+      <div class="bw-chart-val">${escapeHtml(String(round1(last)))}<span class="bw-chart-unit">${escapeHtml(unit)}</span></div>
       <div class="bw-chart-plot">
         <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="bw-chart-svg" aria-hidden="true">
           <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
@@ -23983,7 +24298,7 @@
       hdot.style.display = ""; hdot.style.left = lx; hdot.style.top = (best.fy * 100).toFixed(2) + "%";
       const when = best.time ? `${best.date} · ${String(best.time).slice(0, 5)}` : best.date;
       tip.style.display = "";
-      tip.innerHTML = `<strong>${escapeHtml(String(round1(best.v)))} ${escapeHtml(spec.unit)}</strong><span>${escapeHtml(when)}</span>`;
+      tip.innerHTML = `<strong>${escapeHtml(String(round1(best.v)))} ${escapeHtml(unit)}</strong><span>${escapeHtml(when)}</span>`;
       tip.style.left = Math.max(4, Math.min(rect.width - 4, best.fx * rect.width)) + "px";
     };
     const hide = () => { cross.style.display = "none"; hdot.style.display = "none"; tip.style.display = "none"; };
@@ -24022,7 +24337,9 @@
           if (!top || wgt > top.v || (wgt === top.v && reps > top.reps)) top = { v: wgt, reps };
         });
         if (!top || !l.date) return;
-        (byName[name] = byName[name] || []).push({ t: new Date(l.date + "T12:00:00").getTime(), v: top.v, reps: top.reps, date: l.date });
+        // Plotted in the athlete's unit — the comparison above stays in the
+        // stored one so rounding can't reorder two sets that differ by a hair.
+        (byName[name] = byName[name] || []).push({ t: new Date(l.date + "T12:00:00").getTime(), v: dispNum(top.v), reps: top.reps, date: l.date });
       });
     })));
     Object.keys(byName).forEach((n) => {
@@ -24065,7 +24382,9 @@
     (prs || []).forEach((p) => {
       if (!p.name || !p.date) return;
       const repOnly = prIsRepOnly(p);
-      const v = repOnly ? (parseInt(p.reps, 10) || 0) : Number(p.weight);
+      // Weight points are plotted in the athlete's unit; rep milestones are
+      // just counts and never convert.
+      const v = repOnly ? (parseInt(p.reps, 10) || 0) : dispNum(p.weight);
       if (!v || !isFinite(v)) return;
       const k = prLiftKey(p);
       (byName[k] = byName[k] || { name: p.name.trim(), bw: repOnly, pts: [] })
@@ -24097,7 +24416,7 @@
         <h4>🏆 PR archive</h4>
         <select class="strength-ex-select" aria-label="Exercise">${keys.map((k) => `<option value="${escapeHtml(k)}"${k === sel ? " selected" : ""}>${escapeHtml(byName[k].name)}</option>`).join("")}</select>
       </div>`;
-    card.appendChild(strengthChartCard(g.name, g.pts, { unit: g.bw ? "reps" : "lb", title: `${g.pts.length} PRs over time`, bw: g.bw }));
+    card.appendChild(strengthChartCard(g.name, g.pts, { unit: g.bw ? "reps" : unitLbl(), title: `${g.pts.length} PRs over time`, bw: g.bw }));
     card.querySelector(".strength-ex-select").addEventListener("change", (e) => {
       _strengthSelByHost[hid] = e.target.value;
       renderPRArchive(host, prs);
@@ -24109,7 +24428,9 @@
   // opts.unit / opts.title / opts.bw let the PR archive reuse this component
   // (reps instead of lb, a milestone-count subtitle).
   function strengthChartCard(name, pts, opts = {}) {
-    const unit = opts.unit != null ? opts.unit : "lb";
+    // Point values arrive already in the unit named here — callers convert,
+    // because only they know whether a series is weight, reps or a percentage.
+    const unit = opts.unit != null ? opts.unit : unitLbl();
     const title = opts.title != null ? opts.title : `Top set · ${pts.length} sessions`;
     const W = 320, H = 96, padL = 4, padR = 4, padT = 12, padB = 10;
     const last = pts[pts.length - 1].v;
@@ -24165,7 +24486,7 @@
       tip.style.display = "";
       tip.innerHTML = opts.bw
         ? `<strong>${escapeHtml(String(best.v))} reps</strong><span>${escapeHtml(best.date)}</span>`
-        : `<strong>${escapeHtml(String(best.v))} lb × ${escapeHtml(String(best.reps || "?"))}</strong><span>${escapeHtml(best.date)}</span>`;
+        : `<strong>${escapeHtml(String(best.v))} ${escapeHtml(unit)} × ${escapeHtml(String(best.reps || "?"))}</strong><span>${escapeHtml(best.date)}</span>`;
       tip.style.left = Math.max(4, Math.min(rect.width - 4, best.fx * rect.width)) + "px";
     };
     const hideTip = () => { cross.style.display = "none"; hdot.style.display = "none"; tip.style.display = "none"; };
@@ -24211,10 +24532,12 @@
     }));
     return Math.round(t);
   }
+  // Rounded here rather than at the callers: volume is a whole number of
+  // pounds, but converting it to kilos leaves a tail nobody wants to read.
   function formatTonnage(t) {
     if (t >= 1e6) return (t / 1e6).toFixed(2) + "M";
     if (t >= 1e4) return Math.round(t / 1000) + "k";
-    return t.toLocaleString();
+    return Math.round(t).toLocaleString();
   }
   // Volume (weight × reps, working sets) bucketed by week or calendar month,
   // as a contiguous run ending at the current period — quiet periods show as
@@ -24267,8 +24590,8 @@
         </div>
       </div>
       <div class="vol-chart">${buckets.map((m) => `
-        <div class="vol-col" title="${mode === "week" ? "Week of " : ""}${escapeHtml(m.label)}: ${m.v.toLocaleString()} lb lifted">
-          <span class="vol-val">${m.v ? formatTonnage(m.v) : ""}</span>
+        <div class="vol-col" title="${mode === "week" ? "Week of " : ""}${escapeHtml(m.label)}: ${Math.round(tonNum(m.v)).toLocaleString()} ${unitLbl()} lifted">
+          <span class="vol-val">${m.v ? formatTonnage(tonNum(m.v)) : ""}</span>
           <div class="vol-bar" style="height:${Math.max(2, Math.round((m.v / maxV) * 100))}%"></div>
           <span class="vol-lbl">${escapeHtml(m.label)}</span>
         </div>`).join("")}</div>
@@ -24428,6 +24751,17 @@
     return total;
   }
 
+  // A tonnage milestone's number, said in the athlete's unit. The THRESHOLD
+  // stays frozen in pounds — a trophy already on the shelf never comes back
+  // off — so only the way it reads changes. "10k day" is "4.5k day" in kilos.
+  function tonMilestone(lb) {
+    const n = Math.round(tonNum(lb));
+    if (n >= 1e6) return (n / 1e6).toFixed(n % 1e6 ? 1 : 0).replace(/\.0$/, "") + "M";
+    if (n >= 1e4) return Math.round(n / 1000) + "k";
+    if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+    return n.toLocaleString();
+  }
+  function tonFull(lb) { return Math.round(tonNum(lb)).toLocaleString() + " " + unitLbl(); }
   function computeBadges(progress, client) {
     const dates = completionDateList(progress);
     const workouts = dates.length;
@@ -24477,7 +24811,7 @@
       { icon: "☄️", name: "8-week streak", hint: "Train 8 weeks in a row", earned: streak >= 8 },
       { icon: "🗓️", name: "Iron month", hint: "12 workouts in one calendar month", earned: ironMonth },
       { icon: "🦅", name: "Comeback", hint: "Return after 3+ weeks away", earned: comeback },
-      { icon: "🔨", name: "10k day", hint: "Move 10,000 lb of volume in a single workout", earned: tenKDay },
+      { icon: "🔨", name: `${tonMilestone(10000)} day`, hint: `Move ${tonFull(10000)} of volume in a single workout`, earned: tenKDay },
       { icon: "🏃", name: "Engine builder", hint: "Log 10 cardio sessions", earned: cardioCount >= 10 },
       { icon: "🌱", name: "½ bodyweight", hint: bwHint(50), earned: ratioPct >= 50 },
       { icon: "🪨", name: "¾ bodyweight", hint: bwHint(75), earned: ratioPct >= 75 },
@@ -24490,9 +24824,9 @@
       { icon: "🧗", name: "5 pull-ups", hint: puHint(5), earned: pullups >= 5 },
       { icon: "🦾", name: "10 pull-ups", hint: puHint(10), earned: pullups >= 10 },
       { icon: "🦸", name: "20 pull-ups", hint: puHint(20), earned: pullups >= 20 },
-      { icon: "🏋️", name: "100k club", hint: "Lift 100,000 lb lifetime", earned: ton >= 100000 },
-      { icon: "⛰️", name: "500k club", hint: "Lift 500,000 lb lifetime", earned: ton >= 500000 },
-      { icon: "🌋", name: "Million-lb club", hint: "Lift 1,000,000 lb lifetime", earned: ton >= 1000000 },
+      { icon: "🏋️", name: `${tonMilestone(100000)} club`, hint: `Lift ${tonFull(100000)} lifetime`, earned: ton >= 100000 },
+      { icon: "⛰️", name: `${tonMilestone(500000)} club`, hint: `Lift ${tonFull(500000)} lifetime`, earned: ton >= 500000 },
+      { icon: "🌋", name: isKg() ? `${tonMilestone(1000000)} club` : "Million-lb club", hint: `Lift ${tonFull(1000000)} lifetime`, earned: ton >= 1000000 },
     ];
   }
   // Draws the lifetime stats as a 1080×1080 brand card and shares/downloads it.
@@ -24511,7 +24845,7 @@
     const stats = [
       [String(stats0.workouts), "WORKOUTS"],
       [String(stats0.prs), "PERSONAL RECORDS"],
-      [formatTonnage(stats0.volume) + " lb", "TOTAL LIFTED"],
+      [formatTonnage(tonNum(stats0.volume)) + " " + unitLbl(), "TOTAL LIFTED"],
     ];
     let y = 400;
     stats.forEach(([num, lbl]) => {
@@ -24603,7 +24937,7 @@
     const pair = usesDumbbellPair(ex);
     prs.push(makePR({ name, lift: key, pair, weight: cur.weight, reps: String(cur.reps), date: entry.date, notes: "Auto-detected during workout 🎉", auto: true }));
     if (cardEl) celebrateElement(cardEl, "pr-celebrate");
-    toast(`🎉 New PR · ${name}: ${bw ? cur.reps + " reps" : cur.weight + (pair ? "s × " : " lb × ") + cur.reps}!`, 3500);
+    toast(`🎉 New PR · ${name}: ${bw ? cur.reps + " reps" : dispW(cur.weight) + (pair ? "s × " : ` ${unitLbl()} × `) + cur.reps}!`, 3500);
   }
 
   // -------- Guided tour (spotlight walkthrough) --------
@@ -25525,6 +25859,7 @@
             ${prefSwitchHtml("simple", "Simple mode", "Hides ranks, XP, trophies and streaks. Your workouts, stats and trials stay.", p.simple)}
           </div>
         </details>
+        ${unitsFoldHtml(unitNow())}
         ${cycleFoldHtml()}
         <details class="pref-fold">
           <summary>
@@ -25561,6 +25896,10 @@
     // The notifications fold brings its own switches, times and master button.
     const notifyFold = host.querySelector("#pref-fold-notify");
     if (notifyFold) wireNotifyFold(notifyFold);
+    // Units live on the athlete row, not in athlete_prefs — the coach reads
+    // them too — so they get their own wiring like the cycle fold.
+    const unitsFold = host.querySelector("#pref-fold-units");
+    if (unitsFold) wireUnitsFold(unitsFold, (u) => { setAthleteUnits(u); repaintForUnits(); });
     // Cycle tracking owns its own toggle and radios (not [data-pref] switches —
     // it doesn't live in athlete_prefs and must never be sent to that table).
     const cycleFold = host.querySelector("#pref-fold-cycle");

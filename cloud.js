@@ -83,6 +83,7 @@
       age: c.age || null,
       height_in: c.heightIn || null,
       weight_lb: c.weightLb || null,
+      units: c.units === "kg" ? "kg" : "lb",
       goals: c.goals || null,
       notes: c.notes || null,
       weeks: c.weeks || [],
@@ -107,6 +108,7 @@
       age: r.age || "",
       heightIn: r.height_in || "",
       weightLb: r.weight_lb || "",
+      units: r.units === "kg" ? "kg" : "lb",
       goals: r.goals || "",
       notes: r.notes || "",
       weeks: r.weeks || [],
@@ -550,6 +552,7 @@
       if ("age" in fields) row.age = fields.age || null;
       if ("heightIn" in fields) row.height_in = fields.heightIn || null;
       if ("weightLb" in fields) row.weight_lb = fields.weightLb || null;
+      if ("units" in fields) row.units = fields.units === "kg" ? "kg" : "lb";
       if ("goals" in fields) row.goals = fields.goals || null;
       const { error } = await sb.from("athletes").update(row).eq("id", athleteId);
       if (error) console.warn("[Cloud] updateAthleteProfileFields error", error.message);
