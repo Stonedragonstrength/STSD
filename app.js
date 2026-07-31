@@ -4882,6 +4882,11 @@
         renderStrengthProgress($("#coach-strength-charts"), c, c.importedProgress || {});
         renderClientLogs();
       }
+    } else if (!$("#view-dashboard")?.classList.contains("hidden")) {
+      // Standing on the roster when the pull lands — which is exactly where
+      // exitPreview leaves the coach after a live session. Their card's
+      // activity line is about to be wrong by one session unless it redraws.
+      renderClientGrid();
     }
   }
   // -------- Coach: the athlete snapshot --------
@@ -17623,8 +17628,17 @@
     hide($("#screen-client"));
     show($("#screen-app"));
     applyAthletePrefs();
+    // Leaving a live session used to land on that athlete's Program tab — the
+    // deepest screen in the app, on the assumption the coach wanted to edit
+    // next. They don't: they've finished with this person and the next thing
+    // they want is the roster.
+    //
+    // openClient still runs, and runs FIRST. It clears the stale program-editor
+    // id, re-seats currentClientId and kicks the progress pull that the roster
+    // card's activity line reads; renderDashboard then takes the screen and
+    // nulls currentClientId behind it.
     openClient(ret.clientId);
-    setTab("program"); // land on the program so edits are one tap away
+    renderDashboard();
   }
 
   // -------- Coach tools, layered on the athlete's own page --------
