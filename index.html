@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=sched1" />
+  <link rel="stylesheet" href="styles.css?v=allow1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -589,6 +589,13 @@
               <button class="btn btn-ghost btn-sm" id="btn-grant-month" type="button">＋ Grant this month's sessions</button>
               <label class="autorenew-toggle" title="On the first app open each month, grants a pending package sized to this athlete's booked sessions that month">
                 <input type="checkbox" id="prof-autorenew" /> 🔁 Auto-renew
+              </label>
+              <!-- A monthly allowance is use-it-or-lose-it by default: they paid
+                   for access to this month. This turns that off for the athlete
+                   who was away or hurt, and it never touches a pack they bought
+                   outright, which has always kept its value. -->
+              <label class="autorenew-toggle" title="Off: unused sessions from a monthly membership expire at the end of that month. On: they carry over. Packages bought outright never expire either way.">
+                <input type="checkbox" id="prof-rollover" /> ↻ Roll over unused
               </label>
             </div>
             <!-- Goals and coach notes are EDITED here and READ on the snapshot,
@@ -1332,7 +1339,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=cyc1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=sched1"></script>
+  <script src="app.js?v=allow1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

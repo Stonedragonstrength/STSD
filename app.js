@@ -317,14 +317,78 @@
     // per-session price" — see athleteSessionRate().
     if (typeof c.sessionBank.rate !== "number") c.sessionBank.rate = 0;
   }
+  // A monthly allowance is not a bank balance. The athlete pays for access to
+  // THIS month; sessions they don't take are gone, the same way a gym month is.
+  // Before this, nothing ever expired: a 4-a-month athlete who trained once
+  // gained 3 every month forever, and the chip on the day board would read 36
+  // by the end of a year — the number looked healthy at exactly the moment the
+  // athlete was wasting money and about to quit.
+  //
+  // Two kinds of package, and the data already told them apart:
+  //   • a monthly grant carries the YYYY-MM it was for (membershipGrant from the
+  //     manual button, autoRenewGrant from the automatic one) and expires
+  //   • a pack bought outright carries neither and never expires
+  //
+  // Per-athlete `sessionBank.rollover` turns expiry off for the person coming
+  // back from injury or away for a month. Off by default: expiry is the policy,
+  // rollover is the exception.
+  function bankLedger(bank, todayMonth, rollover) {
+    const packages = bank?.packages || [];
+    const redemptions = bank?.redemptions || [];
+    const monthOf = (p) => p.membershipGrant || p.autoRenewGrant || "";
+
+    const grantByMonth = new Map();
+    let packPool = 0;
+    packages.filter((p) => p.status === "paid").forEach((p) => {
+      const size = Number(p.size) || 0;
+      const mk = monthOf(p);
+      if (mk) grantByMonth.set(mk, (grantByMonth.get(mk) || 0) + size);
+      else packPool += size;
+    });
+
+    const usedByMonth = new Map();
+    let undated = 0;
+    redemptions.forEach((r) => {
+      const mk = String(r?.date || "").slice(0, 7);
+      if (/^\d{4}-\d{2}$/.test(mk)) usedByMonth.set(mk, (usedByMonth.get(mk) || 0) + 1);
+      else undated++;
+    });
+
+    let carried = 0;        // allowance surviving a past month (rollover only)
+    let expired = 0;        // allowance lost to a month end
+    let packUsed = undated; // a use with no date has to come off something real
+
+    const months = new Set([...grantByMonth.keys(), ...usedByMonth.keys()]);
+    months.add(todayMonth);
+    months.forEach((mk) => {
+      const grant = grantByMonth.get(mk) || 0;
+      const used = usedByMonth.get(mk) || 0;
+      // The month's own allowance is always spent FIRST. Spending a bought pack
+      // while an allowance expires beside it would be taking money twice.
+      const left = Math.max(0, grant - used);
+      packUsed += Math.max(0, used - grant);
+      if (mk === todayMonth) return;                    // still live
+      if (mk > todayMonth) { carried += left; return; } // hasn't happened yet
+      if (rollover) carried += left; else expired += left;
+    });
+
+    const thisMonthGrant = grantByMonth.get(todayMonth) || 0;
+    const thisMonthUsed = usedByMonth.get(todayMonth) || 0;
+    const thisMonth = Math.max(0, thisMonthGrant - thisMonthUsed);
+    const banked = packPool + carried - packUsed;
+    return {
+      thisMonth, thisMonthGrant, thisMonthUsed, banked, expired,
+      remaining: thisMonth + banked,
+      granted: [...grantByMonth.values()].reduce((a, b) => a + b, 0) + packPool,
+      used: redemptions.length,
+    };
+  }
+
   function sessionBankSummary(c) {
     ensureSessionBank(c);
-    const granted = c.sessionBank.packages
-      .filter((p) => p.status === "paid")
-      .reduce((n, p) => n + (Number(p.size) || 0), 0);
-    const used = c.sessionBank.redemptions.length;
+    const l = bankLedger(c.sessionBank, todayISO().slice(0, 7), !!c.sessionBank.rollover);
     const pendingCount = c.sessionBank.packages.filter((p) => p.status === "pending").length;
-    return { granted, used, remaining: granted - used, pendingCount };
+    return { ...l, pendingCount };
   }
 
   // -------- Partner link (couples share one session bank) --------
@@ -350,6 +414,9 @@
     p.sessionBank.missedSessions = structuredClone(c.sessionBank.missedSessions);
     p.sessionBank.membership = c.sessionBank.membership;
     p.sessionBank.autoRenew = c.sessionBank.autoRenew;
+    // A shared bank has to expire on the same rule for both halves, or the
+    // couple's balance reads differently depending on whose page you opened.
+    p.sessionBank.rollover = c.sessionBank.rollover;
     // A couple pays one rate for the slot they share, and the slot is booked
     // under one of them, so mirroring the rate can't double-count it.
     p.sessionBank.rate = c.sessionBank.rate;
@@ -5302,6 +5369,8 @@
     populateMembershipSelect(c);
     const autoRenewBox = $("#prof-autorenew");
     if (autoRenewBox) autoRenewBox.checked = !!c.sessionBank?.autoRenew;
+    const rolloverBox = $("#prof-rollover");
+    if (rolloverBox) rolloverBox.checked = !!c.sessionBank?.rollover;
     const rateBox = $("#prof-rate");
     if (rateBox) rateBox.value = c.sessionBank?.rate ? String(c.sessionBank.rate) : "";
     refreshRatePlaceholder(c);
@@ -5485,6 +5554,23 @@
       toast(e.target.checked
         ? "🔁 Auto-renew on: each month grants a package sized to their bookings"
         : "Auto-renew off");
+    });
+    $("#prof-rollover")?.addEventListener("change", (e) => {
+      const c = currentClient(); if (!c) return;
+      ensureSessionBank(c);
+      c.sessionBank.rollover = e.target.checked;
+      bankMutated(c);
+      saveTrainer();
+      // Their balance changes the instant this flips, and it shows in four
+      // places at once, so redraw rather than let three of them go stale.
+      renderClientSnapshot();
+      renderCoachSessions();
+      renderCoachCalendar();
+      renderClientGrid();
+      const sum = sessionBankSummary(c);
+      toast(e.target.checked
+        ? `↻ Unused sessions roll over · ${sum.remaining} left`
+        : `Unused sessions expire at month end · ${sum.remaining} left`);
     });
   }
   // ============ Workout Templates (library) ============
@@ -11300,8 +11386,19 @@
     const sum = sessionBankSummary(c);
     if (!sum.granted && !sum.used) return "";
     const n = sum.remaining;
-    return `<span class="dv-bal${n <= 1 ? " low" : ""}" title="${n} session${Math.abs(n) === 1 ? "" : "s"} left">` +
+    return `<span class="dv-bal${n <= 1 ? " low" : ""}" title="${escapeHtml(bankBreakdown(sum))}">` +
       `${lineIco("sd:ticket")}${n}</span>`;
+  }
+
+  // Says which sessions these are. With expiry on, "3 left" and "3 left, all of
+  // which vanish on the 1st" are very different facts, and the coach shouldn't
+  // have to remember which athlete is on which rule to tell them apart.
+  function bankBreakdown(sum) {
+    const s = (n) => `${n} session${Math.abs(n) === 1 ? "" : "s"}`;
+    if (sum.thisMonth && sum.banked) return `${s(sum.remaining)} left · ${sum.thisMonth} this month, ${sum.banked} banked`;
+    if (sum.banked) return `${s(sum.banked)} banked`;
+    if (sum.thisMonth) return `${s(sum.thisMonth)} left this month`;
+    return sum.remaining < 0 ? `${s(-sum.remaining)} over` : "No sessions left";
   }
 
   // Day: one line each, and nothing else. Every control the day used to wear on
@@ -11369,7 +11466,7 @@
       `<span class="dvs-face">${c ? athleteFaceHtml(c, "md") : `<span class="av-tile av-md av-empty">?</span>`}</span>` +
       `<span class="dvs-id"><b>${escapeHtml(row.name)}</b>` +
         `<span>${escapeHtml(fmtSlotDay(iso))}${row.time ? " · " + escapeHtml(row.time) : ""}</span>` +
-        (sum ? `<span class="dvs-bal${sum.remaining <= 0 ? " low" : ""}">${lineIco("sd:ticket")} ${sum.remaining} left</span>` : "") +
+        (sum ? `<span class="dvs-bal${sum.remaining <= 0 ? " low" : ""}">${lineIco("sd:ticket")} ${escapeHtml(bankBreakdown(sum))}</span>` : "") +
       `</span></div>`;
 
     // The day this session is about: what they scheduled, or failing that the
