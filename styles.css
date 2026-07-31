@@ -2931,6 +2931,23 @@ input.trial-input {
   border-color: rgba(239, 68, 68, 0.5);
   background: var(--danger-soft);
 }
+/* The green ticket: sessions already on the calendar for next month, so the
+   roster answers "what am I invoicing" without opening anything. Same shape as
+   the amber balance chip beside it, green because it is money coming rather
+   than credit owed, and the two must never be misread for each other. */
+.next-month-chip {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  background: rgba(16, 185, 129, 0.1);
+  padding: 0.15em 0.55em;
+  border-radius: 999px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.client-row-sessions:hover .next-month-chip { filter: brightness(1.15); }
 
 /* Athlete day log / plan modal */
 .day-log-picker { display: flex; flex-direction: column; gap: 0.9rem; }

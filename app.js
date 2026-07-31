@@ -3907,6 +3907,8 @@
         b.classList.toggle("active", b.dataset.rosterGroup === groupMode));
     }
 
+    const nextMonth = nextMonthBounds(todayISO());
+    const nextMonthCounts = nextMonthSessionCounts();
     const sorted = [...state.trainerData.clients].sort((a, b) => a.name.localeCompare(b.name));
     for (const group of groupRoster(sorted, groupMode)) {
     if (group.label) {
@@ -3999,18 +4001,31 @@
       // Packages page). Only shown once an athlete has any package activity.
       const sum = sessionBankSummary(c);
       const pendingCount = openRequestsFor(c).length;
-      if (sum.granted > 0 || sum.used > 0 || pendingCount > 0) {
+      const bank = sum.granted > 0 || sum.used > 0 || pendingCount > 0;
+      // The green ticket stands on its own: an athlete with sessions booked for
+      // next month earns the row even with no package history behind them.
+      const booked = nextMonthCounts.get(c.id) || 0;
+      if (bank || booked > 0) {
         const sess = document.createElement("div");
         sess.className = "client-row-sessions";
-        const chip = document.createElement("span");
-        chip.className = "booked-balance-chip" + (sum.remaining <= 1 ? " low" : "");
-        chip.textContent = `🎟 ${sum.remaining}`;
-        sess.appendChild(chip);
+        if (bank) {
+          const chip = document.createElement("span");
+          chip.className = "booked-balance-chip" + (sum.remaining <= 1 ? " low" : "");
+          chip.textContent = `🎟 ${sum.remaining}`;
+          sess.appendChild(chip);
+        }
         if (pendingCount) {
           const pend = document.createElement("span");
           pend.className = "pkg-track-pending";
           pend.textContent = `${pendingCount} req`;
           sess.appendChild(pend);
+        }
+        if (booked > 0) {
+          const green = document.createElement("span");
+          green.className = "next-month-chip";
+          green.title = `${booked} session${booked === 1 ? "" : "s"} booked for ${nextMonth.label}`;
+          green.textContent = `🎫 ${booked} session${booked === 1 ? "" : "s"}`;
+          sess.appendChild(green);
         }
         // Tapping the chips jumps straight to that athlete's Sessions tab,
         // where packages are approved/managed (the rest of the card → profile).
@@ -13276,6 +13291,10 @@
     renderCoachSeries();
     renderIncomeCard();
     renderCoachSettingsSubs(); // the fold summaries quote all three
+    // Bookings arrive after the roster has already drawn, and the green ticket
+    // is counted from them — without this the chips stay missing until some
+    // unrelated thing happens to redraw the grid.
+    renderClientGrid();
   }
 
   // What each collapsed row on the coach Profile says about itself. This is the
@@ -13414,6 +13433,32 @@
       if (d === today) day += r;
     });
     return { day, week, year: (four / 4) * 52, unpriced, sessions };
+  }
+
+  // ---- The green ticket: next month's booked sessions, per athlete ----
+  // This is a billing figure, so it counts a billing PERIOD rather than a
+  // rolling window: standing on 30 Jul it means 1-31 Aug, and on 1 Aug it
+  // becomes September and reads near-empty until those sessions get booked.
+  // That emptiness is the honest answer to "what am I invoicing next month",
+  // which is the question the ticket exists to answer.
+  function nextMonthBounds(iso) {
+    const d = new Date(iso + "T12:00:00");
+    const start = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    const end = new Date(d.getFullYear(), d.getMonth() + 2, 1); // exclusive
+    return { start: dateISO(start), end: dateISO(end), label: MONTH_NAMES[start.getMonth()] };
+  }
+  // One pass over the bookings for the whole roster — the grid renders every
+  // athlete, so counting per card would walk the same rows N times.
+  function nextMonthSessionCounts() {
+    const { start, end } = nextMonthBounds(todayISO());
+    const counts = new Map();
+    (_coachBookings || []).forEach((b) => {
+      if (b.status !== "booked") return;
+      const d = dateISO(new Date(b.start_at));
+      if (d < start || d >= end) return;
+      counts.set(b.athlete_id, (counts.get(b.athlete_id) || 0) + 1);
+    });
+    return counts;
   }
 
   const EYE_SVG = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`;
