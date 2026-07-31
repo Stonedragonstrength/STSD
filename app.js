@@ -5891,6 +5891,175 @@
     });
   }
 
+  // ---- Pull exercises out of another day ---------------------------------
+  // Every other reuse door in the app is whole-day: import a Day Library entry,
+  // repeat the last one-off, or type a bare name from the exercise library and
+  // key the numbers in again. The verb that was missing is "take THESE lifts
+  // from over there" — with their sets, weights and notes attached.
+  //
+  // A hybrid day is this picker used twice on a fresh one-off session, and a
+  // reusable block is a short Day Library entry that this picker can read, so
+  // neither needs a data shape of its own.
+  //
+  // Sources are whatever the day being edited can legitimately see: the weeks
+  // it belongs to, the athlete's dated one-offs, and the Day Library. In the
+  // program-template editor there is no athlete, so the one-offs drop out and
+  // the weeks come from the template — the same split renderWeeks makes.
+  function pullSourceDays(day) {
+    const out = [];
+    const owner = _programEditorId ? currentProgramTemplate() : currentClient();
+    const usable = (d) => d && d.id !== day.id && (d.exercises || []).length;
+    (owner?.weeks || []).forEach((w) => {
+      (w.days || []).forEach((d) => {
+        if (!usable(d)) return;
+        out.push({ id: d.id, name: d.name || "Day", icon: d.icon || "🐉", meta: w.label || "Week", exercises: d.exercises });
+      });
+    });
+    if (!_programEditorId) {
+      (currentClient()?.oneOffDays || []).forEach((d) => {
+        if (!usable(d)) return;
+        out.push({
+          id: d.id, name: d.name || "Coach session", icon: d.icon || "🐉",
+          meta: d.date
+            ? new Date(d.date + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })
+            : "One-off",
+          exercises: d.exercises,
+        });
+      });
+    }
+    (state.trainerData.workoutTemplates || []).forEach((t) => {
+      if (!usable(t)) return;
+      out.push({ id: t.id, name: t.name || "Day", icon: t.icon || "📚", meta: "Day Library", exercises: t.exercises });
+    });
+    return out;
+  }
+
+  function openPullFromDayModal(day, rerenderFn) {
+    const sources = pullSourceDays(day);
+    if (!sources.length) { toast("Nothing to pull from yet — build another day first"); return; }
+    const u = unitOf(_programEditorId ? null : currentClient());
+    const picked = new Set(); // "sourceId::exerciseId"
+
+    // What the lift is prescribed as, in one glance, so the choice doesn't
+    // need the day it came from open in another tab.
+    const exMeta = (ex) => {
+      const sets = String(ex.sets || "").trim();
+      if (ex.kind === "mobility") {
+        const rounds = sets || "1";
+        return ex.currentReps ? `${rounds} × ${ex.currentReps}s hold` : `${rounds} round${rounds === "1" ? "" : "s"}`;
+      }
+      const bits = [];
+      if (sets) bits.push(`${sets} set${sets === "1" ? "" : "s"}`);
+      const w = exWeightLabel(ex, ex.currentWeight, u);
+      if (w) bits.push(w);
+      if (ex.currentReps) bits.push(`× ${ex.currentReps}${ex.timed ? "s" : ""}`);
+      return bits.join(" · ");
+    };
+
+    const body = `
+      <p class="muted pull-intro">Tick what you want. Everything comes across with its sets, weights and notes, and the day you take it from is left alone.</p>
+      <div class="pull-src-list">
+        ${sources.map((s) => `
+          <details class="pull-src">
+            <summary class="pull-src-head">
+              <span class="pull-src-ico">${dayIconHtml(s.icon)}</span>
+              <span class="pull-src-name">${escapeHtml(s.name)}</span>
+              <span class="pull-src-meta">${escapeHtml(s.meta)}</span>
+              <span class="pull-src-n">${s.exercises.length}</span>
+            </summary>
+            <div class="pull-src-body">
+              <button type="button" class="pull-all" data-all="${escapeHtml(s.id)}">Select all</button>
+              ${s.exercises.map((ex) => `
+                <label class="pull-ex">
+                  <input type="checkbox" data-pick="${escapeHtml(s.id)}::${escapeHtml(ex.id)}" />
+                  <span class="pull-ex-name">${escapeHtml(ex.name || "Untitled")}</span>
+                  <span class="pull-ex-meta">${escapeHtml(exMeta(ex))}</span>
+                </label>`).join("")}
+            </div>
+          </details>`).join("")}
+      </div>`;
+
+    openModal({
+      title: "Pull from another day",
+      body,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        {
+          label: "Add",
+          className: "btn btn-primary",
+          onClick: () => {
+            let added = 0;
+            sources.forEach((s) => {
+              const take = (s.exercises || []).filter((ex) => picked.has(`${s.id}::${ex.id}`));
+              // How many members of each superset run are actually coming.
+              const runN = {};
+              take.forEach((ex) => { if (ex.supersetId) runN[ex.supersetId] = (runN[ex.supersetId] || 0) + 1; });
+              const remap = {};
+              take.forEach((ex) => {
+                // structuredClone, not a spread: modifiers and per-set weights
+                // are arrays, and a shallow copy would leave the new day and
+                // the old one editing the same one.
+                const copy = { ...makeExercise(), ...structuredClone(ex), id: uid() };
+                // groupSupersets links CONSECUTIVE lifts sharing an id, so a
+                // run keeps its link only if two or more of it are coming, and
+                // the id is minted fresh — otherwise two runs pulled from two
+                // different days would collide into one.
+                if (ex.supersetId && runN[ex.supersetId] > 1) {
+                  remap[ex.supersetId] = remap[ex.supersetId] || uid();
+                  copy.supersetId = remap[ex.supersetId];
+                } else {
+                  delete copy.supersetId;
+                }
+                day.exercises.push(copy);
+                added++;
+              });
+            });
+            if (!added) return;
+            saveTrainer();
+            closeModal();
+            rerenderFn();
+            toast(`Added ${added} exercise${added === 1 ? "" : "s"}`);
+          },
+        },
+      ],
+    });
+
+    // The footer button counts what is ticked, so the sheet says what it will
+    // do before it does it.
+    const addBtn = $("#modal-foot .btn-primary");
+    const sync = () => {
+      if (!addBtn) return;
+      addBtn.disabled = picked.size === 0;
+      addBtn.textContent = picked.size ? `Add ${picked.size} exercise${picked.size === 1 ? "" : "s"}` : "Add";
+    };
+    sync();
+
+    // Delegated from the list, not from #modal-body: openModal only replaces
+    // the body's innerHTML, so a listener bound to the body itself would
+    // outlive this sheet and fire under the next one.
+    const list = $("#modal-body .pull-src-list");
+    if (!list) return;
+    list.addEventListener("change", (e) => {
+      const cb = e.target.closest("input[data-pick]");
+      if (!cb) return;
+      if (cb.checked) picked.add(cb.dataset.pick); else picked.delete(cb.dataset.pick);
+      sync();
+    });
+    list.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-all]");
+      if (!btn) return;
+      e.preventDefault();
+      const boxes = $$(`#modal-body input[data-pick^="${btn.dataset.all}::"]`);
+      const turnOn = boxes.some((x) => !x.checked);
+      boxes.forEach((x) => {
+        x.checked = turnOn;
+        if (turnOn) picked.add(x.dataset.pick); else picked.delete(x.dataset.pick);
+      });
+      btn.textContent = turnOn ? "Clear" : "Select all";
+      sync();
+    });
+  }
+
   function deleteClientPrompt() {
     const c = currentClient(); if (!c) return;
     if (!window.confirm(`Delete ${c.name}? Removes the athlete and their entire program from this device and the cloud.`)) return;
@@ -8949,6 +9118,14 @@
     libBtn.textContent = "📖 Library";
     libBtn.addEventListener("click", () => openExLibrary(day, rerenderFn));
 
+    // Hangs off renderDayContent so it exists everywhere a day is edited —
+    // program weeks, one-off sessions and the Day Library — from one place.
+    const pullBtn = document.createElement("button");
+    pullBtn.className = "btn btn-ghost btn-xs";
+    pullBtn.title = "Take exercises from another day, with their numbers";
+    pullBtn.textContent = "⇄ Pull";
+    pullBtn.addEventListener("click", () => openPullFromDayModal(day, rerenderFn));
+
     const delDayBtn = document.createElement("button");
     delDayBtn.className = "btn btn-ghost btn-xs";
     delDayBtn.style.color = "var(--danger)";
@@ -8963,6 +9140,7 @@
 
     actionBar.appendChild(nameWrap);
     actionBar.appendChild(spacer);
+    actionBar.appendChild(pullBtn);
     actionBar.appendChild(libBtn);
     if (!opts.hideDelete) actionBar.appendChild(delDayBtn);
 

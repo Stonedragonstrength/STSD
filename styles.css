@@ -3075,6 +3075,114 @@ input.trial-input {
   margin-right: 0.4em;
   font-weight: 800;
 }
+
+/* "Pull from another day" — the exercise picker that builds hybrid days.
+   Source days are collapsed rows; opening one lists its lifts with what they
+   are prescribed as, so the choice can be made without leaving the sheet.
+   No overflow here on purpose: .modal-card already scrolls, and a second
+   scroller inside it steals the thumb on a phone. */
+.pull-intro { margin: -0.4em 0 0.9em; }
+.pull-src-list { display: flex; flex-direction: column; gap: 0.4em; }
+.pull-src {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.pull-src[open] { border-color: var(--primary); }
+.pull-src-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+  padding: 0.65em 0.8em;
+  min-height: 44px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.92rem;
+}
+.pull-src-head::-webkit-details-marker { display: none; }
+.pull-src-head:hover { background: var(--surface-3); }
+.pull-src-ico { display: inline-flex; width: 1.3em; height: 1.3em; flex-shrink: 0; color: var(--primary-bright); }
+.pull-src-ico svg { width: 100%; height: 100%; }
+.pull-src-name {
+  font-weight: 700;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pull-src-meta {
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.pull-src-n {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--text-soft);
+  background: var(--surface-3);
+  border-radius: 999px;
+  padding: 0.1em 0.5em;
+}
+.pull-src-body {
+  border-top: 1px solid var(--border);
+  padding: 0.5em 0.5em 0.6em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15em;
+}
+.pull-all {
+  align-self: flex-start;
+  margin: 0.1em 0 0.35em 0.3em;
+  padding: 0.25em 0.6em;
+  min-height: 32px;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--primary-bright);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.pull-all:hover { border-color: var(--primary); background: var(--surface-3); }
+/* These rows are <label>s, and the base `label` rule shouts everything in
+   uppercase with a 0.9em margin under it — that turns an exercise list into a
+   wall of caps and spaces the rows apart. Undone here, where the name has to
+   read the way it reads everywhere else in the editor. */
+.pull-ex {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.4em 0.5em;
+  min-height: 44px;
+  margin-bottom: 0;
+  border-radius: var(--radius-sm, 8px);
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text);
+}
+.pull-ex:hover { background: var(--surface-3); }
+.pull-ex input { flex-shrink: 0; width: 18px; height: 18px; accent-color: var(--primary); }
+.pull-ex-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pull-ex-meta {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 0.74rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
 .day-check-toggle {
   display: inline-flex;
   align-items: center;
