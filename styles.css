@@ -11681,6 +11681,24 @@ body.scroll-locked {
   font-size: 0.62rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
   color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0 0.4em;
 }
+/* Sessions left, beside the name. Same amber ticket as the roster chip so the
+   two read as one fact in two places. flex-shrink:0 puts it ahead of .dv-what
+   in the squeeze order, which is right — a number that fits in 3 characters
+   shouldn't lose to a day name that can be inferred from the rest of the row. */
+.dv-bal {
+  display: inline-flex; align-items: center; gap: 0.25em;
+  flex-shrink: 0;
+  font-size: 0.7rem; font-weight: 700;
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.1);
+  padding: 0.1em 0.5em;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+.dv-bal .ln-ico { width: 1em; height: 1em; vertical-align: 0; }
+.dv-bal.low { color: var(--danger); border-color: rgba(239, 68, 68, 0.5); background: var(--danger-soft); }
+.dv-row.is-done .dv-bal { opacity: 0.55; }
 
 /* The session sheet: who it is, then what you can do, then what they did. */
 .dvs-head { display: flex; align-items: center; gap: 0.7rem; margin-bottom: 1rem; }

@@ -176,6 +176,11 @@
         // a new Supabase column — no migration to run against live data.
         athleteTemplates: state.trainerData.athleteTemplates || [],
         templateFolders: state.trainerData.templateFolders || [],
+        // When the coach last cleared the activity list. Rides this blob for
+        // the same reason the templates do — no new column — and it has to
+        // reach their other devices, or clearing on the phone leaves the
+        // laptop still showing every row.
+        inboxClearedAt: state.trainerData.inboxClearedAt || 0,
       });
       if (ok) localStorage.removeItem(KEY_LIBPREFS_DIRTY); // confirmed in the cloud
     });
@@ -2353,6 +2358,11 @@
   if (!Array.isArray(state.trainerData.workoutTemplates)) {
     state.trainerData.workoutTemplates = [];
   }
+  // How far the coach has cleared the activity list. 0 means "never cleared",
+  // which is what every existing account should read as.
+  if (!Number.isFinite(state.trainerData.inboxClearedAt)) {
+    state.trainerData.inboxClearedAt = 0;
+  }
   if (!Array.isArray(state.trainerData.openSlots)) {
     state.trainerData.openSlots = [];
   }
@@ -3176,9 +3186,13 @@
       state.trainerData.templateFolders =
         mergeById(prefs.templateFolders, state.trainerData.templateFolders);
     }
-    // (Read-activity marks used to be unioned here. The "New activity" card
-    // they belonged to is gone — the notification log shows everything, with
-    // nothing to dismiss — so the stored key is simply ignored.)
+    // The activity-clear watermark. Takes the LATER of the two: clearing is a
+    // one-way "I've seen up to here", so a device that cleared more recently
+    // wins and a stale row can't un-clear rows the coach already dismissed.
+    if (Number.isFinite(prefs.inboxClearedAt)) {
+      state.trainerData.inboxClearedAt =
+        Math.max(state.trainerData.inboxClearedAt || 0, prefs.inboxClearedAt);
+    }
     state.trainerData.openSlots = coach.open_slots || [];
     if (coach.availability && typeof coach.availability === "object") {
       state.trainerData.availability = coach.availability;
@@ -11272,6 +11286,24 @@
       (a.ts - b.ts) || (a.name || "").localeCompare(b.name || ""));
   }
 
+  // Sessions left, beside the name on the scheduler. Looking at who is coming
+  // in is exactly when it matters that someone is about to run out — the sheet
+  // has carried this number for a while, but only after a tap, which is one tap
+  // too late to notice it across a whole day.
+  //
+  // Only athletes with a package history get one: "0 left" on someone who has
+  // never bought a session is noise on every row that isn't about money. The
+  // low threshold matches the roster chip (<= 1) rather than the sheet's (<= 0),
+  // because one left is the moment to say something, not none.
+  function schedBalHtml(c) {
+    if (!c) return "";
+    const sum = sessionBankSummary(c);
+    if (!sum.granted && !sum.used) return "";
+    const n = sum.remaining;
+    return `<span class="dv-bal${n <= 1 ? " low" : ""}" title="${n} session${Math.abs(n) === 1 ? "" : "s"} left">` +
+      `${lineIco("sd:ticket")}${n}</span>`;
+  }
+
   // Day: one line each, and nothing else. Every control the day used to wear on
   // its sleeve — close call, missed, cancel, unlink, the jump arrows — now
   // lives behind a tap on the session it belongs to. A row of competing tap
@@ -11308,6 +11340,7 @@
         `<button type="button" class="dv-row${r.done ? " is-done" : ""}" data-dv="${i}">` +
         `<span class="dv-face">${r.client ? athleteFaceHtml(r.client) : `<span class="av-tile av-sm av-empty">?</span>`}</span>` +
         `<span class="dv-name">${escapeHtml(r.name)}${r.unlinked ? ` <span class="dv-tag">unlinked</span>` : ""}</span>` +
+        schedBalHtml(r.client) +
         `<span class="dv-what${guess ? " is-next" : ""}">${escapeHtml(what)}</span>` +
         (r.time ? `<span class="dv-time">${escapeHtml(r.time)}</span>` : "") +
         `<span class="dv-state">${r.done ? "✓" : "›"}</span>` +
@@ -14837,7 +14870,36 @@
       });
     });
     out.sort((a, b) => b.ts - a.ts);
-    return out.slice(0, NOTIF_LOG_MAX);
+    // Everything here is DERIVED from athlete data — there is no stored list to
+    // delete from, so Clear can't remove rows, it can only draw a line under
+    // them. Anything that happened at or before the line is history the coach
+    // has already acknowledged; anything after it is new. A workout logged
+    // later but BACKDATED to before the line stays hidden, which is right: the
+    // line is about what the coach has seen, and they saw that date.
+    const cut = state.trainerData.inboxClearedAt || 0;
+    return out.filter((it) => it.ts > cut).slice(0, NOTIF_LOG_MAX);
+  }
+
+  // How many activity rows Clear would actually remove — the needs rows are not
+  // notifications, they are outstanding work, and they survive it.
+  function clearableActivityCount() {
+    return coachInboxRows().filter((r) => r.kind === "act").length;
+  }
+
+  // Draw the line at the newest thing currently listed, not at Date.now(): a
+  // row can carry a future-ish timestamp (a workout logged today is anchored at
+  // noon), and clearing at "now" in the morning would leave today's rows behind
+  // looking like the button had failed.
+  function clearCoachActivity() {
+    const rows = coachInboxRows().filter((r) => r.kind === "act");
+    if (!rows.length) return;
+    const newest = Math.max(...rows.map((r) => r.ts).filter(Number.isFinite));
+    if (!Number.isFinite(newest)) return;
+    state.trainerData.inboxClearedAt = Math.max(state.trainerData.inboxClearedAt || 0, newest);
+    saveTrainer();
+    pushCoachLibPrefs(); // reach the coach's other devices, same as templates
+    refreshCoachInbox(); // the list if it's open, and the pill, which always is
+    toast("Activity cleared");
   }
 
   function notifWhen(ts) {
@@ -14943,10 +15005,29 @@
 
   function openCoachInbox() {
     const needs = coachNeedsRows().length;
+    const clearable = clearableActivityCount();
+    const actions = [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }];
+    // Only offered when there is history to clear. A Clear button that does
+    // nothing is worse than no button — it reads as broken rather than as
+    // "already empty", and on a list that is pure outstanding work it would
+    // promise to remove the very rows it refuses to touch.
+    if (clearable) {
+      actions.push({
+        label: `Clear ${clearable}`,
+        className: "btn btn-ghost",
+        onClick: () => {
+          clearCoachActivity();
+          // Reopen so the title's waiting-count and the Clear button both
+          // reflect what is left, rather than the sheet going stale under them.
+          closeModal();
+          openCoachInbox();
+        },
+      });
+    }
     openModal({
       title: needs ? `⚡ ${needs} waiting` : "🔔 Activity",
       body: `<div class="coach-inbox" id="coach-inbox-list"></div>`,
-      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
+      actions,
     });
     renderCoachInbox();
   }
