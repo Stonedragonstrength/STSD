@@ -16750,8 +16750,11 @@
     { id: "month", icon: "📆", label: "This month", get: (x) => {
         const ym = x.today.slice(0, 7);
         return { value: completionDateList(x.progress).filter((d) => d.slice(0, 7) === ym).length }; } },
-    { id: "streak", icon: "🔥", label: "Week streak", get: (x) => ({ value: x.streakN }) },
-    { id: "thisweek", icon: "◔", label: "This week", get: (x) => x.totalDays ? ({ value: `${x.doneDays}/${x.totalDays}` }) : null },
+    // No "Week streak" or "This week" here: the calendar header above already
+    // shows both, from the same numbers, inches up the same screen. Picking
+    // them put the identical figure on screen twice. Anyone who had them
+    // selected drops them silently — getRacingStatIds filters to ids the
+    // library still knows, and falls back to the default set if that empties.
     { id: "bw", icon: "⚖️", label: "Bodyweight", secret: true, get: (x) => {
         const log = [...(x.progress.bodyweightLog || [])].filter((e) => e.date && isFinite(parseFloat(e.weightLb))).sort((a, b) => a.date.localeCompare(b.date));
         if (!log.length) return null;
