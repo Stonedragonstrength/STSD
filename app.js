@@ -3974,6 +3974,7 @@
     grid.innerHTML = "";
 
     const controls = $("#roster-controls");
+    renderMonthGrantBtn();
     if (state.trainerData.clients.length === 0) {
       show(empty);
       if (controls) hide(controls);
@@ -5331,9 +5332,12 @@
     if (!h) return "";
     return `${Math.floor(h / 12)}'${Math.round(h % 12)}"`;
   }
+  // The rate and the membership select left this list when they moved to the
+  // Sessions tab: they are no longer inside the form this lock guards, and a
+  // dropdown that saves on change has nothing to unlock.
   const PROFILE_FIELD_IDS = [
     "#prof-name", "#prof-age", "#prof-height-ft", "#prof-height-in",
-    "#prof-weight", "#prof-goals", "#prof-notes", "#prof-rate",
+    "#prof-weight", "#prof-goals", "#prof-notes",
   ];
   function setProfileLocked(locked) {
     PROFILE_FIELD_IDS.forEach((sel) => {
@@ -5341,9 +5345,6 @@
       if (locked) el.setAttribute("readonly", "readonly");
       else el.removeAttribute("readonly");
     });
-    // <select> can't use readonly — toggle disabled instead.
-    const memSel = $("#prof-membership");
-    if (memSel) memSel.disabled = locked;
     $(".profile-card")?.classList.toggle("locked", locked);
     hide(locked ? $("#btn-profile-save") : $("#btn-profile-edit"));
     show(locked ? $("#btn-profile-edit") : $("#btn-profile-save"));
@@ -5366,14 +5367,6 @@
     if (!c.inviteCode) { c.inviteCode = makeInviteCode(); saveTrainer(); }
     $("#invite-code-display").textContent = c.inviteCode;
     setInviteCodeVisible(false); // code stays tucked away until "Show code"
-    populateMembershipSelect(c);
-    const autoRenewBox = $("#prof-autorenew");
-    if (autoRenewBox) autoRenewBox.checked = !!c.sessionBank?.autoRenew;
-    const rolloverBox = $("#prof-rollover");
-    if (rolloverBox) rolloverBox.checked = !!c.sessionBank?.rollover;
-    const rateBox = $("#prof-rate");
-    if (rateBox) rateBox.value = c.sessionBank?.rate ? String(c.sessionBank.rate) : "";
-    refreshRatePlaceholder(c);
     renderCoachUnitsFold(c);
     syncUnitLabels();
     setProfileLocked(true);
@@ -5430,15 +5423,68 @@
     sel.value = current;
     refreshGrantBtn();
   }
-  // Keeps the "Grant this month's N sessions" button label + enabled state in
-  // sync with the currently-selected membership tier.
+  // Keeps the grant button's label + enabled state in sync with the selected
+  // tier, and says outright when this month is already on their bank — the
+  // question the button was silently answering wrong for a coach who couldn't
+  // remember whether they'd already done the round.
   function refreshGrantBtn() {
     const btn = $("#btn-grant-month"); if (!btn) return;
     const m = membershipById($("#prof-membership")?.value);
+    const c = currentClient();
+    const granted = !!c && grantedThisMonth(c, todayISO().slice(0, 7));
     btn.disabled = !m || !m.sessions;
-    btn.textContent = m && m.sessions
-      ? `＋ Grant this month's ${m.sessions} sessions`
-      : `＋ Grant this month's sessions`;
+    btn.classList.toggle("is-granted", granted && !!(m && m.sessions));
+    const month = new Date().toLocaleDateString("en-US", { month: "long" });
+    btn.textContent = !m || !m.sessions
+      ? `＋ Grant this month's sessions`
+      : granted
+        ? `✓ ${month} granted`
+        : `＋ Grant ${month}'s ${m.sessions} sessions`;
+  }
+  // The Sessions tab's top card. Every control saves the moment it changes:
+  // this block used to sit inside the Profile edit form on another tab, so
+  // picking a tier did nothing until you found Save over there.
+  function renderSessionOptions(c) {
+    if (!c) return;
+    ensureSessionBank(c);
+    populateMembershipSelect(c); // also refreshes the grant button
+    const rateBox = $("#prof-rate");
+    if (rateBox) rateBox.value = c.sessionBank.rate ? String(c.sessionBank.rate) : "";
+    refreshRatePlaceholder(c);
+    const autoRenewBox = $("#prof-autorenew");
+    if (autoRenewBox) autoRenewBox.checked = !!c.sessionBank.autoRenew;
+    const rolloverBox = $("#prof-rollover");
+    if (rolloverBox) rolloverBox.checked = !!c.sessionBank.rollover;
+    const sub = $("#session-options-sub");
+    if (sub) {
+      const m = membershipById(c.sessionBank.membership);
+      sub.textContent = m ? membershipSub(m) : "No membership set";
+    }
+  }
+  // The ticket beside their name: the balance from every tab, and the door
+  // into Sessions from any of them. The snapshot tile only exists on Overview
+  // and only once there is package history, so an athlete put on a tier this
+  // morning had no route to their session options at all.
+  function renderClientSessionChip() {
+    const el = $("#client-sessions-chip"); if (!el) return;
+    const c = currentClient();
+    if (!c) { hide(el); return; }
+    ensureSessionBank(c);
+    show(el);
+    const sum = sessionBankSummary(c);
+    const m = membershipById(c.sessionBank.membership);
+    const pending = openRequestsFor(c).length;
+    const live = sum.granted > 0 || sum.used > 0 || !!m;
+    el.classList.toggle("low", live && sum.remaining <= 1);
+    el.classList.toggle("blank", !live);
+    // Same line-mark ticket as the roster chips, so it takes the pill's colour
+    // rather than staying red inside an amber one.
+    el.innerHTML = live
+      ? `${lineIco("sd:ticket")}<span class="csc-n">${sum.remaining}</span>${pending ? `<span class="csc-req">${pending}</span>` : ""}`
+      : `${lineIco("sd:ticket")}<span class="csc-n">Set up</span>`;
+    el.title = live
+      ? `${sum.remaining} session${Math.abs(sum.remaining) === 1 ? "" : "s"} left${m ? ` · ${membershipTitle(m)}` : ""}${pending ? ` · ${pending} request waiting` : ""} — open Sessions`
+      : "No membership set — open Sessions";
   }
   // Adds one month's worth of sessions (per the selected membership tier) to the
   // athlete's pool as a paid package. Guards against granting the same month twice.
@@ -5450,7 +5496,7 @@
     ensureSessionBank(c);
     const monthKey = new Date().toISOString().slice(0, 7); // YYYY-MM
     const monthLabel = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
-    const already = (c.sessionBank.packages || []).some((p) => p.membershipGrant === monthKey);
+    const already = grantedThisMonth(c, monthKey);
     if (already && !window.confirm(`You already granted ${monthLabel}'s sessions to ${c.name || "this athlete"}. Grant another ${m.sessions}?`)) return;
     // Keep the saved membership in step with what's shown, then grant.
     c.sessionBank.membership = m.id;
@@ -5462,6 +5508,13 @@
     });
     bankMutated(c);
     saveTrainer();
+    // The balance, the header ticket, the button's own label and the roster
+    // badge all just changed; four of the five were stale until a tab change.
+    renderCoachSessions();
+    renderClientSessionChip();
+    renderClientSnapshot();
+    renderMonthGrantBtn();
+    renderIncomeCard();
     toast(`Granted ${m.sessions} sessions for ${monthLabel} ✓`);
   }
   function saveProfileFields() {
@@ -5474,16 +5527,14 @@
     const ft = Number($("#prof-height-ft").value) || 0;
     const inch = Number($("#prof-height-in").value) || 0;
     c.heightIn = (ft * 12 + inch) || "";
-    ensureSessionBank(c);
-    c.sessionBank.membership = $("#prof-membership")?.value || "";
-    const rate = Number($("#prof-rate")?.value);
-    c.sessionBank.rate = rate > 0 ? rate : 0;
-    bankMutated(c);
+    // Membership + rate are no longer read here — they live on the Sessions
+    // tab and save on change, so a stale value in this form can't overwrite
+    // one that was set there.
     saveTrainer();
     renderIncomeCard();
     $("#client-name-display").textContent = c.name || "(unnamed)";
     $("#client-meta-display").textContent = clientMetaText(c);
-    // Goals, notes, membership and rate all read on the snapshot above.
+    // Goals and notes both read on the snapshot above.
     renderClientSnapshot();
     flashSaved($("#prof-saved"));
     setProfileLocked(true);
@@ -5540,11 +5591,44 @@
       $("#prof-name").focus();
     });
     $("#btn-profile-save").addEventListener("click", saveProfileFields);
-    $("#prof-membership")?.addEventListener("change", () => {
+    // Tier and rate save on change now that they sit on the Sessions tab
+    // rather than inside the locked Profile form. Picking a tier and walking
+    // away used to lose it.
+    $("#prof-membership")?.addEventListener("change", (e) => {
+      const c = currentClient(); if (!c) return;
+      ensureSessionBank(c);
+      c.sessionBank.membership = e.target.value || "";
+      bankMutated(c);
+      saveTrainer();
       refreshGrantBtn();
-      refreshRatePlaceholder(currentClient());
+      refreshRatePlaceholder(c);
+      const sub = $("#session-options-sub");
+      const m = membershipById(c.sessionBank.membership);
+      if (sub) sub.textContent = m ? membershipSub(m) : "No membership set";
+      // The tier shows on the snapshot, the roster grouping and the header
+      // ticket, and it decides what Expected income multiplies by.
+      renderClientSnapshot();
+      renderClientSessionChip();
+      renderClientGrid();
+      renderMonthGrantBtn();
+      renderIncomeCard();
+      toast(m ? `Membership: ${membershipTitle(m)}` : "Membership cleared");
+    });
+    $("#prof-rate")?.addEventListener("change", () => {
+      const c = currentClient(); if (!c) return;
+      ensureSessionBank(c);
+      const rate = Number($("#prof-rate").value);
+      c.sessionBank.rate = rate > 0 ? rate : 0;
+      bankMutated(c);
+      saveTrainer();
+      renderClientSnapshot();
+      renderIncomeCard();
     });
     $("#btn-grant-month")?.addEventListener("click", grantMembershipMonth);
+    $("#client-sessions-chip")?.addEventListener("click", () => {
+      setTab("sessions");
+      $(".tabs")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
     $("#prof-autorenew")?.addEventListener("change", (e) => {
       const c = currentClient(); if (!c) return;
       ensureSessionBank(c);
@@ -13026,6 +13110,9 @@
   function renderCoachSessions() {
     const c = currentClient(); if (!c) return;
     ensureSessionBank(c);
+    // The tier that decides the balance, and the ticket in the page header.
+    renderSessionOptions(c);
+    renderClientSessionChip();
     const container = $("#session-bank-container"); if (!container) return;
     container.innerHTML = "";
 
@@ -13213,6 +13300,175 @@
         }},
       ],
     });
+  }
+
+  // -------- Grant the month (the whole roster, one pass) --------
+  // The per-athlete button is the door for a one-off. This is the first-of-the-
+  // month round, which was: open athlete → Sessions → Grant → back → next, once
+  // per person, with nothing anywhere saying who you had already done.
+  function monthGrantKey() { return todayISO().slice(0, 7); }
+  // Either kind of monthly package counts as "this month is done": auto-renew
+  // already defers to a manual grant, and without the second key a batch would
+  // land a full allowance on top of a package auto-renew put there this morning.
+  function grantedThisMonth(c, key) {
+    return (c?.sessionBank?.packages || [])
+      .some((p) => p.membershipGrant === key || p.autoRenewGrant === key);
+  }
+  function monthGrantLabel() {
+    return new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  }
+  // The tier a bank runs on. A couple's two halves are one bank, so either
+  // half's membership answers for both — bankMutated mirrors it, but a row
+  // that was linked before the tier was set can still be one-sided.
+  function bankMembership(c) {
+    if (!c) return null;
+    return membershipById(c.sessionBank?.membership)
+      || membershipById(partnerOf(c)?.sessionBank?.membership);
+  }
+  // One row per BANK, not per athlete: a couple share one allowance, so they
+  // are one line and one grant. `granted` is read off the bank rather than off
+  // a list of who we granted, so a package mirrored over from a partner counts.
+  function monthGrantRoster() {
+    const key = monthGrantKey();
+    const seen = new Set();
+    const rows = [];
+    (state.trainerData.clients || []).forEach((c) => {
+      if (seen.has(c.id)) return;
+      ensureSessionBank(c);
+      const partner = partnerOf(c);
+      seen.add(c.id);
+      if (partner) seen.add(partner.id);
+      rows.push({
+        client: c,
+        partner,
+        membership: bankMembership(c),
+        granted: grantedThisMonth(c, key),
+        remaining: sessionBankSummary(c).remaining,
+      });
+    });
+    return rows;
+  }
+  function monthGrantDue() {
+    return monthGrantRoster().filter((r) => r.membership && r.membership.sessions && !r.granted);
+  }
+  // The roster-header button carries its own count, so the start-of-month round
+  // announces itself instead of being something the coach has to remember.
+  function renderMonthGrantBtn() {
+    const btn = $("#btn-month-grant"); if (!btn) return;
+    const rows = monthGrantRoster().filter((r) => r.membership && r.membership.sessions);
+    if (!rows.length) { hide(btn); return; }
+    show(btn);
+    const due = rows.filter((r) => !r.granted).length;
+    const month = new Date().toLocaleDateString("en-US", { month: "long" });
+    btn.classList.toggle("is-due", due > 0);
+    btn.innerHTML = `${lineIco("sd:ticket")} Grant ${escapeHtml(month)}` +
+      (due ? `<span class="month-grant-n">${due}</span>` : `<span class="month-grant-done">✓</span>`);
+    btn.title = due
+      ? `${due} athlete${due === 1 ? "" : "s"} still waiting on ${month}'s sessions`
+      : `Every membership has ${month}'s sessions`;
+  }
+  function openMonthGrantSheet() {
+    const rows = monthGrantRoster();
+    const eligible = rows.filter((r) => r.membership && r.membership.sessions);
+    const noTier = rows.filter((r) => !r.membership);
+    const label = monthGrantLabel();
+    if (!eligible.length) {
+      toast("Nobody is on a session membership yet");
+      return;
+    }
+    // Already-granted athletes stay in the list rather than disappearing from
+    // it: "who is on a membership" and "who still needs granting" are the same
+    // glance, and a missing name reads as a mistake.
+    const rowHtml = (r) => {
+      const c = r.client;
+      const m = r.membership;
+      const idx = athleteColorIdx(c);
+      // Already granted: the row stays, unticked and locked. It is how the
+      // sheet answers "who have I done" — and a second package this month is
+      // a deliberate act, which is what the per-athlete button is for.
+      return `
+        <label class="mg-row${r.granted ? " is-granted" : ""}" style="--athlete-rgb:${AVATAR_RGB[idx]}">
+          <input type="checkbox" data-mg="${escapeHtml(c.id)}"${r.granted ? " disabled" : " checked"} />
+          <span class="mg-av">${avatarTileHtml(c, c.importedProgress, { size: "sm", colorIdx: idx })}</span>
+          <span class="mg-main">
+            <span class="mg-name">${escapeHtml(c.name || "(unnamed)")}${r.partner ? ` <span class="mg-pair">💞</span>` : ""}</span>
+            <span class="mg-tier">${escapeHtml(membershipTitle(m))}${r.partner ? ` · shared with ${escapeHtml(r.partner.name || "partner")}` : ""}</span>
+          </span>
+          <span class="mg-right">
+            <span class="mg-add">+${m.sessions}</span>
+            <span class="mg-state">${r.granted ? "granted" : `${r.remaining} left`}</span>
+          </span>
+        </label>`;
+    };
+    openModal({
+      title: `Grant ${label}`,
+      body: `
+        <p class="muted" style="margin-top:-0.4em">One month's sessions onto every ticked bank, marked paid. Anyone already granted this month is unticked.</p>
+        <div class="mg-list" id="mg-list">${eligible.map(rowHtml).join("")}</div>
+        ${noTier.length ? `<p class="muted mg-skipped">No membership set, so not in this round: ${escapeHtml(noTier.map((r) => r.client.name || "(unnamed)").join(", "))}</p>` : ""}`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Grant", className: "btn btn-primary", onClick: runMonthGrant },
+      ],
+    });
+    const goBtn = $("#modal-foot .btn-primary");
+    const list = $("#mg-list");
+    const retotal = () => {
+      if (!goBtn || !list) return;
+      let people = 0, sessions = 0;
+      list.querySelectorAll("input[data-mg]:checked").forEach((box) => {
+        const r = eligible.find((x) => x.client.id === box.dataset.mg);
+        if (!r) return;
+        people += 1; sessions += r.membership.sessions;
+      });
+      goBtn.disabled = !people;
+      // "memberships", not "athletes": a couple's row is one membership over
+      // two people, so counting heads here would not match the list above it.
+      goBtn.textContent = people
+        ? `Grant ${people} membership${people === 1 ? "" : "s"} · ${sessions} sessions`
+        : "Nobody ticked";
+    };
+    list?.addEventListener("change", retotal);
+    retotal();
+  }
+  function runMonthGrant() {
+    const key = monthGrantKey();
+    const label = monthGrantLabel();
+    const picked = $$("#mg-list input[data-mg]:checked").map((b) => b.dataset.mg);
+    const done = [];
+    let sessions = 0;
+    picked.forEach((id) => {
+      const c = (state.trainerData.clients || []).find((x) => x.id === id);
+      if (!c) return;
+      ensureSessionBank(c);
+      const m = bankMembership(c);
+      if (!m || !m.sessions) return;
+      // Re-read the guard per athlete: a linked partner granted a moment ago in
+      // this same pass has already mirrored the package onto this bank, and
+      // granting again would hand the couple two allowances.
+      if (grantedThisMonth(c, key)) return;
+      c.sessionBank.packages.push({
+        id: uid(), size: m.sessions, status: "paid", price: m.price,
+        addedAt: Date.now(), paidAt: Date.now(),
+        note: `Membership: ${membershipTitle(m)} · ${label}`,
+        membershipGrant: key,
+      });
+      bankMutated(c);
+      done.push(c);
+      sessions += m.sessions;
+    });
+    localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+    // saveTrainer() only pushes the athlete currently open, and this touched a
+    // roster's worth of banks, so each one is pushed on its own key.
+    done.forEach((c) => pushAthlete(c));
+    closeModal();
+    renderClientGrid();
+    renderMonthGrantBtn();
+    renderIncomeCard();
+    if (state.currentClientId) { renderCoachSessions(); renderClientSnapshot(); }
+    toast(done.length
+      ? `🎟 ${label}: ${sessions} sessions across ${done.length} membership${done.length === 1 ? "" : "s"} ✓`
+      : "Nothing left to grant this month", 4000);
   }
 
   // ================= Scheduling =================
@@ -26721,6 +26977,7 @@
     window.addEventListener("online", flushBugQueue);
     flushBugQueue();
     $("#btn-add-client").addEventListener("click", addClientPrompt);
+    $("#btn-month-grant")?.addEventListener("click", openMonthGrantSheet);
     // Roster grouping tabs (A to Z / Membership / Activity / Program)
     $$("#roster-controls [data-roster-group]").forEach((b) =>
       b.addEventListener("click", () => {

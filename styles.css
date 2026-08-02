@@ -1059,6 +1059,46 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   padding: 0;
 }
 .client-nudge-btn:hover { border-color: var(--primary); background: var(--primary-soft); }
+/* Session balance beside their name: visible from every tab, and the door into
+   Sessions from all four. Same amber ticket as the roster chip, so the number
+   means the same thing in both places. */
+.client-sessions-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-family: inherit;
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.1);
+  padding: 0.25em 0.6em;
+  border-radius: 999px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.client-sessions-chip .ln-ico { width: 1.05em; height: 1.05em; vertical-align: 0; }
+.client-sessions-chip:hover { filter: brightness(1.15); }
+.client-sessions-chip.low {
+  color: var(--danger);
+  border-color: rgba(239, 68, 68, 0.5);
+  background: var(--danger-soft);
+}
+/* Nobody on a tier yet: still a door, just not an alarm. */
+.client-sessions-chip.blank {
+  color: var(--muted);
+  border-color: var(--border);
+  background: var(--surface-2);
+}
+.csc-req {
+  font-size: 0.65rem; font-weight: 800; line-height: 1;
+  color: var(--primary-bright);
+  background: var(--primary-soft);
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.35);
+  border-radius: 999px;
+  padding: 0.15em 0.4em;
+}
 /* Delete lives at the bottom of the profile page, out of the way */
 .profile-danger-row {
   margin-top: 1.4rem;
@@ -3571,32 +3611,116 @@ input.trial-input {
   padding: 0.05em 0.5em; margin-left: 0.35em; vertical-align: middle;
 }
 
-/* Coach profile — membership picker + grant button (matches other profile fields) */
-.profile-membership-row {
-  /* Bottom margin keeps the grant button clear of the Overall-goals label
-     below — same vertical rhythm as the rest of the card's rows. */
+/* Session options — tier picker, rate, grant button and the two policy
+   switches. Lives at the top of the coach's Sessions tab, directly above the
+   balance it decides (it was inside the Profile edit form on another tab). */
+.session-options-card { padding-bottom: 0.3rem; }
+.session-options-head {
+  display: flex; align-items: baseline; gap: 0.6em; flex-wrap: wrap;
+  margin-bottom: 0.2rem;
+}
+.session-options-head h4 { margin: 0; }
+.session-options-sub { font-size: 0.82rem; }
+.session-options-row {
   margin: 0.4rem 0 0.9rem;
   display: flex;
   align-items: flex-end;
   gap: 0.6rem;
   flex-wrap: wrap;
 }
-.profile-membership-row > label {
+.session-options-row > label {
   display: flex; flex-direction: column; gap: 0.25em;
   font-size: 0.8rem; color: var(--muted);
-  flex: 1 1 220px; min-width: 0;
+  /* Capped: on the coach's wide layout this card is the full column, and an
+     unbounded dropdown stretched to 700px for a 40-character option. */
+  flex: 1 1 220px; min-width: 0; max-width: 26rem;
 }
 /* The rate is a two-or-three digit number, so it takes a narrow column instead
    of the 220px the membership select needs. */
-.profile-membership-row > label.profile-field-rate { flex: 0 0 8.5rem; }
+.session-options-row > label.profile-field-rate { flex: 0 0 8.5rem; }
+/* Own line below the fields, centred against each other rather than bottom-
+   aligned against an input twice their height. */
+.session-options-actions {
+  flex: 1 1 100%;
+  display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap;
+  padding-top: 0.15rem;
+}
 #btn-grant-month { flex: 0 0 auto; white-space: nowrap; }
 #btn-grant-month:disabled { opacity: 0.5; cursor: default; }
+/* Already granted this month: the button stays live (a second grant is a
+   confirm away) but stops reading as something still owed. */
+#btn-grant-month.is-granted {
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.45);
+  background: rgba(16, 185, 129, 0.1);
+}
+
+/* "Grant the month": the whole roster in one sheet, off the athletes header.
+   The count is what makes it a prompt rather than a menu item — it says how
+   many memberships are still waiting on this month. */
+.month-grant-btn { display: inline-flex; align-items: center; gap: 0.4em; }
+.month-grant-btn .ln-ico { width: 1.05em; height: 1.05em; vertical-align: 0; }
+.month-grant-n {
+  font-size: 0.72rem; font-weight: 800; line-height: 1;
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.14);
+  padding: 0.2em 0.5em; border-radius: 999px;
+}
+.month-grant-done { color: #34d399; font-weight: 800; }
+.month-grant-btn.is-due { border-color: rgba(245, 158, 11, 0.5); }
+
+/* One row per athlete on a session tier. It is a <label> so the whole row is
+   the checkbox's hit area — the base label rule's block/caps/margin have to be
+   undone for that to read as a row rather than a heading. */
+.mg-list {
+  display: flex; flex-direction: column; gap: 0.35rem;
+  max-height: 46vh; overflow-y: auto; padding-right: 2px;
+}
+.mg-row {
+  display: flex; align-items: center; gap: 0.6rem;
+  margin-bottom: 0;
+  font-size: 0.9rem;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  color: var(--text);
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid rgba(var(--athlete-rgb), 0.85);
+  border-radius: 10px;
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.mg-row:hover { border-color: rgba(var(--primary-rgb), 0.45); }
+.mg-row input { accent-color: var(--primary); flex: 0 0 auto; }
+.mg-row.is-granted { opacity: 0.55; cursor: default; }
+.mg-row.is-granted:hover { border-color: var(--border); }
+/* A couple are one bank, so they are one row — the heart says the grant lands
+   on both, the same mark the roster uses for a linked pair. */
+.mg-pair { font-size: 0.8em; }
+.mg-av { flex: 0 0 auto; display: inline-flex; }
+.mg-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.mg-name {
+  font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mg-tier {
+  font-size: 0.74rem; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mg-right {
+  flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 0.1em;
+}
+.mg-add { font-weight: 800; font-size: 0.85rem; color: var(--primary-bright); }
+.mg-row.is-granted .mg-add { color: var(--muted); }
+.mg-state { font-size: 0.7rem; color: var(--muted); white-space: nowrap; }
+.mg-skipped { font-size: 0.78rem; margin: 0.7rem 0 0; }
 /* Auto-renew opt-in (recurring clients): package auto-granted each month,
    sized from their booked sessions. */
-.profile-membership-row > label.autorenew-toggle {
+.session-options-actions > label.autorenew-toggle {
   display: inline-flex; flex-direction: row; align-items: center; gap: 0.4em;
   flex: 0 0 auto; font-size: 0.8rem; color: var(--text-soft);
-  white-space: nowrap; cursor: pointer; padding-bottom: 0.55em;
+  white-space: nowrap; cursor: pointer; margin-bottom: 0;
 }
 .autorenew-toggle input { accent-color: var(--primary); }
 

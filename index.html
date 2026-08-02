@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=allow1" />
+  <link rel="stylesheet" href="styles.css?v=sessopt5" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -249,7 +249,10 @@
       <!-- Dashboard -->
       <div id="view-dashboard" class="view">
         <div class="view-head">
-          <div></div>
+          <!-- The start-of-month round: every athlete on a tier, granted in one
+               pass instead of four taps each. Labelled + badged by
+               renderMonthGrantBtn(); hidden when nobody is on a tier. -->
+          <button class="btn btn-ghost btn-sm slim-btn month-grant-btn hidden" id="btn-month-grant" type="button"></button>
           <button class="btn btn-primary btn-sm slim-btn" id="btn-add-client">+ Add athlete</button>
         </div>
         <div class="roster-controls hidden" id="roster-controls">
@@ -508,6 +511,12 @@
             <div class="client-name-row">
               <h2 id="client-name-display"></h2>
               <button class="client-nudge-btn" id="btn-nudge-athlete" title="Send a push notification to this athlete's phone" aria-label="Nudge athlete">🔔</button>
+              <!-- Their balance, beside their name, from every tab. The
+                   snapshot tile only exists on Overview and only once they have
+                   package history, so a new athlete on a membership had no door
+                   to their session options at all. Filled by
+                   renderClientSessionChip(). -->
+              <button class="client-sessions-chip" id="client-sessions-chip" type="button"></button>
             </div>
             <div class="muted" id="client-meta-display"></div>
             <!-- Cycle phase, ONLY for athletes who chose to share it. Filled by
@@ -546,7 +555,7 @@
               <span class="pref-fold-ico">✎</span>
               <span class="pref-fold-text">
                 <span class="pref-fold-title">Details</span>
-                <span class="pref-fold-sub">Name, age, height, membership and rate</span>
+                <span class="pref-fold-sub">Name, age, height, goals and notes</span>
               </span>
               <span class="pref-fold-chev">▸</span>
             </summary>
@@ -576,28 +585,10 @@
                 <input type="number" id="prof-weight" step="0.1" min="0" />
               </label>
             </div>
-            <div class="profile-membership-row">
-              <label>Membership
-                <select id="prof-membership"></select>
-              </label>
-              <!-- What this athlete actually pays per session. Blank falls back
-                   to the tier's per-session price, so it only needs filling in
-                   when the deal is off-menu. Feeds Expected income. -->
-              <label class="profile-field-rate">Session rate ($)
-                <input type="number" id="prof-rate" min="0" step="1" inputmode="decimal" placeholder="tier price" />
-              </label>
-              <button class="btn btn-ghost btn-sm" id="btn-grant-month" type="button">＋ Grant this month's sessions</button>
-              <label class="autorenew-toggle" title="On the first app open each month, grants a pending package sized to this athlete's booked sessions that month">
-                <input type="checkbox" id="prof-autorenew" /> 🔁 Auto-renew
-              </label>
-              <!-- A monthly allowance is use-it-or-lose-it by default: they paid
-                   for access to this month. This turns that off for the athlete
-                   who was away or hurt, and it never touches a pack they bought
-                   outright, which has always kept its value. -->
-              <label class="autorenew-toggle" title="Off: unused sessions from a monthly membership expire at the end of that month. On: they carry over. Packages bought outright never expire either way.">
-                <input type="checkbox" id="prof-rollover" /> ↻ Roll over unused
-              </label>
-            </div>
+            <!-- Membership, rate, auto-renew and rollover used to sit here. You
+                 picked the tier in this form and then granted it on the Sessions
+                 tab, with a save in between — they live with the balance they
+                 produce now (#session-options-row below). -->
             <!-- Goals and coach notes are EDITED here and READ on the snapshot,
                  which is where they matter: "no overhead press" is worth seeing
                  before you open their program, not after opening a fold. -->
@@ -703,6 +694,43 @@
               <button class="btn btn-ghost" id="btn-redeem-session">− Redeem session</button>
               <button class="btn btn-ghost" id="btn-gift-session" title="Give free sessions">🎁 Gift</button>
               <button class="btn btn-primary" id="btn-add-package">+ Add package</button>
+            </div>
+          </div>
+          <!-- Session options: what this athlete is on, what they pay, and the
+               two policy switches. Everything that decides the number in the
+               balance card sits directly above it, and each control saves on
+               change — there is no edit/save mode to enter for a dropdown. -->
+          <div class="card session-options-card">
+            <div class="session-options-head">
+              <h4>Membership</h4>
+              <span class="muted session-options-sub" id="session-options-sub"></span>
+            </div>
+            <div class="session-options-row" id="session-options-row">
+              <label>Membership
+                <select id="prof-membership"></select>
+              </label>
+              <!-- What this athlete actually pays per session. Blank falls back
+                   to the tier's per-session price, so it only needs filling in
+                   when the deal is off-menu. Feeds Expected income. -->
+              <label class="profile-field-rate">Session rate ($)
+                <input type="number" id="prof-rate" min="0" step="1" inputmode="decimal" placeholder="tier price" />
+              </label>
+              <!-- The button and the two switches take their own line: bottom-
+                   aligning a pill and two checkboxes against a pair of tall
+                   inputs never lands on one visual line. -->
+              <div class="session-options-actions">
+                <button class="btn btn-ghost btn-sm" id="btn-grant-month" type="button">＋ Grant this month's sessions</button>
+                <label class="autorenew-toggle" title="On the first app open each month, grants a pending package sized to this athlete's booked sessions that month">
+                  <input type="checkbox" id="prof-autorenew" /> 🔁 Auto-renew
+                </label>
+                <!-- A monthly allowance is use-it-or-lose-it by default: they
+                     paid for access to this month. This turns that off for the
+                     athlete who was away or hurt, and it never touches a pack
+                     they bought outright, which has always kept its value. -->
+                <label class="autorenew-toggle" title="Off: unused sessions from a monthly membership expire at the end of that month. On: they carry over. Packages bought outright never expire either way.">
+                  <input type="checkbox" id="prof-rollover" /> ↻ Roll over unused
+                </label>
+              </div>
             </div>
           </div>
           <div id="session-balance-host"></div>
@@ -1339,7 +1367,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=cyc1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=allow1"></script>
+  <script src="app.js?v=sessopt5"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
