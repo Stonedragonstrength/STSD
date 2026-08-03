@@ -17,6 +17,9 @@
 //   remove      -> { bookingId }        delete the event a booking owns
 //   push-series -> { seriesId, from }   same, for a whole weekly series
 //   remove-series -> { seriesId, from } delete a whole weekly series' events
+//   push-all    -> { from, batch }      backfill every future booking with no
+//                                       event yet; returns what remains so the
+//                                       caller can loop until done
 //
 // Only the coach may call any of them.
 //
@@ -57,6 +60,8 @@ const CORS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -133,6 +138,59 @@ Deno.serve(async (req) => {
     };
     const noteError = async (msg: string) => {
       await sb.from("google_calendar").update({ last_error: msg.slice(0, 300) }).eq("coach_id", coachId);
+    };
+
+    // One booking -> one calendar event. Shared by the targeted pushes and the
+    // backfill so there is exactly one definition of what an event looks like.
+    // Re-running is safe: a booking that already owns an event is PATCHed by
+    // google_event_id rather than posted again, which is what makes a failed
+    // half-finished run recoverable by simply running it again.
+    const writeEvent = async (bk: any, cal: string, auth: Record<string, string>) => {
+      // display_name, not name: the athletes table has never had a `name`
+      // column, and asking for one made PostgREST 400 the whole select. Because
+      // the callers below destructured only `data`, that error was thrown away
+      // and every push -- single, series, all of them -- quietly matched zero
+      // rows. The symptom was an empty Google Calendar with no error anywhere.
+      const name = bk?.athletes?.display_name ?? "Athlete";
+      const event = {
+        summary: `Training: ${name}`,
+        description: bk.note ? String(bk.note) : "Booked in Stone Dragon.",
+        start: { dateTime: new Date(bk.start_at).toISOString() },
+        end: { dateTime: new Date(bk.end_at).toISOString() },
+      };
+      const url = bk.google_event_id
+        ? `${CAL_API}/calendars/${cal}/events/${encodeURIComponent(bk.google_event_id)}`
+        : `${CAL_API}/calendars/${cal}/events`;
+
+      // Calendar meters WRITES to a single calendar far more tightly than it
+      // meters requests, and a backfill is nothing but writes to one calendar.
+      // Pushing a few hundred flat out earns a 403 "Rate Limit Exceeded" partway
+      // through, so each write backs off and retries rather than abandoning the
+      // run. Rate limiting is the expected state here, not a fault.
+      let data: any = null;
+      for (let attempt = 0; ; attempt++) {
+        const res = await fetch(url, {
+          method: bk.google_event_id ? "PATCH" : "POST",
+          headers: auth,
+          body: JSON.stringify(event),
+        });
+        data = await res.json();
+        if (res.ok) break;
+        const msg = String(data?.error?.message ?? `event ${res.status}`);
+        const limited = res.status === 429 || res.status === 403;
+        if (!limited || attempt >= 4) throw new Error(msg);
+        await sleep(400 * Math.pow(2, attempt) + Math.random() * 250);
+      }
+      if (!bk.google_event_id && data?.id) {
+        await sb.from("bookings").update({ google_event_id: data.id }).eq("id", bk.id);
+      }
+    };
+    const dropEvent = async (bk: any, cal: string, auth: Record<string, string>) => {
+      if (!bk.google_event_id) return false;
+      await fetch(`${CAL_API}/calendars/${cal}/events/${encodeURIComponent(bk.google_event_id)}`,
+        { method: "DELETE", headers: auth });
+      await sb.from("bookings").update({ google_event_id: null }).eq("id", bk.id);
+      return true;
     };
 
     switch (action) {
@@ -241,7 +299,7 @@ Deno.serve(async (req) => {
         // A weekly booking is stored as one row per session, so a year-long
         // series would otherwise be 52 round trips from the browser. The whole
         // series is handled in one call instead, capped so a bad id can't spin.
-        let q = sb.from("bookings").select("*, athletes(name)").eq("coach_id", coachId);
+        let q = sb.from("bookings").select("*, athletes(display_name)").eq("coach_id", coachId);
         if (series) {
           const seriesId = String(body?.seriesId ?? "");
           if (!seriesId) return json({ ok: false, error: "no series" }, 400);
@@ -255,7 +313,15 @@ Deno.serve(async (req) => {
         }
         const row = await loadToken();
         if (!row) return json({ ok: true, connected: false });
-        const { data: rows } = await q;
+        // Never swallow this. A malformed select fails here rather than at
+        // Google, and reporting it as "no such booking" is what hid a broken
+        // column name through every push this function has ever done.
+        const { data: rows, error: qErr } = await q;
+        if (qErr) {
+          await noteError(qErr.message);
+          console.error("[google-calendar] booking query failed", qErr);
+          return json({ ok: false, error: qErr.message, soft: true });
+        }
         const list = rows ?? [];
         if (!list.length) return json({ ok: false, error: "no such booking" }, 404);
 
@@ -271,34 +337,10 @@ Deno.serve(async (req) => {
           for (const bk of list) {
             // A cancelled row never has an event, whichever action asked.
             if (!wanted || bk.status !== "booked") {
-              if (bk.google_event_id) {
-                await fetch(`${CAL_API}/calendars/${cal}/events/${encodeURIComponent(bk.google_event_id)}`,
-                  { method: "DELETE", headers: auth });
-                await sb.from("bookings").update({ google_event_id: null }).eq("id", bk.id);
-                removed++;
-              }
+              if (await dropEvent(bk, cal, auth)) removed++;
               continue;
             }
-            const name = (bk as any).athletes?.name ?? "Athlete";
-            const event = {
-              summary: `Training: ${name}`,
-              description: bk.note ? String(bk.note) : "Booked in Stone Dragon.",
-              start: { dateTime: new Date(bk.start_at).toISOString() },
-              end: { dateTime: new Date(bk.end_at).toISOString() },
-            };
-            const url = bk.google_event_id
-              ? `${CAL_API}/calendars/${cal}/events/${encodeURIComponent(bk.google_event_id)}`
-              : `${CAL_API}/calendars/${cal}/events`;
-            const res = await fetch(url, {
-              method: bk.google_event_id ? "PATCH" : "POST",
-              headers: auth,
-              body: JSON.stringify(event),
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data?.error?.message ?? `event ${res.status}`);
-            if (!bk.google_event_id && data?.id) {
-              await sb.from("bookings").update({ google_event_id: data.id }).eq("id", bk.id);
-            }
+            await writeEvent(bk, cal, auth);
             written++;
           }
           await sb.from("google_calendar").update({ last_error: null }).eq("coach_id", coachId);
@@ -312,6 +354,72 @@ Deno.serve(async (req) => {
           // google_event_id and patches instead of duplicating.
           console.error("[google-calendar] push failed", e);
           return json({ ok: false, error: String(e), soft: true });
+        }
+      }
+
+      // Every future booking that has no event yet. The targeted pushes above
+      // all fire at the moment a booking is MADE, so anything that already
+      // existed when Google was connected has nothing pointing at it and never
+      // appears — which, after a Setmore cut-over, is the entire schedule.
+      //
+      // Done in batches the caller loops over rather than in one pass: several
+      // hundred bookings is several hundred sequential Google calls, which
+      // would outrun the function's wall clock and leave the coach staring at a
+      // spinner with no idea how far it got. Each call reports what remains, so
+      // the UI can count down and a failure only costs one batch.
+      case "push-all": {
+        const row = await loadToken();
+        if (!row) return json({ ok: true, connected: false });
+        const size = Math.max(1, Math.min(50, Number(body?.batch ?? 25)));
+        const from = String(body?.from ?? new Date().toISOString());
+        const pending = () => sb.from("bookings")
+          .select("id", { count: "exact", head: true })
+          .eq("coach_id", coachId).eq("status", "booked")
+          .is("google_event_id", null).gte("start_at", from);
+
+        const { data: rows, error: qErr } = await sb.from("bookings").select("*, athletes(display_name)")
+          .eq("coach_id", coachId).eq("status", "booked")
+          .is("google_event_id", null).gte("start_at", from)
+          .order("start_at", { ascending: true }).limit(size);
+        if (qErr) {
+          await noteError(qErr.message);
+          console.error("[google-calendar] backfill query failed", qErr);
+          return json({ ok: false, error: qErr.message, soft: true });
+        }
+        const list = rows ?? [];
+        if (!list.length) return json({ ok: true, written: 0, remaining: 0, done: true });
+
+        try {
+          const token = await accessToken(row.refresh_token, clientId, clientSecret);
+          const cal = encodeURIComponent(row.calendar_id || "primary");
+          const auth = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+          let written = 0;
+          try {
+            for (const bk of list) {
+              await writeEvent(bk, cal, auth);
+              written++;
+              // Paced deliberately. The retry in writeEvent recovers from a
+              // limit once it is hit; this is what keeps it from being hit.
+              await sleep(120);
+            }
+          } catch (e) {
+            // Report what this batch DID write. Everything written is already
+            // recorded against its booking, so the caller can simply run again
+            // and resume — but only if it can see progress was made, or it will
+            // read a partial success as a dead stop.
+            await noteError(String(e));
+            const { count } = await pending();
+            console.error("[google-calendar] push-all batch stopped", e);
+            return json({ ok: false, error: String(e), soft: true, written, remaining: count ?? 0 });
+          }
+          await sb.from("google_calendar").update({ last_error: null }).eq("coach_id", coachId);
+          const { count } = await pending();
+          return json({ ok: true, written, remaining: count ?? 0, done: (count ?? 0) === 0 });
+        } catch (e) {
+          await noteError(String(e));
+          const { count } = await pending();
+          console.error("[google-calendar] push-all failed", e);
+          return json({ ok: false, error: String(e), soft: true, written: 0, remaining: count ?? 0 });
         }
       }
 

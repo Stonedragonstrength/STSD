@@ -1736,6 +1736,24 @@ input.cex-finisher-input { width: 72px; flex: 0 0 72px; text-align: center; }
   font-family: inherit;
 }
 .btn-delete-mini:hover { background: var(--danger-soft); color: #fca5a5; border-color: rgba(239, 68, 68, 0.4); }
+/* Sits beside the delete ×, same footprint so the pair reads as one control
+   group — but hovers to the theme colour, not red: editing a package is the
+   ordinary thing to do to one, and deleting is the exception. */
+.btn-edit-mini {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  padding: 0.3em 0.6em;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+.btn-edit-mini:hover {
+  background: rgba(var(--primary-rgb), 0.14);
+  color: var(--primary-bright);
+  border-color: rgba(var(--primary-rgb), 0.4);
+}
 
 /* ============ Modal ============ */
 .modal {
@@ -11212,6 +11230,13 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 .sched-google-txt b { font-size: 0.88rem; }
 .sched-google-txt span { font-size: 0.75rem; color: var(--text-soft); line-height: 1.35; }
 .sched-google-err { color: var(--warn) !important; }
+/* Connect/Disconnect plus the backfill repair. Wraps rather than squeezing the
+   two buttons, so the row stays usable at 390px where the card is already
+   holding an email address and two lines of explanation. */
+.sched-google-acts {
+  display: flex; align-items: center; gap: 0.4em;
+  flex-wrap: wrap; justify-content: flex-end; flex-shrink: 0;
+}
 
 .sched-book-head {
   font-size: 0.7rem; font-weight: 800; text-transform: uppercase;

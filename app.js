@@ -13728,6 +13728,7 @@
           <div class="session-pkg-row-right">
             ${pill}
             ${payBtn}
+            <button class="btn-edit-mini" data-edit="${escapeHtml(pkg.id)}" title="Edit sessions and price">✎</button>
             <button class="btn-delete-mini" data-del="${escapeHtml(pkg.id)}" title="Remove">×</button>
           </div>`;
         pkgCard.appendChild(row);
@@ -13759,6 +13760,9 @@
           : `${p.size} session${p.size === 1 ? "" : "s"} released ✓`);
       });
     });
+    pkgCard.querySelectorAll("[data-edit]").forEach((btn) => {
+      btn.addEventListener("click", () => openPackageEditor(c, btn.dataset.edit));
+    });
     pkgCard.querySelectorAll("[data-del]").forEach((btn) => {
       btn.addEventListener("click", () => {
         if (!window.confirm("Remove this package? Redemptions are kept.")) return;
@@ -13768,7 +13772,7 @@
       });
     });
 
-    // Redemption history
+    // Redemption history — declared after the package editor below.
     const redCard = document.createElement("div");
     redCard.className = "card";
     redCard.innerHTML = `<h4 style="margin-top:0">Redemption history</h4>`;
@@ -13822,6 +13826,77 @@
           renderCoachSessions();
           closeModal();
           toast(`Added ${size}-session package ✓`);
+        }},
+      ],
+    });
+  }
+
+  // Edit a package in place. Before this the only way to change one was to
+  // delete it and add another, which quietly lost three things the row never
+  // showed: the price (+ Add package has no price field at all), the
+  // uncollected flag (a re-added package is born collected, so it drops off the
+  // month's settle list), and the membershipGrant/autoRenewGrant key that makes
+  // it THIS MONTH's package rather than a loose pack. Correcting a number is
+  // not the same as replacing the package, so this keeps the id and every key
+  // and changes only what was typed.
+  function openPackageEditor(c, pkgId) {
+    ensureSessionBank(c);
+    const pkg = c.sessionBank.packages.find((p) => p.id === pkgId);
+    if (!pkg) return;
+    const m = bankMembership(c);
+    const collected = !(pkg.unpaid || pkg.status === "pending");
+    const monthKey = pkg.membershipGrant || pkg.autoRenewGrant || "";
+    openModal({
+      title: "Edit package",
+      body:
+        (monthKey ? `<p class="muted" style="margin-top:-0.4em">${escapeHtml(monthKey)} allowance${
+          m ? ` · tier is ${m.sessions} session${m.sessions === 1 ? "" : "s"}${m.price ? ` · $${m.price.toLocaleString()}` : ""}` : ""
+        }. It expires with its month either way.</p>` : "") +
+        `<label>Number of sessions
+          <input type="number" id="pkg-ed-size" min="0" max="60" value="${escapeHtml(String(pkg.size ?? 0))}" style="font-size:1.4rem;text-align:center;" />
+        </label>
+        <label>Price ($) — what you bill for the month
+          <input type="number" id="pkg-ed-price" min="0" max="20000" step="1" value="${pkg.price == null ? "" : escapeHtml(String(pkg.price))}" placeholder="e.g. 725" />
+        </label>
+        <label class="autorenew-toggle" style="margin-top:0.6em">
+          <input type="checkbox" id="pkg-ed-collected"${collected ? " checked" : ""} /> Money collected
+        </label>
+        <label>Note
+          <input type="text" id="pkg-ed-note" value="${escapeHtml(pkg.note || "")}" placeholder="e.g. Venmo · August" />
+        </label>
+        <p id="pkg-ed-err" class="error hidden"></p>`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Save", className: "btn btn-primary", onClick: () => {
+          const err = $("#pkg-ed-err");
+          const size = parseInt($("#pkg-ed-size").value, 10);
+          if (!Number.isFinite(size) || size < 0 || size > 60) { showErr(err, "Sessions must be between 0 and 60."); return; }
+          const raw = $("#pkg-ed-price").value.trim();
+          const price = raw === "" ? undefined : Number(raw);
+          if (raw !== "" && (!Number.isFinite(price) || price < 0)) { showErr(err, "Price must be a number, or blank."); return; }
+          const nowCollected = $("#pkg-ed-collected").checked;
+          pkg.size = size;
+          if (price === undefined) delete pkg.price; else pkg.price = price;
+          pkg.note = $("#pkg-ed-note").value.trim();
+          // "Collected" is the only thing here that moves money, and the two
+          // flags have to agree: bankLedger counts a "pending" package as zero,
+          // so leaving it behind would take the sessions away as a side effect
+          // of ticking a box about payment.
+          if (nowCollected) { pkg.status = "paid"; delete pkg.unpaid; pkg.paidAt = pkg.paidAt || Date.now(); }
+          else { pkg.status = "paid"; pkg.unpaid = true; delete pkg.paidAt; }
+          bankMutated(c);
+          saveTrainer();
+          closeModal();
+          // The same five places the collect button refreshes — a size change
+          // moves the balance just as much as releasing one does.
+          renderCoachSessions();
+          renderClientSessionChip();
+          renderClientSnapshot();
+          renderClientGrid();
+          renderMonthGrantBtn();
+          renderIncomeCard();
+          toast(`Package updated · ${size} session${size === 1 ? "" : "s"}${
+            price === undefined ? "" : ` · $${price.toLocaleString()}`}${nowCollected ? "" : " · still to collect"} ✓`, 4000);
         }},
       ],
     });
@@ -14435,9 +14510,65 @@
             : "Not connected. Connect it and every booking lands on your calendar."}</span>` +
           (connected && g.lastError ? `<span class="sched-google-err">Last sync error: ${escapeHtml(g.lastError)}</span>` : "") +
         `</span>` +
-        `<button type="button" class="btn slim-btn btn-sm" id="sched-google-btn">${connected ? "Disconnect" : "Connect"}</button>` +
+        `<span class="sched-google-acts">` +
+          // Only offered once connected, and only as a repair: every booking
+          // made from here on pushes itself as it is created. This is for the
+          // ones that already existed when Google was connected, which nothing
+          // else ever goes back for.
+          (connected ? `<button type="button" class="btn btn-ghost btn-sm slim-btn" id="sched-google-sync">Sync existing bookings</button>` : "") +
+          `<button type="button" class="btn slim-btn btn-sm" id="sched-google-btn">${connected ? "Disconnect" : "Connect"}</button>` +
+        `</span>` +
       `</div>`;
     $("#sched-google-btn").addEventListener("click", () => connected ? disconnectGoogle() : connectGoogle());
+    $("#sched-google-sync")?.addEventListener("click", () => syncAllToGoogle());
+  }
+
+  // Push every future booking that Google doesn't have yet. The server works in
+  // batches and says what is left, so this loops until it is done — several
+  // hundred bookings is several hundred sequential calls to Google and one
+  // request would outlive the function.
+  let _googleSyncing = false;
+  async function syncAllToGoogle() {
+    if (_googleSyncing) return;
+    const btn = $("#sched-google-sync");
+    _googleSyncing = true;
+    if (btn) { btn.disabled = true; btn.textContent = "Syncing…"; }
+    let written = 0;
+    try {
+      // Capped rather than while(true): a server that kept reporting work left
+      // would otherwise loop forever against Google's rate limit.
+      let stalls = 0;
+      for (let pass = 0; pass < 80; pass++) {
+        const res = await window.Cloud?.googleCall?.("push-all", { batch: 25 });
+        if (res?.connected === false) { toast("Connect Google Calendar first."); break; }
+        written += res?.written || 0;
+        if (btn && res?.remaining) btn.textContent = `Syncing… ${res.remaining} to go`;
+        if (!res?.ok) {
+          // Google meters writes to one calendar, so a long backfill gets
+          // limited even when it is paced. The batch says what it managed
+          // first; as long as something moved, waiting and carrying on is the
+          // right answer, and only a batch that achieved nothing is a stop.
+          if (res?.soft && res.written) { await new Promise((r) => setTimeout(r, 3000)); continue; }
+          if (res?.soft && stalls++ < 3) { await new Promise((r) => setTimeout(r, 5000)); continue; }
+          const msg = res?.error ? `Google sync stopped: ${res.error}` : "Couldn't reach Google. Try again.";
+          toast(written ? `${written} added, then stopped · ${msg} · tap again to carry on` : msg, 9000);
+          break;
+        }
+        stalls = 0;
+        if (res.done || !res.written) {
+          toast(written
+            ? `📆 ${written} booking${written === 1 ? "" : "s"} added to Google Calendar ✓`
+            : "Google Calendar is already up to date ✓", 5000);
+          break;
+        }
+      }
+    } finally {
+      _googleSyncing = false;
+      if (btn) { btn.disabled = false; btn.textContent = "Sync existing bookings"; }
+      // Surfaces a last_error the server may have just recorded.
+      _googleStatus = await window.Cloud?.googleStatus?.() || _googleStatus;
+      renderGoogleCard();
+    }
   }
 
   async function connectGoogle() {
