@@ -271,7 +271,49 @@
   }
 
   // -------- Data factories --------
-  const DEFAULT_PR_LIFTS = ["Barbell Squat", "Deadlift", "Bench Press", "DB Bench Press", "Overhead BB Press", "Strict Curl"];
+  // These have to be names the EXERCISE LIBRARY actually uses, because that is
+  // what the coach picks from when building a program, and a PR card fills
+  // itself in by matching a program exercise's name (see bestLoggedByReps).
+  // Four of the original six named lifts that exist nowhere in the app —
+  // "Barbell Squat" against a library that calls it "Back Squat" — so those
+  // cards could never fill in for anybody, on any program, ever.
+  // Bare library names on purpose. A card matches a program exercise by its own
+  // name OR its long form, so "Bench Press" tracks the lift whether or not the
+  // coach tagged it BB — where "Barbell Bench Press" would find nothing on an
+  // untagged program. It also means NOT seeding a dumbbell bench beside the
+  // plain one: the generic card matches dumbbell sets too (their bare name is
+  // still "Bench Press"), so the pair would shadow each other. Anyone who wants
+  // the split adds it with ＋ Track a lift, and can delete what they don't.
+  const DEFAULT_PR_LIFTS = ["Back Squat", "Deadlift", "Bench Press", "Overhead Press", "Curl"];
+  // The names we used to seed, and the lift each one meant. Two jobs: rename
+  // the pristine seeded cards already sitting on every existing athlete, and
+  // let a card someone has TYPED INTO still find its logs without being
+  // renamed under them (see prLiftAlias). Keyed by exKey.
+  const PR_LIFT_RENAMES = {
+    "barbell squat": "Back Squat",
+    "db bench press": "Dumbbell Bench Press",
+    "overhead bb press": "Overhead Press",
+    "strict curl": "Curl",
+  };
+  function prLiftAlias(name) { return PR_LIFT_RENAMES[exKey(name)] || ""; }
+  // Rename seeded cards nobody has touched. A card with a value, a date or a
+  // lock on it has been claimed by the coach or the athlete — that name is
+  // their decision now, so it stays and the alias does the connecting instead.
+  // Skips a rename that would collide with a card they already have.
+  function migratePRLiftNames(list) {
+    if (!Array.isArray(list)) return false;
+    let changed = false;
+    list.forEach((p) => {
+      const to = p && prLiftAlias(p.name);
+      if (!to) return;
+      const touched = [1, 2, 3].some((n) => p[`pr${n}`] || p[`pr${n}Date`] || p[`pr${n}Locked`]);
+      if (touched) return;
+      if (list.some((o) => o !== p && exKey(o.name) === exKey(to))) return;
+      p.name = to;
+      changed = true;
+    });
+    return changed;
+  }
   function makeClient(name) {
     return {
       id: uid(), name: name || "New Athlete",
@@ -12554,9 +12596,14 @@
   function bestLoggedByReps(name, weeks, logsMap) {
     const key = exKey(name);
     if (!key) return null;
+    // A card still called by one of the old seeded names matches the lift that
+    // name meant, so an athlete who typed a number into "Barbell Squat" years
+    // ago still sees it track their Back Squat instead of sitting dead.
+    const alias = exKey(prLiftAlias(name));
     const best = { 1: null, 2: null, 3: null };
     (weeks || []).forEach((wk) => (wk.days || []).forEach((d) => (d.exercises || []).forEach((ex) => {
-      const hit = exKey(ex.name) === key || exKey(liftLabel(ex)) === key;
+      const names = [exKey(ex.name), exKey(liftLabel(ex))];
+      const hit = names.includes(key) || (alias && names.includes(alias));
       if (!hit || ex.kind === "mobility" || exIsTimed(ex)) return;
       ((logsMap || {})[ex.id] || []).forEach((l) => {
         if (l.locked === false || l.skipped) return;
@@ -12638,6 +12685,10 @@
     const emptyEl = $("#coach-pr-empty");
     container.innerHTML = "";
     if (!c.coachPRs) c.coachPRs = [];
+    // Both sides run this: whoever opens the page first fixes the names, and
+    // it is a no-op for the other. Untouched cards only, so the two sides can
+    // never disagree about what a card is called.
+    if (migratePRLiftNames(c.coachPRs)) saveTrainer();
 
     // One coach entry per lift name (first match wins)
     const nameMap = new Map();
@@ -12972,6 +13023,7 @@
     container.innerHTML = "";
     const prog = state.clientData.program; if (!prog) return;
     const athleteOwn = (state.clientData.progress.personalRecords || []).map((p) => ({ ...p, _author: "athlete" }));
+    let renamed = migratePRLiftNames(prog.client.coachPRs);
     const coachPRs = (prog.client.coachPRs || []).filter(p => p.name);
     renderPRArchive($("#athlete-pr-archive"), state.clientData.progress.personalRecords || []);
     if (!athleteOwn.length && !coachPRs.length) show(empty); else hide(empty);
@@ -12985,8 +13037,19 @@
       if (autoFillPRFromLogs(entry, best)) autoFilled = true;
       const card = document.createElement("div");
       card.className = "pr-edit-card pr-shared-card";
-      card.innerHTML = prFoldHtml(entry, entry.id || entry.name, prEditFieldsHtml(entry, best));
+      card.innerHTML = prFoldHtml(entry, entry.id || entry.name, prEditFieldsHtml(entry, best),
+        `<button class="pr-delete-btn" title="Stop tracking this lift" aria-label="Stop tracking ${escapeHtml(entry.name || "this lift")}">×</button>`);
       wirePRFold(card);
+      // The athlete seeds six of these the day they're created and trains maybe
+      // three of them. Without this the unwanted ones were permanent, and the
+      // ＋ Track a lift button beside them made that read as an oversight.
+      card.querySelector(".pr-delete-btn").addEventListener("click", () => {
+        if (!window.confirm(`Stop tracking ${entry.name}? Your logged workouts are not affected.`)) return;
+        prog.client.coachPRs = (prog.client.coachPRs || []).filter((p) => p.id !== entry.id);
+        pushCoachPRs();
+        renderAthletePRs();
+        toast(`No longer tracking ${entry.name}`);
+      });
       [1, 2, 3].forEach((n) => {
         card.querySelector(`.pr-${n}rm-input`).addEventListener("input", (e) => { entry[`pr${n}`] = storeW(e.target.value); pushCoachPRs(); });
         card.querySelector(`.pr-${n}rm-date`).addEventListener("input", (e) => {
@@ -13006,7 +13069,7 @@
       wirePRLoggedChips(card, entry, best, () => { pushCoachPRs(); renderAthletePRs(); });
       container.appendChild(card);
     });
-    if (autoFilled) pushAthleteCoachPRs();
+    if (autoFilled || renamed) pushAthleteCoachPRs();
 
     // Track any lift from the library — the athlete's door into the shared list.
     const trackBtn = document.createElement("button");
