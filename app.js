@@ -11236,10 +11236,18 @@
       // nothing to grant. bankMembership lets a couple's linked half answer.
       const m = bankMembership(c);
       if (!m || !m.sessions) return;
-      const booked = _dashCalSetmoreEvents.filter((e) =>
-        dateISO(new Date(e.startAt)).slice(0, 7) === monthKey &&
-        matchAthleteForEvent(e) === c
-      ).length;
+      // Counted across the whole BANK, not the athlete. A couple shares one
+      // allowance but the slot they share is booked under one of them, so
+      // counting a single half reads 12 for him and 1 for her off the same
+      // thirteen sessions — and because each half mirrors its answer onto the
+      // other, the two would overwrite each other's count on every pass and
+      // push to the cloud every time the calendar loaded.
+      const partner = partnerOf(c);
+      const booked = _dashCalSetmoreEvents.filter((e) => {
+        if (dateISO(new Date(e.startAt)).slice(0, 7) !== monthKey) return false;
+        const who = matchAthleteForEvent(e);
+        return who === c || (!!partner && who === partner);
+      }).length;
       const existing = monthPackageOf(c, monthKey);
       if (existing) {
         // Only ever the advisory count, and only when it has actually moved —

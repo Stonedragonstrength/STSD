@@ -21,6 +21,15 @@ function monthPackageOf(bank, key) {
     .find((p) => p.membershipGrant === key || p.autoRenewGrant === key) || null;
 }
 
+// Bookings for the whole BANK. A couple shares one allowance, but the slot they
+// share is booked under one of them, so counting a single half reads 12 for him
+// and 1 for her off the same thirteen sessions.
+function bookedForBank(events, monthKey, client, partner) {
+  return events.filter((e) =>
+    e.month === monthKey && (e.who === client || (!!partner && e.who === partner))
+  ).length;
+}
+
 // One athlete's pass. Pure, so the decision can be asserted without a calendar.
 // `booked` is what the calendar holds for the month right now.
 function planAutoRenew(bank, key, booked) {
@@ -123,6 +132,28 @@ console.log("\n-- a tier with no price still grants its sessions --");
 {
   eq("monthly-2 carries no price", planAutoRenew(bank("monthly-2"), "2026-08", 2),
     { action: "grant", size: 2, price: undefined, booked: 2 });
+}
+
+console.log("\n-- a couple is one bank, so it is one count --");
+{
+  // Kevin + Sarah: thirteen sessions between them, twelve booked under him and
+  // one under her. Counting her half alone said "1 booked" against a
+  // 16-session allowance and read as an athlete about to quit.
+  const ev = [
+    ...Array(12).fill(0).map(() => ({ month: "2026-08", who: "kevin" })),
+    { month: "2026-08", who: "sarah" },
+    { month: "2026-07", who: "kevin" }, // last month, never counted
+  ];
+  eq("counted from his side", bookedForBank(ev, "2026-08", "kevin", "sarah"), 13);
+  eq("counted from hers, same answer", bookedForBank(ev, "2026-08", "sarah", "kevin"), 13);
+  eq("without the link, only her own", bookedForBank(ev, "2026-08", "sarah", null), 1);
+}
+{
+  // Both halves agreeing is what stops them overwriting each other's count and
+  // pushing to the cloud on every calendar load.
+  const ev = [{ month: "2026-08", who: "a" }, { month: "2026-08", who: "b" }];
+  eq("both halves settle on the same number",
+    bookedForBank(ev, "2026-08", "a", "b"), bookedForBank(ev, "2026-08", "b", "a"));
 }
 
 console.log("\n-- last month's ticket doesn't answer for this one --");
