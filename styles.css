@@ -3849,6 +3849,20 @@ input.trial-input {
 .pending-request-actions { display: flex; gap: 0.4em; }
 .session-pkg-row-right { display: flex; align-items: center; gap: 0.5em; }
 
+/* Booked-vs-billed on an auto-renew ticket. Advisory: the price is the
+   membership's, whichever way this reads. Only rendered when it disagrees with
+   the tier, so it is always saying something. "over" is the one worth acting on
+   — a tier that is too small — so it takes the warn colour; "under" stays muted
+   because an unused session is information, not a problem. */
+.pkg-booked {
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin-top: 0.2em;
+  letter-spacing: 0.01em;
+}
+.pkg-booked.over { color: var(--warn); }
+.pkg-booked.under { color: var(--muted); }
+
 .status-pill {
   display: inline-block;
   font-size: 0.7rem;

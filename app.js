@@ -11203,42 +11203,80 @@
     freed.forEach((c) => pushAthlete(c));
     toast(`🎟 Auto-renewed sessions are live for ${freed.map((c) => c.name).join(", ")} · still marked unpaid`, 5000);
   }
+  // The ticket IS the invoice: the membership, granted monthly, at the
+  // membership's own price. That is what the coach actually bills — a 2×/week
+  // athlete is charged $725 for the month whether they booked seven sessions or
+  // nine — so the package carries that number and nothing else has to be
+  // translated in the coach's head at collection time.
+  //
+  // It used to be sized by counting bookings on the calendar, once, on the first
+  // app open of the month. Two things were wrong with that. The count is taken
+  // when almost nothing is booked yet — an athlete with no standing series books
+  // a few days at a time, so the 1st caught three sessions and a 12-session
+  // athlete was billed for 3, frozen there because the dedupe only asked "is
+  // there a package". And even with a perfect count it was the wrong number:
+  // billing happens at the START of the month, in advance, so what the calendar
+  // eventually holds cannot be known when the invoice goes out.
+  //
+  // The booking count is still worth having — it is just advisory, not money.
+  // It rides along as `booked` and says who has outgrown their tier (nine
+  // sessions against an eight-session membership, every month, is a membership
+  // that should move up) without ever touching size or price.
   function runAutoRenewGrants(year, month) {
     const now = new Date();
     if (year !== now.getFullYear() || month !== now.getMonth()) return;
     const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
     const monthLabel = now.toLocaleDateString("en-US", { month: "long", year: "numeric" });
     const renewed = [];
+    const advised = [];
     (state.trainerData.clients || []).forEach((c) => {
       if (!c.sessionBank?.autoRenew) return;
       ensureSessionBank(c);
-      const already = c.sessionBank.packages.some((p) =>
-        p.membershipGrant === monthKey || p.autoRenewGrant === monthKey);
-      if (already) return;
-      const count = _dashCalSetmoreEvents.filter((e) =>
+      // The tier is the whole grant, so without one there is nothing to bill and
+      // nothing to grant. bankMembership lets a couple's linked half answer.
+      const m = bankMembership(c);
+      if (!m || !m.sessions) return;
+      const booked = _dashCalSetmoreEvents.filter((e) =>
         dateISO(new Date(e.startAt)).slice(0, 7) === monthKey &&
         matchAthleteForEvent(e) === c
       ).length;
-      if (!count) return;
-      const m = membershipById(c.sessionBank.membership);
-      const perSession = m && m.price && m.sessions ? Math.round(m.price / m.sessions) : 0;
+      const existing = monthPackageOf(c, monthKey);
+      if (existing) {
+        // Only ever the advisory count, and only when it has actually moved —
+        // this runs on every calendar load, and a write per load would be a
+        // cloud push per load. Size and price are never reopened: a manual
+        // grant is the coach's own number, and an auto one is already the
+        // membership.
+        if (!existing.autoRenewGrant || existing.booked === booked) return;
+        existing.booked = booked;
+        advised.push(c);
+        bankMutated(c);
+        return;
+      }
+      // No `if (!booked) return` guard: a paying member gets their ticket even
+      // with an empty calendar. Skipping them was a missed invoice the coach
+      // was never told about.
       c.sessionBank.packages.push({
-        id: uid(), size: count, status: "paid", unpaid: true,
+        id: uid(), size: m.sessions, status: "paid", unpaid: true,
         addedAt: Date.now(),
-        price: perSession ? perSession * count : undefined,
-        note: `Auto-renew · ${monthLabel} · ${count} booked session${count === 1 ? "" : "s"}`,
+        price: m.price,
+        note: `Auto-renew · ${membershipTitle(m)} · ${monthLabel}`,
         autoRenewGrant: monthKey,
+        booked,
       });
       renewed.push(c);
       // Mirror now so the partner's own pass sees the grant and skips it.
       bankMutated(c);
     });
-    if (!renewed.length) return;
+    if (!renewed.length && !advised.length) return;
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
-    renewed.forEach((c) => {
+    [...renewed, ...advised].forEach((c) => {
       if (window.Cloud?.enabled) window.Cloud.debounce(`athlete:${c.id}`, () =>
         window.Cloud.upsertAthlete(c, state.trainerData.coachId));
     });
+    // Only the grant is worth a toast. The advisory count moves every time a
+    // booking is made, and the coach did not ask for it.
+    if (!renewed.length) return;
     toast(`🔁 Auto-renew: ${renewed.map((c) => c.name).join(", ")} · ${monthLabel} sessions are live, still to collect`, 4000);
   }
 
@@ -13662,11 +13700,22 @@
           : (pkg.status || "paid") !== "paid"
             ? `<button class="btn btn-primary btn-sm pkg-pay-btn" data-pay="${escapeHtml(pkg.id)}">Mark paid</button>`
             : "";
+        // What they have actually booked against the allowance they are billed
+        // for. Advisory only — it never moved the price — and it is the one
+        // number that says a membership is the wrong size. Silent when it
+        // agrees with the tier, so it only appears when it is worth reading.
+        const booked = typeof pkg.booked === "number" && pkg.booked !== pkg.size
+          ? `<div class="pkg-booked ${pkg.booked > pkg.size ? "over" : "under"}">${pkg.booked} booked · ${
+              pkg.booked > pkg.size
+                ? `${pkg.booked - pkg.size} over the tier`
+                : `${pkg.size - pkg.booked} unused`}</div>`
+          : "";
         row.innerHTML = `
           <div>
             <strong>${label}</strong>
             <span class="muted"> · ${escapeHtml(dateStr)}</span>
             ${pkg.note ? `<div class="muted" style="font-size:0.85rem">${escapeHtml(pkg.note)}</div>` : ""}
+            ${booked}
           </div>
           <div class="session-pkg-row-right">
             ${pill}
