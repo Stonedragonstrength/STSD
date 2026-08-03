@@ -3724,6 +3724,46 @@ input.trial-input {
 .mg-row.is-granted .mg-add { color: var(--muted); }
 .mg-state { font-size: 0.7rem; color: var(--muted); white-space: nowrap; }
 .mg-skipped { font-size: 0.78rem; margin: 0.7rem 0 0; }
+
+/* Setmore cut-over: the connection row, and the preview of what the schedule
+   becomes once the app owns it. */
+.setmore-card {
+  display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap;
+  justify-content: space-between;
+  margin-top: 0.7rem; padding-top: 0.7rem;
+  border-top: 1px solid var(--border);
+}
+.setmore-note { font-size: 0.8rem; margin-top: 0.15em; max-width: 44ch; }
+.setmore-card.is-done { opacity: 0.75; }
+.lk-list {
+  display: flex; flex-direction: column; gap: 0.3rem;
+  max-height: 42vh; overflow-y: auto; padding-right: 2px;
+  margin-top: 0.2rem;
+}
+.lk-row {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid rgba(var(--athlete-rgb), 0.85);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.lk-av { flex: 0 0 auto; display: inline-flex; }
+.lk-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.lk-name {
+  font-weight: 700; font-size: 0.9rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.lk-when {
+  font-size: 0.74rem; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.lk-n {
+  flex: 0 0 auto; font-size: 0.78rem; font-weight: 800;
+  color: var(--primary-bright); white-space: nowrap;
+}
+.lk-gcal { margin-top: 0.9rem; }
+.lk-gcal-note { font-size: 0.75rem; margin: 0.2rem 0 0; max-width: 52ch; }
 /* Auto-renew opt-in (recurring clients): package auto-granted each month,
    sized from their booked sessions. */
 .session-options-actions > label.autorenew-toggle {

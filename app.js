@@ -11083,6 +11083,130 @@
     toast(`🔁 Auto-renew: ${renewed.map((c) => c.name).join(", ")} · ${monthLabel} package${renewed.length === 1 ? "" : "s"} added (pending payment)`, 4000);
   }
 
+  // The Connections fold. Once the feed is cut this becomes one line of
+  // history rather than a control — there is no re-connect, because the
+  // bookings are native now and re-syncing would duplicate every one of them.
+  function renderSetmoreCard() {
+    const host = $("#sched-setmore"); if (!host) return;
+    const cut = setmoreCutoffISO();
+    if (cut) {
+      host.innerHTML = `<div class="setmore-card is-done">
+        <div><strong>📅 Setmore · disconnected</strong>
+        <div class="muted setmore-note">Your schedule has been in the app since ${escapeHtml(
+          new Date(cut).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })
+        )}. Sessions before then are still on the calendar as history.</div></div>
+      </div>`;
+      return;
+    }
+    host.innerHTML = `<div class="setmore-card">
+      <div><strong>📅 Setmore</strong>
+      <div class="muted setmore-note">Bookings are mirrored in from Setmore, so nothing here can move or cancel one. Lock the schedule in to make it yours.</div></div>
+      <button class="btn btn-primary btn-sm slim-btn" id="btn-setmore-lockin" type="button">Lock in the schedule…</button>
+    </div>`;
+    $("#btn-setmore-lockin")?.addEventListener("click", openSetmoreLockInSheet);
+  }
+
+  async function openSetmoreLockInSheet() {
+    toast("Reading your Setmore schedule…");
+    const plan = await setmoreLockInPlan();
+    if (!plan) { toast("Needs a connection. Try again once you're back online.", 4000); return; }
+    if (!plan.series.length && !plan.singles.length) {
+      toast("No upcoming Setmore bookings to lock in", 4000);
+      return;
+    }
+    const rowHtml = (s, once) => {
+      const idx = athleteColorIdx(s.client);
+      const when = once
+        ? `${fmtSlotDay(zonedDateISO(s.ms, plan.tz), plan.tz)} · ${fmtSlotTime(s.ms, plan.tz)}`
+        : `${dowsPhrase(s.dows)} · ${fmtSlotTime(
+            zonedTimeToUtc(2026, 1, 5, s.hh, s.mm, plan.tz), plan.tz)}`;
+      return `<div class="lk-row" style="--athlete-rgb:${AVATAR_RGB[idx]}">
+        <span class="lk-av">${avatarTileHtml(s.client, s.client.importedProgress, { size: "sm", colorIdx: idx })}</span>
+        <span class="lk-main">
+          <span class="lk-name">${escapeHtml(s.client.name || "(unnamed)")}</span>
+          <span class="lk-when">${escapeHtml(when)}</span>
+        </span>
+        <span class="lk-n">${once ? "once" : `${s.dows.length * plan.weeks}`}</span>
+      </div>`;
+    };
+    openModal({
+      title: "Lock in the schedule",
+      body:
+        `<p class="muted" style="margin-top:-0.4em">Your ${plan.events} upcoming Setmore bookings, rebuilt as ${plan.series.length} standing appointment${plan.series.length === 1 ? "" : "s"} and ${plan.singles.length} one-off${plan.singles.length === 1 ? "" : "s"} the app owns — ${plan.rows} sessions, ${plan.weeks} weeks ahead. Setmore is disconnected at the end, and nothing already on the calendar is deleted.</p>` +
+        `<div class="lk-list">${plan.series.map((s) => rowHtml(s, false)).join("")}${plan.singles.map((s) => rowHtml(s, true)).join("")}</div>` +
+        (plan.skipped.length
+          ? `<p class="muted mg-skipped">No athlete matches these, so they are left behind: ${escapeHtml(plan.skipped.map(([n, k]) => `${n} (${k})`).join(", "))}</p>`
+          : "") +
+        `<label class="autorenew-toggle lk-gcal"><input type="checkbox" id="lk-gcal" /> Also add these to Google Calendar</label>` +
+        `<p class="muted lk-gcal-note">Off by default: Setmore may already be putting these on that calendar, and you would get each session twice. Check it after the cut-over and turn this on later if it looks empty.</p>`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: `Lock in ${plan.rows} sessions`, className: "btn btn-primary",
+          onClick: () => runSetmoreLockIn(plan, !!$("#lk-gcal")?.checked) },
+      ],
+    });
+  }
+
+  async function runSetmoreLockIn(plan, pushGoogle) {
+    const btn = $("#modal-foot .btn-primary");
+    if (btn) { btn.disabled = true; btn.textContent = "Locking in…"; }
+    const coachId = state.trainerData.coachId || "";
+    const rows = [];
+    const seriesIds = [];
+    plan.series.forEach((s) => {
+      const seriesId = `sr_${uid()}`;
+      seriesIds.push(seriesId);
+      // From today, so a session earlier this week that already happened is
+      // left where it is rather than being re-created behind the coach.
+      patternOccurrences(todayISO(), s.dows, s.hh, s.mm, plan.tz, plan.weeks).forEach((ms) => {
+        if (ms <= Date.now()) return;
+        rows.push({
+          id: uid(), coach_id: coachId, athlete_id: s.client.id,
+          start_at: new Date(ms).toISOString(),
+          end_at: new Date(ms + s.mins * 60000).toISOString(),
+          status: "booked", created_by: "coach", note: null, series_id: seriesId,
+        });
+      });
+    });
+    plan.singles.forEach((s) => {
+      if (s.ms <= Date.now()) return;
+      rows.push({
+        id: uid(), coach_id: coachId, athlete_id: s.client.id,
+        start_at: new Date(s.ms).toISOString(),
+        end_at: new Date(s.ms + s.mins * 60000).toISOString(),
+        status: "booked", created_by: "coach", note: null, series_id: null,
+      });
+    });
+    const res = await window.Cloud.createBookings(rows);
+    const made = (res?.created || []).length;
+    if (!made) {
+      if (btn) { btn.disabled = false; btn.textContent = `Lock in ${plan.rows} sessions`; }
+      toast("Couldn't create those bookings. Nothing was changed.", 5000);
+      return;
+    }
+    // Only now is it safe to stop believing the feed: the bookings exist. The
+    // cutoff keeps past Setmore sessions on the calendar as history while the
+    // app's own bookings own everything from here. The zone is pinned in the
+    // same write, so a device in another timezone can never reinterpret
+    // "Mondays at 9" — only the zone, no weekly windows, so self-booking stays
+    // shut until the coach opens it themselves.
+    const av = normalizeAvailability(coachAvailability());
+    av.tz = plan.tz;
+    av.setmoreCutoff = new Date().toISOString();
+    await saveCoachAvailability(av);
+    await window.Cloud.clearSetmoreFeed?.(coachId);
+    if (pushGoogle) seriesIds.forEach((seriesId) =>
+      window.Cloud.googleCall?.("push-series", { seriesId, from: new Date().toISOString() }));
+    closeModal();
+    _dashCalSetmoreFetchKey = null;
+    await afterBookingChange();
+    renderSetmoreCard();
+    renderClientGrid();
+    const skipped = (res?.taken || []).length;
+    toast(`📅 Schedule locked in · ${made} session${made === 1 ? "" : "s"} · Setmore disconnected ✓` +
+      (skipped ? ` · ${skipped} time${skipped === 1 ? " was" : "s were"} already taken` : ""), 6000);
+  }
+
   // -------- Dashboard overview calendar --------
   // Setmore-synced booking times for the currently visible month, grouped
   // by local calendar date (see loadDashCalSetmoreEvents).
@@ -11126,7 +11250,13 @@
       bookingId: b.id,
       seriesId: b.series_id || "",
     }));
-    _dashCalSetmoreEvents = [...events, ...asEvents]
+    // Past the cut-over the app's own bookings are the truth. The mirror still
+    // holds every session that happened BEFORE it, which is the only record of
+    // those, so it is filtered rather than ignored — otherwise the same session
+    // would show twice, and the auto-redeem walker would charge for it twice.
+    const cutoff = setmoreCutoffMs();
+    const mirrored = (events || []).filter((e) => new Date(e.startAt).getTime() < cutoff);
+    _dashCalSetmoreEvents = [...mirrored, ...asEvents]
       .sort((a, b) => String(a.startAt).localeCompare(String(b.startAt)));
     autoRedeemFinishedBookings();
     runAutoRenewGrants(year, month);
@@ -11140,6 +11270,73 @@
     }
   }
 
+  // ---- Cutting over from Setmore ----
+  // The feed is a MIRROR: nothing in the app can move or cancel a Setmore
+  // appointment, so while it is connected the schedule is only ever a picture
+  // of a decision made somewhere else. This reads the standing pattern out of
+  // the feed and rebuilds it as real bookings the app owns.
+  //
+  // Nothing is deleted. Past setmore_events stay as the record of sessions that
+  // already happened; `setmoreCutoff` is the instant after which the app stops
+  // believing the mirror, so the two can never show the same session twice.
+  const LOCKIN_WEEKS = 26;
+  // Wall clock in `tz`, which is what a standing appointment is actually made
+  // of — "Mondays at 9" has to stay 9am across a DST change, so the pattern is
+  // rebuilt from the clock face rather than from the instant.
+  function setmoreWall(utcMs, tz) {
+    const local = new Date(utcMs + tzOffsetMs(utcMs, tz));
+    return { dow: local.getUTCDay(), hh: local.getUTCHours(), mm: local.getUTCMinutes() };
+  }
+  // Rides `availability`, which round-trips through the coach row — on
+  // trainerData alone it would be device-local, and the phone would go on
+  // merging the old feed on top of the bookings that replaced it.
+  function setmoreCutoffISO() { return coachAvailability().setmoreCutoff || ""; }
+  function setmoreCutoffMs() {
+    const t = Date.parse(setmoreCutoffISO());
+    return Number.isFinite(t) ? t : Infinity;
+  }
+  // Groups every future booking by athlete + time of day + length. A weekday
+  // that shows up twice or more in that shape is a standing appointment; a
+  // weekday that shows up once is a one-off and stays a single booking.
+  async function setmoreLockInPlan(weeks = LOCKIN_WEEKS) {
+    const coachId = state.trainerData.coachId;
+    if (!coachId || !window.Cloud?.enabled) return null;
+    const now = Date.now();
+    const events = await window.Cloud.getSetmoreEvents(coachId,
+      new Date(now).toISOString(), new Date(now + 400 * 86400000).toISOString());
+    const tz = normalizeAvailability(coachAvailability()).tz || localTz();
+    const shapes = new Map();
+    const skipped = new Map();
+    (events || []).forEach((e) => {
+      const startMs = new Date(e.startAt).getTime();
+      if (!Number.isFinite(startMs)) return;
+      const c = matchAthleteForEvent(e);
+      if (!c) {
+        const who = e.clientName || "Unnamed booking";
+        skipped.set(who, (skipped.get(who) || 0) + 1);
+        return;
+      }
+      const endMs = new Date(e.endAt || e.startAt).getTime();
+      const mins = Math.max(15, Math.round((endMs - startMs) / 60000) || 60);
+      const w = setmoreWall(startMs, tz);
+      const key = `${c.id}|${w.hh}:${w.mm}|${mins}`;
+      const g = shapes.get(key) || { client: c, hh: w.hh, mm: w.mm, mins, items: [] };
+      g.items.push({ ms: startMs, dow: w.dow });
+      shapes.set(key, g);
+    });
+    const series = [], singles = [];
+    shapes.forEach((g) => {
+      const perDow = new Map();
+      g.items.forEach((i) => perDow.set(i.dow, (perDow.get(i.dow) || 0) + 1));
+      const dows = [...perDow.entries()].filter(([, n]) => n >= 2).map(([dow]) => dow).sort((a, b) => a - b);
+      if (dows.length) series.push({ ...g, dows });
+      g.items.filter((i) => !dows.includes(i.dow)).forEach((i) => singles.push({ ...g, ms: i.ms }));
+    });
+    series.sort((a, b) => (a.dows[0] - b.dows[0]) || (a.hh * 60 + a.mm) - (b.hh * 60 + b.mm));
+    const rows = series.reduce((n, s) => n + s.dows.length * weeks, 0) + singles.length;
+    return { tz, weeks, events: (events || []).length, series, singles, rows,
+      skipped: [...skipped.entries()] };
+  }
   // -------- Setmore booking ↔ athlete profile matching --------
   function normSetmoreName(s) {
     return String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -13923,6 +14120,7 @@
     const sum = $("#sched-summary");
     if (sum) sum.innerHTML = availabilitySummaryHtml(coachAvailability());
     renderGoogleCard();
+    renderSetmoreCard();
     renderCoachSeries();
     renderIncomeCard();
     renderCoachSettingsSubs(); // the fold summaries quote all three

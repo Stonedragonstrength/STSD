@@ -932,6 +932,19 @@
       return (data || []).map(rowToSetmoreEvent);
     } catch (e) { console.warn("[Cloud] getSetmoreEvents", e); return []; }
   }
+  // Cut the feed. The sync function selects coaches with a non-null
+  // setmore_ics_url, so clearing it is what actually stops the job — the rows
+  // already in setmore_events are left alone on purpose, since they are the
+  // only record of sessions that happened before the app took over.
+  async function clearSetmoreFeed(coachId) {
+    if (!coachId) return false;
+    try {
+      const { error } = await sb.from("coaches")
+        .update({ setmore_ics_url: null }).eq("id", coachId);
+      if (error) { console.warn("[Cloud] clearSetmoreFeed", error.message); return false; }
+      return true;
+    } catch (e) { console.warn("[Cloud] clearSetmoreFeed", e); return false; }
+  }
   // Manually trigger the sync Edge Function (the "Refresh now" button) —
   // the same job pg_cron runs on a schedule.
   async function refreshSetmoreSync() {
@@ -1048,6 +1061,7 @@
     // Setmore sync
     getSetmoreEvents,
     refreshSetmoreSync,
+    clearSetmoreFeed,
     // Bug reports
     submitBugReport,
     getBugReports,
