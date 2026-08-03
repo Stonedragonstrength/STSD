@@ -651,6 +651,8 @@
     bulletins:    "notify_bulletins",
     messages:     "notify_messages",
     formChecks:   "notify_formchecks",
+    sessionsOn:   "notify_sessions",
+    sessionLead:  "session_lead_mins",
     reminderOn:   "reminder_on",
     reminderTime: "reminder_time",
     tz:           "tz",

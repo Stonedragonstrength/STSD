@@ -10,6 +10,10 @@ export type Prefs = {
   notify_bulletins: boolean;
   notify_messages: boolean;
   notify_formchecks: boolean;
+  // A booked session is coming up. Its own switch, not a coach-sent category:
+  // session-reminder reads it directly and ignores quiet hours.
+  notify_sessions: boolean;
+  session_lead_mins: number;
   reminder_on: boolean;
   reminder_time: string;
   tz: string;

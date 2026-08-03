@@ -26676,10 +26676,23 @@
   const KEY_PREFS = "trainerpro_prefs_v1";
   const PREFS_DEFAULT = {
     bulletins: true, messages: true, formChecks: true,
+    // On by default, like the coach-sent kinds: a session is something the
+    // athlete agreed to, so being told about it is the expected behaviour.
+    sessionsOn: true, sessionLead: 120,
     reminderOn: false, reminderTime: "17:00",
     quietOn: false, quietFrom: "21:00", quietTo: "07:00",
     simple: false, hideWeight: false,
   };
+  // Minutes before a session. Two hours is the default; the short end is for
+  // people who train early and live close, the long end for a whole workday's
+  // warning.
+  const SESSION_LEADS = [30, 60, 120, 180, 720];
+  function leadLabel(mins) {
+    if (mins < 60) return `${mins} minutes before`;
+    if (mins === 60) return "1 hour before";
+    if (mins < 720) return `${mins / 60} hours before`;
+    return "The morning of";
+  }
   let _prefs = null;
   function athletePrefs() {
     if (!_prefs) {
@@ -26848,6 +26861,15 @@
           ${prefSwitchHtml("formChecks", "Form-check replies", "When your coach reviews a clip you sent", p.formChecks)}
         </div>
         <div class="pref-list">
+          ${prefSwitchHtml("sessionsOn", "Session reminders", "Before each session booked with your coach", p.sessionsOn)}
+          <div class="pref-sub${p.sessionsOn ? "" : " hidden"}" id="pref-sessions-sub">
+            <label>Tell me
+              <select id="pref-session-lead">
+                ${SESSION_LEADS.map((n) =>
+                  `<option value="${n}"${n === p.sessionLead ? " selected" : ""}>${escapeHtml(leadLabel(n))}</option>`).join("")}
+              </select>
+            </label>
+          </div>
           ${prefSwitchHtml("reminderOn", "Workout reminder", "A daily nudge, skipped on days you already trained", p.reminderOn)}
           <div class="pref-sub${p.reminderOn ? "" : " hidden"}" id="pref-reminder-sub">
             <label>Remind me at
@@ -26885,8 +26907,15 @@
   function wireNotifyFold(host) {
     const enabled = pushOn();
     wirePrefSwitches(host, {
+      sessionsOn: (on) => $("#pref-sessions-sub")?.classList.toggle("hidden", !on),
       reminderOn: (on) => $("#pref-reminder-sub")?.classList.toggle("hidden", !on),
       quietOn: (on) => $("#pref-quiet-sub")?.classList.toggle("hidden", !on),
+    });
+    $("#pref-session-lead")?.addEventListener("change", (e) => {
+      const n = SESSION_LEADS.includes(+e.target.value) ? +e.target.value : PREFS_DEFAULT.sessionLead;
+      e.target.value = String(n);
+      setAthletePrefs({ sessionLead: n });
+      toast("Saved");
     });
     const timeField = (sel, key) => $(sel)?.addEventListener("change", (e) => {
       const v = /^\d{2}:\d{2}$/.test(e.target.value) ? e.target.value : PREFS_DEFAULT[key];
