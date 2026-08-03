@@ -11490,11 +11490,44 @@
   // lives behind a tap on the session it belongs to. A row of competing tap
   // targets is easy to hit by accident and hard to read at a glance; this is
   // the opposite of both.
+  // The first day with anything on it, walking forward. Only sees the loaded
+  // window (the month ±7 days), which is all the jump needs — anything further
+  // out is a month the coach has to navigate to anyway.
+  function nextDayWithRows(iso, limit = 45) {
+    const d = new Date(iso + "T12:00:00");
+    for (let i = 0; i < limit; i++) {
+      d.setDate(d.getDate() + 1);
+      const next = dateISO(d);
+      const n = dayRows(next).length;
+      if (n) return { iso: next, count: n };
+    }
+    return null;
+  }
   function renderCalDayView(host, iso) {
     if (!host) return;
     const rows = dayRows(iso);
     if (!rows.length) {
-      host.innerHTML = `<p class="muted dash-day-empty">Nothing scheduled or logged for this date.</p>`;
+      // Day is the mode the app opens in, so an empty one is the front door.
+      // "Nothing scheduled" alone reads like the calendar is broken rather than
+      // like a Sunday off — the jump proves there IS a week behind it.
+      const next = nextDayWithRows(iso);
+      const jumpLabel = next && next.iso === addDaysISO(todayISO(), 1)
+        ? "Tomorrow"
+        : next && new Date(next.iso + "T12:00:00")
+            .toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+      host.innerHTML = `<div class="dash-day-empty">` +
+        `<p class="muted dash-day-empty-lbl">${iso === todayISO()
+          ? "Nothing on today."
+          : "Nothing scheduled or logged for this date."}</p>` +
+        (next ? `<button type="button" class="btn btn-ghost btn-sm slim-btn dv-jump" id="dv-jump-next">` +
+          `${escapeHtml(jumpLabel)} · ${next.count} session${next.count === 1 ? "" : "s"} →</button>` : "") +
+        `</div>`;
+      $("#dv-jump-next")?.addEventListener("click", () => {
+        const c = dashCal();
+        const d = new Date(next.iso + "T12:00:00");
+        c.date = next.iso; c.year = d.getFullYear(); c.month = d.getMonth();
+        renderDashboardCalendar();
+      });
       return;
     }
     // The same "you are here" line the week timetable draws, in the only shape
@@ -13220,6 +13253,12 @@
         const pill = pkg.gift
           ? `<span class="status-pill status-gift">gift</span>`
           : `<span class="status-pill status-${escapeHtml(pkg.status || "paid")}">${escapeHtml(pkg.status || "paid")}</span>`;
+        // A pending package is worth ZERO until it is marked paid, and until
+        // now nothing in the app could flip one — auto-renew's packages sat
+        // here looking granted while the balance stayed empty.
+        const payBtn = (pkg.status || "paid") !== "paid"
+          ? `<button class="btn btn-primary btn-sm pkg-pay-btn" data-pay="${escapeHtml(pkg.id)}">Mark paid</button>`
+          : "";
         row.innerHTML = `
           <div>
             <strong>${label}</strong>
@@ -13228,12 +13267,31 @@
           </div>
           <div class="session-pkg-row-right">
             ${pill}
+            ${payBtn}
             <button class="btn-delete-mini" data-del="${escapeHtml(pkg.id)}" title="Remove">×</button>
           </div>`;
         pkgCard.appendChild(row);
       });
     }
     container.appendChild(pkgCard);
+    pkgCard.querySelectorAll("[data-pay]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const p = c.sessionBank.packages.find((x) => x.id === btn.dataset.pay);
+        if (!p) return;
+        p.status = "paid";
+        p.paidAt = Date.now();
+        bankMutated(c);
+        saveTrainer();
+        // The balance this just released reads in five places at once.
+        renderCoachSessions();
+        renderClientSessionChip();
+        renderClientSnapshot();
+        renderClientGrid();
+        renderMonthGrantBtn();
+        renderIncomeCard();
+        toast(`${p.size} session${p.size === 1 ? "" : "s"} released ✓`);
+      });
+    });
     pkgCard.querySelectorAll("[data-del]").forEach((btn) => {
       btn.addEventListener("click", () => {
         if (!window.confirm("Remove this package? Redemptions are kept.")) return;
@@ -13307,13 +13365,17 @@
   // month round, which was: open athlete → Sessions → Grant → back → next, once
   // per person, with nothing anywhere saying who you had already done.
   function monthGrantKey() { return todayISO().slice(0, 7); }
-  // Either kind of monthly package counts as "this month is done": auto-renew
+  // This month's monthly package, whichever route put it there. Auto-renew
   // already defers to a manual grant, and without the second key a batch would
   // land a full allowance on top of a package auto-renew put there this morning.
-  function grantedThisMonth(c, key) {
+  function monthPackageOf(c, key) {
     return (c?.sessionBank?.packages || [])
-      .some((p) => p.membershipGrant === key || p.autoRenewGrant === key);
+      .find((p) => p.membershipGrant === key || p.autoRenewGrant === key) || null;
   }
+  // Guard against creating a SECOND package for the month. Deliberately true
+  // for a pending one too — the answer to a pending package is to mark it paid,
+  // never to grant another beside it.
+  function grantedThisMonth(c, key) { return !!monthPackageOf(c, key); }
   function monthGrantLabel() {
     return new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
   }
@@ -13338,11 +13400,17 @@
       const partner = partnerOf(c);
       seen.add(c.id);
       if (partner) seen.add(partner.id);
+      // Three states, not two. Auto-renew leaves a PENDING package — sized from
+      // their real bookings but worth nothing until the money lands — so the
+      // month's round is "grant the ones with nothing, mark the rest paid".
+      const pkg = monthPackageOf(c, key);
       rows.push({
         client: c,
         partner,
         membership: bankMembership(c),
-        granted: grantedThisMonth(c, key),
+        pkg,
+        action: !pkg ? "grant" : pkg.status === "paid" ? "done" : "pay",
+        granted: !!pkg && pkg.status === "paid",
         remaining: sessionBankSummary(c).remaining,
       });
     });
@@ -13358,14 +13426,17 @@
     const rows = monthGrantRoster().filter((r) => r.membership && r.membership.sessions);
     if (!rows.length) { hide(btn); return; }
     show(btn);
-    const due = rows.filter((r) => !r.granted).length;
+    const due = rows.filter((r) => r.action !== "done").length;
+    const pending = rows.filter((r) => r.action === "pay").length;
     const month = new Date().toLocaleDateString("en-US", { month: "long" });
     btn.classList.toggle("is-due", due > 0);
-    btn.innerHTML = `${lineIco("sd:ticket")} Grant ${escapeHtml(month)}` +
+    btn.innerHTML = `${lineIco("sd:ticket")} Settle ${escapeHtml(month)}` +
       (due ? `<span class="month-grant-n">${due}</span>` : `<span class="month-grant-done">✓</span>`);
-    btn.title = due
-      ? `${due} athlete${due === 1 ? "" : "s"} still waiting on ${month}'s sessions`
-      : `Every membership has ${month}'s sessions`;
+    btn.title = !due
+      ? `Every membership has ${month}'s sessions`
+      : pending
+        ? `${due} to settle · ${pending} auto-renew package${pending === 1 ? "" : "s"} waiting on payment`
+        : `${due} athlete${due === 1 ? "" : "s"} still waiting on ${month}'s sessions`;
   }
   function openMonthGrantSheet() {
     const rows = monthGrantRoster();
@@ -13376,56 +13447,67 @@
       toast("Nobody is on a session membership yet");
       return;
     }
-    // Already-granted athletes stay in the list rather than disappearing from
-    // it: "who is on a membership" and "who still needs granting" are the same
-    // glance, and a missing name reads as a mistake.
+    // Settled athletes stay in the list rather than disappearing from it: "who
+    // is on a membership" and "who still needs doing" are the same glance, and
+    // a missing name reads as a mistake.
     const rowHtml = (r) => {
       const c = r.client;
       const m = r.membership;
       const idx = athleteColorIdx(c);
-      // Already granted: the row stays, unticked and locked. It is how the
-      // sheet answers "who have I done" — and a second package this month is
-      // a deliberate act, which is what the per-athlete button is for.
+      // A pending row's sessions came from their real bookings, so it shows the
+      // package's own size and its price — this tick is a payment being
+      // confirmed, not an allowance being handed out.
+      const n = r.action === "pay" ? r.pkg.size : m.sessions;
+      const state = r.action === "done" ? "paid"
+        : r.action === "pay" ? (r.pkg.price ? `pending · ${money(r.pkg.price)}` : "pending")
+        : `${r.remaining} left`;
       return `
-        <label class="mg-row${r.granted ? " is-granted" : ""}" style="--athlete-rgb:${AVATAR_RGB[idx]}">
-          <input type="checkbox" data-mg="${escapeHtml(c.id)}"${r.granted ? " disabled" : " checked"} />
+        <label class="mg-row${r.action === "done" ? " is-granted" : ""}${r.action === "pay" ? " is-pending" : ""}" style="--athlete-rgb:${AVATAR_RGB[idx]}">
+          <input type="checkbox" data-mg="${escapeHtml(c.id)}"${r.action === "done" ? " disabled" : " checked"} />
           <span class="mg-av">${avatarTileHtml(c, c.importedProgress, { size: "sm", colorIdx: idx })}</span>
           <span class="mg-main">
             <span class="mg-name">${escapeHtml(c.name || "(unnamed)")}${r.partner ? ` <span class="mg-pair">💞</span>` : ""}</span>
             <span class="mg-tier">${escapeHtml(membershipTitle(m))}${r.partner ? ` · shared with ${escapeHtml(r.partner.name || "partner")}` : ""}</span>
           </span>
           <span class="mg-right">
-            <span class="mg-add">+${m.sessions}</span>
-            <span class="mg-state">${r.granted ? "granted" : `${r.remaining} left`}</span>
+            <span class="mg-add">${r.action === "pay" ? "" : "+"}${n}</span>
+            <span class="mg-state">${escapeHtml(state)}</span>
           </span>
         </label>`;
     };
+    const anyPending = eligible.some((r) => r.action === "pay");
     openModal({
-      title: `Grant ${label}`,
+      title: `Settle ${label}`,
       body: `
-        <p class="muted" style="margin-top:-0.4em">One month's sessions onto every ticked bank, marked paid. Anyone already granted this month is unticked.</p>
+        <p class="muted" style="margin-top:-0.4em">${anyPending
+          ? "Auto-renew sizes a package from their real bookings but leaves it pending, worth nothing until the money lands. Ticking a pending row marks it paid; ticking an empty one grants their month."
+          : "One month's sessions onto every ticked bank, marked paid. Anyone already settled this month is unticked."}</p>
         <div class="mg-list" id="mg-list">${eligible.map(rowHtml).join("")}</div>
         ${noTier.length ? `<p class="muted mg-skipped">No membership set, so not in this round: ${escapeHtml(noTier.map((r) => r.client.name || "(unnamed)").join(", "))}</p>` : ""}`,
       actions: [
         { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
-        { label: "Grant", className: "btn btn-primary", onClick: runMonthGrant },
+        { label: "Settle", className: "btn btn-primary", onClick: runMonthGrant },
       ],
     });
     const goBtn = $("#modal-foot .btn-primary");
     const list = $("#mg-list");
     const retotal = () => {
       if (!goBtn || !list) return;
-      let people = 0, sessions = 0;
+      let grants = 0, pays = 0, sessions = 0;
       list.querySelectorAll("input[data-mg]:checked").forEach((box) => {
         const r = eligible.find((x) => x.client.id === box.dataset.mg);
         if (!r) return;
-        people += 1; sessions += r.membership.sessions;
+        if (r.action === "pay") { pays += 1; sessions += r.pkg.size; }
+        else { grants += 1; sessions += r.membership.sessions; }
       });
-      goBtn.disabled = !people;
-      // "memberships", not "athletes": a couple's row is one membership over
-      // two people, so counting heads here would not match the list above it.
-      goBtn.textContent = people
-        ? `Grant ${people} membership${people === 1 ? "" : "s"} · ${sessions} sessions`
+      goBtn.disabled = !(grants + pays);
+      // Named separately because they are different acts on the coach's side:
+      // one hands out an allowance, the other confirms money already owed.
+      const parts = [];
+      if (grants) parts.push(`Grant ${grants}`);
+      if (pays) parts.push(`Mark ${pays} paid`);
+      goBtn.textContent = parts.length
+        ? `${parts.join(" · ")} · ${sessions} sessions`
         : "Nobody ticked";
     };
     list?.addEventListener("change", retotal);
@@ -13436,17 +13518,25 @@
     const label = monthGrantLabel();
     const picked = $$("#mg-list input[data-mg]:checked").map((b) => b.dataset.mg);
     const done = [];
-    let sessions = 0;
+    let sessions = 0, granted = 0, paid = 0;
     picked.forEach((id) => {
       const c = (state.trainerData.clients || []).find((x) => x.id === id);
       if (!c) return;
       ensureSessionBank(c);
+      // Re-read per athlete: a linked partner settled a moment ago in this same
+      // pass has already mirrored their package onto this bank, so acting on a
+      // stale snapshot would hand the couple two allowances.
+      const pkg = monthPackageOf(c, key);
+      if (pkg) {
+        if (pkg.status === "paid") return;
+        pkg.status = "paid";
+        pkg.paidAt = Date.now();
+        bankMutated(c);
+        done.push(c); paid += 1; sessions += pkg.size || 0;
+        return;
+      }
       const m = bankMembership(c);
       if (!m || !m.sessions) return;
-      // Re-read the guard per athlete: a linked partner granted a moment ago in
-      // this same pass has already mirrored the package onto this bank, and
-      // granting again would hand the couple two allowances.
-      if (grantedThisMonth(c, key)) return;
       c.sessionBank.packages.push({
         id: uid(), size: m.sessions, status: "paid", price: m.price,
         addedAt: Date.now(), paidAt: Date.now(),
@@ -13454,8 +13544,7 @@
         membershipGrant: key,
       });
       bankMutated(c);
-      done.push(c);
-      sessions += m.sessions;
+      done.push(c); granted += 1; sessions += m.sessions;
     });
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
     // saveTrainer() only pushes the athlete currently open, and this touched a
@@ -13466,9 +13555,12 @@
     renderMonthGrantBtn();
     renderIncomeCard();
     if (state.currentClientId) { renderCoachSessions(); renderClientSnapshot(); }
+    const bits = [];
+    if (granted) bits.push(`${granted} granted`);
+    if (paid) bits.push(`${paid} marked paid`);
     toast(done.length
-      ? `🎟 ${label}: ${sessions} sessions across ${done.length} membership${done.length === 1 ? "" : "s"} ✓`
-      : "Nothing left to grant this month", 4000);
+      ? `🎟 ${label}: ${bits.join(" · ")} · ${sessions} sessions live ✓`
+      : "Nothing left to settle this month", 4000);
   }
 
   // ================= Scheduling =================

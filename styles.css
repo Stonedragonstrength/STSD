@@ -3694,6 +3694,15 @@ input.trial-input {
 }
 .mg-row:hover { border-color: rgba(var(--primary-rgb), 0.45); }
 .mg-row input { accent-color: var(--primary); flex: 0 0 auto; }
+/* Waiting on money, not on a decision — amber, the same signal the balance
+   chips use for credit owed. */
+.mg-row.is-pending {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.06);
+}
+.mg-row.is-pending .mg-state { color: #fbbf24; }
+.mg-row.is-pending .mg-add { color: #fbbf24; }
+.pkg-pay-btn { white-space: nowrap; }
 .mg-row.is-granted { opacity: 0.55; cursor: default; }
 .mg-row.is-granted:hover { border-color: var(--border); }
 /* A couple are one bank, so they are one row — the heart says the grant lands
@@ -11590,7 +11599,11 @@ body.scroll-locked {
 /* Day view: the same detail a month cell used to open in a sheet. */
 .dash-cal-day-view .dash-day-empty {
   margin: 0; padding: 1.4rem 0.2rem; text-align: center; font-size: 0.88rem;
+  display: flex; flex-direction: column; align-items: center; gap: 0.7rem;
 }
+.dash-cal-day-view .dash-day-empty-lbl { margin: 0; }
+/* The proof there is a week behind an empty day. */
+.dv-jump { border-color: rgba(var(--primary-rgb), 0.45); }
 
 /* Week view: seven rows, an agenda rather than an hour grid — a coach runs a
    few sessions a day, so a time grid is mostly empty, and empty space is what
