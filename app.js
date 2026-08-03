@@ -2565,19 +2565,44 @@
   // var(--header-h, …) rules in styles.css. The first-frame measure right
   // after a screen unhides can be a few px off (fonts/layout still settling),
   // so re-measure on the next frame and once more shortly after.
-  function syncHeaderHeights() {
-    const apply = () => $$(".screen").forEach((s) => {
+  function applyHeaderHeights() {
+    $$(".screen").forEach((s) => {
       const header = s.querySelector(".app-header");
-      if (!header || !header.offsetHeight) return;
-      s.style.setProperty("--header-h", header.offsetHeight + "px");
+      if (!header || !header.offsetHeight) return; // offsetHeight: cheap "is it visible"
+      // Measured off the rect, not offsetHeight: that rounds to whole pixels, and
+      // a header of 59.2 pinned the nav at 59, leaving it to slide the missing
+      // 0.2px on scroll. Small, but it reads as a shimmer on a real screen.
+      // 2dp keeps the sub-pixel without writing 69.5999984741211px into the DOM.
+      const px = (n) => Math.round(n * 100) / 100 + "px";
+      const h = header.getBoundingClientRect().height;
+      s.style.setProperty("--header-h", px(h));
       // The live-session coach bar pins under the header, so anything sticking
       // below it (the athlete tab strip) has to clear both.
       const bar = s.querySelector(".preview-banner:not(.hidden)");
-      s.style.setProperty("--stack-h", (header.offsetHeight + (bar?.offsetHeight || 0)) + "px");
+      s.style.setProperty("--stack-h", px(h + (bar?.getBoundingClientRect().height || 0)));
     });
-    apply();
-    requestAnimationFrame(apply);
-    setTimeout(apply, 250);
+  }
+  function syncHeaderHeights() {
+    applyHeaderHeights();
+    requestAnimationFrame(applyHeaderHeights);
+    setTimeout(applyHeaderHeights, 250);
+  }
+  // Watch the headers themselves. Everything above only fires on a SCREEN
+  // change, and the coach header rewrites itself into breadcrumb mode when an
+  // athlete opens — inside the same screen, and tall enough at phone width to
+  // wrap onto a second line. So --header-h stayed at the roster's height while
+  // the real header was ~9px taller, and the nav strip, resting flush under the
+  // header but stuck to the shorter number, lurched up under it on the first
+  // pixel of scroll and sat there half-hidden. Observing the element covers
+  // that and every other way a header can change height (a long athlete name
+  // wrapping, a late font, the live-session bar) without hunting call sites.
+  // Writes only a custom property that moves a SIBLING, so it can't re-trigger.
+  let _headerRO = null;
+  function observeHeaderHeights() {
+    if (!window.ResizeObserver) return;
+    _headerRO?.disconnect();
+    _headerRO = new ResizeObserver(applyHeaderHeights);
+    $$(".screen .app-header, .screen .preview-banner").forEach((el) => _headerRO.observe(el));
   }
 
   // ---- Back-button router --------------------------------------------------
@@ -3833,6 +3858,14 @@
       hide(bc);
       show(brand);
     }
+    // This is the one place the coach header changes shape, and at phone width
+    // the breadcrumb wraps onto a second line — so the header gets taller here
+    // without any screen changing, which is the only thing that used to
+    // re-measure. Left stale, --header-h stayed at the roster's height and the
+    // nav strip, resting flush under a taller header but stuck to the shorter
+    // number, jumped up under it on the first pixel of scroll. syncHeaderHeights
+    // re-measures again next frame, so the rank chip above lands in time too.
+    syncHeaderHeights();
   }
 
   // How far into their program an athlete has gotten — the furthest day (in
@@ -27715,10 +27748,13 @@
     // Keep --header-h equal to each screen's real header height so the sticky
     // coach nav / athlete tabs pin exactly where they rest (no slide-under on
     // scroll when header padding or content changes the height). Re-measured
-    // on resize and after full load (the header logo image can shift height).
+    // on resize and after full load (the header logo image can shift height),
+    // and continuously by the observer, which is what catches a header that
+    // changes height without the screen changing.
     window.addEventListener("resize", syncHeaderHeights);
     window.addEventListener("load", syncHeaderHeights);
     syncHeaderHeights();
+    observeHeaderHeights();
 
     // Invite deep link: ?invite=XXXX-XXXX (from the coach's emailed invite)
     // jumps straight to the athlete invite screen with the code pre-filled
