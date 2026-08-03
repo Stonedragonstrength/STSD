@@ -264,6 +264,17 @@
   const MAX_OWN_SESSIONS = 60;
   let _focusQuickAddDayId = null; // day id whose type-to-add input should refocus after a rerender
   const _coachMobOpen = new Set(); // day ids whose coach-side mobility section is expanded
+  // Exercise id → whether the coach explicitly opened (true) or closed (false)
+  // its notes/video panel. Absent means they have never touched that ⋮, which
+  // is the only case allowed to decide the panel from the exercise's content.
+  // Without this the panel was open whenever `ex.notes` was non-empty, so the
+  // act of writing a note made it impossible to keep closed: every re-render —
+  // and almost everything in the editor re-renders — put it straight back.
+  const _exDetailOpen = new Map();
+  function exDetailIsOpen(ex) {
+    if (_exDetailOpen.has(ex.id)) return _exDetailOpen.get(ex.id);
+    return !!(ex.notes || ex.videoUrl);
+  }
   let _prNewLifts = [];
   let _prDragSrcId = null;
   function currentProgramTemplate() {
@@ -10164,14 +10175,22 @@
     detail.appendChild(demoRow);
     detail.appendChild(kindToggle);
 
-    if (ex.notes || ex.videoUrl) {
-      detail.classList.remove("hidden");
-      expandBtn.classList.add("active");
-    }
+    // Lit means "there is something behind this button, or it is showing" —
+    // NOT "it is open". Keeping it lit while collapsed is what makes closing a
+    // note safe: the row still says a note exists without displaying it.
+    const syncExpandBtn = () => expandBtn.classList.toggle("active",
+      !!(ex.notes || ex.videoUrl) || !detail.classList.contains("hidden"));
+    detail.classList.toggle("hidden", !exDetailIsOpen(ex));
+    syncExpandBtn();
+    notesTA.addEventListener("input", syncExpandBtn);
+    videoInput.addEventListener("input", syncExpandBtn);
 
     expandBtn.addEventListener("click", () => {
       const nowHidden = detail.classList.toggle("hidden");
-      expandBtn.classList.toggle("active", !nowHidden);
+      // The ⋮ is the only thing that decides this from here on, for this
+      // exercise, for the rest of the session.
+      _exDetailOpen.set(ex.id, !nowHidden);
+      syncExpandBtn();
       if (!nowHidden) notesTA.focus();
     });
 
