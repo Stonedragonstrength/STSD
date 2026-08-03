@@ -280,11 +280,13 @@
   // Bare library names on purpose. A card matches a program exercise by its own
   // name OR its long form, so "Bench Press" tracks the lift whether or not the
   // coach tagged it BB — where "Barbell Bench Press" would find nothing on an
-  // untagged program. It also means NOT seeding a dumbbell bench beside the
-  // plain one: the generic card matches dumbbell sets too (their bare name is
-  // still "Bench Press"), so the pair would shadow each other. Anyone who wants
-  // the split adds it with ＋ Track a lift, and can delete what they don't.
-  const DEFAULT_PR_LIFTS = ["Back Squat", "Deadlift", "Bench Press", "Overhead Press", "Curl"];
+  // untagged program.
+  //
+  // The dumbbell bench is deliberately tracked apart from the barbell one: they
+  // load on completely different scales and Nathan programs both. That only
+  // works because bestLoggedByReps yields a lift to the card that names it
+  // exactly, so the bare Bench Press card doesn't swallow the dumbbell sets.
+  const DEFAULT_PR_LIFTS = ["Back Squat", "Deadlift", "Bench Press", "Dumbbell Bench Press", "Overhead Press", "Curl"];
   // The names we used to seed, and the lift each one meant. Two jobs: rename
   // the pristine seeded cards already sitting on every existing athlete, and
   // let a card someone has TYPED INTO still find its logs without being
@@ -296,6 +298,19 @@
     "strict curl": "Curl",
   };
   function prLiftAlias(name) { return PR_LIFT_RENAMES[exKey(name)] || ""; }
+  // Every lift the athlete's cards name, including the lift an old seeded name
+  // still means. bestLoggedByReps uses this to stop a generically-named card
+  // taking sets that a more specific card beside it is there to hold.
+  function prCardClaims(list) {
+    const s = new Set();
+    (list || []).forEach((p) => {
+      if (!p || !p.name) return;
+      s.add(exKey(p.name));
+      const a = exKey(prLiftAlias(p.name));
+      if (a) s.add(a);
+    });
+    return s;
+  }
   // Rename seeded cards nobody has touched. A card with a value, a date or a
   // lock on it has been claimed by the coach or the athlete — that name is
   // their decision now, so it stays and the alias does the connecting instead.
@@ -12593,17 +12608,32 @@
   // matches either the bare name the coach typed into the program ("Squats")
   // or the lift's full name ("Barbell Squats"), which is how a tracked lift
   // finally connects to a tagged exercise instead of silently finding nothing.
-  function bestLoggedByReps(name, weeks, logsMap) {
+  //
+  // `claims` is every OTHER card's lift on this athlete. A bare card matches by
+  // bare name, which is right for "Back Squat" picking up a barbell back squat
+  // — but a dumbbell bench press is also bare-named "Bench Press", so without
+  // this a plain Bench Press card swallowed the dumbbell sets and the Dumbbell
+  // Bench Press card beside it read the same numbers. When another card names
+  // that exercise exactly, it belongs to that card. (This is the Dan Powers
+  // contamination, fixed in the matcher instead of by renaming his program.)
+  function bestLoggedByReps(name, weeks, logsMap, claims) {
     const key = exKey(name);
     if (!key) return null;
     // A card still called by one of the old seeded names matches the lift that
     // name meant, so an athlete who typed a number into "Barbell Squat" years
     // ago still sees it track their Back Squat instead of sitting dead.
     const alias = exKey(prLiftAlias(name));
+    const mine = new Set([key, alias].filter(Boolean));
     const best = { 1: null, 2: null, 3: null };
     (weeks || []).forEach((wk) => (wk.days || []).forEach((d) => (d.exercises || []).forEach((ex) => {
-      const names = [exKey(ex.name), exKey(liftLabel(ex))];
-      const hit = names.includes(key) || (alias && names.includes(alias));
+      const bare = exKey(ex.name);              // "bench press"
+      const long = exKey(liftLabel(ex));        // "dumbbell bench press"
+      // Most specific claim wins. If a card names this exercise in full, the
+      // exercise is that card's and no bare-named card may take it; otherwise
+      // it falls to whoever matches at all, which is what lets a plain
+      // "Back Squat" card own a barbell back squat nobody named exactly.
+      const owner = long && claims?.has(long) ? long : "";
+      const hit = owner ? mine.has(owner) : (mine.has(bare) || mine.has(long));
       if (!hit || ex.kind === "mobility" || exIsTimed(ex)) return;
       ((logsMap || {})[ex.id] || []).forEach((l) => {
         if (l.locked === false || l.skipped) return;
@@ -12717,11 +12747,12 @@
     // heavy session lifts are exactly what PR cards should pick up).
     const coachWeeks = [...(c.weeks || []), ...(c.archivedPrograms || []).flatMap((a) => a.weeks || []), { days: sessionDays(c, c.importedProgress) }];
     const coachLogs = c.importedProgress?.exerciseLogs || {};
+    const coachClaims = prCardClaims(c.coachPRs);
 
     // Coach-managed cards (editable)
     let autoFilled = false;
     nameMap.forEach((entry, key) => {
-      const best = bestLoggedByReps(entry.name, coachWeeks, coachLogs);
+      const best = bestLoggedByReps(entry.name, coachWeeks, coachLogs, coachClaims);
       if (autoFillPRFromLogs(entry, best)) autoFilled = true;
       const inEdit = _prEditIds.has(entry.id) || !(entry.pr1 || entry.pr2 || entry.pr3);
       container.appendChild(buildCoachPRCard(c, entry, inEdit, false, athleteBestMap.get(key), best));
@@ -13031,9 +13062,10 @@
     // Shared 1RM/2RM/3RM cards — same list the coach sees; either side can fill them in.
     const pushCoachPRs = pushAthleteCoachPRs;
     const athleteLogs = state.clientData.progress?.exerciseLogs || {};
+    const athleteClaims = prCardClaims(prog.client.coachPRs);
     let autoFilled = false;
     coachPRs.forEach(entry => {
-      const best = bestLoggedByReps(entry.name, [...(prog.client.weeks || []), { days: sessionDays(prog.client, state.clientData.progress) }], athleteLogs);
+      const best = bestLoggedByReps(entry.name, [...(prog.client.weeks || []), { days: sessionDays(prog.client, state.clientData.progress) }], athleteLogs, athleteClaims);
       if (autoFillPRFromLogs(entry, best)) autoFilled = true;
       const card = document.createElement("div");
       card.className = "pr-edit-card pr-shared-card";
