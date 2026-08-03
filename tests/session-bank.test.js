@@ -124,6 +124,32 @@ console.log("\n-- pending packages grant nothing until marked paid --");
   eq("pending is worth 0", bankLedger(b, "2026-07", false).remaining, 0);
 }
 
+console.log("\n-- an auto-renewed package is LIVE before the money lands --");
+{
+  // The bug this replaced: auto-renew filed status "pending", so the athlete's
+  // Sessions tab said "August granted" over a balance of 0, and the coach's
+  // header called them out of sessions the moment they trained.
+  const owed = { id: "ar", size: 8, status: "paid", unpaid: true, autoRenewGrant: "2026-07" };
+  const b = { packages: [owed], redemptions: uses("2026-07", 2) };
+  const r = bankLedger(b, "2026-07", false);
+  eq("all 8 count immediately", r.thisMonthGrant, 8);
+  eq("2 used leaves 6", r.remaining, 6);
+  eq("never reads as out of sessions", r.remaining <= 0, false);
+  // Collecting the money must not change the balance by even one.
+  const after = bankLedger(
+    { packages: [{ ...owed, unpaid: undefined, paidAt: 1 }], redemptions: uses("2026-07", 2) },
+    "2026-07", false);
+  eq("marking it collected changes nothing", after.remaining, r.remaining);
+}
+
+console.log("\n-- an unpaid auto-renewal still expires with its month --");
+{
+  const owed = { id: "ar", size: 4, status: "paid", unpaid: true, autoRenewGrant: "2026-06" };
+  const b = { packages: [owed], redemptions: uses("2026-06", 1) };
+  eq("gone in July like any allowance", bankLedger(b, "2026-07", false).remaining, 0);
+  eq("and it expired, it didn't vanish", bankLedger(b, "2026-07", false).expired, 3);
+}
+
 console.log("\n-- month boundary: last month's leftover is gone on the 1st --");
 {
   const b = { packages: [grant("2026-06", 4)], redemptions: uses("2026-06", 1) };

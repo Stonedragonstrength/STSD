@@ -387,7 +387,10 @@
   function sessionBankSummary(c) {
     ensureSessionBank(c);
     const l = bankLedger(c.sessionBank, todayISO().slice(0, 7), !!c.sessionBank.rollover);
-    const pendingCount = c.sessionBank.packages.filter((p) => p.status === "pending").length;
+    // "Waiting on money", which is now two shapes: a package held back until it
+    // is paid, and an auto-renewed one already live but not yet collected.
+    const pendingCount = c.sessionBank.packages
+      .filter((p) => p.status === "pending" || p.unpaid).length;
     return { ...l, pendingCount };
   }
 
@@ -3339,6 +3342,10 @@
     hide($("#screen-client"));
     applyAthletePrefs(); // athlete-only body classes never follow the coach out
     $("#header-trainer-name").textContent = state.trainerData.trainer.name;
+    // Before anything renders a balance: free any auto-renewed package still
+    // filed the old held-back way. Runs here rather than off the calendar fetch
+    // so it doesn't need a connection to fix a number that is wrong offline too.
+    releaseLegacyAutoRenewPackages();
     // Populate the athletes grid + package badge in the background, then land on
     // the Overview page.
     renderDashboard();
@@ -5431,15 +5438,25 @@
     const btn = $("#btn-grant-month"); if (!btn) return;
     const m = membershipById($("#prof-membership")?.value);
     const c = currentClient();
-    const granted = !!c && grantedThisMonth(c, todayISO().slice(0, 7));
+    const key = todayISO().slice(0, 7);
+    const pkg = c ? monthPackageOf(c, key) : null;
+    const granted = !!pkg;
     btn.disabled = !m || !m.sessions;
     btn.classList.toggle("is-granted", granted && !!(m && m.sessions));
     const month = new Date().toLocaleDateString("en-US", { month: "long" });
+    // Say which kind of granted it is. A held-back package reads as granted off
+    // grantedThisMonth (the double-grant guard counts it) while the balance
+    // below it says 0, which is the single most confusing thing this screen has
+    // ever shown; auto-renew's is live but still owed, which is not the same.
     btn.textContent = !m || !m.sessions
       ? `＋ Grant this month's sessions`
-      : granted
-        ? `✓ ${month} granted`
-        : `＋ Grant ${month}'s ${m.sessions} sessions`;
+      : !granted
+        ? `＋ Grant ${month}'s ${m.sessions} sessions`
+        : pkg.status !== "paid"
+          ? `${month} filed · not released yet`
+          : pkg.unpaid
+            ? `✓ ${month} granted · to collect`
+            : `✓ ${month} granted`;
   }
   // The Sessions tab's top card. Every control saves the moment it changes:
   // this block used to sit inside the Profile edit form on another tab, so
@@ -11041,9 +11058,42 @@
 
   // -------- Auto-renew: monthly package sized from booked sessions --------
   // Opt-in per athlete (Profile → 🔁 Auto-renew). On the first app open in a
-  // new month, grants a PENDING package sized to that athlete's matched
-  // Setmore bookings this month — the coach marks it paid when money changes
-  // hands. Same once-per-month dedupe idea as the manual grant button.
+  // new month, grants a package sized to that athlete's booked sessions this
+  // month. Same once-per-month dedupe idea as the manual grant button.
+  //
+  // The package is LIVE the moment it lands, and carries `unpaid: true` until
+  // the coach confirms the money. It used to be filed as status "pending",
+  // which bankLedger counts as zero — so an auto-renewed athlete read
+  // "✓ August granted" on their Sessions tab while their balance sat at 0, and
+  // then tripped the "out of sessions" alarm in the header the first time they
+  // trained. Two screens, opposite answers, and an alarm the coach couldn't
+  // clear without knowing to go and tap Mark paid. Someone who auto-renews is
+  // someone who pays; chasing the money is a separate job from letting them
+  // train, so `unpaid` keeps the collect list without holding the sessions.
+  function autoRenewPkgUnpaid(p) { return !!p && (p.unpaid || p.status === "pending"); }
+  // Older auto-renew packages were written as status "pending" and are worth
+  // nothing where they sit. Release them on sight — this is the same package
+  // the coach already agreed to, just described correctly now.
+  function releaseLegacyAutoRenewPackages() {
+    const freed = [];
+    (state.trainerData.clients || []).forEach((c) => {
+      ensureSessionBank(c);
+      let touched = false;
+      c.sessionBank.packages.forEach((p) => {
+        if (!p || p.status !== "pending" || !p.autoRenewGrant) return;
+        p.status = "paid";
+        p.unpaid = true;
+        touched = true;
+      });
+      if (!touched) return;
+      freed.push(c);
+      bankMutated(c);
+    });
+    if (!freed.length) return;
+    localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+    freed.forEach((c) => pushAthlete(c));
+    toast(`🎟 Auto-renewed sessions are live for ${freed.map((c) => c.name).join(", ")} · still marked unpaid`, 5000);
+  }
   function runAutoRenewGrants(year, month) {
     const now = new Date();
     if (year !== now.getFullYear() || month !== now.getMonth()) return;
@@ -11064,7 +11114,7 @@
       const m = membershipById(c.sessionBank.membership);
       const perSession = m && m.price && m.sessions ? Math.round(m.price / m.sessions) : 0;
       c.sessionBank.packages.push({
-        id: uid(), size: count, status: "pending",
+        id: uid(), size: count, status: "paid", unpaid: true,
         addedAt: Date.now(),
         price: perSession ? perSession * count : undefined,
         note: `Auto-renew · ${monthLabel} · ${count} booked session${count === 1 ? "" : "s"}`,
@@ -11080,7 +11130,7 @@
       if (window.Cloud?.enabled) window.Cloud.debounce(`athlete:${c.id}`, () =>
         window.Cloud.upsertAthlete(c, state.trainerData.coachId));
     });
-    toast(`🔁 Auto-renew: ${renewed.map((c) => c.name).join(", ")} · ${monthLabel} package${renewed.length === 1 ? "" : "s"} added (pending payment)`, 4000);
+    toast(`🔁 Auto-renew: ${renewed.map((c) => c.name).join(", ")} · ${monthLabel} sessions are live, still to collect`, 4000);
   }
 
   // The Connections fold. Once the feed is cut this becomes one line of
@@ -13271,7 +13321,9 @@
       const pending = p.status === "pending";
       events.push({
         date: dateISO(new Date(p.paidAt || p.addedAt || Date.now())),
-        type: pending ? "Package (pending payment)" : "Package purchased",
+        type: pending ? "Package (pending payment)"
+          : p.unpaid ? "Package (live, not collected)"
+          : "Package purchased",
         delta: Number(p.size) || 0,
         note: p.note || "",
         counted: !pending,
@@ -13447,15 +13499,22 @@
         const label = pkg.gift
           ? `🎁 ${escapeHtml(String(pkg.size))}-session gift`
           : `${escapeHtml(String(pkg.size))}-session package`;
+        // Three states, and the difference that matters is whether the sessions
+        // are usable. "pending" is held back and worth zero; "unpaid" is an
+        // auto-renewed package already counting toward the balance with the
+        // money still to come, so it says "live" and asks to be collected
+        // rather than implying the athlete is waiting on anything.
+        const unpaid = !pkg.gift && pkg.unpaid;
         const pill = pkg.gift
           ? `<span class="status-pill status-gift">gift</span>`
-          : `<span class="status-pill status-${escapeHtml(pkg.status || "paid")}">${escapeHtml(pkg.status || "paid")}</span>`;
-        // A pending package is worth ZERO until it is marked paid, and until
-        // now nothing in the app could flip one — auto-renew's packages sat
-        // here looking granted while the balance stayed empty.
-        const payBtn = (pkg.status || "paid") !== "paid"
-          ? `<button class="btn btn-primary btn-sm pkg-pay-btn" data-pay="${escapeHtml(pkg.id)}">Mark paid</button>`
-          : "";
+          : unpaid
+            ? `<span class="status-pill status-paid">live</span><span class="status-pill status-unpaid">unpaid</span>`
+            : `<span class="status-pill status-${escapeHtml(pkg.status || "paid")}">${escapeHtml(pkg.status || "paid")}</span>`;
+        const payBtn = unpaid
+          ? `<button class="btn btn-primary btn-sm pkg-pay-btn" data-pay="${escapeHtml(pkg.id)}">Mark collected</button>`
+          : (pkg.status || "paid") !== "paid"
+            ? `<button class="btn btn-primary btn-sm pkg-pay-btn" data-pay="${escapeHtml(pkg.id)}">Mark paid</button>`
+            : "";
         row.innerHTML = `
           <div>
             <strong>${label}</strong>
@@ -13475,7 +13534,12 @@
       btn.addEventListener("click", () => {
         const p = c.sessionBank.packages.find((x) => x.id === btn.dataset.pay);
         if (!p) return;
+        // An unpaid package was already spendable, so this only settles the
+        // money — say that, rather than claiming to release sessions the
+        // athlete has had all month.
+        const wasLive = p.status === "paid";
         p.status = "paid";
+        delete p.unpaid;
         p.paidAt = Date.now();
         bankMutated(c);
         saveTrainer();
@@ -13486,7 +13550,9 @@
         renderClientGrid();
         renderMonthGrantBtn();
         renderIncomeCard();
-        toast(`${p.size} session${p.size === 1 ? "" : "s"} released ✓`);
+        toast(wasLive
+          ? `Marked collected ✓`
+          : `${p.size} session${p.size === 1 ? "" : "s"} released ✓`);
       });
     });
     pkgCard.querySelectorAll("[data-del]").forEach((btn) => {
@@ -13597,17 +13663,20 @@
       const partner = partnerOf(c);
       seen.add(c.id);
       if (partner) seen.add(partner.id);
-      // Three states, not two. Auto-renew leaves a PENDING package — sized from
-      // their real bookings but worth nothing until the money lands — so the
-      // month's round is "grant the ones with nothing, mark the rest paid".
+      // Three states, not two. Auto-renew leaves a live-but-uncollected package
+      // sized from their real bookings, so the month's round is "grant the ones
+      // with nothing, take the money for the rest". `granted` stays false for an
+      // uncollected one on purpose: it keeps them in the round, which is the
+      // only place the coach is reminded to chase it.
       const pkg = monthPackageOf(c, key);
+      const owed = !!pkg && autoRenewPkgUnpaid(pkg);
       rows.push({
         client: c,
         partner,
         membership: bankMembership(c),
         pkg,
-        action: !pkg ? "grant" : pkg.status === "paid" ? "done" : "pay",
-        granted: !!pkg && pkg.status === "paid",
+        action: !pkg ? "grant" : owed ? "pay" : "done",
+        granted: !!pkg && !owed,
         remaining: sessionBankSummary(c).remaining,
       });
     });
@@ -13632,7 +13701,7 @@
     btn.title = !due
       ? `Every membership has ${month}'s sessions`
       : pending
-        ? `${due} to settle · ${pending} auto-renew package${pending === 1 ? "" : "s"} waiting on payment`
+        ? `${due} to settle · ${pending} auto-renewed package${pending === 1 ? "" : "s"} live but not collected`
         : `${due} athlete${due === 1 ? "" : "s"} still waiting on ${month}'s sessions`;
   }
   function openMonthGrantSheet() {
@@ -13651,12 +13720,12 @@
       const c = r.client;
       const m = r.membership;
       const idx = athleteColorIdx(c);
-      // A pending row's sessions came from their real bookings, so it shows the
-      // package's own size and its price — this tick is a payment being
-      // confirmed, not an allowance being handed out.
+      // An uncollected row's sessions came from their real bookings and are
+      // already spendable, so it shows the package's own size and its price —
+      // this tick is money being confirmed, not an allowance handed out.
       const n = r.action === "pay" ? r.pkg.size : m.sessions;
       const state = r.action === "done" ? "paid"
-        : r.action === "pay" ? (r.pkg.price ? `pending · ${money(r.pkg.price)}` : "pending")
+        : r.action === "pay" ? (r.pkg.price ? `to collect · ${money(r.pkg.price)}` : "to collect")
         : `${r.remaining} left`;
       return `
         <label class="mg-row${r.action === "done" ? " is-granted" : ""}${r.action === "pay" ? " is-pending" : ""}" style="--athlete-rgb:${AVATAR_RGB[idx]}">
@@ -13677,7 +13746,7 @@
       title: `Settle ${label}`,
       body: `
         <p class="muted" style="margin-top:-0.4em">${anyPending
-          ? "Auto-renew sizes a package from their real bookings but leaves it pending, worth nothing until the money lands. Ticking a pending row marks it paid; ticking an empty one grants their month."
+          ? "Auto-renew already sized a package from their real bookings and those sessions are live. Ticking one of those rows just marks the money collected; ticking an empty one grants their month."
           : "One month's sessions onto every ticked bank, marked paid. Anyone already settled this month is unticked."}</p>
         <div class="mg-list" id="mg-list">${eligible.map(rowHtml).join("")}</div>
         ${noTier.length ? `<p class="muted mg-skipped">No membership set, so not in this round: ${escapeHtml(noTier.map((r) => r.client.name || "(unnamed)").join(", "))}</p>` : ""}`,
@@ -13702,7 +13771,7 @@
       // one hands out an allowance, the other confirms money already owed.
       const parts = [];
       if (grants) parts.push(`Grant ${grants}`);
-      if (pays) parts.push(`Mark ${pays} paid`);
+      if (pays) parts.push(`Collect ${pays}`);
       goBtn.textContent = parts.length
         ? `${parts.join(" · ")} · ${sessions} sessions`
         : "Nobody ticked";
@@ -13725,8 +13794,9 @@
       // stale snapshot would hand the couple two allowances.
       const pkg = monthPackageOf(c, key);
       if (pkg) {
-        if (pkg.status === "paid") return;
+        if (!autoRenewPkgUnpaid(pkg)) return;
         pkg.status = "paid";
+        delete pkg.unpaid;
         pkg.paidAt = Date.now();
         bankMutated(c);
         done.push(c); paid += 1; sessions += pkg.size || 0;
@@ -13754,9 +13824,9 @@
     if (state.currentClientId) { renderCoachSessions(); renderClientSnapshot(); }
     const bits = [];
     if (granted) bits.push(`${granted} granted`);
-    if (paid) bits.push(`${paid} marked paid`);
+    if (paid) bits.push(`${paid} collected`);
     toast(done.length
-      ? `🎟 ${label}: ${bits.join(" · ")} · ${sessions} sessions live ✓`
+      ? `🎟 ${label}: ${bits.join(" · ")} · ${sessions} sessions ✓`
       : "Nothing left to settle this month", 4000);
   }
 

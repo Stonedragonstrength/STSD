@@ -3860,6 +3860,13 @@ input.trial-input {
 }
 .status-paid { background: var(--accent-soft); color: var(--accent); }
 .status-pending { background: rgba(245, 158, 11, 0.2); color: var(--warn); }
+/* Live sessions, money still to come. Outlined rather than filled so it reads
+   as a note against the green "live" pill beside it, not a second status. */
+.status-unpaid {
+  background: transparent;
+  color: var(--warn);
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.55);
+}
 .status-cancelled { background: var(--surface-3); color: var(--muted); }
 .status-gift { background: rgba(236, 72, 153, 0.18); color: #f472b6; }
 .status-open { background: var(--primary-soft); color: var(--primary-bright); }
