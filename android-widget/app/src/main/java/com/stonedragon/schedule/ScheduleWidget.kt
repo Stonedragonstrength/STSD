@@ -34,7 +34,9 @@ class ScheduleWidget : AppWidgetProvider() {
         const val ACTION_REFRESH = "com.stonedragon.schedule.REFRESH"
         const val EXTRA_WIDGET_ID = "widget_id"
 
-        private val OUR_ACTIONS = setOf(ACTION_PREV, ACTION_NEXT, ACTION_TODAY, ACTION_REFRESH)
+        // A List, not a Set: the position doubles as the PendingIntent request
+        // code, so each button gets its own. `in` still reads as membership.
+        private val OUR_ACTIONS = listOf(ACTION_PREV, ACTION_NEXT, ACTION_TODAY, ACTION_REFRESH)
 
         // SupervisorJob alone does NOT stop an exception here from reaching the
         // thread's default handler and killing the app — it only stops siblings
@@ -265,8 +267,13 @@ class ScheduleWidget : AppWidgetProvider() {
                 // PendingIntents distinct, so the widget id goes in the URI.
                 data = Uri.parse("sdwidget://$action/$widgetId")
             }
+            // A distinct request code per action per widget as well as a distinct
+            // URI. The URI alone should be enough — PendingIntent equality ignores
+            // extras but not data — and relying on "should be" is how a Refresh
+            // button ends up wired to whatever was registered before it.
+            val code = widgetId * 8 + (OUR_ACTIONS.indexOf(action) + 1)
             return PendingIntent.getBroadcast(
-                ctx, 0, i,
+                ctx, code, i,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
         }
