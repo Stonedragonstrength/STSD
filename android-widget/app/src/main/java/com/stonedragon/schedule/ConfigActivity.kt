@@ -52,10 +52,16 @@ class ConfigActivity : AppCompatActivity() {
         // free day from a rejected token from a stale frame.
         testButton.setOnClickListener {
             testButton.isEnabled = false
-            CrashLog.clear(this) // this run's result replaces the old crash
+            // Read before anything can overwrite it: a crash from the last run
+            // is context for this report, not noise to be cleared away first.
+            val priorCrash = CrashLog.last(this)
             diag.text = getString(R.string.testing)
             CoroutineScope(Dispatchers.IO).launch {
                 val report = try {
+                    // Force the widgets through a real fetch and repaint first,
+                    // so the summary below describes what they have just been
+                    // told rather than whatever they were left holding.
+                    ScheduleWidget.refreshBlocking(this@ConfigActivity)
                     Supabase.selfTest(this@ConfigActivity) + "\n" +
                         ScheduleWidget.debugSummary(this@ConfigActivity)
                 } catch (e: Exception) {
@@ -63,7 +69,7 @@ class ConfigActivity : AppCompatActivity() {
                     "Test threw: " + (e.message ?: e.javaClass.simpleName)
                 }
                 withContext(Dispatchers.Main) {
-                    diag.text = report
+                    diag.text = if (priorCrash != null) "$report\n\n$priorCrash" else report
                     testButton.isEnabled = true
                     renderState() // the query may have cleared a dead session
                 }
@@ -111,6 +117,22 @@ class ConfigActivity : AppCompatActivity() {
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * Opening this screen repaints every widget, and refetches when signed in.
+     * Cheap insurance: whatever else went wrong, the act of opening the app is
+     * now enough to put a stale widget right, instead of leaving the coach with
+     * a home screen that disagrees with the app and no way to reconcile them.
+     */
+    override fun onResume() {
+        super.onResume()
+        try {
+            ScheduleWidget.repaintAll(this)
+            if (Supabase.isSignedIn(this)) ScheduleWidget.refreshAll(this)
+        } catch (e: Exception) {
+            CrashLog.record(this, e, "onResume")
         }
     }
 

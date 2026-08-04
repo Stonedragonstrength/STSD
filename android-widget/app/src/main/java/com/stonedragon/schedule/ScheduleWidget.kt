@@ -80,6 +80,26 @@ class ScheduleWidget : AppWidgetProvider() {
             scope.launch { for (id in ids) refresh(app, mgr, id) }
         }
 
+        /** Same, but waits. Call from IO — used by the diagnostic. */
+        fun refreshBlocking(ctx: Context) {
+            val app = ctx.applicationContext
+            val mgr = AppWidgetManager.getInstance(app)
+            for (id in widgetIds(app)) refresh(app, mgr, id)
+        }
+
+        /**
+         * Redraws from storage without fetching. The launcher keeps whatever
+         * RemoteViews it was last handed, so a frame painted while signed out
+         * survives a later sign-in until something explicitly repaints — which
+         * is how a widget can sit on "Tap to sign in" while the app knows
+         * perfectly well that it is signed in.
+         */
+        fun repaintAll(ctx: Context) {
+            val app = ctx.applicationContext
+            val mgr = AppWidgetManager.getInstance(app)
+            for (id in widgetIds(app)) paint(app, mgr, id)
+        }
+
         /**
          * Signed out: forget the cached day and redraw, with no network at all.
          * Sign-out used to go through refreshAll, which fetched a schedule it
