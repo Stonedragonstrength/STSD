@@ -36,6 +36,7 @@
                 <action android:name="com.stonedragon.schedule.NEXT" />
                 <action android:name="com.stonedragon.schedule.TODAY" />
                 <action android:name="com.stonedragon.schedule.REFRESH" />
+                <action android:name="com.stonedragon.schedule.OPEN" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"

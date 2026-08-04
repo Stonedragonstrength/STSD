@@ -3,7 +3,6 @@ package com.stonedragon.schedule
 import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 import java.text.SimpleDateFormat
@@ -85,9 +84,12 @@ private class ScheduleFactory(
             if (b.endMillis < System.currentTimeMillis()) 0.42f else 1f,
         )
 
+        // Only an extra. fillIn() will not overwrite an action or data the
+        // template already set, so putting them here would silently do nothing —
+        // extras are the part that reliably merges.
         v.setOnClickFillInIntent(
             R.id.row_root,
-            Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.APP_URL)),
+            Intent().putExtra(ScheduleWidget.EXTRA_URL, BuildConfig.APP_URL),
         )
         return v
     }

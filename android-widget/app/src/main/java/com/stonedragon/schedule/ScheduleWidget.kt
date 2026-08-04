@@ -32,7 +32,12 @@ class ScheduleWidget : AppWidgetProvider() {
         const val ACTION_NEXT = "com.stonedragon.schedule.NEXT"
         const val ACTION_TODAY = "com.stonedragon.schedule.TODAY"
         const val ACTION_REFRESH = "com.stonedragon.schedule.REFRESH"
+        // Row taps land here rather than going straight to the browser, so the
+        // template PendingIntent can name an explicit component. See
+        // openAppTemplate for why that is not optional.
+        const val ACTION_OPEN = "com.stonedragon.schedule.OPEN"
         const val EXTRA_WIDGET_ID = "widget_id"
+        const val EXTRA_URL = "url"
 
         // A List, not a Set: the position doubles as the PendingIntent request
         // code, so each button gets its own. `in` still reads as membership.
@@ -138,7 +143,11 @@ class ScheduleWidget : AppWidgetProvider() {
                     "paint id=$widgetId signedIn=$signedIn state=" + Prefs.state(ctx, widgetId),
                 )
             } catch (t: Throwable) {
-                Prefs.note(ctx, "paint id=$widgetId THREW " + t.javaClass.simpleName)
+                Prefs.note(
+                    ctx,
+                    "paint id=$widgetId THREW " + t.javaClass.simpleName +
+                        ": " + (t.message ?: "").take(140),
+                )
                 CrashLog.record(ctx, t, "paint")
             }
         }
@@ -304,12 +313,26 @@ class ScheduleWidget : AppWidgetProvider() {
             )
 
         /**
-         * Mutable by design: a template is completed with each row's own fill-in
-         * Intent, which is exactly what FLAG_IMMUTABLE forbids.
+         * The row-tap template. Mutable by necessity — a template is completed
+         * with each row's fill-in Intent, which is exactly what FLAG_IMMUTABLE
+         * forbids — so the Intent inside it MUST be explicit.
+         *
+         * This was `Intent(ACTION_VIEW)` with no component: implicit. From
+         * Android 14, a mutable PendingIntent around an implicit Intent throws
+         * IllegalArgumentException, and because this is built inside
+         * buildViews() it took the entire paint down with it. Every paint, on
+         * every widget, since the first build — the widget could never draw
+         * anything, which is why it showed the static initialLayout forever
+         * while storage said everything was fine.
+         *
+         * It targets this receiver rather than a browser Intent, so the
+         * component is explicit; ACTION_OPEN then starts the browser from
+         * outside the PendingIntent, where an implicit Intent is fine.
          */
         private fun openAppTemplate(ctx: Context): PendingIntent =
-            PendingIntent.getActivity(
-                ctx, 3, Intent(Intent.ACTION_VIEW),
+            PendingIntent.getBroadcast(
+                ctx, 7,
+                Intent(ctx, ScheduleWidget::class.java).setAction(ACTION_OPEN),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
             )
     }
@@ -343,6 +366,22 @@ class ScheduleWidget : AppWidgetProvider() {
         // the receiver is not being reached at all and no amount of repainting
         // was ever going to help.
         Prefs.note(ctx, "onReceive " + (action ?: "null").substringAfterLast('.'))
+
+        // A row tap. The browser Intent is built HERE, outside any PendingIntent,
+        // where being implicit is perfectly legal.
+        if (action == ACTION_OPEN) {
+            val url = intent.getStringExtra(EXTRA_URL) ?: BuildConfig.APP_URL
+            try {
+                ctx.startActivity(
+                    Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            } catch (e: Exception) {
+                CrashLog.record(ctx, e, "openApp")
+            }
+            return
+        }
+
         if (action !in OUR_ACTIONS) {
             super.onReceive(ctx, intent) // APPWIDGET_UPDATE/DELETED/ENABLED
             return
