@@ -37,6 +37,26 @@ class ScheduleWidget : AppWidgetProvider() {
 
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+        /**
+         * What every placed widget currently believes, for the diagnostic on the
+         * config screen. A widget can only show one line of text, which is not
+         * enough to tell "no sessions today" from "the token was rejected" from
+         * "this frame is stale" — and guessing between those from a description
+         * over the phone is how a bug takes three installs to find.
+         */
+        fun debugSummary(ctx: Context): String {
+            val app = ctx.applicationContext
+            val mgr = AppWidgetManager.getInstance(app)
+            val ids = mgr.getAppWidgetIds(ComponentName(app, ScheduleWidget::class.java))
+            if (ids.isEmpty()) return "No widget placed on the home screen."
+            return ids.joinToString("\n") { id ->
+                val day = Prefs.day(app, id)
+                val n = Prefs.bookings(app, id).size
+                "Widget $id: state=${Prefs.state(app, id)}, cached=$n, " +
+                    "day=" + fmt("EEE d MMM", day)
+            }
+        }
+
         /** Redraws every widget — used after sign-in or sign-out. */
         fun refreshAll(ctx: Context) {
             val app = ctx.applicationContext

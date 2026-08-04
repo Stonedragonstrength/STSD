@@ -43,9 +43,47 @@ jobs:
         with:
           gradle-version: "8.7"
 
+      # Runners generate a throwaway debug keystore per job, so without a
+      # committed key every build is signed differently and Android rejects the
+      # next one as "update not installed". Generated once and committed back;
+      # every later run finds it and skips this.
+      - name: Ensure a stable signing key
+        working-directory: android-widget
+        run: |
+          if [ ! -f signing/widget.jks ]; then
+            mkdir -p signing
+            keytool -genkeypair -v \
+              -keystore signing/widget.jks \
+              -storepass stonedragon -keypass stonedragon \
+              -alias widget -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Stone Dragon Schedule, O=Stone Dragon Strength Training, C=US"
+            echo "NEW_KEYSTORE=1" >> "$GITHUB_ENV"
+            echo "Generated a new signing key."
+          else
+            echo "Signing key already committed."
+          fi
+
+      # Committed before the build so a failing build can't strand the key on a
+      # runner and mint a different one next time.
+      - name: Commit the signing key (first run only)
+        if: env.NEW_KEYSTORE == '1' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f android-widget/signing/widget.jks
+          # [skip ci] or this push retriggers the very workflow that made it.
+          git commit -m "Widget signing key, so updates install over each other [skip ci]"
+          git push
+
       - name: Build debug APK
         working-directory: android-widget
         run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Report the signature
+        working-directory: android-widget
+        run: |
+          keytool -printcert -jarfile app/build/outputs/apk/debug/app-debug.apk \
+            | grep -E "SHA256:|Owner:" || true
 
       - name: Lint
         working-directory: android-widget

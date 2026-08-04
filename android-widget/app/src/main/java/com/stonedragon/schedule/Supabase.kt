@@ -81,6 +81,55 @@ object Supabase {
     fun isSignedIn(ctx: Context) = Prefs.refreshToken(ctx) != null
 
     /**
+     * Runs the widget's real query and describes exactly what came back, for the
+     * diagnostic on the config screen. Deliberately the same code path the
+     * widget uses — a test that proves a *different* request works proves
+     * nothing about the one that is failing.
+     */
+    fun selfTest(ctx: Context): String {
+        val sb = StringBuilder()
+        val hasRefresh = Prefs.refreshToken(ctx) != null
+        sb.append("Session: ").append(if (hasRefresh) "present" else "NONE").append('\n')
+        if (hasRefresh) {
+            val left = (Prefs.expiresAt(ctx) - System.currentTimeMillis()) / 60000
+            sb.append("Access token: ")
+                .append(if (Prefs.accessToken(ctx) == null) "none stored" else "expires in ${left}m")
+                .append('\n')
+        }
+        if (!hasRefresh) {
+            sb.append("\nNothing to query without a session.")
+            return sb.toString()
+        }
+        val day = startOfDay(System.currentTimeMillis())
+        when (val r = bookingsForDay(ctx, day)) {
+            is FetchResult.Ok -> {
+                sb.append("Query: OK, ").append(r.bookings.size).append(" session(s) today")
+                if (r.partial) sb.append(" (one source failed)")
+                sb.append('\n')
+                r.bookings.take(5).forEach {
+                    sb.append("  • ")
+                        .append(SimpleDateFormat("h:mma", Locale.getDefault()).format(Date(it.startMillis)))
+                        .append(' ')
+                        .append(it.athlete.ifBlank { "(no name)" })
+                        .append(if (it.id.startsWith("sm:")) "  [setmore]" else "  [bookings]")
+                        .append('\n')
+                }
+                // The session surviving the query is the thing worth reporting:
+                // a rejected refresh clears it, which is what turns a working
+                // widget into "Tap to sign in" with no other symptom.
+                if (Prefs.refreshToken(ctx) == null) {
+                    sb.append("WARNING: the session was cleared during this query.\n")
+                }
+            }
+            is FetchResult.NotSignedIn ->
+                sb.append("Query: the server rejected the session — it has been cleared.\n")
+            is FetchResult.Failed ->
+                sb.append("Query: FAILED — ").append(r.message).append('\n')
+        }
+        return sb.toString()
+    }
+
+    /**
      * A valid access token, refreshing it first if it is within a minute of
      * expiring. Returns null when there is no session at all, or when the
      * refresh token has been revoked — both mean "send them back to sign-in".

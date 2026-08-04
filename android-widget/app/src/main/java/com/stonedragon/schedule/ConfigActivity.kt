@@ -25,6 +25,8 @@ class ConfigActivity : AppCompatActivity() {
     private lateinit var button: Button
     private lateinit var status: TextView
     private lateinit var signedIn: TextView
+    private lateinit var diag: TextView
+    private lateinit var testButton: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,9 +37,32 @@ class ConfigActivity : AppCompatActivity() {
         button = findViewById(R.id.cfg_button)
         status = findViewById(R.id.cfg_status)
         signedIn = findViewById(R.id.cfg_signed_in)
+        diag = findViewById(R.id.cfg_diag)
+        testButton = findViewById(R.id.cfg_test)
 
         email.setText(Prefs.email(this))
         renderState()
+
+        // Runs the widget's own query and prints what came back. The widget has
+        // one line of text to explain itself with, which is not enough to tell a
+        // free day from a rejected token from a stale frame.
+        testButton.setOnClickListener {
+            testButton.isEnabled = false
+            diag.text = getString(R.string.testing)
+            CoroutineScope(Dispatchers.IO).launch {
+                val report = try {
+                    Supabase.selfTest(this@ConfigActivity) + "\n" +
+                        ScheduleWidget.debugSummary(this@ConfigActivity)
+                } catch (e: Exception) {
+                    "Test threw: " + (e.message ?: e.javaClass.simpleName)
+                }
+                withContext(Dispatchers.Main) {
+                    diag.text = report
+                    testButton.isEnabled = true
+                    renderState() // the query may have cleared a dead session
+                }
+            }
+        }
 
         button.setOnClickListener {
             if (Supabase.isSignedIn(this)) {
