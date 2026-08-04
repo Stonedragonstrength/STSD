@@ -1,0 +1,55 @@
+name: Android widget
+
+# The STSD repo has no build step — it is static files served by Pages. This
+# builds the one thing in it that does need a toolchain, so nobody has to
+# install Android Studio to get an APK. The artifact on a green run is the
+# installable build.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "android-widget/**"
+      - ".github/workflows/android-widget.yml"
+  pull_request:
+    paths:
+      - "android-widget/**"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # No Gradle wrapper is committed: the wrapper is a binary jar, and this
+      # repo is otherwise entirely text. The action supplies Gradle instead.
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Build debug APK
+        working-directory: android-widget
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Lint
+        working-directory: android-widget
+        run: gradle lintDebug --no-daemon
+        continue-on-error: true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stone-dragon-schedule-debug
+          path: android-widget/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lint-report
+          path: android-widget/app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore

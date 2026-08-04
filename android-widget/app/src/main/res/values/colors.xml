@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pulled from the web app's :root custom properties so the widget reads as
+     the same product as the icon sitting next to it. -->
+<resources>
+    <color name="bg">#0B1220</color>
+    <color name="widget_bg">#E60B1220</color>
+    <color name="text">#E6EDF7</color>
+    <color name="muted">#8A9BB4</color>
+    <color name="accent">#06B6D4</color>
+    <color name="divider">#1E2A3D</color>
+</resources>

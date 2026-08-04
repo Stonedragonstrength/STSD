@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Time on the left in a fixed column so the names line up down the list —
+     a ragged left edge is what makes a schedule hard to scan. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/row_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingTop="9dp"
+    android:paddingBottom="9dp">
+
+    <TextView
+        android:id="@+id/row_time"
+        android:layout_width="58dp"
+        android:layout_height="wrap_content"
+        android:maxLines="1"
+        android:text="6:00a"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:textColor="@color/accent" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/row_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="Athlete"
+            android:textSize="14sp"
+            android:textColor="@color/text" />
+
+        <TextView
+            android:id="@+id/row_meta"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="60m"
+            android:textSize="11sp"
+            android:textColor="@color/muted" />
+    </LinearLayout>
+</LinearLayout>

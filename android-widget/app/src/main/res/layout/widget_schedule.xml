@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Header row (day paging) over a scrolling list. The header stays a fixed
+     height so the list gets every pixel the launcher will give it. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_bg"
+    android:padding="10dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingBottom="8dp">
+
+        <TextView
+            android:id="@+id/widget_prev"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:gravity="center"
+            android:text="‹"
+            android:textSize="20sp"
+            android:textColor="@color/accent"
+            android:contentDescription="@string/prev_day" />
+
+        <TextView
+            android:id="@+id/widget_date"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="TODAY"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.05"
+            android:textColor="@color/text" />
+
+        <TextView
+            android:id="@+id/widget_count"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="22dp"
+            android:gravity="center"
+            android:text=""
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:textColor="@color/accent"
+            android:background="@drawable/count_bg"
+            android:paddingStart="7dp"
+            android:paddingEnd="7dp"
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp" />
+
+        <TextView
+            android:id="@+id/widget_next"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:gravity="center"
+            android:text="›"
+            android:textSize="20sp"
+            android:textColor="@color/accent"
+            android:contentDescription="@string/next_day" />
+
+        <TextView
+            android:id="@+id/widget_refresh"
+            android:layout_width="30dp"
+            android:layout_height="34dp"
+            android:gravity="center"
+            android:text="⟳"
+            android:textSize="15sp"
+            android:textColor="@color/muted"
+            android:contentDescription="@string/refresh" />
+    </LinearLayout>
+
+    <ListView
+        android:id="@+id/widget_list"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:divider="@color/divider"
+        android:dividerHeight="1dp"
+        android:scrollbars="none" />
+
+    <TextView
+        android:id="@+id/widget_empty"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:text="@string/loading"
+        android:textSize="13sp"
+        android:textColor="@color/muted" />
+</LinearLayout>

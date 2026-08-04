@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A calendar page with a barbell on it. Drawn inside the middle ~66dp of the
+     108dp adaptive canvas so no launcher mask crops it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M32,34 h44 a4,4 0 0 1 4,4 v38 a4,4 0 0 1 -4,4 h-44 a4,4 0 0 1 -4,-4 v-38 a4,4 0 0 1 4,-4 z"
+        android:strokeColor="#06B6D4"
+        android:strokeWidth="4"
+        android:fillColor="#00000000"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M28,46 h52"
+        android:strokeColor="#06B6D4"
+        android:strokeWidth="4"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M40,28 v10 M68,28 v10"
+        android:strokeColor="#06B6D4"
+        android:strokeWidth="4"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M42,63 h24"
+        android:strokeColor="#E6EDF7"
+        android:strokeWidth="4"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M40,57 v12 M68,57 v12"
+        android:strokeColor="#E6EDF7"
+        android:strokeWidth="5"
+        android:strokeLineCap="round" />
+</vector>
