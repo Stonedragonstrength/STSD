@@ -2935,6 +2935,14 @@ input.trial-input {
    mid-sentence use would push it off. */
 .booked-balance-chip .ln-ico,
 .next-month-chip .ln-ico { width: 1.05em; height: 1.05em; vertical-align: 0; }
+/* A couple is one bank, so both cards carry the same figure on purpose. This
+   says so — without it, 16 on Kevin's card and 16 on Sarah's read as 32. Kept
+   tiny and unfilled so it qualifies the number instead of competing with it. */
+.chip-share {
+  font-size: 0.8em;
+  margin-left: 0.15em;
+  opacity: 0.85;
+}
 
 /* Athlete day log / plan modal */
 .day-log-picker { display: flex; flex-direction: column; gap: 0.9rem; }

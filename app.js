@@ -4261,11 +4261,19 @@
         // can't be tinted, so 🎟 stayed red inside the amber pill and 🎫 stayed
         // yellow inside the green one — two different tickets, neither matching
         // the pill around it. The count alone says what it counts here.
+        // Both of these figures belong to the BANK, and a couple's bank is one
+        // bank — so the same number shows on both cards on purpose. Without a
+        // mark saying so, two 16s on two cards read as 32 sessions.
+        const partner = partnerOf(c);
+        const shareMark = partner
+          ? `<span class="chip-share" aria-label="shared">💞</span>`
+          : "";
+        const sharedWith = partner ? `, shared with ${partner.name || "their partner"}` : "";
         if (bank) {
           const chip = document.createElement("span");
           chip.className = "booked-balance-chip" + (sum.remaining <= 1 ? " low" : "");
-          chip.title = `${sum.remaining} session${Math.abs(sum.remaining) === 1 ? "" : "s"} left in the bank`;
-          chip.innerHTML = `${lineIco("sd:ticket")} ${sum.remaining}`;
+          chip.title = `${sum.remaining} session${Math.abs(sum.remaining) === 1 ? "" : "s"} left in the bank${sharedWith}`;
+          chip.innerHTML = `${lineIco("sd:ticket")} ${sum.remaining}${shareMark}`;
           sess.appendChild(chip);
         }
         if (pendingCount) {
@@ -4277,8 +4285,10 @@
         if (booked > 0) {
           const green = document.createElement("span");
           green.className = "next-month-chip";
-          green.title = `${booked} session${booked === 1 ? "" : "s"} booked for ${nextMonth.label}`;
-          green.innerHTML = `${lineIco("sd:ticket")} ${booked}`;
+          green.title = partner
+            ? `${booked} session${booked === 1 ? "" : "s"} booked for ${nextMonth.label} across this bank — ${c.name || "this athlete"} and ${partner.name || "their partner"} together, counted once`
+            : `${booked} session${booked === 1 ? "" : "s"} booked for ${nextMonth.label}`;
+          green.innerHTML = `${lineIco("sd:ticket")} ${booked}${shareMark}`;
           sess.appendChild(green);
         }
         // Tapping the chips jumps straight to that athlete's Sessions tab,
@@ -14820,6 +14830,23 @@
   // Counted as a SET of slots rather than a running total, so a session that
   // exists on both paths (the app pushes in-app bookings out to Google, and
   // they can come back through the calendar feed) is one session, not two.
+  //
+  // And counted per BANK, not per athlete. A couple's slot is booked under one
+  // name, and syncUpcomingBookingsToAthletes deliberately copies it onto the
+  // other half's `upcomingBookings` so it shows on both calendars. That is a
+  // display mirror, but this function used to read it as ownership: Kevin's
+  // sessions, mirrored to Sarah, were counted again as hers. She was set for no
+  // recurring sessions of her own and still read 3 — three of his that happened
+  // to have been mirrored — while the bank's real total was 16. Worse, the
+  // mirror only fills for months the dashboard calendar has loaded, so her
+  // number climbed as the coach paged through next month.
+  //
+  // A mirrored booking cannot be told from an owned one after the fact: what
+  // gets stored is `{uid, date, time, startAt}` with no athlete on it. So the
+  // union is the fix rather than a filter — both halves contribute the same
+  // slot, the duplicate collapses on the date|time key, and each half reports
+  // the bank's one honest number. Same rule as runAutoRenewGrants and the
+  // settle roster, which have counted bank-wide all along.
   function nextMonthSessionCounts() {
     const { start, end } = nextMonthBounds(todayISO());
     const slots = new Map(); // athlete id -> Set of "date|HH:MM"
@@ -14841,7 +14868,14 @@
       });
     });
     const counts = new Map();
-    slots.forEach((set, id) => counts.set(id, set.size));
+    (state.trainerData.clients || []).forEach((c) => {
+      const mine = slots.get(c.id) || new Set();
+      const p = partnerOf(c);
+      if (!p) { counts.set(c.id, mine.size); return; }
+      // Symmetric by construction, so both halves land on the same number and
+      // neither can disagree with the other depending on whose card you read.
+      counts.set(c.id, new Set([...mine, ...(slots.get(p.id) || [])]).size);
+    });
     return counts;
   }
 
