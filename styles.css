@@ -10026,7 +10026,9 @@ input.ownday-sheet-input { margin-top: 0.35em; }
   display: flex; align-items: center; gap: 0.75em;
   flex-wrap: wrap; margin-top: 0.5rem;
 }
-.ownbuild-hint { flex: 1 1 14em; margin: 0; font-size: 0.8rem; line-height: 1.45; }
+/* min-width:0 so the copy can actually shrink inside the flex row — without it
+   the paragraph keeps its max-content width and shoulders Done off the edge. */
+.ownbuild-hint { flex: 1 1 12em; min-width: 0; margin: 0; font-size: 0.8rem; line-height: 1.45; }
 .ownbuild-done { flex-shrink: 0; }
 /* The detail list is normally a hairline-separated card stack (a 1px-gap grid
    over a border-coloured background) built for the logger's exercise cards.

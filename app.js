@@ -20048,7 +20048,7 @@
         </label>
       </div>
       <div class="detail-head-main ownbuild-head-main">
-        <p class="ownbuild-hint muted">Set it up the way you trained it — sets, weight, reps, supersets. Then log your numbers against it.</p>
+        <p class="ownbuild-hint muted">Set it up the way you trained it, then log your numbers against it.</p>
         <button type="button" class="btn btn-primary btn-sm ownbuild-done" id="ownbuild-done">Done ✓</button>
       </div>`;
     // The session IS its date, so moving it here moves the day and the logs
