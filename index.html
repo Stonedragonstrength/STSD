@@ -1151,19 +1151,24 @@
             <div id="bw-history" class="bw-secret"></div>
           </div>
         </details>
-      </div>
-
-      <!-- Progress: the record of the work. The Hoard, weekly volume and the
-           body-comp trend all moved here from tabs where they were doubling up
-           with something else. Built by renderAthleteProgressTab(). -->
-      <div class="tab-panel" data-ctab-panel="prs">
-        <div id="prog-hoard"></div>
-        <div id="prog-volume"></div>
         <!-- Cycle card, above the charts it explains. Empty unless the athlete
              turned tracking on in Profile; never rendered in a coach preview. -->
         <div id="prog-cycle"></div>
-        <!-- bw-secret: a private body weight stays blurred here too. -->
+        <!-- The body-comp trend. Kept its prog- id from the spell it spent on
+             the Progress tab: the prefix is historical, the eight selectors
+             that reach for it are not worth re-pointing for a rename.
+             bw-secret: a private body weight stays blurred here too. -->
         <div id="prog-bw" class="bw-secret"></div>
+      </div>
+
+      <!-- Progress: the record of the WORK — the Hoard, weekly volume, the
+           strength charts and the PRs. Body composition (the cycle card and the
+           trend charts) went to Diet and Comp on 2026-08-04: the tab is named
+           for composition, and the weigh-in that feeds the trend was already
+           sitting there. Built by renderAthleteProgressTab(). -->
+      <div class="tab-panel" data-ctab-panel="prs">
+        <div id="prog-hoard"></div>
+        <div id="prog-volume"></div>
         <div id="athlete-strength-charts"></div>
         <div id="athlete-pr-archive"></div>
         <div id="athlete-pr-container"></div>
@@ -1375,7 +1380,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=remind1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=obld2"></script>
+  <script src="app.js?v=bodycomp1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

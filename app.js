@@ -17795,8 +17795,7 @@
     _cycle = Object.assign({}, CYCLE_DEFAULT, remote);
     try { localStorage.setItem(KEY_CYCLE, JSON.stringify(_cycle)); } catch (e) {}
     renderAthleteSettingsCards();
-    renderCycleCard();
-    renderAthleteProgressTab();
+    renderAthleteBodyComp();
   }
   // Signing out has to clear it: this is the one thing in the app that must not
   // survive on a shared device into somebody else's session.
@@ -18007,8 +18006,7 @@
   // Anything that moves a period date moves the phase bands on the body-comp
   // charts and the chip on the workout header, so they redraw together.
   function afterCycleChange() {
-    renderCycleCard();
-    renderBwCharts($("#prog-bw"), state.clientData.progress?.bodyweightLog || []);
+    renderAthleteBodyComp();
     if (state.workoutView?.mode === "detail") renderWorkoutDetailUI({ keepScroll: true });
   }
 
@@ -18091,6 +18089,7 @@
     renderClientProgress();
     renderAthletePRs();
     renderAthleteProgressTab();
+    renderAthleteBodyComp(); // the trend is plotted in the unit that just changed
     renderStrengthProgress($("#athlete-strength-charts"), state.clientData.program?.client, state.clientData.progress);
     renderAthleteOverview();
     renderFoodDay();
@@ -18149,8 +18148,7 @@
       if (!c.enabled) c.share = "private"; // switching off can't leave sharing on
       saveCycle();
       renderCycleFold();
-      renderCycleCard();
-      renderBwCharts($("#prog-bw"), state.clientData.progress?.bodyweightLog || []);
+      renderAthleteBodyComp();
       toast(c.enabled ? "Cycle tracking on 🌙" : "Cycle tracking off");
     });
     host.querySelectorAll('input[name="cyc-share"]').forEach((r) => r.addEventListener("change", () => {
@@ -18174,8 +18172,7 @@
       try { localStorage.setItem(KEY_CYCLE, JSON.stringify(_cycle)); } catch (e) {}
       if (id && !state.previewMode && window.Cloud?.enabled) await window.Cloud.deleteMyCycle(id);
       renderCycleFold();
-      renderCycleCard();
-      renderBwCharts($("#prog-bw"), state.clientData.progress?.bodyweightLog || []);
+      renderAthleteBodyComp();
       toast("Deleted ✓");
     });
   }
@@ -19398,9 +19395,13 @@
     $$(".tab-panel[data-ctab-panel]").forEach((p) => p.classList.toggle("active", p.dataset.ctabPanel === name));
     // The racing bar's soft cap can only measure once its panel is visible.
     if (name === "overview") wireRacingCap();
-    // Progress is built on arrival: the Hoard, the volume chart and the trend
-    // all read logs that a workout may have changed since the last visit.
+    // Progress is built on arrival: the Hoard, the volume chart and the
+    // strength charts all read logs that a workout may have changed since the
+    // last visit.
     if (name === "prs") renderAthleteProgressTab();
+    // Same deal for the body-comp block: a weigh-in or a period logged since
+    // the last visit moves both the trend and the phase bands on it.
+    if (name === "diet") renderAthleteBodyComp();
     // Rest timer only floats over the workouts tab (and only in day detail)
     if (name !== "workouts") { hideRestTimer(); WorkoutClock.leave(); }
     else if (state.workoutView?.mode === "detail") showRestTimer();
@@ -23817,10 +23818,11 @@
   }
 
   // -------- Athlete: the Progress tab --------
-  // It used to be the thinnest tab in the app — a strength chart, PR cards, then
-  // nothing. Each of these three has exactly one home now: the Hoard ladder is
-  // new, the volume chart came off the Overview stats fold, and the body-comp
-  // trend came off Diet and Comp, which keeps the weigh-in form and the number.
+  // The record of the WORK: the Hoard ladder, weekly volume, the strength
+  // charts and the PRs. The Hoard is new and the volume chart came off the
+  // Overview stats fold; the body-comp trend passed through here between
+  // 2026-07-29 and 2026-08-04 and now lives on Diet and Comp instead — see
+  // renderAthleteBodyComp().
   function renderAthleteProgressTab() {
     const c = state.clientData.program?.client;
     const progress = state.clientData.progress;
@@ -23830,11 +23832,19 @@
     syncHoard(c, progress);
     renderHoardCard($("#prog-hoard"), c, progress);
     renderVolumeChart(progress, $("#prog-volume"));
-    // Sits directly above the body-comp charts it explains: the phase bands on
-    // those charts are why a late-luteal 3 lb reads as water, not as a bulk.
-    renderCycleCard();
-    renderBwCharts($("#prog-bw"), progress.bodyweightLog || []);
     renderStrengthProgress($("#athlete-strength-charts"), c, progress);
+  }
+
+  // -------- Athlete: the body-comp block on Diet and Comp --------
+  // The tab is named for composition and already holds the weigh-in that feeds
+  // this, so the trend reads next to the number that produced it. The cycle
+  // card sits directly above the charts it explains: the phase bands on those
+  // charts are why a late-luteal 3 lb reads as water, not as a bulk.
+  // Both halves no-op safely — the cycle card empties itself when tracking is
+  // off, and the charts take an empty log.
+  function renderAthleteBodyComp() {
+    renderCycleCard();
+    renderBwCharts($("#prog-bw"), state.clientData.progress?.bodyweightLog || []);
   }
 
   // One slim row at the top of the athlete's overview: badge, rank, a thin
@@ -26060,8 +26070,8 @@
       const latest = [...log].sort(bwSort).find((e) => Number.isFinite(parseFloat(e?.weightLb)));
       meta.textContent = latest ? wLabel(latest.weightLb) : "";
     }
-    // The trend charts live on the Progress tab now. This fold is where a
-    // weigh-in gets entered and listed; reading the trend is a different job.
+    // The trend charts sit under this fold on the same tab again, so a weigh-in
+    // entered here redraws the curve it just moved without a tab change.
     renderBwCharts($("#prog-bw"), log);
     const wrap = $("#bw-history");
     wrap.innerHTML = "";
