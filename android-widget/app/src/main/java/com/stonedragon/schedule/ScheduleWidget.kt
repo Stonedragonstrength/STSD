@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.RemoteViews
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -35,7 +36,16 @@ class ScheduleWidget : AppWidgetProvider() {
 
         private val OUR_ACTIONS = setOf(ACTION_PREV, ACTION_NEXT, ACTION_TODAY, ACTION_REFRESH)
 
-        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        // SupervisorJob alone does NOT stop an exception here from reaching the
+        // thread's default handler and killing the app — it only stops siblings
+        // cancelling each other. Without this handler any unexpected throw in a
+        // background refresh crashed the whole app, which is what made Sign out
+        // impossible: it fired a refresh, the refresh threw, the app died before
+        // the screen could redraw.
+        private val scope = CoroutineScope(
+            SupervisorJob() + Dispatchers.IO +
+                CoroutineExceptionHandler { _, e -> CrashLog.record(null, e, "widget/background") }
+        )
 
         /**
          * What every placed widget currently believes, for the diagnostic on the
@@ -57,34 +67,78 @@ class ScheduleWidget : AppWidgetProvider() {
             }
         }
 
-        /** Redraws every widget — used after sign-in or sign-out. */
+        private fun widgetIds(app: Context): IntArray =
+            AppWidgetManager.getInstance(app)
+                .getAppWidgetIds(ComponentName(app, ScheduleWidget::class.java))
+
+        /** Fetches every widget again. Used after a successful sign-in. */
         fun refreshAll(ctx: Context) {
             val app = ctx.applicationContext
             val mgr = AppWidgetManager.getInstance(app)
-            val ids = mgr.getAppWidgetIds(ComponentName(app, ScheduleWidget::class.java))
+            val ids = widgetIds(app)
             for (id in ids) Prefs.saveState(app, id, "loading")
             scope.launch { for (id in ids) refresh(app, mgr, id) }
         }
 
-        /** Paints from cache. Cheap, and safe to call on any thread. */
-        fun paint(ctx: Context, mgr: AppWidgetManager, widgetId: Int) {
-            val day = Prefs.day(ctx, widgetId)
-            mgr.updateAppWidget(widgetId, buildViews(ctx, widgetId, day))
-            mgr.notifyAppWidgetViewDataChanged(widgetId, R.id.widget_list)
+        /**
+         * Signed out: forget the cached day and redraw, with no network at all.
+         * Sign-out used to go through refreshAll, which fetched a schedule it
+         * could no longer be entitled to — pointless, and the throw that took
+         * the app down with it. It also left the last day's sessions cached, so
+         * a signed-out widget could still be showing athlete names.
+         */
+        fun signedOutAll(ctx: Context) {
+            val app = ctx.applicationContext
+            val mgr = AppWidgetManager.getInstance(app)
+            for (id in widgetIds(app)) {
+                Prefs.saveBookings(app, id, emptyList())
+                Prefs.saveState(app, id, "signin")
+                paint(app, mgr, id)
+            }
         }
 
-        /** Fetches the day, stores it, repaints. Blocking — call from IO. */
-        fun refresh(ctx: Context, mgr: AppWidgetManager, widgetId: Int) {
-            val day = Prefs.day(ctx, widgetId)
-            when (val result = Supabase.bookingsForDay(ctx, day)) {
-                is FetchResult.Ok -> {
-                    Prefs.saveBookings(ctx, widgetId, result.bookings)
-                    Prefs.saveState(ctx, widgetId, if (result.partial) "partial" else "ok")
-                }
-                is FetchResult.NotSignedIn -> Prefs.saveState(ctx, widgetId, "signin")
-                is FetchResult.Failed -> Prefs.saveState(ctx, widgetId, "error:${result.message}")
+        /**
+         * Paints from cache. Cheap, safe on any thread, and never throws — a
+         * widget that cannot draw itself has no way to report that it could not,
+         * so the failure is recorded and swallowed rather than propagated.
+         */
+        fun paint(ctx: Context, mgr: AppWidgetManager, widgetId: Int) {
+            try {
+                val day = Prefs.day(ctx, widgetId)
+                mgr.updateAppWidget(widgetId, buildViews(ctx, widgetId, day))
+                mgr.notifyAppWidgetViewDataChanged(widgetId, R.id.widget_list)
+            } catch (t: Throwable) {
+                CrashLog.record(ctx, t, "paint")
             }
-            paint(ctx, mgr, widgetId)
+        }
+
+        /**
+         * Fetches the day, stores it, repaints. Blocking — call from IO.
+         *
+         * The paint is in a finally: a throw in the fetch used to skip it, which
+         * left whatever frame was already on the home screen. That is how a
+         * successful sign-in still showed "Tap to sign in" — the state was
+         * right in storage and the widget was never told.
+         */
+        fun refresh(ctx: Context, mgr: AppWidgetManager, widgetId: Int) {
+            try {
+                val day = Prefs.day(ctx, widgetId)
+                when (val result = Supabase.bookingsForDay(ctx, day)) {
+                    is FetchResult.Ok -> {
+                        Prefs.saveBookings(ctx, widgetId, result.bookings)
+                        Prefs.saveState(ctx, widgetId, if (result.partial) "partial" else "ok")
+                    }
+                    is FetchResult.NotSignedIn -> Prefs.saveState(ctx, widgetId, "signin")
+                    is FetchResult.Failed -> Prefs.saveState(ctx, widgetId, "error:${result.message}")
+                }
+            } catch (t: Throwable) {
+                // Throwable, not Exception: an Error here (a missing class on an
+                // odd OEM ROM, say) would otherwise sail past and kill the app.
+                CrashLog.record(ctx, t, "refresh")
+                Prefs.saveState(ctx, widgetId, "error:" + (t.message ?: t.javaClass.simpleName))
+            } finally {
+                paint(ctx, mgr, widgetId)
+            }
         }
 
         private fun buildViews(ctx: Context, widgetId: Int, day: Long): RemoteViews {

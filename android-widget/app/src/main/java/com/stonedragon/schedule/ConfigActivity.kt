@@ -43,17 +43,23 @@ class ConfigActivity : AppCompatActivity() {
         email.setText(Prefs.email(this))
         renderState()
 
+        // A crash recorded since last time is the most useful thing on this
+        // screen, so it opens showing it rather than waiting to be asked.
+        CrashLog.last(this)?.let { diag.text = it }
+
         // Runs the widget's own query and prints what came back. The widget has
         // one line of text to explain itself with, which is not enough to tell a
         // free day from a rejected token from a stale frame.
         testButton.setOnClickListener {
             testButton.isEnabled = false
+            CrashLog.clear(this) // this run's result replaces the old crash
             diag.text = getString(R.string.testing)
             CoroutineScope(Dispatchers.IO).launch {
                 val report = try {
                     Supabase.selfTest(this@ConfigActivity) + "\n" +
                         ScheduleWidget.debugSummary(this@ConfigActivity)
                 } catch (e: Exception) {
+                    CrashLog.record(this@ConfigActivity, e, "selfTest")
                     "Test threw: " + (e.message ?: e.javaClass.simpleName)
                 }
                 withContext(Dispatchers.Main) {
@@ -66,8 +72,15 @@ class ConfigActivity : AppCompatActivity() {
 
         button.setOnClickListener {
             if (Supabase.isSignedIn(this)) {
-                Supabase.signOut(this)
-                ScheduleWidget.refreshAll(this)
+                // Wrapped because this used to take the app down and there was
+                // then no way to sign out at all — a dead end reachable only by
+                // clearing the app's storage from Android settings.
+                try {
+                    Supabase.signOut(this)
+                    ScheduleWidget.signedOutAll(this)
+                } catch (e: Exception) {
+                    CrashLog.record(this, e, "signOut")
+                }
                 renderState()
                 return@setOnClickListener
             }
