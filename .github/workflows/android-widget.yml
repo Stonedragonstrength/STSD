@@ -2,8 +2,16 @@ name: Android widget
 
 # The STSD repo has no build step — it is static files served by Pages. This
 # builds the one thing in it that does need a toolchain, so nobody has to
-# install Android Studio to get an APK. The artifact on a green run is the
-# installable build.
+# install Android Studio to get an APK.
+#
+# A push to main republishes the SAME release tag, so the download URL never
+# changes and never expires:
+#
+#   https://github.com/Stonedragonstrength/STSD/releases/latest/download/stone-dragon-schedule.apk
+#
+# Artifacts alone were not enough: they expire after 90 days, need a GitHub
+# login, and live at a different URL per run — which turns "reinstall it" into
+# a hunt through Actions history.
 on:
   push:
     branches: [main]
@@ -14,6 +22,9 @@ on:
     paths:
       - "android-widget/**"
   workflow_dispatch:
+
+permissions:
+  contents: write # publishing the release asset
 
 jobs:
   build:
@@ -41,10 +52,18 @@ jobs:
         run: gradle lintDebug --no-daemon
         continue-on-error: true
 
+      # A stable filename, because the release URL is built from it.
+      - name: Stage APK
+        run: |
+          mkdir -p dist
+          cp android-widget/app/build/outputs/apk/debug/app-debug.apk \
+             dist/stone-dragon-schedule.apk
+          ls -lh dist/
+
       - uses: actions/upload-artifact@v4
         with:
           name: stone-dragon-schedule-debug
-          path: android-widget/app/build/outputs/apk/debug/*.apk
+          path: dist/stone-dragon-schedule.apk
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
@@ -53,3 +72,25 @@ jobs:
           name: lint-report
           path: android-widget/app/build/reports/lint-results-debug.html
           if-no-files-found: ignore
+
+      # Only from main — a PR build should not overwrite the installable APK.
+      - name: Publish to the permanent release
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: widget-latest
+          name: Stone Dragon Schedule widget (latest)
+          body: |
+            Android home-screen widget showing the coach's booked sessions,
+            one day at a time.
+
+            **Install:** download `stone-dragon-schedule.apk` below, tap it, and
+            allow your browser or file manager to install unknown apps. Then open
+            **Stone Dragon Schedule** from the app drawer and sign in.
+
+            This release is republished on every build, so this page and its
+            download link always point at the newest APK.
+
+            Built from ${{ github.sha }}.
+          files: dist/stone-dragon-schedule.apk
+          make_latest: true

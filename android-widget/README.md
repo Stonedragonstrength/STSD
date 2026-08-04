@@ -50,8 +50,14 @@ app already writes.
 ## Building
 
 You do not need Android Studio. Push to `main` and
-`.github/workflows/android-widget.yml` builds a debug APK; download it from the
-run's artifacts and sideload it. `workflow_dispatch` runs it on demand.
+`.github/workflows/android-widget.yml` builds the APK and republishes it to a
+fixed release tag, so the download URL never changes and never expires:
+
+**https://github.com/Stonedragonstrength/STSD/releases/latest/download/stone-dragon-schedule.apk**
+
+Artifacts are still uploaded per run for debugging, but they expire after 90
+days, need a GitHub login, and sit at a different URL each time — the release is
+the link to keep.
 
 Locally, if you do have a JDK 17 and Gradle 8.7:
 
@@ -63,8 +69,10 @@ gradle assembleDebug
 
 ## Installing
 
-1. Download `stone-dragon-schedule-debug` from the Actions run and unzip.
-2. Sideload the APK (allow install from your browser or file manager).
+1. Open the release link above on the phone. It downloads the APK directly — no
+   zip, no login.
+2. Tap it. Android will block it once and offer a settings toggle; allow
+   "install unknown apps" for whichever app you tapped from, then tap again.
 3. Open **Stone Dragon Schedule** from the app drawer and sign in with the coach
    email and password — the same pair as the web app.
 4. Long-press the home screen → Widgets → Stone Dragon · Today.

@@ -70,7 +70,13 @@ class ScheduleWidget : AppWidgetProvider() {
         private fun buildViews(ctx: Context, widgetId: Int, day: Long): RemoteViews {
             val v = RemoteViews(ctx.packageName, R.layout.widget_schedule)
             val today = Supabase.startOfDay(System.currentTimeMillis())
-            val state = Prefs.state(ctx, widgetId)
+            // Whether there is a session is knowable right here, with no network,
+            // so it decides the state instead of waiting for a fetch to come back
+            // and say so. Without this a widget placed before signing in reads
+            // "Loading…" — and a sideloaded app that has never been launched sits
+            // in Android's stopped state and receives no broadcasts, so nothing
+            // ever arrives to correct it and the message is permanent.
+            val state = if (!Supabase.isSignedIn(ctx)) "signin" else Prefs.state(ctx, widgetId)
             val bookings = if (state == "ok") Prefs.bookings(ctx, widgetId) else emptyList()
 
             // "Today" and "Tomorrow" beat a bare date when they apply — reading
@@ -122,11 +128,18 @@ class ScheduleWidget : AppWidgetProvider() {
             v.setOnClickPendingIntent(R.id.widget_date, actionIntent(ctx, ACTION_TODAY, widgetId))
             v.setOnClickPendingIntent(R.id.widget_refresh, actionIntent(ctx, ACTION_REFRESH, widgetId))
 
-            // Signed out, the empty view IS the sign-in button. Otherwise it and
-            // every row open the app.
+            // The empty view is a button, and what it does is whatever the
+            // message is asking for. "Loading…" and an error both retry — that
+            // way a widget stuck on either is recoverable by tapping the thing
+            // you would instinctively tap, instead of needing the small ⟳.
             v.setOnClickPendingIntent(
                 R.id.widget_empty,
-                if (state == "signin") configIntent(ctx) else openAppIntent(ctx),
+                when {
+                    state == "signin" -> configIntent(ctx)
+                    state == "loading" || state.startsWith("error:") ->
+                        actionIntent(ctx, ACTION_REFRESH, widgetId)
+                    else -> openAppIntent(ctx)
+                },
             )
             v.setPendingIntentTemplate(R.id.widget_list, openAppTemplate(ctx))
             return v
