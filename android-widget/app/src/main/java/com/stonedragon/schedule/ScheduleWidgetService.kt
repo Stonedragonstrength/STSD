@@ -36,7 +36,7 @@ private class ScheduleFactory(
     override fun onCreate() {}
 
     override fun onDataSetChanged() {
-        rows = if (Prefs.state(ctx, widgetId) == "ok") Prefs.bookings(ctx, widgetId) else emptyList()
+        rows = if (Prefs.isLoaded(Prefs.state(ctx, widgetId))) Prefs.bookings(ctx, widgetId) else emptyList()
     }
 
     override fun onDestroy() {

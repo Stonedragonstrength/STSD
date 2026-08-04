@@ -28,9 +28,15 @@ data class Booking(
     val note: String,
 )
 
-/** What a refresh produced. The widget renders each of these differently. */
+/**
+ * What a refresh produced. The widget renders each of these differently.
+ *
+ * `partial` means one of the two schedule sources answered and the other did
+ * not. The day is shown anyway — half a schedule beats none — but it is flagged,
+ * because silently dropping sessions is the one failure a coach cannot catch.
+ */
 sealed class FetchResult {
-    data class Ok(val bookings: List<Booking>) : FetchResult()
+    data class Ok(val bookings: List<Booking>, val partial: Boolean = false) : FetchResult()
     object NotSignedIn : FetchResult()
     data class Failed(val message: String) : FetchResult()
 }
@@ -118,52 +124,117 @@ object Supabase {
     // ---- the one query the widget makes ----
 
     /**
-     * Every booked session that starts on [dayStart]'s local calendar day.
+     * Every session on [dayStart]'s local calendar day.
      *
-     * There is deliberately no coach_id filter: the "coach manages own bookings"
-     * RLS policy already scopes this to whoever is signed in, so adding one here
-     * would only be a second place to get it wrong. The athlete name rides along
-     * through the foreign key rather than costing a second round trip.
+     * `bookings` is the source of truth — scheduling lives in the app now. The
+     * legacy `setmore_events` table is still read because switching Setmore off
+     * deliberately leaves its existing rows alone (they are the only record of
+     * sessions made before the app took over), so an already-scheduled upcoming
+     * session can still exist only there. Once that table stops returning rows
+     * for future days this second call answers with an empty list and can be
+     * deleted. The web app's own day view merges exactly these two sources.
+     *
+     * Neither query filters on coach_id: the "coach manages own bookings" and
+     * "coach reads own setmore events" RLS policies already scope both to
+     * whoever is signed in, so a filter here would only be a second place to
+     * get it wrong.
      */
     fun bookingsForDay(ctx: Context, dayStart: Long): FetchResult {
         val token = accessToken(ctx) ?: return FetchResult.NotSignedIn
+        // Whole calendar days, so the window is still right across a DST change
+        // — dayStart + 24h lands an hour early or late on those two days a year
+        // and would clip or double-count a session at the boundary.
         val from = isoUtc(dayStart)
-        val to = isoUtc(dayStart + DAY_MS)
+        val to = isoUtc(addDays(dayStart, 1))
+
+        val out = ArrayList<Booking>()
+        var failed = 0
+        var unauthorized = false
+
+        fun run(block: () -> Unit) {
+            try {
+                block()
+            } catch (e: ApiError) {
+                if (e.status == 401) unauthorized = true else failed++
+            } catch (e: Exception) {
+                failed++
+            }
+        }
+
+        run { out += fetchNative(token, from, to) }
+        run { out += fetchSetmore(token, from, to) }
+
+        if (unauthorized) {
+            Prefs.clearSession(ctx)
+            return FetchResult.NotSignedIn
+        }
+        if (failed == 2) return FetchResult.Failed("Couldn't load")
+
+        // A session that exists in both tables during the changeover is one
+        // session. The native row wins: it knows the athlete and the note.
+        val seen = HashSet<String>()
+        val merged = out
+            .sortedWith(compareBy({ it.startMillis }, { if (it.id.startsWith("sm:")) 1 else 0 }))
+            .filter { seen.add(it.startMillis.toString() + "|" + it.athlete.lowercase()) }
+
+        return FetchResult.Ok(merged, partial = failed > 0)
+    }
+
+    private fun fetchNative(token: String, from: String, to: String): List<Booking> {
         val path = "/rest/v1/bookings" +
             "?select=" + enc("id,start_at,end_at,note,athletes(display_name)") +
             "&status=eq.booked" +
             "&start_at=gte." + enc(from) +
             "&start_at=lt." + enc(to) +
             "&order=" + enc("start_at.asc")
-        return try {
-            val arr = getArray(path, token)
-            val out = ArrayList<Booking>(arr.length())
-            for (i in 0 until arr.length()) {
-                val o = arr.optJSONObject(i) ?: continue
-                val start = parseIso(o.optString("start_at")) ?: continue
-                val end = parseIso(o.optString("end_at")) ?: start
-                out.add(
-                    Booking(
-                        id = o.optString("id"),
-                        startMillis = start,
-                        endMillis = end,
-                        athlete = o.optJSONObject("athletes")?.optString("display_name").orEmpty(),
-                        note = o.optString("note").takeIf { it != "null" }.orEmpty(),
-                    )
+        val arr = getArray(path, token)
+        val out = ArrayList<Booking>(arr.length())
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val start = parseIso(o.optString("start_at")) ?: continue
+            out.add(
+                Booking(
+                    id = o.optString("id"),
+                    startMillis = start,
+                    endMillis = parseIso(o.optString("end_at")) ?: start,
+                    athlete = o.optJSONObject("athletes")?.optString("display_name").orEmpty(),
+                    note = cleanText(o.optString("note")),
                 )
-            }
-            FetchResult.Ok(out)
-        } catch (e: ApiError) {
-            if (e.status == 401) {
-                Prefs.clearSession(ctx)
-                FetchResult.NotSignedIn
-            } else {
-                FetchResult.Failed(e.friendly ?: "Supabase said ${e.status}")
-            }
-        } catch (e: Exception) {
-            FetchResult.Failed("No connection")
+            )
         }
+        return out
     }
+
+    private fun fetchSetmore(token: String, from: String, to: String): List<Booking> {
+        val path = "/rest/v1/setmore_events" +
+            "?select=" + enc("external_uid,client_name,title,start_at,end_at") +
+            "&start_at=gte." + enc(from) +
+            "&start_at=lt." + enc(to) +
+            "&order=" + enc("start_at.asc")
+        val arr = getArray(path, token)
+        val out = ArrayList<Booking>(arr.length())
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val start = parseIso(o.optString("start_at")) ?: continue
+            out.add(
+                Booking(
+                    // Prefixed so it can never collide with a bookings id, the
+                    // same guard the web app uses for the opposite direction.
+                    id = "sm:" + o.optString("external_uid"),
+                    startMillis = start,
+                    endMillis = parseIso(o.optString("end_at")) ?: start,
+                    athlete = cleanText(o.optString("client_name"))
+                        .ifBlank { cleanText(o.optString("title")) },
+                    note = "",
+                )
+            )
+        }
+        return out
+    }
+
+    /** org.json hands back the literal string "null" for a JSON null. */
+    private fun cleanText(s: String?): String =
+        if (s == null || s == "null") "" else s.trim()
 
     // ---- plumbing ----
 
@@ -215,8 +286,6 @@ object Supabase {
 
     // ---- dates ----
 
-    const val DAY_MS = 24 * 60 * 60 * 1000L
-
     private fun isoUtc(millis: Long): String {
         val f = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
         f.timeZone = TimeZone.getTimeZone("UTC")
@@ -259,7 +328,7 @@ object Supabase {
     }
 
     /**
-     * Steps whole calendar days, not fixed 24-hour blocks — adding DAY_MS across
+     * Steps whole calendar days, not fixed 24-hour blocks — adding 24h across
      * a DST boundary lands at 23:00 the previous day and the widget would show
      * the wrong date.
      */

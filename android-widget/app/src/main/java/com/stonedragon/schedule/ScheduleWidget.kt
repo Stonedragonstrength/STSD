@@ -59,7 +59,7 @@ class ScheduleWidget : AppWidgetProvider() {
             when (val result = Supabase.bookingsForDay(ctx, day)) {
                 is FetchResult.Ok -> {
                     Prefs.saveBookings(ctx, widgetId, result.bookings)
-                    Prefs.saveState(ctx, widgetId, "ok")
+                    Prefs.saveState(ctx, widgetId, if (result.partial) "partial" else "ok")
                 }
                 is FetchResult.NotSignedIn -> Prefs.saveState(ctx, widgetId, "signin")
                 is FetchResult.Failed -> Prefs.saveState(ctx, widgetId, "error:${result.message}")
@@ -77,7 +77,7 @@ class ScheduleWidget : AppWidgetProvider() {
             // in Android's stopped state and receives no broadcasts, so nothing
             // ever arrives to correct it and the message is permanent.
             val state = if (!Supabase.isSignedIn(ctx)) "signin" else Prefs.state(ctx, widgetId)
-            val bookings = if (state == "ok") Prefs.bookings(ctx, widgetId) else emptyList()
+            val bookings = if (Prefs.isLoaded(state)) Prefs.bookings(ctx, widgetId) else emptyList()
 
             // "Today" and "Tomorrow" beat a bare date when they apply — reading
             // a weekday and working out that it means today is exactly the work
@@ -96,6 +96,10 @@ class ScheduleWidget : AppWidgetProvider() {
                 when {
                     state == "signin" -> ""
                     state.startsWith("error") -> "—"
+                    // One source answered and one didn't: the number is a floor,
+                    // not a count, and it says so rather than quietly under-
+                    // reporting the day.
+                    state == "partial" -> bookings.size.toString() + "+"
                     else -> bookings.size.toString()
                 }
             )
@@ -118,8 +122,11 @@ class ScheduleWidget : AppWidgetProvider() {
                     state == "signin" -> "Tap to sign in"
                     state.startsWith("error:") -> state.removePrefix("error:") + " · tap ⟳"
                     state == "loading" -> "Loading…"
-                    day == today -> "Nothing booked today"
-                    else -> "Nothing booked"
+                    // Naming the day it actually checked is what separates "you
+                    // have no sessions" from "this thing is broken" — which is
+                    // the difference an empty widget cannot otherwise show.
+                    day == today -> "No sessions booked today"
+                    else -> "No sessions on " + fmt("EEE d MMM", day)
                 }
             )
 

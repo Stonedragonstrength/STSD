@@ -116,11 +116,22 @@ object Prefs {
         }
     }
 
-    /** "ok" | "signin" | "error:<message>" | "loading" — drives the empty view. */
+    /**
+     * "ok" | "partial" | "signin" | "error:<message>" | "loading" — drives the
+     * empty view.
+     */
     fun saveState(ctx: Context, widgetId: Int, state: String) {
         p(ctx).edit().putString(stateKey(widgetId), state).apply()
     }
 
     fun state(ctx: Context, widgetId: Int): String =
         p(ctx).getString(stateKey(widgetId), "loading").orEmpty()
+
+    /**
+     * States where the cached list is real and should be drawn. Lives here
+     * because the provider and the list factory run in different processes and
+     * both have to agree — when they disagreed, the header counted sessions the
+     * list refused to show.
+     */
+    fun isLoaded(state: String): Boolean = state == "ok" || state == "partial"
 }
