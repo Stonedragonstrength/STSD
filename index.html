@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=bankcount1" />
+  <link rel="stylesheet" href="styles.css?v=slog1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -253,6 +253,11 @@
                pass instead of four taps each. Labelled + badged by
                renderMonthGrantBtn(); hidden when nobody is on a tier. -->
           <button class="btn btn-ghost btn-sm slim-btn month-grant-btn hidden" id="btn-month-grant" type="button"></button>
+          <!-- What was actually delivered, month by month, across the whole
+               roster. Lives here rather than in the nav, which is capped at
+               five — and it belongs beside Settle: one asks what to bill, the
+               other what was done for it. -->
+          <button class="btn btn-ghost btn-sm slim-btn" id="btn-session-lookup" type="button">Session log</button>
           <button class="btn btn-primary btn-sm slim-btn" id="btn-add-client">+ Add athlete</button>
         </div>
         <div class="roster-controls hidden" id="roster-controls">
@@ -1370,7 +1375,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=remind1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=bankcount1"></script>
+  <script src="app.js?v=slog1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

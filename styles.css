@@ -3945,6 +3945,159 @@ input.trial-input {
 .status-open { background: var(--primary-soft); color: var(--primary-bright); }
 .status-claimed { background: rgba(245, 158, 11, 0.2); color: var(--warn); }
 
+/* ---- Session log (one athlete) and Session lookup (the whole roster) ----
+   Kind pills. A slot was one of three things and the count is only worth
+   trusting if they stay apart: trained, charged-but-not-trained, or forgiven. */
+.sl-booked { background: var(--primary-soft); color: var(--primary-bright); }
+.sl-manual { background: var(--surface-3); color: var(--text-soft); }
+.sl-missed { background: rgba(245, 158, 11, 0.18); color: var(--warn); }
+.sl-waived { background: var(--surface-3); color: var(--muted); }
+
+/* A month band rather than a heading: the count rides the same line as the
+   name, so the answer lands in one left-to-right sweep instead of a line
+   further down the card. */
+.sl-month {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6em;
+  margin: 1.15em 0 0.1em;
+  padding-bottom: 0.35em;
+  border-bottom: 1px solid var(--border);
+}
+.sl-month:first-of-type { margin-top: 0.25em; }
+.sl-month-name {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+.sl-month-n {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.sl-month-n.is-full { color: var(--accent); }
+
+/* One line per session at every width, with a fixed date column so the dates
+   form a true column — that alignment is most of what "orderly" means here.
+   Tabular numerals keep the times from shuffling sideways row to row. */
+.sl-row {
+  display: grid;
+  grid-template-columns: 5.6em minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.55em;
+  padding: 0.4em 0.1em;
+  border-top: 1px solid var(--border);
+  font-size: 0.84rem;
+}
+.sl-month + .sl-row { border-top: 0; }
+.sl-when {
+  font-weight: 700;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.sl-mid {
+  min-width: 0;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+/* Holds the × column open on rows that can't be undone, so every pill in the
+   list still lines up. */
+.sl-spacer { display: inline-block; width: 1.35em; }
+
+@media (max-width: 620px) {
+  .sl-row {
+    grid-template-columns: 5.1em minmax(0, 1fr) auto auto;
+    gap: 0.4em;
+    font-size: 0.8rem;
+  }
+  .sl-month { margin-top: 1em; }
+}
+@media (max-width: 380px) {
+  .sl-row {
+    grid-template-columns: 4.7em minmax(0, 1fr) auto auto;
+    font-size: 0.76rem;
+  }
+  .sl-row .status-pill { padding: 0.15em 0.45em; letter-spacing: 0.03em; }
+}
+
+/* The lookup: the same log, one month, across everyone. A little wider than a
+   default modal because a name, a count and a date column share each line. */
+#modal .modal-card:has(#session-lookup) { max-width: 640px; }
+.sl-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  margin: -0.3em 0 0.6em;
+}
+.sl-nav-month { flex: 1 1 auto; text-align: center; font-size: 1rem; }
+.sl-nav .btn { flex: 0 0 auto; }
+.sl-search {
+  width: 100%;
+  padding: 0.5em 0.7em;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.88rem;
+}
+.sl-total {
+  margin: 0.55em 0 0.8em;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-soft);
+}
+/* No overflow here on purpose: .modal-card already scrolls, and a second
+   scroller inside it steals the thumb on a phone. */
+.sl-list { display: flex; flex-direction: column; gap: 0.3em; }
+.sl-athlete {
+  padding: 0 0.7em;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.sl-athlete[open] { border-color: rgba(var(--athlete-rgb), 0.5); }
+.sl-athlete > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+  padding: 0.55em 0;
+  cursor: pointer;
+  list-style: none;
+}
+.sl-athlete > summary::-webkit-details-marker { display: none; }
+.sl-av { flex: 0 0 auto; display: inline-flex; }
+.sl-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sl-count {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.sl-athlete .sl-row:last-of-type { padding-bottom: 0.6em; }
+@media (max-width: 420px) {
+  .sl-name { font-size: 0.84rem; }
+  .sl-count { font-size: 0.68rem; }
+  .sl-athlete { padding: 0 0.55em; }
+}
+
 /* Open slots (coach Overview + athlete Sessions) */
 .open-slot-row {
   display: flex;

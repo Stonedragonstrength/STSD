@@ -13661,6 +13661,242 @@
     toast("Session history downloaded ✓");
   }
 
+  // -------- The session log: what was actually delivered --------
+  // Every completed session was already recorded — a redemption carries the
+  // date, a note, and the booking uid it came from. What was missing was any
+  // order on top of it.
+  //
+  // Three different things occupy a session slot, and counting them as one
+  // number is what makes the total untrustworthy:
+  //   • delivered — it happened, and it spent a session
+  //   • missed    — charged but not trained; the slot was held and billed
+  //   • waived    — a close call the coach forgave. It spends nothing, so it
+  //                 never became a redemption at all and lives only in
+  //                 missedSessions. Shown anyway: the slot existed, and a log
+  //                 that silently omits it looks like the day was free.
+  const SESSION_KINDS = {
+    booked: { label: "booked", cls: "sl-booked" },
+    manual: { label: "manual", cls: "sl-manual" },
+    missed: { label: "missed", cls: "sl-missed" },
+    waived: { label: "waived", cls: "sl-waived" },
+  };
+  // A redemption has no time field — auto-redeem writes the time INTO the note
+  // ("Booked session · 6:00 AM"). Split it back out so the log can have a time
+  // column, and leave a note the coach typed himself entirely alone.
+  function splitRedemptionNote(note) {
+    const m = /^(Booked session|Missed session: charged)\s*·\s*(.+)$/.exec(String(note || "").trim());
+    if (m) return { kind: m[1] === "Booked session" ? "booked" : "missed", time: m[2], note: "" };
+    return { kind: "manual", time: "", note: String(note || "").trim() };
+  }
+  function sessionLogRows(c) {
+    ensureSessionBank(c);
+    const missedByUid = new Map();
+    (c.sessionBank.missedSessions || []).forEach((m) => {
+      if (m?.setmoreUid) missedByUid.set(m.setmoreUid, m);
+    });
+    const rows = (c.sessionBank.redemptions || []).map((r) => {
+      const parsed = splitRedemptionNote(r.note);
+      // The note is the usual tell, but a booking marked missed AFTER it was
+      // auto-redeemed keeps its original "Booked session" note. The mark is the
+      // later fact, so the mark wins.
+      const mark = r.setmoreUid ? missedByUid.get(r.setmoreUid) : null;
+      const kind = mark && mark.type !== "closecall" ? "missed" : parsed.kind;
+      return { id: r.id, date: r.date || "", time: parsed.time, note: parsed.note, kind, undoable: true };
+    });
+    (c.sessionBank.missedSessions || []).forEach((m) => {
+      if (!m || m.type !== "closecall") return;
+      rows.push({ id: m.id, date: m.date || "", time: "", note: "Close call — waived", kind: "waived", undoable: false });
+    });
+    return rows.sort((a, b) => b.date.localeCompare(a.date));
+  }
+  // Grouped into months, newest first, each carrying the count that matters:
+  // what was delivered against the allowance that month actually had.
+  function sessionLogMonths(c) {
+    const grantByMonth = new Map();
+    (c?.sessionBank?.packages || []).forEach((p) => {
+      const mk = pkgMonth(p);
+      if (mk) grantByMonth.set(mk, (grantByMonth.get(mk) || 0) + (Number(p.size) || 0));
+    });
+    const byMonth = new Map();
+    sessionLogRows(c).forEach((r) => {
+      const mk = r.date.slice(0, 7);
+      if (!/^\d{4}-\d{2}$/.test(mk)) return;
+      if (!byMonth.has(mk)) byMonth.set(mk, []);
+      byMonth.get(mk).push(r);
+    });
+    return [...byMonth.keys()].sort((a, b) => b.localeCompare(a)).map((mk) => {
+      const rows = byMonth.get(mk);
+      const count = (k) => rows.filter((r) => r.kind === k).length;
+      const missed = count("missed");
+      const waived = count("waived");
+      return {
+        mk, label: monthKeyLabel(mk), rows,
+        delivered: rows.length - missed - waived,
+        missed, waived,
+        grant: grantByMonth.get(mk) || 0,
+      };
+    });
+  }
+  // "Mon 1 Sep" — a weekday, because the coach thinks in "her Tuesday slot",
+  // not in 2026-09-01.
+  function sessionLogWhen(iso) {
+    const [y, m, d] = String(iso).split("-").map(Number);
+    if (!y || !m || !d) return String(iso || "");
+    return `${DOW_LABELS[new Date(y, m - 1, d).getDay()]} ${d} ${MONTH_NAMES[m - 1].slice(0, 3)}`;
+  }
+  // Four columns, one line, at every width. The time and the note share the
+  // middle cell and truncate together rather than each claiming a column —
+  // a note is the exception (only a hand-added session has one), so giving it
+  // a permanent column of its own would leave a gap on almost every row and
+  // force the whole thing to reflow onto two lines on a phone.
+  function sessionLogRowHtml(r, opts) {
+    const k = SESSION_KINDS[r.kind] || SESSION_KINDS.manual;
+    const mid = [r.time, r.note].filter(Boolean).join(" · ");
+    return `<div class="sl-row"${r.note ? ` title="${escapeHtml(r.note)}"` : ""}>
+      <span class="sl-when">${escapeHtml(sessionLogWhen(r.date))}</span>
+      <span class="sl-mid">${escapeHtml(mid)}</span>
+      <span class="status-pill ${k.cls}">${k.label}</span>
+      ${opts?.undo && r.undoable
+        ? `<button class="btn-delete-mini" data-del="${escapeHtml(r.id)}" title="Undo">×</button>`
+        : `<span class="sl-spacer" aria-hidden="true"></span>`}
+    </div>`;
+  }
+  // The month header carries the whole answer: delivered, against the tier, and
+  // the two things that are NOT delivered sessions kept separate from it.
+  function sessionLogMonthHeadHtml(mo) {
+    const bits = [mo.grant
+      ? `${mo.delivered} of ${mo.grant}`
+      : `${mo.delivered} session${mo.delivered === 1 ? "" : "s"}`];
+    if (mo.missed) bits.push(`${mo.missed} missed`);
+    if (mo.waived) bits.push(`${mo.waived} waived`);
+    const full = mo.grant && mo.delivered >= mo.grant;
+    return `<div class="sl-month">
+      <span class="sl-month-name">${escapeHtml(mo.label)}</span>
+      <span class="sl-month-n${full ? " is-full" : ""}">${escapeHtml(bits.join(" · "))}</span>
+    </div>`;
+  }
+
+  // -------- Session lookup: the whole roster, one month at a time --------
+  // The per-athlete log answers "what did I do for her". This answers "what did
+  // I actually deliver in July", which is the other half of the question the
+  // green next-month ticket asks — and the one the coach had no screen for at
+  // all. It opens from the roster header rather than the nav, which is capped.
+  //
+  // Deliberately NOT merged for couples. They share a bank, but a session is
+  // one person's hour and the coach needs to see whose; the 💞 says the money
+  // behind them is shared. Same reason the roster total counts athlete-sessions
+  // — one booking creates one redemption, under whoever it was matched to, so
+  // a couple training in the same slot is still correctly one session.
+  let _lookupMonth = "";
+  let _lookupQuery = "";
+  function sessionLookupData() {
+    const mk = _lookupMonth;
+    const q = _lookupQuery.trim().toLowerCase();
+    const rows = (state.trainerData.clients || []).map((c) => {
+      const all = sessionLogRows(c).filter((r) => r.date.slice(0, 7) === mk);
+      const missed = all.filter((r) => r.kind === "missed").length;
+      const waived = all.filter((r) => r.kind === "waived").length;
+      return {
+        client: c, partner: partnerOf(c), rows: all,
+        delivered: all.length - missed - waived, missed, waived,
+      };
+    }).filter((r) => r.rows.length)
+      .filter((r) => !q || (r.client.name || "").toLowerCase().includes(q))
+      .sort((a, b) => b.delivered - a.delivered || (a.client.name || "").localeCompare(b.client.name || ""));
+    return {
+      mk, rows,
+      delivered: rows.reduce((n, r) => n + r.delivered, 0),
+      missed: rows.reduce((n, r) => n + r.missed, 0),
+    };
+  }
+  function renderSessionLookup() {
+    const host = $("#session-lookup"); if (!host) return;
+    const data = sessionLookupData();
+    const head = `<div class="sl-nav">
+        <button class="btn btn-ghost btn-sm" data-sl-step="-1" type="button">‹</button>
+        <strong class="sl-nav-month">${escapeHtml(monthKeyLabel(data.mk))}</strong>
+        <button class="btn btn-ghost btn-sm" data-sl-step="1" type="button">›</button>
+        <button class="btn btn-ghost btn-sm" data-sl-step="0" type="button">This month</button>
+      </div>
+      <input type="search" id="sl-q" class="sl-search" placeholder="Filter by name…" value="${escapeHtml(_lookupQuery)}" />
+      <p class="sl-total">${data.delivered} session${data.delivered === 1 ? "" : "s"} delivered${
+        data.missed ? ` · ${data.missed} charged but missed` : ""} · ${data.rows.length} athlete${data.rows.length === 1 ? "" : "s"}</p>`;
+    const body = !data.rows.length
+      ? `<p class="muted">Nothing logged for ${escapeHtml(monthKeyLabel(data.mk))}${_lookupQuery ? " matching that name" : ""}.</p>`
+      : data.rows.map((r) => {
+          const idx = athleteColorIdx(r.client);
+          const bits = [`${r.delivered} delivered`];
+          if (r.missed) bits.push(`${r.missed} missed`);
+          if (r.waived) bits.push(`${r.waived} waived`);
+          return `<details class="sl-athlete" style="--athlete-rgb:${AVATAR_RGB[idx]}">
+            <summary>
+              <span class="sl-av">${avatarTileHtml(r.client, r.client.importedProgress, { size: "sm", colorIdx: idx })}</span>
+              <span class="sl-name">${escapeHtml(r.client.name || "(unnamed)")}${
+                r.partner ? ` <span class="chip-share" title="Shares a bank with ${escapeHtml(r.partner.name || "their partner")}">💞</span>` : ""}</span>
+              <span class="sl-count">${escapeHtml(bits.join(" · "))}</span>
+            </summary>
+            ${r.rows.map((row) => sessionLogRowHtml(row)).join("")}
+          </details>`;
+        }).join("");
+    host.innerHTML = head + `<div class="sl-list">${body}</div>`;
+    host.querySelectorAll("[data-sl-step]").forEach((b) => b.addEventListener("click", () => {
+      const step = Number(b.dataset.slStep);
+      if (!step) { _lookupMonth = todayISO().slice(0, 7); renderSessionLookup(); return; }
+      const [y, m] = _lookupMonth.split("-").map(Number);
+      const d = new Date(y, m - 1 + step, 1);
+      _lookupMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      renderSessionLookup();
+    }));
+    // Re-rendering on every keystroke would blur the field, so the value is
+    // restored and the caret put back at the end rather than the input being
+    // left in place — the list under it has to change as they type.
+    const q = $("#sl-q");
+    q?.addEventListener("input", () => {
+      _lookupQuery = q.value;
+      renderSessionLookup();
+      const next = $("#sl-q");
+      next?.focus();
+      next?.setSelectionRange(next.value.length, next.value.length);
+    });
+  }
+  function openSessionLookup() {
+    _lookupMonth = todayISO().slice(0, 7);
+    _lookupQuery = "";
+    openModal({
+      title: "Session log",
+      body: `<div id="session-lookup"></div>`,
+      actions: [
+        { label: "Export month", className: "btn btn-ghost", onClick: exportSessionLookup },
+        { label: "Done", className: "btn btn-primary", onClick: closeModal },
+      ],
+    });
+    renderSessionLookup();
+  }
+  // The month the coach is looking at, flattened — one row per session, with
+  // the athlete on it, so it sorts and pivots in Excel.
+  function exportSessionLookup() {
+    const data = sessionLookupData();
+    if (!data.rows.length) { toast("Nothing to export for this month"); return; }
+    const out = [
+      ["Sessions delivered", monthKeyLabel(data.mk)],
+      ["Exported", todayISO()],
+      ["Delivered", data.delivered],
+      ["Charged but missed", data.missed],
+      [],
+      ["Athlete", "Date", "Time", "Type", "Note", "Shares bank with"],
+    ];
+    data.rows.forEach((r) => {
+      r.rows.forEach((row) => out.push([
+        r.client.name || "", row.date, row.time,
+        (SESSION_KINDS[row.kind] || SESSION_KINDS.manual).label,
+        row.note, r.partner ? (r.partner.name || "") : "",
+      ]));
+    });
+    const csv = "﻿" + out.map((r) => r.map(csvCell).join(",")).join("\r\n");
+    downloadFile(`sessions_${data.mk}.csv`, csv, "text/csv;charset=utf-8");
+    toast(`${monthKeyLabel(data.mk)} downloaded ✓`);
+  }
+
   // -------- Session bank (coach side) --------
   // Membership tiers from stonedragonstrengthtraining.com/memberships (pre-pay
   // monthly pricing). Coach assigns one per athlete in the Profile tab; athlete
@@ -13900,22 +14136,19 @@
       });
     });
 
-    // Redemption history — declared after the package editor below.
+    // The session log. Was "Redemption history": one flat reverse-chronological
+    // run of bare ISO dates, so "how many did I do for her in July" meant
+    // counting rows by eye against an allowance that wasn't on screen.
     const redCard = document.createElement("div");
     redCard.className = "card";
-    redCard.innerHTML = `<h4 style="margin-top:0">Redemption history</h4>`;
-    if (!c.sessionBank.redemptions.length) {
-      redCard.insertAdjacentHTML("beforeend", `<p class="muted">No redemptions yet. Tap <strong>− Redeem session</strong> after each completed session.</p>`);
+    redCard.innerHTML = `<h4 style="margin-top:0">Session log</h4>`;
+    const months = sessionLogMonths(c);
+    if (!months.length) {
+      redCard.insertAdjacentHTML("beforeend", `<p class="muted">No sessions logged yet. Booked sessions land here on their own once they finish; <strong>− Redeem session</strong> adds one by hand.</p>`);
     } else {
-      const sorted = [...c.sessionBank.redemptions].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-      sorted.forEach((r) => {
-        const row = document.createElement("div");
-        row.className = "session-redeem-row";
-        row.innerHTML = `
-          <div><strong>${escapeHtml(r.date || "")}</strong>${r.note ? ` · <span class="muted">${escapeHtml(r.note)}</span>` : ""}</div>
-          <button class="btn-delete-mini" data-del="${escapeHtml(r.id)}" title="Undo">×</button>`;
-        redCard.appendChild(row);
-      });
+      redCard.insertAdjacentHTML("beforeend", months.map((mo) =>
+        sessionLogMonthHeadHtml(mo) + mo.rows.map((r) => sessionLogRowHtml(r, { undo: true })).join("")
+      ).join(""));
     }
     container.appendChild(redCard);
     redCard.querySelectorAll("[data-del]").forEach((btn) => {
@@ -27859,6 +28092,7 @@
     flushBugQueue();
     $("#btn-add-client").addEventListener("click", addClientPrompt);
     $("#btn-month-grant")?.addEventListener("click", openMonthGrantSheet);
+    $("#btn-session-lookup")?.addEventListener("click", openSessionLookup);
     // Roster grouping tabs (A to Z / Membership / Activity / Program)
     $$("#roster-controls [data-roster-group]").forEach((b) =>
       b.addEventListener("click", () => {
