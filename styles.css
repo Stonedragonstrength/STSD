@@ -10604,6 +10604,36 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 .pref-fold .pref-row:last-of-type { border-bottom: none; }
 .pref-foot { font-size: 0.78rem; color: var(--muted); margin: 0.8em 0 1em; }
 
+/* One rule owns the rhythm of an open fold, on every card that holds folds:
+   the coach's own Profile, the coach's per-athlete admin, and the athlete's
+   own settings. Each block used to bring its own margins to the party, and a
+   bottom gap of zero on all of them, so open content sat directly on the
+   divider that belongs to the NEXT fold. Content also starts at the title
+   rather than at the icon, so an open fold reads as the answer to its own
+   heading. Drop a new block into a fold and it inherits all of this.
+
+   This lived under `.coach-settings` alone until 2026-08-04, which is why the
+   two athlete-profile surfaces looked cramped next to the coach's: same fold
+   chrome, none of the spacing. Scoped to `.pref-card` so all three match. */
+.pref-card .pref-fold > summary ~ * { margin-left: 2.35rem; }
+.pref-card .pref-fold[open] > summary + * { margin-top: 0.55rem; }
+.pref-card .pref-fold[open] > :last-child { margin-bottom: 1.15rem; }
+/* The indent is a readability nicety; the vertical gaps are the actual fix.
+   On a phone 2.35rem is 6% of the screen, and the coach's Details fold holds a
+   real form — at 390px it squeezed the Height ft/in boxes until the digits
+   clipped. Below the breakpoint where that grid drops to two columns, the
+   content takes the width back and only the rhythm is kept. */
+@media (max-width: 700px) {
+  .pref-card .pref-fold > summary ~ * { margin-left: 0; }
+}
+/* Every icon sits in the same 1.6rem column, so the titles line up down the
+   list instead of drifting with each emoji's own width — and so the 2.35rem
+   indent above (icon + summary's 0.75em gap) lands exactly on the title. */
+.pref-card .pref-fold-ico {
+  width: 1.6rem; flex: none;
+  display: flex; align-items: center; justify-content: center;
+}
+
 
 
 /* ============ Program page: one section rhythm ============ */
@@ -12648,21 +12678,10 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
    one rather than like the standalone .avatar-fold tile it came from. */
 .coach-settings .pref-fold-ico.avatar-fold-tile { display: flex; line-height: 1; }
 .coach-settings .pref-fold-ico .av-tile { width: 1.6rem; height: 1.6rem; font-size: 0.6rem; }
-/* Every icon sits in the same 1.6rem column, so the titles line up down the
-   list instead of drifting with each emoji's own width. */
-.coach-settings .pref-fold-ico {
-  width: 1.6rem; flex: none;
-  display: flex; align-items: center; justify-content: center;
-}
-/* One rule owns the rhythm of an open fold. Each block used to bring its own
-   margins to the party: five different gaps under the seven summaries, and a
-   bottom gap of zero on all of them, so open content sat directly on the
-   divider that belongs to the NEXT fold. Content also starts at the title
-   rather than at the icon, so an open fold reads as the answer to its own
-   heading. Drop a new block into a fold and it inherits all of this. */
-.coach-settings .pref-fold > summary ~ * { margin-left: 2.35rem; }
-.coach-settings .pref-fold[open] > summary + * { margin-top: 0.55rem; }
-.coach-settings .pref-fold[open] > :last-child { margin-bottom: 1.15rem; }
+/* The fold rhythm (indent to the title, gap under the summary, gap before the
+   next divider) and the 1.6rem icon column now live with `.pref-card` up in
+   the shared fold block — this card, the per-athlete admin card and the
+   athlete's own settings all inherit them. */
 .coach-settings .income-host-profile > .income-card { margin: 0; }
 /* 32 sprites is 460px of grid, more height than the whole rest of the list put
    together, and opening it buried Backup and Bug reports off the bottom of the
