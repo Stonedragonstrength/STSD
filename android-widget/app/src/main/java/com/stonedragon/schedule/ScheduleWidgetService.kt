@@ -36,7 +36,13 @@ private class ScheduleFactory(
     override fun onCreate() {}
 
     override fun onDataSetChanged() {
-        rows = if (Prefs.isLoaded(Prefs.state(ctx, widgetId))) Prefs.bookings(ctx, widgetId) else emptyList()
+        // Same day the provider drew, or the list and the header disagree.
+        val day = Prefs.day(ctx, widgetId)
+        rows = if (Prefs.isLoaded(Prefs.state(ctx, widgetId))) {
+            Prefs.bookings(ctx, widgetId, day)
+        } else {
+            emptyList()
+        }
     }
 
     override fun onDestroy() {

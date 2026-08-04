@@ -61,7 +61,7 @@ class ScheduleWidget : AppWidgetProvider() {
             if (ids.isEmpty()) return "No widget placed on the home screen."
             return ids.joinToString("\n") { id ->
                 val day = Prefs.day(app, id)
-                val n = Prefs.bookings(app, id).size
+                val n = Prefs.bookings(app, id, day).size
                 "Widget $id: state=${Prefs.state(app, id)}, cached=$n, " +
                     "day=" + fmt("EEE d MMM", day)
             }
@@ -91,7 +91,7 @@ class ScheduleWidget : AppWidgetProvider() {
             val app = ctx.applicationContext
             val mgr = AppWidgetManager.getInstance(app)
             for (id in widgetIds(app)) {
-                Prefs.saveBookings(app, id, emptyList())
+                Prefs.saveBookings(app, id, Prefs.day(app, id), emptyList())
                 Prefs.saveState(app, id, "signin")
                 paint(app, mgr, id)
             }
@@ -121,11 +121,11 @@ class ScheduleWidget : AppWidgetProvider() {
          * right in storage and the widget was never told.
          */
         fun refresh(ctx: Context, mgr: AppWidgetManager, widgetId: Int) {
+            val day = Prefs.day(ctx, widgetId)
             try {
-                val day = Prefs.day(ctx, widgetId)
                 when (val result = Supabase.bookingsForDay(ctx, day)) {
                     is FetchResult.Ok -> {
-                        Prefs.saveBookings(ctx, widgetId, result.bookings)
+                        Prefs.saveBookings(ctx, widgetId, day, result.bookings)
                         Prefs.saveState(ctx, widgetId, if (result.partial) "partial" else "ok")
                     }
                     is FetchResult.NotSignedIn -> Prefs.saveState(ctx, widgetId, "signin")
@@ -151,7 +151,12 @@ class ScheduleWidget : AppWidgetProvider() {
             // in Android's stopped state and receives no broadcasts, so nothing
             // ever arrives to correct it and the message is permanent.
             val state = if (!Supabase.isSignedIn(ctx)) "signin" else Prefs.state(ctx, widgetId)
-            val bookings = if (Prefs.isLoaded(state)) Prefs.bookings(ctx, widgetId) else emptyList()
+            // Day-stamped, so this is empty unless the cache holds THIS day.
+            val bookings = if (Prefs.isLoaded(state)) Prefs.bookings(ctx, widgetId, day) else emptyList()
+            // A failed refresh over a cache that still has the day is stale, not
+            // broken. The sessions are shown and the header carries the warning,
+            // rather than the widget going blank over perfectly good data.
+            val stale = bookings.isNotEmpty() && (state.startsWith("error:") || state == "loading")
 
             // "Today" and "Tomorrow" beat a bare date when they apply — reading
             // a weekday and working out that it means today is exactly the work
@@ -169,6 +174,9 @@ class ScheduleWidget : AppWidgetProvider() {
                 R.id.widget_count,
                 when {
                     state == "signin" -> ""
+                    // Showing cached sessions from a refresh that failed: the
+                    // count is real but may be out of date, and says so.
+                    stale -> bookings.size.toString() + " ⚠"
                     state.startsWith("error") -> "—"
                     // One source answered and one didn't: the number is a floor,
                     // not a count, and it says so rather than quietly under-

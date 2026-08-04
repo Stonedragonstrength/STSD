@@ -134,6 +134,14 @@ object Supabase {
      * expiring. Returns null when there is no session at all, or when the
      * refresh token has been revoked — both mean "send them back to sign-in".
      */
+    /**
+     * Synchronized because a Supabase refresh token is single-use: refreshing it
+     * mints a new one and kills the old. Two threads arriving together — a widget
+     * update and a tap, say — would both send the same token, and the loser's 400
+     * used to clear the whole session. The second caller now waits, re-reads, and
+     * finds the token the first one just stored.
+     */
+    @Synchronized
     private fun accessToken(ctx: Context): String? {
         val refresh = Prefs.refreshToken(ctx) ?: return null
         val token = Prefs.accessToken(ctx)
@@ -147,12 +155,21 @@ object Supabase {
             storeSession(ctx, res)
             res.optString("access_token").ifEmpty { null }
         } catch (e: ApiError) {
-            // 400 on a refresh means the token is dead — a password change or a
-            // sign-out elsewhere. Clearing it is what puts "Tap to sign in" back
-            // on the widget instead of a permanent error.
-            if (e.status == 400 || e.status == 401) Prefs.clearSession(ctx)
+            // 400/401 means the server rejected the refresh token. Only treat
+            // that as a dead session if the token has not changed underneath us
+            // — if it has, another thread refreshed successfully while this call
+            // was in flight, and signing the coach out over that would be wrong.
+            if (e.status == 400 || e.status == 401) {
+                if (Prefs.refreshToken(ctx) == refresh) {
+                    Prefs.clearSession(ctx)
+                } else {
+                    return Prefs.accessToken(ctx)
+                }
+            }
             null
         } catch (e: Exception) {
+            // A network failure is not a dead session — leave it alone, so a
+            // refresh attempted on a train does not sign the coach out.
             null
         }
     }

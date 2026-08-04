@@ -67,11 +67,17 @@ object Prefs {
     }
 
     fun forgetWidget(ctx: Context, widgetId: Int) {
-        p(ctx).edit().remove(dayKey(widgetId)).remove(cacheKey(widgetId)).remove(stateKey(widgetId)).apply()
+        p(ctx).edit()
+            .remove(dayKey(widgetId))
+            .remove(cacheKey(widgetId))
+            .remove(cacheDayKey(widgetId))
+            .remove(stateKey(widgetId))
+            .apply()
     }
 
     private fun dayKey(id: Int) = "day_$id"
     private fun cacheKey(id: Int) = "cache_$id"
+    private fun cacheDayKey(id: Int) = "cacheday_$id"
     private fun stateKey(id: Int) = "state_$id"
 
     // ---- last fetch, cached so the list survives a redraw ----
@@ -81,7 +87,12 @@ object Prefs {
     // back. It doubles as the offline cache: a widget woken with no signal shows
     // the last day it managed to load rather than going blank.
 
-    fun saveBookings(ctx: Context, widgetId: Int, bookings: List<Booking>) {
+    /**
+     * The cache is stamped with the day it holds. Without that stamp it cannot
+     * be shown after a failed fetch — yesterday's sessions under tomorrow's date
+     * is worse than an empty widget, and telling the two apart needs the day.
+     */
+    fun saveBookings(ctx: Context, widgetId: Int, day: Long, bookings: List<Booking>) {
         val arr = JSONArray()
         for (b in bookings) {
             arr.put(
@@ -93,10 +104,15 @@ object Prefs {
                     .put("note", b.note)
             )
         }
-        p(ctx).edit().putString(cacheKey(widgetId), arr.toString()).apply()
+        p(ctx).edit()
+            .putString(cacheKey(widgetId), arr.toString())
+            .putLong(cacheDayKey(widgetId), day)
+            .apply()
     }
 
-    fun bookings(ctx: Context, widgetId: Int): List<Booking> {
+    /** Cached sessions, but only if they are for [day]. */
+    fun bookings(ctx: Context, widgetId: Int, day: Long): List<Booking> {
+        if (p(ctx).getLong(cacheDayKey(widgetId), -1L) != day) return emptyList()
         val raw = p(ctx).getString(cacheKey(widgetId), null) ?: return emptyList()
         return try {
             val arr = JSONArray(raw)
@@ -128,10 +144,15 @@ object Prefs {
         p(ctx).getString(stateKey(widgetId), "loading").orEmpty()
 
     /**
-     * States where the cached list is real and should be drawn. Lives here
-     * because the provider and the list factory run in different processes and
-     * both have to agree — when they disagreed, the header counted sessions the
-     * list refused to show.
+     * Whether to draw the cached list. Lives here because the provider and the
+     * list factory both have to agree — when they disagreed, the header counted
+     * sessions the list refused to show.
+     *
+     * A failed refresh still draws: the cache is day-stamped, so if it holds the
+     * day being shown it is the last true answer for that day, and showing it is
+     * the entire point of caching. Only a signed-out widget draws nothing, since
+     * then the cache is cleared anyway. This was the bug that left a widget with
+     * seven sessions stored showing an empty list because one fetch failed.
      */
-    fun isLoaded(state: String): Boolean = state == "ok" || state == "partial"
+    fun isLoaded(state: String): Boolean = state != "signin"
 }
