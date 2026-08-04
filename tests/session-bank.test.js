@@ -8,9 +8,14 @@ function bankLedger(bank, todayMonth, rollover) {
 
   // Two kinds of package. A monthly grant carries the YYYY-MM it was for; a
   // pack the athlete bought outright carries nothing and never expires.
+  //
+  // `status` is deliberately not read. No money moves through the app, so it
+  // cannot know whether payment landed, and the old "pending" state was worth
+  // zero sessions — an athlete could read "granted" on one screen and a balance
+  // of 0 on the next. Every package counts from the moment it exists.
   const grantByMonth = new Map();
   let packPool = 0;
-  packages.filter((p) => p.status === "paid").forEach((p) => {
+  packages.forEach((p) => {
     const size = Number(p.size) || 0;
     const mk = monthOf(p);
     if (mk) grantByMonth.set(mk, (grantByMonth.get(mk) || 0) + size);
@@ -118,10 +123,22 @@ console.log("\n-- over-redeeming goes negative, which is a real debt --");
   eq("3 past the allowance", r.remaining, -3);
 }
 
-console.log("\n-- pending packages grant nothing until marked paid --");
+console.log("\n-- money never gates sessions, whatever the package says --");
 {
-  const b = { packages: [{ id: "x", size: 8, status: "pending", autoRenewGrant: "2026-07" }], redemptions: [] };
-  eq("pending is worth 0", bankLedger(b, "2026-07", false).remaining, 0);
+  // The retired "pending" state, which used to be worth zero. A build that
+  // still has one of these in storage must treat it as the live grant it
+  // always was — the coach agreed to it, the athlete is training on it, and
+  // whether the Venmo has cleared is not something this app can see.
+  const held = { id: "x", size: 8, status: "pending", autoRenewGrant: "2026-07" };
+  eq("a legacy held package still grants", bankLedger({ packages: [held], redemptions: [] }, "2026-07", false).remaining, 8);
+  // Every shape of the money flag lands on the same balance. This is the whole
+  // point of the cleanup: one number, no matter who has paid.
+  const shapes = [
+    { id: "a", size: 8, status: "pending", autoRenewGrant: "2026-07" },
+    { id: "b", size: 8, status: "paid", unpaid: true, autoRenewGrant: "2026-07" },
+    { id: "c", size: 8, status: "paid", paidAt: 1, autoRenewGrant: "2026-07" },
+  ].map((p) => bankLedger({ packages: [p], redemptions: [] }, "2026-07", false).remaining);
+  eq("held, unpaid and collected all read 8", shapes, [8, 8, 8]);
 }
 
 console.log("\n-- an auto-renewed package is LIVE before the money lands --");
@@ -185,6 +202,36 @@ console.log("\n-- an athlete with no bank at all --");
 {
   eq("empty is zero", bankLedger({ packages: [], redemptions: [] }, "2026-07", false).remaining, 0);
   eq("undefined bank is zero", bankLedger(undefined, "2026-07", false).remaining, 0);
+}
+
+console.log("\n-- the balance card has to ADD UP: granted − used − expired --");
+{
+  // The card shows these numbers side by side, so if this identity ever breaks
+  // the coach is looking at a screen that contradicts itself. It is what the
+  // old card got wrong: it showed all-time "purchased" against a this-month
+  // balance and never showed `expired`, so the arithmetic was unfollowable.
+  const cases = {
+    "six months, one used each": (() => {
+      const b = { packages: [], redemptions: [] };
+      ["2026-02","2026-03","2026-04","2026-05","2026-06","2026-07"].forEach((mk) => {
+        b.packages.push(grant(mk, 4));
+        b.redemptions.push(...uses(mk, 1));
+      });
+      return [b, "2026-07", false];
+    })(),
+    "allowance plus an untouched pack": [{ packages: [grant("2026-07", 4), pack(10)], redemptions: uses("2026-07", 3) }, "2026-07", false],
+    "overflow draws on the pack": [{ packages: [grant("2026-07", 4), pack(10)], redemptions: uses("2026-07", 6) }, "2026-07", false],
+    "old allowance gone, pack survives": [{ packages: [pack(10), grant("2026-05", 4)], redemptions: [] }, "2026-07", false],
+    "over-redeemed into debt": [{ packages: [grant("2026-07", 2)], redemptions: uses("2026-07", 5) }, "2026-07", false],
+    "across the year boundary": [{ packages: [grant("2026-12", 4), grant("2027-01", 4)], redemptions: uses("2026-12", 2) }, "2027-01", false],
+    "a redemption with no date": [{ packages: [pack(5)], redemptions: [{ id: "u1" }, { id: "u2", date: "" }] }, "2026-07", false],
+    "booked into next month": [{ packages: [grant("2026-08", 4)], redemptions: uses("2026-08", 1) }, "2026-07", false],
+    "rollover keeps everything": [{ packages: [grant("2026-05", 4), grant("2026-07", 4)], redemptions: uses("2026-05", 1) }, "2026-07", true],
+  };
+  Object.entries(cases).forEach(([name, [b, mk, ro]]) => {
+    const r = bankLedger(b, mk, ro);
+    eq(`${name}: remaining = granted − used − expired`, r.remaining, r.granted - r.used - r.expired);
+  });
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

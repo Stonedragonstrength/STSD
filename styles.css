@@ -3838,6 +3838,17 @@ input.trial-input {
   gap: 1.2em;
   flex-wrap: wrap;
 }
+/* Money to collect, on its own full-width line under the session numbers —
+   never beside them. The card is a flex row, so this claims the whole next
+   line rather than becoming a third column that reads as another count. */
+.balance-owed {
+  flex-basis: 100%;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--warn);
+  padding-top: 0.7em;
+  border-top: 1px solid var(--border);
+}
 .session-balance-stats > div {
   display: flex;
   flex-direction: column;
@@ -3867,6 +3878,20 @@ input.trial-input {
 .pending-request-actions { display: flex; gap: 0.4em; }
 .session-pkg-row-right { display: flex; align-items: center; gap: 0.5em; }
 
+/* Which month an allowance was for, under its name. The single most important
+   line on the row: without it every package looked like the current one. */
+.pkg-when {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-soft);
+  margin-top: 0.15em;
+}
+/* A spent month recedes rather than disappearing — the coach may still be
+   chasing its money, so it has to stay readable and stay tappable. The pay
+   button and the price keep full contrast; only the description dims. */
+.session-pkg-row.is-expired > div:first-child { opacity: 0.62; }
+.session-pkg-row.is-expired .pkg-when { color: var(--muted); }
+
 /* Booked-vs-billed on an auto-renew ticket. Advisory: the price is the
    membership's, whichever way this reads. Only rendered when it disagrees with
    the tier, so it is always saying something. "over" is the one worth acting on
@@ -3892,8 +3917,16 @@ input.trial-input {
 }
 .status-paid { background: var(--accent-soft); color: var(--accent); }
 .status-pending { background: rgba(245, 158, 11, 0.2); color: var(--warn); }
-/* Live sessions, money still to come. Outlined rather than filled so it reads
-   as a note against the green "live" pill beside it, not a second status. */
+/* An allowance whose month has ended. Deliberately quiet — flat, muted, no
+   colour: it is a closed line in the history, not a problem to act on. This is
+   the pill that used to say "live" on a July package in August. */
+.status-expired {
+  background: var(--surface-3);
+  color: var(--muted);
+}
+/* Money still to come. Outlined rather than filled so it reads as a note
+   against the session pill beside it, not a second status. It sits next to
+   "live" and "expired" alike — an ended month can still be owed for. */
 .status-unpaid {
   background: transparent;
   color: var(--warn);

@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=gcal1" />
+  <link rel="stylesheet" href="styles.css?v=pkgmonth1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -720,7 +720,7 @@
                    inputs never lands on one visual line. -->
               <div class="session-options-actions">
                 <button class="btn btn-ghost btn-sm" id="btn-grant-month" type="button">＋ Grant this month's sessions</button>
-                <label class="autorenew-toggle" title="On the first app open each month, grants a pending package sized to this athlete's booked sessions that month">
+                <label class="autorenew-toggle" title="On the first app open each month, grants this athlete their membership's sessions for that month. They're live immediately and flagged for you to collect — the app never holds sessions back over money.">
                   <input type="checkbox" id="prof-autorenew" /> 🔁 Auto-renew
                 </label>
                 <!-- A monthly allowance is use-it-or-lose-it by default: they
@@ -748,7 +748,7 @@
           </div>
           <details class="session-manage" id="coach-session-details">
             <summary>Manage packages &amp; history</summary>
-            <p class="muted session-manage-note">Track sessions your athlete has paid for. The app doesn't collect payment: confirm payment outside the app (Venmo, cash, Stripe link, etc.), then add the package here.</p>
+            <p class="muted session-manage-note">No money moves through this app — you collect outside it (Venmo, cash, Stripe link), then tick <strong>Mark collected</strong> here. That tick is a note to yourself and nothing more: sessions are live from the moment they're granted, whether you've been paid or not. A monthly allowance expires with its month; a package you add by hand never does.</p>
             <div class="session-manage-actions">
               <button class="btn btn-ghost btn-sm" id="btn-export-sessions" title="Download payment &amp; use history (opens in Excel)">⬇ Export</button>
             </div>
@@ -1370,7 +1370,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=remind1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=gcal1"></script>
+  <script src="app.js?v=pkgmonth2"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
