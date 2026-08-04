@@ -132,6 +132,28 @@ object Prefs {
         }
     }
 
+    // ---- trace ----
+    //
+    // A rolling log of what actually happened, because on a sideloaded build
+    // there is no logcat and every symptom so far has been ambiguous between
+    // "the code decided the wrong thing" and "the code never ran".
+
+    private const val K_TRACE = "trace"
+    private const val TRACE_MAX = 14
+
+    fun note(ctx: Context, line: String) {
+        val stamp = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+            .format(java.util.Date())
+        val old = p(ctx).getString(K_TRACE, "").orEmpty()
+        val kept = (old.lines().filter { it.isNotBlank() } + "$stamp $line").takeLast(TRACE_MAX)
+        p(ctx).edit().putString(K_TRACE, kept.joinToString("\n")).apply()
+    }
+
+    fun trace(ctx: Context): String =
+        p(ctx).getString(K_TRACE, "").orEmpty().ifBlank { "(no events recorded)" }
+
+    fun clearTrace(ctx: Context) = p(ctx).edit().remove(K_TRACE).apply()
+
     /**
      * "ok" | "partial" | "signin" | "error:<message>" | "loading" — drives the
      * empty view.

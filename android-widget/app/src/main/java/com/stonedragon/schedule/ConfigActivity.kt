@@ -63,7 +63,8 @@ class ConfigActivity : AppCompatActivity() {
                     // told rather than whatever they were left holding.
                     ScheduleWidget.refreshBlocking(this@ConfigActivity)
                     Supabase.selfTest(this@ConfigActivity) + "\n" +
-                        ScheduleWidget.debugSummary(this@ConfigActivity)
+                        ScheduleWidget.debugSummary(this@ConfigActivity) +
+                        "\n\nEvents:\n" + Prefs.trace(this@ConfigActivity)
                 } catch (e: Exception) {
                     CrashLog.record(this@ConfigActivity, e, "selfTest")
                     "Test threw: " + (e.message ?: e.javaClass.simpleName)

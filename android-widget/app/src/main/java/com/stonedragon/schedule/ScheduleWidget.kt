@@ -127,9 +127,18 @@ class ScheduleWidget : AppWidgetProvider() {
         fun paint(ctx: Context, mgr: AppWidgetManager, widgetId: Int) {
             try {
                 val day = Prefs.day(ctx, widgetId)
+                val signedIn = Supabase.isSignedIn(ctx)
                 mgr.updateAppWidget(widgetId, buildViews(ctx, widgetId, day))
                 mgr.notifyAppWidgetViewDataChanged(widgetId, R.id.widget_list)
+                // Noted AFTER the launcher call returns, so a line here means the
+                // frame was accepted without complaint. If the screen still
+                // disagrees with what this says, the problem is past our code.
+                Prefs.note(
+                    ctx,
+                    "paint id=$widgetId signedIn=$signedIn state=" + Prefs.state(ctx, widgetId),
+                )
             } catch (t: Throwable) {
+                Prefs.note(ctx, "paint id=$widgetId THREW " + t.javaClass.simpleName)
                 CrashLog.record(ctx, t, "paint")
             }
         }
@@ -144,6 +153,7 @@ class ScheduleWidget : AppWidgetProvider() {
          */
         fun refresh(ctx: Context, mgr: AppWidgetManager, widgetId: Int) {
             val day = Prefs.day(ctx, widgetId)
+            Prefs.note(ctx, "refresh id=$widgetId start")
             try {
                 when (val result = Supabase.bookingsForDay(ctx, day)) {
                     is FetchResult.Ok -> {
@@ -305,6 +315,7 @@ class ScheduleWidget : AppWidgetProvider() {
     }
 
     override fun onUpdate(ctx: Context, mgr: AppWidgetManager, ids: IntArray) {
+        Prefs.note(ctx, "onUpdate ids=" + ids.joinToString(","))
         // goAsync inside onUpdate is still inside onReceive's call stack, which
         // is what keeps the process alive long enough for the fetch. Without it
         // the receiver returns, the process becomes killable, and the update
@@ -327,6 +338,11 @@ class ScheduleWidget : AppWidgetProvider() {
 
     override fun onReceive(ctx: Context, intent: Intent) {
         val action = intent.action
+        // Every broadcast that reaches this receiver, including the framework's
+        // own. If nothing appears here when a widget is placed or ⟳ is tapped,
+        // the receiver is not being reached at all and no amount of repainting
+        // was ever going to help.
+        Prefs.note(ctx, "onReceive " + (action ?: "null").substringAfterLast('.'))
         if (action !in OUR_ACTIONS) {
             super.onReceive(ctx, intent) // APPWIDGET_UPDATE/DELETED/ENABLED
             return

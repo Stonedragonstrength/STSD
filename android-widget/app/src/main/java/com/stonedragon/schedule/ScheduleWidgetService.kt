@@ -43,6 +43,10 @@ private class ScheduleFactory(
         } else {
             emptyList()
         }
+        // The launcher binds this service separately from the provider. If this
+        // line never appears, the list is never asked for its contents and the
+        // empty view is all the widget can possibly show.
+        Prefs.note(ctx, "list id=$widgetId rows=" + rows.size)
     }
 
     override fun onDestroy() {
