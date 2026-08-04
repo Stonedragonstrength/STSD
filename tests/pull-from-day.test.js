@@ -16,14 +16,20 @@ function groupSupersets(exercises) {
 }
 
 // --- the commit loop from openPullFromDayModal ---
-function commit(day, sources, picked) {
+// `cap` is opts.cap: the athlete's own sessions cap at MAX_OWN_EXERCISES, the
+// coach's days are uncapped. Returns { added, skipped } so the cap tests can
+// assert on the overflow the toast reports.
+function commit(day, sources, picked, cap) {
   let added = 0;
+  let room = cap ? cap - day.exercises.length : Infinity;
+  let skipped = 0;
   sources.forEach((s) => {
     const take = (s.exercises || []).filter((ex) => picked.has(`${s.id}::${ex.id}`));
     const runN = {};
     take.forEach((ex) => { if (ex.supersetId) runN[ex.supersetId] = (runN[ex.supersetId] || 0) + 1; });
     const remap = {};
     take.forEach((ex) => {
+      if (room <= 0) { skipped++; return; }
       const copy = { ...makeExercise(), ...structuredClone(ex), id: uid() };
       if (ex.supersetId && runN[ex.supersetId] > 1) {
         remap[ex.supersetId] = remap[ex.supersetId] || uid();
@@ -32,10 +38,10 @@ function commit(day, sources, picked) {
         delete copy.supersetId;
       }
       day.exercises.push(copy);
-      added++;
+      added++; room--;
     });
   });
-  return added;
+  return { added, skipped };
 }
 
 let pass = 0, fail = 0;
@@ -113,7 +119,8 @@ const ex = (id, name, extra) => ({ ...makeExercise(), id, name, ...(extra || {})
 {
   const src = { id: "sA", exercises: [ex("a1", "Bench")] };
   const day = { exercises: [] };
-  ok("empty selection adds nothing", commit(day, [src], new Set()) === 0 && day.exercises.length === 0);
+  const r = commit(day, [src], new Set());
+  ok("empty selection adds nothing", r.added === 0 && day.exercises.length === 0);
 }
 
 // ---- 7. order within a source is preserved ----
@@ -123,6 +130,43 @@ const ex = (id, name, extra) => ({ ...makeExercise(), id, name, ...(extra || {})
   commit(day, [src], new Set(["sA::a3", "sA::a1"]));
   ok("picks land in source order, not tick order",
     day.exercises.map((e) => e.name).join(",") === "One,Three");
+}
+
+// ---- 8. the cap (athlete's own sessions) takes what fits ----
+// A pull that overflows must not silently exceed the cap, and must not throw
+// the whole selection away either — the athlete gets what fit and is told what
+// didn't, so a 3-lift pull into a session with 2 slots left is not a no-op.
+console.log("\n-- the athlete session cap --");
+{
+  const src = { id: "sA", exercises: [ex("a1", "One"), ex("a2", "Two"), ex("a3", "Three")] };
+  const day = { exercises: [] };
+  const r = commit(day, [src], new Set(["sA::a1", "sA::a2", "sA::a3"]), 2);
+  ok("only what fits lands", day.exercises.length === 2);
+  ok("added counts the ones that landed", r.added === 2);
+  ok("skipped counts the overflow", r.skipped === 1);
+  ok("the ones that fit are the first picked", day.exercises.map((e) => e.name).join(",") === "One,Two");
+}
+{
+  // Room is measured from what's ALREADY in the day, not from the cap.
+  const src = { id: "sA", exercises: [ex("a1", "One"), ex("a2", "Two")] };
+  const day = { exercises: [ex("x1", "Existing")] };
+  const r = commit(day, [src], new Set(["sA::a1", "sA::a2"]), 2);
+  ok("a part-full day only takes its remaining room", day.exercises.length === 2);
+  ok("and reports the rest as skipped", r.added === 1 && r.skipped === 1);
+}
+{
+  // A full day skips everything rather than adding a 13th lift.
+  const src = { id: "sA", exercises: [ex("a1", "One")] };
+  const day = { exercises: [ex("x1", "A"), ex("x2", "B")] };
+  const r = commit(day, [src], new Set(["sA::a1"]), 2);
+  ok("a full day takes nothing", day.exercises.length === 2 && r.added === 0 && r.skipped === 1);
+}
+{
+  // The coach path passes no cap and must stay unbounded.
+  const src = { id: "sA", exercises: Array.from({ length: 30 }, (_, i) => ex("a" + i, "Ex" + i)) };
+  const day = { exercises: [] };
+  const r = commit(day, [src], new Set(src.exercises.map((e) => "sA::" + e.id)));
+  ok("no cap means no limit", day.exercises.length === 30 && r.skipped === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

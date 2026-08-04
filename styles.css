@@ -10003,9 +10003,10 @@ input.ownday-sheet-input { margin-top: 0.35em; }
 }
 .dh-name-editable:hover .dh-name-pencil { opacity: 0.9; }
 
-/* Delete strip under an athlete-built day's header */
-.ownday-meta { display: flex; justify-content: flex-end; margin-bottom: 0.9rem; }
-.ownday-meta-del {
+/* Edit + delete strip under an athlete-built day's header */
+.ownday-meta { display: flex; justify-content: flex-end; gap: 0.5em; margin-bottom: 0.9rem; }
+.ownday-meta-del,
+.ownday-meta-edit {
   flex-shrink: 0; background: none; border: 1px solid var(--border);
   border-radius: 999px; padding: 0.45em 0.9em;
   font-family: inherit; font-size: 0.78rem; font-weight: 600;
@@ -10013,6 +10014,40 @@ input.ownday-sheet-input { margin-top: 0.35em; }
   transition: border-color 0.15s, background 0.15s;
 }
 .ownday-meta-del:hover { border-color: var(--danger); background: rgba(248, 113, 113, 0.08); }
+.ownday-meta-edit { color: var(--primary); }
+.ownday-meta-edit:hover { border-color: var(--primary); background: var(--primary-soft); }
+
+/* ---- Athlete session builder ----
+   The coach's day editor rendered inside the athlete's workout detail. The
+   editor's own styles are global, so this only handles the header strip that
+   replaces the logger's and the couple of spots where a desktop-first editor
+   needs room to breathe on a phone. */
+.ownbuild-head-main {
+  display: flex; align-items: center; gap: 0.75em;
+  flex-wrap: wrap; margin-top: 0.5rem;
+}
+.ownbuild-hint { flex: 1 1 14em; margin: 0; font-size: 0.8rem; line-height: 1.45; }
+.ownbuild-done { flex-shrink: 0; }
+/* The detail list is normally a hairline-separated card stack (a 1px-gap grid
+   over a border-coloured background) built for the logger's exercise cards.
+   The editor brings its own framing, so in build mode the list goes back to
+   being a plain block — otherwise the stack's background shows through the
+   editor's gaps and overflow:hidden clips the row controls. */
+.ownbuild-mode .workout-detail-list {
+  display: block;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  overflow: visible;
+  padding: 0;
+  gap: 0;
+}
+.ownbuild-mode .day-content { gap: 0.5em; }
+/* Touch has no drag, so the empty day should read as an instruction, not as a
+   dashed target waiting for something that will never be dropped on it. */
+@media (pointer: coarse) {
+  .ownbuild-mode .ex-list-empty-drop { border-style: solid; opacity: 0.75; }
+}
 
 /* Coach's read-only view of what the athlete built for themselves */
 .oneoff-own-head { margin: 1.5rem 0 0.7rem; }

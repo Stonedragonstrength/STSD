@@ -130,6 +130,20 @@
     });
   }
 
+  // Which store the day editor writes to. Everything in the editor subtree —
+  // renderDayContent, renderExerciseRow and every picker they open — saves
+  // through saveEditor() instead of calling saveTrainer() directly, so one
+  // option on renderDayContent re-points the whole tree in a single place.
+  // Coach edits leave this null and land in trainerData. An athlete building
+  // one of their own sessions points it at saveClient, because athleteDays
+  // live in progress — saveTrainer() there would write the coach's (empty)
+  // trainerData and the athlete's day would silently never persist.
+  // renderDayContent sets it on every render, so it can't be left stale by a
+  // previous editor: the pickers are only reachable from a row that render
+  // just built.
+  let _editorSave = null;
+  function saveEditor() { (_editorSave || saveTrainer)(); }
+
   function saveTrainer() {
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
     // Editing a program template live-syncs every athlete it's assigned to.
@@ -1607,7 +1621,7 @@
       b.innerHTML = `<span class="effort-opt-flames">${o.flames}</span><span class="effort-opt-lbl">${escapeHtml(o.label)}</span>`;
       b.addEventListener("click", () => {
         if (o.key) ex.effort = o.key; else delete ex.effort;
-        saveTrainer();
+        saveEditor();
         onChange();
         pop.remove();
       });
@@ -1731,13 +1745,13 @@
         // the "add weight" leg fires — progressionRule() sorts that out.
         section("Time ceiling", PROG_TIME_CEIL_VALUES.filter((v) => v > floor), parseInt(p.ceil, 10) || null,
           (v) => `${floor || "?"}→${v}s`,
-          (v) => { ex.progression = p.repsOnly ? { ceil: v, repsOnly: true, ...carry(p) } : { ceil: v, inc: parseFloat(p.inc) || incStore(progIncDefault(u)), ...carry(p) }; saveTrainer(); onChange(); render(); });
+          (v) => { ex.progression = p.repsOnly ? { ceil: v, repsOnly: true, ...carry(p) } : { ceil: v, inc: parseFloat(p.inc) || incStore(progIncDefault(u)), ...carry(p) }; saveEditor(); onChange(); render(); });
         section("Then add", [...progIncValues(u, p.inc), PROG_REPS_ONLY], p.repsOnly ? PROG_REPS_ONLY : progIncShown(p.inc, u),
           (v) => (v === PROG_REPS_ONLY ? "Time only" : `+${v} ${un}`),
           (v) => {
             const ceil = parseInt(p.ceil, 10) || PROG_TIME_CEIL_VALUES.find((c) => c > floor) || (floor + 15);
             ex.progression = v === PROG_REPS_ONLY ? { ceil, repsOnly: true, ...carry(p) } : { ceil, inc: incStore(v), ...carry(p) };
-            saveTrainer(); onChange(); render();
+            saveEditor(); onChange(); render();
           });
         // Optional: custom hold target (seconds) after a weight jump — defaults
         // to the floor. Lets a heavier week start with a shorter hold.
@@ -1758,7 +1772,7 @@
           const v = parseInt(tInp.value, 10);
           if (v >= 1 && v < (parseInt(ex.progression.ceil, 10) || Infinity)) ex.progression.reset = v;
           else { delete ex.progression.reset; tInp.value = ""; }
-          saveTrainer(); onChange();
+          saveEditor(); onChange();
         });
         pop.appendChild(tInp);
       } else if (isBW) {
@@ -1771,7 +1785,7 @@
             ex.progression = v === PROG_NO_CAP
               ? { ceil: v, ...carry(p) }
               : { ceil: v, ...(p.inc ? { inc: p.inc } : {}), ...carry(p) };
-            saveTrainer(); onChange(); render();
+            saveEditor(); onChange(); render();
           });
         // "Then add weight" — off = bodyweight forever; a weight = graduate at the
         // cap. Picking a weight with no finite cap yet defaults one from the list.
@@ -1784,7 +1798,7 @@
             ex.progression = v === PROG_REPS_ONLY
               ? { ceil, ...carry(p) }
               : { ceil, inc: incStore(v), ...carry(p) };
-            saveTrainer(); onChange(); render();
+            saveEditor(); onChange(); render();
           });
         // Optional: reps after the weight jump (defaults to the floor). Only
         // meaningful once graduation is on.
@@ -1805,20 +1819,20 @@
           const v = parseInt(bwRInp.value, 10);
           if (v >= 1 && v < (parseInt(ex.progression.ceil, 10) || Infinity)) ex.progression.reset = v;
           else { delete ex.progression.reset; bwRInp.value = ""; }
-          saveTrainer(); onChange();
+          saveEditor(); onChange();
         });
         pop.appendChild(bwRInp);
       } else {
         section("Rep ceiling", PROG_CEIL_VALUES.filter((v) => v > floor), parseInt(p.ceil, 10) || null,
           (v) => `${floor || "?"}–${v}`,
-          (v) => { ex.progression = p.repsOnly ? { ceil: v, repsOnly: true, ...carry(p) } : { ceil: v, inc: parseFloat(p.inc) || incStore(progIncDefault(u)), ...carry(p) }; saveTrainer(); onChange(); render(); });
+          (v) => { ex.progression = p.repsOnly ? { ceil: v, repsOnly: true, ...carry(p) } : { ceil: v, inc: parseFloat(p.inc) || incStore(progIncDefault(u)), ...carry(p) }; saveEditor(); onChange(); render(); });
         // "Reps only" rides the increment row: same ladder, no weight leg.
         section("Then add", [...progIncValues(u, p.inc), PROG_REPS_ONLY], p.repsOnly ? PROG_REPS_ONLY : progIncShown(p.inc, u),
           (v) => (v === PROG_REPS_ONLY ? "Reps only" : `+${v} ${un}`),
           (v) => {
             const ceil = parseInt(p.ceil, 10) || (floor + 4);
             ex.progression = v === PROG_REPS_ONLY ? { ceil, repsOnly: true, ...carry(p) } : { ceil, inc: incStore(v), ...carry(p) };
-            saveTrainer(); onChange(); render();
+            saveEditor(); onChange(); render();
           });
 
         // Optional: custom rep target after a weight jump (defaults to the
@@ -1840,7 +1854,7 @@
           const v = parseInt(rInp.value, 10);
           if (v >= 1 && v < (parseInt(ex.progression.ceil, 10) || Infinity)) ex.progression.reset = v;
           else { delete ex.progression.reset; rInp.value = ""; }
-          saveTrainer(); onChange();
+          saveEditor(); onChange();
         });
         pop.appendChild(rInp);
       }
@@ -1868,7 +1882,7 @@
         (v) => {
           if (!ex.progression) return;
           if (v) ex.progression.sets = v; else delete ex.progression.sets;
-          saveTrainer(); onChange(); render();
+          saveEditor(); onChange(); render();
         }, !hasRule);
       subHint(!curSets
         ? `Off: ${topsOut.toLowerCase()} and the weight moves on the next hit.`
@@ -1881,7 +1895,7 @@
         (v) => {
           if (!ex.progression) return;
           if (v) ex.progression.backoff = v; else delete ex.progression.backoff;
-          saveTrainer(); onChange(); render();
+          saveEditor(); onChange(); render();
         }, !hasRule);
 
       const stallLbl = document.createElement("div");
@@ -1902,7 +1916,7 @@
         const v = parseInt(stallInp.value, 10);
         if (v >= 1 && v <= 6) ex.progression.stallAfter = v;
         else { delete ex.progression.stallAfter; stallInp.value = ""; }
-        saveTrainer(); onChange(); render();
+        saveEditor(); onChange(); render();
       });
       pop.appendChild(stallInp);
       subHint(!curBackoff
@@ -1915,7 +1929,7 @@
       off.type = "button";
       off.className = "prog-opt prog-opt-off" + (!ex.progression ? " on" : "");
       off.textContent = "No auto-progression";
-      off.addEventListener("click", () => { delete ex.progression; saveTrainer(); onChange(); render(); });
+      off.addEventListener("click", () => { delete ex.progression; saveEditor(); onChange(); render(); });
       pop.appendChild(off);
     };
     render();
@@ -1931,7 +1945,7 @@
     pop.className = "grid-picker-pop prog-pop pyr-pop";
     pop.style.cssText = "position:fixed;z-index:9999;visibility:hidden";
 
-    const saveChange = () => { saveTrainer(); onChange(); render(); };
+    const saveChange = () => { saveEditor(); onChange(); render(); };
     // Sets and typed weights are editable before any percent is picked, so the
     // pyramid object gets created on demand rather than only by the % row.
     const ensurePyr = () => (ex.pyramid = ex.pyramid || { pct: "", repDrop: 0 });
@@ -2020,7 +2034,7 @@
           ex.pyramid.weights = arr;
           // An all-blank array is the same as no override — don't keep the husk.
           if (!arr.some((v) => String(v).trim())) delete ex.pyramid.weights;
-          saveTrainer();
+          saveEditor();
           onChange();   // row button + card tint follow immediately
           refresh();    // ladder line and downstream placeholders, in place
         });
@@ -2114,7 +2128,7 @@
     pop.className = "grid-picker-pop prog-pop pl-pop";
     pop.style.cssText = "position:fixed;z-index:9999;visibility:hidden";
 
-    const saveChange = () => { saveTrainer(); onChange(); render(); };
+    const saveChange = () => { saveEditor(); onChange(); render(); };
 
     function render() {
       pop.innerHTML = "";
@@ -2179,7 +2193,7 @@
     pop.className = "grid-picker-pop finisher-pop";
     pop.style.cssText = "position:fixed;z-index:9999;visibility:hidden";
 
-    const saveChange = () => { saveTrainer(); onChange(); render(); };
+    const saveChange = () => { saveEditor(); onChange(); render(); };
 
     function pctRow(currentPct, onPick) {
       const row = document.createElement("div");
@@ -2249,7 +2263,7 @@
     pop.className = "warmup-pop";
     pop.style.cssText = "position:fixed;z-index:9999;visibility:hidden";
 
-    const save = () => { saveTrainer(); onChange(); };
+    const save = () => { saveEditor(); onChange(); };
     const wtLabel = (v) => exWeightLabel(ex, v) || "Wt"; // "50s" on DB pairs
 
     function setCount(n) {
@@ -2385,7 +2399,7 @@
     // Exercises saved before the exclusivity rule (or synced from an older
     // client) can still hold both — clean them up as the coach opens the picker
     // so the buttons below never render in a contradictory state.
-    if (dropConflictingTags(ex)) { saveTrainer(); onTagsChange?.(); }
+    if (dropConflictingTags(ex)) { saveEditor(); onTagsChange?.(); }
     document.querySelector(".mod-picker-pop")?.remove();
     const pop = document.createElement("div");
     pop.className = "mod-picker-pop";
@@ -2414,7 +2428,7 @@
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         ex.timed = !exIsTimed(ex);
-        saveTrainer();
+        saveEditor();
         pop.remove();
         onFormatChange?.();
       });
@@ -2495,7 +2509,7 @@
           } else if (!HOLD_TAGS.includes(tag)) {
             setHoldRowOpen(false);
           }
-          saveTrainer();
+          saveEditor();
           const reopen = () => openModPicker(ex, anchorBtn, chipsBefore, chipsAfter, onTagsChange, onFormatChange);
           renderModChips(chipsBefore, ex, "before", reopen);
           renderModChips(chipsAfter, ex, "after", reopen);
@@ -6445,10 +6459,45 @@
     return out;
   }
 
-  function openPullFromDayModal(day, rerenderFn) {
-    const sources = pullSourceDays(day);
+  // Everything an athlete can pull one of their own sessions from: their
+  // programmed weeks, their coach's dated sessions, and their other own days.
+  // pullSourceDays() can't serve this — it reads currentClient() and
+  // state.trainerData, neither of which exists in athlete mode, so it would
+  // hand back an empty list.
+  function athletePullSourceDays(day) {
+    const client = state.clientData.program?.client;
+    const progress = state.clientData.progress;
+    const usable = (d) => d && d.id !== day.id && (d.exercises || []).length;
+    const out = [];
+    (client?.weeks || []).forEach((w) => {
+      (w.days || []).forEach((d) => {
+        if (!usable(d)) return;
+        out.push({ id: d.id, name: d.name || "Day", icon: d.icon || "🐉", meta: w.label || "Week", exercises: d.exercises });
+      });
+    });
+    const dateMeta = (d, fallback) => (d.date
+      ? new Date(d.date + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })
+      : fallback);
+    (client?.oneOffDays || []).forEach((d) => {
+      if (!usable(d)) return;
+      out.push({ id: d.id, name: d.name || "Coach session", icon: d.icon || "🐉", meta: dateMeta(d, "With coach"), exercises: d.exercises });
+    });
+    // Newest own-sessions first: the one you'd repeat is almost always the last
+    // one you did, and it should not be buried under a year of history.
+    [...athleteOwnDays(progress)]
+      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
+      .forEach((d) => {
+        if (!usable(d)) return;
+        out.push({ id: d.id, name: d.name || "My session", icon: d.icon || "🐉", meta: dateMeta(d, "Your session"), exercises: d.exercises });
+      });
+    return out;
+  }
+
+  function openPullFromDayModal(day, rerenderFn, opts) {
+    opts = opts || {};
+    const sources = opts.pullSources ? opts.pullSources(day) : pullSourceDays(day);
     if (!sources.length) { toast("Nothing to pull from yet — build another day first"); return; }
-    const u = unitOf(_programEditorId ? null : currentClient());
+    const u = unitOf(opts.athlete ? state.clientData.program?.client : (_programEditorId ? null : currentClient()));
     const picked = new Set(); // "sourceId::exerciseId"
 
     // What the lift is prescribed as, in one glance, so the choice doesn't
@@ -6500,6 +6549,11 @@
           className: "btn btn-primary",
           onClick: () => {
             let added = 0;
+            // A capped day (the athlete's own sessions) takes what fits and says
+            // what it dropped, rather than silently overflowing or refusing the
+            // whole pull because the last tick didn't fit.
+            let room = opts.cap ? opts.cap - day.exercises.length : Infinity;
+            let skipped = 0;
             sources.forEach((s) => {
               const take = (s.exercises || []).filter((ex) => picked.has(`${s.id}::${ex.id}`));
               // How many members of each superset run are actually coming.
@@ -6507,6 +6561,7 @@
               take.forEach((ex) => { if (ex.supersetId) runN[ex.supersetId] = (runN[ex.supersetId] || 0) + 1; });
               const remap = {};
               take.forEach((ex) => {
+                if (room <= 0) { skipped++; return; }
                 // structuredClone, not a spread: modifiers and per-set weights
                 // are arrays, and a shallow copy would leave the new day and
                 // the old one editing the same one.
@@ -6522,14 +6577,16 @@
                   delete copy.supersetId;
                 }
                 day.exercises.push(copy);
-                added++;
+                added++; room--;
               });
             });
-            if (!added) return;
-            saveTrainer();
+            if (!added && !skipped) return;
+            if (added) saveEditor();
             closeModal();
             rerenderFn();
-            toast(`Added ${added} exercise${added === 1 ? "" : "s"}`);
+            toast(skipped
+              ? `Added ${added} — the session holds ${opts.cap}, so ${skipped} didn't fit`
+              : `Added ${added} exercise${added === 1 ? "" : "s"}`);
           },
         },
       ],
@@ -8155,9 +8212,13 @@
     renderSidebarLibrary($("#ex-lib-sb-search")?.value || "");
   }
 
-  function openExLibrary(day, rerenderFn) {
-    _exLibraryTarget = day ? { day, rerenderFn } : null;
-    $("#ex-library-overlay").classList.remove("athlete-mode");
+  function openExLibrary(day, rerenderFn, opts) {
+    _exLibraryTarget = day ? { day, rerenderFn, opts: opts || {} } : null;
+    // The athlete's own-session builder reuses this drawer, so it still hides
+    // the coach-only "add to library" control — that writes the coach's
+    // exercise library, which an athlete has no business (or permission) editing.
+    // Free-text names still get in via the builder's type-to-add.
+    $("#ex-library-overlay").classList.toggle("athlete-mode", !!opts?.athlete);
     show($("#ex-library-overlay"));
     // The drawer is its own nav level: Back closes it instead of backing out of
     // the day underneath and leaving the library floating over the picker.
@@ -8264,10 +8325,17 @@
         if (!_exLibraryTarget) return;
         // Athlete flow: hand the name off to the caller (adds to their progress).
         if (_exLibraryTarget.onAdd) { _exLibraryTarget.onAdd(item.dataset.exname); return; }
-        const { day, rerenderFn } = _exLibraryTarget;
+        const { day, rerenderFn, opts } = _exLibraryTarget;
+        const cap = opts?.cap;
+        if (cap && day.exercises.length >= cap) {
+          toast(`A session holds up to ${cap} exercises.`);
+          dismissExLibrary();
+          return;
+        }
         day.exercises.push(makeExercise({ name: item.dataset.exname }));
-        saveTrainer();
+        saveEditor();
         toast(`Added ${item.dataset.exname}`);
+        if (cap && day.exercises.length >= cap) dismissExLibrary();
         rerenderFn();
       });
     });
@@ -9534,7 +9602,7 @@
       const id = next.supersetId || ex.supersetId || uid();
       ex.supersetId = id; next.supersetId = id;
     }
-    saveTrainer();
+    saveEditor();
   }
   // Append day.exercises to `list`, wrapping superset runs in a block. `makeRow`
   // builds one exercise element; `athlete` picks the athlete-side hint text.
@@ -9578,10 +9646,31 @@
     return details;
   }
 
+  // opts.save        — where edits persist (default saveTrainer, i.e. the coach)
+  // opts.athlete     — athlete building one of their own sessions: drops the
+  //                    coach-only prescription tool (auto-progression) and
+  //                    swaps desktop-drag copy for something true on a phone
+  // opts.onDelete    — replaces the built-in "remove from week.days" delete
+  // opts.pullSources — override the ⇄ Pull source list (coach state is unreadable
+  //                    from athlete mode, so the athlete side supplies its own)
+  // opts.cap         — max exercises this day accepts, enforced on every add path
   function renderDayContent(week, day, rerenderFn, opts) {
     opts = opts || {};
+    // Re-point the whole editor subtree — rows and every picker they open —
+    // at this day's store. Set on every render so a previous editor can never
+    // leave it aimed at the wrong one.
+    _editorSave = opts.save || null;
     const wrapper = document.createElement("div");
     wrapper.className = "day-content";
+    // How many more exercises this day will take. Uncapped (Infinity) for the
+    // coach; the athlete's own sessions carry MAX_OWN_EXERCISES so a runaway
+    // list can't bloat the progress row they sync on every save.
+    const roomLeft = () => (opts.cap ? opts.cap - day.exercises.length : Infinity);
+    const atCap = () => {
+      if (roomLeft() > 0) return false;
+      toast(`A session holds up to ${opts.cap} exercises.`);
+      return true;
+    };
 
     // Action bar: name + tool buttons
     const actionBar = document.createElement("div");
@@ -9596,8 +9685,12 @@
       e.stopPropagation();
       openIconPicker(day.icon || "🐉", (icon) => {
         day.icon = icon;
+        // An athlete-built session derives its icon from its name, and a
+        // rename re-derives it. Once they've picked one by hand, that stops:
+        // otherwise renaming the session silently throws their choice away.
+        if (opts.athlete) day.iconSet = true;
         setDayIcon(iconBtn, icon);
-        saveTrainer();
+        saveEditor();
       }, iconBtn);
     });
 
@@ -9609,7 +9702,7 @@
     nameInput.className = "day-name-compact";
     nameInput.placeholder = "Day name…";
     nameInput.value = day.name || "";
-    nameInput.addEventListener("input", () => { day.name = nameInput.value; saveTrainer(); });
+    nameInput.addEventListener("input", () => { day.name = nameInput.value; saveEditor(); });
     nameInput.addEventListener("change", () => rerenderFn());
     nameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") nameInput.blur(); });
 
@@ -9625,7 +9718,7 @@
     libBtn.className = "btn btn-ghost btn-xs ex-lib-mobile-btn";
     libBtn.title = "Exercise library";
     libBtn.textContent = "📖 Library";
-    libBtn.addEventListener("click", () => openExLibrary(day, rerenderFn));
+    libBtn.addEventListener("click", () => { if (!atCap()) openExLibrary(day, rerenderFn, opts); });
 
     // Hangs off renderDayContent so it exists everywhere a day is edited —
     // program weeks, one-off sessions and the Day Library — from one place.
@@ -9633,18 +9726,21 @@
     pullBtn.className = "btn btn-ghost btn-xs";
     pullBtn.title = "Take exercises from another day, with their numbers";
     pullBtn.textContent = "⇄ Pull";
-    pullBtn.addEventListener("click", () => openPullFromDayModal(day, rerenderFn));
+    pullBtn.addEventListener("click", () => { if (!atCap()) openPullFromDayModal(day, rerenderFn, opts); });
 
     const delDayBtn = document.createElement("button");
     delDayBtn.className = "btn btn-ghost btn-xs";
     delDayBtn.style.color = "var(--danger)";
-    delDayBtn.title = "Delete this day";
-    delDayBtn.textContent = "✕ Day";
+    delDayBtn.title = opts.athlete ? "Delete this session" : "Delete this day";
+    delDayBtn.textContent = opts.athlete ? "✕ Session" : "✕ Day";
     delDayBtn.addEventListener("click", () => {
+      // The athlete's own sessions carry logs, notes and moods keyed off the
+      // day id, so their delete is a purpose-built teardown, not a list filter.
+      if (opts.onDelete) { opts.onDelete(day); return; }
       if (!window.confirm(`Delete "${day.name || "this day"}"?`)) return;
       week.days = week.days.filter((d) => d.id !== day.id);
       if (week._activeDayIdx >= week.days.length) week._activeDayIdx = Math.max(0, week.days.length - 1);
-      saveTrainer(); rerenderFn();
+      saveEditor(); rerenderFn();
     });
 
     actionBar.appendChild(nameWrap);
@@ -9670,7 +9766,7 @@
 
     // Mobility/stretching sits in its own collapsible section (click to open):
     // warm-up holds pin to the top of the day, finisher holds to the bottom.
-    const rowRenderer = (ex) => renderExerciseRow(day, ex, rerenderFn);
+    const rowRenderer = (ex) => renderExerciseRow(day, ex, rerenderFn, opts);
     // Hold-for-time items (kind:"mobility") split by flavour: speed/agility drills
     // get their own ⚡ section, stretches keep the 🧘 one. Manually-toggled holds
     // (no library category) fall through to the stretch section as before.
@@ -9687,12 +9783,18 @@
     if (mobBottom.length) list.appendChild(coachMobilitySection(day.id, "bottom", "🧘 Finisher Stretches", mobBottom, rowRenderer));
     if (speedBottom.length) list.appendChild(coachMobilitySection(day.id, "speed-bottom", "⚡ Speed & Agility Finisher", speedBottom, rowRenderer));
 
-    // Always show a drop zone — big when empty, slim hint when exercises exist
+    // Always show a drop zone — big when empty, slim hint when exercises exist.
+    // Native HTML5 drag never fires on touch, and the athlete builder is a
+    // phone screen first, so it points at the two paths that do work there
+    // rather than at a sidebar it can't see.
     const dropHint = document.createElement("div");
-    dropHint.className = day.exercises.length === 0 ? "ex-list-empty-drop" : "ex-list-drop-hint";
-    dropHint.textContent = day.exercises.length === 0 ? "Drag exercises from the library →" : "drag to add more";
+    const emptyDay = day.exercises.length === 0;
+    dropHint.className = emptyDay ? "ex-list-empty-drop" : "ex-list-drop-hint";
+    dropHint.textContent = opts.athlete
+      ? (emptyDay ? "Add your lifts below, or tap 📖 Library" : "")
+      : (emptyDay ? "Drag exercises from the library →" : "drag to add more");
     dropHint.setAttribute("aria-hidden", "true");
-    list.appendChild(dropHint);
+    if (dropHint.textContent) list.appendChild(dropHint);
 
     // Type-to-add — autocompletes from the library but also accepts any custom
     // name. Complements drag-and-drop and is the fast path on touch devices.
@@ -9713,10 +9815,10 @@
     quickAdd.addEventListener("submit", (e) => {
       e.preventDefault();
       const name = quickInput.value.trim();
-      if (!name) return;
+      if (!name || atCap()) return;
       day.exercises.push(makeExercise({ name }));
       _focusQuickAddDayId = day.id; // keep focus so several can be added in a row
-      saveTrainer(); rerenderFn();
+      saveEditor(); rerenderFn();
     });
     list.appendChild(quickAdd);
     if (_focusQuickAddDayId === day.id) {
@@ -9734,9 +9836,9 @@
     list.addEventListener("drop", (e) => {
       e.preventDefault(); list.classList.remove("drag-over");
       const name = e.dataTransfer.getData("text/ex-name");
-      if (!name) return;
+      if (!name || atCap()) return;
       day.exercises.push(makeExercise({ name }));
-      saveTrainer(); rerenderFn();
+      saveEditor(); rerenderFn();
     });
 
     wrapper.appendChild(actionBar);
@@ -9745,7 +9847,8 @@
     return wrapper;
   }
 
-  function renderExerciseRow(day, ex, rerenderFn) {
+  function renderExerciseRow(day, ex, rerenderFn, opts) {
+    opts = opts || {};
     const wrapper = document.createElement("div");
     wrapper.className = "ex-row-wrapper";
     wrapper.dataset.exid = ex.id;
@@ -9769,7 +9872,7 @@
       const swapIdx = idx + dir;
       if (idx === -1 || swapIdx < 0 || swapIdx >= day.exercises.length) return;
       [day.exercises[idx], day.exercises[swapIdx]] = [day.exercises[swapIdx], day.exercises[idx]];
-      saveTrainer(); rerenderFn();
+      saveEditor(); rerenderFn();
     }
     const moveUpBtn = document.createElement("button");
     moveUpBtn.className = "btn-icon-mini ex-move-btn";
@@ -9788,7 +9891,7 @@
       if (idx === -1) return;
       day.exercises.splice(idx, 1);
       if (toTop) day.exercises.unshift(ex); else day.exercises.push(ex);
-      saveTrainer(); rerenderFn();
+      saveEditor(); rerenderFn();
     }
     const moveTopBtn = document.createElement("button");
     moveTopBtn.className = "btn-icon-mini ex-move-btn ex-move-edge-btn";
@@ -9817,7 +9920,7 @@
     nameInput.className = "ex-name-compact";
     nameInput.placeholder = "Exercise name…";
     nameInput.value = ex.name || "";
-    nameInput.addEventListener("input", () => { ex.name = nameInput.value; saveTrainer(); });
+    nameInput.addEventListener("input", () => { ex.name = nameInput.value; saveEditor(); });
     nameInput.addEventListener("change", () => { demoRow._repaintDemo?.(); });
 
     // Modifier chips AFTER name (Style)
@@ -9843,7 +9946,7 @@
       setsBtn.classList.toggle("empty", !ex.sets);
     };
     setsBtn.addEventListener("click", (e) => { e.stopPropagation(); openGridPicker(isMob ? "Rounds" : "Sets", SETS_VALUES, ex.sets || "3", (val) => {
-      ex.sets = val; saveTrainer(); refreshSetsBtn();
+      ex.sets = val; saveEditor(); refreshSetsBtn();
     }, setsBtn); });
 
     // Mobility hold-duration button (seconds). Edits ex.currentReps (reused as the
@@ -9853,7 +9956,7 @@
     holdBtn.textContent = ex.currentReps ? ex.currentReps + "s" : "Hold";
     holdBtn.title = "Hold (seconds)";
     holdBtn.addEventListener("click", (e) => { e.stopPropagation(); openGridPicker("Hold (sec)", HOLD_SEC_VALUES, ex.currentReps || "30", (val) => {
-      ex.currentReps = val; saveTrainer(); holdBtn.textContent = val + "s"; holdBtn.classList.remove("empty");
+      ex.currentReps = val; saveEditor(); holdBtn.textContent = val + "s"; holdBtn.classList.remove("empty");
     }, holdBtn, 4); });
 
     // Mobility placement toggle: warm-up (top) vs finisher (bottom). Only used
@@ -9866,7 +9969,7 @@
     placeBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       ex.mobPlacement = isBottom ? "top" : "bottom";
-      saveTrainer(); rerenderFn();
+      saveEditor(); rerenderFn();
     });
 
     const at = document.createElement("span");
@@ -9881,7 +9984,7 @@
     refreshCwLabel();
     cwBtn.title = "Prescribed weight";
     cwBtn.addEventListener("click", (e) => { e.stopPropagation(); openWeightPicker(ex.currentWeight || "BW", (val) => {
-      ex.currentWeight = val; saveTrainer(); refreshCwLabel(); cwBtn.classList.toggle("empty", !val);
+      ex.currentWeight = val; saveEditor(); refreshCwLabel(); cwBtn.classList.toggle("empty", !val);
       refreshProgBtn(); // BW ↔ weighted flips the progression rule type
     }, cwBtn); });
 
@@ -9898,7 +10001,7 @@
       isTimed ? "Time (sec)" : "Reps",
       isTimed ? CARRY_SEC_VALUES : REPS_VALUES,
       ex.currentReps || (isTimed ? "30" : "8"), (val) => {
-      ex.currentReps = val; saveTrainer(); crBtn.textContent = crLabel(val); crBtn.classList.toggle("empty", !val);
+      ex.currentReps = val; saveEditor(); crBtn.textContent = crLabel(val); crBtn.classList.toggle("empty", !val);
       refreshProgBtn(); // reps are the ladder's floor
     }, crBtn, isTimed ? 4 : 6); });
 
@@ -10117,8 +10220,8 @@
       editBtn.classList.toggle("hidden", !locked);
     }
 
-    saveBtn.addEventListener("click", () => { ex.locked = true;  saveTrainer(); applyLock(true); });
-    editBtn.addEventListener("click", () => { ex.locked = false; saveTrainer(); applyLock(false); });
+    saveBtn.addEventListener("click", () => { ex.locked = true;  saveEditor(); applyLock(true); });
+    editBtn.addEventListener("click", () => { ex.locked = false; saveEditor(); applyLock(false); });
     applyLock(!!ex.locked);
 
     // Superset link — pair this exercise with the one below (or break the group)
@@ -10141,7 +10244,7 @@
     delBtn.title = "Delete exercise"; delBtn.textContent = "✕";
     delBtn.addEventListener("click", () => {
       day.exercises = day.exercises.filter((e) => e.id !== ex.id);
-      saveTrainer(); rerenderFn();
+      saveEditor(); rerenderFn();
     });
 
 
@@ -10184,9 +10287,13 @@
     if (isMob) {
       row.appendChild(placeBtn); // warm-up ↔ finisher placement
     } else {
+      // Auto-progression is the coach's to set: it rewrites the athlete's
+      // target for NEXT week off this prescription, which is a programming
+      // decision, not something to hand an athlete recording a session they
+      // already did. Every other extra carries over as-is.
       extrasList = [
         { btn: warmupBtn,   label: "Warm-up sets" },
-        { btn: progBtn,     label: "Auto-progression" },
+        ...(opts.athlete ? [] : [{ btn: progBtn, label: "Auto-progression" }]),
         { btn: pyrBtn,      label: "Pyramid" },
         { btn: plBtn,       label: "Powerlifting" },
         { btn: finisherBtn, label: "Burnout / dropset" },
@@ -10207,14 +10314,14 @@
     notesTA.placeholder = "Notes, tempo, cues, progression…";
     notesTA.rows = 2;
     notesTA.value = ex.notes || "";
-    notesTA.addEventListener("input", () => { ex.notes = notesTA.value; saveTrainer(); });
+    notesTA.addEventListener("input", () => { ex.notes = notesTA.value; saveEditor(); });
 
     const videoInput = document.createElement("input");
     videoInput.type = "text";
     videoInput.className = "ex-video-compact";
     videoInput.placeholder = "YouTube link (optional)…";
     videoInput.value = ex.videoUrl || "";
-    videoInput.addEventListener("input", () => { ex.videoUrl = videoInput.value; saveTrainer(); });
+    videoInput.addEventListener("input", () => { ex.videoUrl = videoInput.value; saveEditor(); });
 
     // Manual fallback: flip any exercise into hold-for-time mode (rounds × hold
     // seconds), independent of whether it came from the mobility library.
@@ -10231,7 +10338,7 @@
       } else {
         ex.kind = "strength";
       }
-      saveTrainer();
+      saveEditor();
       rerenderFn();
     });
     kindToggle.appendChild(kindCb);
@@ -10309,7 +10416,7 @@
         const [moved] = day.exercises.splice(fromIdx, 1);
         const newTo = day.exercises.findIndex((e) => e.id === ex.id);
         day.exercises.splice(insertAfter ? newTo + 1 : newTo, 0, moved);
-        saveTrainer(); rerenderFn();
+        saveEditor(); rerenderFn();
       } catch { /* ignore bad data */ }
     });
 
@@ -19799,7 +19906,7 @@
           ? `<span class="wc-status done">Done ✓</span>`
           : opts.status(day, doneEx, totalEx);
         card.innerHTML = `
-          <div class="workout-card-icon">${dayIconHtml(isSvgIcon(day.icon) ? day.icon : opts.fallbackIcon(day))}</div>
+          <div class="workout-card-icon">${dayIconHtml(isSvgIcon(day.icon) || day.iconSet ? day.icon : opts.fallbackIcon(day))}</div>
           <div class="workout-card-body">
             <h4 class="workout-card-title">${escapeHtml(day.name || opts.fallbackName)}</h4>
             <div class="workout-card-meta">${dateLbl ? escapeHtml(dateLbl) + " · " : ""}${totalEx} exercise${totalEx === 1 ? "" : "s"} · ${status}</div>
@@ -19908,6 +20015,71 @@
     renderWorkoutDetailUI();
   }
 
+  // -------- Athlete-built session: the builder --------
+  // Same editor the coach builds days in (renderDayContent), pointed at
+  // progress.athleteDays instead of the coach's weeks. Build and log stay two
+  // views of the same day: the builder sets the prescription, the log view
+  // (renderClientExercise) records the sets against it, PRs and rest timer
+  // included. `build` rides on workoutView so backing out of a session clears
+  // it with everything else.
+  function enterOwnBuild() {
+    state.workoutView.build = true;
+    Nav.push(() => { state.workoutView.build = false; renderWorkoutDetailUI(); });
+    renderWorkoutDetailUI();
+  }
+  function exitOwnBuild() {
+    Nav.back(() => { state.workoutView.build = false; renderWorkoutDetailUI(); });
+  }
+
+  function renderOwnBuildHeader(day) {
+    const head = $("#workout-detail-head");
+    const n = (day.exercises || []).length;
+    const dateTxt = day.date === todayISO()
+      ? "Today"
+      : new Date((day.date || todayISO()) + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+    head.innerHTML = `
+      <div class="detail-head-top">
+        <span class="phase-badge">Building</span>
+        <span class="dh-week">Your own session</span>
+        <span class="dh-progress">${n} exercise${n === 1 ? "" : "s"} / ${MAX_OWN_EXERCISES}</span>
+        <label class="dh-date" title="When you trained">
+          <span class="dh-date-txt">📅 ${escapeHtml(dateTxt)}</span>
+          <input type="date" class="detail-log-date" id="ownbuild-date" value="${escapeHtml(day.date || todayISO())}" aria-label="When you trained" />
+        </label>
+      </div>
+      <div class="detail-head-main ownbuild-head-main">
+        <p class="ownbuild-hint muted">Set it up the way you trained it — sets, weight, reps, supersets. Then log your numbers against it.</p>
+        <button type="button" class="btn btn-primary btn-sm ownbuild-done" id="ownbuild-done">Done ✓</button>
+      </div>`;
+    // The session IS its date, so moving it here moves the day and the logs
+    // filed under it together — same rule the log view's date chip follows.
+    head.querySelector("#ownbuild-date").addEventListener("change", (e) => {
+      day.date = e.target.value || todayISO();
+      state.workoutView.date = day.date;
+      saveClient();
+      renderWorkoutDetailUI();
+    });
+    head.querySelector("#ownbuild-done").addEventListener("click", exitOwnBuild);
+  }
+
+  function renderOwnBuildUI(day) {
+    renderOwnBuildHeader(day);
+    const list = $("#workout-detail-list");
+    list.innerHTML = "";
+    document.body.classList.add("ownbuild-mode");
+    const week = oneOffWeekShim(state.clientData.program?.client, day);
+    list.appendChild(renderDayContent(week, day, () => renderWorkoutDetailUI(), {
+      save: saveClient,          // athleteDays live in progress, not trainerData
+      athlete: true,             // drops auto-progression, retunes the drag copy
+      cap: MAX_OWN_EXERCISES,
+      pullSources: athletePullSourceDays,
+      onDelete: (d) => deleteOwnSession(d),
+      hideDelete: false,
+    }));
+    hide($("#workout-picker"));
+    show($("#workout-detail"));
+  }
+
   function openNewOwnSessionSheet() {
     const p = state.clientData.progress;
     if (!p) return;
@@ -19930,7 +20102,10 @@
       closeModal();
       state.pickerBucket = "own"; // backing out of it lands on the list it joined
       openOwnSession(day);
-      toast("Session created. Add your lifts.");
+      // Straight into the builder: a brand-new session is empty, and the log
+      // view has nothing to log until it's been built.
+      enterOwnBuild();
+      toast("Session created. Build it out.");
     };
     openModal({
       title: "New session",
@@ -19990,7 +20165,7 @@
   function openRenameOwnSessionSheet(day) {
     const commit = () => {
       day.name = ($("#ownday-rename")?.value || "").trim().slice(0, 60) || "My session";
-      day.icon = workoutIconFor(day.name);
+      if (!day.iconSet) day.icon = workoutIconFor(day.name); // keep a hand-picked icon
       saveClient();
       closeModal();
       renderWorkoutDetailUI();
@@ -20008,6 +20183,16 @@
   function renderOwnDayMeta(day) {
     const wrap = document.createElement("div");
     wrap.className = "ownday-meta";
+    // The way back into the builder. Delete lives in there too, but it stays
+    // here as well — a session you want gone shouldn't need a trip through an
+    // editor first.
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "ownday-meta-edit";
+    edit.textContent = "✏️ Edit session";
+    edit.title = "Change the lifts, sets, weights and reps in this session";
+    edit.addEventListener("click", enterOwnBuild);
+    wrap.appendChild(edit);
     const del = document.createElement("button");
     del.type = "button";
     del.className = "ownday-meta-del";
@@ -20515,9 +20700,18 @@
     if (!week || !day) {
       // Day was removed; bail back to picker.
       state.workoutView = { mode: "picker", weekId: week?.id || null, dayId: null };
+      document.body.classList.remove("ownbuild-mode");
       hide($("#workout-detail")); show($("#workout-picker"));
       return;
     }
+
+    // Building one of their own sessions is the coach's day editor, not the
+    // logger — a different header and a different list, same day underneath.
+    // The flag can only ever be set on an own day, but guard anyway so a stale
+    // one can't strand a program day in an editor it has no business in.
+    if (state.workoutView.build && isOwnDay(day)) { renderOwnBuildUI(day); return; }
+    state.workoutView.build = false;
+    document.body.classList.remove("ownbuild-mode");
 
     renderWorkoutDetailHeader(week, day);
 
@@ -20645,6 +20839,8 @@
     Nav.reset(); // athlete workouts root — the day list
     state.workoutView.mode = "picker";
     state.workoutView.dayId = null;
+    state.workoutView.build = false;
+    document.body.classList.remove("ownbuild-mode");
     // Leaving a one-off coach session: land back on a real program week.
     if (state.workoutView.weekId === "oneoff") {
       state.workoutView.weekId = state.clientData.selectedWeekId || null;
