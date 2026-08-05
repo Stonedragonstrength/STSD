@@ -11683,8 +11683,22 @@
   function bookingsByDate(client, bookingRows) {
     const map = {};
     const seen = new Set();
+    // Dedupe on the INSTANT, never on the formatted time. The mirror stores a
+    // string that was formatted whenever the sync last ran — possibly by a
+    // different browser, locale or Chrome version — and current Chrome puts a
+    // narrow no-break space (U+202F) before AM/PM where older builds used a
+    // plain one. Two spellings of the same 9am then miss each other and the
+    // session draws twice. The instant has no spelling.
+    const dedupeKey = (iso, b) => {
+      const ms = b.startAt ? +new Date(b.startAt) : NaN;
+      if (isFinite(ms)) return `${iso}|@${ms}`;
+      // No instant on the record (very old mirror rows): fall back to the
+      // string, stripped of every kind of space and case so at least the
+      // spellings above collapse together.
+      return `${iso}|${String(b.at || "").replace(/\s+/gu, "").toLowerCase()}`;
+    };
     const push = (iso, b) => {
-      const k = `${iso}|${b.at}`;
+      const k = dedupeKey(iso, b);
       if (seen.has(k)) return;
       seen.add(k);
       (map[iso] = map[iso] || []).push(b);
@@ -13141,7 +13155,18 @@
     const { grid, year, month, client, progress, coachSide } = opts;
     const cells = startMonthGrid(grid, year, month);
     const today = todayISO();
-    const ix = calendarIndex(client, progress, calBookingRows());
+    // One malformed row must not cost the whole month. The index is built from
+    // six different sources, several of them free-form jsonb written by older
+    // builds, and a calendar that renders 41 days and skips one is worth far
+    // more than a calendar that throws and leaves the coach staring at an empty
+    // box — which is exactly the failure this whole rewrite set out to end.
+    let ix;
+    try {
+      ix = calendarIndex(client, progress, calBookingRows());
+    } catch (e) {
+      console.warn("[cal] index failed, drawing an empty month", e);
+      ix = { completed: {}, planned: {}, sessions: {}, booked: {}, cardio: {}, reds: {}, missed: {} };
+    }
     cells.forEach((d) => {
       const iso = dateISO(d);
       const inMonth = d.getMonth() === month;
@@ -13151,6 +13176,7 @@
       if (!inMonth) cell.classList.add("outside");
       if (iso === today) cell.classList.add("today");
 
+      try {
       let pills = "";
       let anything = false;
       const mark = (html, cls) => { pills += html; anything = true; if (cls) cell.classList.add(cls); };
@@ -13238,6 +13264,12 @@
       } else if (inMonth && !coachSide && upcoming) {
         // Empty future day, athlete side: straight to the planner, as before.
         cell.addEventListener("click", () => openAthleteLogDayModal(iso));
+      }
+      } catch (e) {
+        // Keep the date. A day that lost its pills is a hole; a month that lost
+        // its grid is the bug this replaced.
+        console.warn("[cal] day failed to draw:", iso, e);
+        cell.innerHTML = `<div class="cal-day-head"><span class="cal-date-num">${d.getDate()}</span></div>`;
       }
       grid.appendChild(cell);
     });
