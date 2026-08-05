@@ -20,7 +20,18 @@
  * Because navigations are network-first, a fresh deploy is picked up on the
  * next online open automatically — no user prompt.
  */
-const CACHE = "stonedragon-v7";
+// Bumped 2026-08-05 to evict a wedged cache rather than because this file
+// changed. A coach's phone was serving an app.js from before 2026-07-29 —
+// old enough to predate the day-session sheet AND the calendar rewrite, which
+// showed up as "the options are all visible again" and "the athlete calendar
+// has no pills". Navigations are network-first, so `./index.html` should have
+// refreshed and pulled the new `?v=` assets; when a navigation is served from
+// cache instead (offline, flaky, or an installed PWA cold-starting with no
+// network) the OLD index.html comes back, and every `?v=` in it is a cache hit
+// on the old bundle — self-consistent, so nothing looks broken enough to
+// retry. Renaming the cache is the one lever that drops all of it at once:
+// activate purges every key that is not CACHE.
+const CACHE = "stonedragon-v8";
 
 // Stable, un-versioned URLs worth precaching up front. The versioned css/js
 // (styles.css?v=…, app.js?v=…) are cached at runtime on first online load —
