@@ -32,31 +32,44 @@ class ConfigActivity : AppCompatActivity() {
         val light = Prefs.lightBg(this)
         val chosen = Prefs.accentId(this)
         val d = resources.displayMetrics.density
-        val size = (30 * d).toInt()
-        val gap = (8 * d).toInt()
-        Theme.ACCENTS.forEach { a ->
-            val dot = View(this)
-            val lp = android.widget.LinearLayout.LayoutParams(size, size)
-            lp.rightMargin = gap
-            dot.layoutParams = lp
-            val shape = android.graphics.drawable.GradientDrawable().apply {
-                this.shape = android.graphics.drawable.GradientDrawable.OVAL
-                // The colour it will ACTUALLY be on the current surface, not the
-                // nominal one — otherwise the two that get swapped for
-                // legibility would preview as something the widget never draws.
-                setColor(Theme.accentFor(a.id, light))
-                if (a.id == chosen) {
-                    setStroke((3 * d).toInt(), Theme.textColor(light))
+        val size = (34 * d).toInt()
+        val gap = (10 * d).toInt()
+
+        // Five per row. Ten across is wider than a phone, and the container
+        // clips rather than scrolls, so the last five were unreachable.
+        Theme.ACCENTS.chunked(5).forEach { chunk ->
+            val row = android.widget.LinearLayout(this)
+            row.orientation = android.widget.LinearLayout.HORIZONTAL
+            row.layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { bottomMargin = gap }
+
+            chunk.forEach { a ->
+                val dot = View(this)
+                val lp = android.widget.LinearLayout.LayoutParams(size, size)
+                lp.rightMargin = gap
+                dot.layoutParams = lp
+                val shape = android.graphics.drawable.GradientDrawable().apply {
+                    this.shape = android.graphics.drawable.GradientDrawable.OVAL
+                    // The colour it will ACTUALLY be on the current surface, not
+                    // the nominal one — otherwise the two that get swapped for
+                    // legibility would preview as something never drawn.
+                    setColor(Theme.accentFor(a.id, light))
+                    if (a.id == chosen) {
+                        setStroke((3 * d).toInt(), Theme.textColor(light))
+                    }
                 }
+                dot.background = shape
+                dot.contentDescription = a.label
+                dot.setOnClickListener {
+                    Prefs.setAccentId(this, a.id)
+                    buildSwatches()
+                    ScheduleWidget.repaintAll(this)
+                }
+                row.addView(dot)
             }
-            dot.background = shape
-            dot.contentDescription = a.label
-            dot.setOnClickListener {
-                Prefs.setAccentId(this, a.id)
-                buildSwatches()
-                ScheduleWidget.repaintAll(this)
-            }
-            host.addView(dot)
+            host.addView(row)
         }
     }
 

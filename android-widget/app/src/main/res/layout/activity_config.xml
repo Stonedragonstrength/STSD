@@ -87,11 +87,15 @@
         android:textColor="@color/text"
         android:layout_marginTop="26dp" />
 
+    <!-- Vertical: buildSwatches fills it with rows of five. Ten dots in ONE
+         row is 380dp, wider than a phone, so the last few sat off the edge of
+         the screen with no way to reach them — a LinearLayout clips, it does
+         not scroll. Two rows fit any handset and hide nothing. -->
     <LinearLayout
         android:id="@+id/cfg_swatches"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
+        android:orientation="vertical"
         android:paddingTop="10dp" />
 
     <LinearLayout
