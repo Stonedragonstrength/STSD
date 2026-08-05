@@ -8,6 +8,7 @@
      to be hittable with a thumb, not height. They are wide and short now, which
      keeps the target comfortable and hands ~16dp back to the schedule. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"

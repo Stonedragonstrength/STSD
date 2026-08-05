@@ -267,6 +267,23 @@ class ScheduleWidget : AppWidgetProvider() {
                 }
             )
 
+            // Colours are applied here rather than baked into the layout, since
+            // the layout is compiled once and the coach can repaint any time.
+            // The list rows are coloured by the factory, which reads the same
+            // two prefs — see ScheduleWidgetService.
+            val light = Prefs.lightBg(ctx)
+            val accent = Theme.accentFor(Prefs.accentId(ctx), light)
+            val fg = Theme.textColor(light)
+            val dim = Theme.mutedColor(light)
+            v.setInt(R.id.widget_root, "setBackgroundResource", Theme.bgRes(light))
+            v.setTextColor(R.id.widget_date, fg)
+            v.setTextColor(R.id.widget_count, accent)
+            v.setTextColor(R.id.widget_prev, accent)
+            v.setTextColor(R.id.widget_next, accent)
+            v.setTextColor(R.id.widget_now, accent)
+            v.setTextColor(R.id.widget_refresh, dim)
+            v.setTextColor(R.id.widget_empty, dim)
+
             v.setOnClickPendingIntent(R.id.widget_prev, actionIntent(ctx, ACTION_PREV, widgetId))
             v.setOnClickPendingIntent(R.id.widget_next, actionIntent(ctx, ACTION_NEXT, widgetId))
             v.setOnClickPendingIntent(R.id.widget_date, actionIntent(ctx, ACTION_TODAY, widgetId))

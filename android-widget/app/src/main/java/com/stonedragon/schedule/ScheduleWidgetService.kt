@@ -138,6 +138,15 @@ private class ScheduleFactory(
         val v = RemoteViews(ctx.packageName, R.layout.widget_row)
         val b = (row as? Row.Session)?.booking ?: return v
 
+        // Same two prefs the provider reads. The factory runs in the launcher's
+        // process and cannot be handed the palette, so it looks it up itself —
+        // if these ever disagreed the header and the list would be two colours.
+        val light = Prefs.lightBg(ctx)
+        v.setTextColor(R.id.row_time, Theme.accentFor(Prefs.accentId(ctx), light))
+        v.setTextColor(R.id.row_dur, Theme.mutedColor(light))
+        v.setTextColor(R.id.row_name, Theme.textColor(light))
+        v.setTextColor(R.id.row_meta, Theme.mutedColor(light))
+
         v.setTextViewText(R.id.row_time, timeLabel(b.startMillis))
         v.setTextViewText(R.id.row_name, b.athlete.ifBlank { "Session" })
 
@@ -182,6 +191,15 @@ private class ScheduleFactory(
     private fun headerView(h: Row.Header): RemoteViews {
         val v = RemoteViews(ctx.packageName, R.layout.widget_day_header)
         val today = Supabase.startOfDay(System.currentTimeMillis())
+        val light = Prefs.lightBg(ctx)
+        // Today's divider takes the accent; the rest stay quiet, so the eye
+        // finds the current day without reading a single word.
+        v.setTextColor(
+            R.id.hdr_day,
+            if (h.dayStart == today) Theme.accentFor(Prefs.accentId(ctx), light)
+            else Theme.mutedColor(light),
+        )
+        v.setTextColor(R.id.hdr_count, Theme.mutedColor(light))
         val label = SimpleDateFormat("EEE d MMM", Locale.getDefault())
             .format(Date(h.dayStart))
             .uppercase(Locale.getDefault())

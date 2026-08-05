@@ -20,6 +20,46 @@ import kotlinx.coroutines.withContext
  */
 class ConfigActivity : AppCompatActivity() {
 
+    /**
+     * Ten colour dots, built from Theme.ACCENTS so the picker cannot disagree
+     * with what the widget draws. The selected one wears a ring rather than a
+     * tick — at 30dp a tick over a coloured circle is unreadable, and the ring
+     * survives being the same colour as the dot.
+     */
+    private fun buildSwatches() {
+        val host = findViewById<android.widget.LinearLayout>(R.id.cfg_swatches)
+        host.removeAllViews()
+        val light = Prefs.lightBg(this)
+        val chosen = Prefs.accentId(this)
+        val d = resources.displayMetrics.density
+        val size = (30 * d).toInt()
+        val gap = (8 * d).toInt()
+        Theme.ACCENTS.forEach { a ->
+            val dot = View(this)
+            val lp = android.widget.LinearLayout.LayoutParams(size, size)
+            lp.rightMargin = gap
+            dot.layoutParams = lp
+            val shape = android.graphics.drawable.GradientDrawable().apply {
+                this.shape = android.graphics.drawable.GradientDrawable.OVAL
+                // The colour it will ACTUALLY be on the current surface, not the
+                // nominal one — otherwise the two that get swapped for
+                // legibility would preview as something the widget never draws.
+                setColor(Theme.accentFor(a.id, light))
+                if (a.id == chosen) {
+                    setStroke((3 * d).toInt(), Theme.textColor(light))
+                }
+            }
+            dot.background = shape
+            dot.contentDescription = a.label
+            dot.setOnClickListener {
+                Prefs.setAccentId(this, a.id)
+                buildSwatches()
+                ScheduleWidget.repaintAll(this)
+            }
+            host.addView(dot)
+        }
+    }
+
     private lateinit var email: EditText
     private lateinit var password: EditText
     private lateinit var button: Button
@@ -41,11 +81,25 @@ class ConfigActivity : AppCompatActivity() {
         testButton = findViewById(R.id.cfg_test)
 
         email.setText(Prefs.email(this))
+        buildSwatches()
+        // CompoundButton, not Switch: AppCompat's inflater quietly swaps a
+        // <Switch> for a SwitchCompat, which extends CompoundButton and is NOT
+        // a subclass of android.widget.Switch — asking for the latter compiles
+        // and then throws ClassCastException the moment this screen opens.
+        val lightSwitch = findViewById<android.widget.CompoundButton>(R.id.cfg_light)
+        lightSwitch.isChecked = Prefs.lightBg(this)
+        lightSwitch.setOnCheckedChangeListener { _, on ->
+            Prefs.setLightBg(this, on)
+            buildSwatches() // the two unreadable accents swap when the surface does
+            ScheduleWidget.repaintAll(this)
+        }
         renderState()
 
         // A crash recorded since last time is the most useful thing on this
         // screen, so it opens showing it rather than waiting to be asked.
         CrashLog.last(this)?.let { diag.text = it }
+
+        // (swatch construction lives in buildSwatches, below)
 
         // Runs the widget's own query and prints what came back. The widget has
         // one line of text to explain itself with, which is not enough to tell a

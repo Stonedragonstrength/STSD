@@ -74,6 +74,47 @@
         android:textColor="@color/muted"
         android:paddingTop="14dp" />
 
+    <!-- Appearance. The swatches are built in code rather than declared here:
+         ten of them is a lot of near-identical XML, and the palette already
+         exists once in Theme.kt — declaring it again is one more place for the
+         widget and its picker to disagree about what "Teal" is. -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/appearance"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:textColor="@color/text"
+        android:layout_marginTop="26dp" />
+
+    <LinearLayout
+        android:id="@+id/cfg_swatches"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingTop="10dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="14dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/light_background"
+            android:textSize="14sp"
+            android:textColor="@color/text" />
+
+        <Switch
+            android:id="@+id/cfg_light"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" />
+    </LinearLayout>
+
     <Button
         android:id="@+id/cfg_test"
         android:layout_width="match_parent"

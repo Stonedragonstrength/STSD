@@ -100,6 +100,20 @@ object Prefs {
         return true
     }
 
+    // ---- appearance ----
+    //
+    // Global, not per-widget id: two copies of the same widget in two colours
+    // would read as two different apps on one home screen.
+
+    private const val K_ACCENT = "accent"
+    private const val K_LIGHT = "light_bg"
+
+    fun accentId(ctx: Context): String = p(ctx).getString(K_ACCENT, "blue").orEmpty()
+    fun setAccentId(ctx: Context, id: String) = p(ctx).edit().putString(K_ACCENT, id).apply()
+
+    fun lightBg(ctx: Context): Boolean = p(ctx).getBoolean(K_LIGHT, false)
+    fun setLightBg(ctx: Context, on: Boolean) = p(ctx).edit().putBoolean(K_LIGHT, on).apply()
+
     private fun jumpKey(id: Int) = "jump_$id"
     private fun weekKey(id: Int) = "week_$id"
     private fun dayKey(id: Int) = "day_$id"
