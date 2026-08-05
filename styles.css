@@ -2734,21 +2734,13 @@ input.trial-input {
 .cal-day.today .cal-date-num {
   color: var(--primary-bright);
 }
+/* `done` is the only status class these cells ever get — paintMonthGrid is the
+   single place a .cal-day is built, and it sets outside/today/done/has-log and
+   nothing else. The old .partial/.missed/.rest rules went with the underline;
+   a rest day is a pill (.cal-day-pill-rest), not a cell state. */
 .cal-day.done {
   background: var(--accent-soft);
   border-color: var(--accent);
-}
-.cal-day.partial {
-  background: var(--primary-soft);
-  border-color: var(--primary);
-}
-.cal-day.missed {
-  background: var(--danger-soft);
-  border-color: var(--danger);
-}
-.cal-day.rest {
-  background: var(--surface-3);
-  border-style: dashed;
 }
 
 /* Color-coded workout log pill on calendar cells */
@@ -8816,35 +8808,22 @@ body.live-log-mode #screen-client .header-right { display: none; }
   color: var(--accent);
 }
 
-/* -------- 5 · Calendar: status as an underline, today as the only glow --- */
+/* -------- 5 · Calendar: status as a wash, today as the only glow --------- */
+/* The status UNDERLINE is gone (2026-08-05). It was a 3px bar pinned to the
+   bottom of every cell, and it cost more than it said: the cell carried
+   `padding-bottom: 0.8em` purely to keep pills off it — a plain rule here, so
+   it beat the tighter mobile padding too and the reserved strip was widest
+   exactly where space is scarcest. What it encoded is already on the cell
+   twice over: a done day is washed green AND its pill is prefixed "✓".
+   `.partial` and `.missed` never reach these two grids at all (paintMonthGrid
+   only ever sets `done`), so those bars could not have drawn regardless. The
+   dashboard month grid is `.dash-cal-day` and is untouched by any of this. */
 .cal-day {
   border-color: transparent;
-  padding-bottom: 0.8em;
-}
-.cal-day::after {
-  content: "";
-  position: absolute; left: 8%; right: 8%; bottom: 4px; height: 3px;
-  border-radius: 3px;
-  pointer-events: none;
 }
 .cal-day.done {
   background: rgba(16, 185, 129, 0.07);
   border-color: transparent;
-}
-.cal-day.done::after { background: linear-gradient(90deg, var(--accent), rgba(16, 185, 129, 0.25)); }
-.cal-day.partial {
-  background: rgba(var(--primary-rgb), 0.06);
-  border-color: transparent;
-}
-.cal-day.partial::after { background: linear-gradient(90deg, var(--primary-bright), rgba(var(--primary-rgb), 0.25)); }
-.cal-day.missed {
-  background: rgba(239, 68, 68, 0.05);
-  border-color: transparent;
-}
-.cal-day.missed::after { background: rgba(239, 68, 68, 0.65); }
-.cal-day.rest {
-  background: var(--surface);
-  border: 1px dashed var(--border);
 }
 .cal-day:hover { border-color: rgba(var(--primary-rgb), 0.6); }
 .cal-day.today,
