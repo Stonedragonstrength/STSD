@@ -11614,10 +11614,32 @@
       planned: progress?.selfSchedule || {},
       sessions: sessionsByDate(client, progress),
       booked: bookingsByDate(client, bookingRows),
+      cardio: cardioByDate(progress),
       reds: redemptionsByDate(client),
       missed: missedByDate(client),
     };
   }
+
+  // A run is training and belongs on the calendar next to the lifting, not only
+  // in the day sheet — otherwise a week of cardio and no barbell reads as a week
+  // of nothing.
+  function cardioByDate(progress) {
+    const map = {};
+    cardioLogsAll(progress).forEach((l) => {
+      if (l?.date) (map[l.date] = map[l.date] || []).push(l);
+    });
+    return map;
+  }
+  // Minutes for a chip barely wider than the emoji: "40m", "1h", "1h20".
+  function cardioMinShort(min) {
+    const m = Math.round(Number(min) || 0);
+    if (!m) return "";
+    if (m < 60) return `${m}m`;
+    const h = Math.floor(m / 60), rem = m % 60;
+    return rem ? `${h}h${rem}` : `${h}h`;
+  }
+  const cardioIntRgb = (intensity) =>
+    CARDIO_INT_RGB[String(intensity || "moderate").toLowerCase()] || CARDIO_INT_RGB.moderate;
 
   // Every completed date → the week/day it completed. One pass over
   // dayCompletions instead of findCompletedDayForDate's nested scan per cell,
@@ -13180,7 +13202,17 @@
         mark(`<div class="cal-day-pill cal-oneoff-pill${upcoming ? "" : " cal-pill-past"}">${elsewhere ? "✓ " : ""}${isOwnDay(s) ? "🔥" : "🐉"} ${escapeHtml(s.name || (isOwnDay(s) ? "My session" : "Coach session"))}</div>`);
       });
 
-      // 5. Money-side marks: the token a session spent, and any missed mark.
+      // 5. Cardio. Its own chip shape — the type's icon over the minutes, tinted
+      //    by intensity — rather than another text pill, so a glance down the
+      //    month separates "they ran" from "they lifted" without reading a word.
+      (ix.cardio[iso] || []).forEach((l) => {
+        mark(`<div class="cal-cardio-pill" style="--cd-rgb:${cardioIntRgb(l.intensity)}" title="${escapeHtml(`${l.type || "Cardio"} · ${cardioMinLabel(l.minutes)}${Number(l.miles) ? ` · ${cardioMiLabel(Number(l.miles))} mi` : ""} · ${l.intensity || "Moderate"}`)}">
+          <span class="cal-cardio-ico">${cardioIcon(l.type)}</span>
+          <span class="cal-cardio-min">${escapeHtml(cardioMinShort(l.minutes))}</span>
+        </div>`);
+      });
+
+      // 6. Money-side marks: the token a session spent, and any missed mark.
       //    A charged miss replaces its own token pill so the day reads as one
       //    event rather than "used a session" next to "missed the session".
       const missed = ix.missed[iso] || [];
