@@ -64,11 +64,19 @@
             android:textColor="@color/accent"
             android:contentDescription="@string/next_day" />
 
-        <!-- All the slack lives here. -->
-        <View
+        <!-- All the slack lives here.
+
+             An empty TextView, NOT a <View>. RemoteViews inflates only a fixed
+             set of classes — LinearLayout/FrameLayout/RelativeLayout/GridLayout
+             plus TextView, ImageView, Button, ProgressBar, the collection views
+             and a few others — and a bare View is not among them. Using one
+             fails the whole inflation and the launcher shows "Can't load
+             widget", with nothing to say which element was at fault. -->
+        <TextView
             android:layout_width="0dp"
             android:layout_height="1dp"
-            android:layout_weight="1" />
+            android:layout_weight="1"
+            android:text="" />
 
         <TextView
             android:id="@+id/widget_count"
