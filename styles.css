@@ -6182,6 +6182,41 @@ input:focus, textarea:focus, select:focus {
   font-size: 0.6rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
 }
 .billing-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+
+/* The charge sheet: the working, then the number that actually gets sent.
+   Laid out as a sum so the coach can see WHY it says $819 before they send it,
+   and so the discount line reads as a deliberate change to a total rather than
+   as a mystery figure. */
+.chg-working {
+  display: flex; flex-direction: column; gap: 0.4rem;
+  padding: 0.75rem; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--surface-2);
+}
+.chg-line { display: flex; align-items: center; gap: 0.6rem; }
+.chg-line > span { flex: 1 1 auto; font-size: 0.78rem; color: var(--text-soft); }
+input.chg-in { flex: 0 0 6.5rem; width: 6.5rem; text-align: right; }
+.chg-total {
+  display: flex; align-items: baseline; gap: 0.6rem;
+  padding-top: 0.4rem; border-top: 1px solid var(--border);
+}
+.chg-total > span { flex: 1 1 auto; font-size: 0.7rem; font-weight: 800;
+  letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-soft); }
+.chg-total > strong { font-size: 1.1rem; color: var(--text); }
+/* A charge under the working total is a discount. Marked, because "did I mean
+   to knock $90 off?" is a question worth answering before the link goes out. */
+.chg-line.is-discount input.chg-in {
+  border-color: rgba(16, 185, 129, 0.6);
+  color: var(--accent);
+}
+.chg-line[data-diff]:not([data-diff=""])::after {
+  content: attr(data-diff);
+  flex: 0 0 auto; font-size: 0.7rem; font-weight: 800; color: var(--accent);
+}
+.chg-note { font-size: 0.74rem; margin: 0.6rem 0 0; }
+.chg-note-lbl { display: block; margin-top: 0.75rem; }
+.chg-foot { font-size: 0.72rem; margin: 0.75rem 0 0; }
+.chg-err { font-size: 0.78rem; color: var(--danger); margin: 0.75rem 0 0; }
+.chg-ready { font-size: 0.74rem; margin: 0.75rem 0 0; color: var(--accent); }
 .billing-hint { font-size: 0.72rem; }
 .billing-note { font-size: 0.72rem; margin: 0.6rem 0 0; }
 /* `input.` prefix, not a bare class: the base input rule is a type selector and

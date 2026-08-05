@@ -269,19 +269,60 @@ Deno.serve(async (req) => {
       return new Response("ok", { status: 200 });
     }
 
-    // ---- Refund / reversal ----
-    if (type === "payment.updated") {
+    // ---- A month's charge was paid (or reversed) ----
+    // This is the main event now. A charge is a one-off payment link for one
+    // month's real amount — sessions × rate, adjusted — not a subscription
+    // instalment, because the amount moves every month and discounts happen.
+    // square-billing wrote a 'sent' row carrying the order id when it made the
+    // link; Square's payment carries the same order id, and that is the join.
+    if (type === "payment.created" || type === "payment.updated") {
       const p = obj.payment ?? obj;
       const st = String(p?.status ?? "").toUpperCase();
+      const orderId = p?.order_id ?? null;
+
+      if (st === "COMPLETED" && orderId) {
+        const { data: charge } = await sb.from("billing_payments")
+          .select("id, status").eq("square_order_id", orderId).maybeSingle();
+        if (charge) {
+          // Only ever forward, and only from 'sent'. Square sends both created
+          // and updated for one payment, plus retries; without this guard a
+          // refunded charge could be walked back to paid by a late duplicate.
+          if (charge.status === "sent") {
+            await sb.from("billing_payments").update({
+              status: "paid",
+              square_payment_id: p?.id ?? null,
+              paid_at: p?.updated_at ?? new Date().toISOString(),
+              // What Square actually took, which is the number that matters if
+              // the athlete somehow paid a different amount.
+              amount_cents: p?.amount_money?.amount ?? undefined,
+            }).eq("id", charge.id);
+          }
+          return new Response("ok", { status: 200 });
+        }
+        // An order we didn't raise — a card taken in person, say. Not ours to
+        // interpret, and inventing a month for it would settle the wrong one.
+        return new Response("ok", { status: 200 });
+      }
+
       const reversed = st === "FAILED" || st === "CANCELED" || (p?.refunded_money?.amount ?? 0) > 0;
+      if (reversed && orderId) {
+        // Reversed money un-settles the month it paid for, which is the one
+        // case where "paid" legitimately goes backwards. settleBilledPackages
+        // only ever CLEARS an owed flag, so the coach is told rather than the
+        // athlete being silently re-billed.
+        await sb.from("billing_payments")
+          .update({ status: "refunded" })
+          .eq("square_order_id", orderId);
+        return new Response("ok", { status: 200 });
+      }
       if (reversed) {
-        // Matched on the invoice, not the payment id: invoice.payment_made
-        // records the row under the INVOICE (Square's invoice payload does not
-        // reliably carry a payment id), so matching only on payment id here
-        // would quietly update nothing and leave a refunded month reading paid.
-        const invoiceId = p?.order_id ? null : p?.invoice_id ?? null;
+        // No order id — an invoice payment (the subscription path below, kept
+        // for anyone genuinely on a flat monthly). Matched on the invoice
+        // rather than the payment id, because Square's invoice payload does
+        // not reliably carry one, and matching on it would quietly update
+        // nothing and leave a refunded month still reading paid.
         const q = sb.from("billing_payments").update({ status: "refunded" });
-        if (invoiceId) await q.eq("square_invoice_id", invoiceId);
+        if (p?.invoice_id) await q.eq("square_invoice_id", p.invoice_id);
         else if (p?.id) await q.eq("square_payment_id", p.id);
       }
       return new Response("ok", { status: 200 });
