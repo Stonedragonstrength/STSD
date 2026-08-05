@@ -7289,6 +7289,31 @@ input.pyr-weight-input { -moz-appearance: textfield; appearance: textfield; }
   flex-shrink: 0;
 }
 .week-del-btn:hover { color: var(--danger); border-color: var(--danger); }
+
+/* On a phone the row wraps, and `margin-left: auto` kept pushing the week group
+   right AFTER it wrapped — so "Duplicate week" landed alone on a second line,
+   right-aligned against nothing. A push to the far end only means anything when
+   there is slack to push through.
+   Narrow gets an even 2-up grid instead: the buttons pair off, every one is the
+   same width, and there is no orphan. `display: contents` dissolves the
+   week-actions wrapper so its buttons become grid items alongside the day ones,
+   which is what lets one grid own all four. */
+@media (max-width: 640px) {
+  .day-add-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.4rem;
+  }
+  .week-actions { display: contents; }
+  .day-add-row .btn {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
 .day-tab[draggable="true"] { cursor: grab; }
 .day-tab-dragging { opacity: 0.45; }
 .day-tab-dragover { border-bottom-color: var(--primary); background: var(--surface-2); }
