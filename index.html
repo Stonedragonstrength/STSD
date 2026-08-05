@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=democlip1" />
+  <link rel="stylesheet" href="styles.css?v=billing1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -763,6 +763,10 @@
                 </label>
               </div>
             </div>
+            <!-- Card payments. Renders nothing at all until Square is set up,
+                 so an athlete's coach view is unchanged until the coach turns
+                 it on. Filled in by renderBillingRow(). -->
+            <div id="session-billing-row"></div>
           </div>
           <div id="session-balance-host"></div>
           <div class="session-calendar">
@@ -1417,9 +1421,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="bugreport.js?v=bug1"></script>
   <script src="config.js?v=horm2"></script>
-  <script src="cloud.js?v=democlip1"></script>
+  <script src="cloud.js?v=billing1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=democlip1"></script>
+  <script src="app.js?v=billing1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

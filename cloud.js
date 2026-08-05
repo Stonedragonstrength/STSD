@@ -899,6 +899,48 @@
     } catch (e) { console.warn("[Cloud] deleteExerciseDemo", e); return false; }
   }
 
+  // -------- Billing (Square) --------
+  // READS go straight through PostgREST: billing_subscriptions and
+  // billing_payments both carry select policies for the owning athlete and
+  // their coach. WRITES have no policy at all on either table, for anybody —
+  // the only writer is the service-role key inside square-webhook, behind an
+  // HMAC check. So there is deliberately no upsert function here to match.
+  async function getBillingForCoach(coachId) {
+    if (!coachId) return null;
+    try {
+      const [subs, pays] = await Promise.all([
+        sb.from("billing_subscriptions").select("*").eq("coach_id", coachId),
+        // Only what a money surface actually reads. A year of history is
+        // pointless payload on every sign-in.
+        sb.from("billing_payments").select("*").eq("coach_id", coachId)
+          .gte("month_key", monthsAgoKey(3)),
+      ]);
+      if (subs.error) { console.warn("[Cloud] getBillingForCoach subs", subs.error.message); return null; }
+      return { subscriptions: subs.data || [], payments: pays.error ? [] : (pays.data || []) };
+    } catch (e) { console.warn("[Cloud] getBillingForCoach", e); return null; }
+  }
+  // NOTE: there is deliberately no getBillingForAthlete yet. The athlete's own
+  // select policies are already in place for it, but nothing on the athlete
+  // side reads billing, and an untested read path in a payments feature is
+  // worse than a missing one. Add it with the surface that uses it.
+  function monthsAgoKey(n) {
+    const d = new Date();
+    d.setMonth(d.getMonth() - n);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }
+  // The three things that need the Square access token, which can never reach a
+  // browser. All of them return { ok } — see the function's own notes on why an
+  // expected failure comes back as 200.
+  async function squareBilling(action, payload) {
+    try {
+      const { data, error } = await sb.functions.invoke("square-billing", {
+        body: { action, ...(payload || {}) },
+      });
+      if (error) return { ok: false, error: error.message || "call failed" };
+      return data || { ok: false, error: "empty response" };
+    } catch (e) { return { ok: false, error: String(e?.message || e) }; }
+  }
+
   // -------- Progress methods --------
   async function upsertProgress(athleteId, progress) {
     if (!athleteId) return false;
@@ -1112,6 +1154,9 @@
     uploadExerciseDemo,
     signedExerciseDemoUrl,
     deleteExerciseDemo,
+    // Billing (read-only from the client; writes are the webhook's alone)
+    getBillingForCoach,
+    squareBilling,
     // Web push
     savePushSubscription,
     deletePushSubscription,

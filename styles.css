@@ -6152,6 +6152,51 @@ input:focus, textarea:focus, select:focus {
 .cxs-carry-sub strong { color: var(--text); }
 .cxs-carry-none { margin: 0; font-size: 0.78rem; color: var(--muted); line-height: 1.45; }
 
+/* ===== Card payments (Square) ===== */
+/* Sits under the membership that decides what is being charged. The whole row
+   is absent until Square is configured, so nothing here has an empty state. */
+.billing-row {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem 0.75rem;
+  margin-top: 0.75rem; padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+.billing-status {
+  display: inline-flex; align-items: center; gap: 0.4em;
+  font-size: 0.76rem; font-weight: 700;
+  color: var(--text-soft);
+}
+.billing-status::before {
+  content: ""; width: 0.5em; height: 0.5em; border-radius: 999px;
+  background: currentColor;
+}
+.billing-status.good { color: var(--accent); }
+.billing-status.warn { color: var(--warn); }
+.billing-status.bad  { color: var(--danger); }
+.billing-status.muted { color: var(--muted); }
+/* Sandbox is loud on purpose: a test-mode charge that reads like a real one is
+   how you find out in a month that nobody was actually billed. */
+.billing-mode {
+  padding: 0.1em 0.5em; border-radius: 999px;
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.14); color: var(--warn);
+  font-size: 0.6rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.billing-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.billing-hint { font-size: 0.72rem; }
+.billing-note { font-size: 0.72rem; margin: 0.6rem 0 0; }
+/* `input.` prefix, not a bare class: the base input rule is a type selector and
+   outranks a plain class, so a bare .billing-link would lose the width. */
+input.billing-link {
+  width: 100%; margin-top: 0.6rem;
+  font-size: 0.78rem;
+  /* A URL is read left to right and is the one thing in this sheet the coach
+     has to be able to see all of before trusting it. */
+  text-overflow: ellipsis;
+}
+@media (max-width: 560px) {
+  .billing-actions { margin-left: 0; width: 100%; }
+}
+
 /* ===== Coach demo clips ===== */
 /* The coach's own footage, for lifts the still library has nothing for. Sits at
    the top of the demo picker, because it is the answer when the search below it

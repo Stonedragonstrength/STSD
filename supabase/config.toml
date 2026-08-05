@@ -439,3 +439,25 @@ entrypoint = "./functions/sync-setmore/index.ts"
 [functions.google-calendar]
 verify_jwt = false
 entrypoint = "./functions/google-calendar/index.ts"
+
+# Square webhook. verify_jwt MUST be OFF: Square has no Supabase JWT to present,
+# so the gateway check would 401 every real event. The HMAC signature check in
+# the handler IS the authentication — see the notes at the top of the function.
+[functions.square-webhook]
+verify_jwt = false
+entrypoint = "./functions/square-webhook/index.ts"
+
+# Square billing, called from the coach's browser. verify_jwt OFF for the same
+# reason as google-calendar: the CORS preflight carries no credentials, so a
+# gateway JWT check answers it with 401 and the real request never gets sent.
+# The handler authenticates every call itself (auth.getUser + a coaches lookup).
+[functions.square-billing]
+verify_jwt = false
+entrypoint = "./functions/square-billing/index.ts"
+
+# Daily reconcile. Called only by pg_cron with the service-role JWT; the
+# function also re-checks the caller's claims before doing anything.
+[functions.square-reconcile]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/square-reconcile/index.ts"

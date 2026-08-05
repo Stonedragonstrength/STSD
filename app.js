@@ -4177,6 +4177,9 @@
     // athlete card are fresh at login without opening every athlete.
     if (!_packagesBadgeBootstrapped && window.Cloud?.enabled) {
       _packagesBadgeBootstrapped = true;
+      // Same trip: who is on a card, and which months Square has confirmed.
+      // Read-only and memory-only — see the note above _billing.
+      loadCoachBilling();
       refreshAllAthletePackages();
     }
     // Birthdays and referrals are checked here as well as after the booking
@@ -5903,6 +5906,99 @@
       const m = membershipById(c.sessionBank.membership);
       sub.textContent = m ? membershipSub(m) : "No membership set";
     }
+    renderBillingRow(c);
+  }
+
+  // Card payments, under the membership that decides what is being charged.
+  // Renders NOTHING until Square is configured — billing ships dark, so the
+  // roster looks exactly as it did until the coach sets the secrets.
+  function renderBillingRow(c) {
+    const host = $("#session-billing-row");
+    if (!host || !c) return;
+    host.innerHTML = "";
+    if (!window.Cloud?.enabled) return;
+
+    Promise.all([loadBillingConfig(), ensureBillingLoaded()]).then(([cfg]) => {
+      // Re-check the host and the athlete: this resolves async, and the coach
+      // may have moved on to a different athlete or off the tab entirely.
+      if (!cfg?.configured || $("#session-billing-row") !== host || currentClient() !== c) return;
+      const sub = billingSubFor(c);
+      const st = billingStatusLabel(sub);
+      const tier = c.sessionBank.membership;
+      const mapped = (cfg.plans || []).includes(tier);
+
+      const box = document.createElement("div");
+      box.className = "billing-row";
+      box.innerHTML =
+        `<span class="billing-status ${st.tone}">${escapeHtml(st.text)}</span>` +
+        (cfg.mode !== "production" ? `<span class="billing-mode">${escapeHtml(cfg.mode)}</span>` : "");
+
+      const act = document.createElement("div");
+      act.className = "billing-actions";
+      if (!tier) {
+        act.innerHTML = `<span class="muted billing-hint">Pick a membership first.</span>`;
+      } else if (!mapped) {
+        // Named precisely: "billing isn't working" costs an hour of guessing,
+        // "this tier has no Square plan" is a five-second fix.
+        act.innerHTML = `<span class="muted billing-hint">No Square plan mapped for <strong>${escapeHtml(tier)}</strong> — add it to SQUARE_PLANS.</span>`;
+      } else if (sub && sub.status === "active") {
+        const stop = document.createElement("button");
+        stop.type = "button";
+        stop.className = "btn btn-ghost btn-sm";
+        stop.textContent = "Cancel card payments";
+        stop.addEventListener("click", () => cancelBillingFor(c));
+        act.appendChild(stop);
+      } else {
+        const go = document.createElement("button");
+        go.type = "button";
+        go.className = "btn btn-ghost btn-sm";
+        // A failed card needs a NEW card, not a first setup — saying "set up"
+        // to a coach chasing a decline reads like the app has forgotten them.
+        go.textContent =
+          sub && sub.status === "past_due" ? "Send a new card link"
+          : sub && sub.status === "pending" ? "Send the card link again"
+          : "💳 Set up card payments";
+        go.addEventListener("click", () => startBillingFor(c, tier));
+        act.appendChild(go);
+      }
+      box.appendChild(act);
+      host.appendChild(box);
+    });
+  }
+
+  async function startBillingFor(c, planKey) {
+    toast("Asking Square for a checkout link…");
+    const res = await window.Cloud.squareBilling("checkout", { athleteId: c.id, planKey });
+    if (!res?.ok) { toast(res?.error || "Square couldn't make a link", 5000); return; }
+    // The link is NOT auto-opened or auto-sent: it is a page that asks the
+    // athlete for a card, and where it goes is the coach's call, not the app's.
+    openModal({
+      title: "Card payment link",
+      body: `<p class="muted">Send this to ${escapeHtml(c.name || "your athlete")}. They enter their card on Square's own page — it never touches this app.</p>
+        <input class="input billing-link" id="billing-link" readonly value="${escapeHtml(res.url)}" />
+        <p class="muted billing-note">Nothing changes here until Square confirms the first payment.</p>`,
+      actions: [
+        { label: "Copy link", className: "btn btn-primary", onClick: () => {
+          const el = $("#billing-link");
+          el?.select();
+          navigator.clipboard?.writeText(res.url).then(
+            () => toast("Link copied"), () => toast("Select it and copy"));
+        } },
+        { label: "Close", className: "btn btn-ghost", onClick: closeModal },
+      ],
+    });
+    loadCoachBilling().then(() => renderBillingRow(c));
+  }
+
+  async function cancelBillingFor(c) {
+    if (!window.confirm(`Cancel ${c.name || "this athlete"}'s card payments? They keep the sessions they've already been granted, and the month they've paid for runs out as normal.`)) return;
+    const res = await window.Cloud.squareBilling("cancel", { athleteId: billingSubFor(c)?.athlete_id || c.id });
+    if (!res?.ok) { toast(res?.error || "Square couldn't cancel that", 5000); return; }
+    // Square is told; the STATUS still comes back via the webhook. Writing
+    // "canceled" here would make the client an author of payment state, which
+    // is the one thing this design does not allow.
+    toast("Cancelled in Square — the status here updates when Square confirms it");
+    setTimeout(() => loadCoachBilling().then(() => renderBillingRow(c)), 2500);
   }
   // The ticket beside their name: the balance from every tab, and the door
   // into Sessions from any of them. The snapshot tile only exists on Overview
@@ -6062,6 +6158,12 @@
       renderClientGrid();
       renderMonthGrantBtn();
       renderIncomeCard();
+      // The billing row names the tier it is looking for a Square plan for, so
+      // it goes stale the moment the tier changes — and a stale "no plan mapped
+      // for single-1" under an athlete now on single-2 is worse than no row.
+      // This handler updates each piece by hand rather than re-rendering the
+      // card, so a new piece has to be added here as well.
+      renderBillingRow(c);
       toast(m ? `Membership: ${membershipTitle(m)}` : "Membership cleared");
     });
     $("#prof-rate")?.addEventListener("change", () => {
@@ -11986,6 +12088,136 @@
     toast(`Free session granted · ${bits.join(" · ")}`, 5000);
   }
 
+  // ================= Billing (Square) =================
+  // Payment state is READ-ONLY here and lives ONLY in memory. It is never put
+  // in state.trainerData and never written to localStorage, because everything
+  // in there gets pushed back to Supabase by saveTrainer — and a client that
+  // can push payment state is a client that can claim to have paid. The tables
+  // have no write policy for anyone; the only writer is square-webhook, behind
+  // an HMAC check.
+  let _billing = { subscriptions: [], payments: [], loadedAt: 0 };
+  let _billingConfig = null; // { configured, mode, plans } — cached per session
+
+  // How long a failed card keeps its sessions. Square retries over several
+  // days, and locking someone out on day one of a retry punishes the athlete
+  // for their bank's timing. Only after this does the NEXT grant stop.
+  const BILLING_GRACE_DAYS = 7;
+
+  let _billingLoad = null;
+  async function loadCoachBilling() {
+    if (!window.Cloud?.enabled || !state.trainerData?.coachId) return;
+    const data = await window.Cloud.getBillingForCoach(state.trainerData.coachId);
+    if (!data) return;
+    _billing = { ...data, loadedAt: Date.now() };
+    settleBilledPackages();
+  }
+  // Load once, and let every caller share the one request. Without this the
+  // billing row depended on the dashboard having run first — open an athlete
+  // by any other route and the row would render "not on card payments" for
+  // somebody who is, which is worse than rendering nothing.
+  function ensureBillingLoaded() {
+    if (_billing.loadedAt) return Promise.resolve();
+    if (!_billingLoad) {
+      _billingLoad = loadCoachBilling().finally(() => { _billingLoad = null; });
+    }
+    return _billingLoad;
+  }
+  async function loadBillingConfig() {
+    if (_billingConfig) return _billingConfig;
+    if (!window.Cloud?.enabled) return (_billingConfig = { configured: false, plans: [] });
+    const res = await window.Cloud.squareBilling("config");
+    _billingConfig = res?.ok ? res : { configured: false, plans: [], error: res?.error };
+    return _billingConfig;
+  }
+
+  // The subscription covering this athlete. A couple share one, filed under the
+  // lower of the two ids, so either half has to find it — same rule the Edge
+  // Function uses so both sides agree without coordinating.
+  function billingSubFor(c) {
+    if (!c) return null;
+    const pid = c.partnerId || null;
+    return (_billing.subscriptions || []).find((s) =>
+      s.athlete_id === c.id || s.partner_athlete_id === c.id ||
+      (pid && (s.athlete_id === pid || s.partner_athlete_id === pid))) || null;
+  }
+  function billingPaidFor(c, monthKey) {
+    const sub = billingSubFor(c);
+    if (!sub) return false;
+    return (_billing.payments || []).some((p) =>
+      p.month_key === monthKey && p.status === "paid" &&
+      (p.athlete_id === sub.athlete_id || p.athlete_id === c.id));
+  }
+
+  // Does the state of their card allow NEXT month's sessions to be granted?
+  //
+  // This is deliberately not "have they paid for this month". Grant on
+  // schedule, gate the next one: a webhook that arrives late on the 1st must
+  // never leave a paying athlete unable to book, whereas one extra month on a
+  // dead card is visible on the roster and cheap to stop. The asymmetry is the
+  // whole argument.
+  function billingAllowsGrant(c) {
+    const sub = billingSubFor(c);
+    // No card on file at all — this athlete is billed the way they always were,
+    // and turning Square on for someone else must not touch them.
+    if (!sub || sub.status === "none") return true;
+    if (sub.status === "active" || sub.status === "pending" || sub.status === "paused") return true;
+    if (sub.status === "past_due") {
+      if (!sub.past_due_since) return true; // failed, but the clock never started
+      const days = (Date.now() - new Date(sub.past_due_since).getTime()) / 86400000;
+      return days <= BILLING_GRACE_DAYS;
+    }
+    return false; // canceled
+  }
+  function billingStatusLabel(sub) {
+    if (!sub || sub.status === "none") return { text: "Not on card payments", tone: "muted" };
+    if (sub.status === "pending")  return { text: "Card link sent · not started", tone: "warn" };
+    if (sub.status === "active")   return { text: "Paying by card", tone: "good" };
+    if (sub.status === "paused")   return { text: "Paused in Square", tone: "warn" };
+    if (sub.status === "past_due") {
+      const days = sub.past_due_since
+        ? Math.floor((Date.now() - new Date(sub.past_due_since).getTime()) / 86400000) : 0;
+      const left = BILLING_GRACE_DAYS - days;
+      return {
+        text: left > 0 ? `Card failed · ${left} day${left === 1 ? "" : "s"} of grace left`
+                       : "Card failed · next month is on hold",
+        tone: "bad",
+      };
+    }
+    return { text: "Cancelled", tone: "bad" };
+  }
+
+  // Folds server-confirmed payments into the packages the coach already reads,
+  // by clearing `unpaid` on the month they settle. Done this way rather than by
+  // teaching every money surface about billing: `unpaid` is consulted in a
+  // dozen places, and one derived field beats a dozen new joins.
+  //
+  // Only ever CLEARS a flag, never sets one — a missing payment row could just
+  // mean the athlete pays cash, and re-flagging them as owing would be the app
+  // inventing a debt.
+  function settleBilledPackages() {
+    if (!state.trainerData?.clients?.length) return;
+    let touched = false;
+    state.trainerData.clients.forEach((c) => {
+      if (!c.sessionBank?.packages?.length) return;
+      c.sessionBank.packages.forEach((p) => {
+        const key = pkgMonth(p);
+        if (!key || !p.unpaid) return;
+        if (!billingPaidFor(c, key)) return;
+        delete p.unpaid;
+        p.paidAt = p.paidAt || Date.now();
+        p.paidBy = "card";
+        touched = true;
+        bankMutated(c);
+      });
+    });
+    // Same discipline as runAutoRenewGrants: this runs on a load, so writing
+    // unconditionally would be a cloud push per load.
+    if (!touched) return;
+    localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+    (state.trainerData.clients || []).forEach((c) => pushAthlete(c));
+    renderCoachSessions?.();
+  }
+
   function runAutoRenewGrants(year, month) {
     const now = new Date();
     if (year !== now.getFullYear() || month !== now.getMonth()) return;
@@ -11993,6 +12225,7 @@
     const monthLabel = now.toLocaleDateString("en-US", { month: "long", year: "numeric" });
     const renewed = [];
     const advised = [];
+    const blocked = []; // card dead past its grace — see billingAllowsGrant
     (state.trainerData.clients || []).forEach((c) => {
       if (!c.sessionBank?.autoRenew) return;
       ensureSessionBank(c);
@@ -12028,6 +12261,15 @@
       // No `if (!booked) return` guard: a paying member gets their ticket even
       // with an empty calendar. Skipping them was a missed invoice the coach
       // was never told about.
+      //
+      // A dead card DOES stop it, though — and only here, at the point a NEW
+      // month is created. An athlete already holding this month's sessions
+      // keeps them: the block above returns before this line, so a card that
+      // fails on the 10th never claws back sessions granted on the 1st.
+      if (!billingAllowsGrant(c)) {
+        blocked.push(c);
+        return;
+      }
       c.sessionBank.packages.push({
         id: uid(), size: m.sessions, status: "paid", unpaid: true,
         addedAt: Date.now(),
@@ -12040,6 +12282,12 @@
       // Mirror now so the partner's own pass sees the grant and skips it.
       bankMutated(c);
     });
+    // A held-back month is news even when nothing was granted — it is the one
+    // thing here the coach has to act on, and silence would look identical to
+    // "nobody was due". Said once per pass, not once per athlete.
+    if (blocked.length) {
+      toast(`💳 Held back: ${blocked.map((c) => c.name).join(", ")} · card failed, ${monthLabel} not granted`, 6000);
+    }
     if (!renewed.length && !advised.length) return;
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
     [...renewed, ...advised].forEach((c) => {
