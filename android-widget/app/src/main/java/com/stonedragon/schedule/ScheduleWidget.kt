@@ -282,6 +282,7 @@ class ScheduleWidget : AppWidgetProvider() {
             v.setTextColor(R.id.widget_next, accent)
             v.setTextColor(R.id.widget_now, accent)
             v.setTextColor(R.id.widget_refresh, dim)
+            v.setTextColor(R.id.widget_settings, dim)
             v.setTextColor(R.id.widget_empty, dim)
 
             v.setOnClickPendingIntent(R.id.widget_prev, actionIntent(ctx, ACTION_PREV, widgetId))
@@ -289,6 +290,10 @@ class ScheduleWidget : AppWidgetProvider() {
             v.setOnClickPendingIntent(R.id.widget_date, actionIntent(ctx, ACTION_TODAY, widgetId))
             v.setOnClickPendingIntent(R.id.widget_now, actionIntent(ctx, ACTION_TODAY, widgetId))
             v.setOnClickPendingIntent(R.id.widget_refresh, actionIntent(ctx, ACTION_REFRESH, widgetId))
+            // Straight to the activity — no broadcast round trip, and no
+            // android:configure, which the launcher would treat as a widget it
+            // is allowed to drop if the activity ever failed to return RESULT_OK.
+            v.setOnClickPendingIntent(R.id.widget_settings, configIntent(ctx))
 
             // Jump to now, but only when it was actually asked for — see
             // Prefs.requestJump. Consumed here so the next routine repaint

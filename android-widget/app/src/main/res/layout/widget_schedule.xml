@@ -3,10 +3,17 @@
      height so the list gets every pixel the launcher will give it.
 
      Every dimension here is a fight with the list for the same pixels, and the
-     list is what the widget is for. The controls were 44dp boxes — the touch
-     minimum — but 44dp SQUARE spends height on nothing: a chevron needs width
-     to be hittable with a thumb, not height. They are wide and short now, which
-     keeps the target comfortable and hands ~16dp back to the schedule. -->
+     list is what the widget is for. The controls were 44dp SQUARE for the touch
+     minimum, but square spends height on nothing: a chevron needs width to be
+     hittable with a thumb, not height.
+
+     Order matters as much as size. `‹ THIS WEEK ›` is ONE control — the arrows
+     belong either side of the thing they move, and the week count sitting
+     between the date and the forward arrow split a single idea in half. The
+     count is a readout, not a control, so it goes with the other trailing
+     items. One weighted spacer holds all the slack, instead of the date being
+     the weighted view and leaving gaps either side of floating centred text
+     that read as padding nobody asked for. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
@@ -27,7 +34,7 @@
 
         <TextView
             android:id="@+id/widget_prev"
-            android:layout_width="36dp"
+            android:layout_width="26dp"
             android:layout_height="32dp"
             android:gravity="center"
             android:text="‹"
@@ -37,10 +44,8 @@
 
         <TextView
             android:id="@+id/widget_date"
-            android:layout_width="0dp"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:gravity="center"
             android:maxLines="1"
             android:ellipsize="end"
             android:text="THIS WEEK"
@@ -48,6 +53,22 @@
             android:textStyle="bold"
             android:letterSpacing="0.05"
             android:textColor="@color/text" />
+
+        <TextView
+            android:id="@+id/widget_next"
+            android:layout_width="26dp"
+            android:layout_height="32dp"
+            android:gravity="center"
+            android:text="›"
+            android:textSize="20sp"
+            android:textColor="@color/accent"
+            android:contentDescription="@string/next_day" />
+
+        <!-- All the slack lives here. -->
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
 
         <TextView
             android:id="@+id/widget_count"
@@ -65,16 +86,6 @@
             android:paddingTop="2dp"
             android:paddingBottom="2dp" />
 
-        <TextView
-            android:id="@+id/widget_next"
-            android:layout_width="36dp"
-            android:layout_height="32dp"
-            android:gravity="center"
-            android:text="›"
-            android:textSize="20sp"
-            android:textColor="@color/accent"
-            android:contentDescription="@string/next_day" />
-
         <!-- Back to this week AND scrolled to the next session. Tapping the date
              already did the first half, but an affordance nothing announces is
              one nobody uses — hence a button that says what it does. -->
@@ -82,8 +93,10 @@
             android:id="@+id/widget_now"
             android:layout_width="wrap_content"
             android:layout_height="32dp"
-            android:minWidth="34dp"
+            android:minWidth="32dp"
             android:gravity="center"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
             android:text="@string/now"
             android:textSize="11sp"
             android:textStyle="bold"
@@ -93,13 +106,28 @@
 
         <TextView
             android:id="@+id/widget_refresh"
-            android:layout_width="32dp"
+            android:layout_width="30dp"
             android:layout_height="32dp"
             android:gravity="center"
             android:text="⟳"
             android:textSize="15sp"
             android:textColor="@color/muted"
             android:contentDescription="@string/refresh" />
+
+        <!-- The ONLY way into settings from the home screen. This widget has no
+             android:configure on purpose — a configure activity that fails to
+             return RESULT_OK makes the launcher silently drop the widget — so
+             long-pressing offers nothing and the app-drawer icon was the sole
+             remaining door. A colour picker nobody can reach is not a feature. -->
+        <TextView
+            android:id="@+id/widget_settings"
+            android:layout_width="30dp"
+            android:layout_height="32dp"
+            android:gravity="center"
+            android:text="⚙"
+            android:textSize="15sp"
+            android:textColor="@color/muted"
+            android:contentDescription="@string/settings" />
     </LinearLayout>
 
     <ListView

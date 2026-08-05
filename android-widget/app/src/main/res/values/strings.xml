@@ -12,6 +12,7 @@
     <string name="signing_in">Signing in…</string>
     <string name="needs_both">Enter your email and password</string>
     <string name="signed_in_as">Signed in as %1$s</string>
+    <string name="settings">Settings</string>
     <string name="appearance">Appearance</string>
     <string name="light_background">Light background</string>
     <string name="now">NOW</string>
