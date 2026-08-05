@@ -9686,6 +9686,25 @@ body.live-log-mode #screen-client .header-right { display: none; }
   color: var(--text-soft); font-size: 0.76rem; font-weight: 700;
 }
 .food-more button:hover { color: var(--primary-bright); }
+/* One of these four is not like the others. "This week", "My foods" and "Copy
+   yesterday" go and look at something; this one CHANGES the numbers the whole
+   card is measured against, and as a fourth identical text link nobody read it
+   as a control at all. It gets the outline, the accent and the pencil so the
+   row reads as one button and three quiet links. Built from --primary-rgb so
+   it follows every theme, including the light one. */
+.food-more button.food-more-edit {
+  color: var(--primary-bright);
+  border: 1px solid rgba(var(--primary-rgb), 0.45);
+  background: rgba(var(--primary-rgb), 0.1);
+  border-radius: 999px;
+  padding: 0.42em 0.95em;
+  /* Sits first in the row and should stay there when the row wraps. */
+  order: -1;
+}
+.food-more button.food-more-edit:hover {
+  border-color: rgba(var(--primary-rgb), 0.8);
+  background: rgba(var(--primary-rgb), 0.18);
+}
 
 /* Finger-sized targets. The food log's round ✕, the dashed add button and the
    recipe-builder ingredient ✕ are all comfortable with a mouse but land well
@@ -9695,6 +9714,8 @@ body.live-log-mode #screen-client .header-right { display: none; }
   .food-entry-del { width: 40px; height: 40px; font-size: 1.15rem; }
   .food-add-btn { padding: 0.75em 0.4em; font-size: 0.85rem; }
   .rb-item-del { padding: 0.55em 0.7em; font-size: 1.3rem; }
+  /* A 0.76rem text link was a ~18px-tall target. The pill has room to grow. */
+  .food-more button.food-more-edit { min-height: 38px; padding: 0.5em 1.05em; }
 }
 
 /* Add-food modal */

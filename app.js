@@ -24838,7 +24838,7 @@
              and is the entry point the empty state and the tour both teach —
              this stays as the visible one, because the ring advertises itself
              only through an aria-label nobody sighted ever sees. -->
-        <button type="button" id="food-targets-btn">Edit targets</button>
+        <button type="button" id="food-targets-btn" class="food-more-edit">✎ Edit targets</button>
         <button type="button" id="food-week-more">This week</button>
         ${savedCount ? `<button type="button" id="food-myfoods-btn">My foods <span class="myfoods-count">${savedCount}</span></button>` : ""}
         <button type="button" id="food-copy-yesterday">Copy yesterday</button>
