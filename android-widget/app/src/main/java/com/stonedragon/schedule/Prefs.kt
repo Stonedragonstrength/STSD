@@ -48,33 +48,40 @@ object Prefs {
         p(ctx).edit().remove(K_ACCESS).remove(K_REFRESH).remove(K_EXPIRES).apply()
     }
 
-    // ---- which day each widget is showing ----
+    // ---- which week each widget is showing ----
 
     /**
-     * Local midnight of the day this widget renders. Defaults to today, and
-     * re-defaults to today whenever the stored day is in the past — a widget
-     * left on "tomorrow" overnight should come back as a today view, not
-     * silently keep showing yesterday.
+     * Local midnight on the Monday of the week this widget renders. Defaults to
+     * this week, and re-defaults whenever the stored week is in the past — a
+     * widget left on next week over a weekend should come back showing the week
+     * it is now, not keep rendering a week that has been and gone.
+     *
+     * Note the key changed from day_ to week_ when the widget stopped being a
+     * day at a time. An old day_ value is simply ignored: it is a millis inside
+     * some day, and reading it as a week start would put the widget on a week
+     * beginning on a Thursday.
      */
-    fun day(ctx: Context, widgetId: Int): Long {
-        val stored = p(ctx).getLong(dayKey(widgetId), 0L)
-        val today = Supabase.startOfDay(System.currentTimeMillis())
-        return if (stored < today) today else stored
+    fun week(ctx: Context, widgetId: Int): Long {
+        val stored = p(ctx).getLong(weekKey(widgetId), 0L)
+        val thisWeek = Supabase.startOfWeek(System.currentTimeMillis())
+        return if (stored < thisWeek) thisWeek else stored
     }
 
-    fun setDay(ctx: Context, widgetId: Int, dayStart: Long) {
-        p(ctx).edit().putLong(dayKey(widgetId), dayStart).apply()
+    fun setWeek(ctx: Context, widgetId: Int, weekStart: Long) {
+        p(ctx).edit().putLong(weekKey(widgetId), weekStart).apply()
     }
 
     fun forgetWidget(ctx: Context, widgetId: Int) {
         p(ctx).edit()
-            .remove(dayKey(widgetId))
+            .remove(weekKey(widgetId))
+            .remove(dayKey(widgetId)) // pre-week builds; harmless if absent
             .remove(cacheKey(widgetId))
             .remove(cacheDayKey(widgetId))
             .remove(stateKey(widgetId))
             .apply()
     }
 
+    private fun weekKey(id: Int) = "week_$id"
     private fun dayKey(id: Int) = "day_$id"
     private fun cacheKey(id: Int) = "cache_$id"
     private fun cacheDayKey(id: Int) = "cacheday_$id"

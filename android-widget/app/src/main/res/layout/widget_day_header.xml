@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A day divider inside the week list. Sits in the same left column as the
+     session rows' time, so the week reads as one ruled sheet rather than seven
+     stacked lists. The count on the right is what makes an empty day legible:
+     "SAT 9 AUG — none" is information, a missing heading is ambiguity. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/hdr_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingTop="10dp"
+    android:paddingBottom="4dp">
+
+    <TextView
+        android:id="@+id/hdr_day"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:text="MON 4 AUG"
+        android:textSize="11sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.06"
+        android:textColor="@color/muted" />
+
+    <TextView
+        android:id="@+id/hdr_count"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:maxLines="1"
+        android:text="5"
+        android:textSize="11sp"
+        android:textStyle="bold"
+        android:textColor="@color/muted" />
+</LinearLayout>

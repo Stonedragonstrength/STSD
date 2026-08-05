@@ -11,9 +11,9 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
- * Feeds the widget's list. Runs in the launcher's process, so it reads the day's
- * sessions back out of SharedPreferences rather than holding any state of its
- * own — the provider does the fetching, this only draws.
+ * Feeds the widget's list. Runs in the launcher's process, so it reads the
+ * week's sessions back out of SharedPreferences rather than holding any state
+ * of its own — the provider does the fetching, this only draws.
  */
 class ScheduleWidgetService : RemoteViewsService() {
     override fun onGetViewFactory(intent: Intent): RemoteViewsFactory {
@@ -25,27 +25,63 @@ class ScheduleWidgetService : RemoteViewsService() {
     }
 }
 
+/**
+ * One line of the week list: either a day divider or a session under it.
+ *
+ * The week is flattened into a single list because that is the only shape a
+ * RemoteViews collection has — there is no nesting and no section API, so the
+ * headers are rows like any other and the factory is what knows the difference.
+ */
+private sealed class Row {
+    data class Header(val dayStart: Long, val count: Int) : Row()
+    data class Session(val booking: Booking) : Row()
+}
+
 private class ScheduleFactory(
     private val ctx: Context,
     private val widgetId: Int,
 ) : RemoteViewsService.RemoteViewsFactory {
 
-    private var rows: List<Booking> = emptyList()
+    private var rows: List<Row> = emptyList()
 
     override fun onCreate() {}
 
     override fun onDataSetChanged() {
-        // Same day the provider drew, or the list and the header disagree.
-        val day = Prefs.day(ctx, widgetId)
-        rows = if (Prefs.isLoaded(Prefs.state(ctx, widgetId))) {
-            Prefs.bookings(ctx, widgetId, day)
+        // Same week the provider drew, or the list and the header disagree.
+        val week = Prefs.week(ctx, widgetId)
+        val bookings = if (Prefs.isLoaded(Prefs.state(ctx, widgetId))) {
+            Prefs.bookings(ctx, widgetId, week)
         } else {
             emptyList()
         }
+        rows = buildWeek(week, bookings)
         // The launcher binds this service separately from the provider. If this
         // line never appears, the list is never asked for its contents and the
         // empty view is all the widget can possibly show.
-        Prefs.note(ctx, "list id=$widgetId rows=" + rows.size)
+        Prefs.note(ctx, "list id=$widgetId rows=" + rows.size + " sessions=" + bookings.size)
+    }
+
+    /**
+     * Monday to Sunday, every day present whether or not it has sessions — a
+     * rest day is a real answer, and a week that silently omits it reads as a
+     * week that failed to load half of itself.
+     *
+     * Returns EMPTY when the week holds nothing at all. setEmptyView only fires
+     * on a zero-count adapter, so seven bare headers would suppress the message
+     * that says whether the widget is empty or broken.
+     */
+    private fun buildWeek(weekStart: Long, bookings: List<Booking>): List<Row> {
+        if (bookings.isEmpty()) return emptyList()
+        val out = ArrayList<Row>(bookings.size + 7)
+        val sorted = bookings.sortedBy { it.startMillis }
+        for (i in 0 until 7) {
+            val from = Supabase.addDays(weekStart, i)
+            val to = Supabase.addDays(weekStart, i + 1)
+            val mine = sorted.filter { it.startMillis >= from && it.startMillis < to }
+            out.add(Row.Header(from, mine.size))
+            mine.forEach { out.add(Row.Session(it)) }
+        }
+        return out
     }
 
     override fun onDestroy() {
@@ -55,8 +91,10 @@ private class ScheduleFactory(
     override fun getCount() = rows.size
 
     override fun getViewAt(position: Int): RemoteViews {
+        val row = rows.getOrNull(position)
+        if (row is Row.Header) return headerView(row)
         val v = RemoteViews(ctx.packageName, R.layout.widget_row)
-        val b = rows.getOrNull(position) ?: return v
+        val b = (row as? Row.Session)?.booking ?: return v
 
         v.setTextViewText(R.id.row_time, timeLabel(b.startMillis))
         v.setTextViewText(R.id.row_name, b.athlete.ifBlank { "Session" })
@@ -94,9 +132,44 @@ private class ScheduleFactory(
         return v
     }
 
+    /**
+     * A day divider. Today is called out by name and drawn at full strength;
+     * days already gone are dimmed like a finished session, so scrolling back
+     * up the week reads as history rather than as a schedule.
+     */
+    private fun headerView(h: Row.Header): RemoteViews {
+        val v = RemoteViews(ctx.packageName, R.layout.widget_day_header)
+        val today = Supabase.startOfDay(System.currentTimeMillis())
+        val label = SimpleDateFormat("EEE d MMM", Locale.getDefault())
+            .format(Date(h.dayStart))
+            .uppercase(Locale.getDefault())
+        v.setTextViewText(
+            R.id.hdr_day,
+            when (h.dayStart) {
+                today -> "$label · TODAY"
+                Supabase.addDays(today, 1) -> "$label · TOMORROW"
+                else -> label
+            },
+        )
+        // "—" rather than "0": a dash reads as nothing booked, where a zero in a
+        // column of counts reads like a number that failed to arrive.
+        v.setTextViewText(R.id.hdr_count, if (h.count == 0) "—" else h.count.toString())
+        v.setFloat(R.id.hdr_root, "setAlpha", if (h.dayStart < today) 0.42f else 1f)
+        return v
+    }
+
     override fun getLoadingView(): RemoteViews? = null
-    override fun getViewTypeCount() = 1
-    override fun getItemId(position: Int) = rows.getOrNull(position)?.id?.hashCode()?.toLong() ?: position.toLong()
+
+    // Two layouts: the day divider and the session row. Getting this wrong
+    // recycles one into the other and the list draws headers as sessions.
+    override fun getViewTypeCount() = 2
+
+    override fun getItemId(position: Int): Long = when (val r = rows.getOrNull(position)) {
+        is Row.Header -> r.dayStart          // unique per day, stable across refreshes
+        is Row.Session -> r.booking.id.hashCode().toLong()
+        null -> position.toLong()
+    }
+
     override fun hasStableIds() = true
 
     private fun timeLabel(millis: Long): String {

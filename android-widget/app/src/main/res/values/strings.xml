@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Stone Dragon Schedule</string>
-    <string name="widget_label">Stone Dragon · Today</string>
-    <string name="widget_description">Your coaching day, one day at a time.</string>
-    <string name="config_blurb">Sign in with your coach account. The widget shows the sessions booked with you, one day at a time.</string>
+    <string name="widget_label">Stone Dragon · Week</string>
+    <string name="widget_description">Your coaching week, Monday to Sunday.</string>
+    <string name="config_blurb">Sign in with your coach account. The widget shows the sessions booked with you, a week at a time.</string>
     <string name="config_footer">Your password is not stored — only the session token Supabase issues, in this app\'s private storage. Sign out to remove it.</string>
     <string name="email">Coach email</string>
     <string name="password">Password</string>
@@ -12,8 +12,8 @@
     <string name="signing_in">Signing in…</string>
     <string name="needs_both">Enter your email and password</string>
     <string name="signed_in_as">Signed in as %1$s</string>
-    <string name="prev_day">Previous day</string>
-    <string name="next_day">Next day</string>
+    <string name="prev_day">Previous week</string>
+    <string name="next_day">Next week</string>
     <string name="refresh">Refresh</string>
     <string name="loading">Loading…</string>
     <!-- The initialLayout's text: what a widget shows before ANY of this app's

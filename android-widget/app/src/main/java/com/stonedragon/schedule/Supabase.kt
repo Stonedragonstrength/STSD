@@ -100,15 +100,28 @@ object Supabase {
             sb.append("\nNothing to query without a session.")
             return sb.toString()
         }
-        val day = startOfDay(System.currentTimeMillis())
-        when (val r = bookingsForDay(ctx, day)) {
+        // The WEEK, not today. This test used to query only today, so a widget
+        // that could load today and nothing else — which is exactly what got
+        // reported — passed it cleanly and proved nothing.
+        val week = startOfWeek(System.currentTimeMillis())
+        when (val r = bookingsForWeek(ctx, week)) {
             is FetchResult.Ok -> {
-                sb.append("Query: OK, ").append(r.bookings.size).append(" session(s) today")
+                sb.append("Query: OK, ").append(r.bookings.size).append(" session(s) this week")
                 if (r.partial) sb.append(" (one source failed)")
                 sb.append('\n')
-                r.bookings.take(5).forEach {
+                // Per-day counts, so "the week loaded but one day is empty" is
+                // distinguishable from "the whole week is empty" at a glance.
+                val dayFmt = SimpleDateFormat("EEE d", Locale.getDefault())
+                for (i in 0 until 7) {
+                    val from = addDays(week, i)
+                    val to = addDays(week, i + 1)
+                    val n = r.bookings.count { it.startMillis >= from && it.startMillis < to }
+                    sb.append("  ").append(dayFmt.format(Date(from)))
+                        .append(": ").append(n).append('\n')
+                }
+                r.bookings.take(3).forEach {
                     sb.append("  • ")
-                        .append(SimpleDateFormat("h:mma", Locale.getDefault()).format(Date(it.startMillis)))
+                        .append(SimpleDateFormat("EEE h:mma", Locale.getDefault()).format(Date(it.startMillis)))
                         .append(' ')
                         .append(it.athlete.ifBlank { "(no name)" })
                         .append(if (it.id.startsWith("sm:")) "  [setmore]" else "  [bookings]")
@@ -205,13 +218,25 @@ object Supabase {
      * whoever is signed in, so a filter here would only be a second place to
      * get it wrong.
      */
-    fun bookingsForDay(ctx: Context, dayStart: Long): FetchResult {
+    /** Monday to Sunday inclusive, in one pair of requests. */
+    fun bookingsForWeek(ctx: Context, weekStart: Long): FetchResult =
+        bookingsForRange(ctx, weekStart, 7)
+
+    /**
+     * [days] whole calendar days from [dayStart].
+     *
+     * One request per table for the entire span rather than seven per table:
+     * a widget refresh happens on a launcher's schedule and on a phone radio,
+     * and fourteen round trips to draw one screen is how a refresh ends up
+     * half-finished when the process is killed.
+     */
+    fun bookingsForRange(ctx: Context, dayStart: Long, days: Int): FetchResult {
         val token = accessToken(ctx) ?: return FetchResult.NotSignedIn
         // Whole calendar days, so the window is still right across a DST change
         // — dayStart + 24h lands an hour early or late on those two days a year
         // and would clip or double-count a session at the boundary.
         val from = isoUtc(dayStart)
-        val to = isoUtc(addDays(dayStart, 1))
+        val to = isoUtc(addDays(dayStart, days))
 
         val out = ArrayList<Booking>()
         var failed = 0
@@ -390,6 +415,24 @@ object Supabase {
         c.set(Calendar.MINUTE, 0)
         c.set(Calendar.SECOND, 0)
         c.set(Calendar.MILLISECOND, 0)
+        return c.timeInMillis
+    }
+
+    /**
+     * Local midnight on the MONDAY of the week [millis] falls in.
+     *
+     * Deliberately not Calendar.getFirstDayOfWeek(): that is Sunday in a US
+     * locale, and the coach reads his week Monday to Sunday. Hard-coding Monday
+     * makes the widget agree with how he actually plans, rather than with the
+     * phone's region setting.
+     */
+    fun startOfWeek(millis: Long): Long {
+        val c = Calendar.getInstance()
+        c.timeInMillis = startOfDay(millis)
+        // Calendar.MONDAY is 2 and SUNDAY is 1, so Sunday has to fall to the
+        // END of the week it belongs to, six days back rather than one forward.
+        val back = (c.get(Calendar.DAY_OF_WEEK) - Calendar.MONDAY + 7) % 7
+        c.add(Calendar.DAY_OF_YEAR, -back)
         return c.timeInMillis
     }
 

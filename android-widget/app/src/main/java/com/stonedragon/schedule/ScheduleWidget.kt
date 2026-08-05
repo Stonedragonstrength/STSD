@@ -67,10 +67,10 @@ class ScheduleWidget : AppWidgetProvider() {
             val ids = mgr.getAppWidgetIds(ComponentName(app, ScheduleWidget::class.java))
             if (ids.isEmpty()) return "No widget placed on the home screen."
             return ids.joinToString("\n") { id ->
-                val day = Prefs.day(app, id)
-                val n = Prefs.bookings(app, id, day).size
+                val week = Prefs.week(app, id)
+                val n = Prefs.bookings(app, id, week).size
                 "Widget $id: state=${Prefs.state(app, id)}, cached=$n, " +
-                    "day=" + fmt("EEE d MMM", day)
+                    "week of " + fmt("EEE d MMM", week)
             }
         }
 
@@ -118,7 +118,7 @@ class ScheduleWidget : AppWidgetProvider() {
             val app = ctx.applicationContext
             val mgr = AppWidgetManager.getInstance(app)
             for (id in widgetIds(app)) {
-                Prefs.saveBookings(app, id, Prefs.day(app, id), emptyList())
+                Prefs.saveBookings(app, id, Prefs.week(app, id), emptyList())
                 Prefs.saveState(app, id, "signin")
                 paint(app, mgr, id)
             }
@@ -131,9 +131,9 @@ class ScheduleWidget : AppWidgetProvider() {
          */
         fun paint(ctx: Context, mgr: AppWidgetManager, widgetId: Int) {
             try {
-                val day = Prefs.day(ctx, widgetId)
+                val week = Prefs.week(ctx, widgetId)
                 val signedIn = Supabase.isSignedIn(ctx)
-                mgr.updateAppWidget(widgetId, buildViews(ctx, widgetId, day))
+                mgr.updateAppWidget(widgetId, buildViews(ctx, widgetId, week))
                 mgr.notifyAppWidgetViewDataChanged(widgetId, R.id.widget_list)
                 // Noted AFTER the launcher call returns, so a line here means the
                 // frame was accepted without complaint. If the screen still
@@ -161,12 +161,12 @@ class ScheduleWidget : AppWidgetProvider() {
          * right in storage and the widget was never told.
          */
         fun refresh(ctx: Context, mgr: AppWidgetManager, widgetId: Int) {
-            val day = Prefs.day(ctx, widgetId)
+            val week = Prefs.week(ctx, widgetId)
             Prefs.note(ctx, "refresh id=$widgetId start")
             try {
-                when (val result = Supabase.bookingsForDay(ctx, day)) {
+                when (val result = Supabase.bookingsForWeek(ctx, week)) {
                     is FetchResult.Ok -> {
-                        Prefs.saveBookings(ctx, widgetId, day, result.bookings)
+                        Prefs.saveBookings(ctx, widgetId, week, result.bookings)
                         Prefs.saveState(ctx, widgetId, if (result.partial) "partial" else "ok")
                     }
                     is FetchResult.NotSignedIn -> Prefs.saveState(ctx, widgetId, "signin")
@@ -182,9 +182,9 @@ class ScheduleWidget : AppWidgetProvider() {
             }
         }
 
-        private fun buildViews(ctx: Context, widgetId: Int, day: Long): RemoteViews {
+        private fun buildViews(ctx: Context, widgetId: Int, week: Long): RemoteViews {
             val v = RemoteViews(ctx.packageName, R.layout.widget_schedule)
-            val today = Supabase.startOfDay(System.currentTimeMillis())
+            val thisWeek = Supabase.startOfWeek(System.currentTimeMillis())
             // Whether there is a session is knowable right here, with no network,
             // so it decides the state instead of waiting for a fetch to come back
             // and say so. Without this a widget placed before signing in reads
@@ -192,23 +192,32 @@ class ScheduleWidget : AppWidgetProvider() {
             // in Android's stopped state and receives no broadcasts, so nothing
             // ever arrives to correct it and the message is permanent.
             val state = if (!Supabase.isSignedIn(ctx)) "signin" else Prefs.state(ctx, widgetId)
-            // Day-stamped, so this is empty unless the cache holds THIS day.
-            val bookings = if (Prefs.isLoaded(state)) Prefs.bookings(ctx, widgetId, day) else emptyList()
-            // A failed refresh over a cache that still has the day is stale, not
+            // Week-stamped, so this is empty unless the cache holds THIS week.
+            val bookings = if (Prefs.isLoaded(state)) Prefs.bookings(ctx, widgetId, week) else emptyList()
+            // A failed refresh over a cache that still has the week is stale, not
             // broken. The sessions are shown and the header carries the warning,
             // rather than the widget going blank over perfectly good data.
             val stale = bookings.isNotEmpty() && (state.startsWith("error:") || state == "loading")
 
-            // "Today" and "Tomorrow" beat a bare date when they apply — reading
-            // a weekday and working out that it means today is exactly the work
-            // a glanceable widget should be saving.
-            val date = fmt("EEE d MMM", day).uppercase(Locale.getDefault())
+            // "This week" beats a date range when it applies — working out that a
+            // span of dates means the week you are standing in is exactly the
+            // work a glanceable widget should be saving.
+            val sunday = Supabase.addDays(week, 6)
+            // "4–10 AUG", or "28 JUL – 3 AUG" when the week straddles two months.
+            val sameMonth = fmt("MMM", week) == fmt("MMM", sunday)
+            // Deliberately not `if (…) {…} else {…}.uppercase()` — a trailing
+            // call after an if/else block binds to the else branch, not to the
+            // whole expression, and the first half would silently stay unshouted.
+            val spanRaw =
+                if (sameMonth) fmt("d", week) + "–" + fmt("d MMM", sunday)
+                else fmt("d MMM", week) + " – " + fmt("d MMM", sunday)
+            val span = spanRaw.uppercase(Locale.getDefault())
             v.setTextViewText(
                 R.id.widget_date,
-                when (day) {
-                    today -> "TODAY · $date"
-                    Supabase.addDays(today, 1) -> "TOMORROW · $date"
-                    else -> date
+                when (week) {
+                    thisWeek -> "THIS WEEK · $span"
+                    Supabase.addDays(thisWeek, 7) -> "NEXT WEEK · $span"
+                    else -> span
                 }
             )
             v.setTextViewText(
@@ -245,11 +254,11 @@ class ScheduleWidget : AppWidgetProvider() {
                     state == "signin" -> "Tap to sign in"
                     state.startsWith("error:") -> state.removePrefix("error:") + " · tap ⟳"
                     state == "loading" -> "Loading…"
-                    // Naming the day it actually checked is what separates "you
+                    // Naming the week it actually checked is what separates "you
                     // have no sessions" from "this thing is broken" — which is
                     // the difference an empty widget cannot otherwise show.
-                    day == today -> "No sessions booked today"
-                    else -> "No sessions on " + fmt("EEE d MMM", day)
+                    week == thisWeek -> "No sessions booked this week"
+                    else -> "No sessions week of " + fmt("EEE d MMM", week)
                 }
             )
 
@@ -391,16 +400,16 @@ class ScheduleWidget : AppWidgetProvider() {
 
         val app = ctx.applicationContext
         val mgr = AppWidgetManager.getInstance(app)
-        val today = Supabase.startOfDay(System.currentTimeMillis())
-        val day = Prefs.day(app, widgetId)
+        val thisWeek = Supabase.startOfWeek(System.currentTimeMillis())
+        val week = Prefs.week(app, widgetId)
 
         when (action) {
-            // Today is the floor. Yesterday's sessions are history the app shows
-            // better than a widget can, and a coach paging back through last
-            // month on a home screen is not a real journey.
-            ACTION_PREV -> Prefs.setDay(app, widgetId, maxOf(Supabase.addDays(day, -1), today))
-            ACTION_NEXT -> Prefs.setDay(app, widgetId, Supabase.addDays(day, 1))
-            ACTION_TODAY -> Prefs.setDay(app, widgetId, today)
+            // This week is the floor. Last week's sessions are history the app
+            // shows better than a widget can, and a coach paging back through
+            // last month on a home screen is not a real journey.
+            ACTION_PREV -> Prefs.setWeek(app, widgetId, maxOf(Supabase.addDays(week, -7), thisWeek))
+            ACTION_NEXT -> Prefs.setWeek(app, widgetId, Supabase.addDays(week, 7))
+            ACTION_TODAY -> Prefs.setWeek(app, widgetId, thisWeek)
         }
         if (action != ACTION_REFRESH) Prefs.saveState(app, widgetId, "loading")
 
