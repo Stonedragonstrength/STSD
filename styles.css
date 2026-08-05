@@ -6017,6 +6017,108 @@ input:focus, textarea:focus, select:focus {
   .cex-rir-lbl { flex: 0 0 100%; margin-right: 0; }
   .cex-rir-btn { flex: 1 1 0; justify-content: center; }
 }
+
+/* ===== Quick notes: per-exercise pill tags (see EX_NOTES) ===== */
+/* The badge row at the foot of the card IS the trigger — the chips and the
+   empty-state pill are the same button, so nothing extra competes for width on
+   a phone. Four tones so a tweak reads differently from a good rep at a glance. */
+.exn-chips { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.3em; }
+.exn-chips.compact { gap: 0.2em; }
+.exn-chip {
+  display: inline-flex; align-items: center; gap: 0.28em;
+  border-radius: 999px; padding: 0.14em 0.55em;
+  font-size: 0.62rem; font-weight: 800; letter-spacing: 0.03em;
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.28);
+  background: rgba(var(--primary-rgb), 0.12);
+  color: var(--text-soft);
+}
+.exn-chips.compact .exn-chip { padding: 0; border: none; background: none; font-size: 0.9em; }
+.exn-emo { line-height: 1; }
+.exn-badge { font-weight: 900; letter-spacing: 0.02em; }
+.exn-txt { text-transform: uppercase; letter-spacing: 0.04em; }
+.exn-chip.good { border-color: rgba(16, 185, 129, 0.45); background: var(--accent-soft); color: var(--accent); }
+.exn-chip.warn { border-color: rgba(245, 158, 11, 0.45); background: rgba(245, 158, 11, 0.14); color: var(--warn); }
+.exn-chip.bad  { border-color: rgba(239, 68, 68, 0.5);  background: var(--danger-soft);  color: var(--danger); }
+.exn-chip.info { border-color: rgba(var(--edited-val-rgb), 0.4); background: rgba(var(--edited-val-rgb), 0.12); color: var(--edited-val); }
+/* Compact chips drop their pill, so the tone has to survive on the glyph
+   alone — the emoji already carries it, and a coloured ring would only add
+   noise to a row that is deliberately just symbols. */
+.exn-chips.compact .exn-chip.good,
+.exn-chips.compact .exn-chip.warn,
+.exn-chips.compact .exn-chip.bad,
+.exn-chips.compact .exn-chip.info { background: none; border: none; }
+
+.cex-notes-row {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 0.35rem;
+  margin-top: 0.5rem; padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+.cex-notes-btn {
+  display: inline-flex; align-items: center; gap: 0.4em;
+  padding: 0.3em 0.6em; border-radius: 999px;
+  border: 1px dashed var(--border);
+  background: none; color: var(--text-soft);
+  font-family: inherit; font-size: 0.72rem; font-weight: 600;
+  cursor: pointer;
+}
+.cex-notes-btn:hover { border-color: var(--border-strong); color: var(--text); }
+/* Once it is carrying tags it stops advertising itself: solid edge, no dashes,
+   and the ✎ shrinks back so the badges are what the eye lands on. */
+.cex-notes-row.has-notes .cex-notes-btn {
+  border-style: solid;
+  border-color: transparent;
+  padding: 0.2em 0.35em;
+}
+.cex-notes-row.has-notes .cex-notes-btn:hover { border-color: var(--border); }
+.cex-notes-edit { font-size: 0.7em; color: var(--muted); }
+.cex-notes-add { letter-spacing: 0.02em; }
+.cex-hist-noteonly { font-style: italic; color: var(--muted); }
+
+/* The picker. Rendered to <body> like the Tools menu so the card's overflow
+   can't clip it, positioned by _positionPop. */
+.exn-pop {
+  width: min(19rem, calc(100vw - 1rem));
+  padding: 0.7rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-lg);
+}
+.exn-pop-head {
+  font-size: 0.66rem; font-weight: 800; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--text-soft);
+  margin-bottom: 0.5rem;
+}
+.exn-pop-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.35rem; }
+.exn-pop-opt {
+  display: flex; align-items: center; gap: 0.4em; min-width: 0;
+  padding: 0.5em 0.6em; border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-soft);
+  font-family: inherit; font-size: 0.72rem; font-weight: 700;
+  text-align: left; cursor: pointer;
+}
+.exn-pop-opt:hover { border-color: var(--border-strong); color: var(--text); }
+.exn-pop-emo { line-height: 1; font-size: 1.05em; }
+.exn-pop-lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exn-pop-badge { margin-left: auto; font-size: 0.9em; font-weight: 900; opacity: 0.75; }
+.exn-pop-opt.on { color: var(--text); font-weight: 800; }
+.exn-pop-opt.on.good { border-color: rgba(16, 185, 129, 0.6);  background: var(--accent-soft); }
+.exn-pop-opt.on.warn { border-color: rgba(245, 158, 11, 0.6);  background: rgba(245, 158, 11, 0.14); }
+.exn-pop-opt.on.bad  { border-color: rgba(239, 68, 68, 0.65);  background: var(--danger-soft); }
+.exn-pop-opt.on.info { border-color: rgba(var(--edited-val-rgb), 0.55); background: rgba(var(--edited-val-rgb), 0.12); }
+.exn-pop-clear {
+  display: block; width: 100%; margin-top: 0.5rem;
+  padding: 0.45em; border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: none; color: var(--text-soft);
+  font-family: inherit; font-size: 0.7rem; font-weight: 700;
+  cursor: pointer;
+}
+.exn-pop-clear:hover { border-color: var(--border-strong); color: var(--text); }
+/* The coach's day sheet puts the tags on the exercise name line. */
+.breakdown-ex-name .exn-chips { margin-left: 0.4em; vertical-align: middle; }
 /* ===== Pyramid sets: sandy look ===== */
 /* Same sand wash on the coach editor row and the athlete logging card, so a
    pyramid reads at a glance in every theme. */
@@ -13008,6 +13110,11 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
   .cex-set-done { width: 2.5rem; height: 2.5rem; }
   .cex-tools-btn { min-height: 36px; }
   .cex-rir-btn { min-height: 38px; }
+  /* Quick notes: the badge row doubles as its own button, so it grows too —
+     and the picker's own options, which are the tap-speed part of the promise. */
+  .cex-notes-btn { min-height: 38px; }
+  .exn-pop-opt { min-height: 42px; }
+  .exn-pop-clear { min-height: 40px; }
   /* ---- Day header and readiness ---- */
   .day-check-toggle { width: 38px; height: 38px; }
   .detail-mood-btn { min-height: 36px; }

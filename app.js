@@ -4108,9 +4108,13 @@
     if (!weeks.length) return null;
     const dc = c.importedProgress?.dayCompletions || {};
     const logs = c.importedProgress?.exerciseLogs || {};
+    // An entry only counts as work if it actually carries some: a quick-note
+    // tag with no numbers behind it is a record, not a completed exercise.
+    const anyWork = (arr) => (arr || []).some((l) =>
+      l?.locked || l?.skipped || l?.sets?.length || l?.rounds?.length);
     const dayDone = (d) =>
       (dc[d.id] || []).length > 0 ||
-      (d.exercises.length > 0 && d.exercises.every((ex) => (logs[ex.id] || []).length > 0));
+      (d.exercises.length > 0 && d.exercises.every((ex) => anyWork(logs[ex.id])));
     const flat = [];
     weeks.forEach((w) => w.days.forEach((d) => flat.push({ weekId: w.id, day: d })));
     // Anchor on the most recent activity: a skipped day back in week 1 must
@@ -13377,7 +13381,10 @@
     } else {
       exs.forEach((ex) => {
         const logEntry = (logs[ex.id] || []).find((l) => l.date === iso);
-        h += `<div class="breakdown-ex"><div class="breakdown-ex-name">${breakdownExNameHtml(ex, progress)}</div><div class="breakdown-sets">`;
+        // The athlete's quick-note tags ride on the name line, so the thing the
+        // coach most wants to spot (a tweak, a lift that felt rough) is legible
+        // at a glance instead of buried under the numbers.
+        h += `<div class="breakdown-ex"><div class="breakdown-ex-name">${breakdownExNameHtml(ex, progress)}${exNoteChipsHtml(exNotesOf(logEntry))}</div><div class="breakdown-sets">`;
         if (logEntry?.sets?.length) {
           logEntry.sets.forEach((s, i) => {
             if (s.weight || s.reps) h += `<span class="breakdown-set-pill">S${i + 1} ${s.weight ? escapeHtml(wLabel(s.weight, unit)) : "—"} × ${s.reps || "—"}</span>`;
@@ -19258,6 +19265,131 @@
     else p.workoutMoods[dayId] = { date: dateISO || todayISO(), moods: clean };
     saveClient();
   }
+
+  // -------- Quick notes (per exercise, per session) --------
+  // dayNotes is one free-text note for the whole day and workoutMoods is up to
+  // two feelings about the whole session; neither can answer "what happened on
+  // THIS lift". These are tap-speed pills from a fixed vocabulary, and their
+  // whole value is the badge — it has to be readable off the card without
+  // opening anything, the way the readiness and mood chips already read.
+  //
+  // Stored ON the log entry (`notes: [id]`) rather than in a new `progress`
+  // field, which buys three things: no new DB column and no cloud.js mapping to
+  // get wrong, a note that is per-session for free because a log entry already
+  // is, and re-dating a session carries its notes along with the sets because
+  // moveDayLogsTo moves the whole entry.
+  //
+  // Fixed vocabulary, like WORKOUT_MOODS, so the badges stay scannable and
+  // countable. `badge` is the short text that rides beside the emoji when the
+  // glyph alone wouldn't say it — ROM is the case that needs words.
+  const EX_NOTES = [
+    { id: "rom-up",   emoji: "📐", label: "Deeper ROM",       badge: "ROM↑", tone: "good" },
+    // "Short ROM", not "ROM cut short": the badge column costs about eight
+    // characters, and the longer wording ellipsised in the picker.
+    { id: "rom-down", emoji: "📐", label: "Short ROM",        badge: "ROM↓", tone: "warn" },
+    { id: "strong",   emoji: "💪", label: "Moved well",       tone: "good" },
+    { id: "rough",    emoji: "😖", label: "Felt rough",       tone: "warn" },
+    // 🎈/🧱 rather than 🪶/🧱 — the feather is a Unicode 13 glyph and isn't
+    // safe to assume on an older phone.
+    { id: "light",    emoji: "🎈", label: "Too light",        tone: "info" },
+    { id: "heavy",    emoji: "🧱", label: "Too heavy",        tone: "warn" },
+    // `short` is what the badge says when the full label would run away with a
+    // phone-width card. The picker always spells it out.
+    { id: "form",     emoji: "📉", label: "Form broke down",  short: "Form", tone: "warn" },
+    { id: "pain",     emoji: "⚡", label: "Pain or tweak",    short: "Pain", tone: "bad" },
+  ];
+  const MAX_EX_NOTES = 2;
+  const exNoteById = (id) => EX_NOTES.find((n) => n.id === id) || null;
+  const exNotesOf = (entry) => (Array.isArray(entry?.notes) ? entry.notes.filter(exNoteById) : []);
+  // One badge row, shared by the athlete's card and the coach's read-only view
+  // so the two can never drift. `compact` drops the words from everything that
+  // isn't carrying a badge of its own.
+  function exNoteChipsHtml(ids, compact) {
+    const list = (ids || []).map(exNoteById).filter(Boolean);
+    if (!list.length) return "";
+    return `<span class="exn-chips${compact ? " compact" : ""}">${list.map((n) =>
+      `<span class="exn-chip ${n.tone}" title="${escapeHtml(n.label)}">` +
+        `<span class="exn-emo">${n.emoji}</span>` +
+        (n.badge ? `<span class="exn-badge">${escapeHtml(n.badge)}</span>`
+                 : compact ? "" : `<span class="exn-txt">${escapeHtml(n.short || n.label)}</span>`) +
+      `</span>`).join("")}</span>`;
+  }
+  // Writes the picks straight onto this exercise's entry for `dateISO`, whether
+  // or not it is locked — a note is an observation, and the athlete usually has
+  // one AFTER the sets are in and the card has closed up. If there's no entry
+  // yet, a note-only stub carries it: hasAnyLog counts only LOCKED entries, so
+  // a stub can never mark the day complete on its own.
+  function setExNotes(exId, dateISO, ids) {
+    const p = state.clientData?.progress; if (!p) return [];
+    ensureProgressShape(p);
+    const clean = (ids || []).filter(exNoteById).slice(0, MAX_EX_NOTES);
+    const arr = p.exerciseLogs[exId] || (p.exerciseLogs[exId] = []);
+    const idx = arr.findIndex((l) => l.date === dateISO);
+    if (idx >= 0) {
+      if (clean.length) arr[idx].notes = clean;
+      else delete arr[idx].notes;
+      // A stub that only ever held a note has nothing left to say once the note
+      // is cleared — drop it rather than leave an empty entry behind.
+      if (!clean.length && !arr[idx].locked && !arr[idx].skipped
+          && !arr[idx].sets?.length && !arr[idx].rounds?.length) arr.splice(idx, 1);
+    } else if (clean.length) {
+      arr.push({ id: uid(), date: dateISO, sets: [], locked: false, notes: clean });
+    }
+    if (!arr.length) delete p.exerciseLogs[exId];
+    saveClient();
+    return clean;
+  }
+  // Multi-select popover anchored to the badge row. Picks apply on tap — there
+  // is no Save button, because tap-speed is the entire promise.
+  function openExNotePicker(anchorEl, current, onChange) {
+    document.querySelector(".exn-pop")?.remove();
+    const pop = document.createElement("div");
+    pop.className = "exn-pop";
+    pop.style.cssText = "position:fixed;z-index:9999;visibility:hidden";
+    let sel = [...(current || [])];
+    const head = document.createElement("div");
+    head.className = "exn-pop-head";
+    head.textContent = `How did this lift go? Tap up to ${MAX_EX_NOTES}.`;
+    const grid = document.createElement("div");
+    grid.className = "exn-pop-grid";
+    const paint = () => grid.querySelectorAll(".exn-pop-opt").forEach((el) =>
+      el.classList.toggle("on", sel.includes(el.dataset.note)));
+    EX_NOTES.forEach((n) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "exn-pop-opt " + n.tone;
+      b.dataset.note = n.id;
+      b.innerHTML = `<span class="exn-pop-emo">${n.emoji}</span>` +
+        `<span class="exn-pop-lbl">${escapeHtml(n.label)}</span>` +
+        (n.badge ? `<span class="exn-pop-badge">${escapeHtml(n.badge)}</span>` : "");
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (sel.includes(n.id)) sel = sel.filter((x) => x !== n.id);
+        else if (sel.length < MAX_EX_NOTES) sel.push(n.id);
+        else { toast(`Pick up to ${MAX_EX_NOTES}`); return; }
+        paint();
+        onChange([...sel]);
+      });
+      grid.appendChild(b);
+    });
+    paint();
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.className = "exn-pop-clear";
+    clear.textContent = "Clear";
+    clear.addEventListener("click", (e) => {
+      e.stopPropagation();
+      sel = [];
+      paint();
+      onChange([]);
+    });
+    pop.append(head, grid, clear);
+    document.body.appendChild(pop);
+    requestAnimationFrame(() => _positionPop(pop, anchorEl));
+    _attachOutsideClose(pop, anchorEl);
+    return pop;
+  }
+
   // -------- Session summary (what the day-complete sheet reports) --------
   // Everything here is derived from the logs at read time — nothing new is
   // stored. Volume uses the same weight × reps convention as the volume chart
@@ -22911,6 +23043,42 @@
     }
     const collectRir = () => (rirValue == null ? {} : { rir: rirValue });
 
+    // ── Quick notes ──
+    // A badge row at the foot of the card that doubles as its own trigger: the
+    // chips ARE the button, so there's no separate control competing for width
+    // on a phone. Stays live when the card is locked — the athlete usually has
+    // the thought after the sets are in, not before.
+    let noteIds = exNotesOf(todayLog);
+    const collectNotes = () => (noteIds.length ? { notes: [...noteIds] } : {});
+    const notesRow = document.createElement("div");
+    notesRow.className = "cex-notes-row";
+    const notesBtn = document.createElement("button");
+    notesBtn.type = "button";
+    notesBtn.className = "cex-notes-btn";
+    notesBtn.setAttribute("aria-haspopup", "true");
+    const paintNotes = () => {
+      notesRow.classList.toggle("has-notes", noteIds.length > 0);
+      notesBtn.innerHTML = noteIds.length
+        ? exNoteChipsHtml(noteIds) + `<span class="cex-notes-edit">✎</span>`
+        // ＋ rather than a tag emoji: 🏷 has no glyph in the app's font stack
+        // and renders as tofu, and ＋ is already the app's word for "add one".
+        : `<span class="cex-notes-add">＋ Quick note</span>`;
+      notesBtn.title = noteIds.length
+        ? "Change what you tagged this lift with"
+        : "Tag how this lift went";
+    };
+    notesBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openExNotePicker(notesBtn, noteIds, (picked) => {
+        // Written straight through rather than left to autoSave: the debounce
+        // and the auto-lock fuse both belong to the numbers, not to this.
+        noteIds = setExNotes(ex.id, logDate, picked);
+        paintNotes();
+      });
+    });
+    paintNotes();
+    notesRow.appendChild(notesBtn);
+
     // Auto-save: debounced 800ms after last keystroke, saves a draft entry.
     // Drafts never lock in the green checkmark — only the Lock button does.
     let _ast = null;
@@ -22932,7 +23100,9 @@
       _ast = setTimeout(() => {
         const sets = setInputs.map(({ wt, rp, skipped }) => (skipped ? { weight: "", reps: "", skipped: true } : { weight: outW(wt.value), reps: rp.value }))
                               .filter(s => s.skipped || s.weight || s.reps);
-        if (!sets.length && !finisherHasData() && !warmupHasData()) {
+        // A quick note with no numbers behind it is still a record worth
+        // keeping ("did this, it hurt"), so it holds the entry open here.
+        if (!sets.length && !finisherHasData() && !warmupHasData() && !noteIds.length) {
           if (state.clientData.progress.exerciseLogs[ex.id]) {
             state.clientData.progress.exerciseLogs[ex.id] =
               state.clientData.progress.exerciseLogs[ex.id].filter(l => l.date !== logDate);
@@ -22945,7 +23115,7 @@
           state.clientData.progress.exerciseLogs[ex.id] = [];
         const exLogs = state.clientData.progress.exerciseLogs[ex.id];
         const idx = exLogs.findIndex(l => l.date === logDate);
-        const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets, locked: false, ...collectWarmups(), ...collectFinishers(), ...collectRir() };
+        const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets, locked: false, ...collectWarmups(), ...collectFinishers(), ...collectRir(), ...collectNotes() };
         if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
         saveClient();
         renderAthleteCalendar();
@@ -23183,7 +23353,7 @@
         state.clientData.progress.exerciseLogs[ex.id] = [];
       const exLogs = state.clientData.progress.exerciseLogs[ex.id];
       const idx = exLogs.findIndex(l => l.date === logDate);
-      const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets, locked: true, ...collectWarmups(), ...collectFinishers(), ...collectRir() };
+      const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets, locked: true, ...collectWarmups(), ...collectFinishers(), ...collectRir(), ...collectNotes() };
       if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
       detectAndCelebratePR(ex, entry, wrapper);
       saveClient();
@@ -23242,7 +23412,7 @@
         state.clientData.progress.exerciseLogs[ex.id] = [];
       const exLogs = state.clientData.progress.exerciseLogs[ex.id];
       const idx = exLogs.findIndex(l => l.date === logDate);
-      const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets: [], skipped: true, locked: true };
+      const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets: [], skipped: true, locked: true, ...collectNotes() };
       if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
       saveClient();
       isLocked = true;
@@ -23286,26 +23456,41 @@
     updatePlates();
     if (finisherInputs.length) logForm.appendChild(finisherWrap);
     if (prog) logForm.appendChild(rirRow);
+    // Foot of the card, under the numbers it is describing and above the
+    // previous-session history, which is about other days.
+    logForm.appendChild(notesRow);
     } // end else (numSets > 0)
     panel.appendChild(logForm);
 
-    // Previous logs (last 3)
-    if (logs.length) {
+    // Previous logs (last 3). Today's own entry belongs here when it carries
+    // numbers — it confirms what went in — but a note-only entry for today has
+    // nothing to add: the badge row directly above it already says it.
+    const histLogs = logs.filter((l) =>
+      !(l.date === logDate && !l.skipped && !l.sets?.length && !l.weight && exNotesOf(l).length));
+    if (histLogs.length) {
       const hist = document.createElement("div");
       hist.className = "cex-hist";
-      [...logs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3).forEach((l) => {
+      [...histLogs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3).forEach((l) => {
         const item = document.createElement("div");
         item.className = "cex-hist-item";
         const setStr = l.skipped
           ? `<span class="cex-hist-set cex-hist-skip">⊘ Skipped</span>`
+          // A note-only entry has no numbers to report — saying "BW × ?" for it
+          // would be inventing a set the athlete never claimed to do.
+          : (!l.sets?.length && !l.weight && exNotesOf(l).length)
+          ? `<span class="cex-hist-set cex-hist-noteonly">tagged</span>`
           : l.sets?.length
           ? l.sets.map((s, i) => s.skipped
               ? `<span class="cex-hist-set cex-hist-skip"><em>S${i+1}</em> ⊘</span>`
               : `<span class="cex-hist-set"><em>S${i+1}</em> ${s.weight ? escapeHtml(dispW(s.weight)) + dbS : "BW"} × ${escapeHtml(s.reps ? s.reps + tS : "?")}</span>`).join("")
           : `<span class="cex-hist-set">${l.weight ? escapeHtml(dispW(l.weight)) + (dbS || " " + unitLbl()) : "BW"} × ${escapeHtml(l.reps || "?")} ${isTimed ? "sec" : "reps"}</span>`;
         const dateHtml = l.date === logDate ? "" : `<span class="cex-hist-date">${escapeHtml(l.date)}</span>`;
+        // Only PAST sessions carry their tags here — for today's row the badge
+        // row sits directly above it saying exactly the same thing.
+        const noteHtml = l.date === logDate ? "" : exNoteChipsHtml(exNotesOf(l), true);
         item.innerHTML = `${dateHtml}
           <span class="cex-hist-sets">${setStr}</span>
+          ${noteHtml}
           <button class="cex-del-log" data-lid="${escapeHtml(l.id)}" title="Delete">×</button>`;
         item.querySelector(".cex-del-log").addEventListener("click", (e) => {
           e.stopPropagation();
