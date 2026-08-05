@@ -10,6 +10,7 @@
 // Callable only with the service-role JWT the cron sends (never from the app).
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { isServiceRoleCaller } from "../_shared/cron-auth.ts";
 
 const RETENTION_DAYS = 30;
 const BUCKET = "form-checks";
@@ -28,7 +29,7 @@ Deno.serve(async (req) => {
 
     // Only the service role (cron) may run this — reject anon/coach/athlete JWTs.
     const auth = req.headers.get("Authorization") ?? "";
-    if (!auth.includes(serviceKey)) return json({ error: "forbidden" }, 403);
+    if (!isServiceRoleCaller(auth)) return json({ error: "forbidden" }, 403);
 
     const sb = createClient(supabaseUrl, serviceKey);
     const store = sb.storage.from(BUCKET);

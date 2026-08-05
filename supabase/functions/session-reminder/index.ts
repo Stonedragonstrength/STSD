@@ -21,6 +21,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
 import { type Prefs } from "../_shared/notify-prefs.ts";
+import { isServiceRoleCaller } from "../_shared/cron-auth.ts";
 
 // The furthest ahead any athlete may ask to be warned, and therefore how far
 // forward the query has to look.
@@ -49,7 +50,7 @@ Deno.serve(async (req) => {
       "mailto:admin@stonedragonstrengthtraining.com";
 
     const auth = req.headers.get("Authorization") ?? "";
-    if (!auth.includes(serviceKey)) return json({ error: "forbidden" }, 403);
+    if (!isServiceRoleCaller(auth)) return json({ error: "forbidden" }, 403);
     if (!vapidPub || !vapidPriv) return json({ error: "VAPID keys not configured" }, 500);
 
     const sb = createClient(supabaseUrl, serviceKey);
