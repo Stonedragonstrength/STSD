@@ -24832,7 +24832,13 @@
       </div>
 
       <div class="food-more">
-        <button type="button" id="food-targets-btn">Targets</button>
+        <!-- "Targets" read as a link to a readout of numbers the ring and the
+             macro bars are already showing two inches above. It isn't one: it
+             opens the sheet where they get SET. The ring opens the same sheet
+             and is the entry point the empty state and the tour both teach —
+             this stays as the visible one, because the ring advertises itself
+             only through an aria-label nobody sighted ever sees. -->
+        <button type="button" id="food-targets-btn">Edit targets</button>
         <button type="button" id="food-week-more">This week</button>
         ${savedCount ? `<button type="button" id="food-myfoods-btn">My foods <span class="myfoods-count">${savedCount}</span></button>` : ""}
         <button type="button" id="food-copy-yesterday">Copy yesterday</button>
