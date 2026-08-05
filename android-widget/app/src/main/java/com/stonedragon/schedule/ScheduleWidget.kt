@@ -298,12 +298,26 @@ class ScheduleWidget : AppWidgetProvider() {
             // Jump to now, but only when it was actually asked for — see
             // Prefs.requestJump. Consumed here so the next routine repaint
             // leaves the coach where they scrolled to.
-            if (Prefs.takeJump(ctx, widgetId) && bookings.isNotEmpty()) {
-                val weekRows = buildWeekRows(week, bookings)
-                val top = scrollIndexForNow(weekRows)
-                // Not `top` itself — see scrollTargetForTop. Asking for the row
-                // directly parks it at the bottom edge.
-                v.setScrollPosition(R.id.widget_list, scrollTargetForTop(weekRows, top))
+            // The rows are tested BEFORE the flag is taken, and the order is the
+            // whole fix. takeJump consumes the request, and a jump from another
+            // week paints once before the fetch returns — at which point the
+            // cache is still stamped with the OLD week, so this paint has no
+            // rows for the new one. Taking the flag first burned the request on
+            // that empty paint, so NOW moved to this week and never scrolled,
+            // while NOW pressed on the week already showing worked fine.
+            if (bookings.isNotEmpty()) {
+                if (Prefs.takeJump(ctx, widgetId)) {
+                    val weekRows = buildWeekRows(week, bookings)
+                    val top = scrollIndexForNow(weekRows)
+                    // Not `top` itself — see scrollTargetForTop. Asking for the
+                    // row directly parks it at the bottom edge.
+                    v.setScrollPosition(R.id.widget_list, scrollTargetForTop(weekRows, top))
+                }
+            } else if (state == "ok" || state == "partial") {
+                // A finished fetch that genuinely found nothing. Drop the
+                // request rather than leave it armed to fire on some unrelated
+                // repaint days later.
+                Prefs.takeJump(ctx, widgetId)
             }
 
             // The empty view is a button, and what it does is whatever the
