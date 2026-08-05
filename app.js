@@ -18458,13 +18458,67 @@
     const dc = state.clientData?.progress?.dayCompletions;
     return !!(dc && dc[dayId] && dc[dayId].length > 0);
   }
-  function toggleDayComplete(dayId) {
+  // Every date this day is already on: its completion, plus the date stamped on
+  // each of its exercise logs. The athlete-side twin of athleteCurrentDay's
+  // `lastDate`, and the answer to "what date is this session filed under".
+  function dayAllExercises(day, progress) {
+    const p = progress || state.clientData?.progress;
+    return [...(day?.exercises || []), ...((p?.addedExercises?.[day?.id]) || [])];
+  }
+  // The date a day's existing entries live on — "" when nothing is logged yet.
+  // Re-entering a day resumes this instead of snapping back to today, so an
+  // athlete filling a session in late doesn't have to re-pick the date every
+  // time they leave the screen and come back.
+  function dayLogDate(day, progress) {
+    const p = progress || state.clientData?.progress;
+    let max = "";
+    const consider = (d) => { if (d && String(d) > max) max = String(d); };
+    ((p?.dayCompletions || {})[day?.id] || []).forEach(consider);
+    const logs = p?.exerciseLogs || {};
+    dayAllExercises(day, p).forEach((ex) => (logs[ex.id] || []).forEach((l) => consider(l?.date)));
+    return max;
+  }
+  // The date the open session is being logged under: the date chip if this day
+  // is the one on screen, else today. Everything a session writes has to agree
+  // on this — it's what the calendars, the PR walkers and the ladder read back.
+  function activeLogDate(day) {
+    return state.workoutView?.dayId === day?.id && state.workoutView?.date
+      ? state.workoutView.date : todayISO();
+  }
+  // `dateISO` is the date the athlete says they trained, not the date they are
+  // tapping — the calendars are painted straight off these strings, so a session
+  // filled in three days late has to land on the day it happened.
+  function toggleDayComplete(dayId, dateISO) {
     ensureProgressShape(state.clientData.progress);
     const dc = state.clientData.progress.dayCompletions;
     if (isDayChecked(dayId)) dc[dayId] = [];
-    else dc[dayId] = [todayISO()];
+    else dc[dayId] = [dateISO || todayISO()];
     saveClient();
     renderClientWorkouts();
+    renderAthleteCalendar();
+  }
+  // Re-files everything a day is keyed by date on from one date to another, so
+  // changing the date chip after logging carries the sets with it instead of
+  // orphaning them on a date the athlete can no longer see. Exercise logs, the
+  // completion, the readiness answer and the mood picks all move together.
+  function moveDayLogsTo(day, fromDate, toDate) {
+    const p = state.clientData?.progress;
+    if (!p || !day || !fromDate || !toDate || fromDate === toDate) return;
+    ensureProgressShape(p);
+    dayAllExercises(day, p).forEach((ex) => {
+      const arr = p.exerciseLogs?.[ex.id];
+      if (!Array.isArray(arr)) return;
+      const moving = arr.find((l) => l?.date === fromDate);
+      if (!moving) return;
+      // Anything already sitting on the destination date would collide with the
+      // entry we're moving (the log finders all match on date), so it loses.
+      p.exerciseLogs[ex.id] = arr.filter((l) => l === moving || l?.date !== toDate);
+      moving.date = toDate;
+    });
+    const dc = p.dayCompletions || {};
+    if ((dc[day.id] || []).includes(fromDate)) dc[day.id] = [toDate];
+    if (p.readiness?.[day.id]?.date === fromDate) p.readiness[day.id].date = toDate;
+    if (p.workoutMoods?.[day.id]?.date === fromDate) p.workoutMoods[day.id].date = toDate;
   }
   // -------- Pre-workout readiness check-in --------
   // Three taps before the first set: sleep, soreness, stress. Each answer is
@@ -19194,12 +19248,14 @@
       .filter((m) => m.n > 0).sort((a, b) => b.n - a.n);
   }
   // Save (athlete-side) the mood picks for a day, latest-wins. Empty clears it.
-  function setDayMoods(dayId, moods) {
+  function setDayMoods(dayId, moods, dateISO) {
     const p = state.clientData.progress; if (!p) return;
     ensureProgressShape(p);
     const clean = (moods || []).filter(moodById).slice(0, MAX_MOODS);
     if (!clean.length) delete p.workoutMoods[dayId];
-    else p.workoutMoods[dayId] = { date: todayISO(), moods: clean };
+    // Dated with the log date, same as readiness — a mood belongs to the session
+    // it rates, not to the evening the athlete got round to filling it in.
+    else p.workoutMoods[dayId] = { date: dateISO || todayISO(), moods: clean };
     saveClient();
   }
   // -------- Session summary (what the day-complete sheet reports) --------
@@ -19334,7 +19390,7 @@
         draw();
       }));
     };
-    const commit = () => { setDayMoods(day.id, sel); closeModal(); renderClientWorkouts(); renderAthleteCalendar(); };
+    const commit = () => { setDayMoods(day.id, sel, activeLogDate(day)); closeModal(); renderClientWorkouts(); renderAthleteCalendar(); };
     openModal({
       title: "How was your workout?",
       body: "",
@@ -19348,8 +19404,7 @@
     // the news, "how was your workout?" is the follow-up question. Both live
     // outside #modal-body so re-picking a mood (which redraws the body) doesn't
     // wipe them; closeModal/openModal clear them via clearDayCompleteDressing.
-    const logDate = state.workoutView?.dayId === day.id && state.workoutView?.date
-      ? state.workoutView.date : todayISO();
+    const logDate = activeLogDate(day);
     // The numbers show whenever there are any, so re-opening from the 🫀 button
     // later still reports the session. Only the win bar is celebrate-only.
     const summary = sessionSummaryHtml(day, logDate);
@@ -19377,7 +19432,11 @@
     const allDone = day.exercises.every((ex) => hasAnyLog(ex));
     if (allDone === isDayChecked(day.id)) return; // no transition — nothing to do
     ensureProgressShape(state.clientData.progress);
-    state.clientData.progress.dayCompletions[day.id] = allDone ? [todayISO()] : [];
+    // The log date, NOT today: this string is the only thing the athlete's and
+    // the coach's calendars paint a finished session from, so a day filled in
+    // late must file itself on the day it was trained.
+    const logDate = activeLogDate(day);
+    state.clientData.progress.dayCompletions[day.id] = allDone ? [logDate] : [];
     saveClient();
     renderAthleteCalendar();
     // Once per day per date: the not-done → done edge alone isn't enough,
@@ -19386,7 +19445,7 @@
     // persisted — it's not worth a data-shape change and a cloud round trip
     // to suppress a repeat that only happens after a page reload.
     if (allDone) {
-      const key = `${day.id}:${todayISO()}`;
+      const key = `${day.id}:${logDate}`;
       if (!_celebratedDays.has(key)) {
         _celebratedDays.add(key);
         // Drop the keyboard first. The last set is usually still focused when
@@ -20696,7 +20755,10 @@
         <div class="workout-card-chevron">›</div>
       `;
       card.addEventListener("click", () => {
-        state.workoutView = { mode: "detail", weekId: week.id, dayId: day.id, date: todayISO() };
+        // Resume the date this session is already filed under, so a day that was
+        // logged late reopens on the day it happened rather than snapping back
+        // to today and quietly writing a second set of logs on the wrong date.
+        state.workoutView = { mode: "detail", weekId: week.id, dayId: day.id, date: dayLogDate(day) || todayISO() };
         Nav.push(backToWorkoutPicker); // Back returns to the day list, not out of the app
         renderWorkoutDetailUI();
       });
@@ -20801,7 +20863,9 @@
             ? `<span class="wc-status todo">Coming up</span>`
             : `<span class="wc-status todo">Tap to log</span>`),
       onOpen: (day) => {
-        state.workoutView = { mode: "detail", weekId: "oneoff", dayId: day.id, date: todayISO() };
+        // Already-logged date first, then the date the coach booked it for — a
+        // coach session logged late belongs to the session, not to today.
+        state.workoutView = { mode: "detail", weekId: "oneoff", dayId: day.id, date: dayLogDate(day) || day.date || todayISO() };
         Nav.push(backToWorkoutPicker);
         renderWorkoutDetailUI();
       },
@@ -21491,16 +21555,29 @@
     head.querySelector("#detail-rename")?.addEventListener("click", () => openRenameOwnSessionSheet(day));
     head.querySelector("#detail-mood-btn").addEventListener("click", () => openWorkoutMoodSheet(day));
     head.querySelector("#detail-toggle").addEventListener("click", () => {
-      toggleDayComplete(day.id);
+      toggleDayComplete(day.id, state.workoutView.date);
       toast(checked ? "Unchecked" : "Day complete ✓");
       renderWorkoutDetailUI();
     });
     head.querySelector("#detail-log-date").addEventListener("change", (e) => {
-      state.workoutView.date = e.target.value || todayISO();
+      const from = state.workoutView.date;
+      const to = e.target.value || todayISO();
+      if (to === from) return;
+      state.workoutView.date = to;
+      // Carry what's already logged across with the date. Without this the sets
+      // stay stamped with the old date, which the form no longer looks at — the
+      // athlete re-dates a session they just filled in and watches it go blank.
+      moveDayLogsTo(day, from, to);
       // An athlete-built session IS its date — one control, not two, so moving
       // the log date moves the session with it.
-      if (isOwnDay(day)) { day.date = state.workoutView.date; saveClient(); }
+      if (isOwnDay(day)) day.date = to;
+      saveClient();
       renderWorkoutDetailUI();
+      renderAthleteCalendar();
+      const moved = to === todayISO()
+        ? "Logging under today"
+        : `Logging under ${new Date(to + "T12:00:00Z").toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" })}`;
+      toast(moved);
     });
     // Day-level "Clear day" was retired 2026-07-22 — each exercise's Tools menu
     // now owns clearing its own numbers, so the day-wide button was redundant.
