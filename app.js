@@ -13205,11 +13205,16 @@
       // 5. Cardio. Its own chip shape — the type's icon over the minutes, tinted
       //    by intensity — rather than another text pill, so a glance down the
       //    month separates "they ran" from "they lifted" without reading a word.
+      //    It rides the date row rather than the pill column: that row was empty
+      //    to the right of the number, and stacking cardio above the workout
+      //    lines was spending a whole row the cell did not have to give.
+      let cardioHtml = "";
       (ix.cardio[iso] || []).forEach((l) => {
-        mark(`<div class="cal-cardio-pill" style="--cd-rgb:${cardioIntRgb(l.intensity)}" title="${escapeHtml(`${l.type || "Cardio"} · ${cardioMinLabel(l.minutes)}${Number(l.miles) ? ` · ${cardioMiLabel(Number(l.miles))} mi` : ""} · ${l.intensity || "Moderate"}`)}">
+        anything = true;
+        cardioHtml += `<div class="cal-cardio-pill" style="--cd-rgb:${cardioIntRgb(l.intensity)}" title="${escapeHtml(`${l.type || "Cardio"} · ${cardioMinLabel(l.minutes)}${Number(l.miles) ? ` · ${cardioMiLabel(Number(l.miles))} mi` : ""} · ${l.intensity || "Moderate"}`)}">
           <span class="cal-cardio-ico">${cardioIcon(l.type)}</span>
           <span class="cal-cardio-min">${escapeHtml(cardioMinShort(l.minutes))}</span>
-        </div>`);
+        </div>`;
       });
 
       // 6. Money-side marks: the token a session spent, and any missed mark.
@@ -13222,7 +13227,10 @@
       if (missed.length) mark(missedPillHtml(missed));
 
       if (anything) cell.classList.add("has-log");
-      cell.innerHTML = `<div class="cal-date-num">${d.getDate()}</div>${pills}`;
+      cell.innerHTML =
+        `<div class="cal-day-head"><span class="cal-date-num">${d.getDate()}</span>` +
+        (cardioHtml ? `<span class="cal-day-cardio">${cardioHtml}</span>` : "") +
+        `</div>${pills}`;
 
       if (inMonth && anything) {
         cell.classList.add("cal-day-open");

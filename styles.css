@@ -2791,6 +2791,24 @@ input.trial-input {
   color: #fbbf24;
   margin-top: 2px;
 }
+/* The date row. Cardio rides here, to the RIGHT of the number, because that
+   space was empty and the pill column below is the scarce one — stacking cardio
+   there spent a whole row on every day they trained. */
+.cal-day-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.25em;
+  width: 100%;
+  min-width: 0;
+}
+.cal-day-cardio {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 2px;
+  min-width: 0;
+}
 /* Cardio chip. Not a text pill like the rest — the type's icon over the
    minutes, on a wash tinted by intensity (--cd-rgb, from CARDIO_INT_RGB:
    green low, amber moderate, red high). Shaped differently on purpose, so
@@ -2801,18 +2819,16 @@ input.trial-input {
   align-items: center;
   justify-content: center;
   gap: 0;
-  margin-top: 0.25em;
-  padding: 0.12em 0.42em 0.16em;
+  padding: 0.08em 0.34em 0.12em;
   border-radius: 5px;
-  border: 1px solid rgba(var(--cd-rgb), 0.55);
+  border: 1px solid rgba(var(--cd-rgb), 0.5);
   background: rgba(var(--cd-rgb), 0.15);
   color: rgb(var(--cd-rgb));
-  align-self: flex-start;
   max-width: 100%;
 }
-.cal-cardio-ico { font-size: 0.78rem; line-height: 1.05; }
+.cal-cardio-ico { font-size: 0.62rem; line-height: 1.05; }
 .cal-cardio-min {
-  font-size: 0.55rem; font-weight: 800; line-height: 1.05;
+  font-size: 0.5rem; font-weight: 800; line-height: 1.05;
   font-variant-numeric: tabular-nums; letter-spacing: 0.01em;
 }
 .cal-cardio-min:empty { display: none; }
@@ -4574,11 +4590,11 @@ input[type="time"],
   .cal-date-num { font-size: 0.74rem; margin-bottom: 0.1em; align-self: flex-start; }
   .cal-day .cal-day-pill { font-size: 0.5rem; padding: 0.1em 0.32em; margin-top: 0.1em; align-self: center; text-align: center; }
   .cal-day .cal-day-pill-token { font-size: 0.72rem; border: none; background: none; padding: 0; }
-  /* The cardio chip centres with the pills here and loses its border — at this
-     size the tint alone carries the intensity and an outline just adds noise. */
-  .cal-day .cal-cardio-pill { align-self: center; margin-top: 0.1em; padding: 0.06em 0.28em; border-color: transparent; }
-  .cal-day .cal-cardio-ico { font-size: 0.66rem; }
-  .cal-day .cal-cardio-min { font-size: 0.46rem; }
+  /* The cardio chip loses its border here — at this size the tint alone carries
+     the intensity and an outline just adds noise. It stays on the date row. */
+  .cal-day .cal-cardio-pill { padding: 0.04em 0.24em; border-color: transparent; }
+  .cal-day .cal-cardio-ico { font-size: 0.56rem; }
+  .cal-day .cal-cardio-min { font-size: 0.44rem; }
   .cal-dow { font-size: 0.6rem; padding: 0.25em 0; letter-spacing: 0.04em; }
   .cal-title { font-size: 0.95rem; min-width: 0; flex: 1; text-align: center; }
   .cal-nav .btn { min-height: 34px; padding: 0.3em 0.65em; }
