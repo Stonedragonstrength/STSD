@@ -4223,6 +4223,11 @@
     return [{ label: "", clients }];
   }
 
+  // Live roster filter. Deliberately not persisted: a search is a thing you are
+  // doing right now, and a coach who reopens the app to a roster still filtered
+  // down to one name from yesterday would reasonably think athletes vanished.
+  let _rosterQuery = "";
+
   // Re-render just the athlete cards (no view switch). Safe to call after a
   // package approve/decline or a background refresh to update the 🎟 chips.
   function renderClientGrid() {
@@ -4232,10 +4237,12 @@
     grid.innerHTML = "";
 
     const controls = $("#roster-controls");
+    const searchBar = $("#roster-search");
     renderMonthGrantBtn();
     if (state.trainerData.clients.length === 0) {
       show(empty);
       if (controls) hide(controls);
+      if (searchBar) hide(searchBar);
       return;
     }
     hide(empty);
@@ -4246,10 +4253,21 @@
       $$("#roster-controls [data-roster-group]").forEach((b) =>
         b.classList.toggle("active", b.dataset.rosterGroup === groupMode));
     }
+    if (searchBar) show(searchBar);
 
     const nextMonth = nextMonthBounds(todayISO());
     const nextMonthCounts = nextMonthSessionCounts();
-    const sorted = [...state.trainerData.clients].sort((a, b) => a.name.localeCompare(b.name));
+    let sorted = [...state.trainerData.clients].sort((a, b) => a.name.localeCompare(b.name));
+    // Filter before grouping, so a group heading only ever counts the athletes
+    // actually under it.
+    if (_rosterQuery) {
+      const q = _rosterQuery;
+      sorted = sorted.filter((c) => (c.name || "").toLowerCase().includes(q));
+      if (!sorted.length) {
+        grid.innerHTML = `<p class="roster-no-match">No athlete matches “${escapeHtml(_rosterQuery)}”.</p>`;
+        return;
+      }
+    }
     for (const group of groupRoster(sorted, groupMode)) {
     if (group.label) {
       const head = document.createElement("div");
@@ -9460,6 +9478,12 @@
         const list = _programEditorId ? currentProgramTemplate()?.weeks : currentClient()?.weeks;
         if (!list) return;
         if (list.length >= 12) { toast("12-week maximum reached"); return; }
+        // ⧉ sits inside the tab, a thumb's width from the label you were
+        // actually aiming at, and a stray tap used to silently clone a whole
+        // week of programming. Its neighbour × has always confirmed; this is
+        // the same guard for the same reason.
+        const dayCount = (week.days || []).length;
+        if (!window.confirm(`Duplicate ${week.label}?\n\nThis adds a copy with all ${dayCount} day${dayCount === 1 ? "" : "s"} right after it.`)) return;
         const originalLabel = week.label;
         const clone = {
           ...week,
@@ -9598,12 +9622,17 @@
     if (week._activeDayIdx === undefined || week._activeDayIdx >= week.days.length) week._activeDayIdx = 0;
     const tabStrip  = document.createElement("div");
     tabStrip.className = "day-tab-strip";
+    // Its own row under the tabs, refilled by renderDayTabs. A stable element
+    // rather than one re-inserted each render, which would stack copies.
+    const addRow = document.createElement("div");
+    addRow.className = "day-add-row";
     const dayContent = document.createElement("div");
     dayContent.className = "day-content-area";
 
     let dayDragFrom = null;
     function renderDayTabs() {
       tabStrip.innerHTML = "";
+      addRow.innerHTML = "";
       const moodClient = _programEditorId ? null : currentClient();
       week.days.forEach((day, dIdx) => {
         const tab = document.createElement("button");
@@ -9644,24 +9673,30 @@
         });
         tabStrip.appendChild(tab);
       });
+      // Add / import used to be the last two chips IN the tab strip, so a tap
+      // that missed the last day tab landed on "+ Day" and made one. They sit
+      // in their own row now, off the end of the tabs and visually separate:
+      // you hit them because you meant to.
       const addDayBtn = document.createElement("button");
-      addDayBtn.className = "day-tab day-tab-add";
-      addDayBtn.textContent = "+ Day";
+      addDayBtn.type = "button";
+      addDayBtn.className = "btn btn-ghost btn-sm slim-btn day-add-btn";
+      addDayBtn.textContent = "＋ Add day";
       addDayBtn.addEventListener("click", () => {
         week.days.push(makeDay(week.days.length + 1));
         week._activeDayIdx = week.days.length - 1;
         saveTrainer(); renderDayTabs(); renderActiveDayContent();
       });
-      tabStrip.appendChild(addDayBtn);
+      addRow.appendChild(addDayBtn);
 
       const importDayBtn = document.createElement("button");
-      importDayBtn.className = "day-tab day-tab-add day-tab-import";
-      importDayBtn.textContent = "📥 Library";
+      importDayBtn.type = "button";
+      importDayBtn.className = "btn btn-ghost btn-sm slim-btn day-add-btn";
+      importDayBtn.textContent = "📥 From library";
       importDayBtn.title = "Import a day from your Workout Library";
       importDayBtn.addEventListener("click", () => {
         openImportDayModal(week, () => { renderDayTabs(); renderActiveDayContent(); });
       });
-      tabStrip.appendChild(importDayBtn);
+      addRow.appendChild(importDayBtn);
     }
 
     function renderActiveDayContent() {
@@ -9670,7 +9705,7 @@
         const p = document.createElement("p");
         p.className = "muted";
         p.style.cssText = "text-align:center; padding:2.25rem 1.25rem;";
-        p.textContent = "No training days yet. Click + Day to add one, or 📥 Library to import a saved day.";
+        p.textContent = "No training days yet. Use ＋ Add day above, or 📥 From library to import a saved day.";
         dayContent.appendChild(p); return;
       }
       const dayIdx = Math.min(week._activeDayIdx, week.days.length - 1);
@@ -9680,6 +9715,7 @@
 
     renderDayTabs(); renderActiveDayContent();
     body.appendChild(tabStrip);
+    body.appendChild(addRow);
     body.appendChild(dayContent);
     container.appendChild(body);
   }
@@ -10046,6 +10082,44 @@
     if (_focusQuickAddDayId === day.id) {
       _focusQuickAddDayId = null;
       setTimeout(() => quickInput.focus(), 0);
+    }
+
+    // Exercises added on the day itself, which live in progress.addedExercises
+    // and NOT in the program (see addAthleteExercise — a lift added mid-session
+    // must not rewrite the coach's weeks). The editor showed no sign of them at
+    // all, so adding one on the workout sheet and then opening "Edit this day"
+    // looked like the editor had lost it. They are listed here instead, marked
+    // as what they are, with the one control that was missing: make it part of
+    // the program for good.
+    if (!opts.athlete) {
+      const owner = opts.progress || (_programEditorId ? null : currentClient()?.importedProgress);
+      const added = (owner?.addedExercises?.[day.id]) || [];
+      if (added.length) {
+        const sec = document.createElement("div");
+        sec.className = "added-ex-sec";
+        sec.innerHTML = `<div class="added-ex-sec-head">Added on the day · not in the program</div>`;
+        added.forEach((ex) => {
+          const row = document.createElement("div");
+          row.className = "added-ex-sec-row";
+          row.innerHTML = `<span class="added-ex-sec-name">${escapeHtml(ex.name || "Exercise")}</span>`;
+          const keep = document.createElement("button");
+          keep.type = "button";
+          keep.className = "btn btn-ghost btn-xs";
+          keep.textContent = "＋ Add to program";
+          keep.title = "Copy this into the day so it is there every time";
+          keep.addEventListener("click", () => {
+            if (atCap()) return;
+            // A copy with a fresh id: the original stays where the logged sets
+            // point at it, so promoting it never orphans what was recorded.
+            day.exercises.push(makeExercise({ name: ex.name }));
+            saveEditor(); rerenderFn();
+            toast(`${ex.name} added to the program`);
+          });
+          row.appendChild(keep);
+          sec.appendChild(row);
+        });
+        list.appendChild(sec);
+      }
     }
 
     list.addEventListener("dragover", (e) => {
@@ -11469,25 +11543,10 @@
   }
   function tokenPillHtml(reds) {
     // Symbol only (session used) — the day cell stays compact; count shown
-    // when more than one. Full notes on tap via openRedemptionDetailsModal.
+    // when more than one. Full notes on tap via openCalendarDayModal.
     const label = reds.length > 1 ? `🎟×${reds.length}` : "🎟";
     const notes = reds.map((r) => r.note).filter(Boolean).join(" · ");
     return `<div class="cal-day-pill cal-day-pill-token" title="${escapeHtml(notes)}">${label}</div>`;
-  }
-  function openRedemptionDetailsModal(iso, reds, missed = []) {
-    const items = [
-      ...reds.map((r) => `<li>${r.note ? escapeHtml(r.note) : `<span class="muted">No note</span>`}</li>`),
-      ...missed.map((m) => m.type === "closecall"
-        ? `<li>🤝 Close call: free missed session (monthly freebie, no charge)</li>`
-        : `<li>✕ Missed session: charged</li>`),
-    ].join("");
-    openModal({
-      title: `${reds.length ? "🎟" : "🤝"} Session · ${iso}`,
-      body: `
-        <p class="muted" style="margin-top:-0.4em">What happened on this day:</p>
-        <ul class="redemption-note-list">${items}</ul>`,
-      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
-    });
   }
 
   // -------- Missed sessions: close-call freebie vs charged --------
@@ -11510,6 +11569,147 @@
       ? `<div class="cal-day-pill cal-day-pill-closecall" title="Close call: free missed session">🤝 Close call</div>`
       : `<div class="cal-day-pill cal-day-pill-missed" title="Missed session: charged">✕ Missed</div>`).join("");
   }
+
+  // ================= One calendar model, both sides =================
+  // The two month grids used to build their own picture of a date and they
+  // disagreed badly.
+  //
+  // The coach's per-athlete grid read `selfSchedule` and redemptions and
+  // nothing else. Planning a day in the athlete app is opt-in; finishing a
+  // workout is not — so for every athlete who just trains, `selfSchedule` is
+  // empty and that grid was blank all month, while its own caption promised
+  // "booked sessions and your athlete's workout log". It showed neither.
+  //
+  // The athlete's grid knew more but hid all of it the moment a date went
+  // past: bookings, coach 1-offs and planned days were each gated on
+  // `iso >= today`, so a session disappeared the morning after it happened.
+  // Worse, its only source of bookings was `sessionBank.upcomingBookings` — a
+  // mirror that fills in only when the COACH opens the dashboard calendar on
+  // that month, and that syncUpcomingBookingsToAthletes prunes to `date >=
+  // today`. A booked session could therefore never have been on the athlete's
+  // calendar in the past tense at all.
+  //
+  // calendarIndex() is the one model both grids now draw from. It answers
+  // "what is on this date" for any (client, progress) pair, from every source,
+  // with no opinion about past or future — looking backwards is most of what a
+  // calendar is for. Everything is bucketed by ISO date in a single pass so
+  // the 42 cells of a month cost one walk of the data, not forty-two.
+  function calendarIndex(client, progress, bookingRows) {
+    return {
+      completed: completionsByDate(client, progress),
+      planned: progress?.selfSchedule || {},
+      sessions: sessionsByDate(client, progress),
+      booked: bookingsByDate(client, bookingRows),
+      reds: redemptionsByDate(client),
+      missed: missedByDate(client),
+    };
+  }
+
+  // Every completed date → the week/day it completed. One pass over
+  // dayCompletions instead of findCompletedDayForDate's nested scan per cell,
+  // and it takes `progress` as an argument so the coach can run it over an
+  // athlete's mirrored importedProgress (the old one read the athlete-local
+  // state.clientData.progress directly, which is why it could never be reused).
+  function completionsByDate(client, progress) {
+    const byId = new Map();
+    (client?.weeks || []).forEach((w) =>
+      (w.days || []).forEach((d) => byId.set(d.id, { week: w, day: d })));
+    sessionDays(client, progress).forEach((d) =>
+      byId.set(d.id, { week: null, day: d, oneOff: true, own: isOwnDay(d) }));
+    const map = {};
+    Object.entries(progress?.dayCompletions || {}).forEach(([dayId, dates]) => {
+      const hit = byId.get(dayId);
+      if (!hit) return; // a day deleted out of the program since
+      (dates || []).forEach((iso) => {
+        if (iso) (map[iso] = map[iso] || []).push(hit);
+      });
+    });
+    return map;
+  }
+
+  // Dated sessions that sit outside the program — the coach's 1-offs and the
+  // athlete's own days. Kept whether or not they are finished; the cell decides
+  // how to draw a done one.
+  function sessionsByDate(client, progress) {
+    const map = {};
+    sessionDays(client, progress).forEach((d) => {
+      if (d?.date) (map[d.date] = map[d.date] || []).push(d);
+    });
+    return map;
+  }
+
+  // Booked sessions for one athlete, from BOTH paths, deduped on date+time.
+  // `bookingRows` is the live `bookings` table (in-app scheduling, the truth
+  // since the Setmore lock-in); `sessionBank.upcomingBookings` is the old
+  // mirror and is still the only record of some pre-cut-over sessions, so it is
+  // merged rather than dropped. A linked partner's slot counts for both halves
+  // — the couple books once, under one name.
+  function bookingsByDate(client, bookingRows) {
+    const map = {};
+    const seen = new Set();
+    const push = (iso, b) => {
+      const k = `${iso}|${b.at}`;
+      if (seen.has(k)) return;
+      seen.add(k);
+      (map[iso] = map[iso] || []).push(b);
+    };
+    const ids = new Set();
+    if (client?.id) ids.add(client.id);
+    const p = partnerOf(client);
+    if (p?.id) ids.add(p.id);
+    (bookingRows || []).forEach((r) => {
+      if (!r || r.status !== "booked" || !r.start_at) return;
+      // Athlete-side RLS already returns only their own rows and leaves nothing
+      // to filter; coach-side it returns the whole roster's, so a row without a
+      // known athlete id is somebody else's and is skipped.
+      if (ids.size && r.athlete_id && !ids.has(r.athlete_id)) return;
+      const ms = +new Date(r.start_at);
+      push(dateISO(new Date(ms)), {
+        at: fmtSlotTime(ms), startAt: r.start_at, bookingId: r.id,
+        seriesId: r.series_id || "", partner: !!(r.athlete_id && r.athlete_id !== client?.id),
+      });
+    });
+    (client?.sessionBank?.upcomingBookings || []).forEach((b) => {
+      if (!b?.date) return;
+      push(b.date, {
+        at: b.time || (b.startAt ? fmtSlotTime(+new Date(b.startAt)) : ""),
+        startAt: b.startAt || "", uid: b.uid || "", mirrored: true,
+      });
+    });
+    return map;
+  }
+
+  // ---- The month's bookings ----
+  // One fetch serves both grids: RLS scopes the same call per role (a coach
+  // gets the whole roster's rows, an athlete only their own), so there is no
+  // reason for two caches. Keyed by the month on screen, which is the only
+  // thing that changes as the grid is paged — switching athletes re-filters the
+  // rows already in hand rather than going back to the network.
+  let _calBookingsKey = "";
+  let _calBookingRows = [];
+  let _calBookingsFetching = "";
+  function calBookingRows() { return _calBookingRows; }
+  // Called after any booking is made or cancelled, so the next render refetches
+  // instead of drawing a month it already believes it knows.
+  function invalidateCalBookings() { _calBookingsKey = ""; }
+  async function loadCalendarBookings(year, month, after) {
+    const key = `${year}-${month}`;
+    if (_calBookingsKey === key || _calBookingsFetching === key) return;
+    if (!window.Cloud?.enabled) return;
+    _calBookingsFetching = key;
+    // A week of overhang each side: the grid draws the tail of the previous
+    // month and the head of the next one in the same six rows.
+    const from = new Date(year, month, 1 - 7).toISOString();
+    const to = new Date(year, month + 1, 7).toISOString();
+    let rows = null;
+    try { rows = await window.Cloud.getBookings(from, to); } catch (e) { /* offline */ }
+    _calBookingsFetching = "";
+    if (!Array.isArray(rows)) return; // offline: keep whatever is cached
+    _calBookingsKey = key;
+    _calBookingRows = rows;
+    if (typeof after === "function") after();
+  }
+
   function closeCallUsedInMonth(c, monthKey) {
     return (c.sessionBank.missedSessions || []).some((m) =>
       m.type === "closecall" && (m.date || "").slice(0, 7) === monthKey);
@@ -12895,46 +13095,113 @@
     renderDashboardCalendar();
   }
 
+  // -------- The month grid, drawn once for both sides --------
+  // Coach and athlete get the same cells from the same index. They differ only
+  // in what an EMPTY future day does: for the athlete it is the day planner,
+  // for the coach it is nothing. Anything a day actually holds opens the same
+  // detail sheet either way, so the two can no longer tell different stories
+  // about the same date.
+  function paintMonthGrid(opts) {
+    const { grid, year, month, client, progress, coachSide } = opts;
+    const cells = startMonthGrid(grid, year, month);
+    const today = todayISO();
+    const ix = calendarIndex(client, progress, calBookingRows());
+    cells.forEach((d) => {
+      const iso = dateISO(d);
+      const inMonth = d.getMonth() === month;
+      const upcoming = iso >= today;
+      const cell = document.createElement("div");
+      cell.className = "cal-day";
+      if (!inMonth) cell.classList.add("outside");
+      if (iso === today) cell.classList.add("today");
+
+      let pills = "";
+      let anything = false;
+      const mark = (html, cls) => { pills += html; anything = true; if (cls) cell.classList.add(cls); };
+
+      // 1. What they actually did. A completed program day carries its week/day
+      //    colour, a completed session its own icon.
+      const done = ix.completed[iso] || [];
+      done.forEach((hit) => {
+        if (hit.oneOff) {
+          mark(`<div class="cal-day-pill cal-oneoff-pill">✓ ${hit.own ? "🔥" : "🐉"} ${escapeHtml(hit.day.name || (hit.own ? "My session" : "Coach session"))}</div>`, "done");
+        } else {
+          const dc = getDayColor(getDayIdx(client, hit.week.id, hit.day.id));
+          const label = weekDayLabel(client, hit.week.id, hit.day.id);
+          mark(`<div class="cal-day-pill" style="--day-color:${dc.color};--day-color-soft:${dc.soft}">✓ ${escapeHtml(label)} · ${escapeHtml(hit.day.name || "")}</div>`, "done");
+        }
+      });
+
+      // 2. What they said they would do. A plan that has gone past without a
+      //    matching completion is not deleted any more — it stays, greyed, as
+      //    the record that a day was planned and missed. That is exactly the
+      //    thing a coach opens a calendar to find.
+      const plan = ix.planned[iso];
+      if (plan && !done.length) {
+        if (plan.rest) {
+          mark(`<div class="cal-day-pill cal-day-pill-rest${upcoming ? "" : " cal-pill-past"}">Rest</div>`);
+        } else if (plan.weekId) {
+          const dc = getDayColor(getDayIdx(client, plan.weekId, plan.dayId));
+          const wd = findWeekDay(client, plan.weekId, plan.dayId);
+          const label = weekDayLabel(client, plan.weekId, plan.dayId);
+          const name = wd?.day?.name ? ` · ${wd.day.name}` : "";
+          mark(`<div class="cal-day-pill${upcoming ? "" : " cal-pill-past"}" style="--day-color:${dc.color};--day-color-soft:${dc.soft}" title="${upcoming ? "Planned" : "Planned, never logged"}">${upcoming ? "" : "○ "}${escapeHtml(label + name)}</div>`);
+        }
+      }
+
+      // 3. Booked sessions — past ones included. This is the whole reason the
+      //    coach grid could be blank: it had never read them at all.
+      const doneUids = new Set(done.map((h) => h.day.id));
+      (ix.booked[iso] || []).forEach((b) => {
+        mark(`<div class="cal-day-pill cal-booked-pill${upcoming ? "" : " cal-pill-past"}" title="${upcoming ? "Booked session" : "Session booked for this day"}">📅 ${escapeHtml(b.at || "Session")}${b.partner ? " 👥" : ""}</div>`);
+      });
+
+      // 4. Sessions outside the program, on the date they were set for. A
+      //    session finished on some OTHER day used to vanish from the day it
+      //    was booked for; it stays now, ticked, because "we moved it" is
+      //    information and a hole in the calendar is not.
+      (ix.sessions[iso] || []).forEach((s) => {
+        if (doneUids.has(s.id)) return;              // already drawn as ✓ above
+        const elsewhere = ((progress?.dayCompletions || {})[s.id] || []).length > 0;
+        mark(`<div class="cal-day-pill cal-oneoff-pill${upcoming ? "" : " cal-pill-past"}">${elsewhere ? "✓ " : ""}${isOwnDay(s) ? "🔥" : "🐉"} ${escapeHtml(s.name || (isOwnDay(s) ? "My session" : "Coach session"))}</div>`);
+      });
+
+      // 5. Money-side marks: the token a session spent, and any missed mark.
+      //    A charged miss replaces its own token pill so the day reads as one
+      //    event rather than "used a session" next to "missed the session".
+      const missed = ix.missed[iso] || [];
+      const chargedUids = new Set(missed.filter((m) => m.type === "charged" && m.setmoreUid).map((m) => m.setmoreUid));
+      const reds = (ix.reds[iso] || []).filter((r) => !chargedUids.has(r.setmoreUid));
+      if (reds.length) mark(tokenPillHtml(reds));
+      if (missed.length) mark(missedPillHtml(missed));
+
+      if (anything) cell.classList.add("has-log");
+      cell.innerHTML = `<div class="cal-date-num">${d.getDate()}</div>${pills}`;
+
+      if (inMonth && anything) {
+        cell.classList.add("cal-day-open");
+        cell.addEventListener("click", () => openCalendarDayModal(iso, { client, progress, coachSide }));
+      } else if (inMonth && !coachSide && upcoming) {
+        // Empty future day, athlete side: straight to the planner, as before.
+        cell.addEventListener("click", () => openAthleteLogDayModal(iso));
+      }
+      grid.appendChild(cell);
+    });
+  }
+
   // -------- Coach calendar --------
   function renderCoachCalendar() {
     const c = currentClient(); if (!c) return;
     const { year, month } = state.coachCal;
     $("#cal-title").textContent = `${MONTH_NAMES[month]} ${year}`;
-    const grid = $("#cal-grid");
-    const cells = startMonthGrid(grid, year, month);
-    const today = todayISO();
-    const selfSched = c.importedProgress?.selfSchedule || {};
-    const redsByDate = redemptionsByDate(c);
-    cells.forEach((d) => {
-      const iso = dateISO(d);
-      const inMonth = d.getMonth() === month;
-      const cell = document.createElement("div");
-      cell.className = "cal-day";
-      if (!inMonth) cell.classList.add("outside");
-      if (iso === today) cell.classList.add("today");
-      const entry = selfSched[iso];
-      let pillHtml = "";
-      if (entry && entry.weekId) {
-        const dIdx = getDayIdx(c, entry.weekId, entry.dayId);
-        const dc = getDayColor(dIdx);
-        const wd = findWeekDay(c, entry.weekId, entry.dayId);
-        const name = wd?.day.name || "Workout";
-        pillHtml = `<div class="cal-day-pill" style="--day-color:${dc.color};--day-color-soft:${dc.soft}">${escapeHtml(name)}</div>`;
-        cell.classList.add("has-log");
-      } else if (entry?.rest) {
-        pillHtml = `<div class="cal-day-pill cal-day-pill-rest">Rest</div>`;
-        cell.classList.add("has-log");
-      }
-      const reds = redsByDate[iso] || [];
-      if (reds.length) pillHtml += tokenPillHtml(reds);
-      cell.innerHTML = `<div class="cal-date-num">${d.getDate()}</div>${pillHtml}`;
-      if (inMonth && entry && !entry.rest) {
-        cell.addEventListener("click", () => openCoachDayBreakdown(iso, c));
-      } else if (inMonth && reds.length) {
-        cell.classList.add("has-log");
-        cell.addEventListener("click", () => openRedemptionDetailsModal(iso, reds));
-      }
-      grid.appendChild(cell);
+    // Async, and deliberately not awaited: the grid paints immediately from
+    // whatever is cached and repaints when the month's bookings land.
+    loadCalendarBookings(year, month, () => {
+      if (state.coachCal.year === year && state.coachCal.month === month) renderCoachCalendar();
+    });
+    paintMonthGrid({
+      grid: $("#cal-grid"), year, month,
+      client: c, progress: c.importedProgress, coachSide: true,
     });
   }
 
@@ -12990,48 +13257,159 @@
     });
   }
 
-  function openCoachDayBreakdown(iso, c) {
-    const entry = c.importedProgress?.selfSchedule?.[iso]; if (!entry || !entry.weekId) return;
-    const wd = findWeekDay(c, entry.weekId, entry.dayId);
-    if (!wd) {
-      openModal({ title: iso, body: `<p class="muted">Day not found in current program.</p>`, actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }] });
-      return;
-    }
-    const { week, day } = wd;
-    const dIdx = getDayIdx(c, entry.weekId, entry.dayId);
-    const dc = getDayColor(dIdx);
-    const logs = c.importedProgress?.exerciseLogs || {};
-    let bodyHtml = `<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem">
-      <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${dc.color};flex-shrink:0"></span>
-      <span class="muted" style="font-size:0.85rem">${escapeHtml(week.label)}</span>
-    </div>`;
-    if (!day.exercises.length) {
-      bodyHtml += `<p class="muted">No exercises in this day.</p>`;
+  // ================= What happened on this day =================
+  // The old coach version answered one narrow question — "which program day was
+  // PLANNED here, and what got logged against it" — and refused to open at all
+  // unless a plan existed. Everything else the day held (the booking, the
+  // session, the token, how they felt, what they weighed, a PR they hit) had
+  // nowhere to be read. This is the whole day, and both sides open it.
+  function dayBlockHtml(iso, client, progress, entry) {
+    const { week, day, planned } = entry;
+    // "never logged" is a verdict, and it is only true once the day is over.
+    // A plan for Thursday is just a plan.
+    const past = iso < todayISO();
+    const dc = getDayColor(week ? getDayIdx(client, week.id, day.id) : 0);
+    const logs = progress?.exerciseLogs || {};
+    const unit = unitOf(client);
+    const kicker = week ? week.label : (isOwnDay(day) ? "Their own session" : "Session with coach");
+    const rdy = dayReadiness(progress, day.id);
+    const moods = moodChipsHtml(dayMoods(progress, day.id));
+
+    let h = `<div class="cday-block${planned ? " cday-planned" : ""}" style="--day-color:${dc.color};--day-color-soft:${dc.soft}">
+      <div class="cday-block-head">
+        <span class="cday-dot"></span>
+        <div class="cday-block-titles">
+          <strong>${escapeHtml(day.name || "Workout")}</strong>
+          <span class="muted">${escapeHtml(kicker)}${planned ? (past ? " · planned, never logged" : " · planned") : ""}</span>
+        </div>
+        ${rdy ? readinessChipHtml(rdy, true) : ""}${moods}
+      </div>`;
+
+    const exs = day.exercises || [];
+    if (!exs.length) {
+      h += `<p class="muted cday-empty">No exercises in this day.</p>`;
     } else {
-      day.exercises.forEach(ex => {
-        const logEntry = (logs[ex.id] || []).find(l => l.date === iso);
-        bodyHtml += `<div class="breakdown-ex"><div class="breakdown-ex-name">${breakdownExNameHtml(ex, c.importedProgress)}</div><div class="breakdown-sets">`;
+      exs.forEach((ex) => {
+        const logEntry = (logs[ex.id] || []).find((l) => l.date === iso);
+        h += `<div class="breakdown-ex"><div class="breakdown-ex-name">${breakdownExNameHtml(ex, progress)}</div><div class="breakdown-sets">`;
         if (logEntry?.sets?.length) {
           logEntry.sets.forEach((s, i) => {
-            if (s.weight || s.reps) bodyHtml += `<span class="breakdown-set-pill">S${i+1} ${s.weight ? escapeHtml(wLabel(s.weight, unitOf(c))) : "—"} × ${s.reps || "—"}</span>`;
+            if (s.weight || s.reps) h += `<span class="breakdown-set-pill">S${i + 1} ${s.weight ? escapeHtml(wLabel(s.weight, unit)) : "—"} × ${s.reps || "—"}</span>`;
           });
         } else if (logEntry?.weight || logEntry?.reps) {
-          bodyHtml += `<span class="breakdown-set-pill">${logEntry.weight ? escapeHtml(wLabel(logEntry.weight, unitOf(c))) : "—"} × ${logEntry.reps || "—"}</span>`;
+          h += `<span class="breakdown-set-pill">${logEntry.weight ? escapeHtml(wLabel(logEntry.weight, unit)) : "—"} × ${logEntry.reps || "—"}</span>`;
         } else {
-          bodyHtml += `<span style="font-size:0.8rem;color:var(--muted)">Not logged</span>`;
+          // The target still says something on a day nothing was logged: it is
+          // what they were asked to do and did not.
+          const tgt = ex.currentWeight || ex.currentReps
+            ? `Target ${ex.currentWeight ? escapeHtml(wLabel(ex.currentWeight, unit)) : "—"} × ${ex.currentReps || "—"}`
+            : "Not logged";
+          h += `<span class="breakdown-untouched">${escapeHtml(tgt)}</span>`;
         }
-        bodyHtml += `</div></div>`;
+        h += `</div></div>`;
       });
     }
-    const dayNote = c.importedProgress?.dayNotes?.[day.id];
-    if (dayNote) bodyHtml += `<div class="breakdown-note"><span class="breakdown-note-label">Session note</span><p>${escapeHtml(dayNote)}</p></div>`;
-    bodyHtml += coachFormCheckSectionHtml(c, day);
-    openModal({
-      title: `${escapeHtml(day.name)} · ${iso}`,
-      body: bodyHtml,
-      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
+    const note = progress?.dayNotes?.[day.id];
+    if (note) h += `<div class="breakdown-note"><span class="breakdown-note-label">Session note</span><p>${escapeHtml(note)}</p></div>`;
+    return h + `</div>`;
+  }
+
+  function openCalendarDayModal(iso, ctx) {
+    const { client, progress, coachSide } = ctx;
+    const ix = calendarIndex(client, progress, calBookingRows());
+    const today = todayISO();
+    const who = coachSide ? (client.name || "Your athlete") : "You";
+
+    // The day's workouts: everything completed on it, then a plan that never
+    // turned into one, then any outstanding session dated to it.
+    const blocks = [];
+    const seen = new Set();
+    (ix.completed[iso] || []).forEach((hit) => {
+      seen.add(hit.day.id);
+      blocks.push({ week: hit.week, day: hit.day });
     });
-    wireCoachFormChecks(c, day);
+    const plan = ix.planned[iso];
+    if (plan?.weekId && !seen.has(plan.dayId)) {
+      const wd = findWeekDay(client, plan.weekId, plan.dayId);
+      if (wd) { seen.add(wd.day.id); blocks.push({ week: wd.week, day: wd.day, planned: true }); }
+    }
+    (ix.sessions[iso] || []).forEach((s) => {
+      if (seen.has(s.id)) return;
+      seen.add(s.id);
+      blocks.push({ week: null, day: s, planned: !((progress?.dayCompletions || {})[s.id] || []).length });
+    });
+
+    let body = "";
+
+    // ---- Booked sessions ----
+    const booked = ix.booked[iso] || [];
+    if (booked.length) {
+      body += `<div class="cday-sec"><div class="cday-sec-head">📅 Booked</div>` +
+        booked.map((b) => `<div class="cday-line">
+          <strong>${escapeHtml(b.at || "Session")}</strong>
+          <span class="muted">${b.seriesId ? "Weekly regular" : "One-off"}${b.partner ? " · shared slot" : ""}${b.mirrored ? " · from the old calendar" : ""}</span>
+        </div>`).join("") + `</div>`;
+    }
+
+    // ---- Rest day ----
+    if (plan?.rest) {
+      body += `<div class="cday-sec"><div class="cday-line"><strong>🛌 Rest day</strong>
+        <span class="muted">${coachSide ? "They planned this as a rest day" : "You planned this as a rest day"}</span></div></div>`;
+    }
+
+    // ---- The workouts ----
+    blocks.forEach((b) => { body += dayBlockHtml(iso, client, progress, b); });
+
+    // ---- Everything else logged against the date ----
+    const extras = [];
+    const bw = (progress?.bodyweightLog || []).filter((e) => e && e.date === iso);
+    bw.forEach((e) => extras.push(`⚖️ Weighed in at <strong>${escapeHtml(wLabel(e.weightLb, unitOf(client)))}</strong>`));
+    cardioLogsAll(progress).filter((l) => l && l.date === iso).forEach((l) => {
+      // Minutes and miles in ONE <strong>: .cday-line is a flex row, so closing
+      // the tag mid-figure would make " · 1.3 mi" its own flex item and open a
+      // gap in the middle of the number.
+      const fig = `${escapeHtml(String(l.minutes || 0))} min` +
+        (Number(l.miles) ? ` · ${escapeHtml(cardioMiLabel(Number(l.miles)))} mi` : "");
+      extras.push(`${cardioIcon(l.type)} ${escapeHtml(l.type || "Cardio")} · <strong>${fig}</strong>`);
+    });
+    (progress?.personalRecords || []).filter((p) => p && p.date === iso).forEach((p) => {
+      // prValueLabel already handles the dumbbell "80s" form and rep-only PRs.
+      extras.push(`🥇 PR · ${escapeHtml(p.name || "Lift")} <strong>${prValueLabel(p)}</strong>`);
+    });
+    const missed = ix.missed[iso] || [];
+    const chargedUids = new Set(missed.filter((m) => m.type === "charged" && m.setmoreUid).map((m) => m.setmoreUid));
+    (ix.reds[iso] || []).filter((r) => !chargedUids.has(r.setmoreUid)).forEach((r) => {
+      extras.push(`🎟 Session used${r.note ? ` · ${escapeHtml(r.note)}` : ""}`);
+    });
+    missed.forEach((m) => extras.push(m.type === "closecall"
+      ? `🤝 Close call · free missed session, no charge`
+      : `✕ Missed session · charged`));
+    if (extras.length) {
+      body += `<div class="cday-sec"><div class="cday-sec-head">Also on this day</div>` +
+        extras.map((e) => `<div class="cday-line">${e}</div>`).join("") + `</div>`;
+    }
+
+    if (!body) body = `<p class="muted">Nothing logged on this day.</p>`;
+
+    // Form-check review is coach-only and needs a day to hang off.
+    const fcDay = coachSide ? blocks.find((b) => formChecksForDay(progress, b.day.id).length)?.day : null;
+    if (fcDay) body += coachFormCheckSectionHtml(client, fcDay);
+
+    const actions = [];
+    // Athlete, today or later: the planner is still one tap away, which is what
+    // tapping the cell used to do outright.
+    if (!coachSide && iso >= today) {
+      actions.push({ label: plan ? "Change plan" : "Plan this day", className: "btn btn-ghost", onClick: () => { closeModal(); openAthleteLogDayModal(iso); } });
+    }
+    actions.push({ label: "Close", className: "btn btn-ghost", onClick: closeModal });
+
+    const when = new Date(iso + "T12:00:00").toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+    openModal({
+      title: `${escapeHtml(when)}${coachSide ? ` · ${escapeHtml(who)}` : ""}`,
+      body,
+      actions,
+    });
+    if (fcDay) wireCoachFormChecks(client, fcDay);
   }
 
   // -------- Coach Cardio view (athlete's logged cardio only) --------
@@ -15194,7 +15572,16 @@
       if (!ok) { toast("Couldn't cancel that. Try again."); return; }
       toast("Session cancelled");
       refreshAthleteBooking();
+      afterAthleteBookingChange();
     }));
+  }
+
+  // The Overview calendar caches the month's booking rows, so a session booked
+  // or dropped on the Sessions tab has to knock that cache over or the two tabs
+  // disagree until the next reload.
+  function afterAthleteBookingChange() {
+    invalidateCalBookings();
+    renderAthleteCalendar();
   }
 
   function confirmBooking(startMs, endMs, btn) {
@@ -15247,6 +15634,7 @@
     // failure here is a sync problem and never undoes the booking.
     window.Cloud?.googleCall?.("push", { bookingId: row.id });
     refreshAthleteBooking();
+    afterAthleteBookingChange();
   }
 
   // ---- Coach: availability editor + bookings + Google Calendar ----
@@ -16117,6 +16505,10 @@
   async function afterBookingChange() {
     await refreshCoachSchedule();
     _dashCalSetmoreFetchKey = null;
+    // The per-athlete grid caches the month's booking rows; without this it
+    // would keep drawing the month as it was before this booking existed.
+    invalidateCalBookings();
+    if (state.currentClientId) renderCoachCalendar();
     if (state.dashCal) await loadDashCalSetmoreEvents(state.dashCal.year, state.dashCal.month);
   }
 
@@ -18926,18 +19318,6 @@
       }
     }
   }
-  function findCompletedDayForDate(client, iso) {
-    const dc = state.clientData.progress?.dayCompletions || {};
-    for (const week of client.weeks) {
-      for (const day of week.days) {
-        if ((dc[day.id] || []).includes(iso)) return { week, day };
-      }
-    }
-    for (const day of sessionDays(client, state.clientData.progress)) {
-      if ((dc[day.id] || []).includes(iso)) return { week: null, day, oneOff: true, own: isOwnDay(day) };
-    }
-    return null;
-  }
   function resumeClient() {
     if (!state.clientData.program) return;
     if (!state.clientData.progress) state.clientData.progress = emptyProgress();
@@ -19802,7 +20182,12 @@
     // hideDelete: deleting the day you're standing in from inside it would
     // leave the portal underneath pointing at nothing. That stays on the
     // full editor.
-    body.appendChild(renderDayContent(t.week, t.day, renderCoachDaySheet, { hideDelete: true }));
+    // progress: this sheet opens OVER the live athlete portal, so the live
+    // progress is the one holding any exercise just added on the day —
+    // currentClient().importedProgress is the coach's mirror and lags it.
+    body.appendChild(renderDayContent(t.week, t.day, renderCoachDaySheet, {
+      hideDelete: true, progress: state.clientData.progress,
+    }));
   }
 
   // DOM teardown only. Split out so leaving for the full editor doesn't also
@@ -19872,91 +20257,18 @@
     const prog = state.clientData.program; if (!prog) return;
     const { year, month } = state.athleteCal;
     $("#ccal-title").textContent = `${MONTH_NAMES[month]} ${year}`;
-    const grid = $("#ccal-grid");
-    const cells = startMonthGrid(grid, year, month);
-    const today = todayISO();
-    const selfSched = state.clientData.progress.selfSchedule || {};
-    const redsByDate = redemptionsByDate(prog.client);
-    const missedByD = missedByDate(prog.client);
-    // Upcoming Setmore bookings the coach matched to this athlete (synced via
-    // sessionBank.upcomingBookings) → a "📅 time" pill on those future days.
-    const upcomingByDate = {};
-    (prog.client.sessionBank?.upcomingBookings || []).forEach((b) => {
-      if (b && b.date) (upcomingByDate[b.date] = upcomingByDate[b.date] || []).push(b);
+    // Bookings for the month straight from the `bookings` table. The athlete
+    // used to see only `sessionBank.upcomingBookings` — a mirror that fills in
+    // only when the coach happens to open the dashboard calendar on that month,
+    // and that gets pruned to future dates. Reading the table directly (RLS
+    // returns the athlete their own rows) is what makes a booked session appear
+    // reliably, and go on existing once the day has passed.
+    loadCalendarBookings(year, month, () => {
+      if (state.athleteCal.year === year && state.athleteCal.month === month) renderAthleteCalendar();
     });
-    // Sessions outside the program → a pill until they're completed. 🐉 for the
-    // coach's, 🔥 for ones the athlete built themselves.
-    const oneOffByDate = {};
-    sessionDays(prog.client, state.clientData.progress).forEach((d) => {
-      if (d && d.date) (oneOffByDate[d.date] = oneOffByDate[d.date] || []).push(d);
-    });
-    const sessionPill = (d) =>
-      `<div class="cal-day-pill cal-oneoff-pill">${isOwnDay(d) ? "🔥" : "🐉"} ${escapeHtml(d.name || (isOwnDay(d) ? "My session" : "Coach session"))}</div>`;
-    cells.forEach((d) => {
-      const iso = dateISO(d);
-      const inMonth = d.getMonth() === month;
-      const cell = document.createElement("div");
-      cell.className = "cal-day";
-      if (!inMonth) cell.classList.add("outside");
-      if (iso === today) cell.classList.add("today");
-      const isUpcoming = iso >= today;
-      const entry = selfSched[iso];
-      const completed = findCompletedDayForDate(prog.client, iso);
-      let pillHtml = "";
-      if (completed && completed.oneOff) {
-        pillHtml = `<div class="cal-day-pill cal-oneoff-pill">✓ ${completed.own ? "🔥" : "🐉"} ${escapeHtml(completed.day.name || (completed.own ? "My session" : "Coach session"))}</div>`;
-        cell.classList.add("done");
-        if (isUpcoming) cell.classList.add("has-log");
-      } else if (completed) {
-        const dIdx = getDayIdx(prog.client, completed.week.id, completed.day.id);
-        const dc = getDayColor(dIdx);
-        const label = weekDayLabel(prog.client, completed.week.id, completed.day.id);
-        pillHtml = `<div class="cal-day-pill" style="--day-color:${dc.color};--day-color-soft:${dc.soft}">✓ ${escapeHtml(label)}</div>`;
-        cell.classList.add("done");
-        if (isUpcoming) cell.classList.add("has-log");
-      } else if (isUpcoming && entry && entry.weekId) {
-        // Only show/allow planned days that haven't passed yet — once a
-        // planned date is in the past and never got auto-completed, the
-        // plan is stale and just drops off the calendar.
-        const dIdx = getDayIdx(prog.client, entry.weekId, entry.dayId);
-        const dc = getDayColor(dIdx);
-        const label = weekDayLabel(prog.client, entry.weekId, entry.dayId);
-        pillHtml = `<div class="cal-day-pill" style="--day-color:${dc.color};--day-color-soft:${dc.soft}">${escapeHtml(label)}</div>`;
-        cell.classList.add("has-log");
-      } else if (isUpcoming && entry?.rest) {
-        pillHtml = `<div class="cal-day-pill cal-day-pill-rest">Rest</div>`;
-        cell.classList.add("has-log");
-      }
-      const upc = isUpcoming ? (upcomingByDate[iso] || []) : [];
-      if (upc.length) {
-        pillHtml += upc.map((b) => `<div class="cal-day-pill cal-booked-pill">${escapeHtml(b.time || "Session")}</div>`).join("");
-        cell.classList.add("has-log");
-      }
-      const oneOffs = isUpcoming ? (oneOffByDate[iso] || []).filter((d) => !isDayChecked(d.id)) : [];
-      if (oneOffs.length) {
-        pillHtml += oneOffs.map(sessionPill).join("");
-        cell.classList.add("has-log");
-      }
-      // Missed-session marks from the coach (close call = green freebie,
-      // charged = dark). A charged mark replaces its token pill so the day
-      // reads "✕ Missed" instead of a generic 🎟.
-      const missed = missedByD[iso] || [];
-      const chargedUids = new Set(missed.filter((m) => m.type === "charged" && m.setmoreUid).map((m) => m.setmoreUid));
-      const reds = (redsByDate[iso] || []).filter((r) => !chargedUids.has(r.setmoreUid));
-      if (reds.length) pillHtml += tokenPillHtml(reds);
-      if (missed.length) { pillHtml += missedPillHtml(missed); cell.classList.add("has-log"); }
-      cell.innerHTML = `<div class="cal-date-num">${d.getDate()}</div>${pillHtml}`;
-      // Athletes can only plan today/future days here — completion itself
-      // is auto-detected from locked-in exercise logs, not hand-picked.
-      if (inMonth && isUpcoming) {
-        cell.addEventListener("click", () => openAthleteLogDayModal(iso));
-      } else if (inMonth && (reds.length || missed.length)) {
-        // Past days aren't plannable, so a tap can surface the redemption
-        // details instead (title tooltips don't exist on mobile).
-        cell.classList.add("has-log");
-        cell.addEventListener("click", () => openRedemptionDetailsModal(iso, reds, missed));
-      }
-      grid.appendChild(cell);
+    paintMonthGrid({
+      grid: $("#ccal-grid"), year, month,
+      client: prog.client, progress: state.clientData.progress, coachSide: false,
     });
     // Token balance chip — only shown once the athlete has a session bank.
     const balEl = $("#ccal-token-balance");
@@ -28797,6 +29109,31 @@
         localStorage.setItem(KEY_ROSTER_GROUP, b.dataset.rosterGroup);
         renderClientGrid();
       }));
+    // Roster search. The ✕ clears and hands focus back to the field, so
+    // clear-and-retype is one tap rather than a tap and a re-aim.
+    const rosterSearchInput = $("#roster-search-input");
+    const rosterSearchClear = $("#roster-search-clear");
+    if (rosterSearchInput) {
+      const applyRosterSearch = () => {
+        _rosterQuery = rosterSearchInput.value.trim().toLowerCase();
+        rosterSearchClear?.classList.toggle("hidden", !rosterSearchInput.value);
+        renderClientGrid();
+      };
+      rosterSearchInput.addEventListener("input", applyRosterSearch);
+      // Escape clears, matching every other search field on the platform.
+      rosterSearchInput.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && rosterSearchInput.value) {
+          e.stopPropagation();       // don't let Nav treat this as a back
+          rosterSearchInput.value = "";
+          applyRosterSearch();
+        }
+      });
+      rosterSearchClear?.addEventListener("click", () => {
+        rosterSearchInput.value = "";
+        applyRosterSearch();
+        rosterSearchInput.focus();
+      });
+    }
     $("#btn-back").addEventListener("click", () => Nav.back(renderDashboard));
     $("#btn-header-back").addEventListener("click", () => Nav.back(renderDashboard));
     // Coach side-nav

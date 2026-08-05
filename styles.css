@@ -2791,8 +2791,14 @@ input.trial-input {
   color: #fbbf24;
   margin-top: 2px;
 }
+/* A day that has already happened. Both grids now keep showing what was
+   booked, planned and done on a past date instead of blanking it, so past
+   entries are dimmed to keep the eye on what is still ahead. */
+.cal-pill-past { opacity: 0.55; }
+.cal-day.done .cal-pill-past { opacity: 0.75; }
 .cal-day.has-log { cursor: pointer; }
 .cal-day.has-log:hover { border-color: var(--day-color, var(--primary)); }
+.cal-day-open { cursor: pointer; }
 
 /* Token balance chip in the athlete calendar header */
 .cal-token-balance {
@@ -3155,6 +3161,45 @@ input.trial-input {
 .breakdown-note { margin-top: 1rem; padding: 0.75rem; background: var(--surface-2); border-radius: var(--radius); }
 .breakdown-note-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-soft); font-weight: 700; }
 .breakdown-note p { margin: 0.3rem 0 0; font-size: 0.9rem; }
+/* An exercise with nothing logged against the day — shows the target it was
+   measured against rather than a bare "Not logged". */
+.breakdown-untouched { font-size: 0.8rem; color: var(--muted); font-style: italic; }
+
+/* ---- "What happened on this day" sheet (both calendars) ---- */
+.cday-sec { margin-bottom: 0.9rem; }
+.cday-sec-head {
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-soft); font-weight: 700; margin-bottom: 0.35rem;
+}
+.cday-line {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.15rem 0.5rem;
+  padding: 0.4rem 0.6rem; margin-bottom: 0.3rem;
+  background: var(--surface-2); border-radius: var(--radius); font-size: 0.88rem;
+}
+.cday-line .muted { font-size: 0.78rem; }
+/* One workout on the day. The left rail carries the program day's colour, so a
+   sheet listing two sessions reads as two blocks at a glance. */
+.cday-block {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--day-color, var(--border));
+  border-radius: var(--radius);
+  padding: 0.65rem 0.8rem;
+  margin-bottom: 0.9rem;
+  background: var(--surface-2);
+}
+.cday-block.cday-planned { border-style: dashed; opacity: 0.85; }
+.cday-block-head {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 0.45rem;
+  margin-bottom: 0.5rem;
+}
+.cday-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--day-color, var(--muted)); flex-shrink: 0;
+}
+.cday-block-titles { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.cday-block-titles strong { font-size: 0.95rem; line-height: 1.25; }
+.cday-block-titles .muted { font-size: 0.76rem; }
+.cday-empty { margin: 0; font-size: 0.85rem; }
 
 @media (max-width: 600px) {
   .cal-day { min-height: 60px; padding: 0.3em; font-size: 0.7rem; }
@@ -7198,10 +7243,17 @@ input.pyr-weight-input { -moz-appearance: textfield; appearance: textfield; }
 }
 .day-tab:hover { color: var(--text); }
 .day-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
-.day-tab-add { color: var(--muted); font-weight: 400; font-size: 0.78rem; }
-.day-tab-add:hover { color: var(--primary); }
-.day-tab-import { color: var(--primary); }
-.day-tab-import:hover { color: var(--primary); background: var(--surface-2); }
+/* Add day / import a day. Deliberately OUT of the tab strip: as chips at the
+   end of the tabs they were a mis-tap away from the last day, and a mis-tap
+   made a day. Own row, own spacing, nothing to hit them by accident from. */
+.day-add-row {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.55rem 1rem;
+  background: rgba(0, 0, 0, 0.1);
+  border-bottom: 1px solid var(--border);
+}
+.day-add-btn { flex-shrink: 0; }
 .day-tab[draggable="true"] { cursor: grab; }
 .day-tab-dragging { opacity: 0.45; }
 .day-tab-dragover { border-bottom-color: var(--primary); background: var(--surface-2); }
@@ -8073,6 +8125,26 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 .ex-quick-add-input::placeholder { color: var(--muted); }
 .ex-quick-add-btn { flex: 0 0 auto; }
 
+/* Exercises added on the day itself. They live in progress.addedExercises, not
+   in the program, so they are shown apart from the editable rows — dashed, to
+   say "here but not part of this day" — with the one action that changes that. */
+.added-ex-sec {
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.added-ex-sec-head {
+  font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--muted); font-weight: 800; margin-bottom: 0.35rem;
+}
+.added-ex-sec-row {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.25rem 0;
+}
+.added-ex-sec-name { flex: 1; min-width: 0; font-size: 0.85rem; font-weight: 600; }
+
 /* ============ Gamification & insights ============ */
 
 /* Trophy case */
@@ -8421,6 +8493,43 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 .rest-timer-pop .rest-pop-opt.on .rest-pop-state { color: var(--primary-bright); }
 
 /* ===== Roster grouping (coach dashboard) ===== */
+/* Type-to-find over the roster, above Group by. */
+.roster-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.7rem;
+}
+.roster-search-ico {
+  position: absolute; left: 0.85rem;
+  font-size: 0.85rem; line-height: 1;
+  pointer-events: none; opacity: 0.7;
+}
+/* Descendant + attribute (0,2,1) so it outranks the base input[type="search"]
+   rule (0,1,1) — see the `input.` prefix note elsewhere in this file. */
+.roster-search input[type="search"] {
+  width: 100%; padding: 0.6em 2.4rem 0.6em 2.4rem;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); color: var(--text);
+  font-family: inherit; font-size: 0.92rem;
+}
+.roster-search input[type="search"]::-webkit-search-cancel-button { display: none; }
+.roster-search input[type="search"]:focus {
+  outline: none; border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.16);
+}
+.roster-search-clear {
+  position: absolute; right: 0.5rem;
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 0; background: var(--surface-2); color: var(--text-soft);
+  cursor: pointer; font-size: 0.72rem; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+.roster-search-clear:hover { color: var(--text); }
+.roster-search-clear.hidden { display: none; }
+.roster-no-match {
+  padding: 1.2rem 0.4rem; text-align: center; color: var(--muted); font-size: 0.9rem;
+}
 .roster-controls {
   display: flex;
   align-items: center;
@@ -12663,10 +12772,14 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
 /* auto-FILL, not auto-fit: a fresh athlete has two tiles, and auto-fit would
    stretch those two across the whole width of a desktop card. Empty tracks keep
    every tile the same size whether there are two of them or seven. */
+/* 220px tracks fitted only five tiles across a desktop card, so the last two
+   wrapped to a second row — and those two carry previews, so the overflow row
+   was the tall one. 158px fits the whole snapshot on one line at coach widths
+   and the tiles stay legible; the previews are what shrink, not the numbers. */
 .snap-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
-  gap: 0.45rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(158px, 100%), 1fr));
+  gap: 0.35rem;
 }
 .snap-tile {
   transform: skewX(-15deg);
@@ -12688,19 +12801,20 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
 /* Un-skew the contents, exactly as .ov-stat-row .sr-in does. */
 .snap-in {
   transform: skewX(15deg);
-  display: flex; flex-direction: column; gap: 0.12em;
-  padding: 0.5em 1.05em 0.55em;
+  display: flex; flex-direction: column; gap: 0.05em;
+  padding: 0.35em 0.75em 0.4em;
   min-width: 0;
 }
+.snap-tile .sr-lbl { font-size: 0.58rem; letter-spacing: 0.06em; }
 .snap-val { display: flex; align-items: baseline; gap: 0.1em; min-width: 0; }
 /* The value can be a day name ("Upper Body A"), not just a number, so it has to
    be allowed to shrink and clip rather than blow the grid track open. */
 .snap-tile .sr-val {
-  font-size: 1.1rem;
+  font-size: 0.98rem;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
 }
 .snap-sub {
-  font-size: 0.68rem; color: var(--muted); line-height: 1.4;
+  font-size: 0.62rem; color: var(--muted); line-height: 1.3;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
 }
 .snap-sub .rdy-chip, .snap-sub .mood-chip { vertical-align: -0.15em; }
@@ -12711,9 +12825,9 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
 .snap-preview {
   display: flex;
   flex-direction: column;
-  gap: 0.1em;
-  margin-top: 0.35em;
-  padding-top: 0.3em;
+  gap: 0;
+  margin-top: 0.25em;
+  padding-top: 0.22em;
   border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   min-width: 0;
 }
@@ -12721,8 +12835,8 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
   display: flex;
   align-items: baseline;
   gap: 0.5em;
-  font-size: 0.68rem;
-  line-height: 1.45;
+  font-size: 0.62rem;
+  line-height: 1.3;
   min-width: 0;
 }
 .snap-mini-k {

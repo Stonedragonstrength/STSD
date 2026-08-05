@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=bookperm3" />
+  <link rel="stylesheet" href="styles.css?v=cal3" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -259,6 +259,13 @@
                other what was done for it. -->
           <button class="btn btn-ghost btn-sm slim-btn" id="btn-session-lookup" type="button">Session log</button>
           <button class="btn btn-primary btn-sm slim-btn" id="btn-add-client">+ Add athlete</button>
+        </div>
+        <!-- Type-to-find, above Group by: on a roster this size scrolling for a
+             name is slower than typing three letters of it. -->
+        <div class="roster-search hidden" id="roster-search">
+          <span class="roster-search-ico" aria-hidden="true">🔍</span>
+          <input type="search" id="roster-search-input" placeholder="Search athletes" aria-label="Search athletes" autocomplete="off" />
+          <button type="button" class="roster-search-clear hidden" id="roster-search-clear" aria-label="Clear search">✕</button>
         </div>
         <div class="roster-controls hidden" id="roster-controls">
           <span class="roster-controls-lbl">Group by</span>
@@ -1410,9 +1417,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="bugreport.js?v=bug1"></script>
   <script src="config.js?v=horm2"></script>
-  <script src="cloud.js?v=bookperm3"></script>
+  <script src="cloud.js?v=cal3"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=bookperm3"></script>
+  <script src="app.js?v=cal3"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
