@@ -98,6 +98,7 @@
       setmore_aliases: c.setmoreAliases || [],
       nutrition: c.nutrition || { current: null, history: [] },
       hide_open_slots: !!c.hideOpenSlots,
+      can_book: !!c.canBook,
       partner_id: c.partnerId || null,
       updated_at: new Date().toISOString(),
     };
@@ -126,6 +127,7 @@
       setmoreAliases: r.setmore_aliases || [],
       nutrition: r.nutrition || { current: null, history: [] },
       hideOpenSlots: !!r.hide_open_slots,
+      canBook: !!r.can_book,
       partnerId: r.partner_id || null,
       importedProgress: null,
       createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
@@ -546,6 +548,18 @@
       if (error) console.warn("[Cloud] updateAthleteHideOpenSlots error", error.message);
       return !error;
     } catch (e) { console.warn("[Cloud] updateAthleteHideOpenSlots", e); return false; }
+  }
+
+  // Coach-side write: may this athlete book their own sessions? A single-column
+  // update rather than a whole-athlete upsert, so flipping a switch can't race
+  // a program edit and write back a stale `weeks`.
+  async function updateAthleteCanBook(athleteId, allowed) {
+    if (!athleteId) return false;
+    try {
+      const { error } = await sb.from("athletes").update({ can_book: !!allowed }).eq("id", athleteId);
+      if (error) console.warn("[Cloud] updateAthleteCanBook error", error.message);
+      return !error;
+    } catch (e) { console.warn("[Cloud] updateAthleteCanBook", e); return false; }
   }
 
   // Athlete self-edits their own vitals (name / age / height / weight / goals)
@@ -1037,6 +1051,7 @@
     linkAthleteToAuth,
     updateAthleteCoachPRs,
     updateAthleteHideOpenSlots,
+    updateAthleteCanBook,
     updateAthleteProfileFields,
     updateCoachAvatar,
     // Cycle tracking

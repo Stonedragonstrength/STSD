@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=edittgt1" />
+  <link rel="stylesheet" href="styles.css?v=bookperm3" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -838,6 +838,11 @@
               <div id="sched-series" class="sched-series"></div>
               <div id="sched-summary" class="sched-summary"></div>
               <button class="btn slim-btn btn-sm" id="btn-edit-availability">Edit availability</button>
+              <!-- Who may self-book. Sits directly under the hours because the
+                   two are one decision: publishing hours means nothing until
+                   somebody is allowed to act on them. Filled by
+                   renderBookingAccess(). -->
+              <div id="sched-access" class="sched-access"></div>
             </div>
           </details>
 
@@ -1405,9 +1410,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="bugreport.js?v=bug1"></script>
   <script src="config.js?v=horm2"></script>
-  <script src="cloud.js?v=remind1"></script>
+  <script src="cloud.js?v=bookperm3"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=edittgt1"></script>
+  <script src="app.js?v=bookperm3"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

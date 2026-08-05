@@ -270,6 +270,32 @@
     const y = year || new Date().getFullYear();
     return dateISO(new Date(y, mm - 1, dd));
   }
+  // The next occurrence of a birthday, as YYYY-MM-DD, or "" if there's no
+  // usable date. Both this year and next are tried, because on December 30th a
+  // January birthday's next occurrence is next year's — asking only for this
+  // year's returns a date in the past and reads as "never".
+  function nextBirthdayISO(iso, fromISO) {
+    const today = fromISO || todayISO();
+    const y = Number(today.slice(0, 4));
+    for (const year of [y, y + 1]) {
+      const due = birthdayThisYear(iso, year);
+      if (due && due >= today) return due;
+    }
+    return "";
+  }
+  // Whole days from today until that, or null when there's no birthday on file.
+  // Both dates are local YYYY-MM-DD (todayISO() is local); going through UTC
+  // would tip the count by a day for half of every evening.
+  function daysUntilBirthday(iso, fromISO) {
+    const due = nextBirthdayISO(iso, fromISO);
+    if (!due) return null;
+    const today = fromISO || todayISO();
+    return Math.round(
+      (new Date(due + "T12:00:00") - new Date(today + "T12:00:00")) / 86400000);
+  }
+  // How far ahead the 🎁 chip appears on a roster card.
+  const BIRTHDAY_CHIP_DAYS = 5;
+
   function normalizeInviteCode(s) {
     return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
   }
@@ -400,6 +426,9 @@
       // either way — see the units block below weightToLb().
       units: "lb",
       goals: "", notes: "",
+      // Self-booking is granted per athlete on the coach's Scheduling card, so
+      // a new athlete starts unable to take slots out of the availability.
+      canBook: false,
       weeks: [],
       oneOffDays: [],
       trials: [],
@@ -4274,6 +4303,24 @@
           q.textContent = `😴 ${quietDays}d`;
           nameEl.appendChild(q);
         }
+      }
+      // Birthday coming up. Sits on the name line with the other chips, and
+      // only inside the 5-day window — a countdown that's always on is just
+      // another column. runBirthdayGrants() puts the free session in their bank
+      // on the day itself; this is the warning that lets the coach say
+      // something first.
+      const bDays = daysUntilBirthday(c.birthday);
+      if (bDays !== null && bDays <= BIRTHDAY_CHIP_DAYS) {
+        const b = document.createElement("span");
+        b.className = "quiet-chip birthday-chip";
+        const when = new Date(nextBirthdayISO(c.birthday) + "T12:00:00");
+        // ageFromBirthday() has already ticked over on the day itself, so only
+        // the days before it need the +1.
+        const age = ageFromBirthday(c.birthday);
+        b.title = `Birthday ${when.toLocaleDateString(undefined, { month: "long", day: "numeric" })}` +
+          (age ? ` · turning ${Number(age) + (bDays === 0 ? 0 : 1)}` : "");
+        b.textContent = bDays === 0 ? "🎁 today" : bDays === 1 ? "🎁 tomorrow" : `🎁 ${bDays}d`;
+        nameEl.appendChild(b);
       }
       const cPartner = partnerOf(c);
       if (cPartner) {
@@ -15021,14 +15068,41 @@
   let _athleteAvailability = null;
   let _bookingBusy = false;      // an insert is in flight
 
+  // The Sessions tab only hits the network while `_athleteSlots` is still null,
+  // so these three outlive a live session unless something clears them. In the
+  // athlete's own app that's right — it's one person for the whole session. For
+  // a coach stepping through athletes it is not: the second athlete inherits the
+  // first one's card, which now means inheriting their booking permission and
+  // showing the wrong answer for the very thing being checked.
+  function resetAthleteBookingCache() {
+    _athleteSlots = null;
+    _athleteBookings = [];
+    _athleteAvailability = null;
+  }
+
   async function refreshAthleteBooking() {
+    // Coach previewing an athlete: the RPC below answers for whoever is signed
+    // in, and that's the coach, so it would report no coach and no hours. Read
+    // both from the coach's own data instead, so the preview shows this
+    // athlete's actual booking state rather than a permanent empty card.
+    if (state.previewMode) {
+      const c = currentClient();
+      _athleteAvailability = { ...coachAvailability(), canBook: !!c?.canBook };
+      const p = normalizeAvailability(_athleteAvailability);
+      _athleteSlots = c?.canBook && availabilityIsSet(p)
+        ? generateSlots(p, Date.now(), p.horizonDays + 1, []) : [];
+      _athleteBookings = [];
+      renderAthleteBooking();
+      return;
+    }
     // Offline, the cached copy still shows the schedule and what's booked.
     // Booking itself needs the network — the unique index is the only thing
     // that can decide who got a slot, and it lives in the database.
     if (!window.Cloud?.enabled) {
       _athleteAvailability = state.clientData.availability || {};
       const off = normalizeAvailability(_athleteAvailability);
-      _athleteSlots = availabilityIsSet(off) ? generateSlots(off, Date.now(), off.horizonDays + 1, []) : [];
+      _athleteSlots = off.canBook !== false && availabilityIsSet(off)
+        ? generateSlots(off, Date.now(), off.horizonDays + 1, []) : [];
       renderAthleteBooking();
       return;
     }
@@ -15040,6 +15114,17 @@
     const a = normalizeAvailability(_athleteAvailability);
     const from = Date.now();
     const toMs = from + (a.horizonDays + 1) * 86400000;
+    // Not allowed to book: still load their own sessions — they need to see
+    // what the coach put in the diary, and to be able to cancel one — but skip
+    // the taken-slots read, which exists only to subtract from a grid that
+    // isn't going to be drawn.
+    if (a.canBook === false) {
+      const own = await window.Cloud.getBookings(new Date(from - 86400000).toISOString(), new Date(toMs).toISOString());
+      _athleteBookings = Array.isArray(own) ? own : [];
+      _athleteSlots = [];
+      renderAthleteBooking();
+      return;
+    }
     const [taken, mine] = await Promise.all([
       window.Cloud.getBookedWindow(new Date(from).toISOString(), new Date(toMs).toISOString()),
       window.Cloud.getBookings(new Date(from - 86400000).toISOString(), new Date(toMs).toISOString()),
@@ -15060,7 +15145,9 @@
       .filter((b) => b.status === "booked" && +new Date(b.start_at) >= Date.now() - 3600000)
       .sort((x, y) => String(x.start_at).localeCompare(String(y.start_at)));
 
-    let html = `<h4 style="margin-top:0">🗓️ Book a session</h4>`;
+    // The card still earns its place when they can't book — it's where their
+    // upcoming sessions are — but it must not be headed with an offer.
+    let html = `<h4 style="margin-top:0">🗓️ ${a.canBook === false ? "Your sessions" : "Book a session"}</h4>`;
 
     if (mine.length) {
       html += `<div class="book-mine">${mine.map((b) => {
@@ -15074,6 +15161,12 @@
 
     if (_athleteSlots === null) {
       html += `<p class="muted">Loading times…</p>`;
+    } else if (a.canBook === false) {
+      // Not a failure, and not something to apologise for — for most athletes
+      // this is simply how it works, so it reads as an arrangement rather than
+      // a door that's been shut. Any sessions they already hold stay above,
+      // cancellable, because losing the permission mustn't trap them.
+      html += `<p class="muted">Your coach schedules your sessions for you. Message them to set up a time or move one.</p>`;
     } else if (!availabilityIsSet(a)) {
       html += `<p class="muted">Your coach hasn't posted their hours yet. Message them to set something up.</p>`;
     } else if (!_athleteSlots.length) {
@@ -15224,9 +15317,76 @@
     return `${which} · ${a.sessionMins} min`;
   }
 
+  // ---- Coach: who is allowed to book themselves in ----
+  // Availability is published once and read by the whole roster, so without
+  // this every athlete with an account could take any free slot. Opt-in: an
+  // athlete books only if the coach switched them on. The database enforces it
+  // (the `athlete books for self` policy checks `can_book`); this is only the
+  // dial. Booking an athlete in yourself is unaffected either way.
+  function bookingAllowedClients() {
+    return (state.trainerData.clients || []).filter((c) => c.canBook);
+  }
+
+  function setClientCanBook(c, allowed) {
+    c.canBook = !!allowed;
+    saveTrainer();
+    // Single-column write, not a full upsert — see updateAthleteCanBook.
+    if (window.Cloud?.enabled) window.Cloud.updateAthleteCanBook(c.id, c.canBook);
+  }
+
+  function renderBookingAccess() {
+    const host = $("#sched-access"); if (!host) return;
+    const clients = (state.trainerData.clients || [])
+      .slice().sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    if (!clients.length) { host.innerHTML = ""; return; }
+    const on = clients.filter((c) => c.canBook).length;
+    const countLine = (n) => n
+      ? `${n} of ${clients.length} can pick their own times`
+      : "Nobody yet — you book everyone";
+
+    host.innerHTML =
+      `<details class="sched-access-fold"${on ? "" : " open"}>` +
+        `<summary><span class="sched-access-ico">🔑</span>` +
+          `<span class="sched-access-sum"><b>Who can book</b>` +
+          `<span class="sched-access-count">${escapeHtml(countLine(on))}</span>` +
+        `</span><span class="pref-fold-chev">▸</span></summary>` +
+        `<p class="sched-access-note">Switch someone on and they can take any free slot in your availability. Everyone else sees their sessions but no times to pick from — you book them in as usual.</p>` +
+        (clients.length > 8
+          ? `<input type="search" class="sched-access-find" id="sched-access-find" placeholder="Find an athlete…" autocomplete="off">` : "") +
+        `<div class="sched-access-list">${clients.map((c) =>
+          `<label class="sched-access-item" data-name="${escapeHtml((c.name || "").toLowerCase())}">` +
+            `<input type="checkbox" data-can-book="${escapeHtml(c.id)}"${c.canBook ? " checked" : ""}>` +
+            `<span>${escapeHtml(c.name || "Athlete")}</span>` +
+          `</label>`).join("")}</div>` +
+      `</details>`;
+
+    host.querySelectorAll("[data-can-book]").forEach((cb) => cb.addEventListener("change", () => {
+      const c = (state.trainerData.clients || []).find((x) => x.id === cb.dataset.canBook);
+      if (!c) return;
+      setClientCanBook(c, cb.checked);
+      toast(cb.checked
+        ? `${c.name || "They"} can book their own sessions now`
+        : `${c.name || "They"} can no longer book — you book them in`);
+      // Patch the two summary lines rather than redraw: a redraw here would
+      // close the fold and throw away whatever was typed in the filter.
+      const count = host.querySelector(".sched-access-count");
+      if (count) count.textContent = countLine(bookingAllowedClients().length);
+      renderCoachSettingsSubs();
+    }));
+
+    const find = $("#sched-access-find");
+    find?.addEventListener("input", () => {
+      const q = find.value.trim().toLowerCase();
+      host.querySelectorAll(".sched-access-item").forEach((el) => {
+        el.classList.toggle("hidden", !!q && !el.dataset.name.includes(q));
+      });
+    });
+  }
+
   function renderCoachSchedule() {
     const sum = $("#sched-summary");
     if (sum) sum.innerHTML = availabilitySummaryHtml(coachAvailability());
+    renderBookingAccess();
     renderGoogleCard();
     renderSetmoreCard();
     renderCoachSeries();
@@ -15245,8 +15405,12 @@
   function renderCoachSettingsSubs() {
     const set = (sel, text) => { const el = $(sel); if (el) el.textContent = text; };
     const regulars = bookingSeriesList().length;
+    const canBook = bookingAllowedClients().length;
     set("#cs-sub-sched", availabilityLine(coachAvailability()) +
-      (regulars ? ` · ${regulars} weekly regular${regulars === 1 ? "" : "s"}` : ""));
+      (regulars ? ` · ${regulars} weekly regular${regulars === 1 ? "" : "s"}` : "") +
+      // Worth a closed-fold mention: hours that nobody may book are a common
+      // way for this to look broken from the outside.
+      ` · ${canBook ? `${canBook} can book` : "booking off"}`);
     const g = _googleStatus;
     set("#cs-sub-google", g?.connected
       ? "Google Calendar · " + (g.email || "connected")
@@ -19495,6 +19659,7 @@
     // Start from the athlete's freshest synced progress (cached copy if offline).
     try { await pullProgressFromCloud(c); } catch (e) {}
     _previewReturn = { clientData: state.clientData, mode: state.mode, clientId: c.id };
+    resetAthleteBookingCache(); // or this athlete gets the last one's booking card
     state.previewMode = true;
     state.liveLog = true;
     document.body.classList.add("live-log-mode");
@@ -19531,6 +19696,7 @@
     // Push any pending live-session writes before tearing the preview down.
     if (state.liveLog) window.Cloud?.flush?.();
     const ret = _previewReturn; _previewReturn = null;
+    resetAthleteBookingCache(); // don't leave a previewed athlete's slots behind
     state.previewMode = false;
     state.liveLog = false;
     document.body.classList.remove("preview-mode", "live-log-mode");
