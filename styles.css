@@ -1274,8 +1274,23 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
 }
 .profile-grid {
   display: grid;
-  grid-template-columns: 1.4fr 0.7fr 1fr 1fr;
+  /* Auto-fitting rather than a fixed track list. Adding Birthday made it five
+     fields, and inside the coach's Details fold the row is only ~720px wide —
+     five fixed columns squeezed the Height boxes until the ft/in placeholders
+     clipped. 155px is the width of the widest control here (a date input), so
+     columns wrap to a second row instead of crushing. */
+  grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
   gap: 0.35em 1.1em;
+}
+/* A full name deserves more than one column wherever there is room for it. */
+@media (min-width: 900px) {
+  .profile-grid > .profile-field-name { grid-column: span 2; }
+}
+/* A derived age is information, not an input, and should not invite a tap. */
+.profile-grid input[readonly] {
+  background: var(--surface);
+  color: var(--text-soft);
+  cursor: default;
 }
 .profile-grid > label { min-width: 0; } /* grid items don't shrink below content's intrinsic width by default — without this, the Name/Height inputs overflow their column and spill past the card edge on mobile's narrower 2-column layout */
 @media (max-width: 700px) {
@@ -1305,6 +1320,34 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
 @media (max-width: 700px) {
   .profile-notes-grid { grid-template-columns: 1fr; }
 }
+
+/* ============ Referrals ============ */
+/* Coach side: one row per person they've brought in, with where the thank-you
+   has got to. Built from the roster, so a deleted athlete just leaves. */
+.ref-list { display: flex; flex-direction: column; gap: 0.3em; margin: 0.2em 0 0.6em; }
+.ref-row {
+  display: flex; align-items: baseline; gap: 0.6em; flex-wrap: wrap;
+  padding: 0.4em 0; border-bottom: 1px solid var(--border);
+}
+.ref-row:last-child { border-bottom: 0; }
+.ref-row-name { font-weight: 600; }
+.ref-row-state { font-size: 0.78rem; margin-left: auto; }
+.ref-row-state.is-paid { color: var(--ok, #3fb27f); }
+.ref-row-state.is-due { color: var(--warn, #e8b33c); }
+.ref-row-state.is-waiting { color: var(--muted); }
+
+/* Athlete side: the code is the point, so it gets the size. */
+.ref-code-row { display: flex; align-items: center; gap: 0.5em; flex-wrap: wrap; margin-top: 0.7em; }
+.ref-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.15rem; font-weight: 700; letter-spacing: 0.06em;
+  color: var(--primary-bright);
+  background: rgba(var(--primary-rgb), 0.1);
+  border: 1px solid rgba(var(--primary-rgb), 0.35);
+  border-radius: var(--radius-sm, 8px);
+  padding: 0.35em 0.7em;
+}
+.ref-earned { font-size: 0.82rem; color: var(--text-soft); margin: 0.8em 0 0; }
 
 /* ============ Empty states ============ */
 .empty-state {

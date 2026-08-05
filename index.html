@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=foldrhy2" />
+  <link rel="stylesheet" href="styles.css?v=refer3" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -575,6 +575,12 @@
               <label class="profile-field-name">Name
                 <input type="text" id="prof-name" />
               </label>
+              <!-- Birthday owns age now: it's what the free-session grant fires
+                   on, and it stops the age going stale the day after it's typed.
+                   The age box beside it is a readout whenever a date is set. -->
+              <label>Birthday
+                <input type="date" id="prof-birthday" />
+              </label>
               <label>Age
                 <input type="number" id="prof-age" min="0" />
               </label>
@@ -625,6 +631,19 @@
               <button class="btn btn-ghost btn-sm hidden" id="btn-copy-invite">Copy</button>
               <button class="btn btn-ghost btn-sm hidden" id="btn-regen-invite" title="Regenerate code">↻</button>
             </div>
+          </details>
+          <!-- Their referral code and who they've brought in. Built by
+               renderCoachReferralFold(). -->
+          <details class="pref-fold" id="cprof-fold-referral">
+            <summary>
+              <span class="pref-fold-ico">🤝</span>
+              <span class="pref-fold-text">
+                <span class="pref-fold-title">Referrals</span>
+                <span class="pref-fold-sub" id="cprof-referral-sub">Their code, and who they've sent you</span>
+              </span>
+              <span class="pref-fold-chev">▸</span>
+            </summary>
+            <div id="cprof-referral-body"></div>
           </details>
           <details class="pref-fold">
             <summary>
@@ -1182,6 +1201,9 @@
       <!-- Sessions + Calendar (athlete, merged) -->
       <div class="tab-panel" data-ctab-panel="sessions">
         <div id="athlete-balance-host"></div>
+        <!-- Their code to hand out, and what it's earned. Built by
+             renderAthleteReferralCard(). -->
+        <div id="athlete-referral-host"></div>
         <details class="session-manage" id="athlete-session-details">
           <summary>Package balance &amp; history</summary>
           <p class="muted session-manage-note">Your training package balance. Buying a package sends a purchase request to your coach. Settle payment with them outside the app, and they'll mark it paid to add the sessions.</p>
@@ -1211,6 +1233,11 @@
           <div class="profile-grid">
             <label class="profile-field-name">Name
               <input type="text" id="ath-prof-name" autocomplete="name" />
+            </label>
+            <!-- Optional, and the one field here the coach can't fill in for
+                 everyone. It's also what the birthday session fires on. -->
+            <label>Birthday
+              <input type="date" id="ath-prof-birthday" autocomplete="bday" />
             </label>
             <label>Age
               <input type="number" id="ath-prof-age" min="0" />
@@ -1380,7 +1407,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=remind1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=clock2"></script>
+  <script src="app.js?v=refer2"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

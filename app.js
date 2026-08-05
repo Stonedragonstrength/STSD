@@ -237,6 +237,39 @@
     for (let i = 0; i < 8; i++) s += chars[Math.floor(Math.random() * chars.length)];
     return s.slice(0, 4) + "-" + s.slice(4);
   }
+  // A referral code is NOT an invite code. An invite code claims one account
+  // and is spent; a referral code identifies the person doing the referring,
+  // gets handed to several friends, and lives as long as they do. Same readable
+  // alphabet so the two look like they come from the same app, and a fixed R
+  // prefix so a code read down the phone can't be mistaken for the other kind.
+  function makeReferralCode() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let s = "";
+    for (let i = 0; i < 6; i++) s += chars[Math.floor(Math.random() * chars.length)];
+    return "R" + s.slice(0, 3) + "-" + s.slice(3);
+  }
+  // Age is derived from the birthday now, so it stops being wrong the day after
+  // it was typed. Returns "" for a missing or unparseable date rather than 0 —
+  // every caller treats age as a string that may be blank.
+  function ageFromBirthday(iso) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso || ""))) return "";
+    const b = new Date(iso + "T12:00:00");
+    if (isNaN(b)) return "";
+    const now = new Date();
+    let age = now.getFullYear() - b.getFullYear();
+    const m = now.getMonth() - b.getMonth();
+    if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--;
+    return age >= 0 && age < 150 ? String(age) : "";
+  }
+  // This year's occurrence of a birthday, as YYYY-MM-DD. Feb 29 lands on Mar 1
+  // in a common year, which is what the Date constructor does on its own and is
+  // the friendlier of the two conventions for a gift.
+  function birthdayThisYear(iso, year) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso || ""))) return "";
+    const [, mm, dd] = iso.split("-").map(Number);
+    const y = year || new Date().getFullYear();
+    return dateISO(new Date(y, mm - 1, dd));
+  }
   function normalizeInviteCode(s) {
     return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
   }
@@ -357,7 +390,12 @@
   function makeClient(name) {
     return {
       id: uid(), name: name || "New Athlete",
-      age: "", heightIn: "", weightLb: "",
+      // `birthday` is the source of truth; `age` is derived from it on save and
+      // still written, because a cached PWA on the old build reads `age` and
+      // knows nothing about birthdays.
+      birthday: "", age: "", heightIn: "", weightLb: "",
+      referralCode: makeReferralCode(),
+      referredBy: "", // athlete id of whoever brought them in
       // Which unit this athlete reads and types in. Storage stays pounds
       // either way — see the units block below weightToLb().
       units: "lb",
@@ -2603,6 +2641,10 @@
     if (c.units !== "kg") c.units = "lb";
     ensureSessionBank(c);
     if (!c.inviteCode) { c.inviteCode = makeInviteCode(); _trainerDataDirty = true; }
+    // Everyone filed before referrals existed still needs a code to share.
+    if (!c.referralCode) { c.referralCode = makeReferralCode(); _trainerDataDirty = true; }
+    if (typeof c.referredBy !== "string") c.referredBy = "";
+    if (typeof c.birthday !== "string") c.birthday = "";
     // Migrate weekly diet targets → one standing nutrition plan: seed from the
     // last week that had targets filled in, so nobody starts blank.
     if (!c.nutrition) {
@@ -4099,6 +4141,13 @@
       _packagesBadgeBootstrapped = true;
       refreshAllAthletePackages();
     }
+    // Birthdays and referrals are checked here as well as after the booking
+    // fetch. That fetch is where a referral can BECOME due (the auto-redeem
+    // walker files the newcomer's first session there), but it returns early
+    // without a cloud session — so hanging the only check off it would mean a
+    // birthday that never lands if the calendar failed to load. Both passes are
+    // idempotent and write nothing when there is nothing to give.
+    runRewardGrants();
     renderClientGrid();
   }
 
@@ -5060,16 +5109,39 @@
   }
 
   function addClientPrompt() {
+    // Referrals are captured here because the coach creates every account —
+    // that makes a picker the entire capture story, with no athlete-side code
+    // entry to build, and no way for a typo'd code to point at nobody.
+    const roster = [...(state.trainerData.clients || [])]
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
     openModal({
       title: "Add new athlete",
       body: `
-        <label>Athlete name<input type="text" id="new-client-name" placeholder="e.g. Jamie Lee" autofocus /></label>`,
+        <label>Athlete name<input type="text" id="new-client-name" placeholder="e.g. Jamie Lee" autofocus /></label>
+        ${roster.length ? `
+        <label>Referred by <span class="muted">(optional)</span>
+          <select id="new-client-ref">
+            <option value="">Nobody — found you another way</option>
+            ${roster.map((r) => `<option value="${escapeHtml(r.id)}">${escapeHtml(r.name || "Unnamed")}</option>`).join("")}
+          </select>
+        </label>
+        <p class="muted" style="margin:-0.2em 0 0">Both of them get a free session: this athlete now, and whoever referred them once this athlete trains for the first time.</p>` : ""}`,
       actions: [
         { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
         { label: "Add athlete", className: "btn btn-primary", onClick: () => {
             const name = $("#new-client-name").value.trim();
             if (!name) return;
             const c = makeClient(name);
+            const refId = $("#new-client-ref")?.value || "";
+            if (refId && refId !== c.id) {
+              c.referredBy = refId;
+              // The newcomer's half is granted right now: they have nothing to
+              // wait for, and it is the thing the referrer had to offer.
+              const ref = state.trainerData.clients.find((x) => x.id === refId);
+              ensureSessionBank(c);
+              c.sessionBank.packages.push(freeSessionPkg(
+                `🤝 Welcome session · referred by ${ref?.name || "an athlete"}`, { referralWelcome: true }));
+            }
             state.trainerData.clients.push(c);
             saveTrainer();
             // Immediate push so cross-device login works the moment the coach shares the invite code.
@@ -5529,7 +5601,7 @@
   // Sessions tab: they are no longer inside the form this lock guards, and a
   // dropdown that saves on change has nothing to unlock.
   const PROFILE_FIELD_IDS = [
-    "#prof-name", "#prof-age", "#prof-height-ft", "#prof-height-in",
+    "#prof-name", "#prof-birthday", "#prof-age", "#prof-height-ft", "#prof-height-in",
     "#prof-weight", "#prof-goals", "#prof-notes",
   ];
   function setProfileLocked(locked) {
@@ -5538,6 +5610,9 @@
       if (locked) el.setAttribute("readonly", "readonly");
       else el.removeAttribute("readonly");
     });
+    // Unlocking just cleared the age box's readonly along with everything
+    // else's. It has to go back on when a birthday owns that number.
+    if (!locked) syncAgeFromBirthday("#prof-birthday", "#prof-age", currentClient());
     $(".profile-card")?.classList.toggle("locked", locked);
     hide(locked ? $("#btn-profile-save") : $("#btn-profile-edit"));
     show(locked ? $("#btn-profile-edit") : $("#btn-profile-save"));
@@ -5548,7 +5623,10 @@
     // any of these, and an undefined assigned to .value renders the literal
     // word "undefined" in the box.
     $("#prof-name").value = c.name ?? "";
-    $("#prof-age").value = c.age ?? "";
+    $("#prof-birthday").value = c.birthday ?? "";
+    // Age follows the birthday when there is one, and only stays typeable for
+    // athletes whose birthday nobody has filled in yet.
+    syncAgeFromBirthday("#prof-birthday", "#prof-age", c);
     const h = Number(c.heightIn) || 0;
     $("#prof-height-ft").value = h ? Math.floor(h / 12) : "";
     $("#prof-height-in").value = h ? Math.round(h % 12) : "";
@@ -5560,9 +5638,99 @@
     if (!c.inviteCode) { c.inviteCode = makeInviteCode(); saveTrainer(); }
     $("#invite-code-display").textContent = c.inviteCode;
     setInviteCodeVisible(false); // code stays tucked away until "Show code"
+    renderCoachReferralFold(c);
     renderCoachUnitsFold(c);
     syncUnitLabels();
     setProfileLocked(true);
+  }
+  // -------- Referrals: the two surfaces --------
+  // Who this athlete has brought in, newest first, with whether the thank-you
+  // has landed yet. Reads the roster rather than a stored list so it cannot
+  // disagree with reality after an athlete is deleted.
+  function referralsBy(c) {
+    if (!c) return [];
+    return (state.trainerData.clients || [])
+      .filter((x) => x.referredBy === c.id && x.id !== c.id)
+      .map((x) => ({ who: x, paid: hasGrantTag(c, "referralGrant", x.id),
+        trained: !!(x.sessionBank?.redemptions || []).length }))
+      .sort((a, b) => (b.who.createdAt || 0) - (a.who.createdAt || 0));
+  }
+  function renderCoachReferralFold(c) {
+    const body = $("#cprof-referral-body"); if (!body) return;
+    const sub = $("#cprof-referral-sub");
+    if (!c) { body.innerHTML = ""; return; }
+    if (!c.referralCode) { c.referralCode = makeReferralCode(); saveTrainer(); }
+    const list = referralsBy(c);
+    const from = c.referredBy
+      ? (state.trainerData.clients || []).find((x) => x.id === c.referredBy) : null;
+    if (sub) sub.textContent = list.length
+      ? `${list.length} referred · ${list.filter((r) => r.paid).length} thanked`
+      : "Their code, and who they've sent you";
+    body.innerHTML = `
+      <div class="invite-code-bar">
+        <span class="invite-code-bar-label">🤝 Referral</span>
+        <span class="invite-code-display" id="referral-code-display">${escapeHtml(c.referralCode)}</span>
+        <button class="btn btn-ghost btn-sm" id="btn-copy-referral">Copy</button>
+      </div>
+      ${from ? `<p class="muted" style="margin:0.2em 0 0.6em">Referred by <b>${escapeHtml(from.name || "an athlete")}</b>.</p>` : ""}
+      ${list.length ? `<div class="ref-list">${list.map((r) => `
+        <div class="ref-row">
+          <span class="ref-row-name">${escapeHtml(r.who.name || "Unnamed")}</span>
+          <span class="ref-row-state ${r.paid ? "is-paid" : r.trained ? "is-due" : "is-waiting"}">${
+            r.paid ? "✓ free session given"
+              : r.trained ? "session due — grants on next load"
+              : "hasn't trained yet"}</span>
+        </div>`).join("")}</div>`
+        : `<p class="muted" style="margin:0.2em 0 0.6em">Nobody yet. Set this on the add-athlete form when someone new mentions them.</p>`}`;
+    $("#btn-copy-referral")?.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(c.referralCode); toast("Referral code copied ✓"); }
+      catch (e) { toast("Couldn't copy — read it out instead"); }
+    });
+  }
+  // The athlete's own card. Deliberately states the offer in full: a code with
+  // no stated reward is a code nobody passes on.
+  function renderAthleteReferralCard() {
+    const host = $("#athlete-referral-host"); if (!host) return;
+    const c = state.clientData.program?.client;
+    if (!c || !c.referralCode) { host.innerHTML = ""; return; }
+    const earned = (c.sessionBank?.packages || []).filter((p) => p && p.referralGrant).length;
+    host.innerHTML = `
+      <div class="card ref-card">
+        <h3>🤝 Bring a friend</h3>
+        <p class="muted">Give them your code. They get a free session when they join, and you get one the first time they train.</p>
+        <div class="ref-code-row">
+          <span class="ref-code">${escapeHtml(c.referralCode)}</span>
+          <button class="btn btn-ghost btn-sm slim-btn" id="btn-ath-copy-ref">Copy</button>
+          <button class="btn btn-primary btn-sm slim-btn" id="btn-ath-share-ref">Share</button>
+        </div>
+        ${earned ? `<p class="ref-earned">🎁 ${earned} free ${earned === 1 ? "session" : "sessions"} earned from referrals so far.</p>` : ""}
+      </div>`;
+    const msg = `Come train at Stone Dragon with me — use my code ${c.referralCode} and we both get a free session.`;
+    $("#btn-ath-copy-ref")?.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(c.referralCode); toast("Code copied ✓"); }
+      catch (e) { toast("Couldn't copy — read it out instead"); }
+    });
+    $("#btn-ath-share-ref")?.addEventListener("click", async () => {
+      // The OS share sheet where there is one; the clipboard is the fallback,
+      // because a Share button that silently does nothing is worse than none.
+      if (navigator.share) {
+        try { await navigator.share({ text: msg }); return; } catch (e) { if (e?.name === "AbortError") return; }
+      }
+      try { await navigator.clipboard.writeText(msg); toast("Invite copied — paste it to them ✓"); }
+      catch (e) { toast("Couldn't share on this device"); }
+    });
+  }
+
+  // A birthday makes the age box a readout rather than a field: two sources for
+  // one fact is how `age` came to be years out of date on half the roster. With
+  // no birthday on file the box still takes a number, so nothing is lost for an
+  // athlete who would rather not give the date.
+  function syncAgeFromBirthday(bdaySel, ageSel, c) {
+    const bday = $(bdaySel)?.value || "";
+    const ageEl = $(ageSel); if (!ageEl) return;
+    const derived = ageFromBirthday(bday);
+    if (derived) { ageEl.value = derived; ageEl.readOnly = true; ageEl.title = "From the birthday"; }
+    else { ageEl.value = (c?.age ?? ""); ageEl.readOnly = false; ageEl.title = ""; }
   }
   // The coach's copy of the athlete's unit. Programming for a kg gym means the
   // weight picker has to speak kg while the program is being written, so the
@@ -5721,7 +5889,10 @@
   function saveProfileFields() {
     const c = currentClient(); if (!c) return;
     c.name = $("#prof-name").value;
-    c.age = $("#prof-age").value;
+    c.birthday = $("#prof-birthday").value || "";
+    // `age` keeps being written even though the birthday now owns it: a cached
+    // PWA on the previous build reads `age` and has never heard of birthdays.
+    c.age = ageFromBirthday(c.birthday) || $("#prof-age").value;
     c.weightLb = storeW($("#prof-weight").value, unitOf(c));
     c.goals = $("#prof-goals").value;
     c.notes = $("#prof-notes").value;
@@ -5792,6 +5963,10 @@
       $("#prof-name").focus();
     });
     $("#btn-profile-save").addEventListener("click", saveProfileFields);
+    // Typing a birthday updates the age beside it straight away, so the coach
+    // sees the two agree before saving rather than after a re-render.
+    $("#prof-birthday")?.addEventListener("change", () =>
+      syncAgeFromBirthday("#prof-birthday", "#prof-age", currentClient()));
     // Tier and rate save on change now that they sit on the Sessions tab
     // rather than inside the locked Profile form. Picking a tier and walking
     // away used to lose it.
@@ -11398,6 +11573,113 @@
   // It rides along as `booked` and says who has outgrown their tier (nine
   // sessions against an eight-session membership, every month, is a membership
   // that should move up) without ever touching size or price.
+  // -------- Free sessions: birthdays and referrals --------
+  // Both rewards are the same object, and its shape is the whole design:
+  //
+  //   size 1, price 0, unpaid false, and NO month key.
+  //
+  // No month key means it is a bought pack as far as bankLedger is concerned,
+  // so (a) it never expires — a birthday gift that evaporated on the 31st would
+  // be worse than not giving it — and (b) it is spent only AFTER the month's
+  // allowance, so it is a genuine extra session rather than one the athlete had
+  // already paid for. price 0 + unpaid false keeps it out of every money
+  // surface: owedAmount sums only unpaid packages, and each price display is
+  // guarded by `pkg.price ?`. It cannot discount anything, because the
+  // membership price is the invoice — see runAutoRenewGrants below.
+  //
+  // Each grant carries a tag that is its own "once per" key, so these passes
+  // run on every calendar load without ever granting twice.
+  const REWARD_LOOKBACK_DAYS = 30;
+  function freeSessionPkg(note, tag) {
+    return { id: uid(), size: 1, price: 0, unpaid: false, status: "paid",
+      addedAt: Date.now(), paidAt: Date.now(), note, ...tag };
+  }
+  function hasGrantTag(c, key, val) {
+    return (c.sessionBank?.packages || []).some((p) => p && p[key] === val);
+  }
+  // A note the athlete reads on their own bulletin board. Targeted, unlike
+  // postBulletin's broadcast: it lands in this one athlete's bank only.
+  function tellAthlete(c, text, days) {
+    ensureSessionBank(c);
+    const now = new Date();
+    c.sessionBank.bulletins.push({
+      id: uid(), text, postedAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + (days || 21) * 86400000).toISOString(),
+      weeks: Math.ceil((days || 21) / 7),
+    });
+    pruneBulletins(c);
+  }
+
+  // Grants a session on or after the birthday, once per athlete per year. The
+  // "on or after" is what makes it safe that this only runs when the coach
+  // opens the app: miss the day itself and it lands on the next open. The
+  // lookback stops a birthday typed in December from back-granting one for
+  // March — a gift eight months late reads as a bug, not a present.
+  function runBirthdayGrants() {
+    const today = todayISO();
+    const year = String(new Date().getFullYear());
+    const granted = [];
+    (state.trainerData.clients || []).forEach((c) => {
+      if (!c.birthday) return;
+      ensureSessionBank(c);
+      if (hasGrantTag(c, "birthdayGrant", year)) return;
+      const due = birthdayThisYear(c.birthday, Number(year));
+      if (!due || due > today) return;
+      if (cycleDaysBetween(due, today) > REWARD_LOOKBACK_DAYS) return;
+      // Couples share one bank, so two birthdays put two sessions in the same
+      // pool. Correct — but the note has to name whose, or the package list
+      // shows "Birthday session" twice with nothing to tell them apart.
+      c.sessionBank.packages.push(freeSessionPkg(
+        `🎂 Birthday session · ${c.name || "athlete"} · ${year}`, { birthdayGrant: year }));
+      tellAthlete(c, `🎂 Happy birthday! There's a free session in your balance from your coach — book it whenever you like, it doesn't expire.`);
+      granted.push(c);
+      bankMutated(c);
+    });
+    return granted;
+  }
+
+  // The referrer's session lands when the person they brought in actually
+  // trains, which is the only proof this app can see: no money moves through
+  // it, so "they paid" is unknowable, but a redemption is right there. Runs as
+  // a scan rather than a hook on the redemption sites because there are several
+  // of them (manual redeem, missed-session charge, the auto-redeem walker) and
+  // a scan cannot be bypassed by whichever one fires.
+  function runReferralGrants() {
+    const granted = [];
+    const clients = state.trainerData.clients || [];
+    clients.forEach((c) => {
+      if (!c.referredBy) return;
+      const ref = clients.find((x) => x.id === c.referredBy);
+      if (!ref || ref.id === c.id) return;
+      ensureSessionBank(c); ensureSessionBank(ref);
+      if (hasGrantTag(ref, "referralGrant", c.id)) return;
+      if (!(c.sessionBank.redemptions || []).length) return; // not yet trained
+      ref.sessionBank.packages.push(freeSessionPkg(
+        `🤝 Referral · brought in ${c.name || "a new athlete"}`, { referralGrant: c.id }));
+      tellAthlete(ref, `🤝 ${c.name || "Someone you referred"} just trained their first session — there's a free session in your balance to say thanks.`);
+      granted.push({ ref, who: c });
+      bankMutated(ref);
+    });
+    return granted;
+  }
+
+  // One pass, one save, one toast. Called wherever auto-renew is.
+  function runRewardGrants() {
+    const birthdays = runBirthdayGrants();
+    const referrals = runReferralGrants();
+    if (!birthdays.length && !referrals.length) return;
+    localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+    const touched = new Set([...birthdays, ...referrals.map((r) => r.ref)]);
+    if (window.Cloud?.enabled) {
+      touched.forEach((c) => window.Cloud.debounce(`athlete:${c.id}`, () =>
+        window.Cloud.upsertAthlete(c, state.trainerData.coachId)));
+    }
+    const bits = [];
+    if (birthdays.length) bits.push(`🎂 ${birthdays.map((c) => c.name).join(", ")}`);
+    if (referrals.length) bits.push(`🤝 ${referrals.map((r) => r.ref.name).join(", ")}`);
+    toast(`Free session granted · ${bits.join(" · ")}`, 5000);
+  }
+
   function runAutoRenewGrants(year, month) {
     const now = new Date();
     if (year !== now.getFullYear() || month !== now.getMonth()) return;
@@ -11641,6 +11923,9 @@
       .sort((a, b) => String(a.startAt).localeCompare(String(b.startAt)));
     autoRedeemFinishedBookings();
     runAutoRenewGrants(year, month);
+    // After auto-redeem above, so a referred athlete's first session is already
+    // on the books when the referral scan looks for it.
+    runRewardGrants();
     syncUpcomingBookingsToAthletes();
     // Only re-render if still on the same month (avoid clobbering a nav that happened mid-fetch)
     // Every view is built FROM these events and this fetch is async, landing
@@ -13437,6 +13722,7 @@
     ensureSessionBank(prog.client);
     renderClientHeaderSessions();
     renderClientHeaderRank();
+    renderAthleteReferralCard();
     if (!state.clientData.progress.packageRequests) state.clientData.progress.packageRequests = [];
 
     const sum = sessionBankSummary(prog.client);
@@ -19144,7 +19430,8 @@
     const c = state.clientData.program?.client; if (!c) return;
     const set = (id, v) => { const el = $(id); if (el) el.value = v ?? ""; };
     set("#ath-prof-name", c.name || "");
-    set("#ath-prof-age", c.age || "");
+    set("#ath-prof-birthday", c.birthday || "");
+    syncAgeFromBirthday("#ath-prof-birthday", "#ath-prof-age", c);
     const h = Number(c.heightIn) || 0;
     set("#ath-prof-height-ft", h ? Math.floor(h / 12) : "");
     set("#ath-prof-height-in", h ? Math.round(h % 12) : "");
@@ -19155,7 +19442,10 @@
     if (state.previewMode) return; // coach preview is read-only
     const c = state.clientData.program?.client; if (!c) return;
     c.name = $("#ath-prof-name").value.trim();
-    c.age = $("#ath-prof-age").value;
+    c.birthday = $("#ath-prof-birthday").value || "";
+    // Still written for a cached PWA on the old build, which reads only `age`.
+    c.age = ageFromBirthday(c.birthday) || $("#ath-prof-age").value;
+    syncAgeFromBirthday("#ath-prof-birthday", "#ath-prof-age", c);
     c.weightLb = storeW($("#ath-prof-weight").value);
     c.goals = $("#ath-prof-goals").value;
     const ft = Number($("#ath-prof-height-ft").value) || 0;
@@ -19167,7 +19457,8 @@
     if (window.Cloud?.enabled && athleteId) {
       window.Cloud.debounce(`athleteProfile:${athleteId}`, () =>
         window.Cloud.updateAthleteProfileFields(athleteId, {
-          name: c.name, age: c.age, heightIn: c.heightIn, weightLb: c.weightLb, goals: c.goals,
+          name: c.name, age: c.age, birthday: c.birthday,
+          heightIn: c.heightIn, weightLb: c.weightLb, goals: c.goals,
         })
       );
     }
@@ -28649,7 +28940,7 @@
     });
     // No #btn-add-cardio here: the cardio block re-renders itself on every
     // range change, so its Log button is wired where it's built.
-    ["#ath-prof-name", "#ath-prof-age", "#ath-prof-height-ft", "#ath-prof-height-in", "#ath-prof-weight", "#ath-prof-goals"]
+    ["#ath-prof-name", "#ath-prof-birthday", "#ath-prof-age", "#ath-prof-height-ft", "#ath-prof-height-in", "#ath-prof-weight", "#ath-prof-goals"]
       .forEach((sel) => $(sel)?.addEventListener("change", saveAthleteProfile));
     $("#client-feedback").addEventListener("input", () => {
       state.clientData.progress.feedback = $("#client-feedback").value;

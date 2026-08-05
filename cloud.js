@@ -81,6 +81,9 @@
       display_name: c.name || "",
       invite_code: c.inviteCode,
       age: c.age || null,
+      birthday: c.birthday || null,
+      referral_code: c.referralCode || null,
+      referred_by: c.referredBy || null,
       height_in: c.heightIn || null,
       weight_lb: c.weightLb || null,
       units: c.units === "kg" ? "kg" : "lb",
@@ -106,6 +109,9 @@
       name: r.display_name,
       inviteCode: r.invite_code,
       age: r.age || "",
+      birthday: r.birthday || "",
+      referralCode: r.referral_code || "",
+      referredBy: r.referred_by || "",
       heightIn: r.height_in || "",
       weightLb: r.weight_lb || "",
       units: r.units === "kg" ? "kg" : "lb",
@@ -550,6 +556,7 @@
       const row = { updated_at: new Date().toISOString() };
       if ("name" in fields) row.display_name = fields.name || "";
       if ("age" in fields) row.age = fields.age || null;
+      if ("birthday" in fields) row.birthday = fields.birthday || null;
       if ("heightIn" in fields) row.height_in = fields.heightIn || null;
       if ("weightLb" in fields) row.weight_lb = fields.weightLb || null;
       if ("units" in fields) row.units = fields.units === "kg" ? "kg" : "lb";
