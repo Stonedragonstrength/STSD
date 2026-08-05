@@ -3,64 +3,63 @@ package com.stonedragon.schedule
 import android.graphics.Color
 
 /**
- * The widget's palette, matching the web app's theme picker.
+ * The widget's palette.
  *
- * The colours are the app's `--primary-bright` values, not `--primary`: bright
- * is what the app actually draws accents with, and a widget sits on whatever
- * wallpaper the phone has rather than on the app's dark page, so the more
- * legible of the two is the right one to copy.
+ * Each accent carries TWO colours, not one. A neon that sings against the dark
+ * surface is close to invisible on the light one — #3DFF77 on #F2F6FA is pale
+ * green text on near-white — so every accent has a deep counterpart in the same
+ * hue for light backgrounds. Same choice, legible either way, rather than eight
+ * colours that only work on one of the two surfaces the widget offers.
  *
- * Accent and background are stored SEPARATELY here, unlike the app where
- * picking "White" gets you a light page. On a home screen the two are genuinely
- * independent choices — a purple accent on a light widget is a reasonable thing
- * to want next to a pale wallpaper, and the app's coupling would forbid it.
+ * These are hotter than the web app's `--primary-bright` values, which are
+ * Tailwind 400s and read muted on a phone at arm's length behind a wallpaper.
+ * The hues still track the app's ten themes so the two read as one product.
+ *
+ * Slate and Ink are deliberately NOT neon — they are the neutral choices, the
+ * widget's equivalent of the app's Black and White themes.
  */
-internal data class Accent(val id: String, val label: String, val color: Int)
+internal data class Accent(
+    val id: String,
+    val label: String,
+    /** For the dark surface: saturated, high-luminance. */
+    val neon: Int,
+    /** For the light surface: same hue, deep enough to read on near-white. */
+    val deep: Int,
+)
 
 internal object Theme {
 
+    private fun c(s: String) = Color.parseColor(s)
+
     val ACCENTS = listOf(
-        Accent("blue", "Blue", Color.parseColor("#22D3EE")),
-        Accent("teal", "Teal", Color.parseColor("#2DD4BF")),
-        Accent("green", "Green", Color.parseColor("#5EEA8D")),
-        Accent("yellow", "Yellow", Color.parseColor("#FBBF24")),
-        Accent("orange", "Orange", Color.parseColor("#FB923C")),
-        Accent("red", "Red", Color.parseColor("#F87171")),
-        Accent("pink", "Pink", Color.parseColor("#F472B6")),
-        Accent("purple", "Purple", Color.parseColor("#C084FC")),
-        Accent("slate", "Slate", Color.parseColor("#CBD5E1")),
-        Accent("ink", "Ink", Color.parseColor("#334155")),
+        Accent("blue",   "Blue",   c("#00E1FF"), c("#0083A0")),
+        Accent("teal",   "Teal",   c("#00FFC6"), c("#00907A")),
+        Accent("green",  "Green",  c("#3DFF77"), c("#1B9440")),
+        Accent("yellow", "Yellow", c("#FFE01B"), c("#8F6E00")),
+        Accent("orange", "Orange", c("#FF8A1F"), c("#B85200")),
+        Accent("red",    "Red",    c("#FF3355"), c("#BE1330")),
+        Accent("pink",   "Pink",   c("#FF3DA6"), c("#B80F6E")),
+        Accent("purple", "Purple", c("#B266FF"), c("#6D1FD1")),
+        Accent("slate",  "Slate",  c("#D9E2EC"), c("#475569")),
+        Accent("ink",    "Ink",    c("#94A3B8"), c("#1E293B")),
     )
 
     fun accentOf(id: String): Accent = ACCENTS.firstOrNull { it.id == id } ?: ACCENTS[0]
 
-    // Surfaces. Two sets, because the only thing a background has to do is let
-    // the text on it be read.
+    /** The accent as it will actually be drawn on the current surface. */
+    fun accentFor(id: String, light: Boolean): Int =
+        accentOf(id).let { if (light) it.deep else it.neon }
+
+    // Surfaces. The only job a background has is to let the text on it be read.
     private const val DARK_TEXT = "#E6EDF7"
     private const val DARK_MUTED = "#8A9BB4"
     private const val LIGHT_TEXT = "#0B1220"
     private const val LIGHT_MUTED = "#5A6A80"
 
-    fun textColor(light: Boolean): Int =
-        Color.parseColor(if (light) LIGHT_TEXT else DARK_TEXT)
+    fun textColor(light: Boolean): Int = c(if (light) LIGHT_TEXT else DARK_TEXT)
 
-    fun mutedColor(light: Boolean): Int =
-        Color.parseColor(if (light) LIGHT_MUTED else DARK_MUTED)
+    fun mutedColor(light: Boolean): Int = c(if (light) LIGHT_MUTED else DARK_MUTED)
 
     fun bgRes(light: Boolean): Int =
         if (light) R.drawable.widget_bg_light else R.drawable.widget_bg
-
-    /**
-     * An accent chosen for a dark widget can be unreadable on a light one —
-     * "Ink" is nearly black and vanishes on dark, "Slate" is nearly white and
-     * vanishes on light. Rather than forbid combinations, the two that actually
-     * disappear are swapped for their opposite number, so every pick stays
-     * legible on either background instead of silently rendering invisible text.
-     */
-    fun accentFor(id: String, light: Boolean): Int {
-        val a = accentOf(id)
-        if (light && a.id == "slate") return Color.parseColor("#475569")
-        if (!light && a.id == "ink") return Color.parseColor("#94A3B8")
-        return a.color
-    }
 }
