@@ -195,6 +195,10 @@
         // reach their other devices, or clearing on the phone leaves the
         // laptop still showing every row.
         inboxClearedAt: state.trainerData.inboxClearedAt || 0,
+        // The coach's own demo footage — [{ id, path, label, addedAt }]. Same
+        // reasoning again: the clip FILES are in Storage, this is just the index
+        // of them, so it rides the blob instead of earning a column.
+        demoClips: state.trainerData.demoClips || [],
       });
       if (ok) localStorage.removeItem(KEY_LIBPREFS_DIRTY); // confirmed in the cloud
     });
@@ -3484,6 +3488,7 @@
       if (Array.isArray(prefs.exCatOrder)) state.trainerData.exCatOrder = prefs.exCatOrder;
       if (Array.isArray(prefs.athleteTemplates)) state.trainerData.athleteTemplates = prefs.athleteTemplates;
       if (Array.isArray(prefs.templateFolders)) state.trainerData.templateFolders = prefs.templateFolders;
+      if (Array.isArray(prefs.demoClips)) state.trainerData.demoClips = prefs.demoClips;
     } else {
       // Unsynced local edits: merge by id like programTemplates, so a template
       // saved on this device and one saved on another both survive.
@@ -24172,8 +24177,20 @@
     closeModal();
   }
 
-  // Shared "See how" button for the athlete's exercise cards.
+  // Shared "See how" button for the athlete's exercise cards. The coach's own
+  // clip wins over a matched still: they filmed it precisely because the still
+  // was missing or wrong, so it is the more deliberate answer of the two.
   function demoButton(ex, label = "See how") {
+    if (ex?.demoVideo) {
+      const btn = document.createElement("button");
+      btn.className = "btn btn-sm btn-ghost demo-btn is-clip";
+      btn.innerHTML = `<span class="demo-thumb demo-thumb-clip">▶</span><span>${escapeHtml(label)}</span>`;
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openDemoClipModal(ex.demoVideo, ex.name);
+      });
+      return btn;
+    }
     const entry = demoForExercise(ex);
     if (!entry) return null;
     const btn = document.createElement("button");
@@ -24184,6 +24201,108 @@
       openDemoModal(entry, ex.name);
     });
     return btn;
+  }
+
+  // -------- Coach demo clips --------
+  // The still library (free-exercise-db) covers the staples well and the long
+  // tail badly — plenty of accessory work simply isn't in it, and those
+  // exercises showed "No demo matched" and gave the athlete no picture at all.
+  // This is the coach's own footage for those: record or pick a clip, it lands
+  // in the private `exercise-demos` bucket, and `ex.demoVideo` holds the path.
+  //
+  // The path rides the exercise itself, inside the weeks jsonb that already
+  // syncs to the athlete, so nothing new had to be plumbed to show it. The
+  // coach's reusable index rides library_prefs (see pushCoachLibPrefs).
+  const DEMO_CLIP_MAX_BYTES = 50 * 1024 * 1024; // the bucket's hard cap
+  const coachDemoClips = () => (Array.isArray(state.trainerData?.demoClips) ? state.trainerData.demoClips : []);
+  const demoClipByPath = (path) => coachDemoClips().find((c) => c.path === path) || null;
+
+  // Signed URLs are short-lived and each one is a round trip, so a clip opened
+  // twice in a session doesn't pay for it twice.
+  const _demoClipUrls = new Map();
+  async function demoClipUrl(path) {
+    if (!path) return null;
+    const hit = _demoClipUrls.get(path);
+    if (hit && hit.until > Date.now()) return hit.url;
+    const url = await window.Cloud?.signedExerciseDemoUrl?.(path, 3600);
+    // Expire our copy well before the URL does, so a clip never fails to open
+    // on a boundary.
+    if (url) _demoClipUrls.set(path, { url, until: Date.now() + 45 * 60 * 1000 });
+    return url;
+  }
+
+  async function openDemoClipModal(path, displayName) {
+    openModal({
+      title: displayName || "Exercise demo",
+      body: `<div class="demo-clip-wrap"><p class="muted demo-clip-loading">Loading clip…</p></div>`,
+      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
+    });
+    const url = await demoClipUrl(path);
+    const wrap = $(".demo-clip-wrap");
+    if (!wrap) return; // closed while we were fetching
+    if (!url) {
+      wrap.innerHTML = `<p class="muted">That clip couldn't be loaded. It may have been removed, or you're offline.</p>`;
+      return;
+    }
+    // Looped and muted: a demo is watched for the movement, over and over, and
+    // an autoplaying clip with sound in a gym is nobody's friend.
+    wrap.innerHTML = `<video class="demo-clip" src="${escapeHtml(url)}" controls autoplay loop muted playsinline></video>`;
+  }
+
+  // Shared by the picker and the coach's detail strip. Downscales first (the
+  // same 720p30 pass form checks use), falls back to the raw file when the
+  // browser can't do a canvas capture, and refuses anything over the cap.
+  //
+  // Records the library entry but deliberately does NOT save: the caller has to
+  // attach the path to an exercise first, so one saveTrainer() persists both.
+  // Saving here would open a window where a throw leaves the clip uploaded and
+  // indexed but attached to nothing.
+  async function uploadDemoClip(file, label) {
+    const coachId = state.trainerData?.coachId;
+    if (!coachId) { toast("Sign in to upload a clip."); return null; }
+    if (!window.Cloud?.enabled) { toast("Uploading a clip needs a connection."); return null; }
+    toast("Processing clip…");
+    let blob = await downscaleVideo(file);
+    let ext = "webm", type = "video/webm";
+    if (!blob) {
+      // No canvas-capture path on this browser — send the original if it fits.
+      if (file.size > DEMO_CLIP_MAX_BYTES) {
+        toast("That clip is too big. Trim it to a few seconds and try again.");
+        return null;
+      }
+      blob = file; ext = fileExt(file); type = file.type || "video/mp4";
+    }
+    if (blob.size > DEMO_CLIP_MAX_BYTES) {
+      toast("That clip is too big even after shrinking. Trim it and try again.");
+      return null;
+    }
+    toast("Uploading…");
+    const path = await window.Cloud.uploadExerciseDemo(coachId, blob, ext, type);
+    if (!path) { toast("Upload failed. Try again."); return null; }
+    if (!Array.isArray(state.trainerData.demoClips)) state.trainerData.demoClips = [];
+    state.trainerData.demoClips.push({
+      id: uid(), path, label: String(label || "Untitled").slice(0, 60),
+      addedAt: Date.now(), sizeBytes: blob.size,
+    });
+    toast("Clip saved");
+    return path;
+  }
+
+  // Hidden input rather than a visible one: `capture` lets a phone go straight
+  // to the camera, and the button that opens it can then look like every other
+  // button in the sheet.
+  function pickDemoClipFile(onPicked) {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "video/*";
+    input.style.display = "none";
+    document.body.appendChild(input);
+    input.addEventListener("change", async () => {
+      const file = input.files?.[0];
+      input.remove();
+      if (file) await onPicked(file);
+    });
+    input.click();
   }
 
   // Coach-side: confirm or override which demo an exercise is matched to.
@@ -24204,7 +24323,8 @@
       body: `
         <p class="muted demo-pick-intro">${auto
           ? `Auto-matched to <strong>${escapeHtml(auto.n)}</strong>. Pick a different one below if that's not the movement.`
-          : `No automatic match for "${escapeHtml(ex.name || "this exercise")}". Search for the closest movement.`}</p>
+          : `No automatic match for "${escapeHtml(ex.name || "this exercise")}". Search for the closest movement, or use your own clip.`}</p>
+        <div id="demo-clip-sec"></div>
         <input type="text" id="demo-pick-search" class="input" placeholder="Search demos…" value="${escapeHtml(ex.name || "")}" />
         <div class="demo-pick-list" id="demo-pick-list">${resultsHtml(demoSearch(ex.name || ""))}</div>`,
       actions: [
@@ -24217,6 +24337,82 @@
         { label: "Close", className: "btn btn-ghost", onClick: closeModal },
       ],
     });
+
+    // ── Your own clip ──
+    // Sits above the stills search because it's the answer when the search has
+    // nothing — which is exactly the case this whole section was added for.
+    const clipSec = $("#demo-clip-sec");
+    const paintClips = () => {
+      if (!clipSec) return;
+      clipSec.innerHTML = "";
+      const box = document.createElement("div");
+      box.className = "demo-clip-sec";
+      const head = document.createElement("div");
+      head.className = "demo-clip-head";
+      head.textContent = "Your own clip";
+      box.appendChild(head);
+
+      const mine = ex.demoVideo ? demoClipByPath(ex.demoVideo) : null;
+      if (ex.demoVideo) {
+        const cur = document.createElement("div");
+        cur.className = "demo-clip-current";
+        const play = document.createElement("button");
+        play.type = "button";
+        play.className = "btn btn-sm btn-ghost";
+        play.textContent = `▶ ${mine?.label || "Play clip"}`;
+        play.addEventListener("click", () => openDemoClipModal(ex.demoVideo, ex.name));
+        const off = document.createElement("button");
+        off.type = "button";
+        off.className = "btn btn-sm btn-ghost";
+        off.textContent = "Remove";
+        off.title = "Stop using this clip here. It stays in your library.";
+        off.addEventListener("click", () => {
+          delete ex.demoVideo; saveTrainer(); paintClips(); onDone?.();
+        });
+        cur.append(play, off);
+        box.appendChild(cur);
+      }
+
+      const up = document.createElement("button");
+      up.type = "button";
+      up.className = "btn btn-sm btn-primary";
+      up.textContent = ex.demoVideo ? "Replace with a new clip" : "＋ Record or upload a clip";
+      up.addEventListener("click", () => pickDemoClipFile(async (file) => {
+        const path = await uploadDemoClip(file, ex.name || "Demo");
+        if (!path) return;
+        ex.demoVideo = path;
+        saveTrainer();
+        paintClips();
+        onDone?.();
+      }));
+      box.appendChild(up);
+
+      // Reuse: a clip filmed once for "Barbell Squat" should be attachable to
+      // every other copy of that lift without filming it again.
+      const others = coachDemoClips().filter((c) => c.path !== ex.demoVideo);
+      if (others.length) {
+        const reuseHead = document.createElement("div");
+        reuseHead.className = "demo-clip-reuse-head";
+        reuseHead.textContent = "Or reuse one you've already filmed";
+        box.appendChild(reuseHead);
+        const reuse = document.createElement("div");
+        reuse.className = "demo-clip-reuse";
+        others.slice().reverse().forEach((c) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "demo-clip-chip";
+          b.innerHTML = `<span class="dcc-play">▶</span><span class="dcc-lbl">${escapeHtml(c.label || "Clip")}</span>`;
+          b.title = "Use this clip for this exercise";
+          b.addEventListener("click", () => {
+            ex.demoVideo = c.path; saveTrainer(); paintClips(); onDone?.();
+          });
+          reuse.appendChild(b);
+        });
+        box.appendChild(reuse);
+      }
+      clipSec.appendChild(box);
+    };
+    paintClips();
 
     const search = $("#demo-pick-search");
     const list = $("#demo-pick-list");
@@ -24244,7 +24440,16 @@
       const label = document.createElement("button");
       label.type = "button";
       label.className = "ex-demo-preview";
-      if (entry) {
+      // A coach clip is what the athlete will actually see, so the strip has to
+      // report it — otherwise this still says "No demo matched" next to an
+      // exercise that now has a perfectly good video on it.
+      if (ex.demoVideo) {
+        const clip = demoClipByPath(ex.demoVideo);
+        label.className += " is-clip";
+        label.innerHTML = `<span class="ex-demo-clip-ico">▶</span><span>${escapeHtml(clip?.label || "Your clip")}</span>`;
+        label.title = "Play the clip the athlete sees";
+        label.addEventListener("click", () => openDemoClipModal(ex.demoVideo, ex.name));
+      } else if (entry) {
         label.innerHTML = `<img src="${demoImgUrl(entry.i, 0)}" alt="" loading="lazy" /><span>${escapeHtml(entry.n)}${ex.demoId && ex.demoId !== "none" ? "" : " <em>auto</em>"}</span>`;
         label.title = "Preview the demo the athlete sees";
         label.addEventListener("click", () => openDemoModal(entry, ex.name));
@@ -24256,7 +24461,7 @@
       const change = document.createElement("button");
       change.type = "button";
       change.className = "btn btn-sm btn-ghost";
-      change.textContent = entry ? "Change" : "Pick one";
+      change.textContent = (ex.demoVideo || entry) ? "Change" : "Pick one";
       change.addEventListener("click", () => openDemoPicker(ex, paint));
       row.appendChild(label);
       row.appendChild(change);

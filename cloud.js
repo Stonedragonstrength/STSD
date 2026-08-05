@@ -863,6 +863,42 @@
   }
   function uidLike() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
+  // -------- Coach demo clips (private Storage bucket) --------
+  // The coach's own footage for lifts the vendored still library has nothing
+  // for. Layout: <coachId>/<uid>.<ext>. RLS lets the owning coach write, read
+  // and delete their folder, and lets that coach's athletes read it — the clip
+  // is shown to all of them, but the bucket stays private (a demo can have a
+  // face in it), so playback goes through a signed URL like a form check.
+  const EX_DEMO_BUCKET = "exercise-demos";
+  async function uploadExerciseDemo(coachId, blob, ext = "webm", contentType = "video/webm") {
+    if (!coachId || !blob) return null;
+    const path = `${coachId}/${uidLike()}.${ext}`;
+    try {
+      const { error } = await sb.storage.from(EX_DEMO_BUCKET).upload(path, blob, {
+        contentType,
+        upsert: false,
+      });
+      if (error) { console.warn("[Cloud] uploadExerciseDemo", error.message); return null; }
+      return path;
+    } catch (e) { console.warn("[Cloud] uploadExerciseDemo", e); return null; }
+  }
+  async function signedExerciseDemoUrl(path, expiresSec = 3600) {
+    if (!path) return null;
+    try {
+      const { data, error } = await sb.storage.from(EX_DEMO_BUCKET).createSignedUrl(path, expiresSec);
+      if (error) { console.warn("[Cloud] signedExerciseDemoUrl", error.message); return null; }
+      return data?.signedUrl || null;
+    } catch (e) { console.warn("[Cloud] signedExerciseDemoUrl", e); return null; }
+  }
+  async function deleteExerciseDemo(path) {
+    if (!path) return false;
+    try {
+      const { error } = await sb.storage.from(EX_DEMO_BUCKET).remove([path]);
+      if (error) { console.warn("[Cloud] deleteExerciseDemo", error.message); return false; }
+      return true;
+    } catch (e) { console.warn("[Cloud] deleteExerciseDemo", e); return false; }
+  }
+
   // -------- Progress methods --------
   async function upsertProgress(athleteId, progress) {
     if (!athleteId) return false;
@@ -1072,6 +1108,10 @@
     uploadFormCheck,
     signedFormCheckUrl,
     deleteFormCheck,
+    // Coach demo clips
+    uploadExerciseDemo,
+    signedExerciseDemoUrl,
+    deleteExerciseDemo,
     // Web push
     savePushSubscription,
     deletePushSubscription,
