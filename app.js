@@ -20506,6 +20506,142 @@
     const target = pos || athleteCurrentDay(c);
     if (target) editClientDay(c.id, target.weekId, target.dayId);
   }
+
+  // -------- Single-exercise editor + carry-forward --------
+  // "Edit this day" opens the whole day. This opens ONE exercise from its own
+  // card, which is what a coach standing next to a lifter actually wants: move
+  // the weight on the bench and get out again. The second half is the reason it
+  // earns a sheet of its own — the same change can be carried into the SAME
+  // lift in every later week of the program in one tap, instead of being
+  // retyped four times and mistyped once.
+  //
+  // Later weeks are matched on the day's NAME plus the lift's identity
+  // (liftKey — the name and its equipment/grip/position tags), never on
+  // position. A coach who reorders a day or inserts a week still means "this
+  // exercise", and index matching would quietly rewrite a different lift.
+  function laterWeekMatches(client, fromWeekId, day, key) {
+    const weeks = client?.weeks || [];
+    const from = weeks.findIndex((w) => w.id === fromWeekId);
+    if (from < 0 || !key) return [];
+    const dayName = String(day?.name || "").trim().toLowerCase();
+    const out = [];
+    weeks.slice(from + 1).forEach((w) => {
+      (w.days || []).forEach((d) => {
+        if (String(d.name || "").trim().toLowerCase() !== dayName) return;
+        (d.exercises || []).forEach((e) => {
+          if (liftKey(e) === key) out.push({ week: w, day: d, ex: e });
+        });
+      });
+    });
+    return out;
+  }
+  // Copies the whole prescription across, keeping each target's OWN id. Logged
+  // sets are keyed by exercise id, so a target that keeps its id keeps its
+  // history; copying the source id too would point two weeks at one lift and
+  // scramble both. Mutated in place because these are the live objects in
+  // state.trainerData that saveTrainer persists.
+  function applyExerciseToLater(matches, source) {
+    const copy = structuredClone(source);
+    delete copy.id;
+    matches.forEach((m) => {
+      const keepId = m.ex.id;
+      Object.keys(m.ex).forEach((k) => { if (k !== "id") delete m.ex[k]; });
+      Object.assign(m.ex, structuredClone(copy), { id: keepId });
+    });
+  }
+
+  // The portal draws from a structuredClone of the athlete's program, so the
+  // week/day/exercise a card is holding are copies — editing one saves nothing.
+  // Resolve back to the real objects on state.trainerData by id first, which is
+  // what makes the sheet's saveTrainer() persist and push.
+  function coachExerciseTarget(week, day, ex) {
+    const c = currentClient();
+    if (!c || !day || !ex) return null;
+    if (week?.id === "oneoff") {
+      const d = (c.oneOffDays || []).find((x) => x.id === day.id);
+      const e = d && (d.exercises || []).find((x) => x.id === ex.id);
+      // No `week` object means no later weeks to carry into, which is correct
+      // for a one-off: it sits outside the program entirely.
+      return e ? { week: { id: "oneoff", label: "Coach session" }, day: d, ex: e } : null;
+    }
+    const w = (c.weeks || []).find((x) => x.id === week?.id);
+    const d = w && (w.days || []).find((x) => x.id === day.id);
+    const e = d && (d.exercises || []).find((x) => x.id === ex.id);
+    return e ? { week: w, day: d, ex: e } : null;
+  }
+
+  function openCoachExerciseSheet(week, day, ex, onDone) {
+    const c = currentClient();
+    if (!c || !week || !day || !ex) return;
+    // Captured BEFORE any edit: rename the lift in this sheet and the later
+    // weeks still hold the OLD name, which is what we have to go looking for.
+    const originalKey = liftKey(ex);
+    const originalLabel = liftLabel(ex);
+    _editorSave = null; // an athlete's own program — plain saveTrainer
+    openModal({
+      title: "Edit exercise",
+      body: "",
+      actions: [{
+        label: "Done", className: "btn btn-primary",
+        onClick: () => { closeModal(); onDone?.(); },
+      }],
+    });
+    const host = $("#modal-body");
+    if (!host) return;
+
+    const carryBlock = () => {
+      const box = document.createElement("div");
+      box.className = "cxs-carry";
+      const matches = laterWeekMatches(c, week.id, day, originalKey);
+      if (!matches.length) {
+        box.innerHTML = `<p class="cxs-carry-none">This lift isn't in a later week of this program, so there's nothing to carry forward.</p>`;
+        return box;
+      }
+      const labels = [...new Set(matches.map((m) => m.week.label || "Week"))];
+      const nW = labels.length;
+      box.innerHTML = `<div class="cxs-carry-head">Carry forward</div>
+        <p class="cxs-carry-sub">Replace <strong>${escapeHtml(originalLabel)}</strong> on ${escapeHtml(day.name || "this day")} in ${nW} later week${nW === 1 ? "" : "s"} with what's above: ${escapeHtml(labels.join(", "))}. Anything already logged against those days stays where it is.</p>`;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn btn-primary btn-sm";
+      btn.textContent = `Apply to ${nW} later week${nW === 1 ? "" : "s"}`;
+      btn.addEventListener("click", () => {
+        if (!window.confirm(`Replace this exercise in ${nW} later week${nW === 1 ? "" : "s"}? Their current sets, weights and reps are overwritten.`)) return;
+        applyExerciseToLater(matches, ex);
+        saveTrainer();
+        toast(`Carried into ${nW} later week${nW === 1 ? "" : "s"}`);
+        draw(); // the matches are now identical — redraw so the copy reads true
+      });
+      box.appendChild(btn);
+      return box;
+    };
+
+    const draw = () => {
+      // The row carries its own ✕. Deleting the exercise you opened the sheet
+      // ON leaves nothing to edit, so the sheet leaves with it rather than
+      // redrawing a lift that is no longer in the day.
+      if (!(day.exercises || []).some((e) => e.id === ex.id)) {
+        closeModal();
+        onDone?.();
+        return;
+      }
+      host.innerHTML = "";
+      const kick = document.createElement("p");
+      kick.className = "cxs-kicker";
+      kick.textContent = `${week.label || "Program"} · ${day.name || "Day"}`;
+      host.appendChild(kick);
+      // The row is built for the coach's full-width editor table and overflows
+      // a sheet. `.cxs-row` lets it wrap and hides the reorder controls, which
+      // mean nothing when there's one exercise on screen.
+      const rowBox = document.createElement("div");
+      rowBox.className = "cxs-row";
+      rowBox.appendChild(renderExerciseRow(day, ex, draw, {}));
+      host.appendChild(rowBox);
+      host.appendChild(carryBlock());
+    };
+    draw();
+  }
+
   function setClientTab(name) {
     // Leaving the tab underneath it: the library drawer goes too, rather than
     // floating over whatever the athlete switched to.
@@ -22414,6 +22550,28 @@
       chip.textContent = "⇄ swapped";
       chip.title = `Swapped in for ${ex.name || "the prescribed exercise"}`;
       nameBlock.appendChild(chip);
+    }
+    // Coach-only, and only in a live session: rewrite THIS lift's prescription
+    // without leaving the athlete's day for the full editor. Athlete-built
+    // sessions aren't the coach's to rewrite, so they don't get it.
+    if (state.previewMode && week && !isOwnDay(day)) {
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "cex-coach-edit";
+      edit.textContent = "✎";
+      edit.title = "Edit this exercise in the program";
+      edit.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const t = coachExerciseTarget(week, day, ex);
+        if (!t) { toast("This exercise isn't in the program yet."); return; }
+        openCoachExerciseSheet(t.week, t.day, t.ex, () => {
+          // The portal is drawn from a CLONE of the program, so pull the edit
+          // through before redrawing or the card shows the old numbers.
+          refreshLiveProgram();
+          renderWorkoutDetailUI({ keepScroll: true });
+        });
+      });
+      nameBlock.appendChild(edit);
     }
 
     content.appendChild(nameBlock);

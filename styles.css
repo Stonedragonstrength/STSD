@@ -6119,6 +6119,49 @@ input:focus, textarea:focus, select:focus {
 .exn-pop-clear:hover { border-color: var(--border-strong); color: var(--text); }
 /* The coach's day sheet puts the tags on the exercise name line. */
 .breakdown-ex-name .exn-chips { margin-left: 0.4em; vertical-align: middle; }
+
+/* ===== Single-exercise editor (coach, mid-session) ===== */
+/* The ✎ beside a lift's name on the athlete's card. Coach-only and quiet — it
+   sits in the athlete's UI, so it must not read as something they can press. */
+.cex-coach-edit {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.5rem; height: 1.5rem; margin-left: 0.35em;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: none; color: var(--text-soft);
+  font-family: inherit; font-size: 0.72rem; line-height: 1;
+  cursor: pointer;
+}
+.cex-coach-edit:hover { border-color: var(--primary-bright); color: var(--primary-bright); }
+.cxs-kicker {
+  margin: 0 0 0.6rem; font-size: 0.66rem; font-weight: 800;
+  letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-soft);
+}
+/* The carry-forward block. Deliberately set apart from the editor above it:
+   everything above changes one day, this one changes the rest of the program. */
+.cxs-carry {
+  margin-top: 0.9rem; padding-top: 0.8rem;
+  border-top: 1px solid var(--border);
+}
+.cxs-carry-head {
+  font-size: 0.7rem; font-weight: 800; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--primary-bright);
+  margin-bottom: 0.3rem;
+}
+.cxs-carry-sub { margin: 0 0 0.6rem; font-size: 0.78rem; color: var(--text-soft); line-height: 1.45; }
+.cxs-carry-sub strong { color: var(--text); }
+.cxs-carry-none { margin: 0; font-size: 0.78rem; color: var(--muted); line-height: 1.45; }
+/* The editor row is laid out for the coach's full-width table — one long
+   nowrap line. In a sheet that line becomes a horizontal scrollbar, so here it
+   wraps instead, and the controls that only make sense in a LIST of exercises
+   (drag handle, move up/down/top/bottom) come off. */
+.cxs-row .ex-row { flex-wrap: wrap; row-gap: 0.4rem; overflow: visible; }
+.cxs-row .ex-drag-handle,
+.cxs-row .ex-move-group { display: none; }
+/* The name gets its own line so it isn't squeezed to eight characters. */
+.cxs-row .ex-name-compact { flex: 1 1 100%; min-width: 0; }
+.cxs-row .ex-metrics-group { flex-wrap: wrap; row-gap: 0.4rem; }
+.cxs-row .ex-row-wrapper { width: 100%; }
 /* ===== Pyramid sets: sandy look ===== */
 /* Same sand wash on the coach editor row and the athlete logging card, so a
    pyramid reads at a glance in every theme. */
@@ -13115,6 +13158,8 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
   .cex-notes-btn { min-height: 38px; }
   .exn-pop-opt { min-height: 42px; }
   .exn-pop-clear { min-height: 40px; }
+  /* The coach's ✎ on an athlete card — pressed with a lifter waiting. */
+  .cex-coach-edit { width: 34px; height: 34px; }
   /* ---- Day header and readiness ---- */
   .day-check-toggle { width: 38px; height: 38px; }
   .detail-mood-btn { min-height: 36px; }
