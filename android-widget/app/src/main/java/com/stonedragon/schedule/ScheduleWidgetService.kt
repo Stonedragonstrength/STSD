@@ -67,23 +67,39 @@ internal fun buildWeekRows(weekStart: Long, bookings: List<Booking>): List<Row> 
 }
 
 /**
- * Where "now" is in that list: the next session that has not finished, else
- * today's header, else the top. Scrolling to the next session rather than to
- * midnight is the whole point — by 4pm, today's header is above six sessions
- * already done and lands the coach exactly where they were not looking.
+ * The row that should end up at the TOP of the screen: the next session that
+ * has not finished, else today's header, else the top of the week.
+ *
+ * The next session rather than today's header, because by 4pm today's header
+ * sits above six finished sessions and lands the coach exactly where they were
+ * not looking.
  */
 internal fun scrollIndexForNow(rows: List<Row>): Int {
     val now = System.currentTimeMillis()
     val next = rows.indexOfFirst { it is Row.Session && it.booking.endMillis >= now }
-    if (next >= 0) {
-        // One row of lead-in, so the day header above it stays on screen and
-        // the session has context instead of floating at the top edge.
-        val header = (next - 1).coerceAtLeast(0)
-        return if (rows.getOrNull(header) is Row.Header) header else next
-    }
+    if (next >= 0) return next
     val today = Supabase.startOfDay(now)
     val head = rows.indexOfFirst { it is Row.Header && it.dayStart == today }
     return if (head >= 0) head else 0
+}
+
+/**
+ * Turns "I want row N at the top" into the row to hand setScrollPosition.
+ *
+ * RemoteViews.setScrollPosition is smoothScrollToPosition underneath, which
+ * scrolls the MINIMUM distance to make a row visible — so asking for the target
+ * directly parks it at the BOTTOM edge, under everything already on screen,
+ * which is the least useful place for the session you are about to coach.
+ * Asking for a row further down instead pushes the target up to the top.
+ *
+ * The lead is a guess at how many rows fit, because the launcher never tells
+ * the widget its height in rows. Over-shooting is harmless — it clamps to the
+ * end of the week and the target still lands high — so it is deliberately
+ * generous rather than exact.
+ */
+internal fun scrollTargetForTop(rows: List<Row>, topIndex: Int): Int {
+    val LEAD = 6
+    return minOf(topIndex + LEAD, (rows.size - 1).coerceAtLeast(0))
 }
 
 private class ScheduleFactory(

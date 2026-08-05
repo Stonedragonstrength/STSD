@@ -277,8 +277,11 @@ class ScheduleWidget : AppWidgetProvider() {
             // Prefs.requestJump. Consumed here so the next routine repaint
             // leaves the coach where they scrolled to.
             if (Prefs.takeJump(ctx, widgetId) && bookings.isNotEmpty()) {
-                val idx = scrollIndexForNow(buildWeekRows(week, bookings))
-                if (idx > 0) v.setScrollPosition(R.id.widget_list, idx)
+                val weekRows = buildWeekRows(week, bookings)
+                val top = scrollIndexForNow(weekRows)
+                // Not `top` itself — see scrollTargetForTop. Asking for the row
+                // directly parks it at the bottom edge.
+                v.setScrollPosition(R.id.widget_list, scrollTargetForTop(weekRows, top))
             }
 
             // The empty view is a button, and what it does is whatever the

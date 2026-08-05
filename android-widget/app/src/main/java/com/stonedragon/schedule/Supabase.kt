@@ -261,12 +261,24 @@ object Supabase {
         }
         if (failed == 2) return FetchResult.Failed("Couldn't load")
 
-        // A session that exists in both tables during the changeover is one
-        // session. The native row wins: it knows the athlete and the note.
-        val seen = HashSet<String>()
+        // A session that exists in both tables is one session. The native row
+        // wins: it knows the athlete and the note.
+        //
+        // Matched on START TIME ALONE, deliberately. This used to key on time
+        // PLUS the athlete's name, which assumed the two tables spell people
+        // identically — and they do not. One athlete is "Alyssa Steilstra" in
+        // `athletes` and "Alyssa Stielstra" in `setmore_events`, so her two rows
+        // never collapsed and every one of her sessions was drawn twice. A
+        // legacy mirror row is a duplicate of whatever native booking occupies
+        // its slot whatever either side calls the person; the coach cannot be in
+        // two places at 7am, so the time is the identity.
+        val nativeStarts = HashSet<Long>()
+        out.forEach { if (!it.id.startsWith("sm:")) nativeStarts.add(it.startMillis) }
         val merged = out
             .sortedWith(compareBy({ it.startMillis }, { if (it.id.startsWith("sm:")) 1 else 0 }))
-            .filter { seen.add(it.startMillis.toString() + "|" + it.athlete.lowercase()) }
+            // Only the legacy side is ever dropped. Two NATIVE bookings at the
+            // same time are two real sessions and both survive.
+            .filter { !it.id.startsWith("sm:") || it.startMillis !in nativeStarts }
 
         return FetchResult.Ok(merged, partial = failed > 0)
     }
