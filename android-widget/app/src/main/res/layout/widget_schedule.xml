@@ -1,24 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Header row (day paging) over a scrolling list. The header stays a fixed
-     height so the list gets every pixel the launcher will give it. -->
+<!-- Header row (week paging) over a scrolling list. The header stays a fixed
+     height so the list gets every pixel the launcher will give it.
+
+     Every dimension here is a fight with the list for the same pixels, and the
+     list is what the widget is for. The controls were 44dp boxes — the touch
+     minimum — but 44dp SQUARE spends height on nothing: a chevron needs width
+     to be hittable with a thumb, not height. They are wide and short now, which
+     keeps the target comfortable and hands ~16dp back to the schedule. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@drawable/widget_bg"
-    android:padding="10dp">
+    android:paddingLeft="8dp"
+    android:paddingRight="8dp"
+    android:paddingTop="6dp"
+    android:paddingBottom="6dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingBottom="8dp">
+        android:paddingBottom="2dp">
 
         <TextView
             android:id="@+id/widget_prev"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
+            android:layout_width="36dp"
+            android:layout_height="32dp"
             android:gravity="center"
             android:text="‹"
             android:textSize="20sp"
@@ -33,8 +42,8 @@
             android:gravity="center"
             android:maxLines="1"
             android:ellipsize="end"
-            android:text="TODAY"
-            android:textSize="13sp"
+            android:text="THIS WEEK"
+            android:textSize="12sp"
             android:textStyle="bold"
             android:letterSpacing="0.05"
             android:textColor="@color/text" />
@@ -57,18 +66,34 @@
 
         <TextView
             android:id="@+id/widget_next"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
+            android:layout_width="36dp"
+            android:layout_height="32dp"
             android:gravity="center"
             android:text="›"
             android:textSize="20sp"
             android:textColor="@color/accent"
             android:contentDescription="@string/next_day" />
 
+        <!-- Back to this week AND scrolled to the next session. Tapping the date
+             already did the first half, but an affordance nothing announces is
+             one nobody uses — hence a button that says what it does. -->
+        <TextView
+            android:id="@+id/widget_now"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:minWidth="34dp"
+            android:gravity="center"
+            android:text="@string/now"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.04"
+            android:textColor="@color/accent"
+            android:contentDescription="@string/now_desc" />
+
         <TextView
             android:id="@+id/widget_refresh"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
             android:gravity="center"
             android:text="⟳"
             android:textSize="15sp"

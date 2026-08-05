@@ -74,6 +74,7 @@ object Prefs {
     fun forgetWidget(ctx: Context, widgetId: Int) {
         p(ctx).edit()
             .remove(weekKey(widgetId))
+            .remove(jumpKey(widgetId))
             .remove(dayKey(widgetId)) // pre-week builds; harmless if absent
             .remove(cacheKey(widgetId))
             .remove(cacheDayKey(widgetId))
@@ -81,6 +82,25 @@ object Prefs {
             .apply()
     }
 
+    /**
+     * One-shot: the next paint should scroll to now, then forget it.
+     *
+     * A flag rather than "always scroll when showing this week", because the
+     * launcher repaints on its own schedule — every 30 minutes, on rotation, on
+     * a refresh — and a widget that jumps back to now each time would fight the
+     * thumb of anyone reading Friday.
+     */
+    fun requestJump(ctx: Context, widgetId: Int) {
+        p(ctx).edit().putBoolean(jumpKey(widgetId), true).apply()
+    }
+
+    fun takeJump(ctx: Context, widgetId: Int): Boolean {
+        if (!p(ctx).getBoolean(jumpKey(widgetId), false)) return false
+        p(ctx).edit().remove(jumpKey(widgetId)).apply()
+        return true
+    }
+
+    private fun jumpKey(id: Int) = "jump_$id"
     private fun weekKey(id: Int) = "week_$id"
     private fun dayKey(id: Int) = "day_$id"
     private fun cacheKey(id: Int) = "cache_$id"

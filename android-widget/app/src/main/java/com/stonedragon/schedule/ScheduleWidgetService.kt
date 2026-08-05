@@ -3,6 +3,7 @@ package com.stonedragon.schedule
 import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
+import android.view.View
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 import java.text.SimpleDateFormat
@@ -32,9 +33,57 @@ class ScheduleWidgetService : RemoteViewsService() {
  * RemoteViews collection has — there is no nesting and no section API, so the
  * headers are rows like any other and the factory is what knows the difference.
  */
-private sealed class Row {
+internal sealed class Row {
     data class Header(val dayStart: Long, val count: Int) : Row()
     data class Session(val booking: Booking) : Row()
+}
+
+/**
+ * Monday to Sunday, every day present whether or not it has sessions — a rest
+ * day is a real answer, and a week that silently omits it reads as a week that
+ * failed to load half of itself.
+ *
+ * Returns EMPTY when the week holds nothing at all. setEmptyView only fires on
+ * a zero-count adapter, so seven bare headers would suppress the message that
+ * says whether the widget is empty or broken.
+ *
+ * Top-level and shared on purpose: the provider has to work out which index to
+ * scroll to, and the factory has to lay out the same list. If those two
+ * disagreed by one row the NOW button would land on the wrong day, so they are
+ * not allowed to be two implementations.
+ */
+internal fun buildWeekRows(weekStart: Long, bookings: List<Booking>): List<Row> {
+    if (bookings.isEmpty()) return emptyList()
+    val out = ArrayList<Row>(bookings.size + 7)
+    val sorted = bookings.sortedBy { it.startMillis }
+    for (i in 0 until 7) {
+        val from = Supabase.addDays(weekStart, i)
+        val to = Supabase.addDays(weekStart, i + 1)
+        val mine = sorted.filter { it.startMillis >= from && it.startMillis < to }
+        out.add(Row.Header(from, mine.size))
+        mine.forEach { out.add(Row.Session(it)) }
+    }
+    return out
+}
+
+/**
+ * Where "now" is in that list: the next session that has not finished, else
+ * today's header, else the top. Scrolling to the next session rather than to
+ * midnight is the whole point — by 4pm, today's header is above six sessions
+ * already done and lands the coach exactly where they were not looking.
+ */
+internal fun scrollIndexForNow(rows: List<Row>): Int {
+    val now = System.currentTimeMillis()
+    val next = rows.indexOfFirst { it is Row.Session && it.booking.endMillis >= now }
+    if (next >= 0) {
+        // One row of lead-in, so the day header above it stays on screen and
+        // the session has context instead of floating at the top edge.
+        val header = (next - 1).coerceAtLeast(0)
+        return if (rows.getOrNull(header) is Row.Header) header else next
+    }
+    val today = Supabase.startOfDay(now)
+    val head = rows.indexOfFirst { it is Row.Header && it.dayStart == today }
+    return if (head >= 0) head else 0
 }
 
 private class ScheduleFactory(
@@ -54,34 +103,11 @@ private class ScheduleFactory(
         } else {
             emptyList()
         }
-        rows = buildWeek(week, bookings)
+        rows = buildWeekRows(week, bookings)
         // The launcher binds this service separately from the provider. If this
         // line never appears, the list is never asked for its contents and the
         // empty view is all the widget can possibly show.
         Prefs.note(ctx, "list id=$widgetId rows=" + rows.size + " sessions=" + bookings.size)
-    }
-
-    /**
-     * Monday to Sunday, every day present whether or not it has sessions — a
-     * rest day is a real answer, and a week that silently omits it reads as a
-     * week that failed to load half of itself.
-     *
-     * Returns EMPTY when the week holds nothing at all. setEmptyView only fires
-     * on a zero-count adapter, so seven bare headers would suppress the message
-     * that says whether the widget is empty or broken.
-     */
-    private fun buildWeek(weekStart: Long, bookings: List<Booking>): List<Row> {
-        if (bookings.isEmpty()) return emptyList()
-        val out = ArrayList<Row>(bookings.size + 7)
-        val sorted = bookings.sortedBy { it.startMillis }
-        for (i in 0 until 7) {
-            val from = Supabase.addDays(weekStart, i)
-            val to = Supabase.addDays(weekStart, i + 1)
-            val mine = sorted.filter { it.startMillis >= from && it.startMillis < to }
-            out.add(Row.Header(from, mine.size))
-            mine.forEach { out.add(Row.Session(it)) }
-        }
-        return out
     }
 
     override fun onDestroy() {
@@ -99,17 +125,17 @@ private class ScheduleFactory(
         v.setTextViewText(R.id.row_time, timeLabel(b.startMillis))
         v.setTextViewText(R.id.row_name, b.athlete.ifBlank { "Session" })
 
-        // Length, and the note when there is one — a note is usually why this
-        // session is different from the others, so it earns the line.
+        // Duration rides under the time, in the column that already had the
+        // height to spare.
         val mins = TimeUnit.MILLISECONDS.toMinutes(b.endMillis - b.startMillis).toInt()
-        val meta = buildString {
-            if (mins > 0) append(mins).append("m")
-            if (b.note.isNotBlank()) {
-                if (isNotEmpty()) append(" · ")
-                append(b.note)
-            }
-        }
-        v.setTextViewText(R.id.row_meta, meta)
+        v.setTextViewText(R.id.row_dur, if (mins > 0) mins.toString() + "m" else "")
+
+        // The second line is the note or nothing. GONE rather than empty text:
+        // an empty TextView still claims its line height, which is the whole
+        // thing this was meant to stop spending.
+        val hasNote = b.note.isNotBlank()
+        v.setTextViewText(R.id.row_meta, b.note)
+        v.setViewVisibility(R.id.row_meta, if (hasNote) View.VISIBLE else View.GONE)
 
         // A finished session is dimmed rather than hidden: the coach still wants
         // the shape of the whole day, and a list that empties itself as the day

@@ -1,24 +1,46 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Time on the left in a fixed column so the names line up down the list —
-     a ragged left edge is what makes a schedule hard to scan. -->
+     a ragged left edge is what makes a schedule hard to scan.
+
+     The row used to be two lines always: a name, and under it a meta line that
+     usually said nothing but "60m". Across a week that is a wasted line per
+     session and about a third of the visible schedule. The duration moved into
+     the time column, which had spare height and no second line, and the meta
+     line is now hidden unless there is a note — so an ordinary session is one
+     line and only the ones with something to say cost two. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/row_root"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:gravity="center_vertical"
-    android:paddingTop="9dp"
-    android:paddingBottom="9dp">
+    android:paddingTop="6dp"
+    android:paddingBottom="6dp">
 
-    <TextView
-        android:id="@+id/row_time"
-        android:layout_width="58dp"
+    <LinearLayout
+        android:layout_width="52dp"
         android:layout_height="wrap_content"
-        android:maxLines="1"
-        android:text="6:00a"
-        android:textSize="13sp"
-        android:textStyle="bold"
-        android:textColor="@color/accent" />
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/row_time"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:text="6:00a"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:textColor="@color/accent" />
+
+        <TextView
+            android:id="@+id/row_dur"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:text="60m"
+            android:textSize="10sp"
+            android:textColor="@color/muted" />
+    </LinearLayout>
 
     <LinearLayout
         android:layout_width="0dp"
@@ -36,13 +58,14 @@
             android:textSize="14sp"
             android:textColor="@color/text" />
 
+        <!-- Notes only, and GONE when there is no note. -->
         <TextView
             android:id="@+id/row_meta"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:maxLines="1"
             android:ellipsize="end"
-            android:text="60m"
+            android:text=""
             android:textSize="11sp"
             android:textColor="@color/muted" />
     </LinearLayout>

@@ -30,6 +30,8 @@ class ScheduleWidget : AppWidgetProvider() {
     companion object {
         const val ACTION_PREV = "com.stonedragon.schedule.PREV"
         const val ACTION_NEXT = "com.stonedragon.schedule.NEXT"
+        // Named TODAY since the day-at-a-time build; it means "this week, and
+        // scrolled to the next session" now.
         const val ACTION_TODAY = "com.stonedragon.schedule.TODAY"
         const val ACTION_REFRESH = "com.stonedragon.schedule.REFRESH"
         // Row taps land here rather than going straight to the browser, so the
@@ -212,11 +214,14 @@ class ScheduleWidget : AppWidgetProvider() {
                 if (sameMonth) fmt("d", week) + "–" + fmt("d MMM", sunday)
                 else fmt("d MMM", week) + " – " + fmt("d MMM", sunday)
             val span = spanRaw.uppercase(Locale.getDefault())
+            // Either the word or the dates, never both. Five controls now share
+            // this row with it, and "THIS WEEK · 3–9 AUG" ellipsized to "THIS…"
+            // on a 250dp widget — which is less information, not more.
             v.setTextViewText(
                 R.id.widget_date,
                 when (week) {
-                    thisWeek -> "THIS WEEK · $span"
-                    Supabase.addDays(thisWeek, 7) -> "NEXT WEEK · $span"
+                    thisWeek -> "THIS WEEK"
+                    Supabase.addDays(thisWeek, 7) -> "NEXT WEEK"
                     else -> span
                 }
             )
@@ -265,7 +270,16 @@ class ScheduleWidget : AppWidgetProvider() {
             v.setOnClickPendingIntent(R.id.widget_prev, actionIntent(ctx, ACTION_PREV, widgetId))
             v.setOnClickPendingIntent(R.id.widget_next, actionIntent(ctx, ACTION_NEXT, widgetId))
             v.setOnClickPendingIntent(R.id.widget_date, actionIntent(ctx, ACTION_TODAY, widgetId))
+            v.setOnClickPendingIntent(R.id.widget_now, actionIntent(ctx, ACTION_TODAY, widgetId))
             v.setOnClickPendingIntent(R.id.widget_refresh, actionIntent(ctx, ACTION_REFRESH, widgetId))
+
+            // Jump to now, but only when it was actually asked for — see
+            // Prefs.requestJump. Consumed here so the next routine repaint
+            // leaves the coach where they scrolled to.
+            if (Prefs.takeJump(ctx, widgetId) && bookings.isNotEmpty()) {
+                val idx = scrollIndexForNow(buildWeekRows(week, bookings))
+                if (idx > 0) v.setScrollPosition(R.id.widget_list, idx)
+            }
 
             // The empty view is a button, and what it does is whatever the
             // message is asking for. "Loading…" and an error both retry — that
@@ -409,7 +423,10 @@ class ScheduleWidget : AppWidgetProvider() {
             // last month on a home screen is not a real journey.
             ACTION_PREV -> Prefs.setWeek(app, widgetId, maxOf(Supabase.addDays(week, -7), thisWeek))
             ACTION_NEXT -> Prefs.setWeek(app, widgetId, Supabase.addDays(week, 7))
-            ACTION_TODAY -> Prefs.setWeek(app, widgetId, thisWeek)
+            ACTION_TODAY -> {
+                Prefs.setWeek(app, widgetId, thisWeek)
+                Prefs.requestJump(app, widgetId)
+            }
         }
         if (action != ACTION_REFRESH) Prefs.saveState(app, widgetId, "loading")
 
