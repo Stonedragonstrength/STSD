@@ -8,7 +8,7 @@ app through the App Store, which this is not.
 
 ```
 ┌──────────────────────────────────────┐
-│  ‹   TODAY · TUE 4 AUG   4   ›    ⟳  │
+│  ‹   TODAY · TUE 4 AUG   ›   NOW  ⟳  │
 ├──────────────────────────────────────┤
 │  6:00a   Sarah M.                    │
 │          60m                         │

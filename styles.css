@@ -6804,25 +6804,9 @@ input.pyr-weight-input { -moz-appearance: textfield; appearance: textfield; }
 
 .coach-week-tab-lbl { pointer-events: none; }
 
-.coach-week-tab-del,
-.coach-week-tab-dup {
-  background: none;
-  border: none;
-  color: var(--muted);
-  font-size: 0.9rem;
-  line-height: 1;
-  padding: 0 0.1em;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.12s, color 0.12s;
-  flex-shrink: 0;
-}
-.coach-week-tab:hover .coach-week-tab-del,
-.coach-week-tab.active .coach-week-tab-del,
-.coach-week-tab:hover .coach-week-tab-dup,
-.coach-week-tab.active .coach-week-tab-dup { opacity: 1; }
-.coach-week-tab-del:hover { color: var(--danger) !important; }
-.coach-week-tab-dup:hover { color: var(--primary) !important; }
+/* The in-tab ⧉ / × buttons were removed 2026-08-05: sitting inside the tab, they
+   were a mis-tap away from the label, so switching weeks on a phone kept
+   cloning one. Both live in .week-actions now. */
 .coach-week-tab-dragging { opacity: 0.45; }
 .coach-week-tab-dragover { border-bottom-color: var(--primary); background: var(--surface-2); }
 
@@ -7248,12 +7232,24 @@ input.pyr-weight-input { -moz-appearance: textfield; appearance: textfield; }
    made a day. Own row, own spacing, nothing to hit them by accident from. */
 .day-add-row {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 0.4rem;
   padding: 0.55rem 1rem;
   background: rgba(0, 0, 0, 0.1);
   border-bottom: 1px solid var(--border);
 }
 .day-add-btn { flex-shrink: 0; }
+/* Week-scoped actions, pushed to the far end of the day-action row — as far
+   from both tab strips as the layout allows. The button text ("Duplicate week"
+   vs "Add day") is what says which scope you are acting on. */
+.week-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.week-del-btn:hover { color: var(--danger); border-color: var(--danger); }
 .day-tab[draggable="true"] { cursor: grab; }
 .day-tab-dragging { opacity: 0.45; }
 .day-tab-dragover { border-bottom-color: var(--primary); background: var(--surface-2); }

@@ -9469,65 +9469,13 @@
       const lbl = document.createElement("span");
       lbl.className = "coach-week-tab-lbl";
       lbl.textContent = week.phaseLabel ? `${week.phaseLabel} ${week.label}` : week.label;
-      const dup = document.createElement("button");
-      dup.className = "coach-week-tab-dup";
-      dup.textContent = "⧉";
-      dup.title = `Duplicate ${week.label}`;
-      dup.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const list = _programEditorId ? currentProgramTemplate()?.weeks : currentClient()?.weeks;
-        if (!list) return;
-        if (list.length >= 12) { toast("12-week maximum reached"); return; }
-        // ⧉ sits inside the tab, a thumb's width from the label you were
-        // actually aiming at, and a stray tap used to silently clone a whole
-        // week of programming. Its neighbour × has always confirmed; this is
-        // the same guard for the same reason.
-        const dayCount = (week.days || []).length;
-        if (!window.confirm(`Duplicate ${week.label}?\n\nThis adds a copy with all ${dayCount} day${dayCount === 1 ? "" : "s"} right after it.`)) return;
-        const originalLabel = week.label;
-        const clone = {
-          ...week,
-          id: uid(),
-          days: (week.days || []).map((day) => ({
-            ...day,
-            id: uid(),
-            exercises: (day.exercises || []).map((ex) => ({ ...ex, id: uid() })),
-          })),
-        };
-        list.splice(wIdx + 1, 0, clone);
-        list.forEach((w, i) => { if (/^Week \d+$/.test(w.label)) w.label = `Week ${i + 1}`; });
-        _coachActiveWeekIdx = wIdx + 1;
-        saveTrainer();
-        renderWeeks();
-        if (!_programEditorId) { renderDiet(); renderCoachCalendar(); }
-        toast(`Duplicated ${originalLabel}`);
-      });
-
-      const del = document.createElement("button");
-      del.className = "coach-week-tab-del";
-      del.textContent = "×";
-      del.title = `Delete ${week.label}`;
-      if (wIdx === 0) del.style.display = "none";
-      del.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (!window.confirm(`Delete ${week.label}?`)) return;
-        if (_programEditorId) {
-          const tpl = currentProgramTemplate(); if (!tpl) return;
-          tpl.weeks.splice(wIdx, 1);
-          tpl.weeks.forEach((w, i) => { if (/^Week \d+$/.test(w.label)) w.label = `Week ${i + 1}`; });
-        } else {
-          const c = currentClient(); if (!c) return;
-          c.weeks.splice(wIdx, 1);
-          c.weeks.forEach((w, i) => { if (/^Week \d+$/.test(w.label)) w.label = `Week ${i + 1}`; });
-        }
-        if (_coachActiveWeekIdx >= weeks.length - 1) _coachActiveWeekIdx = Math.max(0, weeks.length - 2);
-        saveTrainer();
-        renderWeeks();
-        if (!_programEditorId) { renderDiet(); renderCoachCalendar(); }
-      });
+      // ⧉ and × used to live INSIDE each tab, a thumb's width from the label
+      // you were aiming at — so switching weeks on a phone regularly cloned one
+      // instead. A confirm was the wrong fix: it does not stop the mis-tap, it
+      // just adds a dialog to dismiss. Both moved to a toolbar that acts on the
+      // week you are already looking at, leaving the tabs as pure navigation
+      // with nothing destructive in them. See weekActionsInto().
       tab.appendChild(lbl);
-      tab.appendChild(dup);
-      tab.appendChild(del);
       tab.addEventListener("click", () => {
         _coachActiveWeekIdx = wIdx;
         _coachOneOffTab = false;
@@ -9697,6 +9645,72 @@
         openImportDayModal(week, () => { renderDayTabs(); renderActiveDayContent(); });
       });
       addRow.appendChild(importDayBtn);
+      weekActionsInto(addRow);
+    }
+
+    // Duplicate / delete for the week ON SCREEN, parked at the right-hand end
+    // of the day-action row. One control row serves both scopes and the button
+    // text says which is which ("Add day" vs "Duplicate week"), so this costs
+    // no extra chrome — and puts the two destructive controls as far from both
+    // tab strips as the layout allows.
+    function weekActionsInto(row) {
+      const acts = document.createElement("div");
+      acts.className = "week-actions";
+
+      const dup = document.createElement("button");
+      dup.type = "button";
+      dup.className = "btn btn-ghost btn-sm slim-btn";
+      dup.textContent = "⧉ Duplicate week";
+      dup.title = `Add a copy of ${week.label} after it`;
+      dup.addEventListener("click", () => {
+        const list = _programEditorId ? currentProgramTemplate()?.weeks : currentClient()?.weeks;
+        if (!list) return;
+        if (list.length >= 12) { toast("12-week maximum reached"); return; }
+        const at = _coachActiveWeekIdx;
+        const src = list[at]; if (!src) return;
+        const originalLabel = src.label;
+        const clone = {
+          ...src,
+          id: uid(),
+          days: (src.days || []).map((day) => ({
+            ...day,
+            id: uid(),
+            exercises: (day.exercises || []).map((ex) => ({ ...ex, id: uid() })),
+          })),
+        };
+        list.splice(at + 1, 0, clone);
+        list.forEach((w, i) => { if (/^Week \d+$/.test(w.label)) w.label = `Week ${i + 1}`; });
+        _coachActiveWeekIdx = at + 1;
+        saveTrainer();
+        renderWeeks();
+        if (!_programEditorId) { renderDiet(); renderCoachCalendar(); }
+        toast(`Duplicated ${originalLabel}`);
+      });
+      acts.appendChild(dup);
+
+      // Week 1 was never deletable from the old tab button either — a program
+      // has to keep a week.
+      if (_coachActiveWeekIdx > 0) {
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "btn btn-ghost btn-sm slim-btn week-del-btn";
+        del.textContent = "🗑 Delete week";
+        del.title = `Delete ${week.label}`;
+        del.addEventListener("click", () => {
+          const at = _coachActiveWeekIdx;
+          const list = _programEditorId ? currentProgramTemplate()?.weeks : currentClient()?.weeks;
+          if (!list || !list[at]) return;
+          if (!window.confirm(`Delete ${list[at].label}? This cannot be undone.`)) return;
+          list.splice(at, 1);
+          list.forEach((w, i) => { if (/^Week \d+$/.test(w.label)) w.label = `Week ${i + 1}`; });
+          _coachActiveWeekIdx = Math.max(0, Math.min(at, list.length - 1));
+          saveTrainer();
+          renderWeeks();
+          if (!_programEditorId) { renderDiet(); renderCoachCalendar(); }
+        });
+        acts.appendChild(del);
+      }
+      row.appendChild(acts);
     }
 
     function renderActiveDayContent() {

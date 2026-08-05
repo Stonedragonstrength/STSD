@@ -7,6 +7,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.view.View
 import android.widget.RemoteViews
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -225,21 +226,26 @@ class ScheduleWidget : AppWidgetProvider() {
                     else -> span
                 }
             )
-            v.setTextViewText(
-                R.id.widget_count,
-                when {
-                    state == "signin" -> ""
-                    // Showing cached sessions from a refresh that failed: the
-                    // count is real but may be out of date, and says so.
-                    stale -> bookings.size.toString() + " ⚠"
-                    state.startsWith("error") -> "—"
-                    // One source answered and one didn't: the number is a floor,
-                    // not a count, and it says so rather than quietly under-
-                    // reporting the day.
-                    state == "partial" -> bookings.size.toString() + "+"
-                    else -> bookings.size.toString()
-                }
-            )
+            // Status only — no session count. "How many this week" is not a
+            // number you act on, and the pill was taking width from a row that
+            // already carries five controls. What survives is the part that
+            // changes a decision: whether what you are reading can be trusted.
+            // Empty in the normal case, and then the pill is GONE rather than a
+            // background chip floating in the row — which is where the extra
+            // breathing room comes from.
+            val status = when {
+                state == "signin" -> ""
+                // Cached sessions from a refresh that failed: real, possibly out
+                // of date, and it says so.
+                stale -> "⚠"
+                state.startsWith("error") -> "—"
+                // One source answered and one didn't, so the list is a floor
+                // rather than the whole week.
+                state == "partial" -> "+"
+                else -> ""
+            }
+            v.setTextViewText(R.id.widget_count, status)
+            v.setViewVisibility(R.id.widget_count, if (status.isEmpty()) View.GONE else View.VISIBLE)
 
             // setEmptyView only fires for an empty adapter, so every "nothing to
             // show" reason — no sessions, signed out, no signal — lands in the

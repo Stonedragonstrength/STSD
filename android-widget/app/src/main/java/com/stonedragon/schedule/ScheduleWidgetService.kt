@@ -96,9 +96,14 @@ internal fun scrollIndexForNow(rows: List<Row>): Int {
  * the widget its height in rows. Over-shooting is harmless — it clamps to the
  * end of the week and the target still lands high — so it is deliberately
  * generous rather than exact.
+ *
+ * Raised 6 → 9 on 2026-08-05: NOW was still stopping short, leaving the next
+ * session a little above where it should sit. Under-shooting is the failure
+ * that shows (the target parks mid-screen or lower); over-shooting just clamps.
+ * So when in doubt this number goes up, never down.
  */
 internal fun scrollTargetForTop(rows: List<Row>, topIndex: Int): Int {
-    val LEAD = 6
+    val LEAD = 9
     return minOf(topIndex + LEAD, (rows.size - 1).coerceAtLeast(0))
 }
 
