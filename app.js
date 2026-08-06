@@ -15390,6 +15390,10 @@
         const out = await window.Cloud.squareBilling("saveCard", {
           sourceId: res.token,
           verificationToken: res.details?.verificationToken,
+          // Square will not STORE a card without a billing postcode, even
+          // though it will happily take a payment from one. The form already
+          // asked for it; this is just carrying the answer through.
+          postalCode: res.details?.billing?.postalCode,
         });
         if (!out?.ok) throw new Error(out?.error || "Square wouldn't save that card");
         _athleteCard = null; _athleteCardAt = 0; // force a re-read

@@ -357,6 +357,10 @@ Deno.serve(async (req) => {
       const sourceId = String(body?.sourceId ?? "");
       const verificationToken = body?.verificationToken
         ? String(body.verificationToken) : undefined;
+      // The postcode the card form collected. NOT optional to Square: storing a
+      // card without a billing_address comes back as INVALID_CARD_DATA, which
+      // reads like the card was wrong when the request was.
+      const postalCode = String(body?.postalCode ?? "").slice(0, 12);
       if (!sourceId) return json({ ok: false, error: "no card token" });
 
       const row = await billingRow(athlete);
@@ -369,7 +373,11 @@ Deno.serve(async (req) => {
           idempotency_key: `card-${athlete.id}-${Date.now()}`.slice(0, 45),
           source_id: sourceId,
           verification_token: verificationToken,
-          card: { customer_id: customerId },
+          card: {
+            customer_id: customerId,
+            cardholder_name: athlete.display_name ?? undefined,
+            billing_address: postalCode ? { postal_code: postalCode } : undefined,
+          },
         }),
       });
       const card = made?.card;
