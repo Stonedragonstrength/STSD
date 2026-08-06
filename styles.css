@@ -4015,6 +4015,24 @@ input.bill-in {
 .books-tile.is-out { border-color: rgba(245, 158, 11, 0.35); }
 .books-tile.is-out .books-tile-num { color: #fbbf24; }
 
+/* The shape of a normal month, under the year's totals. Deliberately flatter
+   than the tiles above — these are things you look up, not things you glance
+   at, so they get a label-and-value row rather than a third row of big type. */
+.books-stats {
+  display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem;
+  margin-top: 0.6rem; padding: 0.5rem 0.15rem 0;
+  border-top: 1px solid var(--border);
+}
+.books-stat { display: flex; align-items: baseline; gap: 0.4em; min-width: 0; }
+.books-stat-lbl {
+  font-size: 0.6rem; font-weight: 800; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--muted); white-space: nowrap;
+}
+.books-stat-val {
+  font-size: 0.82rem; font-weight: 800; color: var(--text-soft);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
 .books-months { display: flex; flex-direction: column; gap: 0.15rem; margin-top: 0.8rem; }
 .books-mo-row {
   display: grid; grid-template-columns: 2.4rem minmax(0, 1fr) auto;
@@ -11658,6 +11676,18 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 @media (max-width: 700px) {
   .pref-card .pref-fold > summary ~ * { margin-left: 0; }
 }
+/* The Money screen holds the same folds but NOT inside a .pref-card, so none of
+   the rhythm above reached them: every card sat flush on its own summary, and
+   the gap down to the next fold was whatever margin the last child happened to
+   leave — 25px under Raise, 17px under Income, for three folds meant to read as
+   one stack. Same two vertical rules and no indent: these are full-width
+   reports rather than settings rows, and each already carries its own frame.
+   The inner margin has to be zeroed first — the hosts have no padding, so a
+   card's own margin-bottom escapes, collapses with the wrapper's, and the
+   larger of the two silently wins instead of the rule underneath. */
+#view-money .pref-fold[open] > summary + * { margin-top: 0.55rem; }
+#view-money .pref-fold > * > :last-child { margin-bottom: 0; }
+#view-money .pref-fold[open] > :last-child { margin-bottom: 1.15rem; }
 /* Every icon sits in the same 1.6rem column, so the titles line up down the
    list instead of drifting with each emoji's own width — and so the 2.35rem
    indent above (icon + summary's 0.75em gap) lands exactly on the title. */
@@ -12286,12 +12316,13 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
      grid puts it back on the right here. */
   #view-overview > .overview-rail { grid-column: 2; grid-row: 1; }
   #view-overview > .overview-rail > .card { margin: 0; }
-  /* Income moves out of the coach Profile and into the rail at this width. The
-     id prefix is load-bearing: the base `display:none` sits LATER in the file,
-     so an equally specific selector here would lose. */
+  /* The rail gets its copy of the income card at this width. The id prefix is
+     load-bearing: the base `display:none` sits LATER in the file, so an equally
+     specific selector here would lose. Nothing is hidden in exchange — the copy
+     it used to trade places with lived in the coach Profile, and moved to the
+     Money screen on 2026-08-06. Two homes, two different screens. */
   #view-overview .income-host-rail { display: block; }
   #view-overview .income-host-rail > .income-card { margin: 0 0 1rem; }
-  #view-settings .income-host-profile, #view-settings .income-section { display: none; }
   /* Exactly one item per column, so neither can stretch the other's rows.
      The nav and grid used to be separate items sharing rows with the rail,
      and the rail's height got distributed across them — which is what opened
@@ -12884,10 +12915,11 @@ body.scroll-locked {
 #coach-sched-hub .sched-series:not(:empty) { margin-bottom: 0.9rem; }
 #coach-sched-hub .slim-btn { margin-top: 0.7rem; }
 
-/* Expected income has one home per width. Phone and tablet: the coach Profile,
-   because the Overview is a single stack there and money is not what the
-   morning glance is for. Wide: the Overview rail, which has the room (the
-   swap is in the 1200px block above). */
+/* The income card has two hosts: the Money screen at every width, and the
+   Overview rail on a wide one, where there is room for a glance on the way
+   past. The rail is off below 1200px — the Overview is a single stack there
+   and money is not what the morning glance is for (the switch is in the
+   1200px block above). */
 .income-host-rail { display: none; }
 .income-host-profile > .income-card { margin-bottom: 1rem; }
 
@@ -12914,6 +12946,39 @@ body.scroll-locked {
   stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
 }
 .income-figs { margin-top: 0.5rem; }
+/* Earned: three tiles, same shape as the books' so the two folds read as one
+   report. minmax(0,1fr) rather than 1fr — a bare 1fr floors at min-content and
+   clips a five-figure number without a scrollbar to say so. */
+.income-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.45rem; }
+.income-tile {
+  min-width: 0; padding: 0.55rem 0.4rem;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2);
+  display: flex; flex-direction: column; align-items: center; gap: 0.1rem;
+}
+.income-tile-num {
+  font-size: 1.05rem; font-weight: 900; color: var(--text);
+  font-variant-numeric: tabular-nums; line-height: 1.1; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+.income-tile-lbl {
+  font-size: 0.6rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--muted); text-align: center;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+}
+.income-tile.is-in { border-color: rgba(34, 197, 94, 0.35); }
+.income-tile.is-in .income-tile-num { color: #4ade80; }
+.income-tile.is-out { border-color: rgba(245, 158, 11, 0.35); }
+.income-tile.is-out .income-tile-num { color: #fbbf24; }
+.income-trend {
+  margin: 0.45em 0 0; font-size: 0.68rem; font-weight: 700; color: #4ade80;
+}
+.income-trend.is-down { color: #fbbf24; }
+/* The line that turns the card from one list into two. */
+.income-group-lbl {
+  margin: 0.75em 0 0.1em; padding-top: 0.55em; border-top: 1px solid var(--border);
+  font-size: 0.6rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--muted);
+}
 .income-row {
   display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem;
   padding: 0.3em 0;

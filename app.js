@@ -6066,12 +6066,23 @@
   // Sorted by what needs doing: nothing raised yet, then raised and unpaid,
   // then settled. A list in roster order makes you read all nineteen to find
   // the four that need you.
+  //
+  // Sequence-guarded, because the Money screen deliberately renders this TWICE
+  // — once from cache on arrival, once when the billing fetch lands — and the
+  // clear is synchronous while the append is not. With both passes in flight
+  // the second one's clear happens before the first one's append, so both
+  // appends survived and the whole roster was drawn twice, one card under the
+  // other. Checking the host is still mounted didn't catch it: it is the same
+  // host both times. Only the newest pass may write.
+  let _moneyRosterSeq = 0;
   function renderMoneyRoster() {
     const host = $("#money-roster-host");
     if (!host) return;
+    const seq = ++_moneyRosterSeq;
     host.innerHTML = "";
     if (!window.Cloud?.enabled) return;
     Promise.all([loadBillingConfig(), ensureBillingLoaded(BILLING_STALE_MS)]).then(([cfg]) => {
+      if (seq !== _moneyRosterSeq) return;
       if (!cfg?.configured || $("#money-roster-host") !== host) return;
       const monthKey = billingMonthKey();
       // A couple share one bank and one invoice, so the partner's half would be
@@ -6093,11 +6104,24 @@
       const owed = rows.filter((r) => r.charge?.status === "sent")
         .reduce((n, r) => n + (Number(r.charge.amount_cents) || 0), 0) / 100;
       const todo = rows.filter((r) => !r.charge).length;
+      const unpaid = rows.filter((r) => r.charge?.status === "sent").length;
       card.innerHTML =
         `<div class="mr-head"><span class="mr-title">${escapeHtml(monthKeyLabel(monthKey))}</span>` +
         `<span class="mr-sum">${escapeHtml(
           todo ? `${todo} to raise` : owed ? `${money(owed)} outstanding` : "all settled",
         )}</span></div>`;
+
+      // The fold's own summary, which is all you see once it is shut. Counts
+      // only — the head inside says the figure, and it lives under the eye
+      // toggle; a summary that reads "$1,240 outstanding" would put the number
+      // back on screen at exactly the moment he collapsed the fold to hide it.
+      const sub = $("#cs-sub-raise");
+      if (sub) {
+        sub.textContent = todo
+          ? `${monthKeyLabel(monthKey).replace(/ \d{4}$/, "")} · ${todo} to raise`
+          : unpaid ? `${unpaid} raised, not yet paid`
+          : "All settled for " + monthKeyLabel(monthKey).replace(/ \d{4}$/, "");
+      }
 
       rows.forEach(({ c, charge, plan, card: saved }) => {
         const row = document.createElement("div");
@@ -6709,13 +6733,28 @@
   // first one with anything in it are dropped for the same reason — an app
   // installed in July should not open its books on six empty rows — while an
   // empty month inside the run is kept, because that one means something.
+  //
+  // "The month we are in" is a floor, not a ceiling: he bills a month IN
+  // ADVANCE, so on 6 August September's invoices are already raised and three
+  // of them are outstanding. Stopping at August hid every one of them — the
+  // books read $20,210 for the year while the income card, which walks all
+  // twelve months, read $22,995, and the coach had two figures for one year
+  // and no way to tell which lied. The bill he has actually sent belongs on
+  // the books the day he sends it. See [[how-nathan-bills]].
   function booksMonths(year) {
     const now = new Date();
-    const last = year === now.getFullYear() ? now.getMonth() : 11;
     const rows = [];
     const all = moneyLedger().filter((e) => booksYearOf(e) === year);
+    const monthOf = (e) => Number(String(e.monthKey).slice(5, 7)) - 1;
+    const lastUsed = all.reduce((max, e) => {
+      const m = monthOf(e);
+      return Number.isFinite(m) && m > max ? m : max;
+    }, -1);
+    const last = year === now.getFullYear()
+      ? Math.min(11, Math.max(now.getMonth(), lastUsed))
+      : 11;
     const firstUsed = all.reduce((min, e) => {
-      const m = Number(String(e.monthKey).slice(5, 7)) - 1;
+      const m = monthOf(e);
       return Number.isFinite(m) && m < min ? m : min;
     }, 12);
     for (let m = Math.min(firstUsed, last); m <= last; m++) {
@@ -6754,6 +6793,21 @@
       const now = new Date();
       const canForward = year < now.getFullYear();
 
+      // The three questions the month bars can't answer on their own: what a
+      // normal month looks like, which one was the best, and what a session is
+      // actually worth once discounts and goodwill have been applied. The
+      // average is over months with money IN them — dividing by twelve in
+      // February would report a business a sixth its real size.
+      const total = collected + outstanding;
+      const live = months.filter((r) => r.collected + r.outstanding > 0);
+      const best = live.reduce((b, r) =>
+        (r.collected + r.outstanding) > (b ? b.collected + b.outstanding : 0) ? r : b, null);
+      const stats = [
+        ["Average month", live.length ? money(total / live.length) : "—"],
+        ["Best month", best ? `${best.label} · ${money(best.collected + best.outstanding)}` : "—"],
+        ["Per session", sessions ? money(total / sessions) : "—"],
+      ];
+
       host.innerHTML = `
         <div class="books${shown ? "" : " is-hidden"}">
           <div class="books-head">
@@ -6778,6 +6832,13 @@
                 <span class="books-tile-num">${sessions}</span>
                 <span class="books-tile-lbl">sessions billed</span>
               </div>
+            </div>
+            <div class="books-stats">
+              ${stats.map(([lbl, val]) => `
+                <div class="books-stat">
+                  <span class="books-stat-lbl">${escapeHtml(lbl)}</span>
+                  <span class="books-stat-val">${escapeHtml(val)}</span>
+                </div>`).join("")}
             </div>
             <div class="books-months">
               ${months.map((r) => {
@@ -18088,28 +18149,88 @@
     return "$" + Math.round(n).toLocaleString();
   }
 
-  // Today, this week (Sunday-start, to match the month grid's columns), and a
-  // yearly projection. The projection is the next four weeks averaged and
-  // multiplied out: summing only what is literally booked for the next twelve
-  // months would read absurdly low, since nobody books a year ahead.
+  // Today, this week (Sunday-start, to match the month grid's columns), and the
+  // next four weeks. Four weeks is as far as the calendar honestly reaches:
+  // summing what is literally booked for the next twelve months would read
+  // absurdly low, since nobody books a year ahead. The run rate it implies is
+  // what yearOutlook() extends over the months with nothing on the books yet.
   function incomeForecast() {
     const rates = new Map((state.trainerData.clients || []).map((c) => [c.id, athleteSessionRate(c)]));
     const today = todayISO();
     const wkStart = weekStartOf(today);
     const wkEnd = addDaysISO(wkStart, 7);      // exclusive
     const fourEnd = addDaysISO(wkStart, 28);   // exclusive
-    let day = 0, week = 0, four = 0, unpriced = 0, sessions = 0;
+    let day = 0, week = 0, four = 0, unpriced = 0, sessions = 0, fourSessions = 0;
     (_coachBookings || []).forEach((b) => {
       if (b.status !== "booked") return;
       const d = dateISO(new Date(b.start_at));
       if (d < wkStart || d >= fourEnd) return;
       const r = rates.get(b.athlete_id) || 0;
       four += r;
+      fourSessions++;
       if (!r) unpriced++;
       if (d < wkEnd) { week += r; sessions++; }
       if (d === today) day += r;
     });
-    return { day, week, year: (four / 4) * 52, unpriced, sessions };
+    return { day, week, four, fourSessions, year: (four / 4) * 52, unpriced, sessions };
+  }
+
+  // ---- Earned, as against booked ----
+  //
+  // The income card used to answer only "what is on the calendar", which is
+  // half a question: a coach who bills a month in advance has most of the year
+  // already decided, and none of it showed up here. These read the SAME ledger
+  // the books fold does — moneyLedger(), deduped per bank — so the two surfaces
+  // cannot disagree about a month.
+  //
+  // Filed under the month the money was FOR, which is what moneyLedger does.
+  // That matters here more than anywhere: he bills in advance, so September's
+  // invoice is raised and paid in August, and a cash-basis "this month" would
+  // credit August with September's money and then read September as a dead
+  // month. See [[how-nathan-bills]].
+  function earnedByMonth() {
+    const by = new Map(); // "YYYY-MM" -> { collected, outstanding, sessions }
+    moneyLedger().forEach((e) => {
+      const r = by.get(e.monthKey) || { collected: 0, outstanding: 0, sessions: 0 };
+      if (e.paid) r.collected += e.amount; else r.outstanding += e.amount;
+      r.sessions += e.sessions;
+      by.set(e.monthKey, r);
+    });
+    return by;
+  }
+  const EMPTY_MONTH = { collected: 0, outstanding: 0, sessions: 0 };
+  const monthTotal = (r) => (r ? r.collected + r.outstanding : 0);
+  function shiftMonthKey(mk, by) {
+    const [y, m] = String(mk).split("-").map(Number);
+    const d = new Date(y, (m - 1) + by, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  // What the year is worth, without counting anything twice.
+  //
+  // The old figure was the next four weeks × 13, which ignored eleven months of
+  // real invoices and moved every time somebody booked a session. This splits
+  // the year in two instead: months that already have money against them are
+  // taken from the ledger at face value, and only the months with NOTHING on
+  // the books get the booked run rate applied. A month can therefore never be
+  // both forecast and earned, which is the double-count that made the old
+  // number drift high in exactly the months he had already billed.
+  function yearOutlook() {
+    const year = new Date().getFullYear();
+    const by = earnedByMonth();
+    const f = incomeForecast();
+    const perMonth = (f.four / 28) * (365 / 12); // booked run rate, monthly
+    let onBooks = 0, collected = 0, outstanding = 0, sessions = 0, blank = 0;
+    for (let m = 0; m < 12; m++) {
+      const r = by.get(`${year}-${String(m + 1).padStart(2, "0")}`);
+      if (!r || !monthTotal(r)) { blank++; continue; }
+      onBooks += monthTotal(r);
+      collected += r.collected;
+      outstanding += r.outstanding;
+      sessions += r.sessions;
+    }
+    return { year, onBooks, collected, outstanding, sessions, blank, perMonth,
+             projected: onBooks + blank * perMonth };
   }
 
   // ---- The green ticket: next month's booked sessions, per athlete ----
@@ -18191,45 +18312,107 @@
   function incomeShown() {
     return sessionStorage.getItem(KEY_INCOME_SHOWN) === "1";
   }
-  // One card, two hosts (the Overview rail and the coach Profile). Both are
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+  // One card, two hosts (the Overview rail and the Money screen). Both are
   // filled; CSS decides which width shows which, so there is never a second
   // copy of the figures on screen.
-  function incomeCardHtml() {
+  //
+  // Two halves, and the order is the point. EARNED first — three tiles for the
+  // month you are in, what is still owed against it, and the year so far —
+  // because "how am I doing" is answered by money that exists, not by money
+  // that might. BOOKED second, as the forward half. The card carried only the
+  // forward half until 2026-08-06, which is why it could show a week's takings
+  // and never once say what the year had actually brought in.
+  //
+  // `title` differs by host and both are doing a job. In the Overview rail
+  // nothing else on screen names the card, so it says what the whole thing is.
+  // On the Money screen the fold's summary already says "Income" a line above,
+  // so repeating it there is the word twice AND leaves the tiles unlabelled; it
+  // says "Earned" instead and pairs with "Booked ahead" below. The heading
+  // can't just move down inside .income-figs to sit with the tiles — that is
+  // the element the eye blurs, and a blurred eye can't be clicked back.
+  function incomeCardHtml(title = "Income") {
     const shown = incomeShown();
     const f = incomeForecast();
-    const rows = [
-      ["Today", money(f.day), ""],
-      ["This week", money(f.week), f.sessions ? `${f.sessions} session${f.sessions === 1 ? "" : "s"}` : "nothing booked"],
-      ["Year", money(f.year), "projected from the next 4 weeks"],
+    const y = yearOutlook();
+    const by = earnedByMonth();
+    const thisKey = todayISO().slice(0, 7);
+    const prevKey = shiftMonthKey(thisKey, -1);
+    const cur = by.get(thisKey) || EMPTY_MONTH;
+    const prev = by.get(prevKey) || EMPTY_MONTH;
+    const monthName = (mk) => monthKeyLabel(mk).replace(/ \d{4}$/, "");
+
+    // Against last month, as a share rather than a difference: "up 12%" is the
+    // sentence he'd say, and it survives the months being different lengths.
+    const prevTotal = monthTotal(prev);
+    const curTotal = monthTotal(cur);
+    const delta = prevTotal ? Math.round(((curTotal - prevTotal) / prevTotal) * 100) : 0;
+    const trend = !prevTotal ? ""
+      : delta === 0 ? `level with ${monthName(prevKey)}`
+      : `${delta > 0 ? "▲" : "▼"} ${Math.abs(delta)}% on ${monthName(prevKey)}`;
+
+    // "billed", not "so far": he bills a month ahead, so this legitimately
+    // includes next month's invoices the day they go out, and a tile reading
+    // "2026 so far" would look like it had counted the future by mistake.
+    const tiles = [
+      { n: money(curTotal), l: monthName(thisKey), tone: "" },
+      { n: money(cur.outstanding), l: "still owed", tone: cur.outstanding ? " is-out" : "" },
+      { n: money(y.onBooks), l: `${y.year} billed`, tone: " is-in" },
     ];
-    const note = f.unpriced
-      ? `<p class="income-note">${f.unpriced} booked session${f.unpriced === 1 ? "" : "s"} with no rate set. Add one on their Profile.</p>`
-      : "";
+
+    const rows = [
+      ["Today", money(f.day), f.day ? "" : "nothing booked"],
+      ["This week", money(f.week), f.sessions ? plural(f.sessions, "session") : "nothing booked"],
+      ["Next 4 weeks", money(f.four), f.fourSessions ? plural(f.fourSessions, "session") : "nothing booked"],
+      // Said as an estimate, not a total, because it is one: the months already
+      // invoiced at face value plus the booked rate over the months that aren't.
+      ["On track for " + y.year, money(y.projected),
+        y.blank ? `${plural(y.blank, "month")} still at the booked rate` : "all twelve months on the books"],
+    ];
+
+    const notes = [];
+    if (f.unpriced) notes.push(`${plural(f.unpriced, "booked session")} with no rate set. Add one on their Profile.`);
+    if (y.sessions) notes.push(`${money(y.onBooks / y.sessions)} a session across ${plural(y.sessions, "session")} billed this year.`);
+
     return `<div class="card income-card${shown ? "" : " is-hidden"}">` +
       `<div class="income-head">` +
-        `<span class="income-title">Expected income</span>` +
+        `<span class="income-title">${escapeHtml(title)}</span>` +
         `<button type="button" class="income-eye" aria-label="${shown ? "Hide" : "Show"} income" aria-pressed="${shown}">` +
           (shown ? EYE_SVG : EYE_OFF_SVG) +
         `</button>` +
       `</div>` +
       `<div class="income-figs">` +
+        `<div class="income-tiles">` +
+          tiles.map((t) =>
+            `<div class="income-tile${t.tone}"><span class="income-tile-num">${escapeHtml(t.n)}</span>` +
+            `<span class="income-tile-lbl">${escapeHtml(t.l)}</span></div>`).join("") +
+        `</div>` +
+        (trend ? `<p class="income-trend${delta < 0 ? " is-down" : ""}">${escapeHtml(trend)}</p>` : "") +
+        `<p class="income-group-lbl">Booked ahead</p>` +
         rows.map(([lbl, val, sub]) =>
           `<div class="income-row"><span class="income-lbl">${escapeHtml(lbl)}` +
           (sub ? `<span class="income-sub">${escapeHtml(sub)}</span>` : "") +
           `</span><span class="income-val">${escapeHtml(val)}</span></div>`).join("") +
-        note +
+        notes.map((t) => `<p class="income-note">${escapeHtml(t)}</p>`).join("") +
       `</div>` +
     `</div>`;
   }
   function renderIncomeCard() {
     $$(".income-host").forEach((host) => {
-      host.innerHTML = incomeCardHtml();
+      host.innerHTML = incomeCardHtml(host.classList.contains("income-host-rail") ? "Income" : "Earned");
       host.querySelector(".income-eye")?.addEventListener("click", toggleIncomeShown);
     });
   }
+  // One switch, both readouts. The books already redrew the income card from
+  // THEIR eye; this is the missing other half. It didn't matter while the two
+  // lived on different screens — now they are folds on the same page, and
+  // covering the income card while every figure in the books stayed legible an
+  // inch below it defeats the entire point of the toggle.
   function toggleIncomeShown() {
     sessionStorage.setItem(KEY_INCOME_SHOWN, incomeShown() ? "0" : "1");
     renderIncomeCard();
+    renderBooks();
   }
 
   // ---- Coach: book an athlete straight off the month grid ----
@@ -32078,14 +32261,18 @@
           state.currentClientId = null;
           switchCoachView("money");
           hideLibSidebar();
-          // Both halves are repainted on arrival rather than left as whatever
+          // All three are repainted on arrival rather than left as whatever
           // they said last time. The books in particular are the one screen
           // where a stale answer is worse than a slow one — "did that land?" is
-          // the entire question being asked.
+          // the entire question being asked. The income card is in the second
+          // pass too now that its earned half reads the same billing rows: it
+          // would otherwise open on a year total of zero and fill in silently.
           renderIncomeCard();
           renderMoneyRoster();
           renderBooks();
-          loadCoachBilling().then(() => { renderMoneyRoster(); renderBooks(); });
+          loadCoachBilling().then(() => {
+            renderIncomeCard(); renderMoneyRoster(); renderBooks();
+          });
         } else if (target === "anatomy") {
           _programEditorId = null;
           state.currentClientId = null;

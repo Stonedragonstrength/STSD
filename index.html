@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=card10" />
+  <link rel="stylesheet" href="styles.css?v=money1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -337,11 +337,12 @@
              calendar is generated from. -->
         <div class="overview-rail">
 
-        <!-- Expected income has ONE home per width: this rail on a wide screen,
-             where there is space beside the calendar, and the coach Profile on a
-             phone, where the Overview is a single stack and money is not what
-             the morning glance is for. renderIncomeCard() fills every
-             .income-host; CSS shows exactly one. -->
+        <!-- A second copy of the income card, for the glance on the way past.
+             It appears only on a wide screen, where there is space beside the
+             calendar; below 1200px the Overview is a single stack and money is
+             not what the morning glance is for. The card's real home is the
+             Money screen, at every width. renderIncomeCard() fills every
+             .income-host, and the two are never on screen together. -->
         <div class="income-host income-host-rail"></div>
         <!-- Weekly regulars + "Your hours" used to sit here. Both are standing
              arrangements the calendar is generated FROM, and the calendar beside
@@ -436,31 +437,46 @@
              page because it is the only part you ACT on — the two folds under
              it are reports. Raising a charge used to start from an athlete's
              profile, which meant billing the roster was nineteen trips through
-             Athletes; this is the same sheet reached from the money screen. -->
-        <div id="money-roster-host"></div>
+             Athletes; this is the same sheet reached from the money screen.
 
-        <!-- Phone and tablet only: at 1200px+ expected income moves to the
-             Overview rail, and the whole fold goes with it rather than leaving
-             an empty row behind. -->
-        <details class="pref-fold income-section" open>
+             A fold like the two under it, and open by default, because it is
+             the row of nineteen names: once the month is raised it is the
+             longest thing on the page and the least worth reading, and there
+             was no way to put it away. Its summary carries a COUNT and never a
+             figure, so collapsing it doesn't turn the fold into the money
+             readout the eye toggle exists to cover. -->
+        <details class="pref-fold" id="raise-fold" open>
+          <summary>
+            <span class="pref-fold-ico">🧾</span>
+            <span class="pref-fold-text">
+              <span class="pref-fold-title">Raise</span>
+              <span class="pref-fold-sub" id="cs-sub-raise">Next month, athlete by athlete</span>
+            </span>
+            <span class="pref-fold-chev">▸</span>
+          </summary>
+          <div id="money-roster-host"></div>
+        </details>
+
+        <!-- Booked against earned, in one card. The Overview rail renders the
+             same card at 1200px+, on a screen you can't be looking at at the
+             same time as this one. -->
+        <details class="pref-fold" open>
           <summary>
             <span class="pref-fold-ico">💷</span>
             <span class="pref-fold-text">
-              <span class="pref-fold-title">Expected</span>
-              <span class="pref-fold-sub">Booked sessions against your rates</span>
+              <span class="pref-fold-title">Income</span>
+              <span class="pref-fold-sub">What's booked, and what you've earned</span>
             </span>
             <span class="pref-fold-chev">▸</span>
           </summary>
           <div class="income-host income-host-profile"></div>
         </details>
 
-        <!-- What was actually asked for and what actually came in, month by
-             month — where Expected above it is a forecast of what is booked.
-             Its own fold rather than a section inside it because Expected is
-             hidden at 1200px+ (it moves to the Overview rail) and the books
-             have to be readable at every width. Filled by renderBooks(); the
-             figures stay blurred until the eye is tapped, same switch the
-             income card uses. -->
+        <!-- The year, month by month. Income above it answers "how am I doing"
+             in six figures; this is where you go to see which month those came
+             from and who is still to pay. Filled by renderBooks(); the figures
+             stay blurred until the eye is tapped, and it is the SAME switch the
+             income card uses — either eye covers both. -->
         <details class="pref-fold" id="books-fold" open>
           <summary>
             <span class="pref-fold-ico">📒</span>
@@ -1481,9 +1497,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="bugreport.js?v=bug1"></script>
   <script src="config.js?v=horm2"></script>
-  <script src="cloud.js?v=card10"></script>
+  <script src="cloud.js?v=money1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=card10"></script>
+  <script src="app.js?v=money1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
