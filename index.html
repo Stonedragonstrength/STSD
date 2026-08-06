@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=card2" />
+  <link rel="stylesheet" href="styles.css?v=card3" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -242,6 +242,17 @@
           <span class="coach-nav-icon"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1"/><path d="m9 20 3-6 3 6"/><path d="m6 8 6 2 6-2"/><path d="M12 10v4"/></svg></span>
           <span class="coach-nav-label">Anatomy</span>
         </button>
+        <!-- The sixth. The nav was a deliberate five for a long time and a
+             sixth was cut once before — but that one (Templates) was a
+             sub-destination of Programs and belonged on its page. This isn't:
+             the books are every athlete's invoices and the income forecast is
+             the whole roster's, and both were living inside the coach's own
+             settings card where nothing about them belongs. Money answers to
+             no other nav item, so it gets its own. -->
+        <button class="coach-nav-item" data-coach-nav="money" type="button">
+          <span class="coach-nav-icon"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg></span>
+          <span class="coach-nav-label">Money</span>
+        </button>
       </nav>
 
       <main class="app-main coach-main">
@@ -407,6 +418,52 @@
             </div>
             <div id="bulletin-active" class="bulletin-active"></div>
           </div>
+        </details>
+      </div>
+
+      <!-- Money: the whole roster's, not one athlete's.
+           Both halves lived in the coach's profile card until 2026-08-06, which
+           made "what came in this month?" a question you answered from inside
+           Settings. They are the same subject seen twice — what is booked and
+           what was actually paid — so they share a destination, forecast
+           first because that is the one you act on. -->
+      <div id="view-money" class="view hidden">
+        <div class="view-head">
+          <h2>Money</h2>
+        </div>
+
+        <!-- Phone and tablet only: at 1200px+ expected income moves to the
+             Overview rail, and the whole fold goes with it rather than leaving
+             an empty row behind. -->
+        <details class="pref-fold income-section" open>
+          <summary>
+            <span class="pref-fold-ico">💷</span>
+            <span class="pref-fold-text">
+              <span class="pref-fold-title">Expected</span>
+              <span class="pref-fold-sub">Booked sessions against your rates</span>
+            </span>
+            <span class="pref-fold-chev">▸</span>
+          </summary>
+          <div class="income-host income-host-profile"></div>
+        </details>
+
+        <!-- What was actually asked for and what actually came in, month by
+             month — where Expected above it is a forecast of what is booked.
+             Its own fold rather than a section inside it because Expected is
+             hidden at 1200px+ (it moves to the Overview rail) and the books
+             have to be readable at every width. Filled by renderBooks(); the
+             figures stay blurred until the eye is tapped, same switch the
+             income card uses. -->
+        <details class="pref-fold" id="books-fold" open>
+          <summary>
+            <span class="pref-fold-ico">📒</span>
+            <span class="pref-fold-text">
+              <span class="pref-fold-title">Books</span>
+              <span class="pref-fold-sub" id="cs-sub-books">Invoices, and what came in</span>
+            </span>
+            <span class="pref-fold-chev">▸</span>
+          </summary>
+          <div id="books-host"></div>
         </details>
       </div>
 
@@ -823,39 +880,10 @@
         </div>
         <div class="card pref-card coach-settings">
 
-          <!-- Money. Phone and tablet only: at 1200px+ expected income moves to
-               the Overview rail, and the whole fold goes with it rather than
-               leaving an empty row behind. -->
-          <details class="pref-fold income-section">
-            <summary>
-              <span class="pref-fold-ico">💷</span>
-              <span class="pref-fold-text">
-                <span class="pref-fold-title">Money</span>
-                <span class="pref-fold-sub">Booked sessions against your rates</span>
-              </span>
-              <span class="pref-fold-chev">▸</span>
-            </summary>
-            <div class="income-host income-host-profile"></div>
-          </details>
-
-          <!-- Books. What was actually asked for and what actually came in,
-               month by month — where Money above it is a forecast of what is
-               booked. Its own fold rather than a section inside Money because
-               Money is hidden at 1200px+ (it moves to the Overview rail) and
-               the books have to be readable at every width. Filled by
-               renderBooks(); the figures stay blurred until the eye is tapped,
-               same switch the income card uses. -->
-          <details class="pref-fold" id="books-fold">
-            <summary>
-              <span class="pref-fold-ico">📒</span>
-              <span class="pref-fold-text">
-                <span class="pref-fold-title">Books</span>
-                <span class="pref-fold-sub" id="cs-sub-books">Invoices, and what came in</span>
-              </span>
-              <span class="pref-fold-chev">▸</span>
-            </summary>
-            <div id="books-host"></div>
-          </details>
+          <!-- Money and the Books used to sit here, in the coach's own profile
+               card. They were never settings: one is the whole roster's income
+               forecast and the other is every athlete's invoices. Both moved to
+               the Money view (#view-money) on 2026-08-06. -->
 
           <!-- Scheduling: the standing arrangements the Overview calendar is
                generated from. Off the Overview since 2026-07-30 — the calendar
@@ -1446,9 +1474,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="bugreport.js?v=bug1"></script>
   <script src="config.js?v=horm2"></script>
-  <script src="cloud.js?v=card2"></script>
+  <script src="cloud.js?v=card3"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=card2"></script>
+  <script src="app.js?v=card3"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

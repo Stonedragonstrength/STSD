@@ -3646,6 +3646,7 @@
       overview:        "#view-overview",
       messages:        "#view-messages",
       anatomy:         "#view-anatomy",
+      money:           "#view-money",
       settings:        "#view-settings",
       programs:        "#view-programs",
       templates:       "#view-templates",
@@ -6005,8 +6006,19 @@
         act.appendChild(doc);
       }
       if (charge?.status === "paid") {
-        // Nothing else to do. Said, not offered — re-charging a paid month
-        // should take more than one stray tap.
+        // Paid is not finished. Extra sessions get added, a one-off gets
+        // agreed, next month comes round — and with no button here at all
+        // there was NO WAY to charge an athlete a second time, ever. The
+        // original reasoning still stands (re-charging a paid month should
+        // take more than one stray tap), so this is a ghost button that says
+        // it is a NEW charge rather than the primary action repeated.
+        const more = document.createElement("button");
+        more.type = "button";
+        more.className = "btn btn-ghost btn-sm";
+        more.textContent = "＋ New charge";
+        more.title = "Raise another charge — extra sessions, a one-off, or the next month";
+        more.addEventListener("click", () => openChargeSheet(c, monthKey, plan, null));
+        act.appendChild(more);
       } else if (charge?.status === "sent") {
         const again = document.createElement("button");
         again.type = "button";
@@ -31867,6 +31879,18 @@
           hideLibSidebar();
           renderMessagesView();
           loadCoachMessages(); // fresh threads, then re-render
+        } else if (target === "money") {
+          _programEditorId = null;
+          state.currentClientId = null;
+          switchCoachView("money");
+          hideLibSidebar();
+          // Both halves are repainted on arrival rather than left as whatever
+          // they said last time. The books in particular are the one screen
+          // where a stale answer is worse than a slow one — "did that land?" is
+          // the entire question being asked.
+          renderIncomeCard();
+          renderBooks();
+          loadCoachBilling().then(renderBooks);
         } else if (target === "anatomy") {
           _programEditorId = null;
           state.currentClientId = null;
