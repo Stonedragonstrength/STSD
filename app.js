@@ -5973,8 +5973,22 @@
       const box = document.createElement("div");
       box.className = "billing-row";
       const st = chargeStatusLabel(charge, plan, monthKey);
+      // Whether this athlete is set up to pay in one tap, at a glance. Without
+      // it the only way to find out was to open the charge sheet and notice
+      // which option had pre-selected itself — so "who still needs a link?"
+      // meant opening every athlete in the roster one at a time.
+      const card = savedCardFor(c);
+      const cardChip = card
+        ? `<span class="billing-card" title="${escapeHtml(
+            card.autopay
+              ? "Card on file, and auto-pay is on — raising a month charges it."
+              : "Card on file. They pay in the app in one tap; no link needed.",
+          )}">💳 ${escapeHtml(card.card_last4 ? "···" + card.card_last4 : "on file")}${
+            card.autopay ? " · auto" : ""}</span>`
+        : "";
       box.innerHTML =
         `<span class="billing-status ${st.tone}">${escapeHtml(st.text)}</span>` +
+        cardChip +
         (cfg.mode !== "production" ? `<span class="billing-mode">${escapeHtml(cfg.mode)}</span>` : "");
 
       const act = document.createElement("div");

@@ -6378,6 +6378,17 @@ input:focus, textarea:focus, select:focus {
 .billing-status.warn { color: var(--warn); }
 .billing-status.bad  { color: var(--danger); }
 .billing-status.muted { color: var(--muted); }
+/* Who can pay in one tap. Quiet — it is a fact about the athlete, not a state
+   of this month's money, so it must not compete with the status beside it.
+   Built from --primary-rgb like the athlete's own chip, so the two read as the
+   same object seen from either side. */
+.billing-card {
+  padding: 0.1em 0.5em; border-radius: 999px;
+  border: 1px solid rgba(var(--primary-rgb), 0.32);
+  background: rgba(var(--primary-rgb), 0.08);
+  color: var(--text-soft);
+  font-size: 0.68rem; font-weight: 700; white-space: nowrap;
+}
 /* Sandbox is loud on purpose: a test-mode charge that reads like a real one is
    how you find out in a month that nobody was actually billed. */
 .billing-mode {
