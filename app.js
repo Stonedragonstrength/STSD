@@ -15254,9 +15254,199 @@
     if (rows) { _athleteCharges = rows; _athleteChargesAt = Date.now(); }
     return _athleteCharges || [];
   }
+  // ---- The saved card ----
+  // Same memory-only rule as the charges above, and for the same reason: this
+  // never enters state.clientData, because everything in there is pushed back
+  // to Supabase by saveClient, and a client that can push card state is a
+  // client that can claim to have one.
+  let _athleteCard = null;
+  let _athleteCardAt = 0;
+  async function loadAthleteCard(maxAgeMs = 60_000) {
+    if (_athleteCard && Date.now() - _athleteCardAt < maxAgeMs) return _athleteCard;
+    if (!window.Cloud?.enabled || state.previewMode) return _athleteCard;
+    const row = await window.Cloud.getCardForAthlete();
+    if (row !== null) { _athleteCard = row; _athleteCardAt = Date.now(); }
+    return _athleteCard;
+  }
+  const hasSavedCard = (row) => !!row?.card_saved_at;
+  // "Visa ···4242", or just the brand if Square gave us no digits.
+  const cardLabel = (row) =>
+    [row?.card_brand || "Card", row?.card_last4 ? `···${row.card_last4}` : ""].join(" ").trim();
+
+  // Square's SDK, fetched only when someone actually goes to add a card — it is
+  // a third-party script and an athlete who never touches billing should never
+  // pay to download it.
+  //
+  // The URL is chosen from the mode the server reported, never hardcoded:
+  // sandbox and production are different hosts AND different location ids, and
+  // Square's own docs name that mismatch as the commonest reason live payments
+  // fail. One source for both, decided server-side.
+  let _sqSdk = null;
+  function ensureSquareSdk(cfg) {
+    if (_sqSdk) return _sqSdk;
+    const src = cfg.mode === "production"
+      ? "https://web.squarecdn.com/v1/square.js"
+      : "https://sandbox.web.squarecdn.com/v1/square.js";
+    _sqSdk = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = src;
+      s.async = true;
+      s.onload = () => (window.Square ? resolve(window.Square) : reject(new Error("SDK loaded empty")));
+      s.onerror = () => { _sqSdk = null; reject(new Error("Couldn't reach Square")); };
+      document.head.appendChild(s);
+    });
+    return _sqSdk;
+  }
+
+  // Entering a card. The fields are Square's own iframes — this app never sees
+  // a card number, and `tokenize()` hands back a single-use token that is the
+  // only thing that leaves the browser.
+  async function openAddCardSheet(onDone) {
+    const cfg = await loadBillingConfig();
+    if (!cfg?.canSaveCards) { toast("Card payments aren't set up yet"); return; }
+    // Assigned once the card fields are actually up. openModal builds its
+    // buttons immediately and hands the click event straight to onClick, so the
+    // handler has to exist now and the button comes from `currentTarget` —
+    // there is no id on a modal action to look up later.
+    let doSave = () => {};
+    openModal({
+      title: "Add a card",
+      body:
+        `<div id="sq-card" class="sq-card-fields"></div>` +
+        `<p class="sq-consent">Saving your card lets you pay each month with one tap. ` +
+        `Your card is stored by Square, not by Stone Dragon — we only ever see the last four digits. ` +
+        `You can remove it any time.</p>` +
+        `<p class="sq-err" id="sq-err" hidden></p>`,
+      actions: [
+        { label: "Save card", className: "btn btn-primary", onClick: (e) => doSave(e.currentTarget) },
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+      ],
+    });
+    const err = (m) => {
+      const box = $("#sq-err");
+      if (box) { box.textContent = m; box.hidden = false; }
+    };
+    let card;
+    try {
+      const Square = await ensureSquareSdk(cfg);
+      const payments = Square.payments(cfg.applicationId, cfg.locationId);
+      card = await payments.card();
+      await card.attach("#sq-card");
+    } catch (e) {
+      err(e?.message || "Couldn't load the card form"); return;
+    }
+    doSave = async (save) => {
+      if (!save || save.disabled) return;
+      save.disabled = true;
+      save.textContent = "Saving…";
+      try {
+        const res = await card.tokenize();
+        if (res.status !== "OK") throw new Error(res.errors?.[0]?.message || "Check the card details");
+        const out = await window.Cloud.squareBilling("saveCard", {
+          sourceId: res.token,
+          verificationToken: res.details?.verificationToken,
+        });
+        if (!out?.ok) throw new Error(out?.error || "Square wouldn't save that card");
+        _athleteCard = null; _athleteCardAt = 0; // force a re-read
+        closeModal();
+        toast("Card saved ✓");
+        onDone?.();
+      } catch (e) {
+        err(e?.message || "Couldn't save that card");
+        save.disabled = false;
+        save.textContent = "Save card";
+      }
+    };
+  }
+
+  // The payment method, under whatever is owed. One line when a card is saved,
+  // one button when it isn't — it is a setting, not a prompt, so it stays quiet.
+  function renderAthletePayMethod(host) {
+    loadBillingConfig().then((cfg) => {
+      let row = host.querySelector(".apm-row");
+      if (!cfg?.canSaveCards) { row?.remove(); return; }
+      return loadAthleteCard().then((saved) => {
+        row = host.querySelector(".apm-row");
+        if (!row) {
+          row = document.createElement("div");
+          row.className = "apm-row";
+          host.appendChild(row);
+        }
+        row.innerHTML = "";
+        if (!hasSavedCard(saved)) {
+          const add = document.createElement("button");
+          add.type = "button";
+          add.className = "btn btn-ghost btn-sm apm-add";
+          add.textContent = "💳 Save a card for next time";
+          add.addEventListener("click", () => openAddCardSheet(() => renderAthleteBilling(host)));
+          row.appendChild(add);
+          return;
+        }
+        const label = document.createElement("span");
+        label.className = "apm-card";
+        label.textContent = cardLabel(saved);
+        // Auto-pay is the athlete's own switch and nobody else's — being
+        // charged without being asked is consent, and consent given on
+        // somebody's behalf is not consent.
+        const auto = document.createElement("label");
+        auto.className = "apm-auto";
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.checked = !!saved.autopay;
+        box.addEventListener("change", async () => {
+          box.disabled = true;
+          const out = await window.Cloud.squareBilling("setAutopay", { on: box.checked });
+          box.disabled = false;
+          if (!out?.ok) { box.checked = !box.checked; toast(out?.error || "Couldn't change that"); return; }
+          _athleteCard = null; _athleteCardAt = 0;
+          toast(box.checked ? "Auto-pay on" : "Auto-pay off");
+        });
+        auto.append(box, document.createTextNode("Pay automatically"));
+        const drop = document.createElement("button");
+        drop.type = "button";
+        drop.className = "btn btn-ghost btn-sm apm-drop";
+        drop.textContent = "Remove";
+        drop.addEventListener("click", async () => {
+          if (!confirm("Remove this card? You can add it again any time.")) return;
+          const out = await window.Cloud.squareBilling("removeCard");
+          if (!out?.ok) { toast(out?.error || "Couldn't remove that card"); return; }
+          _athleteCard = null; _athleteCardAt = 0;
+          toast("Card removed");
+          renderAthleteBilling(host);
+        });
+        row.append(label, auto, drop);
+      });
+    });
+  }
+
+  // Both halves, in the order they matter: what is owed, then how it gets paid.
+  function renderAthleteBilling(host) {
+    renderAthleteChargeCard(host);
+    renderAthletePayMethod(host);
+  }
+
+  // One tap, with the saved card. The amount is never sent — the function reads
+  // it from the invoice row, so this button cannot ask to be charged a
+  // different number than the one on screen.
+  async function payWithSavedCard(row, btn, host) {
+    const was = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Paying…";
+    const out = await window.Cloud.squareBilling("payNow", { paymentId: row.id });
+    if (!out?.ok) {
+      btn.disabled = false;
+      btn.textContent = was;
+      toast(out?.error || "That didn't go through");
+      return;
+    }
+    toast(out.already ? "Already paid ✓" : "Paid ✓");
+    _athleteCharges = null; _athleteChargesAt = 0;
+    renderAthleteBilling(host);
+  }
+
   function renderAthleteChargeCard(host) {
     let card = host.querySelector(".athlete-charge-card");
-    loadAthleteCharges().then((rows) => {
+    Promise.all([loadAthleteCharges(), loadAthleteCard()]).then(([rows, saved]) => {
       renderAthleteInvoiceLink(host, rows);
       // A charge with no link is one the coach is collecting himself, so it is
       // still owed and still shown — it just has an invoice to read instead of
@@ -15286,7 +15476,20 @@
         `<p class="acc-what">${escapeHtml(one ? describe(one) : `${due.length} months outstanding`)}</p>`;
       const acts = document.createElement("div");
       acts.className = "acc-acts";
-      if (due[0].checkout_url) {
+      // A saved card beats a link: one tap, in the app, no new tab and no card
+      // number to type. The link is still there underneath for anyone who has
+      // not saved one — and remains the ONLY route for a charge raised before
+      // this athlete had a card, since those already carry a Square order.
+      if (hasSavedCard(saved)) {
+        const pay = document.createElement("button");
+        pay.type = "button";
+        pay.className = "btn btn-primary btn-sm acc-pay";
+        pay.textContent = due.length === 1
+          ? `Pay ${money(total)} · ${cardLabel(saved)}`
+          : `Pay ${monthName(due[0].month_key)} · ${cardLabel(saved)}`;
+        pay.addEventListener("click", () => payWithSavedCard(due[0], pay, host));
+        acts.appendChild(pay);
+      } else if (due[0].checkout_url) {
         const pay = document.createElement("button");
         pay.type = "button";
         pay.className = "btn btn-primary btn-sm acc-pay";
@@ -15310,10 +15513,13 @@
           const b = document.createElement("button");
           b.type = "button";
           b.className = "btn btn-ghost btn-sm";
-          b.textContent = `${r.checkout_url ? "Pay" : "View"} ${monthName(r.month_key)} · ${money((r.amount_cents || 0) / 100)}`;
-          b.addEventListener("click", () => (r.checkout_url
-            ? window.open(r.checkout_url, "_blank", "noopener")
-            : openInvoiceSheet(r, athleteOwnName(), { side: "athlete" })));
+          const payable = hasSavedCard(saved) || r.checkout_url;
+          b.textContent = `${payable ? "Pay" : "View"} ${monthName(r.month_key)} · ${money((r.amount_cents || 0) / 100)}`;
+          b.addEventListener("click", () => (hasSavedCard(saved)
+            ? payWithSavedCard(r, b, host)
+            : r.checkout_url
+              ? window.open(r.checkout_url, "_blank", "noopener")
+              : openInvoiceSheet(r, athleteOwnName(), { side: "athlete" })));
           rest.appendChild(b);
         });
         card.appendChild(rest);
@@ -15402,7 +15608,7 @@
     if (balHost) balHost.replaceChildren(balance); else container.appendChild(balance);
     // Anything to pay goes directly under it — a charge the coach has actually
     // raised, never an estimate of one. See renderAthleteChargeCard.
-    if (balHost) renderAthleteChargeCard(balHost);
+    if (balHost) renderAthleteBilling(balHost);
 
     // Membership card — coach-assigned plan (read-only), top of the Sessions tab.
     const membership = membershipById(prog.client.sessionBank?.membership);

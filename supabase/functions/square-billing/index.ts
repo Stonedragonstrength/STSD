@@ -163,8 +163,30 @@ Deno.serve(async (req) => {
   // only `data` — so a wrong name here reads as "you are not a coach".
   const { data: coach } = await sb.from("coaches")
     .select("id, display_name, email, library_prefs").eq("auth_user_id", userId).maybeSingle();
-  if (!coach) return json({ ok: false, error: "coach only" }, 403);
-  const coachId = coach.id as string;
+
+  // ---- Or is an ATHLETE asking? ----
+  // This function was coach-only until card-on-file, and everything that was
+  // coach-only stays that way: an athlete gets past this point but is then held
+  // to the allowlist below, which is checked before any action runs.
+  //
+  // The rule that makes this safe is that NO athlete action reads an athleteId
+  // out of the request body. Every one of them is scoped to `athlete.id` from
+  // this lookup, which came from their own JWT — so there is no id to tamper
+  // with and no way to aim an action at somebody else's card or somebody else's
+  // invoice. Amounts are read from the database row, never from the caller.
+  let athlete:
+    | { id: string; coach_id: string; display_name: string | null; partner_id: string | null }
+    | null = null;
+  if (!coach) {
+    const { data: a } = await sb.from("athletes")
+      .select("id, coach_id, display_name, partner_id")
+      .eq("auth_user_id", userId).maybeSingle();
+    // Same wording as before for anyone who is neither. "coach only" is still
+    // the truth for every action that existed before this change.
+    if (!a) return json({ ok: false, error: "coach only" }, 403);
+    athlete = a as typeof athlete;
+  }
+  const coachId = (coach?.id ?? athlete!.coach_id) as string;
 
   // Legacy fallback only. The tier -> variation mapping now lives on the
   // coach's own row (library_prefs.squarePlans) and is set from a dropdown,
@@ -184,12 +206,36 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { /* config takes no body */ }
   const action = body?.action ?? "config";
 
+  // Everything an athlete may ask for. Anything absent from this set is a coach
+  // action and answers 403 — which is every action that existed before card-on-
+  // file, without having to remember to guard each one individually. New coach
+  // actions are safe by default; only a name added HERE is reachable by an
+  // athlete.
+  const ATHLETE_ACTIONS = new Set(["config", "saveCard", "removeCard", "setAutopay", "payNow"]);
+  if (athlete && !ATHLETE_ACTIONS.has(action)) {
+    return json({ ok: false, error: "coach only" }, 403);
+  }
+
   if (action === "config") {
     return json({
       ok: true,
       configured: missing.length === 0,
       mode: (Deno.env.get("SQUARE_ENV") ?? "sandbox").toLowerCase(),
       missing,
+      // For the Web Payments SDK in the browser. BOTH are public values — the
+      // application id is designed to ship in a web page, and the location id
+      // is already visible on every receipt Square prints. The access token is
+      // the secret and it is not here.
+      //
+      // Sent rather than hardcoded because Square's SDK URL and the location id
+      // have to agree with the environment, and their own docs name a mismatched
+      // location id as the most common cause of production payments failing.
+      // One source, chosen server-side, so the two cannot drift.
+      applicationId: Deno.env.get("SQUARE_APPLICATION_ID") ?? "",
+      locationId,
+      // Card entry needs the app id as well as everything else; without it the
+      // app keeps the hosted-link flow and simply never offers to save a card.
+      canSaveCards: missing.length === 0 && !!Deno.env.get("SQUARE_APPLICATION_ID"),
     });
   }
 
@@ -232,6 +278,206 @@ Deno.serve(async (req) => {
         out.squareSaid = (e as Error).message;
       }
       return json(out);
+    }
+
+    // ================= CARD ON FILE (athlete-facing) =================
+    //
+    // Why a saved card at all: the coach bills a different amount every month
+    // (sessions × rate), so there is nothing to subscribe to — but there is no
+    // reason the athlete should type a card number twelve times a year. The card
+    // is stored ONCE against a Square customer; every later charge is that
+    // opaque handle plus an amount the coach set.
+    //
+    // No card data passes through here. The browser hands Square's own SDK the
+    // number, gets back a single-use token, and that token is all this function
+    // ever sees.
+
+    // The athlete's billing row — one per athlete, or one per couple keyed on
+    // the lower id, matching how charges are already grouped. Created on demand
+    // so an athlete who saves a card before ever being charged still has a home
+    // for it.
+    async function billingRow(a: NonNullable<typeof athlete>) {
+      const { primary, partner } = primaryOf(a.id, a.partner_id ?? null);
+      const { data: row } = await sb.from("billing_subscriptions")
+        .select("*").eq("athlete_id", primary).maybeSingle();
+      if (row) return row;
+      await sb.from("billing_subscriptions").upsert({
+        athlete_id: primary, coach_id: a.coach_id, partner_athlete_id: partner,
+        status: "none", updated_at: new Date().toISOString(),
+      }, { onConflict: "athlete_id" });
+      const { data: made } = await sb.from("billing_subscriptions")
+        .select("*").eq("athlete_id", primary).maybeSingle();
+      return made;
+    }
+
+    // A Square customer to hang the card on. Reused if we already made one, so
+    // an athlete who removes a card and adds another keeps one customer record
+    // instead of collecting a new one each time.
+    async function ensureCustomer(a: NonNullable<typeof athlete>, row: any): Promise<string> {
+      if (row?.square_customer_id) return row.square_customer_id as string;
+      let email: string | undefined;
+      const { data: full } = await sb.from("athletes")
+        .select("auth_user_id").eq("id", a.id).maybeSingle();
+      if (full?.auth_user_id) {
+        const { data: au } = await sb.auth.admin.getUserById(full.auth_user_id);
+        email = au?.user?.email ?? undefined;
+      }
+      const made = await square("/v2/customers", token, {
+        method: "POST",
+        body: JSON.stringify({
+          idempotency_key: `cust-${a.id}`.slice(0, 45),
+          given_name: a.display_name ?? "Athlete",
+          email_address: email,
+          reference_id: a.id,
+        }),
+      });
+      const id = made?.customer?.id as string | undefined;
+      if (!id) throw new Error("Square did not return a customer");
+      await sb.from("billing_subscriptions")
+        .update({ square_customer_id: id, updated_at: new Date().toISOString() })
+        .eq("athlete_id", row.athlete_id);
+      return id;
+    }
+
+    // ---- Save a card ----
+    // `sourceId` is the single-use token Square's SDK produced in the browser.
+    // It is worthless to anyone else and expires quickly; the durable handle is
+    // what CreateCard gives back.
+    if (action === "saveCard" && athlete) {
+      const sourceId = String(body?.sourceId ?? "");
+      const verificationToken = body?.verificationToken
+        ? String(body.verificationToken) : undefined;
+      if (!sourceId) return json({ ok: false, error: "no card token" });
+
+      const row = await billingRow(athlete);
+      if (!row) return json({ ok: false, error: "could not open a billing record" });
+      const customerId = await ensureCustomer(athlete, row);
+
+      const made = await square("/v2/cards", token, {
+        method: "POST",
+        body: JSON.stringify({
+          idempotency_key: `card-${athlete.id}-${Date.now()}`.slice(0, 45),
+          source_id: sourceId,
+          verification_token: verificationToken,
+          card: { customer_id: customerId },
+        }),
+      });
+      const card = made?.card;
+      if (!card?.id) return json({ ok: false, error: "Square did not return a card" });
+
+      // Brand and last four ONLY — enough for the athlete to recognise which
+      // card is saved, and nothing that could be used to charge it elsewhere.
+      await sb.from("billing_subscriptions").update({
+        square_card_id: card.id,
+        card_brand: card.card_brand ?? card.brand ?? null,
+        card_last4: card.last_4 ?? null,
+        card_saved_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq("athlete_id", row.athlete_id);
+
+      return json({ ok: true, brand: card.card_brand ?? null, last4: card.last_4 ?? null });
+    }
+
+    // ---- Forget a card ----
+    // Disabled at Square as well as forgotten here. Clearing only our columns
+    // would leave a card on file in Square that the athlete believes they have
+    // removed, which is exactly the surprise this is meant to prevent.
+    if (action === "removeCard" && athlete) {
+      const row = await billingRow(athlete);
+      if (!row?.square_card_id) return json({ ok: true });
+      try {
+        await square(`/v2/cards/${row.square_card_id}/disable`, token, { method: "POST" });
+      } catch (_) {
+        // Already gone at Square, or Square is unreachable. Forgetting it here
+        // is still the right answer: the athlete asked for it to stop being
+        // used, and nothing in this app can charge a card id it no longer holds.
+      }
+      // autopay goes with it — the CHECK constraint would refuse the row
+      // otherwise, and an autopay flag with no card is the shape of a surprise.
+      await sb.from("billing_subscriptions").update({
+        square_card_id: null, card_brand: null, card_last4: null,
+        card_saved_at: null, autopay: false, updated_at: new Date().toISOString(),
+      }).eq("athlete_id", row.athlete_id);
+      return json({ ok: true });
+    }
+
+    // ---- Turn automatic payment on or off ----
+    // Only the athlete can set this, never the coach: it is consent to be
+    // charged without being asked each time, and consent given on someone's
+    // behalf is not consent.
+    if (action === "setAutopay" && athlete) {
+      const on = body?.on === true;
+      const row = await billingRow(athlete);
+      if (!row) return json({ ok: false, error: "no billing record" });
+      if (on && !row.square_card_id) return json({ ok: false, error: "add a card first" });
+      await sb.from("billing_subscriptions")
+        .update({ autopay: on, updated_at: new Date().toISOString() })
+        .eq("athlete_id", row.athlete_id);
+      return json({ ok: true, autopay: on });
+    }
+
+    // ---- Pay an outstanding month with the saved card ----
+    //
+    // The amount is read from the billing_payments ROW, never from the request.
+    // The athlete says WHICH invoice, and only ever one of their own; they do
+    // not get to say what it is worth.
+    if (action === "payNow" && athlete) {
+      const rowId = String(body?.paymentId ?? "");
+      if (!rowId) return json({ ok: false, error: "which month?" });
+
+      const sub = await billingRow(athlete);
+      if (!sub?.square_card_id) return json({ ok: false, error: "no card saved" });
+
+      // Scoped to this athlete or their partner's half of a shared bank — the
+      // same pairing the coach's side uses to decide whose invoice is whose.
+      const { primary, partner } = primaryOf(athlete.id, athlete.partner_id ?? null);
+      const mine = [primary, partner].filter(Boolean) as string[];
+      const { data: due } = await sb.from("billing_payments")
+        .select("id, athlete_id, amount_cents, month_key, status")
+        .eq("id", rowId).in("athlete_id", mine).maybeSingle();
+      if (!due) return json({ ok: false, error: "not your invoice" });
+      if (due.status === "paid") return json({ ok: true, already: true });
+      if (due.status !== "sent") return json({ ok: false, error: "nothing to pay" });
+
+      // Derived from the invoice, NOT from the clock. A second tap — a slow
+      // network, an impatient thumb, a page restored from the back stack —
+      // replays the same key and Square returns the ORIGINAL payment instead of
+      // taking the money twice. Two athletes were charged twice on 4 August
+      // through a different hole; this one is closed by construction.
+      const paid = await square("/v2/payments", token, {
+        method: "POST",
+        body: JSON.stringify({
+          idempotency_key: `inv-${due.id}`.slice(0, 45),
+          source_id: sub.square_card_id,
+          customer_id: sub.square_customer_id,
+          location_id: locationId,
+          amount_money: { amount: due.amount_cents, currency: "USD" },
+          note: `Training · ${due.month_key}`,
+        }),
+      });
+
+      const p = paid?.payment;
+      const okStatus = p?.status === "COMPLETED" || p?.status === "APPROVED";
+      if (!okStatus) {
+        return json({ ok: false, error: `Square said ${p?.status ?? "no"}` });
+      }
+
+      // Settled here rather than waiting for the webhook, and that is a
+      // deliberate exception to "only square-webhook may mark a payment paid".
+      // The rule exists because a BROWSER must never be believed about money.
+      // Nothing is being believed here: this is Square's own synchronous answer
+      // to a call this function made with the service role. The webhook still
+      // fires and still settles — writing the same values twice changes
+      // nothing, and if it arrives first this update is the no-op instead.
+      await sb.from("billing_payments").update({
+        status: "paid",
+        paid_at: new Date().toISOString(),
+        method: "card",
+        source: "card_on_file",
+        square_payment_id: p.id ?? null,
+      }).eq("id", due.id);
+
+      return json({ ok: true, amountCents: due.amount_cents });
     }
 
     // ---- Charge one month ----

@@ -6464,6 +6464,57 @@ input.billing-link {
    prompt. */
 .athlete-invoices-line { display: flex; justify-content: flex-end; margin-top: 0.5rem; }
 
+/* ---- The saved card ----
+   A setting, not a prompt: one quiet line under whatever is owed, never
+   competing with the amount above it. Everything here is built from the theme's
+   own --primary-rgb, so it lands correctly in all ten themes including white
+   without a single hardcoded colour. */
+.apm-row {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 0.45rem;
+  margin-top: 0.55rem;
+}
+/* The card itself reads as an object you own — a chip, not a label. The tint is
+   the faintest the border can carry so it sits UNDER the amount in the card
+   above rather than beside it. */
+.apm-card {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.28em 0.6em; border-radius: 999px;
+  border: 1px solid rgba(var(--primary-rgb), 0.34);
+  background: rgba(var(--primary-rgb), 0.09);
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.01em;
+  color: var(--text); white-space: nowrap;
+}
+/* A full reset, like .chg-how-opt: the bare `label` rule up top uppercases
+   every label in the app and hangs a 0.9em margin off it, both wrong here. */
+.apm-auto {
+  display: inline-flex; align-items: center; gap: 0.38rem;
+  margin: 0; padding: 0; border: 0;
+  font-size: 0.72rem; font-weight: 600; letter-spacing: 0;
+  text-transform: none; color: var(--text-soft); cursor: pointer;
+}
+.apm-auto input { width: 0.95rem; height: 0.95rem; margin: 0; accent-color: var(--primary-bright); cursor: pointer; }
+.apm-auto:hover { color: var(--text); }
+/* Destructive and quiet. It should be findable and never inviting. */
+.apm-drop { margin-left: auto; opacity: 0.62; font-size: 0.7rem; }
+.apm-drop:hover { opacity: 1; }
+.apm-add { font-size: 0.74rem; }
+
+/* ---- Square's own card fields ----
+   The box is ours; everything inside it is an iframe served by Square, so it is
+   given room and left alone. min-height reserves the space the SDK is about to
+   fill, so the sheet doesn't jump when the iframes land. */
+.sq-card-fields {
+  min-height: 90px;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface-2);
+}
+.sq-consent { margin: 0.7rem 0 0; font-size: 0.72rem; line-height: 1.45; color: var(--text-soft); }
+.sq-err {
+  margin: 0.55rem 0 0; font-size: 0.74rem; font-weight: 600;
+  color: var(--danger, #f87171);
+}
+
 /* How they pay, on the charge sheet. Both options raise the same numbered
    invoice; only one of them makes a Square link. Reset in full because the bare
    `label` rule up top uppercases every label in the app and adds a 0.9em

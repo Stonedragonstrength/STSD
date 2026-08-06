@@ -959,6 +959,24 @@
       return data || [];
     } catch (e) { console.warn("[Cloud] getBillingForAthlete", e); return null; }
   }
+  // The athlete's own saved card, if they have one. RLS answers "which row is
+  // mine", so there is no id to pass — the same arrangement as their charges.
+  //
+  // Four columns and no more: brand and last four so they can see WHICH card is
+  // saved, `card_saved_at` as the only "is there one" signal the UI needs, and
+  // the autopay switch. The Square card id is deliberately not fetched — the app
+  // never needs to name it, only the Edge Function does.
+  async function getCardForAthlete() {
+    try {
+      const { data, error } = await sb.from("billing_subscriptions")
+        .select("card_brand, card_last4, card_saved_at, autopay")
+        .limit(1);
+      if (error) { console.warn("[Cloud] getCardForAthlete", error.message); return null; }
+      // A row is optional — an athlete who has never been charged has none —
+      // so "no row" is an answer (no card), not a failure.
+      return (data && data[0]) || {};
+    } catch (e) { console.warn("[Cloud] getCardForAthlete", e); return null; }
+  }
   function monthsAgoKey(n) {
     const d = new Date();
     d.setMonth(d.getMonth() - n);
@@ -1195,6 +1213,7 @@
     getBillingForCoach,
     getBillingForAthlete,
     squareBilling,
+    getCardForAthlete,
     // Web push
     savePushSubscription,
     deletePushSubscription,
