@@ -6045,6 +6045,73 @@
     });
   }
 
+  // The whole roster's money on one screen, with the charge sheet one tap from
+  // each name. Everything here is the same machinery the athlete's own billing
+  // row uses — monthChargePlan, chargeFor, chargeStatusLabel, openChargeSheet —
+  // so the two surfaces cannot drift into saying different things about the
+  // same month.
+  //
+  // Sorted by what needs doing: nothing raised yet, then raised and unpaid,
+  // then settled. A list in roster order makes you read all nineteen to find
+  // the four that need you.
+  function renderMoneyRoster() {
+    const host = $("#money-roster-host");
+    if (!host) return;
+    host.innerHTML = "";
+    if (!window.Cloud?.enabled) return;
+    Promise.all([loadBillingConfig(), ensureBillingLoaded(BILLING_STALE_MS)]).then(([cfg]) => {
+      if (!cfg?.configured || $("#money-roster-host") !== host) return;
+      const monthKey = billingMonthKey();
+      // A couple share one bank and one invoice, so the partner's half would be
+      // a second row for money already listed against the other.
+      const seen = new Set();
+      const rows = (state.trainerData.clients || []).filter((c) => {
+        if (seen.has(c.id)) return false;
+        if (c.partnerId) seen.add(c.partnerId);
+        return true;
+      }).map((c) => {
+        const charge = chargeFor(c, monthKey);
+        return { c, charge, plan: monthChargePlan(c, monthKey), card: savedCardFor(c) };
+      });
+      const rank = (r) => (!r.charge ? 0 : r.charge.status === "sent" ? 1 : 2);
+      rows.sort((a, b) => rank(a) - rank(b) || (a.c.name || "").localeCompare(b.c.name || ""));
+
+      const card = document.createElement("div");
+      card.className = "card money-roster";
+      const owed = rows.filter((r) => r.charge?.status === "sent")
+        .reduce((n, r) => n + (Number(r.charge.amount_cents) || 0), 0) / 100;
+      const todo = rows.filter((r) => !r.charge).length;
+      card.innerHTML =
+        `<div class="mr-head"><span class="mr-title">${escapeHtml(monthKeyLabel(monthKey))}</span>` +
+        `<span class="mr-sum">${escapeHtml(
+          todo ? `${todo} to raise` : owed ? `${money(owed)} outstanding` : "all settled",
+        )}</span></div>`;
+
+      rows.forEach(({ c, charge, plan, card: saved }) => {
+        const row = document.createElement("div");
+        row.className = "mr-row";
+        const st = chargeStatusLabel(charge, plan, monthKey);
+        row.innerHTML =
+          `<span class="mr-name">${escapeHtml(c.name || "(unnamed)")}</span>` +
+          (saved ? `<span class="mr-card" title="Card on file">💳${saved.autopay ? "auto" : ""}</span>` : "") +
+          `<span class="billing-status ${st.tone} mr-status">${escapeHtml(st.text)}</span>`;
+        const go = document.createElement("button");
+        go.type = "button";
+        go.className = charge ? "btn btn-ghost btn-sm" : "btn btn-primary btn-sm";
+        go.textContent = charge
+          ? (charge.status === "paid" ? "＋ New" : "Chase")
+          : (plan.sessions ? `💳 ${money(plan.amount)}` : "💳 Charge");
+        go.addEventListener("click", () => openChargeSheet(c, monthKey, plan, charge));
+        row.appendChild(go);
+        card.appendChild(row);
+      });
+      if (!rows.length) {
+        card.innerHTML += `<p class="muted mr-empty">No athletes yet.</p>`;
+      }
+      host.appendChild(card);
+    });
+  }
+
   // What this month is worth, and how that number was reached. Shown as the
   // working, not just the total, because a coach about to charge somebody
   // should be able to see WHY it says $819 before they send it.
@@ -31889,8 +31956,9 @@
           // where a stale answer is worse than a slow one — "did that land?" is
           // the entire question being asked.
           renderIncomeCard();
+          renderMoneyRoster();
           renderBooks();
-          loadCoachBilling().then(renderBooks);
+          loadCoachBilling().then(() => { renderMoneyRoster(); renderBooks(); });
         } else if (target === "anatomy") {
           _programEditorId = null;
           state.currentClientId = null;

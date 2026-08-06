@@ -6378,6 +6378,37 @@ input:focus, textarea:focus, select:focus {
 .billing-status.warn { color: var(--warn); }
 .billing-status.bad  { color: var(--danger); }
 .billing-status.muted { color: var(--muted); }
+/* The roster's money, one row each. Dense on purpose: nineteen athletes have to
+   be scannable without scrolling past the ones that need nothing. */
+.money-roster { display: flex; flex-direction: column; gap: 0; padding: 0.9rem 1rem; }
+.mr-head {
+  display: flex; align-items: baseline; gap: 0.6rem;
+  padding-bottom: 0.6rem; margin-bottom: 0.2rem;
+  border-bottom: 1px solid var(--border);
+}
+.mr-title { font-size: 0.9rem; font-weight: 800; color: var(--text); }
+.mr-sum {
+  margin-left: auto; font-size: 0.7rem; font-weight: 700;
+  letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-soft);
+}
+.mr-row {
+  display: flex; align-items: center; gap: 0.55rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(var(--primary-rgb), 0.08);
+}
+.mr-row:last-child { border-bottom: 0; }
+.mr-name {
+  font-size: 0.84rem; font-weight: 700; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  flex: 0 1 auto; min-width: 4rem;
+}
+.mr-card { font-size: 0.62rem; font-weight: 800; color: var(--text-soft); letter-spacing: 0.02em; }
+/* The status takes the slack, so every button lands in the same column and the
+   list reads as one control rather than a ragged edge of them. */
+.mr-status { flex: 1 1 auto; justify-content: flex-end; font-size: 0.7rem; }
+.mr-row .btn { flex: 0 0 auto; }
+.mr-empty { margin: 0.6rem 0 0; }
+
 /* Who can pay in one tap. Quiet — it is a fact about the athlete, not a state
    of this month's money, so it must not compete with the status beside it.
    Built from --primary-rgb like the athlete's own chip, so the two read as the
