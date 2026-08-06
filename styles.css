@@ -6378,6 +6378,11 @@ input:focus, textarea:focus, select:focus {
 .billing-status.warn { color: var(--warn); }
 .billing-status.bad  { color: var(--danger); }
 .billing-status.muted { color: var(--muted); }
+/* Refund sheet. The amount leads, the caveats follow — someone about to send
+   money backwards should read the number first and the small print second. */
+.rf-lead { margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--text); }
+.rf-note { margin: 0.6rem 0 0; font-size: 0.76rem; line-height: 1.45; color: var(--text-soft); }
+
 /* Sandbox-only decline switch. Warning-coloured and full reset, like every
    other label in a sheet — the bare `label` rule uppercases and adds margin. */
 .chg-decline {

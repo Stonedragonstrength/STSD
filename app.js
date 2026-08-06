@@ -6540,11 +6540,44 @@
   // The whole charge, back to the card it came from. Confirmed first: this is
   // the one control on the billing row that moves real money the wrong way, and
   // it cannot be undone from here — un-refunding is not a thing.
-  async function refundCharge(row, c) {
+  function refundCharge(row, c) {
     const amt = money((Number(row.amount_cents) || 0) / 100);
-    if (!confirm(`Refund ${amt} to ${c?.name || "them"}? This can't be undone from the app.`)) return;
-    const res = await window.Cloud.squareBilling("refundPayment", { id: row.id });
-    if (!res?.ok) { toast(res?.error || "Square wouldn't refund that"); return; }
+    const who = c?.name || "them";
+    // The app's own sheet rather than the browser's confirm(): this is the one
+    // control that moves real money the wrong way, and a grey OS dialog is
+    // both uglier than everything around it and easier to dismiss on reflex.
+    let go = () => {};
+    openModal({
+      title: "Refund this charge?",
+      body:
+        `<p class="rf-lead">${escapeHtml(amt)} goes back to ${escapeHtml(who)}, ` +
+        `on the card it was taken from.</p>` +
+        `<p class="rf-note">Card refunds can take a few days to appear on their statement. ` +
+        `This can't be undone from the app — re-charging means raising a new one.</p>` +
+        `<p class="sq-err" id="rf-err" hidden></p>`,
+      actions: [
+        { label: `↩ Refund ${amt}`, className: "btn btn-danger", onClick: (e) => go(e.currentTarget) },
+        { label: "Keep it", className: "btn btn-ghost", onClick: closeModal },
+      ],
+    });
+    go = async (btn) => {
+      if (!btn || btn.disabled) return;
+      btn.disabled = true;
+      btn.textContent = "Refunding…";
+      const res = await window.Cloud.squareBilling("refundPayment", { id: row.id });
+      if (!res?.ok) {
+        const box = $("#rf-err");
+        if (box) { box.textContent = res?.error || "Square wouldn't refund that"; box.hidden = false; }
+        btn.disabled = false;
+        btn.textContent = `↩ Refund ${amt}`;
+        return;
+      }
+      closeModal();
+      await finishRefund(res, amt, c);
+    };
+  }
+
+  async function finishRefund(res, amt, c) {
     // PENDING is still a yes — card refunds settle over hours, and the row is
     // marked either way so the books stop counting money that is on its way
     // back out.
