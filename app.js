@@ -15434,6 +15434,26 @@
     return _athleteCard;
   }
   const hasSavedCard = (row) => !!row?.card_saved_at;
+
+  // Whether to offer card-on-file to an ATHLETE at all.
+  //
+  // Square is still in sandbox, and the deployed site is the real one — so
+  // without this an athlete opening their Sessions tab is invited to type a
+  // real card into a test integration, which sandbox then refuses. No money at
+  // risk and nothing stored, but a confusing failure aimed at somebody who did
+  // nothing wrong.
+  //
+  // Localhost is exempt so the whole flow stays testable against sandbox
+  // without shipping it to anyone. Nothing else is: this is deliberately about
+  // WHERE the page is served from, not who is looking at it, because "is this
+  // the copy athletes use" is exactly the question being asked.
+  //
+  // Delete this once SQUARE_ENV is production — at which point the condition is
+  // true everywhere and the feature simply turns on.
+  const cardsOfferedHere = (cfg) =>
+    !!cfg?.canSaveCards &&
+    (cfg.mode === "production" ||
+      location.hostname === "localhost" || location.hostname === "127.0.0.1");
   // "Visa ···4242", or just the brand if Square gave us no digits.
   const cardLabel = (row) =>
     [row?.card_brand || "Card", row?.card_last4 ? `···${row.card_last4}` : ""].join(" ").trim();
@@ -15533,7 +15553,7 @@
   function renderAthletePayMethod(host) {
     loadBillingConfig().then((cfg) => {
       let row = host.querySelector(".apm-row");
-      if (!cfg?.canSaveCards) { row?.remove(); return; }
+      if (!cardsOfferedHere(cfg)) { row?.remove(); return; }
       return loadAthleteCard().then((saved) => {
         row = host.querySelector(".apm-row");
         if (!row) {
@@ -15624,7 +15644,11 @@
   function renderAthleteChargeCard(host) {
     let card = host.querySelector(".athlete-charge-card");
     // Returned so renderAthleteBilling can put the payment method after it.
-    return Promise.all([loadAthleteCharges(), loadAthleteCard()]).then(([rows, saved]) => {
+    return Promise.all([loadAthleteCharges(), loadAthleteCard(), loadBillingConfig()])
+      .then(([rows, savedRow, cfg]) => {
+      // Where cards aren't offered, a saved one isn't offered either — the
+      // hosted link is the whole payment story on that copy of the app.
+      const saved = cardsOfferedHere(cfg) ? savedRow : null;
       renderAthleteInvoiceLink(host, rows);
       // A charge with no link is one the coach is collecting himself, so it is
       // still owed and still shown — it just has an invoice to read instead of
