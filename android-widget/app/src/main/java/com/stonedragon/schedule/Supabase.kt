@@ -260,20 +260,23 @@ object Supabase {
             ownedSlots += native.slots
         }
         run { out += fetchSetmore(token, from, to) }
-        // Not counted in `failed`: a coach row that will not load is a reason to
-        // show the sessions anyway, not to call the whole week partial. Infinity
-        // then keeps every mirrored event, which is the pre-cutover behaviour.
-        val cutoff = try {
-            setmoreCutoff(token)
-        } catch (e: Exception) {
-            Long.MAX_VALUE
-        }
 
         if (unauthorized) {
             Prefs.clearSession(ctx)
             return FetchResult.NotSignedIn
         }
         if (failed == 2) return FetchResult.Failed("Couldn't load")
+
+        // After the bail-outs — there is nothing to filter until there is
+        // something to draw. Not counted in `failed` either: a coach row that
+        // will not load is a reason to show the sessions anyway, not to call
+        // the whole week partial. Infinity then keeps every mirrored event,
+        // which is exactly the pre-cutover behaviour.
+        val cutoff = try {
+            setmoreCutoff(token)
+        } catch (e: Exception) {
+            Long.MAX_VALUE
+        }
 
         // A session that exists in both tables is one session. The native row
         // wins: it knows the athlete and the note.
