@@ -37,6 +37,7 @@
 //   5. supabase functions deploy google-calendar --use-api
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { callerUserId } from "../_shared/caller-auth.ts";
 
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -99,7 +100,6 @@ Deno.serve(async (req) => {
     const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
     const redirectUri = Deno.env.get("GOOGLE_REDIRECT_URI");
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
     let body: any = {};
@@ -107,14 +107,15 @@ Deno.serve(async (req) => {
     const action = String(body?.action ?? "");
 
     // ---- who is calling ----
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } },
-    });
-    const { data: { user } } = await userClient.auth.getUser();
-    if (!user) return json({ ok: false, error: "not signed in" }, 401);
+    // Via GoTrue over HTTP, not a client built from SUPABASE_ANON_KEY — that
+    // key is managed by Supabase and stopped being a JWT when the project moved
+    // to the new key format, which silently 401'd every caller. See
+    // _shared/caller-auth.ts.
+    const userId = await callerUserId(req, supabaseUrl);
+    if (!userId) return json({ ok: false, error: "not signed in" }, 401);
 
     const sb = createClient(supabaseUrl, serviceKey);
-    const { data: coach } = await sb.from("coaches").select("id").eq("auth_user_id", user.id).maybeSingle();
+    const { data: coach } = await sb.from("coaches").select("id").eq("auth_user_id", userId).maybeSingle();
     if (!coach) return json({ ok: false, error: "coach only" }, 403);
     const coachId = coach.id as string;
 

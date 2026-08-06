@@ -54,6 +54,7 @@
 // and the app shows billing as not set up. Nothing an athlete sees changes.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { callerUserId } from "../_shared/caller-auth.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -89,8 +90,14 @@ async function square(path: string, token: string, init?: RequestInit) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const detail = body?.errors?.[0]?.detail ?? `square ${res.status}`;
-    throw new Error(detail);
+    // Square's `detail` alone is often unactionable — "This request could not
+    // be authorized" is the same sentence for a bad token, a sandbox token sent
+    // to production, and a token missing a permission. The CODE distinguishes
+    // them, so carry it.
+    const e0 = body?.errors?.[0];
+    const detail = e0?.detail ?? `square ${res.status}`;
+    const code = e0?.code ? ` [${e0.category ?? "?"}/${e0.code}]` : ` [HTTP ${res.status}]`;
+    throw new Error(detail + code);
   }
   return body;
 }
@@ -118,15 +125,34 @@ Deno.serve(async (req) => {
   const locationId = Deno.env.get("SQUARE_LOCATION_ID") ?? "";
   const plansRaw = Deno.env.get("SQUARE_PLANS") ?? "";
 
-  // ---- Who is asking? ----
-  const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
-    global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } },
-  });
-  const { data: { user } } = await userClient.auth.getUser();
-  if (!user) return json({ ok: false, error: "not signed in" }, 401);
+  // Which build is live, and what the auth-related env actually looks like.
+  // Answered BEFORE the auth check on purpose — when auth is the thing that's
+  // broken, a diagnostic behind it tells you nothing. Exposes no secret: only
+  // the SHAPE of the keys (length and prefix), which is what distinguishes a
+  // project JWT from the new sb_secret_/sb_publishable_ format.
+  let peekBody: any = {};
+  try { peekBody = await req.clone().json(); } catch { /* no body */ }
+  if (peekBody?.action === "version") {
+    const shape = (v: string | undefined) =>
+      !v ? "(unset)" : `${v.slice(0, 11)}… len=${v.length} ${v.startsWith("ey") ? "JWT" : "NOT-JWT"}`;
+    return json({
+      ok: true,
+      build: "2026-08-06-auth-via-service-getUser",
+      anonKey: shape(Deno.env.get("SUPABASE_ANON_KEY")),
+      serviceKey: shape(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")),
+      url: Deno.env.get("SUPABASE_URL") ?? "(unset)",
+    });
+  }
 
+  // ---- Who is asking? ----
+  // Via GoTrue over HTTP, not a client built from SUPABASE_ANON_KEY — that key
+  // is managed by Supabase and stopped being a JWT when the project moved to
+  // the new key format, which silently 401'd every caller holding a perfectly
+  // valid session. See _shared/caller-auth.ts for the whole story.
   const sb = createClient(supabaseUrl, serviceKey);
-  const { data: coach } = await sb.from("coaches").select("id").eq("auth_user_id", user.id).maybeSingle();
+  const userId = await callerUserId(req, supabaseUrl);
+  if (!userId) return json({ ok: false, error: "not signed in" }, 401);
+  const { data: coach } = await sb.from("coaches").select("id").eq("auth_user_id", userId).maybeSingle();
   if (!coach) return json({ ok: false, error: "coach only" }, 403);
   const coachId = coach.id as string;
 
@@ -160,6 +186,36 @@ Deno.serve(async (req) => {
   if (missing.length) return json({ ok: false, error: "not configured", needsSetup: true, missing });
 
   try {
+    // ---- Is the token actually usable, and does the location match? ----
+    // "This request could not be authorized" is the same sentence for a bad
+    // token, a sandbox token pointed at production, and a token missing a
+    // permission. This calls the most harmless endpoint there is and reports
+    // what came back, so those three stop looking identical.
+    if (action === "ping") {
+      const out: Record<string, unknown> = {
+        env: (Deno.env.get("SQUARE_ENV") ?? "sandbox").toLowerCase(),
+        base: squareBase(),
+        // Shape only — never the value. A token pasted with a trailing newline
+        // or truncated mid-copy shows up here as a wrong length or a bad prefix.
+        tokenLen: token.length,
+        tokenPrefix: token.slice(0, 4),
+        tokenLooksSandbox: token.startsWith("EAAAl") || token.includes("-sandbox"),
+        tokenHasWhitespace: /\s/.test(token),
+        locationIdGiven: locationId,
+      };
+      try {
+        const locs = await square("/v2/locations", token);
+        const list = (locs?.locations ?? []).map((l: any) => ({ id: l.id, name: l.name }));
+        out.ok = true;
+        out.locations = list;
+        out.locationMatches = list.some((l: any) => l.id === locationId);
+      } catch (e) {
+        out.ok = false;
+        out.squareSaid = (e as Error).message;
+      }
+      return json(out);
+    }
+
     // ---- Charge one month ----
     // The amount comes from the coach, not from a plan, because the coach is
     // the one who knows it: sessions × rate, plus or minus whatever this month

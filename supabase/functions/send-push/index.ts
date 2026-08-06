@@ -13,6 +13,7 @@
 // effect. An athlete with no prefs row hears everything.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { callerUserId } from "../_shared/caller-auth.ts";
 import webpush from "npm:web-push@3.6.7";
 import { allowedTargets, type Prefs, type PushKind } from "../_shared/notify-prefs.ts";
 
@@ -26,23 +27,22 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const vapidPub = Deno.env.get("VAPID_PUBLIC_KEY");
     const vapidPriv = Deno.env.get("VAPID_PRIVATE_KEY");
     const vapidSubject = Deno.env.get("VAPID_SUBJECT") ?? "mailto:admin@stonedragonstrengthtraining.com";
     if (!vapidPub || !vapidPriv) return json({ error: "VAPID keys not configured" }, 500);
 
-    // Resolve the caller from their JWT, then require a coach row.
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } },
-    });
-    const { data: { user } } = await userClient.auth.getUser();
-    if (!user) return json({ error: "unauthorized" }, 401);
+    // Resolve the caller from their JWT, then require a coach row. Via GoTrue
+    // over HTTP rather than a client built from SUPABASE_ANON_KEY — that key is
+    // managed by Supabase and stopped being a JWT when the project moved to the
+    // new key format, silently 401ing everyone. See _shared/caller-auth.ts.
+    const userId = await callerUserId(req, supabaseUrl);
+    if (!userId) return json({ error: "unauthorized" }, 401);
 
     const sb = createClient(supabaseUrl, serviceKey);
     const { data: coach } = await sb
-      .from("coaches").select("id").eq("auth_user_id", user.id).maybeSingle();
+      .from("coaches").select("id").eq("auth_user_id", userId).maybeSingle();
     if (!coach) return json({ error: "coaches only" }, 403);
 
     const { athleteIds, title, body, url, kind } = await req.json();
