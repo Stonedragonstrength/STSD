@@ -6082,9 +6082,26 @@
   // The sheet where the number gets decided. It opens with the app's
   // arithmetic filled in and every part of it editable, because the app knows
   // the sessions and the rate but not the goodwill.
+  // The athlete's saved card, from the billing rows the coach already loads.
+  // A couple share one bank and one card, so this matches either half — the
+  // same pairing chargeFor uses to decide whose invoice is whose.
+  function savedCardFor(c) {
+    if (!c) return null;
+    const pid = c.partnerId || null;
+    const row = (_billing.subscriptions || []).find((s) =>
+      s.athlete_id === c.id || (pid && s.athlete_id === pid));
+    return row?.card_saved_at ? row : null;
+  }
+
   function openChargeSheet(c, monthKey, plan, existing) {
     const monthLabel = new Date(monthKey + "-15T12:00:00Z")
       .toLocaleDateString(undefined, { month: "long", year: "numeric", timeZone: "UTC" });
+    // A saved card changes what this sheet is FOR. Sending a link to someone
+    // whose card is already on file is a step nobody needed: they pay in the
+    // app, or — if they turned auto-pay on — the money moves when this sheet
+    // is submitted and there is nothing to send at all.
+    const saved = savedCardFor(c);
+    const auto = !!saved?.autopay;
     if (existing?.url) { /* a re-open shows the same link below */ }
     openModal({
       title: `Charge ${c.name || "athlete"} · ${monthLabel}`,
@@ -6104,7 +6121,8 @@
              athletes on a card and nobody else — and most of them hand over
              cash or send a transfer. -->
         <div class="chg-how" id="chg-how">
-          <label class="chg-how-opt"><input type="radio" name="chg-how" value="card" checked /> <span>Card link</span></label>
+          ${saved ? `<label class="chg-how-opt"><input type="radio" name="chg-how" value="inapp" checked /> <span>${escapeHtml(auto ? "Charge card" : "In the app")}</span></label>` : ""}
+          <label class="chg-how-opt"><input type="radio" name="chg-how" value="card"${saved ? "" : " checked"} /> <span>Card link</span></label>
           <label class="chg-how-opt"><input type="radio" name="chg-how" value="manual" /> <span>Invoice only</span></label>
         </div>
         <p class="muted chg-foot" id="chg-foot">They pay on Square's own page. Their card never touches this app, and nothing here changes until Square confirms it.</p>
@@ -6118,13 +6136,21 @@
     // no link in it is the kind of small lie that costs a support message.
     const howBtn = $("#modal-foot .btn-primary");
     const syncHow = () => {
-      const manual = $("#chg-how input:checked")?.value === "manual";
-      if (howBtn) howBtn.textContent = manual ? "Raise invoice" : "Send link";
+      const how = $("#chg-how input:checked")?.value || "card";
+      if (howBtn) {
+        howBtn.textContent = how === "inapp"
+          ? (auto ? `Charge ${cardLabel(saved)}` : "Raise it")
+          : how === "manual" ? "Raise invoice" : "Send link";
+      }
       const foot = $("#chg-foot");
       if (foot) {
-        foot.textContent = manual
-          ? "No payment link. They get the invoice, you get paid however you normally do, and you tick it off here."
-          : "They pay on Square's own page. Their card never touches this app, and nothing here changes until Square confirms it.";
+        foot.textContent = how === "inapp"
+          ? (auto
+            ? `They turned auto-pay on, so submitting this takes it from ${cardLabel(saved)} now. Nothing to send.`
+            : `No link needed — it appears on their Sessions tab and they pay it with ${cardLabel(saved)} in one tap.`)
+          : how === "manual"
+            ? "No payment link. They get the invoice, you get paid however you normally do, and you tick it off here."
+            : "They pay on Square's own page. Their card never touches this app, and nothing here changes until Square confirms it.";
       }
     };
     $("#chg-how")?.addEventListener("change", syncHow);
@@ -6168,7 +6194,10 @@
     const sessions = Number($("#chg-sessions")?.value) || 0;
     const rate = Number($("#chg-rate")?.value) || 0;
     const note = ($("#chg-note")?.value || "").trim();
-    const noLink = $("#chg-how input:checked")?.value === "manual";
+    // "In the app" makes no Square link either — the athlete's saved card is
+    // how it gets paid, so a link would be a second way to pay the same month.
+    const how = $("#chg-how input:checked")?.value || "card";
+    const noLink = how === "manual" || how === "inapp";
     if (amount < 1) { toast("Put an amount on it first"); return; }
     const res = await window.Cloud.squareBilling("chargeMonth", {
       athleteId: c.id, monthKey, amountCents: Math.round(amount * 100), sessions, rate, note, noLink,
@@ -6195,13 +6224,29 @@
       $("#billing-link")?.select();
       navigator.clipboard?.writeText(res.url).then(
         () => toast("Link copied"), () => {});
-    } else if (out) {
-      out.innerHTML = `<p class="muted chg-ready">Invoice raised. It's on their Sessions tab, and yours.</p>`;
+    } else {
+      // Nothing to copy and nothing to send, so nothing to stay open for. The
+      // sheet used to sit there with its answer buried under the fold, which
+      // meant closing it by hand and only then seeing what it said.
+      closeModal();
+      toast(
+        res.autopaid ? `Charged ${money((res.amountCents || 0) / 100)} ✓`
+        // A declined card must not read as a completed charge. The invoice IS
+        // raised — it just wasn't paid, and the coach is the only one who can
+        // do anything about that.
+        : res.autopayFailed ? "Invoice raised — card declined"
+        : "Invoice raised ✓",
+      );
     }
     // The athlete is told, rather than left to find it. Same reasoning as the
-    // session reminder: a bill nobody knows about is a bill nobody pays.
-    window.Cloud?.sendPush?.([c.id], "🧾 Your invoice is ready",
-      `${money(amount)} · ${monthKeyLabel(monthKey)}`, "./", "invoice");
+    // session reminder: a bill nobody knows about is a bill nobody pays. Not
+    // for an auto-payment though: "your invoice is ready" about money that has
+    // already left their account is a notification that asks for an action
+    // nobody needs to take.
+    if (!res.autopaid) {
+      window.Cloud?.sendPush?.([c.id], "🧾 Your invoice is ready",
+        `${money(amount)} · ${monthKeyLabel(monthKey)}`, "./", "invoice");
+    }
     loadCoachBilling().then(() => renderBillingRow(c));
   }
 

@@ -570,7 +570,7 @@ Deno.serve(async (req) => {
       // id is the join: the payment webhook carries the same one, and that is
       // what turns this row into 'paid'. Without it a payment cannot be matched
       // back to a month and the settle step has nothing to work from.
-      await sb.from("billing_payments").insert({
+      const { data: inserted } = await sb.from("billing_payments").insert({
         coach_id: coachId,
         athlete_id: athleteId,
         month_key: monthKey,
@@ -589,7 +589,7 @@ Deno.serve(async (req) => {
         issuer,
         method: noLink ? "manual" : "card",
         status: "sent",
-      });
+      }).select("id").single();
 
       // Remember the athlete so their charges group together in Square's own
       // dashboard rather than reading as unrelated strangers.
@@ -603,7 +603,56 @@ Deno.serve(async (req) => {
         }, { onConflict: "athlete_id" });
       }
 
-      return json({ ok: true, url, orderId });
+      // ---- Auto-pay ----
+      // The athlete said "don't ask me every month", so this is where that
+      // promise is kept. Without it the switch on their screen is decoration:
+      // nothing else in this app ever charges a saved card on its own.
+      //
+      // Deliberately hung off the coach raising the charge rather than a cron.
+      // The amount is different every month and the coach is the one who knows
+      // it — so the moment he decides what August costs is the only moment
+      // there is anything to charge. No schedule to drift, and nothing can be
+      // charged that he did not just approve.
+      //
+      // Only ever for a NO-LINK invoice: a Square payment link already has an
+      // order behind it, and paying that order AND the card would be the same
+      // month twice.
+      const { data: sub } = await sb.from("billing_subscriptions")
+        .select("square_card_id, square_customer_id, autopay")
+        .eq("athlete_id", primary).maybeSingle();
+      if (noLink && inserted?.id && sub?.autopay && sub.square_card_id) {
+        try {
+          const paid = await square("/v2/payments", token, {
+            method: "POST",
+            body: JSON.stringify({
+              // Same rule as payNow: keyed to the invoice, not the clock, so a
+              // charge raised twice for one month cannot take the money twice.
+              idempotency_key: `inv-${inserted.id}`.slice(0, 45),
+              source_id: sub.square_card_id,
+              customer_id: sub.square_customer_id,
+              location_id: locationId,
+              amount_money: { amount: amountCents, currency: "USD" },
+              note: note || `Training · ${monthKey}`,
+            }),
+          });
+          const p = paid?.payment;
+          if (p?.status === "COMPLETED" || p?.status === "APPROVED") {
+            await sb.from("billing_payments").update({
+              status: "paid", paid_at: new Date().toISOString(),
+              method: "card", source: "card_on_file", square_payment_id: p.id ?? null,
+            }).eq("id", inserted.id);
+            return json({ ok: true, url: null, orderId: null, autopaid: true, amountCents });
+          }
+          // Square said no. The invoice stays raised and unpaid, which is the
+          // truth — the coach can see it wasn't taken and chase it however he
+          // normally would.
+          return json({ ok: true, url: null, orderId: null, autopayFailed: p?.status ?? "declined" });
+        } catch (e) {
+          return json({ ok: true, url: null, orderId: null, autopayFailed: (e as Error).message });
+        }
+      }
+
+      return json({ ok: true, url, orderId, savedCard: !!sub?.square_card_id });
     }
 
     // ---- The coach ticks off an invoice he was paid in cash ----
