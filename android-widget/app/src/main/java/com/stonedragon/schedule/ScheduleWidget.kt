@@ -329,7 +329,14 @@ class ScheduleWidget : AppWidgetProvider() {
             // A failed refresh over a cache that still has the week is stale, not
             // broken. The sessions are shown and the header carries the warning,
             // rather than the widget going blank over perfectly good data.
-            val stale = bookings.isNotEmpty() && (state.startsWith("error:") || state == "loading")
+            val stale = bookings.isNotEmpty() && state.startsWith("error:")
+            // A fetch in flight over sessions already on screen. Distinct from
+            // stale: this data is not suspect, it is being replaced. It exists
+            // because ⟳ over an unchanged week changed NOTHING on screen — no
+            // spinner, no text, and if the answer came back the same, no rows
+            // either — which is indistinguishable from a dead button, and got
+            // reported as one.
+            val refreshing = bookings.isNotEmpty() && state == "loading"
 
             // "This week" beats a date range when it applies — working out that a
             // span of dates means the week you are standing in is exactly the
@@ -364,6 +371,9 @@ class ScheduleWidget : AppWidgetProvider() {
             // breathing room comes from.
             val status = when {
                 state == "signin" -> ""
+                // Fetching, over sessions that are already up. Ahead of stale
+                // and error: whatever the last attempt did, a new one is out.
+                refreshing -> "⋯"
                 // Cached sessions from a refresh that failed: real, possibly out
                 // of date, and it says so.
                 stale -> "⚠"
@@ -647,7 +657,10 @@ class ScheduleWidget : AppWidgetProvider() {
                 Prefs.requestJump(app, widgetId)
             }
         }
-        if (action != ACTION_REFRESH) Prefs.saveState(app, widgetId, "loading")
+        // ⟳ included, now that "loading" over existing rows shows a ⋯ rather
+        // than blanking them. It was excluded when loading meant an empty list,
+        // and the cost was a button that acknowledged nothing.
+        Prefs.saveState(app, widgetId, "loading")
 
         val pending = goAsync()
         // The date and arrows respond now. This frame never scrolls: every

@@ -239,6 +239,8 @@ object Supabase {
         val to = isoUtc(addDays(dayStart, days))
 
         val out = ArrayList<Booking>()
+        // Every slot the app owns, cancelled bookings INCLUDED — see below.
+        val ownedSlots = HashSet<Long>()
         var failed = 0
         var unauthorized = false
 
@@ -252,8 +254,20 @@ object Supabase {
             }
         }
 
-        run { out += fetchNative(token, from, to) }
+        run {
+            val native = fetchNative(token, from, to)
+            out += native.booked
+            ownedSlots += native.slots
+        }
         run { out += fetchSetmore(token, from, to) }
+        // Not counted in `failed`: a coach row that will not load is a reason to
+        // show the sessions anyway, not to call the whole week partial. Infinity
+        // then keeps every mirrored event, which is the pre-cutover behaviour.
+        val cutoff = try {
+            setmoreCutoff(token)
+        } catch (e: Exception) {
+            Long.MAX_VALUE
+        }
 
         if (unauthorized) {
             Prefs.clearSession(ctx)
@@ -272,30 +286,73 @@ object Supabase {
         // legacy mirror row is a duplicate of whatever native booking occupies
         // its slot whatever either side calls the person; the coach cannot be in
         // two places at 7am, so the time is the identity.
-        val nativeStarts = HashSet<Long>()
-        out.forEach { if (!it.id.startsWith("sm:")) nativeStarts.add(it.startMillis) }
+        //
+        // The slot set comes from EVERY native booking, cancelled ones included,
+        // while only the booked ones are drawn. Once the app owns a slot the
+        // mirror is dead for it whatever happens next — otherwise cancelling a
+        // booking HANDS THE SLOT BACK to the mirror and the session the coach
+        // just cancelled reappears under the athlete's name. app.js closed this
+        // hole on 2026-08-05 after it double-charged two athletes; the widget
+        // was left behind, still filtering `status=eq.booked` server side, which
+        // is what put deleted clients back on the home screen.
         val merged = out
             .sortedWith(compareBy({ it.startMillis }, { if (it.id.startsWith("sm:")) 1 else 0 }))
             // Only the legacy side is ever dropped. Two NATIVE bookings at the
             // same time are two real sessions and both survive.
-            .filter { !it.id.startsWith("sm:") || it.startMillis !in nativeStarts }
+            .filter { b ->
+                if (!b.id.startsWith("sm:")) return@filter true
+                // Past the cut-over the app owns the calendar outright, so a
+                // mirrored event from then on is a leftover, not a session.
+                // Without this the widget shows a week the app does not.
+                b.startMillis < cutoff && b.startMillis !in ownedSlots
+            }
 
         return FetchResult.Ok(merged, partial = failed > 0)
     }
 
-    private fun fetchNative(token: String, from: String, to: String): List<Booking> {
+    /**
+     * The instant Setmore was switched off, from `coaches.availability` — the
+     * same JSON the web app reads. Long.MAX_VALUE when it has never been set,
+     * matching app.js's fallback to Infinity: before a cut-over every mirrored
+     * event is still real.
+     *
+     * No coach_id filter, like the other two queries: RLS returns this coach's
+     * row and nobody else's.
+     */
+    private fun setmoreCutoff(token: String): Long {
+        val arr = getArray("/rest/v1/coaches?select=" + enc("availability") + "&limit=1", token)
+        val av = arr.optJSONObject(0)?.optJSONObject("availability") ?: return Long.MAX_VALUE
+        val raw = av.optString("setmoreCutoff")
+        if (raw.isBlank()) return Long.MAX_VALUE
+        return parseIso(raw) ?: Long.MAX_VALUE
+    }
+
+    /**
+     * The native side of the week: the bookings to draw, and every slot the app
+     * has claimed. They are not the same set — see the merge in bookingsForRange.
+     */
+    private class NativeRows(val booked: List<Booking>, val slots: Set<Long>)
+
+    private fun fetchNative(token: String, from: String, to: String): NativeRows {
+        // No `status=eq.booked` here on purpose: a cancelled booking is not
+        // drawn, but it still has to be READ, because its slot is what keeps the
+        // legacy mirror from speaking for it.
         val path = "/rest/v1/bookings" +
-            "?select=" + enc("id,start_at,end_at,note,athletes(display_name)") +
-            "&status=eq.booked" +
+            "?select=" + enc("id,start_at,end_at,note,status,athletes(display_name)") +
             "&start_at=gte." + enc(from) +
             "&start_at=lt." + enc(to) +
             "&order=" + enc("start_at.asc")
         val arr = getArray(path, token)
-        val out = ArrayList<Booking>(arr.length())
+        val booked = ArrayList<Booking>(arr.length())
+        val slots = HashSet<Long>()
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
             val start = parseIso(o.optString("start_at")) ?: continue
-            out.add(
+            // Claimed first, drawn second. Every row claims its slot; only a
+            // booked one is a session.
+            slots.add(start)
+            if (o.optString("status") != "booked") continue
+            booked.add(
                 Booking(
                     id = o.optString("id"),
                     startMillis = start,
@@ -305,7 +362,7 @@ object Supabase {
                 )
             )
         }
-        return out
+        return NativeRows(booked, slots)
     }
 
     private fun fetchSetmore(token: String, from: String, to: String): List<Booking> {
