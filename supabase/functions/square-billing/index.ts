@@ -174,18 +174,20 @@ Deno.serve(async (req) => {
   // this lookup, which came from their own JWT — so there is no id to tamper
   // with and no way to aim an action at somebody else's card or somebody else's
   // invoice. Amounts are read from the database row, never from the caller.
-  let athlete:
+  // Looked up for EVERY caller, not just when the coach lookup missed.
+  //
+  // Nathan is his own athlete — the coach row and the athlete row hang off the
+  // same auth user. Resolving this only for non-coaches meant the coach row won
+  // and `athlete` stayed null, so every athlete action fell straight through to
+  // "unknown action". Anyone who coaches themselves hit it.
+  const { data: a } = await sb.from("athletes")
+    .select("id, coach_id, display_name, partner_id")
+    .eq("auth_user_id", userId).maybeSingle();
+  const athlete = (a ?? null) as
     | { id: string; coach_id: string; display_name: string | null; partner_id: string | null }
-    | null = null;
-  if (!coach) {
-    const { data: a } = await sb.from("athletes")
-      .select("id, coach_id, display_name, partner_id")
-      .eq("auth_user_id", userId).maybeSingle();
-    // Same wording as before for anyone who is neither. "coach only" is still
-    // the truth for every action that existed before this change.
-    if (!a) return json({ ok: false, error: "coach only" }, 403);
-    athlete = a as typeof athlete;
-  }
+    | null;
+  // Neither: same answer as before this function had an athlete half.
+  if (!coach && !athlete) return json({ ok: false, error: "coach only" }, 403);
   const coachId = (coach?.id ?? athlete!.coach_id) as string;
 
   // Legacy fallback only. The tier -> variation mapping now lives on the
@@ -212,8 +214,16 @@ Deno.serve(async (req) => {
   // actions are safe by default; only a name added HERE is reachable by an
   // athlete.
   const ATHLETE_ACTIONS = new Set(["config", "saveCard", "removeCard", "setAutopay", "payNow"]);
-  if (athlete && !ATHLETE_ACTIONS.has(action)) {
+  // Keyed on NOT being a coach, not on being an athlete — a coach who is also
+  // an athlete of their own gym is both, and must keep every coach action.
+  if (!coach && !ATHLETE_ACTIONS.has(action)) {
     return json({ ok: false, error: "coach only" }, 403);
+  }
+  // A coach with no athlete row of their own asking for an athlete action. Says
+  // so, rather than falling through to "unknown action" — which is what this
+  // whole class of bug looked like from the outside.
+  if (action !== "config" && ATHLETE_ACTIONS.has(action) && !athlete) {
+    return json({ ok: false, error: "no athlete record on this account" });
   }
 
   if (action === "config") {
