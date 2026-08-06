@@ -204,6 +204,11 @@
         // billing reads it there when it stamps an invoice, so a set of details
         // that only ever reached localStorage would print an empty heading.
         invoiceFrom: state.trainerData.invoiceFrom || {},
+        // His edits to the membership tiers — a DIFF against MEMBERSHIP_DEFAULTS,
+        // see allMemberships(). Rides the blob because it is small, coach-owned
+        // and needs no migration; and it must cross devices, or repricing on the
+        // laptop leaves the phone quoting last month's numbers.
+        membershipEdits: state.trainerData.membershipEdits || {},
       });
       if (ok) localStorage.removeItem(KEY_LIBPREFS_DIRTY); // confirmed in the cloud
     });
@@ -3502,6 +3507,11 @@
       if (prefs.invoiceFrom && typeof prefs.invoiceFrom === "object") {
         state.trainerData.invoiceFrom = prefs.invoiceFrom;
       }
+      // Membership edits, replaced for the same reason: there is one price list.
+      // Merging keys would resurrect a tier retired on another device.
+      if (prefs.membershipEdits && typeof prefs.membershipEdits === "object") {
+        state.trainerData.membershipEdits = prefs.membershipEdits;
+      }
     } else {
       // Unsynced local edits: merge by id like programTemplates, so a template
       // saved on this device and one saved on another both survive.
@@ -4219,7 +4229,7 @@
   function groupRoster(clients, mode) {
     if (mode === "membership") {
       const buckets = new Map();
-      MEMBERSHIPS.forEach((m) => buckets.set(m.id, { label: `🏅 ${membershipTitle(m)}`, clients: [] }));
+      memberships().forEach((m) => buckets.set(m.id, { label: `🏅 ${membershipTitle(m)}`, clients: [] }));
       buckets.set("", { label: "No membership", clients: [] });
       clients.forEach((c) => {
         const id = c.sessionBank?.membership || "";
@@ -5874,17 +5884,38 @@
     ensureSessionBank(c);
     const current = c.sessionBank?.membership || "";
     let html = `<option value="">No membership set</option>`;
-    let lastCat = null;
-    MEMBERSHIPS.forEach((m) => {
-      if (m.cat !== lastCat) {
-        if (lastCat !== null) html += `</optgroup>`;
-        html += `<optgroup label="${escapeHtml(m.cat)}">`;
-        lastCat = m.cat;
-      }
-      const label = m.optLabel || `${m.perWeek}× / week · ${m.sessions} sessions/mo · $${m.price.toLocaleString()}`;
-      html += `<option value="${m.id}">${label}</option>`;
+    // Grouped through a Map rather than by watching for the category to CHANGE
+    // as the list goes past. That older loop assumed the tiers arrived sorted
+    // by category, which held while the list was a literal and stops holding
+    // the moment the coach adds one — his tiers are appended, so a custom
+    // "Single Sessions" tier would have opened a second optgroup of the same
+    // name further down the menu.
+    const byCat = new Map();
+    memberships().forEach((m) => {
+      const cat = m.cat || "Other";
+      if (!byCat.has(cat)) byCat.set(cat, []);
+      byCat.get(cat).push(m);
     });
-    if (lastCat !== null) html += `</optgroup>`;
+    // A retired tier is not offered, but the athlete ON it must still see what
+    // they are on, or opening their profile silently reassigns them to nothing.
+    const cur = current ? membershipById(current) : null;
+    if (cur?.hidden) {
+      html += `<option value="${escapeHtml(cur.id)}">${escapeHtml(membershipTitle(cur))} (retired)</option>`;
+    }
+    byCat.forEach((list, cat) => {
+      html += `<optgroup label="${escapeHtml(cat)}">`;
+      list.forEach((m) => {
+        // Always composed. Never `m.price.toLocaleString()` — a coach-made tier
+        // can have no perWeek and no price at all, and that threw. And never
+        // `optLabel`, which is hand-written wording that omits the price: fine
+        // while the prices lived in code, wrong now that he can change them,
+        // because the two tiers carrying one were the only rows in the menu
+        // that wouldn't say what they cost.
+        const label = `${membershipTitle(m)} · ${membershipSub(m)}`;
+        html += `<option value="${escapeHtml(m.id)}">${escapeHtml(label)}</option>`;
+      });
+      html += `</optgroup>`;
+    });
     sel.innerHTML = html;
     sel.value = current;
     refreshGrantBtn();
@@ -6953,6 +6984,7 @@
         </div>
         <p class="pref-foot">Collected counts card payments Square has confirmed and anything you've ticked off yourself. Outstanding is an invoice raised and not yet settled — sessions are never withheld over it.</p>
         <div class="pref-actions">
+          <button class="btn btn-ghost btn-sm slim-btn" id="btn-memberships" type="button">Memberships & prices…</button>
           <button class="btn btn-ghost btn-sm slim-btn" id="btn-invoice-from" type="button">Your details on invoices…</button>
         </div>`;
 
@@ -6975,6 +7007,10 @@
         if (e) openInvoiceSheet(e.charge, e.name, { side: "coach" });
       }));
       $("#btn-invoice-from")?.addEventListener("click", openInvoiceFromSheet);
+      // Reachable from Money because that is where he is standing when a price
+      // looks wrong. It also sits on the athlete's Sessions tab, beside the
+      // tier picker, which is the other place the question comes up.
+      $("#btn-memberships")?.addEventListener("click", openMembershipsSheet);
       renderCoachSettingsSubs();
     });
   }
@@ -7022,6 +7058,162 @@
   // What sits at the top of an invoice. Kept on the coach row (library_prefs)
   // rather than only here, because square-billing reads it there when it stamps
   // an invoice — an invoice's issuer is frozen at the moment it is raised.
+  // ================= The price list =================
+  // Editing a tier writes a sparse diff, never a copy of the default, so a tier
+  // he only renamed still tracks a price fixed in code later. See
+  // allMemberships() for the storage shape and why nothing is hard-deleted.
+  //
+  // The list is the sheet: every tier is a row with its own name / sessions /
+  // price boxes, saved together. A per-tier sub-sheet would be one more tap for
+  // the thing he actually came to do, which is almost always "change a number".
+  function openMembershipsSheet() {
+    const rowHtml = (m) => {
+      const edited = !!membershipEdits()[m.id];
+      const inUse = membershipUseCount(m.id);
+      return `
+        <div class="mem-row${m.hidden ? " is-retired" : ""}" data-mem="${escapeHtml(m.id)}">
+          <div class="mem-head">
+            <input type="text" class="input mem-name" data-mem-title="${escapeHtml(m.id)}"
+                   maxlength="60" value="${escapeHtml(membershipTitle(m))}" aria-label="Name" />
+            ${m.hidden ? `<span class="mem-tag">retired</span>`
+              : edited ? `<span class="mem-tag is-edited">edited</span>` : ""}
+          </div>
+          <div class="mem-nums">
+            <label class="mem-in-lbl">Sessions / mo
+              <input type="number" class="input mem-in" data-mem-sessions="${escapeHtml(m.id)}"
+                     min="0" max="60" step="1" value="${escapeHtml(String(m.sessions ?? 0))}" />
+            </label>
+            <label class="mem-in-lbl">Price / mo
+              <input type="number" class="input mem-in" data-mem-price="${escapeHtml(m.id)}"
+                     min="0" max="100000" step="1" value="${escapeHtml(String(m.price ?? ""))}" placeholder="0" />
+            </label>
+            <div class="mem-acts">
+              ${edited && !m.custom ? `<button type="button" class="mem-btn" data-mem-reset="${escapeHtml(m.id)}" title="Back to the built-in price">↺</button>` : ""}
+              <button type="button" class="mem-btn mem-retire" data-mem-hide="${escapeHtml(m.id)}"
+                      title="${m.hidden ? "Put back in service" : "Retire — stays on anyone already assigned"}">${m.hidden ? "＋" : "🗑"}</button>
+            </div>
+          </div>
+          <p class="mem-foot">${escapeHtml(
+            (inUse ? `${inUse} athlete${inUse === 1 ? "" : "s"} on it` : "Nobody on it") +
+            " · " + (Number(m.sessions) ? `${money(Math.round((Number(m.price) || 0) / m.sessions))} a session` : "flat monthly"),
+          )}</p>
+        </div>`;
+    };
+
+    const groups = new Map();
+    allMemberships().forEach((m) => {
+      const cat = m.cat || "Other";
+      if (!groups.has(cat)) groups.set(cat, []);
+      groups.get(cat).push(m);
+    });
+    let body = `<p class="muted" style="margin-top:-0.4em">Prices apply from the next time you grant or bill a month. Invoices already raised, and sessions already granted, keep the price they were made with.</p>`;
+    groups.forEach((list, cat) => {
+      body += `<p class="mem-cat">${escapeHtml(cat)}</p>` + list.map(rowHtml).join("");
+    });
+    body += `<button type="button" class="btn btn-ghost btn-sm slim-btn" id="mem-add">＋ New membership</button>`;
+
+    openModal({
+      title: "Memberships & prices",
+      body,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Save", className: "btn btn-primary", onClick: saveMembershipsSheet },
+      ],
+    });
+
+    $("#mem-add")?.addEventListener("click", () => {
+      // Committed before the sheet reopens, so the new row cannot be lost by
+      // the reopen throwing away what is on screen.
+      saveMembershipsSheet({ silent: true });
+      const id = uid();
+      state.trainerData.membershipEdits = { ...membershipEdits(), [id]: {
+        custom: true, id, cat: "Monthly Memberships", title: "New membership", sessions: 0, price: 0,
+      } };
+      saveTrainer();
+      pushCoachLibPrefs();
+      closeModal();
+      openMembershipsSheet();
+    });
+    document.querySelectorAll("[data-mem-reset]").forEach((b) => b.addEventListener("click", () => {
+      saveMembershipsSheet({ silent: true });
+      const next = { ...membershipEdits() };
+      delete next[b.dataset.memReset];
+      state.trainerData.membershipEdits = next;
+      saveTrainer(); pushCoachLibPrefs(); closeModal(); openMembershipsSheet();
+      toast("Back to the built-in ✓");
+    }));
+    document.querySelectorAll("[data-mem-hide]").forEach((b) => b.addEventListener("click", () => {
+      saveMembershipsSheet({ silent: true });
+      const id = b.dataset.memHide;
+      const m = membershipById(id);
+      const edits = { ...membershipEdits() };
+      if (m?.hidden) {
+        // Back in service. A custom tier keeps its record; a built-in drops the
+        // whole override only if retiring was the only thing done to it.
+        const e = { ...edits[id] }; delete e.hidden;
+        if (Object.keys(e).length === 0 || (e.custom && Object.keys(e).length <= 1)) delete edits[id];
+        else edits[id] = e;
+      } else {
+        edits[id] = { ...(edits[id] || {}), hidden: true };
+      }
+      state.trainerData.membershipEdits = edits;
+      saveTrainer(); pushCoachLibPrefs(); closeModal(); openMembershipsSheet();
+    }));
+  }
+
+  // Reads every row back at once. Only fields that actually DIFFER from the
+  // default are written, which is what keeps the store a diff instead of
+  // quietly becoming a full copy the first time this is saved.
+  function saveMembershipsSheet({ silent = false } = {}) {
+    const edits = { ...membershipEdits() };
+    let changed = 0;
+    document.querySelectorAll("[data-mem]").forEach((row) => {
+      const id = row.dataset.mem;
+      const def = MEMBERSHIP_DEFAULTS.find((m) => m.id === id);
+      const prev = edits[id] || {};
+      const next = { ...prev };
+      const title = (row.querySelector(`[data-mem-title="${CSS.escape(id)}"]`)?.value || "").trim();
+      const sessRaw = row.querySelector(`[data-mem-sessions="${CSS.escape(id)}"]`)?.value;
+      const priceRaw = row.querySelector(`[data-mem-price="${CSS.escape(id)}"]`)?.value;
+      const sessions = Math.max(0, Math.min(60, Math.round(Number(sessRaw) || 0)));
+      const price = Math.max(0, Math.min(100000, Math.round(Number(priceRaw) || 0)));
+
+      const setOrClear = (key, value, defValue) => {
+        if (def && value === defValue) delete next[key];   // back to the built-in
+        else next[key] = value;
+      };
+      if (def) {
+        setOrClear("title", title, membershipTitle(def));
+        setOrClear("sessions", sessions, def.sessions ?? 0);
+        setOrClear("price", price, def.price ?? 0);
+      } else {
+        next.custom = true; next.id = id;
+        next.title = title || "Membership";
+        next.sessions = sessions;
+        next.price = price;
+        next.cat = next.cat || "Monthly Memberships";
+      }
+      const wasEmpty = Object.keys(prev).length === 0;
+      const isEmpty = Object.keys(next).length === 0;
+      if (isEmpty) { if (!wasEmpty) { delete edits[id]; changed++; } return; }
+      if (JSON.stringify(next) !== JSON.stringify(prev)) changed++;
+      edits[id] = next;
+    });
+    state.trainerData.membershipEdits = edits;
+    saveTrainer();
+    pushCoachLibPrefs();
+    if (silent) return;
+    closeModal();
+    // Everything downstream of a price: the roster grouping, the athlete's own
+    // Sessions tab, and every money surface that proposes a number.
+    renderClientGrid();
+    if (currentClient()) { populateMembershipSelect(currentClient()); renderCoachSessions(); }
+    renderMoneyRoster();
+    renderIncomeCard();
+    renderBooks();
+    toast(changed ? `Prices saved ✓` : "Nothing changed");
+  }
+
   function openInvoiceFromSheet() {
     const f = state.trainerData.invoiceFrom || {};
     const t = state.trainerData.trainer || {};
@@ -7203,6 +7395,7 @@
     // Tier and rate save on change now that they sit on the Sessions tab
     // rather than inside the locked Profile form. Picking a tier and walking
     // away used to lose it.
+    $("#btn-edit-memberships")?.addEventListener("click", openMembershipsSheet);
     $("#prof-membership")?.addEventListener("change", (e) => {
       const c = currentClient(); if (!c) return;
       ensureSessionBank(c);
@@ -16591,7 +16784,7 @@
   // monthly pricing). Coach assigns one per athlete in the Profile tab; athlete
   // sees it read-only on their Sessions tab. Stored as `client.sessionBank.membership`
   // (the id) — rides the coach-write-only session_bank jsonb, no DB migration.
-  const MEMBERSHIPS = [
+  const MEMBERSHIP_DEFAULTS = [
     { id: "single-1", cat: "Single Sessions",  perWeek: 1, sessions: 4,  price: 400  },
     { id: "single-2", cat: "Single Sessions",  perWeek: 2, sessions: 8,  price: 725, popular: true },
     { id: "single-3", cat: "Single Sessions",  perWeek: 3, sessions: 12, price: 1020 },
@@ -16607,12 +16800,73 @@
     { id: "digital",    cat: "Monthly Memberships", sessions: 0, price: 250, title: "Digital Membership", short: "Program only · $250/mo", optLabel: "Digital Membership (program only)" },
     { id: "no-session", cat: "Monthly Memberships", sessions: 0, title: "No Session Membership",       short: "Program only · no sessions", optLabel: "No sessions (program only)" },
   ];
-  function membershipById(id) { return MEMBERSHIPS.find((m) => m.id === id) || null; }
-  function membershipTitle(m) { return m.title || `${m.cat} · ${m.perWeek}× / week`; }
+  // ---- The coach's own edits to the tier list ----
+  //
+  // Stored as a DIFF against the defaults above, not as a replacement copy of
+  // them, and keyed by tier id:
+  //
+  //   { "single-2": { price: 800 },              // sparse override of a built-in
+  //     "mk3f9x":   { custom: true, id, cat, sessions, price, title },
+  //     "single-4": { hidden: true } }           // retired, not destroyed
+  //
+  // A diff rather than a snapshot for three reasons. A tier he never touched
+  // still tracks the defaults, so fixing one in code reaches him. "Reset to
+  // default" is just deleting a key, so a bad edit is always reversible. And
+  // nothing is ever really deleted — an athlete assigned to a retired tier
+  // still resolves it by id and keeps its name on their history, where a hard
+  // delete would silently drop their rate to zero and relabel old invoices.
+  // Same shape as the coach's anatomy edits ([[anatomy-page-coach-editable]]).
+  //
+  // Rides `library_prefs.membershipEdits`, so it crosses devices without a
+  // migration. Editing a PRICE moves what everyone on that tier is billed from
+  // the next grant on; it cannot move history, because a package stamps
+  // `price` at grant time and an invoice freezes `amount_cents` when raised.
+  function membershipEdits() {
+    const e = state.trainerData?.membershipEdits;
+    return e && typeof e === "object" ? e : {};
+  }
+  // Every tier the coach has, retired ones included. Order: the built-ins in
+  // their published order, then anything he added, so his own tiers do not
+  // shuffle around inside the categories he knows.
+  function allMemberships() {
+    const edits = membershipEdits();
+    const out = MEMBERSHIP_DEFAULTS.map((m) => {
+      const e = edits[m.id];
+      if (!e) return m;
+      // A title he set replaces the composed one; a title he CLEARED goes back
+      // to composing, so `short` must not survive an override that renames.
+      const merged = { ...m, ...e };
+      // `short` and `optLabel` are hand-written copy for the ORIGINAL numbers.
+      // Left in place they outlive the edit and the menu goes on advertising
+      // "$250/mo" for a tier he just repriced.
+      if (e.title || e.price != null || e.sessions != null) {
+        delete merged.short;
+        delete merged.optLabel;
+      }
+      return merged;
+    });
+    Object.keys(edits).forEach((id) => {
+      const e = edits[id];
+      if (e && e.custom && !MEMBERSHIP_DEFAULTS.some((m) => m.id === id)) out.push({ ...e, id });
+    });
+    return out;
+  }
+  // What a picker offers: everything still in service. Retired tiers are
+  // deliberately absent here and deliberately present in membershipById.
+  function memberships() { return allMemberships().filter((m) => !m.hidden); }
+  function membershipById(id) { return allMemberships().find((m) => m.id === id) || null; }
+  function membershipTitle(m) { return m && (m.title || `${m.cat} · ${m.perWeek}× / week`) || ""; }
   function membershipSub(m) {
     if (m.short) return m.short;
-    const base = `${m.sessions} sessions / month`;
-    return m.price ? `${base} · $${m.price.toLocaleString()}/mo` : base;
+    const base = `${m.sessions} session${m.sessions === 1 ? "" : "s"} / month`;
+    const price = m.price ? `$${Number(m.price).toLocaleString()}/mo` : "";
+    if (!m.sessions) return price ? `Program only · ${price}` : "Program only · no sessions";
+    return price ? `${base} · ${price}` : base;
+  }
+  // Only ever counts tiers in service — a retired one has nobody new on it.
+  function membershipUseCount(id) {
+    return (state.trainerData.clients || [])
+      .filter((c) => (c.sessionBank?.membership || "") === id).length;
   }
 
   function renderCoachSessions() {
