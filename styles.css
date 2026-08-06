@@ -3873,6 +3873,177 @@ input.trial-input {
 .mg-state { font-size: 0.7rem; color: var(--muted); white-space: nowrap; }
 .mg-skipped { font-size: 0.78rem; margin: 0.7rem 0 0; }
 
+/* "Bill the month": Settle's other half, and it borrows Settle's count badge
+   so the two read as one round rather than two features. */
+.month-bill-btn { display: inline-flex; align-items: center; gap: 0.4em; }
+.month-bill-btn.is-due { border-color: rgba(245, 158, 11, 0.5); }
+/* The month being billed, steppable either way. Billing is the one thing here
+   done in arrears as often as in advance. */
+.bill-month {
+  display: flex; align-items: center; justify-content: center; gap: 0.8rem;
+  margin: -0.2rem 0 0.2rem;
+}
+.bill-month-lbl { font-weight: 800; font-size: 0.95rem; color: var(--text); }
+.bill-step {
+  min-width: 40px; min-height: 40px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface-2); color: var(--text-soft);
+  font-family: inherit; font-size: 0.8rem; cursor: pointer;
+}
+.bill-step:hover:not(:disabled) { border-color: var(--primary); color: var(--primary-bright); }
+.bill-step:disabled { opacity: 0.35; cursor: default; }
+.bill-list {
+  display: flex; flex-direction: column; gap: 0.4rem;
+  max-height: 46vh; overflow-y: auto; padding-right: 2px;
+}
+/* Two parts to a row: who (a label wrapping the tick, so the whole name is the
+   hit area) and how much (inputs, which must NOT be inside that label or every
+   tap in the sessions box toggles the tick). */
+.bill-row {
+  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid rgba(var(--athlete-rgb), 0.85);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.bill-row.is-done { opacity: 0.6; }
+.bill-row.is-norate { border-color: rgba(245, 158, 11, 0.4); }
+.bill-pick {
+  display: flex; align-items: center; gap: 0.6rem; flex: 1 1 11rem; min-width: 0;
+  margin-bottom: 0; font-size: 0.9rem; font-weight: 500; color: var(--text);
+  text-transform: none; letter-spacing: 0; cursor: pointer;
+}
+.bill-pick input { accent-color: var(--primary); flex: 0 0 auto; }
+.bill-av { flex: 0 0 auto; display: inline-flex; }
+.bill-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.bill-name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bill-state { font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
+.bill-row.is-norate .bill-state { color: #fbbf24; }
+.bill-nums { display: flex; align-items: flex-end; gap: 0.4rem; flex: 0 0 auto; }
+.bill-in-lbl {
+  display: flex; flex-direction: column; gap: 0.15rem; margin-bottom: 0;
+  font-size: 0.6rem; font-weight: 800; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--muted);
+}
+input.bill-in {
+  width: 5rem; text-align: right; padding: 0.4em 0.5em; font-size: 0.85rem;
+}
+/* Card or cash, per bank, remembered. A chip rather than a select: it has two
+   states and it is tapped on a phone. */
+.bill-how {
+  min-width: 40px; min-height: 40px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); font-size: 1rem; cursor: pointer;
+}
+.bill-how[data-how="manual"] { border-color: rgba(245, 158, 11, 0.5); }
+.bill-how:hover { border-color: var(--primary); }
+.bill-doc {
+  min-width: 40px; min-height: 40px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); font-size: 1rem; cursor: pointer;
+}
+.bill-doc:hover { border-color: var(--primary); }
+.bill-fails { margin: 0.5rem 0 0; padding-left: 1.1rem; font-size: 0.82rem; color: var(--text-soft); }
+.bill-fails li { margin-bottom: 0.25rem; }
+
+/* ===== The books =====
+   A year of money in one column: three totals, then the twelve months as bars
+   you can open. Same blur switch as the income card — one eye, one session
+   flag, so showing figures in one place shows them in both. */
+.books-head { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.7rem; }
+.books-year {
+  flex: 1; text-align: center;
+  font-size: 1.05rem; font-weight: 900; letter-spacing: 0.04em; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.books.is-hidden .books-figs { filter: blur(8px); user-select: none; }
+.books.is-hidden .books-figs * { pointer-events: none; }
+/* The three headline numbers, in the racing-stat style the overview uses:
+   the number carries the weight, the label is a whisper under it. */
+.books-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.45rem; }
+.books-tile {
+  display: flex; flex-direction: column; align-items: center; gap: 0.1rem;
+  padding: 0.6rem 0.4rem; min-width: 0;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2);
+}
+.books-tile-num {
+  font-size: 1.05rem; font-weight: 900; line-height: 1.1; color: var(--text);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+.books-tile-lbl {
+  font-size: 0.6rem; font-weight: 800; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--muted); text-align: center;
+}
+.books-tile.is-in { border-color: rgba(34, 197, 94, 0.35); }
+.books-tile.is-in .books-tile-num { color: #4ade80; }
+.books-tile.is-out { border-color: rgba(245, 158, 11, 0.35); }
+.books-tile.is-out .books-tile-num { color: #fbbf24; }
+
+.books-months { display: flex; flex-direction: column; gap: 0.15rem; margin-top: 0.8rem; }
+.books-mo-row {
+  display: grid; grid-template-columns: 2.4rem minmax(0, 1fr) auto;
+  align-items: center; gap: 0.6rem; width: 100%;
+  padding: 0.4rem 0.3rem; min-height: 40px;
+  border: none; background: none; color: var(--text);
+  font-family: inherit; font-size: 0.8rem; text-align: left; cursor: pointer;
+  border-radius: 8px;
+}
+.books-mo-row:hover:not(:disabled) { background: var(--surface-2); }
+.books-mo-row:disabled { cursor: default; opacity: 0.45; }
+.books-mo-name { font-weight: 800; color: var(--text-soft); }
+/* The bar is two segments end to end, both scaled against the year's biggest
+   month — the shape of the year, not just its figures. */
+.books-mo-bar {
+  display: flex; height: 8px; border-radius: 999px; overflow: hidden;
+  background: var(--surface-2); min-width: 0;
+}
+.books-bar-in { background: linear-gradient(90deg, rgba(34, 197, 94, 0.55), #4ade80); }
+.books-bar-out { background: rgba(245, 158, 11, 0.55); }
+.books-mo-num { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.books-mo.is-open .books-mo-row { background: var(--surface-2); }
+.books-mo-list {
+  display: flex; flex-direction: column; gap: 0.2rem;
+  padding: 0.35rem 0.3rem 0.6rem 3rem;
+}
+.books-ln {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center; gap: 0.5rem; font-size: 0.76rem;
+}
+.books-ln-name { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.books-ln-what { font-size: 0.66rem; color: var(--muted); white-space: nowrap; }
+.books-ln-amt { font-weight: 800; font-variant-numeric: tabular-nums; }
+.books-ln-amt.is-paid { color: #4ade80; }
+.books-ln-amt.is-due { color: #fbbf24; }
+/* The whole line is a grid of three plus the button, so an entry with no
+   invoice behind it still lines its amount up with the ones that have. */
+.books-ln { grid-template-columns: minmax(0, 1fr) auto auto 1.9rem; }
+.books-ln-doc {
+  width: 1.9rem; min-height: 32px;
+  border: none; background: none; font-size: 0.85rem; cursor: pointer;
+  opacity: 0.7;
+}
+.books-ln-doc:hover { opacity: 1; }
+.books-ln-doc.is-none { cursor: default; }
+
+.books-tiers { margin-top: 0.9rem; padding-top: 0.7rem; border-top: 1px solid var(--border); }
+.books-sub {
+  font-size: 0.62rem; font-weight: 800; letter-spacing: 0.07em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 0.35rem;
+}
+.books-tier-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) 2rem auto;
+  align-items: center; gap: 0.5rem;
+  padding: 0.3rem 0; font-size: 0.78rem;
+}
+.books-tier-row + .books-tier-row { border-top: 1px solid var(--border); }
+.books-tier-name { color: var(--text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.books-tier-n {
+  text-align: center; font-size: 0.66rem; font-weight: 800; color: var(--muted);
+}
+.books-tier-amt { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text); }
+
 /* Setmore cut-over: the connection row, and the preview of what the schedule
    becomes once the app owns it. */
 .setmore-card {
@@ -6252,7 +6423,112 @@ input.billing-link {
 .acc-amount { font-size: 1.5rem; font-weight: 900; color: var(--primary-bright); line-height: 1; }
 .acc-what { margin: 0; font-size: 0.78rem; color: var(--text-soft); }
 .acc-pay { align-self: flex-start; }
+.acc-acts { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
 .acc-rest { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+/* The way in to every invoice they've ever had, under the card that only ever
+   shows the unpaid ones. Quiet by design — it is a filing cabinet, not a
+   prompt. */
+.athlete-invoices-line { display: flex; justify-content: flex-end; margin-top: 0.5rem; }
+
+/* How they pay, on the charge sheet. Both options raise the same numbered
+   invoice; only one of them makes a Square link. Reset in full because the bare
+   `label` rule up top uppercases every label in the app and adds a 0.9em
+   bottom margin — five properties, all of them wrong for a radio row. */
+.chg-how { display: flex; gap: 0.5rem; margin-top: 0.7rem; }
+.chg-how-opt {
+  display: flex; align-items: center; gap: 0.4rem;
+  flex: 1; margin-bottom: 0; padding: 0.5em 0.7em;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface-2); cursor: pointer;
+  font-size: 0.8rem; font-weight: 700; color: var(--text-soft);
+  text-transform: none; letter-spacing: 0;
+}
+.chg-how-opt:has(input:checked) {
+  border-color: var(--primary); color: var(--text);
+  background: var(--primary-soft);
+}
+
+/* ===== The invoice document =====
+   Deliberately unlike the rest of the app: paper proportions, a rule under the
+   heading, a table with its total on the right. It is the one screen here that
+   is going to be printed and filed, and it should look like the thing it is
+   rather than like a card in a dark dashboard. */
+.invoice-doc { display: flex; flex-direction: column; gap: 0.9rem; }
+.invoice-top {
+  display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+  padding-bottom: 0.8rem; border-bottom: 2px solid var(--border-strong);
+}
+.invoice-biz { font-size: 1.05rem; font-weight: 900; color: var(--text); letter-spacing: 0.01em; }
+.invoice-fromline { font-size: 0.76rem; color: var(--text-soft); line-height: 1.5; }
+.invoice-meta { text-align: right; min-width: 8rem; }
+.invoice-word {
+  font-size: 0.7rem; font-weight: 900; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--primary-bright);
+}
+.invoice-no { font-size: 1rem; font-weight: 800; color: var(--text); }
+.invoice-date { font-size: 0.74rem; color: var(--text-soft); }
+.invoice-billed { display: flex; flex-direction: column; gap: 0.15rem; }
+.invoice-lbl {
+  font-size: 0.64rem; font-weight: 800; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--muted);
+}
+.invoice-billed strong { font-size: 0.95rem; color: var(--text); }
+/* Wide content inside a sheet: scrolls in its own box rather than pushing the
+   page sideways. */
+.invoice-table {
+  width: 100%; border-collapse: collapse; font-size: 0.82rem;
+}
+.invoice-table th {
+  text-align: left; padding: 0.45em 0.5em;
+  font-size: 0.64rem; font-weight: 800; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+.invoice-table td { padding: 0.55em 0.5em; color: var(--text); border-bottom: 1px solid var(--border); }
+.invoice-table .ivt-n { text-align: right; white-space: nowrap; }
+.invoice-table tfoot td {
+  border-bottom: none; padding-top: 0.7em;
+  font-weight: 900; font-size: 0.95rem;
+}
+.invoice-table tfoot td:first-child {
+  text-align: right; font-size: 0.7rem; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--muted); font-weight: 800;
+}
+.invoice-status {
+  align-self: flex-start;
+  padding: 0.35em 0.75em; border-radius: 999px;
+  font-size: 0.72rem; font-weight: 800; letter-spacing: 0.03em;
+}
+.invoice-status.is-paid { background: rgba(34, 197, 94, 0.16); color: #4ade80; }
+.invoice-status.is-due { background: rgba(251, 191, 36, 0.16); color: #fbbf24; }
+.invoice-note, .invoice-footer {
+  margin: 0; font-size: 0.75rem; color: var(--text-soft); line-height: 1.5;
+}
+.invoice-note { padding-left: 0.6rem; border-left: 2px solid var(--border-strong); }
+
+/* The list they are picked from, on both sides. */
+.inv-list { display: flex; flex-direction: column; gap: 0.4rem; }
+.inv-row {
+  display: flex; align-items: center; gap: 0.6rem; width: 100%;
+  padding: 0.6rem 0.7rem; min-height: 44px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface-2); color: var(--text);
+  font-family: inherit; font-size: 0.82rem; text-align: left; cursor: pointer;
+}
+.inv-row:hover { border-color: var(--primary); }
+/* minmax(0,1fr) rather than a bare 1fr: a bare one floors at min-content and
+   clips a long month name without ever showing an ellipsis. */
+.inv-row-main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.1rem; flex: 1; min-width: 0; }
+.inv-row-no { font-weight: 800; }
+.inv-row-when { font-size: 0.72rem; color: var(--text-soft); }
+.inv-row-amt { font-weight: 800; white-space: nowrap; }
+.inv-row-st {
+  font-size: 0.64rem; font-weight: 800; letter-spacing: 0.05em;
+  text-transform: uppercase; padding: 0.2em 0.5em; border-radius: 999px;
+  white-space: nowrap;
+}
+.inv-row-st.is-paid { background: rgba(34, 197, 94, 0.16); color: #4ade80; }
+.inv-row-st.is-due { background: rgba(251, 191, 36, 0.16); color: #fbbf24; }
 /* The coach's own footage, for lifts the still library has nothing for. Sits at
    the top of the demo picker, because it is the answer when the search below it
    comes back empty. */
@@ -8773,6 +9049,52 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 .tour-card.caret-none::before { display: none; }
 /* ? replay button in both headers */
 .tour-help-btn { min-width: 2.1em; font-weight: 800; }
+
+/* The offer that now stands in front of the tour. A bar at the bottom rather
+   than a dialog in the middle: it has to be ignorable, because the answer
+   "not now, I came here to do something" is a legitimate one and a modal
+   makes it cost a tap to give. Slides up under the toast's z-index so a toast
+   fired at boot still reads over it. */
+.tour-offer {
+  position: fixed;
+  left: 50%;
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 190;
+  width: min(30rem, calc(100vw - 1.5rem));
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.7rem 0.85rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+  animation: tourOfferIn 0.28s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+@keyframes tourOfferIn {
+  from { opacity: 0; transform: translate(-50%, 14px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+.tour-offer-text { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; flex: 1; }
+.tour-offer-text strong { font-size: 0.9rem; color: var(--text); }
+.tour-offer-text span { font-size: 0.78rem; color: var(--text-soft); }
+.tour-offer-acts { display: flex; gap: 0.45rem; flex-shrink: 0; }
+.tour-offer-acts button {
+  font-family: inherit; cursor: pointer; border-radius: 8px;
+  font-size: 0.8rem; font-weight: 700; padding: 0.5em 0.9em;
+  min-height: 40px;
+}
+.tour-offer-no { background: none; border: 1px solid var(--border); color: var(--text-soft); }
+.tour-offer-no:hover { border-color: var(--border-strong); color: var(--text); }
+.tour-offer-go { background: var(--primary); border: 1px solid var(--primary); color: var(--bg); }
+.tour-offer-go:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+/* Narrow phones: the two buttons take their own row rather than squeezing the
+   sentence down to one word a line. */
+@media (max-width: 400px) {
+  .tour-offer { flex-direction: column; align-items: stretch; gap: 0.6rem; }
+  .tour-offer-acts button { flex: 1; }
+}
 /* Sized to keep the dock a slim bar. It no longer needs a drop shadow to lift
    it off the content — the dock's own edge does that. */
 .rest-timer-btn {
@@ -13361,4 +13683,69 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
     height: 22px;
     accent-color: var(--primary);
   }
+}
+
+/* ============ Printing an invoice ============
+   The app has one printable artefact and this is it. Rather than a second
+   window (blocked on half the devices this runs on) the sheet already on
+   screen becomes the page: everything else is taken out of flow, the modal is
+   unpinned from the viewport, and the document is put back on white.
+
+   !important throughout on purpose. These rules have to beat whatever the
+   screen stylesheet last said about a modal card, and print is the one place
+   where losing a specificity race means a blank sheet of paper coming out of
+   somebody's printer. */
+@media print {
+  body.printing-invoice > * { display: none !important; }
+  /* The scroll lock pins <body> with a negative top offset while a sheet is
+     open, which prints as an empty first page and the document halfway down
+     the second. */
+  body.printing-invoice.scroll-locked {
+    position: static !important;
+    top: 0 !important;
+    overflow: visible !important;
+  }
+  body.printing-invoice #modal {
+    display: block !important;
+    position: static !important;
+    background: #fff !important;
+  }
+  body.printing-invoice #modal .modal-backdrop,
+  body.printing-invoice #modal .modal-head,
+  body.printing-invoice #modal .modal-foot { display: none !important; }
+  body.printing-invoice #modal .modal-card {
+    position: static !important;
+    max-width: none !important;
+    width: auto !important;
+    max-height: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important;
+    transform: none !important;
+  }
+  body.printing-invoice #modal .modal-body {
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+  /* Black on white, whatever theme the screen was in. Printers do not honour
+     background colours by default, so anything carrying meaning as a fill
+     (the paid/due pill) is given a border to say it on paper too. */
+  body.printing-invoice .invoice-doc,
+  body.printing-invoice .invoice-doc * {
+    color: #000 !important;
+    background: transparent !important;
+  }
+  body.printing-invoice .invoice-doc { gap: 1.2rem !important; }
+  body.printing-invoice .invoice-top { border-bottom: 2px solid #000 !important; }
+  body.printing-invoice .invoice-table th,
+  body.printing-invoice .invoice-table td { border-bottom: 1px solid #999 !important; }
+  body.printing-invoice .invoice-status {
+    border: 1px solid #000 !important;
+    padding: 0.3em 0.7em !important;
+  }
+  body.printing-invoice .invoice-note { border-left: 2px solid #999 !important; }
+  @page { margin: 18mm; }
 }

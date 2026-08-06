@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=billing3" />
+  <link rel="stylesheet" href="styles.css?v=invoice1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -253,6 +253,12 @@
                pass instead of four taps each. Labelled + badged by
                renderMonthGrantBtn(); hidden when nobody is on a tier. -->
           <button class="btn btn-ghost btn-sm slim-btn month-grant-btn hidden" id="btn-month-grant" type="button"></button>
+          <!-- The other half of the same round: Settle hands out the month's
+               sessions, this asks the month's money for them. One row per bank,
+               sessions x rate proposed and editable. Filled and shown by
+               renderMonthBillBtn(); stays hidden until Square is set up, like
+               every other billing surface. -->
+          <button class="btn btn-ghost btn-sm slim-btn month-bill-btn hidden" id="btn-month-bill" type="button"></button>
           <!-- What was actually delivered, month by month, across the whole
                roster. Lives here rather than in the nav, which is capped at
                five — and it belongs beside Settle: one asks what to bill, the
@@ -830,6 +836,25 @@
               <span class="pref-fold-chev">▸</span>
             </summary>
             <div class="income-host income-host-profile"></div>
+          </details>
+
+          <!-- Books. What was actually asked for and what actually came in,
+               month by month — where Money above it is a forecast of what is
+               booked. Its own fold rather than a section inside Money because
+               Money is hidden at 1200px+ (it moves to the Overview rail) and
+               the books have to be readable at every width. Filled by
+               renderBooks(); the figures stay blurred until the eye is tapped,
+               same switch the income card uses. -->
+          <details class="pref-fold" id="books-fold">
+            <summary>
+              <span class="pref-fold-ico">📒</span>
+              <span class="pref-fold-text">
+                <span class="pref-fold-title">Books</span>
+                <span class="pref-fold-sub" id="cs-sub-books">Invoices, and what came in</span>
+              </span>
+              <span class="pref-fold-chev">▸</span>
+            </summary>
+            <div id="books-host"></div>
           </details>
 
           <!-- Scheduling: the standing arrangements the Overview calendar is
@@ -1421,9 +1446,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="bugreport.js?v=bug1"></script>
   <script src="config.js?v=horm2"></script>
-  <script src="cloud.js?v=billing3"></script>
+  <script src="cloud.js?v=invoice1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=billing3"></script>
+  <script src="app.js?v=invoice1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

@@ -199,6 +199,11 @@
         // reasoning again: the clip FILES are in Storage, this is just the index
         // of them, so it rides the blob instead of earning a column.
         demoClips: state.trainerData.demoClips || [],
+        // What goes at the top of an invoice. It rides this blob for the same
+        // reason, and it has to be on the SERVER copy specifically: square-
+        // billing reads it there when it stamps an invoice, so a set of details
+        // that only ever reached localStorage would print an empty heading.
+        invoiceFrom: state.trainerData.invoiceFrom || {},
       });
       if (ok) localStorage.removeItem(KEY_LIBPREFS_DIRTY); // confirmed in the cloud
     });
@@ -3030,6 +3035,9 @@
     show($("#screen-login"));
     hide($("#screen-app"));
     hide($("#screen-client"));
+    // The tour offer is parented to <body>, so it would otherwise outlive the
+    // screen it was asked about and float over the login form.
+    $(".tour-offer")?.remove();
     ["#login-role", "#login-signin", "#login-client-import",
      "#login-athlete-setup", "#login-athlete-signin",
      "#login-forgot-password", "#login-reset-password"]
@@ -3489,6 +3497,11 @@
       if (Array.isArray(prefs.athleteTemplates)) state.trainerData.athleteTemplates = prefs.athleteTemplates;
       if (Array.isArray(prefs.templateFolders)) state.trainerData.templateFolders = prefs.templateFolders;
       if (Array.isArray(prefs.demoClips)) state.trainerData.demoClips = prefs.demoClips;
+      // The heading on his invoices. Not merged, replaced: there is one set of
+      // business details and the newest edit is the right one.
+      if (prefs.invoiceFrom && typeof prefs.invoiceFrom === "object") {
+        state.trainerData.invoiceFrom = prefs.invoiceFrom;
+      }
     } else {
       // Unsynced local edits: merge by id like programTemplates, so a template
       // saved on this device and one saved on another both survive.
@@ -3592,9 +3605,12 @@
     renderDashboard();
     showCoachOverview();
     refreshCycleShares(); // only athletes who opted in come back from this
-    // First time on this device: one guided lap. Skippable, never repeats.
+    // First time on this device: OFFER one guided lap. Asked, never imposed.
     if (!localStorage.getItem(KEY_TOUR_COACH)) {
-      setTimeout(() => { if (state.mode === "trainer") startTour(coachTourSteps(), KEY_TOUR_COACH); }, 800);
+      setTimeout(() => {
+        if (state.mode !== "trainer") return;
+        offerTour(KEY_TOUR_COACH, () => startTour(coachTourSteps(), KEY_TOUR_COACH));
+      }, 800);
     }
   }
 
@@ -3667,6 +3683,7 @@
     // the regulars list is empty for a coach who lands here before Overview.
     renderCoachSchedule();
     refreshCoachSchedule();
+    renderBooks();
     renderBackupNote();
   }
 
@@ -4251,6 +4268,7 @@
     const controls = $("#roster-controls");
     const searchBar = $("#roster-search");
     renderMonthGrantBtn();
+    renderMonthBillBtn();
     if (state.trainerData.clients.length === 0) {
       show(empty);
       if (controls) hide(controls);
@@ -5957,14 +5975,25 @@
 
       const act = document.createElement("div");
       act.className = "billing-actions";
+      // The document, wherever the money got to. Offered for a paid month too:
+      // that is the receipt, and "can you send me something for my records" is
+      // a question that arrives months later.
+      if (charge) {
+        const doc = document.createElement("button");
+        doc.type = "button";
+        doc.className = "btn btn-ghost btn-sm";
+        doc.textContent = charge.status === "paid" ? "🧾 Receipt" : "🧾 Invoice";
+        doc.addEventListener("click", () => openInvoiceSheet(charge, c.name, { side: "coach" }));
+        act.appendChild(doc);
+      }
       if (charge?.status === "paid") {
-        // Nothing to do. Said, not offered — re-charging a paid month should
-        // take more than one stray tap.
+        // Nothing else to do. Said, not offered — re-charging a paid month
+        // should take more than one stray tap.
       } else if (charge?.status === "sent") {
         const again = document.createElement("button");
         again.type = "button";
         again.className = "btn btn-ghost btn-sm";
-        again.textContent = "Show the link again";
+        again.textContent = charge.checkout_url ? "Show the link again" : "Charge again";
         again.addEventListener("click", () => openChargeSheet(c, monthKey, plan, charge));
         const drop = document.createElement("button");
         drop.type = "button";
@@ -6006,16 +6035,31 @@
       amount: Math.round(sessions * rate),
     };
   }
-  const chargeFor = (c, monthKey) => (_billing.payments || []).find((p) =>
-    p.month_key === monthKey && p.athlete_id === c.id &&
-    (p.status === "sent" || p.status === "paid")) || null;
+  // The month's charge for this BANK, not this athlete. A couple share one
+  // allowance and get one invoice, raised against whichever half is the bank's
+  // primary — so looking only at `c.id` told the other half's Sessions tab that
+  // nothing had been billed, and offered a second charge for money already
+  // asked for. Matching either half is what makes the two agree.
+  const chargeFor = (c, monthKey) => {
+    const pid = c?.partnerId || null;
+    return (_billing.payments || []).find((p) =>
+      p.month_key === monthKey &&
+      (p.athlete_id === c.id || (pid && p.athlete_id === pid)) &&
+      (p.status === "sent" || p.status === "paid")) || null;
+  };
 
   function chargeStatusLabel(charge, plan) {
+    // How it was paid, not just that it was: an invoice-only charge settled in
+    // cash reading "Paid by card" is the app telling him something untrue about
+    // his own money.
+    const amt = charge?.amount_cents ? ` · ${money(charge.amount_cents / 100)}` : "";
     if (charge?.status === "paid") {
-      return { text: `Paid by card${charge.amount_cents ? ` · ${money(charge.amount_cents / 100)}` : ""}`, tone: "good" };
+      return { text: `Paid ${charge.method === "manual" ? "in cash" : "by card"}${amt}`, tone: "good" };
     }
     if (charge?.status === "sent") {
-      return { text: `Link sent${charge.amount_cents ? ` · ${money(charge.amount_cents / 100)}` : ""} · not paid`, tone: "warn" };
+      return charge.checkout_url
+        ? { text: `Link sent${amt} · not paid`, tone: "warn" }
+        : { text: `Invoiced${amt} · not paid`, tone: "warn" };
     }
     if (!plan.sessions) return { text: "Nothing booked this month", tone: "muted" };
     // The over-allowance case said out loud, because it is the one the coach
@@ -6046,13 +6090,36 @@
         <label class="chg-note-lbl">What this is for
           <input type="text" class="input" id="chg-note" maxlength="120" value="${escapeHtml(`${plan.sessions} session${plan.sessions === 1 ? "" : "s"} · ${monthLabel}`)}" />
         </label>
-        <p class="muted chg-foot">They pay on Square's own page. Their card never touches this app, and nothing here changes until Square confirms it.</p>
+        <!-- How they pay. Both raise the same numbered invoice; only one of
+             them involves Square. Without this, invoicing worked for the
+             athletes on a card and nobody else — and most of them hand over
+             cash or send a transfer. -->
+        <div class="chg-how" id="chg-how">
+          <label class="chg-how-opt"><input type="radio" name="chg-how" value="card" checked /> <span>Card link</span></label>
+          <label class="chg-how-opt"><input type="radio" name="chg-how" value="manual" /> <span>Invoice only</span></label>
+        </div>
+        <p class="muted chg-foot" id="chg-foot">They pay on Square's own page. Their card never touches this app, and nothing here changes until Square confirms it.</p>
         <div id="chg-result"></div>`,
       actions: [
         { label: "Send link", className: "btn btn-primary", onClick: () => doCharge(c, monthKey) },
         { label: "Close", className: "btn btn-ghost", onClick: closeModal },
       ],
     });
+    // The button says what it is about to do. "Send link" on an invoice with
+    // no link in it is the kind of small lie that costs a support message.
+    const howBtn = $("#modal-foot .btn-primary");
+    const syncHow = () => {
+      const manual = $("#chg-how input:checked")?.value === "manual";
+      if (howBtn) howBtn.textContent = manual ? "Raise invoice" : "Send link";
+      const foot = $("#chg-foot");
+      if (foot) {
+        foot.textContent = manual
+          ? "No payment link. They get the invoice, you get paid however you normally do, and you tick it off here."
+          : "They pay on Square's own page. Their card never touches this app, and nothing here changes until Square confirms it.";
+      }
+    };
+    $("#chg-how")?.addEventListener("change", syncHow);
+    syncHow();
     // Sessions × rate drives the total, but the CHARGE box is the one that
     // gets sent — typing in it is how a discount is applied, so recalculating
     // it out from under the coach would be the app arguing with them.
@@ -6088,10 +6155,12 @@
   async function doCharge(c, monthKey) {
     const amount = Number($("#chg-amount")?.value) || 0;
     const sessions = Number($("#chg-sessions")?.value) || 0;
+    const rate = Number($("#chg-rate")?.value) || 0;
     const note = ($("#chg-note")?.value || "").trim();
+    const noLink = $("#chg-how input:checked")?.value === "manual";
     if (amount < 1) { toast("Put an amount on it first"); return; }
     const res = await window.Cloud.squareBilling("chargeMonth", {
-      athleteId: c.id, monthKey, amountCents: Math.round(amount * 100), sessions, note,
+      athleteId: c.id, monthKey, amountCents: Math.round(amount * 100), sessions, rate, note, noLink,
     });
     const out = $("#chg-result");
     if (!res?.ok) {
@@ -6103,22 +6172,25 @@
     // ("$725 to collect") next to a link for $819, which is two answers to one
     // question — and the list price was never the real one anyway, because the
     // billing is per session and discounts happen.
-    const pkg = monthPackageOf(c, monthKey);
-    if (pkg && Number(pkg.price) !== amount) {
-      pkg.price = amount;
-      pkg.note = note || pkg.note;
-      bankMutated(c);
+    if (monthPackageOf(c, monthKey)) {
+      syncPackagePrice(c, monthKey, amount, note);
       saveTrainer();
       renderCoachSessions();
     }
     // Shown, never auto-sent: where a payment link goes is the coach's call.
-    if (out) {
+    if (out && res.url) {
       out.innerHTML = `<p class="muted chg-ready">Link ready — send it to ${escapeHtml(c.name || "them")}.</p>
         <input class="input billing-link" id="billing-link" readonly value="${escapeHtml(res.url)}" />`;
       $("#billing-link")?.select();
       navigator.clipboard?.writeText(res.url).then(
         () => toast("Link copied"), () => {});
+    } else if (out) {
+      out.innerHTML = `<p class="muted chg-ready">Invoice raised. It's on their Sessions tab, and yours.</p>`;
     }
+    // The athlete is told, rather than left to find it. Same reasoning as the
+    // session reminder: a bill nobody knows about is a bill nobody pays.
+    window.Cloud?.sendPush?.([c.id], "🧾 Your invoice is ready",
+      `${money(amount)} · ${monthKeyLabel(monthKey)}`, "./", "invoice");
     loadCoachBilling().then(() => renderBillingRow(c));
   }
 
@@ -6128,6 +6200,464 @@
     if (!res?.ok) { toast(res?.error || "Nothing to void"); return; }
     toast("Link voided");
     loadCoachBilling().then(() => renderBillingRow(c));
+  }
+
+  // ================= The invoice document =================
+  // A charge row already held everything an invoice says. What turns it into a
+  // document is a number, the issuer's details as they stood on the day, and a
+  // layout that survives being printed — all three of which are on the row by
+  // the time it gets here (see 20260806120000_invoices.sql).
+  //
+  // ONE renderer, both audiences. The coach and the athlete must be looking at
+  // the same piece of paper: an invoice that says something different depending
+  // on who opened it is not an invoice. What differs is only what you can DO
+  // with it — pay it, tick it off, void it — which is the footer, not the body.
+  //
+  // The `note` field is deliberately absent from the athlete's copy. It is the
+  // coach's own annotation ("comped", "goodwill", "still owes for June") and
+  // reading it back to the person being charged is not the app's to do.
+
+  // Cents, always with the pence showing. money() rounds to whole dollars,
+  // which is right on a dashboard and wrong on a document somebody files.
+  function usd(cents) {
+    const n = (Number(cents) || 0) / 100;
+    return "$" + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  const invoiceNoLabel = (row) =>
+    row?.invoice_no ? "No. " + String(row.invoice_no).padStart(4, "0") : "";
+  const invoiceDateLabel = (iso) => iso
+    ? new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })
+    : "";
+
+  // The working, as lines. sessions × rate is the whole invoice for most months;
+  // an adjustment line only appears when the coach actually made one, and it is
+  // named as a discount or an extra rather than left as an unexplained gap
+  // between the arithmetic and the total.
+  function invoiceLines(row) {
+    const amount = Number(row.amount_cents) || 0;
+    const qty = Number(row.sessions) || 0;
+    const rate = Number(row.rate_cents) || 0;
+    const gross = qty && rate ? qty * rate : amount;
+    const lines = [{
+      what: `Training session${qty === 1 ? "" : "s"}${row.month_key ? ` · ${monthKeyLabel(row.month_key)}` : ""}`,
+      qty: qty || null,
+      each: rate || null,
+      amount: gross,
+    }];
+    const diff = amount - gross;
+    if (qty && rate && diff !== 0) {
+      lines.push({ what: diff < 0 ? "Discount" : "Additional", qty: null, each: null, amount: diff });
+    }
+    return { lines, total: amount };
+  }
+
+  function invoiceDocHtml(row, billedTo, opts = {}) {
+    const iss = row.issuer || {};
+    const paid = row.status === "paid";
+    const { lines, total } = invoiceLines(row);
+    const addr = String(iss.address || "").split("\n").filter(Boolean);
+    return `
+      <div class="invoice-doc">
+        <div class="invoice-top">
+          <div class="invoice-from">
+            <div class="invoice-biz">${escapeHtml(iss.businessName || "Stone Dragon Strength")}</div>
+            ${addr.map((l) => `<div class="invoice-fromline">${escapeHtml(l)}</div>`).join("")}
+            ${iss.contact ? `<div class="invoice-fromline">${escapeHtml(iss.contact)}</div>` : ""}
+            ${iss.taxLine ? `<div class="invoice-fromline">${escapeHtml(iss.taxLine)}</div>` : ""}
+          </div>
+          <div class="invoice-meta">
+            <div class="invoice-word">${paid ? "Receipt" : "Invoice"}</div>
+            <div class="invoice-no">${escapeHtml(invoiceNoLabel(row))}</div>
+            <div class="invoice-date">Issued ${escapeHtml(invoiceDateLabel(row.created_at))}</div>
+          </div>
+        </div>
+
+        <div class="invoice-billed">
+          <span class="invoice-lbl">Billed to</span>
+          <strong>${escapeHtml(billedTo || "Athlete")}</strong>
+        </div>
+
+        <table class="invoice-table">
+          <thead>
+            <tr><th>Description</th><th class="ivt-n">Qty</th><th class="ivt-n">Each</th><th class="ivt-n">Amount</th></tr>
+          </thead>
+          <tbody>
+            ${lines.map((l) => `
+              <tr>
+                <td>${escapeHtml(l.what)}</td>
+                <td class="ivt-n">${l.qty == null ? "" : escapeHtml(String(l.qty))}</td>
+                <td class="ivt-n">${l.each == null ? "" : escapeHtml(usd(l.each))}</td>
+                <td class="ivt-n">${escapeHtml(usd(l.amount))}</td>
+              </tr>`).join("")}
+          </tbody>
+          <tfoot>
+            <tr><td colspan="3">Total</td><td class="ivt-n">${escapeHtml(usd(total))}</td></tr>
+          </tfoot>
+        </table>
+
+        <div class="invoice-status ${paid ? "is-paid" : "is-due"}">
+          ${paid
+            ? `Paid${row.paid_at ? ` · ${escapeHtml(invoiceDateLabel(row.paid_at))}` : ""}${
+                row.method === "manual" ? " · in cash" : " · by card"}`
+            : row.method === "manual" ? "Due — payable directly" : "Due — payable by card"}
+        </div>
+
+        ${opts.showNote && row.note ? `<p class="invoice-note">${escapeHtml(row.note)}</p>` : ""}
+        ${iss.footer ? `<p class="invoice-footer">${escapeHtml(iss.footer)}</p>` : ""}
+      </div>`;
+  }
+
+  // Printing hides the app rather than opening a second window: a popup would
+  // be blocked on half the devices this runs on, and the sheet already holds
+  // the finished document. The class is what the @media print block keys on;
+  // afterprint takes it off again, and a timer backs that up because Safari
+  // does not always fire the event.
+  function printInvoice() {
+    document.body.classList.add("printing-invoice");
+    const off = () => document.body.classList.remove("printing-invoice");
+    window.addEventListener("afterprint", off, { once: true });
+    setTimeout(off, 3000);
+    window.print();
+  }
+
+  function openInvoiceSheet(row, billedTo, opts = {}) {
+    const paid = row.status === "paid";
+    const actions = [
+      { label: "🖨 Print", className: "btn btn-ghost", onClick: printInvoice },
+    ];
+    if (opts.side === "athlete" && !paid && row.checkout_url) {
+      actions.unshift({ label: "Pay by card", className: "btn btn-primary", onClick: () => {
+        window.open(row.checkout_url, "_blank", "noopener");
+      }});
+    }
+    if (opts.side === "coach" && !paid && row.checkout_url) {
+      actions.unshift({ label: "Copy link", className: "btn btn-ghost", onClick: () => {
+        navigator.clipboard?.writeText(row.checkout_url).then(() => toast("Link copied"), () => {});
+      }});
+    }
+    // Only ever offered for an invoice with no Square order behind it. The
+    // function refuses the rest anyway, but offering a button that always
+    // fails is its own kind of lie.
+    if (opts.side === "coach" && !paid && !row.square_order_id) {
+      actions.unshift({ label: "Mark paid", className: "btn btn-primary", onClick: () => markInvoicePaid(row) });
+    }
+    actions.push({ label: "Close", className: "btn btn-ghost", onClick: closeModal });
+    openModal({
+      title: paid ? "Receipt" : "Invoice",
+      body: invoiceDocHtml(row, billedTo, { showNote: opts.side === "coach" }),
+      actions,
+    });
+  }
+
+  async function markInvoicePaid(row) {
+    const res = await window.Cloud.squareBilling("markInvoicePaid", { id: row.id, paid: true });
+    if (!res?.ok) { toast(res?.error || "Couldn't mark that paid"); return; }
+    toast("Marked paid ✓");
+    closeModal();
+    await loadCoachBilling();
+    const c = currentClient();
+    if (c) { renderBillingRow(c); renderCoachSessions(); }
+    renderBooks();
+  }
+
+  // ================= The books =================
+  // Money that was actually asked for and actually came in — as against the
+  // income card above it, which forecasts what is BOOKED. The two answer
+  // different questions and are deliberately not merged: one is "what is this
+  // month worth if everybody turns up", the other is "what did I earn".
+  //
+  // ONE deduped ledger feeds all of it, and the dedupe is the whole difficulty.
+  // The same money can be described twice — once by a charge row and once by
+  // the session package it was raised for — and a couple's package is MIRRORED
+  // onto both halves of their bank, so a naive sum over athletes counts them
+  // twice more. So: walk banks, not athletes; let the charge row win wherever
+  // both describe the same month; and never add a package the card settled
+  // (settleBilledPackages stamps those `paidBy: "card"`).
+
+  // Each bank once, with both names when it is a couple.
+  function eachBank() {
+    const seen = new Set();
+    const banks = [];
+    (state.trainerData.clients || []).forEach((c) => {
+      if (seen.has(c.id)) return;
+      ensureSessionBank(c);
+      const partner = partnerOf(c);
+      seen.add(c.id);
+      if (partner) seen.add(partner.id);
+      banks.push({
+        c, partner,
+        ids: partner ? [c.id, partner.id] : [c.id],
+        name: partner
+          ? `${c.name || "(unnamed)"} & ${partner.name || "(unnamed)"}`
+          : (c.name || "(unnamed)"),
+      });
+    });
+    return banks;
+  }
+
+  // Every sum of money this business has on record, as flat entries.
+  //
+  // Filed under the month it was FOR, not the day it landed. A cash-basis
+  // ledger would file July's allowance, collected on the 3rd of August, under
+  // August — which is correct accounting and the wrong answer to the question
+  // this coach actually asks ("how did July go"). The date it was settled is
+  // kept on the entry and shown on the row.
+  function moneyLedger() {
+    const entries = [];
+    eachBank().forEach(({ c, partner, ids, name }) => {
+      const membership = bankMembership(c);
+      const covered = new Set(); // months a charge row already speaks for
+      (_billing.payments || []).forEach((p) => {
+        if (!ids.includes(p.athlete_id)) return;
+        if (p.status !== "paid" && p.status !== "sent") return;
+        if (p.month_key) covered.add(p.month_key);
+        const paid = p.status === "paid";
+        entries.push({
+          bankId: c.id, name, membership,
+          monthKey: p.month_key || String(p.created_at || "").slice(0, 7),
+          settledAt: paid ? (p.paid_at || p.created_at) : null,
+          sessions: Number(p.sessions) || 0,
+          amount: (Number(p.amount_cents) || 0) / 100,
+          paid,
+          how: p.method === "manual" ? "invoice" : "card",
+          charge: p,
+        });
+      });
+      (c.sessionBank?.packages || []).forEach((pkg) => {
+        const price = Number(pkg.price) || 0;
+        if (!price || pkg.gift) return;
+        // Already on the books as a charge, or already settled by one.
+        const mk = pkgMonth(pkg);
+        if (mk && covered.has(mk)) return;
+        if (pkg.paidBy === "card") return;
+        const owed = pkgOwed(pkg);
+        entries.push({
+          bankId: c.id, name, membership,
+          monthKey: mk || dateISO(new Date(pkg.addedAt || pkg.paidAt || Date.now())).slice(0, 7),
+          settledAt: owed ? null : (pkg.paidAt || pkg.addedAt || null),
+          sessions: Number(pkg.size) || 0,
+          amount: price,
+          paid: !owed,
+          how: "cash",
+          pkg,
+        });
+      });
+    });
+    return entries;
+  }
+
+  const booksYearOf = (e) => Number(String(e.monthKey).slice(0, 4)) || 0;
+  let _booksYear = null;
+  const booksYear = () => _booksYear || new Date().getFullYear();
+
+  // Months down the year, each with what came in and what is still out. Past
+  // years run the full twelve; the current one stops at the month we are in,
+  // because a row of zeroes for a month that has not happened reads as a
+  // business that has stopped rather than as a calendar. Months BEFORE the
+  // first one with anything in it are dropped for the same reason — an app
+  // installed in July should not open its books on six empty rows — while an
+  // empty month inside the run is kept, because that one means something.
+  function booksMonths(year) {
+    const now = new Date();
+    const last = year === now.getFullYear() ? now.getMonth() : 11;
+    const rows = [];
+    const all = moneyLedger().filter((e) => booksYearOf(e) === year);
+    const firstUsed = all.reduce((min, e) => {
+      const m = Number(String(e.monthKey).slice(5, 7)) - 1;
+      return Number.isFinite(m) && m < min ? m : min;
+    }, 12);
+    for (let m = Math.min(firstUsed, last); m <= last; m++) {
+      const key = `${year}-${String(m + 1).padStart(2, "0")}`;
+      const mine = all.filter((e) => e.monthKey === key);
+      rows.push({
+        key,
+        // Three letters: twelve rows of "September" pushes the bar off a phone.
+        label: MONTH_NAMES[m].slice(0, 3),
+        collected: mine.filter((e) => e.paid).reduce((n, e) => n + e.amount, 0),
+        outstanding: mine.filter((e) => !e.paid).reduce((n, e) => n + e.amount, 0),
+        sessions: mine.reduce((n, e) => n + e.sessions, 0),
+        entries: mine,
+      });
+    }
+    return rows;
+  }
+
+  let _booksOpenMonth = null; // which month's athlete list is expanded
+
+  function renderBooks() {
+    const host = $("#books-host"); if (!host) return;
+    // The fold is on a page the coach can land on directly, so this cannot
+    // assume the dashboard has already fetched billing.
+    ensureBillingLoaded(BILLING_STALE_MS).then(() => {
+      if ($("#books-host") !== host) return;
+      const year = booksYear();
+      const months = booksMonths(year);
+      const shown = incomeShown();
+      const collected = months.reduce((n, r) => n + r.collected, 0);
+      const outstanding = months.reduce((n, r) => n + r.outstanding, 0);
+      const sessions = months.reduce((n, r) => n + r.sessions, 0);
+      // Bars are scaled to the biggest month, so the shape of the year reads at
+      // a glance without anybody having to compare figures.
+      const peak = Math.max(1, ...months.map((r) => r.collected + r.outstanding));
+      const now = new Date();
+      const canForward = year < now.getFullYear();
+
+      host.innerHTML = `
+        <div class="books${shown ? "" : " is-hidden"}">
+          <div class="books-head">
+            <button type="button" class="bill-step" id="books-prev" aria-label="Previous year">◀</button>
+            <span class="books-year">${year}</span>
+            <button type="button" class="bill-step" id="books-next" ${canForward ? "" : "disabled"} aria-label="Next year">▶</button>
+            <button type="button" class="income-eye" id="books-eye" aria-label="${shown ? "Hide" : "Show"} the books" aria-pressed="${shown}">
+              ${shown ? EYE_SVG : EYE_OFF_SVG}
+            </button>
+          </div>
+          <div class="books-figs">
+            <div class="books-tiles">
+              <div class="books-tile is-in">
+                <span class="books-tile-num">${escapeHtml(money(collected))}</span>
+                <span class="books-tile-lbl">collected</span>
+              </div>
+              <div class="books-tile is-out">
+                <span class="books-tile-num">${escapeHtml(money(outstanding))}</span>
+                <span class="books-tile-lbl">outstanding</span>
+              </div>
+              <div class="books-tile">
+                <span class="books-tile-num">${sessions}</span>
+                <span class="books-tile-lbl">sessions billed</span>
+              </div>
+            </div>
+            <div class="books-months">
+              ${months.map((r) => {
+                const total = r.collected + r.outstanding;
+                const open = _booksOpenMonth === r.key;
+                return `
+                <div class="books-mo${open ? " is-open" : ""}${total ? "" : " is-empty"}">
+                  <button type="button" class="books-mo-row" data-books-mo="${escapeHtml(r.key)}"${total ? "" : " disabled"}>
+                    <span class="books-mo-name">${escapeHtml(r.label)}</span>
+                    <span class="books-mo-bar">
+                      <span class="books-bar-in" style="width:${(r.collected / peak) * 100}%"></span>
+                      <span class="books-bar-out" style="width:${(r.outstanding / peak) * 100}%"></span>
+                    </span>
+                    <span class="books-mo-num">${escapeHtml(money(total))}</span>
+                  </button>
+                  ${open ? `<div class="books-mo-list">${booksEntriesHtml(r.entries)}</div>` : ""}
+                </div>`;
+              }).join("")}
+            </div>
+            ${booksByTierHtml(months)}
+          </div>
+        </div>
+        <p class="pref-foot">Collected counts card payments Square has confirmed and anything you've ticked off yourself. Outstanding is an invoice raised and not yet settled — sessions are never withheld over it.</p>
+        <div class="pref-actions">
+          <button class="btn btn-ghost btn-sm slim-btn" id="btn-invoice-from" type="button">Your details on invoices…</button>
+        </div>`;
+
+      $("#books-prev")?.addEventListener("click", () => { _booksYear = year - 1; _booksOpenMonth = null; renderBooks(); });
+      $("#books-next")?.addEventListener("click", () => { _booksYear = year + 1; _booksOpenMonth = null; renderBooks(); });
+      $("#books-eye")?.addEventListener("click", () => {
+        sessionStorage.setItem(KEY_INCOME_SHOWN, incomeShown() ? "0" : "1");
+        renderIncomeCard();
+        renderBooks();
+      });
+      host.querySelectorAll("[data-books-mo]").forEach((b) => b.addEventListener("click", () => {
+        // Remembered rather than derived from what is in the row — a fold whose
+        // open state is read back off its own content re-opens on every render.
+        _booksOpenMonth = _booksOpenMonth === b.dataset.booksMo ? null : b.dataset.booksMo;
+        renderBooks();
+      }));
+      host.querySelectorAll("[data-books-doc]").forEach((b) => b.addEventListener("click", () => {
+        const all = moneyLedger();
+        const e = all.find((x) => x.charge?.id === b.dataset.booksDoc);
+        if (e) openInvoiceSheet(e.charge, e.name, { side: "coach" });
+      }));
+      $("#btn-invoice-from")?.addEventListener("click", openInvoiceFromSheet);
+      renderCoachSettingsSubs();
+    });
+  }
+
+  function booksEntriesHtml(entries) {
+    if (!entries.length) return `<p class="muted">Nothing billed this month.</p>`;
+    return [...entries]
+      .sort((a, b) => b.amount - a.amount)
+      .map((e) => `
+        <div class="books-ln">
+          <span class="books-ln-name">${escapeHtml(e.name)}</span>
+          <span class="books-ln-what">${e.sessions ? `${e.sessions} session${e.sessions === 1 ? "" : "s"} · ` : ""}${
+            e.how === "card" ? "card" : e.how === "invoice" ? "invoice" : "cash"}</span>
+          <span class="books-ln-amt ${e.paid ? "is-paid" : "is-due"}">${escapeHtml(money(e.amount))}</span>
+          ${e.charge ? `<button type="button" class="books-ln-doc" data-books-doc="${escapeHtml(e.charge.id)}" title="Open the invoice">🧾</button>` : `<span class="books-ln-doc is-none"></span>`}
+        </div>`).join("");
+  }
+
+  // Which tiers the year's money actually came from. The membership list is
+  // where his pricing gets decided, so seeing a tier earn less than the one
+  // below it is the fact that changes a price.
+  function booksByTierHtml(months) {
+    const byTier = new Map();
+    months.forEach((r) => r.entries.forEach((e) => {
+      const key = e.membership ? membershipTitle(e.membership) : "No membership";
+      const cur = byTier.get(key) || { total: 0, banks: new Set() };
+      cur.total += e.amount;
+      cur.banks.add(e.bankId);
+      byTier.set(key, cur);
+    }));
+    const rows = [...byTier.entries()].sort((a, b) => b[1].total - a[1].total);
+    if (!rows.length) return "";
+    return `
+      <div class="books-tiers">
+        <div class="books-sub">By membership</div>
+        ${rows.map(([name, v]) => `
+          <div class="books-tier-row">
+            <span class="books-tier-name">${escapeHtml(name)}</span>
+            <span class="books-tier-n">${v.banks.size}</span>
+            <span class="books-tier-amt">${escapeHtml(money(v.total))}</span>
+          </div>`).join("")}
+      </div>`;
+  }
+
+  // What sits at the top of an invoice. Kept on the coach row (library_prefs)
+  // rather than only here, because square-billing reads it there when it stamps
+  // an invoice — an invoice's issuer is frozen at the moment it is raised.
+  function openInvoiceFromSheet() {
+    const f = state.trainerData.invoiceFrom || {};
+    const t = state.trainerData.trainer || {};
+    openModal({
+      title: "Your details on invoices",
+      body: `
+        <p class="muted" style="margin-top:-0.4em">This is the heading on every invoice you raise from now on. Ones already sent keep the details they were sent with.</p>
+        <label>Business name
+          <input type="text" class="input" id="inv-biz" maxlength="80" value="${escapeHtml(f.businessName || t.name || "")}" placeholder="Stone Dragon Strength Training" />
+        </label>
+        <label>Contact
+          <input type="text" class="input" id="inv-contact" maxlength="120" value="${escapeHtml(f.contact || t.email || "")}" placeholder="email · phone" />
+        </label>
+        <label>Address
+          <textarea class="input" id="inv-addr" rows="3" maxlength="200" placeholder="One line per line">${escapeHtml(f.address || "")}</textarea>
+        </label>
+        <label>Tax or registration line
+          <input type="text" class="input" id="inv-tax" maxlength="80" value="${escapeHtml(f.taxLine || "")}" placeholder="Optional" />
+        </label>
+        <label>Footer
+          <input type="text" class="input" id="inv-foot" maxlength="200" value="${escapeHtml(f.footer || "")}" placeholder="e.g. Thank you. Payment due on receipt." />
+        </label>`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Save", className: "btn btn-primary", onClick: () => {
+          state.trainerData.invoiceFrom = {
+            businessName: ($("#inv-biz")?.value || "").trim(),
+            contact: ($("#inv-contact")?.value || "").trim(),
+            address: ($("#inv-addr")?.value || "").trim(),
+            taxLine: ($("#inv-tax")?.value || "").trim(),
+            footer: ($("#inv-foot")?.value || "").trim(),
+          };
+          saveTrainer();
+          pushCoachLibPrefs();
+          closeModal();
+          toast("Invoice details saved ✓");
+        }},
+      ],
+    });
   }
 
   // The ticket beside their name: the balance from every tab, and the door
@@ -14615,7 +15145,11 @@
   function renderAthleteChargeCard(host) {
     let card = host.querySelector(".athlete-charge-card");
     loadAthleteCharges().then((rows) => {
-      const due = (rows || []).filter((r) => r.status === "sent" && r.checkout_url);
+      renderAthleteInvoiceLink(host, rows);
+      // A charge with no link is one the coach is collecting himself, so it is
+      // still owed and still shown — it just has an invoice to read instead of
+      // a button to pay with.
+      const due = (rows || []).filter((r) => r.status === "sent");
       card = host.querySelector(".athlete-charge-card");
       if (!due.length) { card?.remove(); return; }
       if (!card) {
@@ -14638,14 +15172,25 @@
         `<div class="acc-head"><span class="acc-label">To pay</span>` +
         `<span class="acc-amount">${escapeHtml(money(total))}</span></div>` +
         `<p class="acc-what">${escapeHtml(one ? describe(one) : `${due.length} months outstanding`)}</p>`;
-      const pay = document.createElement("button");
-      pay.type = "button";
-      pay.className = "btn btn-primary btn-sm acc-pay";
-      pay.textContent = due.length === 1 ? "Pay by card" : `Pay ${monthName(due[0].month_key)}`;
-      // Opens Square's own page. The card is entered there and never here —
-      // which is also why this is a link out and not a form.
-      pay.addEventListener("click", () => window.open(due[0].checkout_url, "_blank", "noopener"));
-      card.appendChild(pay);
+      const acts = document.createElement("div");
+      acts.className = "acc-acts";
+      if (due[0].checkout_url) {
+        const pay = document.createElement("button");
+        pay.type = "button";
+        pay.className = "btn btn-primary btn-sm acc-pay";
+        pay.textContent = due.length === 1 ? "Pay by card" : `Pay ${monthName(due[0].month_key)}`;
+        // Opens Square's own page. The card is entered there and never here —
+        // which is also why this is a link out and not a form.
+        pay.addEventListener("click", () => window.open(due[0].checkout_url, "_blank", "noopener"));
+        acts.appendChild(pay);
+      }
+      const view = document.createElement("button");
+      view.type = "button";
+      view.className = "btn btn-ghost btn-sm";
+      view.textContent = "🧾 Invoice";
+      view.addEventListener("click", () => openInvoiceSheet(due[0], athleteOwnName(), { side: "athlete" }));
+      acts.appendChild(view);
+      card.appendChild(acts);
       if (due.length > 1) {
         const rest = document.createElement("div");
         rest.className = "acc-rest";
@@ -14653,13 +15198,63 @@
           const b = document.createElement("button");
           b.type = "button";
           b.className = "btn btn-ghost btn-sm";
-          b.textContent = `Pay ${monthName(r.month_key)} · ${money((r.amount_cents || 0) / 100)}`;
-          b.addEventListener("click", () => window.open(r.checkout_url, "_blank", "noopener"));
+          b.textContent = `${r.checkout_url ? "Pay" : "View"} ${monthName(r.month_key)} · ${money((r.amount_cents || 0) / 100)}`;
+          b.addEventListener("click", () => (r.checkout_url
+            ? window.open(r.checkout_url, "_blank", "noopener")
+            : openInvoiceSheet(r, athleteOwnName(), { side: "athlete" })));
           rest.appendChild(b);
         });
         card.appendChild(rest);
       }
     });
+  }
+
+  const athleteOwnName = () =>
+    state.clientData?.program?.client?.name || state.clientData?.program?.clientName || "";
+
+  // Everything they have ever been billed, paid or not. Separate from the To
+  // pay card on purpose: that card is a prompt and disappears when it is dealt
+  // with, and a receipt you can only see while you still owe money is no use to
+  // anybody. One quiet line, and only once there is something behind it.
+  function renderAthleteInvoiceLink(host, rows) {
+    let line = host.querySelector(".athlete-invoices-line");
+    if (!(rows || []).length) { line?.remove(); return; }
+    if (!line) {
+      line = document.createElement("div");
+      line.className = "athlete-invoices-line";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn btn-ghost btn-sm";
+      btn.textContent = "🧾 Invoices & receipts";
+      btn.addEventListener("click", () => openAthleteInvoiceList());
+      line.appendChild(btn);
+      host.appendChild(line);
+    }
+  }
+
+  async function openAthleteInvoiceList() {
+    const rows = [...(await loadAthleteCharges(0) || [])]
+      .filter((r) => r.status === "sent" || r.status === "paid")
+      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+    openModal({
+      title: "Invoices & receipts",
+      body: rows.length
+        ? `<div class="inv-list">${rows.map((r) => `
+            <button type="button" class="inv-row" data-inv="${escapeHtml(r.id)}">
+              <span class="inv-row-main">
+                <span class="inv-row-no">${escapeHtml(invoiceNoLabel(r) || "Invoice")}</span>
+                <span class="inv-row-when">${escapeHtml(monthKeyLabel(r.month_key) || invoiceDateLabel(r.created_at))}</span>
+              </span>
+              <span class="inv-row-amt">${escapeHtml(usd(r.amount_cents))}</span>
+              <span class="inv-row-st ${r.status === "paid" ? "is-paid" : "is-due"}">${r.status === "paid" ? "Paid" : "Due"}</span>
+            </button>`).join("")}</div>`
+        : `<p class="muted">Nothing here yet.</p>`,
+      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
+    });
+    $$(".inv-row").forEach((el) => el.addEventListener("click", () => {
+      const row = rows.find((r) => r.id === el.dataset.inv);
+      if (row) openInvoiceSheet(row, athleteOwnName(), { side: "athlete" });
+    }));
   }
   const monthName = (key) => key
     ? new Date(key + "-15T12:00:00Z").toLocaleDateString(undefined, { month: "long", timeZone: "UTC" })
@@ -15822,6 +16417,297 @@
       : "Nothing left to settle this month", 4000);
   }
 
+  // -------- Bill the month (the whole roster, one pass) --------
+  // Settle hands out the month's sessions. This asks for the month's money, and
+  // it is the same round: open athlete → Sessions → Charge → back → next, once
+  // per person, with nothing on screen saying who had already been invoiced.
+  //
+  // One row per BANK, exactly as Settle does, because a couple get one invoice
+  // between them. Which half it is raised against is not arbitrary — it is the
+  // lower of the two ids, the same rule square-billing's primaryOf uses to pick
+  // which half owns the Square customer, so the invoice and the customer record
+  // never end up on opposite halves of a couple.
+  let _billMonthKey = null;
+  const billMonthKey = () => _billMonthKey || todayISO().slice(0, 7);
+  function shiftBillMonth(delta) {
+    const [y, m] = billMonthKey().split("-").map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    _billMonthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }
+  // How far either way the stepper will go. Billing three months back is
+  // catching up; billing three months forward is a mistake, and the arrow
+  // simply stops rather than explaining itself.
+  const BILL_MONTH_SPAN = 3;
+  function billMonthOffset() {
+    const [y1, m1] = billMonthKey().split("-").map(Number);
+    const [y2, m2] = todayISO().slice(0, 7).split("-").map(Number);
+    return (y1 - y2) * 12 + (m1 - m2);
+  }
+
+  // Sessions actually taken in a given month, off the bank's own redemption
+  // log. monthChargePlan answers this for the CURRENT month only (it reads
+  // sessionBankSummary, which is anchored to today), and a sheet with a month
+  // stepper on it needs the same question answered about any month.
+  function sessionsInMonth(c, monthKey) {
+    return (c?.sessionBank?.redemptions || [])
+      .filter((r) => String(r?.date || "").slice(0, 7) === monthKey).length;
+  }
+  // What to bill for, in order of how much it knows: what the month's package
+  // says was booked against it, what was actually logged, and failing both the
+  // tier's own size — a month billed in advance has neither of the first two.
+  function billSessionsFor(c, monthKey, membership) {
+    const pkg = monthPackageOf(c, monthKey);
+    const booked = Number(pkg?.booked);
+    const used = sessionsInMonth(c, monthKey);
+    const n = Math.max(Number.isFinite(booked) ? booked : 0, used);
+    return n || Number(membership?.sessions) || 0;
+  }
+  // Card or cash, remembered per bank. Seeded from how they last actually paid,
+  // so the answer is right the first time for everybody who already has history
+  // — and then it is just a chip the coach can flip.
+  function bankPayBy(c) {
+    const own = c?.sessionBank?.payBy;
+    if (own === "card" || own === "manual") return own;
+    const pid = c?.partnerId || null;
+    const last = (_billing.payments || [])
+      .filter((p) => p.athlete_id === c.id || (pid && p.athlete_id === pid))
+      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0];
+    return last?.method === "manual" ? "manual" : "card";
+  }
+
+  function monthBillRoster(monthKey) {
+    const seen = new Set();
+    const rows = [];
+    (state.trainerData.clients || []).forEach((c) => {
+      if (seen.has(c.id)) return;
+      ensureSessionBank(c);
+      const partner = partnerOf(c);
+      seen.add(c.id);
+      if (partner) seen.add(partner.id);
+      // The bank's primary: the lower id, computed identically on both halves.
+      const target = partner && partner.id < c.id ? partner : c;
+      const membership = bankMembership(c);
+      const rate = athleteSessionRate(c) || athleteSessionRate(partner) || 0;
+      const sessions = billSessionsFor(c, monthKey, membership);
+      const charge = chargeFor(c, monthKey);
+      rows.push({
+        client: c, partner, target, membership, rate, sessions, charge,
+        payBy: bankPayBy(c),
+        amount: Math.round(sessions * rate),
+        state: charge?.status === "paid" ? "paid" : charge ? "sent" : "due",
+      });
+    });
+    return rows;
+  }
+
+  // Shown only once billing is configured, like every other money surface here,
+  // and it carries its own count so the round announces itself.
+  function renderMonthBillBtn() {
+    const btn = $("#btn-month-bill"); if (!btn) return;
+    loadBillingConfig().then((cfg) => {
+      if (!cfg?.configured) { hide(btn); return; }
+      return ensureBillingLoaded(BILLING_STALE_MS).then(() => {
+        if ($("#btn-month-bill") !== btn) return;
+        const key = billMonthKey();
+        const rows = monthBillRoster(key).filter((r) => r.sessions > 0 || r.charge);
+        if (!rows.length) { hide(btn); return; }
+        show(btn);
+        const due = rows.filter((r) => r.state === "due").length;
+        const month = new Date(key + "-15T12:00:00Z")
+          .toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
+        btn.classList.toggle("is-due", due > 0);
+        btn.innerHTML = `🧾 Bill ${escapeHtml(month)}` +
+          (due ? `<span class="month-grant-n">${due}</span>` : `<span class="month-grant-done">✓</span>`);
+        btn.title = due
+          ? `${due} athlete${due === 1 ? "" : "s"} not yet invoiced for ${month}`
+          : `Everyone has an invoice for ${month}`;
+      });
+    });
+  }
+
+  function openMonthBillSheet() {
+    const key = billMonthKey();
+    const monthLabel = new Date(key + "-15T12:00:00Z")
+      .toLocaleDateString(undefined, { month: "long", year: "numeric", timeZone: "UTC" });
+    const rows = monthBillRoster(key);
+    const billable = rows.filter((r) => r.sessions > 0 || r.charge);
+    const idle = rows.filter((r) => !r.sessions && !r.charge);
+    const off = billMonthOffset();
+
+    // Already invoiced rows stay in the list rather than vanishing from it:
+    // "who is being billed this month" and "who still needs doing" are the same
+    // glance, and a missing name reads as a mistake.
+    const rowHtml = (r) => {
+      const c = r.client;
+      const idx = athleteColorIdx(c);
+      const done = r.state !== "due";
+      const stateTxt = r.state === "paid" ? `Paid · ${money((r.charge.amount_cents || 0) / 100)}`
+        : r.state === "sent" ? `Invoiced · ${money((r.charge.amount_cents || 0) / 100)}`
+        : r.rate ? `${r.sessions} × ${money(r.rate)}`
+        : "No rate set";
+      return `
+        <div class="bill-row${done ? " is-done" : ""}${r.rate ? "" : " is-norate"}" data-bill="${escapeHtml(c.id)}" style="--athlete-rgb:${AVATAR_RGB[idx]}">
+          <label class="bill-pick">
+            <input type="checkbox" data-bill-on="${escapeHtml(c.id)}"${done ? " disabled" : " checked"} />
+            <span class="bill-av">${avatarTileHtml(c, c.importedProgress, { size: "sm", colorIdx: idx })}</span>
+            <span class="bill-main">
+              <span class="bill-name">${escapeHtml(c.name || "(unnamed)")}${r.partner ? ` <span class="mg-pair">💞</span>` : ""}</span>
+              <span class="bill-state">${escapeHtml(stateTxt)}</span>
+            </span>
+          </label>
+          ${done ? `<button type="button" class="bill-doc" data-bill-doc="${escapeHtml(c.id)}">🧾</button>` : `
+          <div class="bill-nums">
+            <label class="bill-in-lbl">Sessions
+              <input type="number" class="input bill-in" data-bill-sessions="${escapeHtml(c.id)}" min="0" step="1" value="${escapeHtml(String(r.sessions))}" />
+            </label>
+            <label class="bill-in-lbl">Charge
+              <input type="number" class="input bill-in" data-bill-amount="${escapeHtml(c.id)}" min="0" step="1" value="${escapeHtml(String(r.amount))}" />
+            </label>
+            <button type="button" class="bill-how" data-bill-how="${escapeHtml(c.id)}" data-how="${escapeHtml(r.payBy)}"
+              title="How this one pays">${r.payBy === "manual" ? "💵" : "💳"}</button>
+          </div>`}
+        </div>`;
+    };
+
+    openModal({
+      title: `Bill ${monthLabel}`,
+      body: `
+        <div class="bill-month">
+          <button type="button" class="bill-step" id="bill-prev" ${off <= -BILL_MONTH_SPAN ? "disabled" : ""} aria-label="Previous month">◀</button>
+          <span class="bill-month-lbl">${escapeHtml(monthLabel)}</span>
+          <button type="button" class="bill-step" id="bill-next" ${off >= BILL_MONTH_SPAN ? "disabled" : ""} aria-label="Next month">▶</button>
+        </div>
+        <p class="muted" style="margin-top:0.4rem">Sessions × their rate, ready to adjust. 💳 sends a card link; 💵 raises the invoice and leaves you to collect it. Everyone gets a numbered invoice either way.</p>
+        <div class="bill-list" id="bill-list">${billable.map(rowHtml).join("") || `<p class="muted">Nothing to bill for this month.</p>`}</div>
+        ${idle.length ? `<p class="muted mg-skipped">No sessions this month, so not in this round: ${escapeHtml(idle.map((r) => r.client.name || "(unnamed)").join(", "))}</p>` : ""}
+        <div id="bill-result"></div>`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Send", className: "btn btn-primary", onClick: () => runMonthBill(billable) },
+      ],
+    });
+
+    $("#bill-prev")?.addEventListener("click", () => { shiftBillMonth(-1); openMonthBillSheet(); });
+    $("#bill-next")?.addEventListener("click", () => { shiftBillMonth(1); openMonthBillSheet(); });
+
+    const goBtn = $("#modal-foot .btn-primary");
+    const list = $("#bill-list");
+    // Sessions × rate drives the charge box until the coach types in it — the
+    // same rule as the single charge sheet, for the same reason: recalculating
+    // a number the coach has just decided on would be the app arguing with him.
+    const manual = new Set();
+    const retotal = () => {
+      if (!goBtn || !list) return;
+      let n = 0, total = 0;
+      billable.forEach((r) => {
+        const on = list.querySelector(`input[data-bill-on="${CSS.escape(r.client.id)}"]`);
+        if (!on?.checked) return;
+        n += 1;
+        total += Number(list.querySelector(`input[data-bill-amount="${CSS.escape(r.client.id)}"]`)?.value) || 0;
+      });
+      goBtn.disabled = !n;
+      goBtn.textContent = n ? `Send ${n} · ${money(total)}` : "Nobody ticked";
+    };
+    list?.addEventListener("input", (e) => {
+      const id = e.target?.dataset?.billSessions;
+      if (id && !manual.has(id)) {
+        const r = billable.find((x) => x.client.id === id);
+        const amt = list.querySelector(`input[data-bill-amount="${CSS.escape(id)}"]`);
+        if (r && amt) amt.value = Math.round((Number(e.target.value) || 0) * r.rate);
+      }
+      if (e.target?.dataset?.billAmount) manual.add(e.target.dataset.billAmount);
+      retotal();
+    });
+    list?.addEventListener("change", retotal);
+    list?.addEventListener("click", (e) => {
+      const howId = e.target?.dataset?.billHow;
+      if (howId) {
+        const r = billable.find((x) => x.client.id === howId);
+        if (!r) return;
+        r.payBy = r.payBy === "manual" ? "card" : "manual";
+        e.target.dataset.how = r.payBy;
+        e.target.textContent = r.payBy === "manual" ? "💵" : "💳";
+        // Remembered on the bank, so next month opens with the right answer.
+        ensureSessionBank(r.client);
+        r.client.sessionBank.payBy = r.payBy;
+        bankMutated(r.client);
+        saveTrainer();
+        return;
+      }
+      const docId = e.target?.dataset?.billDoc;
+      if (docId) {
+        const r = rows.find((x) => x.client.id === docId);
+        if (r?.charge) openInvoiceSheet(r.charge, r.client.name, { side: "coach" });
+      }
+    });
+    retotal();
+  }
+
+  // One call per athlete, in sequence. Square makes one payment link per
+  // request and there is no batch endpoint, so the loop is real work — and it
+  // reports as it goes rather than freezing on a spinner for twelve people.
+  // A failure stops nothing: the athletes it already billed are billed, and the
+  // ones it couldn't are named at the end rather than silently dropped.
+  async function runMonthBill(billable) {
+    const key = billMonthKey();
+    const list = $("#bill-list");
+    const goBtn = $("#modal-foot .btn-primary");
+    const picked = billable.filter((r) =>
+      list?.querySelector(`input[data-bill-on="${CSS.escape(r.client.id)}"]`)?.checked);
+    if (!picked.length) return;
+    if (goBtn) goBtn.disabled = true;
+    const monthLabel = monthKeyLabel(key);
+    const failed = [];
+    let done = 0;
+    for (const r of picked) {
+      if (goBtn) goBtn.textContent = `Sending ${done + 1} of ${picked.length}…`;
+      const sessions = Number(list?.querySelector(`input[data-bill-sessions="${CSS.escape(r.client.id)}"]`)?.value) || 0;
+      const amount = Number(list?.querySelector(`input[data-bill-amount="${CSS.escape(r.client.id)}"]`)?.value) || 0;
+      if (amount < 1) { failed.push(`${r.client.name || "(unnamed)"} — no amount`); continue; }
+      const note = `${sessions} session${sessions === 1 ? "" : "s"} · ${monthLabel}`;
+      const res = await window.Cloud.squareBilling("chargeMonth", {
+        athleteId: r.target.id, monthKey: key,
+        amountCents: Math.round(amount * 100),
+        sessions, rate: r.rate, note, noLink: r.payBy === "manual",
+      });
+      if (!res?.ok) { failed.push(`${r.client.name || "(unnamed)"} — ${res?.error || "failed"}`); continue; }
+      // Same alignment the single charge sheet does: the month's package carries
+      // what was actually billed, not the membership's list price, or the
+      // balance card and the invoice give two answers to one question.
+      syncPackagePrice(r.client, key, amount, note);
+      window.Cloud?.sendPush?.([r.target.id], "🧾 Your invoice is ready",
+        `${money(amount)} · ${monthLabel}`, "./", "invoice");
+      done += 1;
+    }
+    saveTrainer();
+    await loadCoachBilling();
+    closeModal();
+    renderClientGrid();
+    renderMonthBillBtn();
+    renderBooks();
+    if (state.currentClientId) { renderCoachSessions(); renderBillingRow(currentClient()); }
+    if (failed.length) {
+      openModal({
+        title: `Billed ${done} of ${picked.length}`,
+        body: `<p class="muted">These didn't go through. Nothing was charged for them, so they can be tried again.</p>
+          <ul class="bill-fails">${failed.map((f) => `<li>${escapeHtml(f)}</li>`).join("")}</ul>`,
+        actions: [{ label: "OK", className: "btn btn-primary", onClick: closeModal }],
+      });
+      return;
+    }
+    toast(`🧾 ${monthLabel}: ${done} invoice${done === 1 ? "" : "s"} sent ✓`, 4000);
+  }
+
+  // The month's package should say what was actually billed for it. Used by
+  // both the single charge sheet and the batch.
+  function syncPackagePrice(c, monthKey, amount, note) {
+    const pkg = monthPackageOf(c, monthKey);
+    if (!pkg || Number(pkg.price) === amount) return;
+    pkg.price = amount;
+    pkg.note = note || pkg.note;
+    bankMutated(c);
+  }
+
   // ================= Scheduling =================
   // The coach writes recurring WALL-CLOCK windows ("Mondays 06:00-11:00") plus
   // the zone they mean them in, never instants — that is what makes the
@@ -16334,6 +17220,13 @@
       : "Google Calendar not connected");
     const theme = THEMES.find((t) => t.id === currentThemeForRole("coach"));
     set("#cs-sub-theme", theme ? theme.name : "Colour scheme");
+    // The books summary names the count, never the money — a fold title is on
+    // screen whether or not the eye has been tapped, and the blur exists so a
+    // figure isn't sitting there while somebody reads over his shoulder.
+    const out = moneyLedger().filter((e) => !e.paid).length;
+    set("#cs-sub-books", out
+      ? `${out} invoice${out === 1 ? "" : "s"} outstanding`
+      : "Invoices, and what came in");
   }
 
   function renderGoogleCard() {
@@ -20086,10 +20979,13 @@
     refreshPushSubscription();
     pullAthletePrefs(); // cloud copy wins, then re-renders the cards
     pullCycle();        // their own private row, same deal
-    // First time on this device: one guided lap (never during a coach live
-    // session — that's the coach's screen, not the athlete's).
+    // First time on this device: offer one guided lap (never during a coach
+    // live session — that's the coach's screen, not the athlete's).
     if (!state.previewMode && !localStorage.getItem(KEY_TOUR_ATHLETE)) {
-      setTimeout(() => { if (!state.previewMode && state.mode === "client") beginAthleteTour(); }, 800);
+      setTimeout(() => {
+        if (state.previewMode || state.mode !== "client") return;
+        offerTour(KEY_TOUR_ATHLETE, beginAthleteTour);
+      }, 800);
     }
   }
   // -------- Athlete Overview (home dashboard) --------
@@ -29004,6 +29900,46 @@
   const KEY_TOUR_ATHLETE = "trainerpro_tour_athlete_v1";
   let _tour = null;
 
+  // Ask before taking the screen over.
+  //
+  // The tour used to just START on a first boot: 800ms in, the whole app dimmed
+  // and a card appeared over it, and somebody who had opened the app to check
+  // one thing had to get out of a walkthrough first. Skip existed, but only
+  // once you were already inside the thing you wanted to skip. This is the same
+  // offer made BEFORE anything is taken over, and it is small enough to ignore.
+  //
+  // "No thanks" is a real answer and is remembered for good — it writes the
+  // same doneKey a finished tour does, so the question is asked once per device
+  // and the ? button in either header is the only way back to it. Walking away
+  // without answering deliberately does NOT write the key: an unanswered
+  // question is not a no, and it costs one line at the bottom of the next boot.
+  function offerTour(doneKey, begin) {
+    if (localStorage.getItem(doneKey) || $(".tour-offer")) return;
+    const mode = state.mode;
+    const box = document.createElement("div");
+    box.className = "tour-offer";
+    box.innerHTML = `
+      <div class="tour-offer-text">
+        <strong>First time here?</strong>
+        <span>A quick lap of the app, about a minute.</span>
+      </div>
+      <div class="tour-offer-acts">
+        <button type="button" class="tour-offer-no">No thanks</button>
+        <button type="button" class="tour-offer-go">Show me</button>
+      </div>`;
+    document.body.appendChild(box);
+    box.querySelector(".tour-offer-no").addEventListener("click", () => {
+      localStorage.setItem(doneKey, "1");
+      box.remove();
+    });
+    box.querySelector(".tour-offer-go").addEventListener("click", () => {
+      box.remove();
+      // Not marked done here — the tour itself writes the key when it finishes
+      // or is skipped, so a tour abandoned by reloading gets offered again.
+      if (state.mode === mode) begin();
+    });
+  }
+
   // onEnd runs when the tour closes (finish OR skip) — used to tear down the
   // temporary demo program the athlete tour stands up on an empty account.
   function startTour(steps, doneKey, onEnd) {
@@ -30244,6 +31180,7 @@
     flushBugQueue();
     $("#btn-add-client").addEventListener("click", addClientPrompt);
     $("#btn-month-grant")?.addEventListener("click", openMonthGrantSheet);
+    $("#btn-month-bill")?.addEventListener("click", openMonthBillSheet);
     $("#btn-session-lookup")?.addEventListener("click", openSessionLookup);
     // Roster grouping tabs (A to Z / Membership / Activity / Program)
     $$("#roster-controls [data-roster-group]").forEach((b) =>

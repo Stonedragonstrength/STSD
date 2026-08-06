@@ -9,9 +9,11 @@
 // function secrets.
 //
 // Actions (POST { action, ... }), coach only:
-//   config      -> { configured, mode, missing }
-//   chargeMonth -> { url }  a Square-hosted page to pay ONE month's amount
-//   voidCharge  -> forget a link that was sent by mistake
+//   config          -> { configured, mode, missing }
+//   chargeMonth     -> { url }  a Square-hosted page to pay ONE month's amount,
+//                     or with noLink:true an invoice raised with no link at all
+//   markInvoicePaid -> tick off a no-link invoice paid in cash
+//   voidCharge      -> forget a link that was sent by mistake
 //
 // WHY THIS IS NOT A SUBSCRIPTION
 // The first version of this file created Square subscription plans. That was
@@ -152,7 +154,15 @@ Deno.serve(async (req) => {
   const sb = createClient(supabaseUrl, serviceKey);
   const userId = await callerUserId(req, supabaseUrl);
   if (!userId) return json({ ok: false, error: "not signed in" }, 401);
-  const { data: coach } = await sb.from("coaches").select("id").eq("auth_user_id", userId).maybeSingle();
+  // library_prefs carries the invoice issuer details (invoiceFrom), read here
+  // rather than accepted from the caller: it is the coach's own data either
+  // way, but read server-side there is exactly one copy of it and no way for a
+  // stale browser to stamp an old address onto a new invoice.
+  // NOTE the column names: `coaches` has display_name and NOT name. PostgREST
+  // 400s the WHOLE select on one unknown column, and this caller destructures
+  // only `data` — so a wrong name here reads as "you are not a coach".
+  const { data: coach } = await sb.from("coaches")
+    .select("id, display_name, email, library_prefs").eq("auth_user_id", userId).maybeSingle();
   if (!coach) return json({ ok: false, error: "coach only" }, 403);
   const coachId = coach.id as string;
 
@@ -183,7 +193,15 @@ Deno.serve(async (req) => {
     });
   }
 
-  if (missing.length) return json({ ok: false, error: "not configured", needsSetup: true, missing });
+  // Only the actions that actually talk to Square need Square. An invoice with
+  // no payment link, and the coach ticking one off as paid in cash, are this
+  // app's own business — gating them on a token would mean a rotated key takes
+  // the paper side of the books down with the card side.
+  const needsSquare = !(action === "markInvoicePaid" ||
+    (action === "chargeMonth" && body?.noLink === true));
+  if (needsSquare && missing.length) {
+    return json({ ok: false, error: "not configured", needsSetup: true, missing });
+  }
 
   try {
     // ---- Is the token actually usable, and does the location match? ----
@@ -228,6 +246,11 @@ Deno.serve(async (req) => {
       const amountCents = Math.round(Number(body?.amountCents));
       const sessions = Number.isFinite(Number(body?.sessions)) ? Number(body.sessions) : null;
       const note = String(body?.note ?? "").slice(0, 120);
+      const rate = Number.isFinite(Number(body?.rate)) ? Number(body.rate) : null;
+      // An invoice with no payment link, for the athletes who hand over cash or
+      // send a transfer. Same document, same numbering, same place in the books
+      // — the only difference is who is allowed to say it has been paid.
+      const noLink = body?.noLink === true;
       if (!athleteId || !/^\d{4}-\d{2}$/.test(monthKey)) {
         return json({ ok: false, error: "athleteId and a YYYY-MM monthKey are required" });
       }
@@ -261,22 +284,41 @@ Deno.serve(async (req) => {
         .update({ status: "canceled" })
         .eq("athlete_id", athleteId).eq("month_key", monthKey).eq("status", "sent");
 
-      const link = await square("/v2/online-checkout/payment-links", token, {
-        method: "POST",
-        body: JSON.stringify({
-          idempotency_key: `chg-${athleteId}-${monthKey}-${Date.now()}`,
-          quick_pay: {
-            name: note || `Training · ${monthKey}`,
-            price_money: { amount: amountCents, currency: "USD" },
-            location_id: locationId,
-          },
-          checkout_options: { ask_for_shipping_address: false },
-          pre_populated_data: email ? { buyer_email: email } : undefined,
-        }),
-      });
-      const url = link?.payment_link?.url ?? link?.payment_link?.long_url ?? null;
-      const orderId = link?.payment_link?.order_id ?? null;
-      if (!url) return json({ ok: false, error: "Square did not return a checkout link" });
+      let url: string | null = null;
+      let orderId: string | null = null;
+      if (!noLink) {
+        const link = await square("/v2/online-checkout/payment-links", token, {
+          method: "POST",
+          body: JSON.stringify({
+            idempotency_key: `chg-${athleteId}-${monthKey}-${Date.now()}`,
+            quick_pay: {
+              name: note || `Training · ${monthKey}`,
+              price_money: { amount: amountCents, currency: "USD" },
+              location_id: locationId,
+            },
+            checkout_options: { ask_for_shipping_address: false },
+            pre_populated_data: email ? { buyer_email: email } : undefined,
+          }),
+        });
+        url = link?.payment_link?.url ?? link?.payment_link?.long_url ?? null;
+        orderId = link?.payment_link?.order_id ?? null;
+        if (!url) return json({ ok: false, error: "Square did not return a checkout link" });
+      }
+
+      // The number, and the issuer as they stand today. Taken AFTER Square has
+      // agreed to make the link: a failed checkout would otherwise burn an
+      // invoice number on a document that never existed, and a run with holes
+      // in it is exactly what the counter is there to prevent.
+      const { data: invoiceNo } = await sb.rpc("next_invoice_no", { p_coach: coachId });
+      const prefs = (coach.library_prefs ?? {}) as Record<string, unknown>;
+      const from = (prefs.invoiceFrom ?? {}) as Record<string, unknown>;
+      const issuer = {
+        businessName: String(from.businessName ?? coach.display_name ?? "").slice(0, 80),
+        contact: String(from.contact ?? coach.email ?? "").slice(0, 120),
+        address: String(from.address ?? "").slice(0, 200),
+        taxLine: String(from.taxLine ?? "").slice(0, 80),
+        footer: String(from.footer ?? "").slice(0, 200),
+      };
 
       // Recorded as 'sent', which grants nothing and settles nothing. The order
       // id is the join: the payment webhook carries the same one, and that is
@@ -289,11 +331,17 @@ Deno.serve(async (req) => {
         square_order_id: orderId,
         amount_cents: amountCents,
         sessions,
+        // The per-session figure the total was built from, kept so the invoice
+        // can show its own working instead of one unexplained number.
+        rate_cents: rate == null ? null : Math.round(rate * 100),
         note: note || null,
         // Stored so the ATHLETE can pay from their own Sessions tab instead of
         // waiting to be sent it. Their select policy already scopes this row to
         // them, and the link is exactly what they're meant to have.
         checkout_url: url,
+        invoice_no: invoiceNo ?? null,
+        issuer,
+        method: noLink ? "manual" : "card",
         status: "sent",
       });
 
@@ -310,6 +358,37 @@ Deno.serve(async (req) => {
       }
 
       return json({ ok: true, url, orderId });
+    }
+
+    // ---- The coach ticks off an invoice he was paid in cash ----
+    //
+    // This is the ONE way a payment gets recorded without Square, and the guard
+    // below is what keeps that from being a hole in the rule that only a
+    // verified webhook may settle a card charge: a row carrying a Square order
+    // id is refused outright, whoever is asking. What is left is invoices this
+    // app raised with no payment link, where the only person who can possibly
+    // know the money arrived is the coach who was handed it.
+    //
+    // The athlete cannot reach this — the caller is checked against `coaches`
+    // at the top of the file, and billing_payments still has no write policy
+    // for anyone.
+    if (action === "markInvoicePaid") {
+      const id = String(body?.id ?? "");
+      const paid = body?.paid !== false; // default true; false undoes a mis-tap
+      if (!id) return json({ ok: false, error: "id required" });
+      const { data: row } = await sb.from("billing_payments")
+        .select("id, coach_id, square_order_id, status").eq("id", id).maybeSingle();
+      if (!row || row.coach_id !== coachId) return json({ ok: false, error: "not your invoice" }, 403);
+      if (row.square_order_id) {
+        return json({ ok: false, error: "That one is a card charge — Square confirms it, not us." });
+      }
+      const { error } = await sb.from("billing_payments").update({
+        status: paid ? "paid" : "sent",
+        paid_at: paid ? new Date().toISOString() : null,
+        method: "manual",
+      }).eq("id", id);
+      if (error) return json({ ok: false, error: error.message });
+      return json({ ok: true, paid });
     }
 
     // ---- Forget a link sent by mistake ----
