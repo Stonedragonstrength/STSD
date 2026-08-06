@@ -15420,9 +15420,17 @@
   }
 
   // Both halves, in the order they matter: what is owed, then how it gets paid.
+  //
+  // CHAINED, not fired together. Both halves resolve their own promises and
+  // then append to the same host, so running them in parallel means whichever
+  // request came back first is whichever ends up on top — and the payment
+  // method landing ABOVE the amount it pays reads as a settings row that has
+  // wandered into the wrong card. Waiting costs nothing here: the two requests
+  // are already in flight, since loadAthleteCard is what the charge card is
+  // also waiting on.
   function renderAthleteBilling(host) {
-    renderAthleteChargeCard(host);
-    renderAthletePayMethod(host);
+    return Promise.resolve(renderAthleteChargeCard(host))
+      .then(() => renderAthletePayMethod(host));
   }
 
   // One tap, with the saved card. The amount is never sent — the function reads
@@ -15446,7 +15454,8 @@
 
   function renderAthleteChargeCard(host) {
     let card = host.querySelector(".athlete-charge-card");
-    Promise.all([loadAthleteCharges(), loadAthleteCard()]).then(([rows, saved]) => {
+    // Returned so renderAthleteBilling can put the payment method after it.
+    return Promise.all([loadAthleteCharges(), loadAthleteCard()]).then(([rows, saved]) => {
       renderAthleteInvoiceLink(host, rows);
       // A charge with no link is one the coach is collecting himself, so it is
       // still owed and still shown — it just has an invoice to read instead of
