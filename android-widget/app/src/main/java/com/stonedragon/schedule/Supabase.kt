@@ -307,7 +307,7 @@ object Supabase {
                 // Past the cut-over the app owns the calendar outright, so a
                 // mirrored event from then on is a leftover, not a session.
                 // Without this the widget shows a week the app does not.
-                b.startMillis < cutoff && b.startMillis !in ownedSlots
+                b.startMillis < cutoff && slotKey(b.startMillis) !in ownedSlots
             }
 
         return FetchResult.Ok(merged, partial = failed > 0)
@@ -336,6 +336,17 @@ object Supabase {
      */
     private class NativeRows(val booked: List<Booking>, val slots: Set<Long>)
 
+    /**
+     * A slot identity, to the MINUTE — the same coarseness app.js uses, and for
+     * the same reason: the lock-in built each booking from its Setmore slot, so
+     * the two agree to the minute, and a minute survives a stored second's
+     * drift that exact-millis equality would not. There is no such drift in the
+     * data today (checked, 2026-08-06: zero pairs agree on the minute and
+     * disagree on the second) — this is so that a single stray second can never
+     * quietly put a cancelled session back on the home screen.
+     */
+    private fun slotKey(startMillis: Long): Long = startMillis / 60_000L
+
     private fun fetchNative(token: String, from: String, to: String): NativeRows {
         // No `status=eq.booked` here on purpose: a cancelled booking is not
         // drawn, but it still has to be READ, because its slot is what keeps the
@@ -353,7 +364,7 @@ object Supabase {
             val start = parseIso(o.optString("start_at")) ?: continue
             // Claimed first, drawn second. Every row claims its slot; only a
             // booked one is a session.
-            slots.add(start)
+            slots.add(slotKey(start))
             if (o.optString("status") != "booked") continue
             booked.add(
                 Booking(
