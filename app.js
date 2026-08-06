@@ -9734,6 +9734,10 @@
     "sd:undo": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.6 8.4h6.2M3.6 8.4V3.6"/><path d="M3.6 8.4a8.6 8.6 0 1 1-1.1 6"/></svg>',
     "sd:calx": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.3" y="5.2" width="17.4" height="15.5" rx="3"/><path d="M3.3 10.1h17.4M8.1 3.3v3.6M15.9 3.3v3.6"/><path d="m10.2 13.6 3.6 3.6M13.8 13.6l-3.6 3.6"/></svg>',
     "sd:unlink": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.4 14.6 7 17a3.7 3.7 0 0 1-5.2-5.2l2.4-2.4"/><path d="m14.6 9.4 2.4-2.4a3.7 3.7 0 0 1 5.2 5.2l-2.4 2.4"/><path d="M12.5 4.2V1.8M19.8 11.5h2.4M4.2 12.5H1.8M11.5 19.8v2.4"/></svg>',
+    // A calendar with an arrow through it: the session moves, it doesn't vanish.
+    // Deliberately not the ✕ calendar (sd:calx) beside it — the two sit in the
+    // same list and must not read as the same action at a glance.
+    "sd:calmove": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.3" y="5.2" width="17.4" height="15.5" rx="3"/><path d="M3.3 10.1h17.4M8.1 3.3v3.6M15.9 3.3v3.6"/><path d="M8.4 15.4h7.2M13 12.8l2.6 2.6L13 18"/></svg>',
     // The activity column's own kinds. A stroked barbell rather than the solid
     // eq:dumbbell, so the whole column is one weight.
     // Tall plates on purpose: a barbell is a wide, flat shape, and drawn to its
@@ -13144,7 +13148,8 @@
     const rangeEnd = new Date(year, month + 1, 7);
     const [events, native] = await Promise.all([
       window.Cloud.getSetmoreEvents(state.trainerData.coachId, rangeStart.toISOString(), rangeEnd.toISOString()),
-      window.Cloud.getBookings(rangeStart.toISOString(), rangeEnd.toISOString()),
+      // Cancelled ones included on purpose — see nativeSlots below.
+      window.Cloud.getBookings(rangeStart.toISOString(), rangeEnd.toISOString(), true),
     ]);
     // In-app bookings join the calendar in the same shape as Setmore's, so the
     // month grid, the auto-redeem walker, the unlink control and the athlete
@@ -13184,9 +13189,16 @@
     // from its Setmore slot, so the two agree to the minute, and a minute is
     // coarse enough to survive a stored second's drift. Never on the formatted
     // time — that string carries a narrow no-break space before AM/PM.
+    //
+    // NB the slot set is built from EVERY native booking, cancelled ones
+    // included, while only the booked ones become calendar events. Once the app
+    // owns a slot the mirror is dead for it whatever happens next — otherwise
+    // cancelling a booking HANDS THE SLOT BACK to the mirror, which then
+    // charges for a session the coach just cancelled. That is exactly what
+    // happened to two athletes on 4 August.
     const cutoff = setmoreCutoffMs();
     const slotKey = (athleteId, startAt) => `${athleteId}|${Math.floor(new Date(startAt).getTime() / 60000)}`;
-    const nativeSlots = new Set(asEvents.map((e) => slotKey(e.athleteId, e.startAt)));
+    const nativeSlots = new Set((native || []).map((b) => slotKey(b.athlete_id, b.start_at)));
     const mirrored = (events || []).filter((e) => {
       if (new Date(e.startAt).getTime() >= cutoff) return false;
       const who = matchAthleteForEvent(e);
@@ -13760,6 +13772,9 @@
         ? act("unmark", "sd:undo", `Undo &ldquo;${mark.type === "closecall" ? "close call" : "missed"}&rdquo;`)
         : act("cc", "sd:waive", "Close call · free missed session") +
           act("charge", "sd:missed", "Missed · still charged"));
+      // Moving one comes before cancelling one, because it is the thing the
+      // coach usually actually wants: a session rarely disappears, it shifts.
+      if (e.native && e.bookingId) acts.push(act("move", "sd:calmove", "Change the date or time"));
       if (e.native && e.bookingId) acts.push(act("cancel", "sd:calx", "Cancel this session", "danger"));
       else if (!e.native) acts.push(act("unlink", "sd:unlink", "Unlink this booking"));
     }
@@ -13826,6 +13841,7 @@
     on("cc", () => { closeModal(); markBookingMissed(e, c, "closecall"); });
     on("charge", () => { closeModal(); markBookingMissed(e, c, "charged"); });
     on("unmark", () => { closeModal(); unmarkBookingMissed(e, c); });
+    on("move", () => { closeModal(); openMoveBookingSheet(e, c); });
     on("cancel", () => { closeModal(); cancelBookingFlow(e.bookingId, e.seriesId, e.startAt); });
     on("unlink", () => { closeModal(); unlinkSetmoreBooking(e.clientName); });
     on("link", () => { closeModal(); openLinkSetmoreNameModal(e.clientName); });
@@ -18144,19 +18160,148 @@
   // standing appointment? Ask, rather than picking one and being wrong half
   // the time. Past sessions are never touched: they happened, and the session
   // bank has already charged for them.
+  // Cancelling a booking gives its session back.
+  //
+  // It never did. The walker spends a token the moment a booking finishes, and
+  // cancelling only ever removed the booking row and the Google event — so a
+  // session the coach cancelled stayed spent, on a screen that gave no hint why
+  // the balance was one short. Two athletes were charged on 4 August for
+  // sessions cancelled that same day, which is how this came to light.
+  //
+  // Matched on the booking's own uid (`stsd:<id>`), so it takes back exactly
+  // what that booking spent and cannot touch a hand-logged redemption — those
+  // carry no uid at all, and a coach who redeemed a session by hand meant it.
+  function refundBookingTokens(bookingIds) {
+    const ids = (Array.isArray(bookingIds) ? bookingIds : [bookingIds]).filter(Boolean);
+    if (!ids.length) return 0;
+    const uids = new Set(ids.map((id) => `stsd:${id}`));
+    const touched = [];
+    let n = 0;
+    (state.trainerData.clients || []).forEach((c) => {
+      const reds = c.sessionBank?.redemptions;
+      if (!Array.isArray(reds) || !reds.length) return;
+      // The slots those bookings occupied, so a mirrored Setmore twin charging
+      // for the same session goes back with it rather than being left behind.
+      const slots = new Set(reds.filter((r) => uids.has(r.setmoreUid)).map((r) => r.slot).filter((s) => s != null));
+      const keep = reds.filter((r) => {
+        if (uids.has(r.setmoreUid)) return false;
+        if (r.setmoreUid && !String(r.setmoreUid).startsWith("stsd:") && r.slot != null && slots.has(r.slot)) return false;
+        return true;
+      });
+      if (keep.length === reds.length) return;
+      n += reds.length - keep.length;
+      c.sessionBank.redemptions = keep;
+      bankMutated(c);
+      touched.push(c);
+    });
+    if (!touched.length) return 0;
+    localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+    touched.forEach((c) => pushAthlete(c));
+    return n;
+  }
+
+  // Move one booked session to another date or time.
+  //
+  // Until now the only way to shift a session was to cancel it and book it
+  // again, which lost the booking's identity — and with it the redemption
+  // keyed to that id, the Google event, and the athlete's own copy of it.
+  //
+  // ONE booking, never the series. A weekly regular that moved because one
+  // week was awkward is not a weekly regular at a new time, and doing that by
+  // accident from a day sheet would be a bad afternoon. Ending a series and
+  // starting a new one is still the way to move the standing appointment.
+  function openMoveBookingSheet(e, c) {
+    if (!e?.bookingId) return;
+    const tz = normalizeAvailability(coachAvailability()).tz || localTz();
+    const startMs = new Date(e.startAt).getTime();
+    const endMs = new Date(e.endAt || startMs + 3600000).getTime();
+    // The length is carried, not re-asked. Moving a 90-minute session must not
+    // quietly turn it into an hour because the sheet only offered a start.
+    const lenMs = Math.max(15 * 60000, endMs - startMs);
+    const mins = Math.round(lenMs / 60000);
+    openModal({
+      title: `Move ${escapeHtml(c?.name?.split(" ")[0] || "this session")}`,
+      body: `
+        <p class="muted" style="margin-top:-0.4em">Currently ${escapeHtml(fmtSetmoreTime(e.startAt))} on ${escapeHtml(
+          new Date(startMs).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })
+        )} · ${mins} min.${e.seriesId ? " This one only — the rest of the weekly series stays where it is." : ""}</p>
+        <label>Date<input type="date" class="input" id="mv-date" value="${escapeHtml(zonedDateISO(startMs, tz))}" /></label>
+        <label>Start time<input type="time" class="input" id="mv-time" value="${escapeHtml(zonedHM(startMs, tz))}" /></label>
+        <p id="mv-err" class="error hidden"></p>`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Move it", className: "btn btn-primary", onClick: () => doMoveBooking(e, tz, lenMs) },
+      ],
+    });
+  }
+
+  async function doMoveBooking(e, tz, lenMs) {
+    const err = $("#mv-err");
+    const dateStr = $("#mv-date")?.value || "";
+    const hm = parseHM($("#mv-time")?.value || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr) || !hm) { showErr(err, "Pick a date and a time."); return; }
+    const [y, m, d] = dateStr.split("-").map(Number);
+    // Wall clock in the coach's zone, same as every other booking this app
+    // makes — an instant computed any other way slides an hour at a DST change.
+    const startMs = zonedTimeToUtc(y, m, d, hm.hh, hm.mm, tz);
+    if (startMs === new Date(e.startAt).getTime()) { closeModal(); return; }
+    const btn = $("#modal-foot .btn-primary");
+    if (btn) { btn.disabled = true; btn.textContent = "Moving…"; }
+    const res = await window.Cloud?.updateBookingTime?.(
+      e.bookingId, new Date(startMs).toISOString(), new Date(startMs + lenMs).toISOString());
+    if (!res?.ok) {
+      if (btn) { btn.disabled = false; btn.textContent = "Move it"; }
+      // The unique index is the authority on whether that slot was free, so a
+      // clash is reported from the write rather than guessed at beforehand.
+      showErr(err, res?.taken ? "Something else is already booked at that time." : "Couldn't move that booking.");
+      return;
+    }
+    // A session already spent moves WITH the booking. Leaving the redemption on
+    // the old date would put the session log and the calendar in two different
+    // places, and the log is what the month gets billed from.
+    moveBookingRedemption(e.bookingId, startMs);
+    window.Cloud?.googleCall?.("push", { bookingId: e.bookingId });
+    closeModal();
+    toast("Session moved ✓");
+    afterBookingChange();
+  }
+
+  // Keeps an auto-redeemed token attached to the booking it belongs to.
+  function moveBookingRedemption(bookingId, startMs) {
+    const uid = `stsd:${bookingId}`;
+    const c = (state.trainerData.clients || []).find((x) =>
+      (x.sessionBank?.redemptions || []).some((r) => r.setmoreUid === uid));
+    if (!c) return;
+    let touched = false;
+    c.sessionBank.redemptions.forEach((r) => {
+      if (r.setmoreUid !== uid) return;
+      r.date = dateISO(new Date(startMs));
+      r.slot = Math.floor(startMs / 60000);
+      if (/^Booked session · /.test(r.note || "")) r.note = `Booked session · ${fmtSetmoreTime(startMs)}`;
+      touched = true;
+    });
+    if (!touched) return;
+    bankMutated(c);
+    localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+    pushAthlete(c);
+  }
+
   function cancelBookingFlow(bookingId, seriesId, startAt) {
     const cancelOne = async () => {
       const ok = await window.Cloud?.cancelBooking?.(bookingId);
       if (!ok) { toast("Couldn't cancel that booking"); return; }
       window.Cloud?.googleCall?.("remove", { bookingId });
-      toast("Booking cancelled");
+      const back = refundBookingTokens(bookingId);
+      toast(back ? "Booking cancelled · session given back" : "Booking cancelled");
       afterBookingChange();
     };
     const cancelRest = async () => {
       const ids = await window.Cloud?.cancelBookingSeries?.(seriesId, startAt || new Date().toISOString());
       if (!ids?.length) { toast("Couldn't cancel those. Try again."); return; }
       window.Cloud?.googleCall?.("remove-series", { seriesId, from: startAt || new Date().toISOString() });
-      toast(`${ids.length} session${ids.length === 1 ? "" : "s"} cancelled`);
+      const back = refundBookingTokens(ids);
+      toast(`${ids.length} session${ids.length === 1 ? "" : "s"} cancelled` +
+        (back ? ` · ${back} given back` : ""));
       afterBookingChange();
     };
     if (!seriesId) {

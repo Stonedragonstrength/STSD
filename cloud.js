@@ -374,6 +374,24 @@
       return (data || []).map((r) => r.id);
     } catch (e) { console.warn("[Cloud] cancelBookingSeries", e); return []; }
   }
+  // Move one booking to a new time. Same 23505 contract as createBooking: the
+  // partial unique index is the authority on whether the target slot was free,
+  // so a clash comes back as { taken:true } rather than being guessed at first.
+  // Deliberately one booking — moving a whole weekly series is a different act,
+  // and doing it by accident from a day sheet would be a bad afternoon.
+  async function updateBookingTime(id, startISO, endISO) {
+    try {
+      const { error } = await sb.from("bookings")
+        .update({ start_at: startISO, end_at: endISO })
+        .eq("id", id).eq("status", "booked");
+      if (error) {
+        const taken = error.code === "23505";
+        if (!taken) console.warn("[Cloud] updateBookingTime", error.message);
+        return { ok: false, taken, message: error.message };
+      }
+      return { ok: true };
+    } catch (e) { console.warn("[Cloud] updateBookingTime", e); return { ok: false, taken: false }; }
+  }
   async function cancelBooking(id) {
     try {
       const { error } = await sb.from("bookings")
@@ -384,9 +402,14 @@
   }
   // Whole rows. RLS narrows this to the caller's own bookings for an athlete
   // and to every athlete's for the coach, so both sides use the same call.
-  async function getBookings(fromISO, toISO) {
+  // `includeCancelled` is for one caller: the calendar merge needs to know which
+  // slots the APP owns, and a cancelled booking still owns its slot. Without it
+  // the dead Setmore mirror starts speaking for a session the coach cancelled,
+  // and the auto-redeem walker charges for it. Everything else wants booked only.
+  async function getBookings(fromISO, toISO, includeCancelled) {
     try {
-      let q = sb.from("bookings").select("*").eq("status", "booked").order("start_at", { ascending: true });
+      let q = sb.from("bookings").select("*").order("start_at", { ascending: true });
+      if (!includeCancelled) q = q.eq("status", "booked");
       if (fromISO) q = q.gte("start_at", fromISO);
       if (toISO) q = q.lt("start_at", toISO);
       const { data, error } = await q;
@@ -1127,6 +1150,7 @@
     createBooking,
     createBookings,
     cancelBooking,
+    updateBookingTime,
     cancelBookingSeries,
     getBookings,
     googleCall,
