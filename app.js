@@ -6219,6 +6219,14 @@
           <label class="chg-how-opt"><input type="radio" name="chg-how" value="manual" /> <span>Invoice only</span></label>
         </div>
         <p class="muted chg-foot" id="chg-foot">They pay on Square's own page. Their card never touches this app, and nothing here changes until Square confirms it.</p>
+        ${_billingConfig && _billingConfig.mode !== "production" ? `
+        <!-- Sandbox only, and gated again on the SERVER by SQUARE_ENV — a
+             production request carrying this flag charges the real card
+             regardless, so it can never become a way to fail someone's
+             payment. Here because a declined card-on-file charge cannot be
+             produced any other way: by the time we charge, the number is gone
+             and we hold an opaque handle. -->
+        <label class="chg-decline"><input type="checkbox" id="chg-decline" /> <span>⚠︎ Simulate a decline (sandbox)</span></label>` : ""}
         <div id="chg-result"></div>`,
       actions: [
         { label: "Send link", className: "btn btn-primary", onClick: () => doCharge(c, monthKey) },
@@ -6294,6 +6302,9 @@
     if (amount < 1) { toast("Put an amount on it first"); return; }
     const res = await window.Cloud.squareBilling("chargeMonth", {
       athleteId: c.id, monthKey, amountCents: Math.round(amount * 100), sessions, rate, note, noLink,
+      // Only ever true in sandbox — the checkbox does not exist otherwise, and
+      // the server ignores it in production anyway.
+      testDecline: $("#chg-decline")?.checked === true,
     });
     const out = $("#chg-result");
     if (!res?.ok) {

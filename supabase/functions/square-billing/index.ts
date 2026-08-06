@@ -80,6 +80,26 @@ function squareBase(): string {
     : "https://connect.squareupsandbox.com";
 }
 
+const isProduction = () =>
+  (Deno.env.get("SQUARE_ENV") ?? "sandbox").toLowerCase() === "production";
+
+/**
+ * What to charge, honouring a sandbox-only request to make it fail.
+ *
+ * A declined card-on-file charge cannot be produced from the UI: by the time we
+ * charge, the number is gone and we hold an opaque handle. Square's only
+ * simulator is this source id. So the decline path — what happens when a real
+ * athlete's card expires — had no way of ever being run before a real athlete
+ * ran it.
+ *
+ * Gated on the ENVIRONMENT, not on who is asking. In production this returns
+ * the real card every time whatever the request says, so the flag cannot become
+ * a way to make somebody's payment fail.
+ */
+function chargeSource(cardId: string, wantDecline: boolean): string {
+  return !isProduction() && wantDecline ? "ccof:customer-card-id-declined" : cardId;
+}
+
 async function square(path: string, token: string, init?: RequestInit) {
   const res = await fetch(squareBase() + path, {
     ...init,
@@ -466,7 +486,7 @@ Deno.serve(async (req) => {
         method: "POST",
         body: JSON.stringify({
           idempotency_key: `inv-${due.id}`.slice(0, 45),
-          source_id: sub.square_card_id,
+          source_id: chargeSource(sub.square_card_id, body?.testDecline === true),
           customer_id: sub.square_customer_id,
           location_id: locationId,
           amount_money: { amount: due.amount_cents, currency: "USD" },
@@ -646,7 +666,7 @@ Deno.serve(async (req) => {
               // Same rule as payNow: keyed to the invoice, not the clock, so a
               // charge raised twice for one month cannot take the money twice.
               idempotency_key: `inv-${inserted.id}`.slice(0, 45),
-              source_id: sub.square_card_id,
+              source_id: chargeSource(sub.square_card_id, body?.testDecline === true),
               customer_id: sub.square_customer_id,
               location_id: locationId,
               amount_money: { amount: amountCents, currency: "USD" },
