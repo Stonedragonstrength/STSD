@@ -19,12 +19,32 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * The coach's day, on the home screen.
+ * Where NOW wants the list: [top] is the row that should end up against the top
+ * edge — the next unfinished session — and [target] is the row below it that
+ * has to be asked for to get it there. See ScheduleWidget.settleThenScroll.
  *
- * One day at a time, with ‹ and › to step through it and the date itself as the
- * way back to today. A week grid was the other option and it loses on a phone:
- * at widget size a week is seven unreadable columns, and the question this is
- * meant to answer — "what does the rest of today look like" — is a day question.
+ * Top-level, like Row next door, rather than tucked inside the companion: the
+ * provider's own onUpdate and onReceive hold one of these, and a type private
+ * to the companion is a visibility argument nothing on this machine can settle
+ * — there is no compiler here, only CI.
+ */
+internal class Jump(val target: Int, val top: Int)
+
+/**
+ * A painted frame, plus the jump it wants applied once the list has caught up
+ * with it — the two cannot travel together, see ScheduleWidget.settleThenScroll.
+ */
+internal class Frame(val views: RemoteViews, val scrollTo: Jump?)
+
+/**
+ * The coach's week, on the home screen.
+ *
+ * One scrolling list, Monday to Sunday, day headers interleaved with sessions,
+ * with ‹ and › to step whole weeks and NOW to come back to the next session.
+ * A week GRID was the other option and it loses on a phone: at widget size a
+ * week is seven unreadable columns, and RemoteViews has no horizontal scroller
+ * to rescue it. It started as a day at a time, which answered "what is left of
+ * today" and nothing about tomorrow.
  */
 class ScheduleWidget : AppWidgetProvider() {
 
@@ -288,19 +308,6 @@ class ScheduleWidget : AppWidgetProvider() {
                 paint(ctx, mgr, widgetId)?.let { settleThenScroll(ctx, mgr, widgetId, it) }
             }
         }
-
-        /**
-         * Where NOW wants the list: [top] is the row that should end up against
-         * the top edge — the next session — and [target] is the row below it
-         * that has to be asked for to get it there. See settleThenScroll.
-         */
-        private class Jump(val target: Int, val top: Int)
-
-        /**
-         * A painted frame, plus the jump it wants applied once the list has the
-         * data — the two cannot travel together, see settleThenScroll.
-         */
-        private class Frame(val views: RemoteViews, val scrollTo: Jump?)
 
         private fun buildFrame(
             ctx: Context,
