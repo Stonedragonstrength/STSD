@@ -14588,6 +14588,83 @@
     await refreshAthleteOpenSlots();
   }
 
+  // ---- What the athlete owes, and nothing else about money ----
+  // The balance card's rule stands: no money on it, ever. This is a separate
+  // card that exists ONLY when the coach has raised a real charge, and it
+  // disappears the moment it's paid.
+  //
+  // Deliberately NOT a forecast. The app can work out sessions × rate, but
+  // the coach adjusts totals and gives discounts, so a predicted figure would
+  // routinely disagree with the one they're eventually asked for — and a
+  // number that changes under someone is worse friction than no number.
+  // Nothing here is computed; it is the amount he actually asked for.
+
+  // Memory-only, like the coach's. Payment state is never put in
+  // state.clientData, because everything in there is pushed back to Supabase
+  // by saveClient, and a client that can push payment state is a client that
+  // can claim to have paid.
+  let _athleteCharges = null;
+  let _athleteChargesAt = 0;
+  async function loadAthleteCharges(maxAgeMs = 60_000) {
+    if (_athleteCharges && Date.now() - _athleteChargesAt < maxAgeMs) return _athleteCharges;
+    if (!window.Cloud?.enabled || state.previewMode) return _athleteCharges || [];
+    const rows = await window.Cloud.getBillingForAthlete();
+    if (rows) { _athleteCharges = rows; _athleteChargesAt = Date.now(); }
+    return _athleteCharges || [];
+  }
+  function renderAthleteChargeCard(host) {
+    let card = host.querySelector(".athlete-charge-card");
+    loadAthleteCharges().then((rows) => {
+      const due = (rows || []).filter((r) => r.status === "sent" && r.checkout_url);
+      card = host.querySelector(".athlete-charge-card");
+      if (!due.length) { card?.remove(); return; }
+      if (!card) {
+        card = document.createElement("div");
+        card.className = "card athlete-charge-card";
+        host.appendChild(card);
+      }
+      const total = due.reduce((n, r) => n + (Number(r.amount_cents) || 0), 0) / 100;
+      const one = due.length === 1 ? due[0] : null;
+      // Described from the STRUCTURED fields, never from `note`. That field is
+      // the coach's own annotation for his records — "goodwill", "comped",
+      // whatever the reason was — and it is not the app's to read back to the
+      // person being charged. Sessions and month say enough.
+      const describe = (r) => {
+        const n = Number(r.sessions);
+        return n > 0 ? `${n} session${n === 1 ? "" : "s"} · ${monthName(r.month_key)}`
+                     : monthName(r.month_key);
+      };
+      card.innerHTML =
+        `<div class="acc-head"><span class="acc-label">To pay</span>` +
+        `<span class="acc-amount">${escapeHtml(money(total))}</span></div>` +
+        `<p class="acc-what">${escapeHtml(one ? describe(one) : `${due.length} months outstanding`)}</p>`;
+      const pay = document.createElement("button");
+      pay.type = "button";
+      pay.className = "btn btn-primary btn-sm acc-pay";
+      pay.textContent = due.length === 1 ? "Pay by card" : `Pay ${monthName(due[0].month_key)}`;
+      // Opens Square's own page. The card is entered there and never here —
+      // which is also why this is a link out and not a form.
+      pay.addEventListener("click", () => window.open(due[0].checkout_url, "_blank", "noopener"));
+      card.appendChild(pay);
+      if (due.length > 1) {
+        const rest = document.createElement("div");
+        rest.className = "acc-rest";
+        due.slice(1).forEach((r) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "btn btn-ghost btn-sm";
+          b.textContent = `Pay ${monthName(r.month_key)} · ${money((r.amount_cents || 0) / 100)}`;
+          b.addEventListener("click", () => window.open(r.checkout_url, "_blank", "noopener"));
+          rest.appendChild(b);
+        });
+        card.appendChild(rest);
+      }
+    });
+  }
+  const monthName = (key) => key
+    ? new Date(key + "-15T12:00:00Z").toLocaleDateString(undefined, { month: "long", timeZone: "UTC" })
+    : "this month";
+
   function renderAthleteSessions() {
     const container = $("#athlete-session-container"); if (!container) return;
     container.innerHTML = "";
@@ -14616,6 +14693,9 @@
     // Balance card lives in the always-visible host above the calendar.
     const balHost = $("#athlete-balance-host");
     if (balHost) balHost.replaceChildren(balance); else container.appendChild(balance);
+    // Anything to pay goes directly under it — a charge the coach has actually
+    // raised, never an estimate of one. See renderAthleteChargeCard.
+    if (balHost) renderAthleteChargeCard(balHost);
 
     // Membership card — coach-assigned plan (read-only), top of the Sessions tab.
     const membership = membershipById(prog.client.sessionBank?.membership);

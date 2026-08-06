@@ -919,10 +919,23 @@
       return { subscriptions: subs.data || [], payments: pays.error ? [] : (pays.data || []) };
     } catch (e) { console.warn("[Cloud] getBillingForCoach", e); return null; }
   }
-  // NOTE: there is deliberately no getBillingForAthlete yet. The athlete's own
-  // select policies are already in place for it, but nothing on the athlete
-  // side reads billing, and an untested read path in a payments feature is
-  // worse than a missing one. Add it with the surface that uses it.
+  // The athlete's own charges. RLS answers "which are mine" — including a
+  // partner's half of a shared bank — so there is no filtering to do here and
+  // no athlete id to pass. Only ever charges the coach actually raised; the
+  // app never shows an athlete an estimate of one.
+  async function getBillingForAthlete() {
+    try {
+      const { data, error } = await sb.from("billing_payments")
+        // `note` is deliberately NOT fetched: it is the coach's own annotation
+        // ("goodwill", "comped") and belongs in his records, not read back to
+        // the person being charged. RLS would allow it; taste doesn't.
+        .select("id, month_key, amount_cents, status, checkout_url, sessions, paid_at")
+        .gte("month_key", monthsAgoKey(3))
+        .order("month_key", { ascending: false });
+      if (error) { console.warn("[Cloud] getBillingForAthlete", error.message); return null; }
+      return data || [];
+    } catch (e) { console.warn("[Cloud] getBillingForAthlete", e); return null; }
+  }
   function monthsAgoKey(n) {
     const d = new Date();
     d.setMonth(d.getMonth() - n);
@@ -1156,6 +1169,7 @@
     deleteExerciseDemo,
     // Billing (read-only from the client; writes are the webhook's alone)
     getBillingForCoach,
+    getBillingForAthlete,
     squareBilling,
     // Web push
     savePushSubscription,

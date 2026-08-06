@@ -234,6 +234,10 @@ Deno.serve(async (req) => {
         amount_cents: amountCents,
         sessions,
         note: note || null,
+        // Stored so the ATHLETE can pay from their own Sessions tab instead of
+        // waiting to be sent it. Their select policy already scopes this row to
+        // them, and the link is exactly what they're meant to have.
+        checkout_url: url,
         status: "sent",
       });
 

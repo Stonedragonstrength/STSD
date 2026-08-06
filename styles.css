@@ -6232,7 +6232,27 @@ input.billing-link {
   .billing-actions { margin-left: 0; width: 100%; }
 }
 
-/* ===== Coach demo clips ===== */
+/* ===== What the athlete owes ===== */
+/* The ONLY money an athlete ever sees, and only when their coach has actually
+   raised a charge. It sits under the balance card rather than on it, because
+   the balance card's rule is that opening the app to book never greets anyone
+   with a bill — this is a separate thing that appears and then goes away. */
+.athlete-charge-card {
+  display: flex; flex-direction: column; gap: 0.5rem;
+  border-color: rgba(var(--primary-bright-rgb), 0.45);
+  background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.12), transparent);
+}
+.acc-head { display: flex; align-items: baseline; gap: 0.6rem; }
+.acc-label {
+  flex: 1 1 auto;
+  font-size: 0.68rem; font-weight: 800; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--text-soft);
+}
+/* The number is the point of the card, so it gets the size. */
+.acc-amount { font-size: 1.5rem; font-weight: 900; color: var(--primary-bright); line-height: 1; }
+.acc-what { margin: 0; font-size: 0.78rem; color: var(--text-soft); }
+.acc-pay { align-self: flex-start; }
+.acc-rest { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 /* The coach's own footage, for lifts the still library has nothing for. Sits at
    the top of the demo picker, because it is the answer when the search below it
    comes back empty. */
