@@ -6115,6 +6115,19 @@
           : (plan.sessions ? `💳 ${money(plan.amount)}` : "💳 Charge");
         go.addEventListener("click", () => openChargeSheet(c, monthKey, plan, charge));
         row.appendChild(go);
+        // Giving it back belongs here too. Money is where billing lives now, so
+        // refunding from it should not send you into the athlete's profile to
+        // find the same button. Same guard as there: only where there is a card
+        // payment behind the charge.
+        if (charge?.status === "paid" && charge.square_payment_id) {
+          const back = document.createElement("button");
+          back.type = "button";
+          back.className = "btn btn-ghost btn-sm mr-refund";
+          back.textContent = "↩";
+          back.title = `Refund ${money((charge.amount_cents || 0) / 100)}`;
+          back.addEventListener("click", () => refundCharge(charge, c));
+          row.appendChild(back);
+        }
         card.appendChild(row);
       });
       if (!rows.length) {

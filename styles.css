@@ -13893,3 +13893,8 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
   body.printing-invoice .invoice-note { border-left: 2px solid #999 !important; }
   @page { margin: 18mm; }
 }
+
+/* Refund, on a roster row. Icon-only: the row is already dense, and the title
+   carries the amount for anyone who hovers or long-presses. */
+.mr-refund { padding-left: 0.55em; padding-right: 0.55em; opacity: 0.62; }
+.mr-refund:hover { opacity: 1; }
