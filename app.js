@@ -6048,7 +6048,7 @@
         const go = document.createElement("button");
         go.type = "button";
         go.className = "btn btn-ghost btn-sm";
-        go.textContent = plan.sessions ? `💳 Charge ${money(plan.amount)}` : "💳 Charge by card";
+        go.textContent = plan.amount ? `💳 Charge ${money(plan.amount)}` : "💳 Charge by card";
         go.addEventListener("click", () => openChargeSheet(c, monthKey, plan, null));
         act.appendChild(go);
       }
@@ -6136,7 +6136,7 @@
         go.className = charge ? "btn btn-ghost btn-sm" : "btn btn-primary btn-sm";
         go.textContent = charge
           ? (charge.status === "paid" ? "＋ New" : "Chase")
-          : (plan.sessions ? `💳 ${money(plan.amount)}` : "💳 Charge");
+          : (plan.amount ? `💳 ${money(plan.amount)}` : "💳 Charge");
         go.addEventListener("click", () => openChargeSheet(c, monthKey, plan, charge));
         row.appendChild(go);
         // Giving it back belongs here too. Money is where billing lives now, so
@@ -6164,6 +6164,14 @@
   // What this month is worth, and how that number was reached. Shown as the
   // working, not just the total, because a coach about to charge somebody
   // should be able to see WHY it says $819 before they send it.
+  // A tier that is priced but grants no sessions bills its price FLAT: the
+  // coaching is the product, so sessions × rate is $0 and would offer nothing
+  // to bill for an athlete who owes $250. Returns 0 for every ordinary tier,
+  // which leaves the sessions × rate arithmetic exactly as it was.
+  function flatMonthly(m) {
+    return m && m.price && !m.sessions ? Number(m.price) || 0 : 0;
+  }
+
   function monthChargePlan(c, monthKey) {
     ensureSessionBank(c);
     const rate = athleteSessionRate(c);
@@ -6176,10 +6184,11 @@
     const pkg = monthPackageOf(c, monthKey);
     const sessions = billSessionsFor(c, monthKey, membership);
     const allowance = Number(pkg?.size) || Number(membership?.sessions) || 0;
+    const flat = flatMonthly(membership);
     return {
-      sessions, rate, allowance,
+      sessions, rate, allowance, flat,
       over: allowance ? Math.max(0, sessions - allowance) : 0,
-      amount: Math.round(sessions * rate),
+      amount: flat || Math.round(sessions * rate),
     };
   }
   // The month's charge for this BANK, not this athlete. A couple share one
@@ -6212,6 +6221,9 @@
     // that says "this month" while proposing September's number is the app
     // being wrong about the one thing the coach is checking.
     const when = monthKey ? monthKeyLabel(monthKey).replace(/ \d{4}$/, "") : "";
+    // A flat tier has something to bill with no sessions on it at all, so the
+    // session count cannot be the test for "is there anything here".
+    if (plan.flat) return { text: `${money(plan.flat)}${when ? ` · ${when}` : ""}`, tone: "muted" };
     if (!plan.sessions) return { text: `Nothing to bill for ${when || "next month"}`, tone: "muted" };
     // The over-allowance case said out loud, because it is the one the coach
     // most needs to notice and the one a flat monthly charge would have missed.
@@ -6249,14 +6261,26 @@
       title: `Charge ${c.name || "athlete"} · ${monthLabel}`,
       body: `
         <div class="chg-working">
+          ${plan.flat ? `
+          <!-- A flat tier has no sessions × rate to show. Showing the working
+               anyway would invite him to edit two boxes that multiply to a
+               number the charge box then ignores. The charge itself stays
+               editable, because goodwill still happens. -->
+          <div class="chg-line"><span>Membership</span><strong>${escapeHtml(membershipTitle(bankMembership(c)) || "Monthly")}</strong></div>
+          ` : `
           <div class="chg-line"><span>Sessions</span><input type="number" class="input chg-in" id="chg-sessions" min="0" step="1" value="${plan.sessions}" /></div>
           <div class="chg-line"><span>Rate each</span><input type="number" class="input chg-in" id="chg-rate" min="0" step="1" value="${plan.rate || ""}" placeholder="0" /></div>
           <div class="chg-total"><span>Total</span><strong id="chg-total">${money(plan.amount)}</strong></div>
+          `}
           <div class="chg-line"><span>Charge</span><input type="number" class="input chg-in" id="chg-amount" min="1" step="1" value="${plan.amount}" /></div>
         </div>
         ${plan.over ? `<p class="muted chg-note">${plan.over} session${plan.over === 1 ? "" : "s"} over the ${plan.allowance} on their membership — already counted above.</p>` : ""}
         <label class="chg-note-lbl">What this is for
-          <input type="text" class="input" id="chg-note" maxlength="120" value="${escapeHtml(`${plan.sessions} session${plan.sessions === 1 ? "" : "s"} · ${monthLabel}`)}" />
+          <input type="text" class="input" id="chg-note" maxlength="120" value="${escapeHtml(
+            plan.flat
+              ? `${membershipTitle(bankMembership(c)) || "Membership"} · ${monthLabel}`
+              : `${plan.sessions} session${plan.sessions === 1 ? "" : "s"} · ${monthLabel}`,
+          )}" />
         </label>
         <!-- How they pay. Both raise the same numbered invoice; only one of
              them involves Square. Without this, invoicing worked for the
@@ -6780,6 +6804,33 @@
     return rows;
   }
 
+  // What a NAMED month is worth on the calendar: its booked sessions against
+  // each athlete's rate.
+  //
+  // Deliberately not the run rate yearOutlook() uses. That one extends a
+  // four-week average across months nobody has booked yet, which is the right
+  // answer for "what is the year worth" and the wrong one for a row sitting in
+  // the books under real months — a named month either has sessions on it or it
+  // does not, and next month always does, because he books ahead.
+  function bookedValueForMonth(monthKey) {
+    const [y, m] = String(monthKey).split("-").map(Number);
+    if (!y || !m) return { amount: 0, sessions: 0, unpriced: 0 };
+    const rates = new Map((state.trainerData.clients || []).map((c) => [c.id, athleteSessionRate(c)]));
+    const start = `${monthKey}-01`;
+    const end = dateISO(new Date(y, m, 1)); // exclusive: the 1st of the month after
+    let amount = 0, sessions = 0, unpriced = 0;
+    (_coachBookings || []).forEach((b) => {
+      if (b.status !== "booked" || !b.start_at) return;
+      const d = dateISO(new Date(b.start_at));
+      if (d < start || d >= end) return;
+      const r = rates.get(b.athlete_id) || 0;
+      if (!r) unpriced++;
+      amount += r;
+      sessions++;
+    });
+    return { amount, sessions, unpriced };
+  }
+
   let _booksOpenMonth = null; // which month's athlete list is expanded
 
   function renderBooks() {
@@ -6814,6 +6865,24 @@
         ["Best month", best ? `${best.label} · ${money(best.collected + best.outstanding)}` : "—"],
         ["Per session", sessions ? money(total / sessions) : "—"],
       ];
+
+      // One ghost row under the real months: the next month that has NOT been
+      // billed yet, worth whatever is already on the calendar. The books
+      // otherwise end at the last invoice, which on a coach who bills a month
+      // ahead means the row you most want — "what is coming" — is the one row
+      // missing. Shown only where it can mean something: the current year, a
+      // month inside that year, and only once something is actually booked in
+      // it, so December doesn't grow a permanent $0 row.
+      const lastKey = months.length ? months[months.length - 1].key : `${year}-01`;
+      const projKey = shiftMonthKey(lastKey, 1);
+      const projMonth = Number(projKey.slice(5, 7)) - 1;
+      const proj = projKey.startsWith(`${year}-`) && year === now.getFullYear()
+        ? { ...bookedValueForMonth(projKey), key: projKey, label: MONTH_NAMES[projMonth].slice(0, 3) }
+        : null;
+      const showProj = !!proj && proj.sessions > 0;
+      // The ghost bar shares the year's scale, so "next month is quiet so far"
+      // reads as a short bar rather than as a full-width one in another colour.
+      const barPeak = Math.max(peak, showProj ? proj.amount : 0);
 
       host.innerHTML = `
         <div class="books${shown ? "" : " is-hidden"}">
@@ -6856,14 +6925,28 @@
                   <button type="button" class="books-mo-row" data-books-mo="${escapeHtml(r.key)}"${total ? "" : " disabled"}>
                     <span class="books-mo-name">${escapeHtml(r.label)}</span>
                     <span class="books-mo-bar">
-                      <span class="books-bar-in" style="width:${(r.collected / peak) * 100}%"></span>
-                      <span class="books-bar-out" style="width:${(r.outstanding / peak) * 100}%"></span>
+                      <span class="books-bar-in" style="width:${(r.collected / barPeak) * 100}%"></span>
+                      <span class="books-bar-out" style="width:${(r.outstanding / barPeak) * 100}%"></span>
                     </span>
                     <span class="books-mo-num">${escapeHtml(money(total))}</span>
                   </button>
                   ${open ? `<div class="books-mo-list">${booksEntriesHtml(r.entries)}</div>` : ""}
                 </div>`;
               }).join("")}
+              ${showProj ? `
+                <div class="books-mo is-proj">
+                  <div class="books-mo-row">
+                    <span class="books-mo-name">${escapeHtml(proj.label)}</span>
+                    <span class="books-mo-bar">
+                      <span class="books-bar-proj" style="width:${(proj.amount / barPeak) * 100}%"></span>
+                    </span>
+                    <span class="books-mo-num">${escapeHtml(money(proj.amount))}</span>
+                  </div>
+                  <p class="books-proj-note">${escapeHtml(
+                    `${plural(proj.sessions, "session")} booked, at your rates. Not invoiced yet.` +
+                    (proj.unpriced ? ` ${proj.unpriced} with no rate set.` : ""),
+                  )}</p>
+                </div>` : ""}
             </div>
             ${booksByTierHtml(months)}
           </div>
@@ -16516,9 +16599,12 @@
     { id: "couples-1", cat: "Couples Sessions", perWeek: 1, sessions: 4,  price: 550  },
     { id: "couples-2", cat: "Couples Sessions", perWeek: 2, sessions: 8,  price: 1040 },
     { id: "couples-3", cat: "Couples Sessions", perWeek: 3, sessions: 12, price: 1500 },
-    // Standalone monthly tiers for client categorization. No perWeek/price
-    // framing, so they carry their own title/sub/option labels.
-    { id: "monthly-2",  cat: "Monthly Memberships", sessions: 2, title: "2 Session Monthly Membership", short: "2 sessions / month", optLabel: "2 sessions / month" },
+    // Standalone monthly tiers. `short` is dropped where a price exists so
+    // membershipSub composes the usual "N sessions / month · $X/mo".
+    { id: "monthly-2",  cat: "Monthly Memberships", sessions: 2, price: 315, title: "2 Session Monthly Membership", optLabel: "2 sessions / month" },
+    // Program only, and priced — the coaching IS the product, so it bills a
+    // FLAT monthly amount rather than sessions × rate. See flatMonthly().
+    { id: "digital",    cat: "Monthly Memberships", sessions: 0, price: 250, title: "Digital Membership", short: "Program only · $250/mo", optLabel: "Digital Membership (program only)" },
     { id: "no-session", cat: "Monthly Memberships", sessions: 0, title: "No Session Membership",       short: "Program only · no sessions", optLabel: "No sessions (program only)" },
   ];
   function membershipById(id) { return MEMBERSHIPS.find((m) => m.id === id) || null; }
@@ -17212,10 +17298,11 @@
       const rate = athleteSessionRate(c) || athleteSessionRate(partner) || 0;
       const sessions = billSessionsFor(c, monthKey, membership);
       const charge = chargeFor(c, monthKey);
+      const flat = flatMonthly(membership);
       rows.push({
-        client: c, partner, target, membership, rate, sessions, charge,
+        client: c, partner, target, membership, rate, sessions, charge, flat,
         payBy: bankPayBy(c),
-        amount: Math.round(sessions * rate),
+        amount: flat || Math.round(sessions * rate),
         state: charge?.status === "paid" ? "paid" : charge ? "sent" : "due",
       });
     });
@@ -17231,7 +17318,7 @@
       return ensureBillingLoaded(BILLING_STALE_MS).then(() => {
         if ($("#btn-month-bill") !== btn) return;
         const key = billMonthKey();
-        const rows = monthBillRoster(key).filter((r) => r.sessions > 0 || r.charge);
+        const rows = monthBillRoster(key).filter((r) => r.sessions > 0 || r.flat || r.charge);
         if (!rows.length) { hide(btn); return; }
         show(btn);
         const due = rows.filter((r) => r.state === "due").length;
@@ -17252,8 +17339,8 @@
     const monthLabel = new Date(key + "-15T12:00:00Z")
       .toLocaleDateString(undefined, { month: "long", year: "numeric", timeZone: "UTC" });
     const rows = monthBillRoster(key);
-    const billable = rows.filter((r) => r.sessions > 0 || r.charge);
-    const idle = rows.filter((r) => !r.sessions && !r.charge);
+    const billable = rows.filter((r) => r.sessions > 0 || r.flat || r.charge);
+    const idle = rows.filter((r) => !r.sessions && !r.flat && !r.charge);
     const off = billMonthOffset();
 
     // Already invoiced rows stay in the list rather than vanishing from it:
@@ -17265,10 +17352,12 @@
       const done = r.state !== "due";
       const stateTxt = r.state === "paid" ? `Paid · ${money((r.charge.amount_cents || 0) / 100)}`
         : r.state === "sent" ? `Invoiced · ${money((r.charge.amount_cents || 0) / 100)}`
+        // A flat tier has no × to show, and "0 × $0" is not what it costs.
+        : r.flat ? `${membershipTitle(r.membership) || "Monthly"} · ${money(r.flat)}`
         : r.rate ? `${r.sessions} × ${money(r.rate)}`
         : "No rate set";
       return `
-        <div class="bill-row${done ? " is-done" : ""}${r.rate ? "" : " is-norate"}" data-bill="${escapeHtml(c.id)}" style="--athlete-rgb:${AVATAR_RGB[idx]}">
+        <div class="bill-row${done ? " is-done" : ""}${r.rate || r.flat ? "" : " is-norate"}" data-bill="${escapeHtml(c.id)}" style="--athlete-rgb:${AVATAR_RGB[idx]}">
           <label class="bill-pick">
             <input type="checkbox" data-bill-on="${escapeHtml(c.id)}"${done ? " disabled" : " checked"} />
             <span class="bill-av">${avatarTileHtml(c, c.importedProgress, { size: "sm", colorIdx: idx })}</span>

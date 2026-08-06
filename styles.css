@@ -4053,6 +4053,23 @@ input.bill-in {
 }
 .books-bar-in { background: linear-gradient(90deg, rgba(34, 197, 94, 0.55), #4ade80); }
 .books-bar-out { background: rgba(245, 158, 11, 0.55); }
+/* Next month, from the calendar rather than from an invoice. Deliberately the
+   quietest row on the list — hatched rather than filled, and set apart above a
+   rule — because it is the only figure in the books that has not happened yet,
+   and it must never be mistaken for money that has been asked for. */
+.books-mo.is-proj { margin-top: 0.35rem; padding-top: 0.4rem; border-top: 1px dashed var(--border); }
+.books-mo.is-proj .books-mo-row { cursor: default; }
+.books-mo.is-proj .books-mo-name,
+.books-mo.is-proj .books-mo-num { color: var(--muted); }
+.books-bar-proj {
+  background-image: repeating-linear-gradient(
+    45deg, rgba(148, 163, 184, 0.55) 0 4px, transparent 4px 8px);
+  border: 1px dashed rgba(148, 163, 184, 0.5);
+  border-radius: 999px;
+}
+.books-proj-note {
+  margin: 0.1em 0 0 3rem; font-size: 0.66rem; color: var(--muted);
+}
 .books-mo-num { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .books-mo.is-open .books-mo-row { background: var(--surface-2); }
 .books-mo-list {
