@@ -6323,11 +6323,27 @@
     }
     // Shown, never auto-sent: where a payment link goes is the coach's call.
     if (out && res.url) {
-      out.innerHTML = `<p class="muted chg-ready">Link ready — send it to ${escapeHtml(c.name || "them")}.</p>
-        <input class="input billing-link" id="billing-link" readonly value="${escapeHtml(res.url)}" />`;
-      $("#billing-link")?.select();
-      navigator.clipboard?.writeText(res.url).then(
-        () => toast("Link copied"), () => {});
+      // The link is on the clipboard, so the sheet has nothing left to show —
+      // and it is recoverable anyway ("Show the link again" on the billing
+      // row), so keeping it up was making every charge a two-step exit.
+      //
+      // Only closed once the copy has actually SUCCEEDED. If the clipboard is
+      // unavailable or refused, the sheet stays open with the link selected,
+      // because that is then the only copy of it on screen.
+      const showIt = () => {
+        out.innerHTML = `<p class="muted chg-ready">Link ready — send it to ${escapeHtml(c.name || "them")}.</p>
+          <input class="input billing-link" id="billing-link" readonly value="${escapeHtml(res.url)}" />`;
+        $("#billing-link")?.select();
+      };
+      const copied = navigator.clipboard?.writeText(res.url);
+      if (copied) {
+        copied.then(() => {
+          closeModal();
+          toast(`Link copied — send it to ${c.name || "them"}`);
+        }, showIt);
+      } else {
+        showIt();
+      }
     } else {
       // Nothing to copy and nothing to send, so nothing to stay open for. The
       // sheet used to sit there with its answer buried under the fold, which
