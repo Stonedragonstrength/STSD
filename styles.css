@@ -3892,10 +3892,44 @@ input.trial-input {
 }
 .bill-step:hover:not(:disabled) { border-color: var(--primary); color: var(--primary-bright); }
 .bill-step:disabled { opacity: 0.35; cursor: default; }
+/* Type-to-find over the round, with the ✕ that hands focus back so
+   clear-and-retype is one tap. Same shape as the roster's search. */
+.bill-search { position: relative; display: flex; align-items: center; margin: 0.6rem 0 0.5rem; }
+.bill-search-ico {
+  position: absolute; left: 0.85rem; font-size: 0.85rem; line-height: 1;
+  pointer-events: none; opacity: 0.7;
+}
+/* Descendant + attribute (0,2,1) so it outranks the base input[type="search"]
+   rule (0,1,1) — see the `input.` prefix note elsewhere in this file. */
+.bill-search input[type="search"] {
+  width: 100%; padding: 0.55em 2.4rem;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); color: var(--text);
+  font-family: inherit; font-size: 0.9rem;
+}
+.bill-search input[type="search"]::-webkit-search-cancel-button { display: none; }
+.bill-search input[type="search"]:focus {
+  outline: none; border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.16);
+}
+.bill-search-clear {
+  position: absolute; right: 0.5rem;
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 0; background: var(--surface-2); color: var(--text-soft);
+  cursor: pointer; font-size: 0.72rem; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+.bill-search-clear:hover { color: var(--text); }
+.bill-search-clear.hidden { display: none; }
+.bill-nomatch, .bill-hiding { font-size: 0.78rem; margin: 0.6rem 0 0; }
+.bill-nomatch.hidden, .bill-hiding.hidden { display: none; }
+/* Amber, because it is the one line that changes what Send is about to do. */
+.bill-hiding { color: #fbbf24; }
 .bill-list {
   display: flex; flex-direction: column; gap: 0.4rem;
   max-height: 46vh; overflow-y: auto; padding-right: 2px;
 }
+.bill-row.is-filtered { display: none; }
 /* Two parts to a row: who (a label wrapping the tick, so the whole name is the
    hit area) and how much (inputs, which must NOT be inside that label or every
    tap in the sessions box toggles the tick). */

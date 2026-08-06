@@ -3600,6 +3600,9 @@
     // held-back way. Runs here rather than off the calendar fetch so it doesn't
     // need a connection to fix a number that is wrong offline too.
     releaseHeldPackages();
+    // Before anything renders a balance, for the same reason: a session charged
+    // twice is a balance that is wrong on every screen it appears on.
+    dedupeCutoverRedemptions();
     // Populate the athletes grid + package badge in the background, then land on
     // the Overview page.
     renderDashboard();
@@ -5962,13 +5965,14 @@
       if (seq !== _billingRenderSeq) return; // a newer render already owns the host
       if (!cfg?.configured || $("#session-billing-row") !== host || currentClient() !== c) return;
 
-      const monthKey = todayISO().slice(0, 7);
+      // The month being BILLED, which is next month — not the one we're in.
+      const monthKey = billingMonthKey();
       const charge = chargeFor(c, monthKey);
       const plan = monthChargePlan(c, monthKey);
 
       const box = document.createElement("div");
       box.className = "billing-row";
-      const st = chargeStatusLabel(charge, plan);
+      const st = chargeStatusLabel(charge, plan, monthKey);
       box.innerHTML =
         `<span class="billing-status ${st.tone}">${escapeHtml(st.text)}</span>` +
         (cfg.mode !== "production" ? `<span class="billing-mode">${escapeHtml(cfg.mode)}</span>` : "");
@@ -6020,15 +6024,16 @@
   // should be able to see WHY it says $819 before they send it.
   function monthChargePlan(c, monthKey) {
     ensureSessionBank(c);
-    const sum = sessionBankSummary(c);
     const rate = athleteSessionRate(c);
-    // The month's own package knows how many sessions were booked against it —
-    // runAutoRenewGrants keeps that count current. Fall back to what's actually
-    // been used, so a month with no auto-renew package still costs something.
+    const membership = bankMembership(c);
+    // Asked about the month named, not about today. This used to read
+    // sessionBankSummary().thisMonthUsed, which is anchored to the current
+    // month however far ahead you are looking — so billing September in August
+    // proposed August's session count. See billSessionsFor: the month's own
+    // booked count, else what was logged in it, else the tier's size.
     const pkg = monthPackageOf(c, monthKey);
-    const booked = Number.isFinite(Number(pkg?.booked)) ? Number(pkg.booked) : 0;
-    const sessions = Math.max(booked, sum.thisMonthUsed || 0);
-    const allowance = Number(pkg?.size) || 0;
+    const sessions = billSessionsFor(c, monthKey, membership);
+    const allowance = Number(pkg?.size) || Number(membership?.sessions) || 0;
     return {
       sessions, rate, allowance,
       over: allowance ? Math.max(0, sessions - allowance) : 0,
@@ -6048,7 +6053,7 @@
       (p.status === "sent" || p.status === "paid")) || null;
   };
 
-  function chargeStatusLabel(charge, plan) {
+  function chargeStatusLabel(charge, plan, monthKey) {
     // How it was paid, not just that it was: an invoice-only charge settled in
     // cash reading "Paid by card" is the app telling him something untrue about
     // his own money.
@@ -6061,13 +6066,17 @@
         ? { text: `Link sent${amt} · not paid`, tone: "warn" }
         : { text: `Invoiced${amt} · not paid`, tone: "warn" };
     }
-    if (!plan.sessions) return { text: "Nothing booked this month", tone: "muted" };
+    // Named, never "this month": what is being billed is NEXT month, and a row
+    // that says "this month" while proposing September's number is the app
+    // being wrong about the one thing the coach is checking.
+    const when = monthKey ? monthKeyLabel(monthKey).replace(/ \d{4}$/, "") : "";
+    if (!plan.sessions) return { text: `Nothing to bill for ${when || "next month"}`, tone: "muted" };
     // The over-allowance case said out loud, because it is the one the coach
     // most needs to notice and the one a flat monthly charge would have missed.
     if (plan.over) {
       return { text: `${plan.sessions} sessions · ${plan.over} over the ${plan.allowance}`, tone: "warn" };
     }
-    return { text: `${plan.sessions} session${plan.sessions === 1 ? "" : "s"} this month`, tone: "muted" };
+    return { text: `${plan.sessions} session${plan.sessions === 1 ? "" : "s"}${when ? ` · ${when}` : ""}`, tone: "muted" };
   }
 
   // The sheet where the number gets decided. It opens with the app's
@@ -6146,6 +6155,8 @@
       row.dataset.diff = total > 0 && amt > 0 && amt !== total
         ? (amt < total ? `−${money(total - amt)}` : `+${money(amt - total)}`) : "";
     };
+    // Same tap-a-number grid as the batch sheet — it is the same question.
+    wireSessionPicker($("#chg-sessions"));
     $("#chg-sessions")?.addEventListener("input", recalc);
     $("#chg-rate")?.addEventListener("input", recalc);
     $("#chg-amount")?.addEventListener("input", () => { manual = true; markDiscount(); });
@@ -12852,6 +12863,61 @@
     renderCoachSessions?.();
   }
 
+  // ---- One-time repair: sessions charged twice at the Setmore cut-over ----
+  //
+  // Between the lock-in and the fix above, a session that existed both as a
+  // native booking and as a mirrored Setmore event was auto-redeemed twice —
+  // two redemptions, same athlete, same date, same note, different uid. On this
+  // roster that was 19 sessions across 14 athletes in four days, every one of
+  // them a session the athlete paid for and did not get.
+  //
+  // Runs once per DEVICE (trainerData is local — only templates, library_prefs
+  // and availability round-trip through the coach row). That is fine because it
+  // is idempotent: whichever device runs first pushes the repaired banks, and
+  // the next one finds nothing left to collapse. Deliberately conservative: it only
+  // collapses AUTO-redeemed rows that agree on date AND note AND carry
+  // different booking uids — a coach who genuinely redeemed two sessions on one
+  // day by hand wrote no uid, and two real bookings at different times have
+  // different notes. The native (`stsd:`) row is the one kept, because past the
+  // cut-over the app's own booking is the record that still means something.
+  function dedupeCutoverRedemptions() {
+    if (state.trainerData.cutoverDedupeV1) return;
+    const fixed = [];
+    (state.trainerData.clients || []).forEach((c) => {
+      const reds = c.sessionBank?.redemptions;
+      if (!Array.isArray(reds) || reds.length < 2) return;
+      const groups = new Map();
+      reds.forEach((r) => {
+        if (!r.setmoreUid) return;               // hand-redeemed: never touched
+        const k = `${r.date}|${r.note || ""}`;
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(r);
+      });
+      const drop = new Set();
+      groups.forEach((rows) => {
+        if (rows.length < 2) return;
+        const uids = new Set(rows.map((r) => r.setmoreUid));
+        if (uids.size < 2) return;               // same booking twice is a different bug
+        // Keep the native booking if there is one, else the earliest row.
+        const keep = rows.find((r) => String(r.setmoreUid).startsWith("stsd:")) || rows[0];
+        rows.forEach((r) => { if (r !== keep) drop.add(r.id); });
+      });
+      if (!drop.size) return;
+      c.sessionBank.redemptions = reds.filter((r) => !drop.has(r.id));
+      bankMutated(c);
+      fixed.push({ c, n: drop.size });
+    });
+    state.trainerData.cutoverDedupeV1 = Date.now();
+    localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+    if (!fixed.length) return;
+    // saveTrainer only pushes the open athlete, and this touched a roster's worth.
+    fixed.forEach(({ c }) => pushAthlete(c));
+    const total = fixed.reduce((n, f) => n + f.n, 0);
+    toast(`🎟 Gave back ${total} session${total === 1 ? "" : "s"} charged twice at the Setmore cut-over`, 6000);
+    renderClientGrid?.();
+    if (state.currentClientId) renderCoachSessions?.();
+  }
+
   function runAutoRenewGrants(year, month) {
     const now = new Date();
     if (year !== now.getFullYear() || month !== now.getMonth()) return;
@@ -13104,8 +13170,28 @@
     // holds every session that happened BEFORE it, which is the only record of
     // those, so it is filtered rather than ignored — otherwise the same session
     // would show twice, and the auto-redeem walker would charge for it twice.
+    //
+    // THE CUTOFF ALONE WASN'T ENOUGH, and this is how we found out: 19 double
+    // charges across 14 athletes in the four days after the lock-in, every one
+    // of them a native booking and a mirrored Setmore event for the same slot.
+    // `setmoreCutoffMs()` falls back to **Infinity** when the cached
+    // availability has no cutoff on it — which is any device that hasn't pulled
+    // the coach row since the cut-over — and Infinity keeps every mirrored
+    // event, including the ones the lock-in had already turned into bookings.
+    //
+    // So the native booking now wins on any slot it covers, whatever the cutoff
+    // says. Keyed on athlete + start MINUTE: the lock-in built each booking
+    // from its Setmore slot, so the two agree to the minute, and a minute is
+    // coarse enough to survive a stored second's drift. Never on the formatted
+    // time — that string carries a narrow no-break space before AM/PM.
     const cutoff = setmoreCutoffMs();
-    const mirrored = (events || []).filter((e) => new Date(e.startAt).getTime() < cutoff);
+    const slotKey = (athleteId, startAt) => `${athleteId}|${Math.floor(new Date(startAt).getTime() / 60000)}`;
+    const nativeSlots = new Set(asEvents.map((e) => slotKey(e.athleteId, e.startAt)));
+    const mirrored = (events || []).filter((e) => {
+      if (new Date(e.startAt).getTime() >= cutoff) return false;
+      const who = matchAthleteForEvent(e);
+      return !who || !nativeSlots.has(slotKey(who.id, e.startAt));
+    });
     _dashCalSetmoreEvents = [...mirrored, ...asEvents]
       .sort((a, b) => String(a.startAt).localeCompare(String(b.startAt)));
     autoRedeemFinishedBookings();
@@ -13233,13 +13319,23 @@
       ensureSessionBank(c);
       const date = dateISO(new Date(e.startAt));
       const reds = c.sessionBank.redemptions;
+      const slot = Math.floor(new Date(e.startAt).getTime() / 60000);
+      const note = `Booked session · ${fmtSetmoreTime(e.startAt)}`;
       if (reds.some((r) => r.setmoreUid === e.uid)) return;
       if (reds.some((r) => !r.setmoreUid && r.date === date)) return;
+      // ONE CHARGE PER SLOT, not per uid. The uid guard above only knows that
+      // this particular booking hasn't been charged — it cannot tell that the
+      // same real session already got charged under a different id, which is
+      // exactly what happened when a Setmore mirror and a native booking both
+      // described it. The slot is the session; the uid is only one name for it.
+      if (reds.some((r) => r.slot === slot)) return;
+      // Same guard for rows written before `slot` existed: a duplicate presents
+      // as the identical date and note, because both come off the same instant.
+      if (reds.some((r) => r.date === date && r.note === note)) return;
       // Close-called bookings are waived — never auto-charge them.
       if ((c.sessionBank.missedSessions || []).some((m) => m.setmoreUid === e.uid && m.type === "closecall")) return;
       reds.push({
-        id: uid(), date,
-        note: `Booked session · ${fmtSetmoreTime(e.startAt)}`,
+        id: uid(), date, slot, note,
         setmoreUid: e.uid,
       });
       spent.push(c);
@@ -16274,22 +16370,42 @@
   }
   // The roster-header button carries its own count, so the start-of-month round
   // announces itself instead of being something the coach has to remember.
+  // A month he settled OUTSIDE this sheet — by hand, package by package, or
+  // simply in his head. The roster can't tell that from "nobody has been
+  // granted yet": a hand-added package carries no month key, so
+  // monthPackageOf() finds nothing and the badge goes on counting people who
+  // have already had their sessions. One watermark, set by him, is the only
+  // thing that can know. It rides trainerData, so it reaches his other devices.
+  function monthGrantDismissed() {
+    return state.trainerData.monthGrantDone === monthGrantKey();
+  }
+  function dismissMonthGrant() {
+    state.trainerData.monthGrantDone = monthGrantKey();
+    saveTrainer();
+    closeModal();
+    renderMonthGrantBtn();
+    toast(`${monthGrantLabel()} marked settled ✓`);
+  }
+
   function renderMonthGrantBtn() {
     const btn = $("#btn-month-grant"); if (!btn) return;
     const rows = monthGrantRoster().filter((r) => r.membership && r.membership.sessions);
     if (!rows.length) { hide(btn); return; }
     show(btn);
-    const due = rows.filter((r) => r.action !== "done").length;
+    const dismissed = monthGrantDismissed();
+    const due = dismissed ? 0 : rows.filter((r) => r.action !== "done").length;
     const pending = rows.filter((r) => r.action === "pay").length;
     const month = new Date().toLocaleDateString("en-US", { month: "long" });
     btn.classList.toggle("is-due", due > 0);
     btn.innerHTML = `${lineIco("sd:ticket")} Settle ${escapeHtml(month)}` +
       (due ? `<span class="month-grant-n">${due}</span>` : `<span class="month-grant-done">✓</span>`);
-    btn.title = !due
-      ? `Every membership has ${month}'s sessions`
-      : pending
-        ? `${due} to settle · ${pending} auto-renewed package${pending === 1 ? "" : "s"} live but not collected`
-        : `${due} athlete${due === 1 ? "" : "s"} still waiting on ${month}'s sessions`;
+    btn.title = dismissed
+      ? `You marked ${month} settled. Open it to grant anyone you missed.`
+      : !due
+        ? `Every membership has ${month}'s sessions`
+        : pending
+          ? `${due} to settle · ${pending} auto-renewed package${pending === 1 ? "" : "s"} live but not collected`
+          : `${due} athlete${due === 1 ? "" : "s"} still waiting on ${month}'s sessions`;
   }
   function openMonthGrantSheet() {
     const rows = monthGrantRoster();
@@ -16332,6 +16448,7 @@
     openModal({
       title: `Settle ${label}`,
       body: `
+        ${monthGrantDismissed() ? `<p class="muted mg-dismissed" style="margin-top:-0.4em">You marked ${escapeHtml(label)} settled. Anyone still listed below can be granted from here anyway.</p>` : ""}
         <p class="muted" style="margin-top:-0.4em">${anyPending
           ? "Auto-renew already granted these athletes their membership for the month, and those sessions are live. Ticking one of those rows only marks the money collected; ticking an empty one grants their month."
           : "One month's sessions onto every ticked bank, marked collected. Anyone already settled this month is unticked."}</p>
@@ -16339,6 +16456,11 @@
         ${noTier.length ? `<p class="muted mg-skipped">No membership set, so not in this round: ${escapeHtml(noTier.map((r) => r.client.name || "(unnamed)").join(", "))}</p>` : ""}`,
       actions: [
         { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        // Escape hatch for a month granted outside this sheet. It grants
+        // nothing and takes nothing away — it only stops the badge asking.
+        ...(monthGrantDismissed() ? [] : [{
+          label: "Already done", className: "btn btn-ghost", onClick: dismissMonthGrant,
+        }]),
         { label: "Settle", className: "btn btn-primary", onClick: runMonthGrant },
       ],
     });
@@ -16427,8 +16549,20 @@
   // lower of the two ids, the same rule square-billing's primaryOf uses to pick
   // which half owns the Square customer, so the invoice and the customer record
   // never end up on opposite halves of a couple.
+  // THE MONTH HE BILLS FOR IS NOT THE MONTH HE IS IN.
+  // Nathan invoices in advance: standing in August, the invoice going out is
+  // September's. That is also why the amount falls back to the tier's own
+  // session count — a month that hasn't happened has nothing booked against it
+  // yet, and waiting for it to would mean invoicing in arrears.
+  function nextMonthKey(fromISO) {
+    const [y, m] = String(fromISO || todayISO()).slice(0, 7).split("-").map(Number);
+    const d = new Date(y, m, 1); // m is 1-based, so this lands on the next month
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }
+  const billingMonthKey = () => nextMonthKey(todayISO());
+
   let _billMonthKey = null;
-  const billMonthKey = () => _billMonthKey || todayISO().slice(0, 7);
+  const billMonthKey = () => _billMonthKey || billingMonthKey();
   function shiftBillMonth(delta) {
     const [y, m] = billMonthKey().split("-").map(Number);
     const d = new Date(y, m - 1 + delta, 1);
@@ -16442,6 +16576,26 @@
     const [y1, m1] = billMonthKey().split("-").map(Number);
     const [y2, m2] = todayISO().slice(0, 7).split("-").map(Number);
     return (y1 - y2) * 12 + (m1 - m2);
+  }
+
+  // 1 to 36, as a grid you tap. A session count is a small whole number and
+  // choosing one should not mean summoning a phone keyboard over the sheet you
+  // are reading — the same reasoning as the athlete's log picker, and the same
+  // mechanism: the element stays a real <input type=number>, so every read of
+  // `.value` and every desktop keystroke still work, and `inputMode = "none"`
+  // is the one thing that suppresses the on-screen keyboard.
+  const BILL_SESSION_VALUES = Array.from({ length: 36 }, (_, i) => i + 1);
+  function wireSessionPicker(input) {
+    if (!input) return;
+    input.inputMode = "none";
+    input.addEventListener("click", () => {
+      openGridPicker("Sessions", BILL_SESSION_VALUES, input.value, (val) => {
+        input.value = val;
+        // Bubbles, so both the delegated batch handler and the charge sheet's
+        // own listener recalculate exactly as they do for a typed digit.
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      }, input, 6);
+    });
   }
 
   // Sessions actually taken in a given month, off the bank's own redemption
@@ -16578,7 +16732,14 @@
           <button type="button" class="bill-step" id="bill-next" ${off >= BILL_MONTH_SPAN ? "disabled" : ""} aria-label="Next month">▶</button>
         </div>
         <p class="muted" style="margin-top:0.4rem">Sessions × their rate, ready to adjust. 💳 sends a card link; 💵 raises the invoice and leaves you to collect it. Everyone gets a numbered invoice either way.</p>
+        <div class="bill-search">
+          <span class="bill-search-ico" aria-hidden="true">🔍</span>
+          <input type="search" id="bill-search-input" placeholder="Search athletes" aria-label="Search athletes" autocomplete="off" />
+          <button type="button" class="bill-search-clear hidden" id="bill-search-clear" aria-label="Clear search">✕</button>
+        </div>
         <div class="bill-list" id="bill-list">${billable.map(rowHtml).join("") || `<p class="muted">Nothing to bill for this month.</p>`}</div>
+        <p class="muted bill-nomatch hidden" id="bill-nomatch">Nobody by that name in this month's round.</p>
+        <p class="muted bill-hiding hidden" id="bill-hiding"></p>
         ${idle.length ? `<p class="muted mg-skipped">No sessions this month, so not in this round: ${escapeHtml(idle.map((r) => r.client.name || "(unnamed)").join(", "))}</p>` : ""}
         <div id="bill-result"></div>`,
       actions: [
@@ -16592,22 +16753,64 @@
 
     const goBtn = $("#modal-foot .btn-primary");
     const list = $("#bill-list");
+    list?.querySelectorAll("[data-bill-sessions]").forEach(wireSessionPicker);
+
+    // Type-to-find over the round. A filtered-out row is NOT sent, even if it
+    // is still ticked — what is on screen is what the button does, which is the
+    // only reading of a filtered list of tick boxes that can't surprise you.
+    // The count of what's being hidden is spelled out underneath so the filter
+    // can never quietly turn "bill everyone" into "bill one person".
+    const searchEl = $("#bill-search-input");
+    const clearEl = $("#bill-search-clear");
+    const isShown = (r) => !list?.querySelector(`.bill-row[data-bill="${CSS.escape(r.client.id)}"]`)?.classList.contains("is-filtered");
+
     // Sessions × rate drives the charge box until the coach types in it — the
     // same rule as the single charge sheet, for the same reason: recalculating
     // a number the coach has just decided on would be the app arguing with him.
     const manual = new Set();
     const retotal = () => {
       if (!goBtn || !list) return;
-      let n = 0, total = 0;
+      let n = 0, total = 0, hidden = 0;
       billable.forEach((r) => {
         const on = list.querySelector(`input[data-bill-on="${CSS.escape(r.client.id)}"]`);
         if (!on?.checked) return;
+        if (!isShown(r)) { hidden += 1; return; }
         n += 1;
         total += Number(list.querySelector(`input[data-bill-amount="${CSS.escape(r.client.id)}"]`)?.value) || 0;
       });
       goBtn.disabled = !n;
       goBtn.textContent = n ? `Send ${n} · ${money(total)}` : "Nobody ticked";
+      const hidingEl = $("#bill-hiding");
+      if (hidingEl) {
+        hidingEl.textContent = hidden
+          ? `Search is hiding ${hidden} other${hidden === 1 ? "" : "s"} — clear it to bill ${hidden === 1 ? "them" : "them all"}.`
+          : "";
+        hidingEl.classList.toggle("hidden", !hidden);
+      }
     };
+
+    const applySearch = () => {
+      const q = (searchEl?.value || "").trim().toLowerCase();
+      clearEl?.classList.toggle("hidden", !q);
+      let shown = 0;
+      billable.forEach((r) => {
+        const row = list?.querySelector(`.bill-row[data-bill="${CSS.escape(r.client.id)}"]`);
+        if (!row) return;
+        const name = `${r.client.name || ""} ${r.partner?.name || ""}`.toLowerCase();
+        const hit = !q || name.includes(q);
+        row.classList.toggle("is-filtered", !hit);
+        if (hit) shown += 1;
+      });
+      $("#bill-nomatch")?.classList.toggle("hidden", !!shown || !q);
+      retotal();
+    };
+    searchEl?.addEventListener("input", applySearch);
+    // Escape clears rather than closing the sheet — losing a round of edited
+    // numbers to a stray key is not a trade worth making.
+    searchEl?.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && searchEl.value) { e.stopPropagation(); searchEl.value = ""; applySearch(); }
+    });
+    clearEl?.addEventListener("click", () => { if (searchEl) { searchEl.value = ""; applySearch(); searchEl.focus(); } });
     list?.addEventListener("input", (e) => {
       const id = e.target?.dataset?.billSessions;
       if (id && !manual.has(id)) {
@@ -16652,8 +16855,11 @@
     const key = billMonthKey();
     const list = $("#bill-list");
     const goBtn = $("#modal-foot .btn-primary");
+    // Ticked AND on screen. A row the search is hiding is not billed, which is
+    // what the button has been counting all along.
     const picked = billable.filter((r) =>
-      list?.querySelector(`input[data-bill-on="${CSS.escape(r.client.id)}"]`)?.checked);
+      list?.querySelector(`input[data-bill-on="${CSS.escape(r.client.id)}"]`)?.checked &&
+      !list.querySelector(`.bill-row[data-bill="${CSS.escape(r.client.id)}"]`)?.classList.contains("is-filtered"));
     if (!picked.length) return;
     if (goBtn) goBtn.disabled = true;
     const monthLabel = monthKeyLabel(key);
