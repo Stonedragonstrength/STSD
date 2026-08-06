@@ -6623,6 +6623,13 @@
     renderBillingRow(c);
     renderCoachSessions();
     renderBooks();
+    // The Money screen too. The ↩ button exists on the roster as well as on the
+    // athlete's own billing row, and refunding from there repainted the athlete
+    // page he wasn't looking at while the roster row in front of him went on
+    // saying "Paid by card" — the one surface that had to change was the one
+    // surface that didn't. Both are no-ops when their hosts aren't mounted.
+    renderMoneyRoster();
+    renderIncomeCard();
   }
 
   async function markInvoicePaid(row) {
