@@ -280,6 +280,28 @@ Deno.serve(async (req) => {
       const st = String(p?.status ?? "").toUpperCase();
       const orderId = p?.order_id ?? null;
 
+      // A refund against a CARD-ON-FILE payment, matched on the payment id.
+      //
+      // Those charges are made straight against the stored card and carry no
+      // order id, so every order-based branch below is blind to them — a refund
+      // issued from Square's own dashboard left the row reading "paid" forever
+      // while the money sat back in the athlete's account, and the books went
+      // on counting it as income.
+      //
+      // Checked FIRST, before the settle branch: a payment that has been
+      // refunded must never be re-read as a fresh completion. Square keeps
+      // sending payment.updated with status COMPLETED after a refund — the
+      // refund shows up as refunded_money, not as a changed status.
+      if ((p?.refunded_money?.amount ?? 0) > 0 && p?.id) {
+        const { data: hit } = await sb.from("billing_payments")
+          .select("id").eq("square_payment_id", p.id).maybeSingle();
+        if (hit) {
+          await sb.from("billing_payments")
+            .update({ status: "refunded" }).eq("id", hit.id);
+          return new Response("ok", { status: 200 });
+        }
+      }
+
       if (st === "COMPLETED" && orderId) {
         const { data: charge } = await sb.from("billing_payments")
           .select("id, status").eq("square_order_id", orderId).maybeSingle();

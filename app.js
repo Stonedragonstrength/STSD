@@ -6019,6 +6019,18 @@
         more.title = "Raise another charge — extra sessions, a one-off, or the next month";
         more.addEventListener("click", () => openChargeSheet(c, monthKey, plan, null));
         act.appendChild(more);
+        // Giving it back, without leaving for Square's dashboard. Only for a
+        // card payment — a month ticked off as cash has nothing at Square to
+        // reverse, and offering a button that always fails is its own kind of
+        // lie. Deliberately last and ghost: it moves real money the wrong way.
+        if (charge.square_payment_id) {
+          const back = document.createElement("button");
+          back.type = "button";
+          back.className = "btn btn-ghost btn-sm";
+          back.textContent = "↩ Refund";
+          back.addEventListener("click", () => refundCharge(charge, c));
+          act.appendChild(back);
+        }
       } else if (charge?.status === "sent") {
         const again = document.createElement("button");
         again.type = "button";
@@ -6523,6 +6535,24 @@
       body: invoiceDocHtml(row, billedTo, { showNote: opts.side === "coach" }),
       actions,
     });
+  }
+
+  // The whole charge, back to the card it came from. Confirmed first: this is
+  // the one control on the billing row that moves real money the wrong way, and
+  // it cannot be undone from here — un-refunding is not a thing.
+  async function refundCharge(row, c) {
+    const amt = money((Number(row.amount_cents) || 0) / 100);
+    if (!confirm(`Refund ${amt} to ${c?.name || "them"}? This can't be undone from the app.`)) return;
+    const res = await window.Cloud.squareBilling("refundPayment", { id: row.id });
+    if (!res?.ok) { toast(res?.error || "Square wouldn't refund that"); return; }
+    // PENDING is still a yes — card refunds settle over hours, and the row is
+    // marked either way so the books stop counting money that is on its way
+    // back out.
+    toast(res.already ? "Already refunded" : `Refunded ${amt} ✓`);
+    await loadCoachBilling();
+    renderBillingRow(c);
+    renderCoachSessions();
+    renderBooks();
   }
 
   async function markInvoicePaid(row) {

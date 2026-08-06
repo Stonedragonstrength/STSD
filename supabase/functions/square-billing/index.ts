@@ -518,6 +518,54 @@ Deno.serve(async (req) => {
       return json({ ok: true, amountCents: due.amount_cents });
     }
 
+    // ---- Give the money back ----
+    //
+    // Coach only, and not in ATHLETE_ACTIONS: an athlete refunding themselves
+    // is not a feature.
+    //
+    // The amount comes from the ROW, never from the request — a refund is
+    // always the whole charge. Partial refunds are a real thing, but "how much
+    // of it" typed into a box is the shape of a wrong number moving real money,
+    // and Square's dashboard does partials properly if one is ever needed.
+    if (action === "refundPayment") {
+      const rowId = String(body?.id ?? "");
+      // Scoped to this coach's own rows. A row id is guessable; ownership is
+      // what makes that not matter.
+      const { data: row } = await sb.from("billing_payments")
+        .select("id, square_payment_id, amount_cents, status")
+        .eq("id", rowId).eq("coach_id", coachId).maybeSingle();
+      if (!row) return json({ ok: false, error: "not your charge" });
+      if (row.status === "refunded") return json({ ok: true, already: true });
+      if (row.status !== "paid") return json({ ok: false, error: "that hasn't been paid" });
+      if (!row.square_payment_id) {
+        // Cash, or an invoice ticked off by hand. There is nothing at Square to
+        // give back, and pretending otherwise would write a refund that never
+        // happened into the books.
+        return json({ ok: false, error: "no card payment to refund — this was marked paid by hand" });
+      }
+
+      const done = await square("/v2/refunds", token, {
+        method: "POST",
+        body: JSON.stringify({
+          // Keyed to the charge, so a double tap refunds once.
+          idempotency_key: `ref-${row.id}`.slice(0, 45),
+          payment_id: row.square_payment_id,
+          amount_money: { amount: row.amount_cents, currency: "USD" },
+          reason: String(body?.reason ?? "Refunded by coach").slice(0, 190),
+        }),
+      });
+      const st = String(done?.refund?.status ?? "").toUpperCase();
+      // PENDING counts. Square settles card refunds asynchronously, and a row
+      // still reading "paid" while the money is on its way back is the exact
+      // lie this was built to stop. The webhook confirms it either way.
+      if (st !== "COMPLETED" && st !== "PENDING") {
+        return json({ ok: false, error: `Square said ${st || "no"}` });
+      }
+      await sb.from("billing_payments")
+        .update({ status: "refunded" }).eq("id", row.id);
+      return json({ ok: true, status: st, amountCents: row.amount_cents });
+    }
+
     // ---- Charge one month ----
     // The amount comes from the coach, not from a plan, because the coach is
     // the one who knows it: sessions × rate, plus or minus whatever this month
