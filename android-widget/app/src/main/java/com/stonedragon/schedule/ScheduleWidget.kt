@@ -46,6 +46,15 @@ class ScheduleWidget : AppWidgetProvider() {
         // code, so each button gets its own. `in` still reads as membership.
         private val OUR_ACTIONS = listOf(ACTION_PREV, ACTION_NEXT, ACTION_TODAY, ACTION_REFRESH)
 
+        // How long to give the launcher to rebind the list and pick up the rows
+        // a paint just published — long enough that the rows are really there,
+        // short enough that NOW still feels like a button press rather than a
+        // page load — and then how long to let the first scroll finish before
+        // the second one asks from a list that has stopped moving. Both are
+        // waits on something with no callback to wait for; see settleThenScroll.
+        private const val SCROLL_SETTLE_MS = 450L
+        private const val SCROLL_CONFIRM_MS = 600L
+
         // SupervisorJob alone does NOT stop an exception here from reaching the
         // thread's default handler and killing the app — it only stops siblings
         // cancelling each other. Without this handler any unexpected throw in a
@@ -107,7 +116,9 @@ class ScheduleWidget : AppWidgetProvider() {
         fun repaintAll(ctx: Context) {
             val app = ctx.applicationContext
             val mgr = AppWidgetManager.getInstance(app)
-            for (id in widgetIds(app)) paint(app, mgr, id)
+            // A repaint can inherit a jump that a killed process never got to
+            // apply, so it honours one if it finds it rather than swallowing it.
+            for (id in widgetIds(app)) paint(app, mgr, id)?.let { scrollLater(app, mgr, id, it) }
         }
 
         /**
@@ -131,12 +142,19 @@ class ScheduleWidget : AppWidgetProvider() {
          * Paints from cache. Cheap, safe on any thread, and never throws — a
          * widget that cannot draw itself has no way to report that it could not,
          * so the failure is recorded and swallowed rather than propagated.
+         *
+         * Returns the jump NOW wants, or null in the ordinary case of a frame
+         * that should leave the list exactly where the coach left it. The
+         * scroll is deliberately NOT applied here — see settleThenScroll for
+         * why it cannot ride along with the paint. Callers that are already on
+         * IO should pass it to settleThenScroll; the rest, to scrollLater.
          */
-        fun paint(ctx: Context, mgr: AppWidgetManager, widgetId: Int) {
-            try {
+        private fun paint(ctx: Context, mgr: AppWidgetManager, widgetId: Int): Jump? {
+            return try {
                 val week = Prefs.week(ctx, widgetId)
                 val signedIn = Supabase.isSignedIn(ctx)
-                mgr.updateAppWidget(widgetId, buildViews(ctx, widgetId, week))
+                val frame = buildFrame(ctx, mgr, widgetId, week)
+                mgr.updateAppWidget(widgetId, frame.views)
                 mgr.notifyAppWidgetViewDataChanged(widgetId, R.id.widget_list)
                 // Noted AFTER the launcher call returns, so a line here means the
                 // frame was accepted without complaint. If the screen still
@@ -145,6 +163,7 @@ class ScheduleWidget : AppWidgetProvider() {
                     ctx,
                     "paint id=$widgetId signedIn=$signedIn state=" + Prefs.state(ctx, widgetId),
                 )
+                frame.scrollTo
             } catch (t: Throwable) {
                 Prefs.note(
                     ctx,
@@ -152,7 +171,88 @@ class ScheduleWidget : AppWidgetProvider() {
                         ": " + (t.message ?: "").take(140),
                 )
                 CrashLog.record(ctx, t, "paint")
+                null
             }
+        }
+
+        /**
+         * Waits for the list to catch up with the frame, then scrolls it.
+         * Blocking — call from IO.
+         *
+         * The wait is the whole point. notifyAppWidgetViewDataChanged is
+         * asynchronous: it asks the launcher to rebind the factory, and the
+         * rows arrive some tens or hundreds of milliseconds later, with no
+         * callback to say when. A setScrollPosition inside the same RemoteViews
+         * therefore runs against whatever the list held BEFORE the paint —
+         * either the previous week's rows, which is the visible stutter of a
+         * scroll starting and then being yanked back as the data lands, or an
+         * empty list, where smoothScrollToPosition does nothing at all and NOW
+         * appears to move the week and then just sit there.
+         *
+         * Then it scrolls TWICE, and the pair is not a retry: which edge a row
+         * lands on depends on which way the list travelled to reach it. Going
+         * down it stops as soon as the row is visible, at the BOTTOM edge, so
+         * getting the next session to the top means aiming at the last row that
+         * fits below it. Going up it stops with the row at the TOP edge, and
+         * that same aim leaves the session a screenful above the viewport,
+         * off screen — which is what pressing NOW after scrolling ahead to
+         * Friday used to do.
+         *
+         * So: aim past it, then ask for the session itself.
+         *  - Coming from above, the first lands it at the top and the second is
+         *    a no-op — smoothScrollToPosition to a row that is already fully
+         *    visible computes a zero delta and does not move. One motion.
+         *  - Coming from below, the first overshoots and the second brings it
+         *    back to the top edge.
+         *  - Already on screen, both are small or nothing.
+         * Ending on the session rather than on the overshoot is also what makes
+         * an early first scroll survivable: whatever it did to a list that had
+         * not loaded yet, the last word is always "show the next session".
+         */
+        private fun settleThenScroll(
+            ctx: Context,
+            mgr: AppWidgetManager,
+            widgetId: Int,
+            jump: Jump,
+        ) {
+            try {
+                Thread.sleep(SCROLL_SETTLE_MS)
+                applyScroll(ctx, mgr, widgetId, jump.target)
+                // Long enough that the first scroll has finished. Cut this short
+                // and the second one recomputes from a moving list, which is
+                // how a scroll turns into a bounce.
+                Thread.sleep(SCROLL_CONFIRM_MS)
+                applyScroll(ctx, mgr, widgetId, jump.top)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
+
+        /**
+         * A partial update carrying nothing but the scroll. partiallyUpdateAppWidget
+         * applies these actions over the frame already on screen; a full
+         * updateAppWidget would re-run every action — colours, text, the remote
+         * adapter — and reset the list underneath the animation it just started.
+         */
+        private fun applyScroll(
+            ctx: Context,
+            mgr: AppWidgetManager,
+            widgetId: Int,
+            position: Int,
+        ) {
+            try {
+                val v = RemoteViews(ctx.packageName, R.layout.widget_schedule)
+                v.setScrollPosition(R.id.widget_list, position)
+                mgr.partiallyUpdateAppWidget(widgetId, v)
+                Prefs.note(ctx, "scroll id=$widgetId to=$position")
+            } catch (t: Throwable) {
+                CrashLog.record(ctx, t, "scroll")
+            }
+        }
+
+        /** Same, off the caller's thread — for the paints that are not in a fetch. */
+        private fun scrollLater(ctx: Context, mgr: AppWidgetManager, widgetId: Int, jump: Jump) {
+            scope.launch { settleThenScroll(ctx, mgr, widgetId, jump) }
         }
 
         /**
@@ -181,11 +281,33 @@ class ScheduleWidget : AppWidgetProvider() {
                 CrashLog.record(ctx, t, "refresh")
                 Prefs.saveState(ctx, widgetId, "error:" + (t.message ?: t.javaClass.simpleName))
             } finally {
-                paint(ctx, mgr, widgetId)
+                // The scroll rides on this thread rather than a posted one: the
+                // callers hold a goAsync() pending result open until this
+                // returns, and that is what keeps the process alive long enough
+                // to send it.
+                paint(ctx, mgr, widgetId)?.let { settleThenScroll(ctx, mgr, widgetId, it) }
             }
         }
 
-        private fun buildViews(ctx: Context, widgetId: Int, week: Long): RemoteViews {
+        /**
+         * Where NOW wants the list: [top] is the row that should end up against
+         * the top edge — the next session — and [target] is the row below it
+         * that has to be asked for to get it there. See settleThenScroll.
+         */
+        private class Jump(val target: Int, val top: Int)
+
+        /**
+         * A painted frame, plus the jump it wants applied once the list has the
+         * data — the two cannot travel together, see settleThenScroll.
+         */
+        private class Frame(val views: RemoteViews, val scrollTo: Jump?)
+
+        private fun buildFrame(
+            ctx: Context,
+            mgr: AppWidgetManager,
+            widgetId: Int,
+            week: Long,
+        ): Frame {
             val v = RemoteViews(ctx.packageName, R.layout.widget_schedule)
             val thisWeek = Supabase.startOfWeek(System.currentTimeMillis())
             // Whether there is a session is knowable right here, with no network,
@@ -304,26 +426,44 @@ class ScheduleWidget : AppWidgetProvider() {
             // Jump to now, but only when it was actually asked for — see
             // Prefs.requestJump. Consumed here so the next routine repaint
             // leaves the coach where they scrolled to.
-            // The rows are tested BEFORE the flag is taken, and the order is the
-            // whole fix. takeJump consumes the request, and a jump from another
-            // week paints once before the fetch returns — at which point the
-            // cache is still stamped with the OLD week, so this paint has no
-            // rows for the new one. Taking the flag first burned the request on
-            // that empty paint, so NOW moved to this week and never scrolled,
-            // while NOW pressed on the week already showing worked fine.
-            if (bookings.isNotEmpty()) {
-                if (Prefs.takeJump(ctx, widgetId)) {
-                    val weekRows = buildWeekRows(week, bookings)
-                    val top = scrollIndexForNow(weekRows)
-                    // Not `top` itself — see scrollTargetForTop. Asking for the
-                    // row directly parks it at the bottom edge.
-                    v.setScrollPosition(R.id.widget_list, scrollTargetForTop(weekRows, top))
+            //
+            // "loading" is excluded, and that exclusion is the fix for the
+            // stutter. Pressing NOW paints twice: once immediately so the
+            // header answers the tap, then again when the fetch lands. The
+            // first paint has cached rows whenever the coach was already on
+            // this week, so it used to claim the jump and start a scroll that
+            // the second paint's data reload then yanked out from under it.
+            // Nothing before a settled frame gets to scroll.
+            //
+            // The rows are still tested BEFORE the flag is taken. A jump from
+            // another week reaches a settled frame with the cache still stamped
+            // to the OLD week; taking the flag there would burn the request on
+            // a frame with nothing to scroll to.
+            var scrollTo: Jump? = null
+            if (state != "loading") {
+                if (bookings.isNotEmpty()) {
+                    if (Prefs.takeJump(ctx, widgetId)) {
+                        val weekRows = buildWeekRows(week, bookings)
+                        val top = scrollIndexForNow(weekRows)
+                        // Both rows, not just the one — see settleThenScroll.
+                        // Asking for `top` alone parks it at the bottom edge.
+                        scrollTo = Jump(
+                            scrollTargetForTop(
+                                weekRows,
+                                top,
+                                listHeightDp(mgr, widgetId),
+                                ctx.resources.configuration.fontScale,
+                            ),
+                            top,
+                        )
+                    }
+                } else if (state == "ok" || state == "partial" || state == "signin") {
+                    // A finished fetch that genuinely found nothing, or a widget
+                    // that is signed out and holds nothing to find. Drop the
+                    // request rather than leave it armed to fire on some
+                    // unrelated repaint days later.
+                    Prefs.takeJump(ctx, widgetId)
                 }
-            } else if (state == "ok" || state == "partial") {
-                // A finished fetch that genuinely found nothing. Drop the
-                // request rather than leave it armed to fire on some unrelated
-                // repaint days later.
-                Prefs.takeJump(ctx, widgetId)
             }
 
             // The empty view is a button, and what it does is whatever the
@@ -340,7 +480,31 @@ class ScheduleWidget : AppWidgetProvider() {
                 },
             )
             v.setPendingIntentTemplate(R.id.widget_list, openAppTemplate(ctx))
-            return v
+            return Frame(v, scrollTo)
+        }
+
+        /**
+         * The list's own height in dp — the widget minus the chrome above it.
+         *
+         * The launcher reports the widget's size in the options bundle, where
+         * for height MIN is the landscape bound and MAX the portrait one. The
+         * home screen is portrait, so MAX is the honest number. A launcher that
+         * reports neither leaves zeroes, hence the declared minHeight as a floor
+         * — under-stating the height only costs a row of scroll accuracy.
+         */
+        private fun listHeightDp(mgr: AppWidgetManager, widgetId: Int): Int {
+            val reported = try {
+                mgr.getAppWidgetOptions(widgetId)
+                    .getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0)
+            } catch (t: Throwable) {
+                0
+            }
+            // 180dp is the minHeight in widget_info.xml: the smallest this can
+            // legitimately be, and so the safest thing to assume.
+            val widget = if (reported > 0) reported else 180
+            // 6dp of root padding top and bottom, a 32dp control row, and the
+            // 2dp under it — all of it spent before the list sees a pixel.
+            return (widget - 46).coerceAtLeast(40)
         }
 
         private fun fmt(pattern: String, millis: Long): String =
@@ -388,7 +552,7 @@ class ScheduleWidget : AppWidgetProvider() {
          * This was `Intent(ACTION_VIEW)` with no component: implicit. From
          * Android 14, a mutable PendingIntent around an implicit Intent throws
          * IllegalArgumentException, and because this is built inside
-         * buildViews() it took the entire paint down with it. Every paint, on
+         * buildFrame() it took the entire paint down with it. Every paint, on
          * every widget, since the first build — the widget could never draw
          * anything, which is why it showed the static initialLayout forever
          * while storage said everything was fine.
@@ -413,7 +577,10 @@ class ScheduleWidget : AppWidgetProvider() {
         // lands or doesn't depending on memory pressure.
         val pending = goAsync()
         val app = ctx.applicationContext
-        for (id in ids) paint(app, mgr, id) // something on screen immediately
+        // Something on screen immediately. It rarely has a jump to honour — one
+        // is normally armed and spent inside a single NOW press — but a process
+        // killed between the two would leave one waiting here.
+        for (id in ids) paint(app, mgr, id)?.let { scrollLater(app, mgr, id, it) }
         scope.launch {
             try {
                 for (id in ids) refresh(app, mgr, id)
@@ -476,7 +643,12 @@ class ScheduleWidget : AppWidgetProvider() {
         if (action != ACTION_REFRESH) Prefs.saveState(app, widgetId, "loading")
 
         val pending = goAsync()
-        paint(app, mgr, widgetId) // the date and arrows respond now
+        // The date and arrows respond now. This frame never scrolls: every
+        // action but ⟳ has just set the state to "loading", which buildFrame
+        // refuses to jump from on purpose — the scroll belongs to the settled
+        // frame the fetch brings back, and starting one here is what made NOW
+        // stutter.
+        paint(app, mgr, widgetId)?.let { scrollLater(app, mgr, widgetId, it) }
         scope.launch {
             try {
                 refresh(app, mgr, widgetId)

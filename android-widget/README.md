@@ -19,8 +19,9 @@ app through the App Store, which this is not.
 └──────────────────────────────────────┘
 ```
 
-- `‹` / `›` step a day. Today is the floor — it will not page into the past.
-- Tapping the date jumps back to today.
+- `‹` / `›` step a week. This week is the floor — it will not page into the past.
+- `NOW`, and tapping the date, come back to this week and scroll the next
+  unfinished session to the top of the list.
 - `⟳` refetches.
 - Tapping a row opens the web app.
 - Finished sessions dim rather than disappear, so the shape of the day stays.

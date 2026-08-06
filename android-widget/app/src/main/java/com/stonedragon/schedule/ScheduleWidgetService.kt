@@ -87,24 +87,65 @@ internal fun scrollIndexForNow(rows: List<Row>): Int {
  * Turns "I want row N at the top" into the row to hand setScrollPosition.
  *
  * RemoteViews.setScrollPosition is smoothScrollToPosition underneath, which
- * scrolls the MINIMUM distance to make a row visible — so asking for the target
- * directly parks it at the BOTTOM edge, under everything already on screen,
- * which is the least useful place for the session you are about to coach.
- * Asking for a row further down instead pushes the target up to the top.
+ * scrolls the MINIMUM distance to make a row visible — so a list travelling
+ * DOWN parks the row it was asked for at the BOTTOM edge, under everything
+ * already on screen, which is the least useful place for the session you are
+ * about to coach. Asking for the last row that still FITS below it is what
+ * pushes the session up to the top edge instead. (Travelling up the edges swap
+ * over, which is ScheduleWidget.settleThenScroll's problem, not this one's.)
  *
- * The lead is a guess at how many rows fit, because the launcher never tells
- * the widget its height in rows. Over-shooting is harmless — it clamps to the
- * end of the week and the target still lands high — so it is deliberately
- * generous rather than exact.
+ * Which row that is depends on the widget's height and on the rows themselves,
+ * so it is measured here rather than guessed. It used to be a fixed lead of
+ * nine rows, and nine rows is roughly twice what a 180dp widget can show: the
+ * scroll sailed several rows PAST the session it was aiming for and left it
+ * above the top edge, off screen. Raising the lead — 6 → 9, when NOW looked
+ * like it was stopping short — was treating a symptom of the timing bug in
+ * ScheduleWidget.paint, and made this half worse.
  *
- * Raised 6 → 9 on 2026-08-05: NOW was still stopping short, leaving the next
- * session a little above where it should sit. Under-shooting is the failure
- * that shows (the target parks mid-screen or lower); over-shooting just clamps.
- * So when in doubt this number goes up, never down.
+ * Estimates round the rows TALL and the viewport SHORT, so the count comes out
+ * low on purpose. Counting low parks the target a little below the top edge,
+ * which is merely imperfect; counting high scrolls past it, which is wrong.
  */
-internal fun scrollTargetForTop(rows: List<Row>, topIndex: Int): Int {
-    val LEAD = 9
-    return minOf(topIndex + LEAD, (rows.size - 1).coerceAtLeast(0))
+internal fun scrollTargetForTop(
+    rows: List<Row>,
+    topIndex: Int,
+    listHeightDp: Int,
+    fontScale: Float,
+): Int {
+    val last = rows.size - 1
+    if (topIndex >= last) return last.coerceAtLeast(0)
+    var used = 0f
+    var target = topIndex
+    for (i in topIndex..last) {
+        used += rowHeightDp(rows[i], fontScale)
+        // The first row counts whether or not it fits — there is nowhere else
+        // for the scroll to aim, and a target below topIndex would scroll the
+        // wrong way.
+        if (used > listHeightDp && i > topIndex) break
+        target = i
+    }
+    return target
+}
+
+/**
+ * About how tall a row draws, in dp. Only ever used to count how many fit on
+ * screen, so near enough is enough — but it rounds up, since over-estimating
+ * costs a row of accuracy and under-estimating scrolls past the target.
+ *
+ * The sp parts are multiplied by the phone's font scale and the dp padding is
+ * not, because that is how the two actually behave: a coach on large text has
+ * meaningfully taller rows and correspondingly fewer of them on screen.
+ * Line heights are the text size × 1.25, which is a shade over Roboto's real
+ * ascent-to-descent. The trailing 1dp on each is the list divider.
+ */
+private fun rowHeightDp(row: Row, fontScale: Float): Float = when (row) {
+    // 10dp + 4dp padding around a single 11sp line.
+    is Row.Header -> 15f + 14f * fontScale
+    // 6dp top and bottom around the taller of the two columns: the time over
+    // the duration (13sp + 10sp), or the name over a note that is only there
+    // sometimes (14sp + 11sp). row_dur is blanked rather than hidden, so the
+    // left column always costs both of its lines.
+    is Row.Session -> 13f + fontScale * (if (row.booking.note.isNotBlank()) 32f else 29f)
 }
 
 private class ScheduleFactory(
