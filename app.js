@@ -7178,11 +7178,24 @@
           </div>
         </div>
         <p class="pref-foot">Collected counts card payments Square has confirmed and anything you've ticked off yourself. Outstanding is an invoice raised and not yet settled — sessions are never withheld over it.</p>
-        <div class="pref-actions">
-          <button class="btn btn-ghost btn-sm slim-btn" id="btn-tax" type="button">Tax estimate…</button>
-          <button class="btn btn-ghost btn-sm slim-btn" id="btn-books-csv" type="button">Export ${year} (CSV)</button>
-          <button class="btn btn-ghost btn-sm slim-btn" id="btn-memberships" type="button">Memberships & prices…</button>
-          <button class="btn btn-ghost btn-sm slim-btn" id="btn-invoice-from" type="button">Your details on invoices…</button>
+        <!-- Two jobs, not four buttons. The first pair READS the year above —
+             both answer a question about it, neither changes anything. The
+             second pair sets what future invoices are built FROM, which has
+             nothing to do with the year on screen. They were one flat row of
+             four directly under a footnote about "collected" and "outstanding",
+             so they also read as though they belonged to that sentence. -->
+        <div class="books-acts">
+          <div class="pref-actions">
+            <button class="btn btn-ghost btn-sm slim-btn" id="btn-tax" type="button">Tax estimate…</button>
+            <button class="btn btn-ghost btn-sm slim-btn" id="btn-books-csv" type="button">Export ${year} (CSV)</button>
+          </div>
+          <div class="books-acts-group">
+            <span class="books-acts-lbl">What invoices are built from</span>
+            <div class="pref-actions">
+              <button class="btn btn-ghost btn-sm slim-btn" id="btn-memberships" type="button">Memberships & prices…</button>
+              <button class="btn btn-ghost btn-sm slim-btn" id="btn-invoice-from" type="button">Invoice details…</button>
+            </div>
+          </div>
         </div>`;
 
       $("#books-prev")?.addEventListener("click", () => { _booksYear = year - 1; _booksOpenMonth = null; renderBooks(); });
@@ -7769,7 +7782,9 @@
     const f = state.trainerData.invoiceFrom || {};
     const t = state.trainerData.trainer || {};
     openModal({
-      title: "Your details on invoices",
+      // Matches the button that opens it. It was "Your details on invoices" —
+      // a sentence fragment sitting beside three noun phrases.
+      title: "Invoice details",
       body: `
         <p class="muted" style="margin-top:-0.4em">This is the heading on every invoice you raise from now on. Ones already sent keep the details they were sent with.</p>
         <label>Business name

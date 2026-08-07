@@ -11262,6 +11262,19 @@ input.ownday-sheet-input { margin-top: 0.35em; }
 .coach-sheet.is-msg .coach-sheet-card::before {
   background: linear-gradient(90deg, var(--primary), rgba(var(--primary-rgb), 0.15));
 }
+/* Books actions: two rows, because they answer two different questions. The
+   rule and caption are what stop the settings pair reading as more ways to
+   look at the year above them. */
+.books-acts { display: flex; flex-direction: column; gap: 0.55rem; }
+.books-acts-group {
+  display: flex; flex-direction: column; gap: 0.35rem;
+  padding-top: 0.6rem; border-top: 1px solid var(--border);
+}
+.books-acts-lbl {
+  font-size: 0.68rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--muted);
+}
+
 .coach-sheet.is-msg .coach-sheet-kicker { color: var(--primary-bright); }
 /* This head carries TWO buttons, and the shell's space-between spreads three
    children evenly — which left ⟳ stranded in the middle of the title bar.
