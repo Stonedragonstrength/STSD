@@ -14124,3 +14124,24 @@ input.tax-in.is-rate { width: 4.2rem; margin: 0 0.2em 0 0.4em; }
 }
 .books-cut-btn.is-on { color: var(--primary-bright); border-color: var(--primary-bright); background: var(--primary-soft); }
 .books-tier-due { color: #fbbf24; font-weight: 700; font-size: 0.7rem; }
+
+/* ============ Credit for unused sessions ============
+   Sits with the other two session switches. Greyed rather than hidden when
+   roll over wins, so it is obvious the two are one choice and not that the
+   control has gone missing. */
+#credit-toggle.is-off { opacity: 0.45; }
+input.credit-cap {
+  width: 3.1rem; margin-left: 0.4em; padding: 0.15em 0.3em;
+  text-align: center; font-variant-numeric: tabular-nums; font-size: 0.8rem;
+}
+input.credit-cap:disabled { opacity: 0.4; }
+.credit-note {
+  margin: 0.55rem 0 0; padding: 0.5rem 0.7rem;
+  border: 1px solid rgba(74, 222, 128, 0.35); border-radius: 10px;
+  background: rgba(74, 222, 128, 0.08);
+  font-size: 0.76rem; color: var(--text-soft);
+}
+.credit-note strong { color: #4ade80; }
+/* On the charge sheet the credit reads as money coming OFF, the same green the
+   balance note uses, so the two are recognisably the same thing. */
+.chg-line.is-credit strong { color: #4ade80; }

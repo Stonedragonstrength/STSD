@@ -558,6 +558,9 @@
     let carried = 0;        // allowance surviving a past month (rollover only)
     let expired = 0;        // allowance lost to a month end
     let packUsed = undated; // a use with no date has to come off something real
+    // Per month, so the credit accrual can read the SAME arithmetic instead of
+    // recomputing "what was left over" beside it and drifting from it.
+    const byMonth = new Map();
 
     const months = new Set([...grantByMonth.keys(), ...usedByMonth.keys()]);
     months.add(todayMonth);
@@ -568,6 +571,7 @@
       // while an allowance expires beside it would be taking money twice.
       const left = Math.max(0, grant - used);
       packUsed += Math.max(0, used - grant);
+      byMonth.set(mk, { grant, used, left, closed: mk < todayMonth });
       if (mk === todayMonth) return;                    // still live
       if (mk > todayMonth) { carried += left; return; } // hasn't happened yet
       if (rollover) carried += left; else expired += left;
@@ -578,11 +582,109 @@
     const thisMonth = Math.max(0, thisMonthGrant - thisMonthUsed);
     const banked = packPool + carried - packUsed;
     return {
-      thisMonth, thisMonthGrant, thisMonthUsed, banked, expired,
+      thisMonth, thisMonthGrant, thisMonthUsed, banked, expired, byMonth,
       remaining: thisMonth + banked,
       granted: [...grantByMonth.values()].reduce((a, b) => a + b, 0) + packPool,
       used: redemptions.length,
     };
+  }
+
+  // ================= Credit for unused sessions =================
+  //
+  // Opt-in, per athlete. When a month closes with allowance left on it, the
+  // leftovers become MONEY OFF the next invoice instead of simply expiring.
+  //
+  // Deliberately not a scheduled job. Nothing in this app runs on a clock —
+  // a "6pm on the last day of the month" calculation only happens if the coach
+  // has the app open at 6pm on the last day of the month, and silently does not
+  // if he doesn't. A month is closed once it is over, so this is worked out
+  // lazily the first time anything asks, the same way allowances expire and
+  // auto-renew grants land. Idempotent: one earned entry per month, ever.
+  //
+  // It also cannot be combined with rollover. Rollover means the sessions carry
+  // forward, so there is nothing left over to pay back — turning both on would
+  // hand the athlete the session AND the money for it.
+  //
+  // Capped, because this quietly removes the cost of not turning up. A session
+  // missed is a slot he held and could have sold; refunding all of it makes
+  // no-showing free, which is exactly why "use it or lose it" is the norm. The
+  // cap keeps it a goodwill gesture rather than a standing discount.
+  const CREDIT_CAP_DEFAULT = 2;
+  const creditCapOf = (c) => {
+    const n = Number(c?.sessionBank?.creditCap);
+    return Number.isFinite(n) && n >= 0 ? n : CREDIT_CAP_DEFAULT;
+  };
+  const creditsOn = (c) => !!c?.sessionBank?.creditUnused && !c?.sessionBank?.rollover;
+  const creditEntries = (c) => (c?.sessionBank?.credits || []);
+  // Earned minus spent. Rounded to whole dollars because it lands on an invoice.
+  function creditBalance(c) {
+    return Math.max(0, Math.round(creditEntries(c).reduce(
+      (n, e) => n + (e.kind === "used" ? -(Number(e.amount) || 0) : (Number(e.amount) || 0)), 0)));
+  }
+
+  // Turn closed months into credit. Safe to call on every load.
+  function accrueSessionCredits() {
+    if (!state.trainerData?.clients?.length) return;
+    const today = todayISO().slice(0, 7);
+    let touched = false;
+    const seen = new Set();
+    state.trainerData.clients.forEach((c) => {
+      // Per BANK, not per athlete — a couple's leftovers are one set of
+      // leftovers, and crediting both halves would pay it back twice.
+      if (seen.has(c.id)) return;
+      ensureSessionBank(c);
+      const p = partnerOf(c);
+      seen.add(c.id);
+      if (p) seen.add(p.id);
+      if (!creditsOn(c)) return;
+      const rate = athleteSessionRate(c) || athleteSessionRate(p) || 0;
+      if (!rate) return; // nothing to value the leftovers at
+      const cap = creditCapOf(c);
+      const l = bankLedger(c.sessionBank, today, false);
+      const already = new Set(creditEntries(c).filter((e) => e.kind !== "used").map((e) => e.monthKey));
+      l.byMonth.forEach((v, mk) => {
+        if (!v.closed || v.left <= 0 || already.has(mk)) return;
+        const sessions = Math.min(v.left, cap);
+        if (sessions <= 0) return;
+        c.sessionBank.credits = [...creditEntries(c), {
+          id: uid(), kind: "earned", monthKey: mk, sessions,
+          amount: Math.round(sessions * rate), rate, addedAt: Date.now(),
+        }];
+        touched = true;
+        bankMutated(c); // mirrors onto the partner's copy
+      });
+    });
+    if (!touched) return;
+    localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+    (state.trainerData.clients || []).forEach((x) => pushAthlete(x));
+  }
+
+  // Spend it. Called only once a charge has actually been raised, so a charge
+  // that failed never eats the credit.
+  //
+  // How much was spent is derived from what the invoice ACTUALLY went out at,
+  // not from what the sheet offered:
+  //
+  //   applied = min(balance, gross − charged)
+  //
+  // which does the right thing in all three cases. Left alone, the whole credit
+  // is spent. Typed back up to the full price, nothing is spent and the balance
+  // survives — he decided not to give it, and the app should not spend it on his
+  // behalf. Discounted further by hand, only the credit is consumed and the rest
+  // is his own goodwill, which is not the athlete's to have again next month.
+  function applyCreditAfterCharge(c, monthKey, amountCharged, chargeId) {
+    if (!c || !creditsOn(c)) return;
+    const balance = creditBalance(c);
+    if (balance <= 0) return;
+    const gross = monthChargePlan(c, monthKey).gross;
+    const applied = Math.max(0, Math.min(balance, Math.round(gross - (Number(amountCharged) || 0))));
+    if (applied <= 0) return;
+    ensureSessionBank(c);
+    c.sessionBank.credits = [...creditEntries(c), {
+      id: uid(), kind: "used", monthKey, amount: applied, chargeId: chargeId || null, usedAt: Date.now(),
+    }];
+    bankMutated(c);
+    saveTrainer();
   }
 
   function sessionBankSummary(c) {
@@ -5965,6 +6067,37 @@
     if (autoRenewBox) autoRenewBox.checked = !!c.sessionBank.autoRenew;
     const rolloverBox = $("#prof-rollover");
     if (rolloverBox) rolloverBox.checked = !!c.sessionBank.rollover;
+    // Credit and roll over answer the same question two ways, so only one can
+    // be on. The disabled state says which is winning rather than letting a
+    // silently-ignored tick sit there looking active.
+    const creditBox = $("#prof-credit");
+    if (creditBox) {
+      creditBox.checked = !!c.sessionBank.creditUnused;
+      creditBox.disabled = !!c.sessionBank.rollover;
+    }
+    const capBox = $("#prof-credit-cap");
+    if (capBox) {
+      capBox.value = String(creditCapOf(c));
+      capBox.disabled = !c.sessionBank.creditUnused || !!c.sessionBank.rollover;
+    }
+    const cToggle = $("#credit-toggle");
+    if (cToggle) cToggle.classList.toggle("is-off", !!c.sessionBank.rollover);
+    if (rolloverBox) rolloverBox.disabled = !!c.sessionBank.creditUnused;
+    // The balance said out loud on the card, not left to appear as a surprise
+    // line on an invoice. Named months, because "where did $273 come from" is
+    // the only question this number ever prompts.
+    const credHost = $("#credit-balance-note");
+    if (credHost) {
+      const bal = creditBalance(c);
+      const from = creditEntries(c)
+        .filter((e) => e.kind !== "used")
+        .map((e) => monthKeyLabel(e.monthKey).replace(/ \d{4}$/, ""));
+      credHost.innerHTML = bal
+        ? `💸 <strong>${escapeHtml(money(bal))}</strong> credit from unused sessions${
+            from.length ? ` (${escapeHtml(from.slice(-3).join(", "))})` : ""} — comes off the next invoice.`
+        : "";
+      credHost.classList.toggle("hidden", !bal);
+    }
     const sub = $("#session-options-sub");
     if (sub) {
       const m = membershipById(c.sessionBank.membership);
@@ -6221,10 +6354,15 @@
     const sessions = billSessionsFor(c, monthKey, membership);
     const allowance = Number(pkg?.size) || Number(membership?.sessions) || 0;
     const flat = flatMonthly(membership);
+    const gross = flat || Math.round(sessions * rate);
+    // Credit for months that closed with sessions unused. Never more than the
+    // invoice itself — a credit bigger than the bill would produce a negative
+    // charge, and the rest stays on the balance for next time.
+    const credit = Math.min(creditBalance(c), gross);
     return {
-      sessions, rate, allowance, flat,
+      sessions, rate, allowance, flat, gross, credit,
       over: allowance ? Math.max(0, sessions - allowance) : 0,
-      amount: flat || Math.round(sessions * rate),
+      amount: Math.max(0, gross - credit),
     };
   }
   // The month's charge for this BANK, not this athlete. A couple share one
@@ -6306,8 +6444,11 @@
           ` : `
           <div class="chg-line"><span>Sessions</span><input type="number" class="input chg-in" id="chg-sessions" min="0" step="1" value="${plan.sessions}" /></div>
           <div class="chg-line"><span>Rate each</span><input type="number" class="input chg-in" id="chg-rate" min="0" step="1" value="${plan.rate || ""}" placeholder="0" /></div>
-          <div class="chg-total"><span>Total</span><strong id="chg-total">${money(plan.amount)}</strong></div>
+          <div class="chg-total"><span>Total</span><strong id="chg-total">${money(plan.gross)}</strong></div>
           `}
+          ${plan.credit ? `
+          <div class="chg-line is-credit"><span>Unused sessions credit</span>
+            <strong>−${escapeHtml(money(plan.credit))}</strong></div>` : ""}
           <div class="chg-line"><span>Charge</span><input type="number" class="input chg-in" id="chg-amount" min="1" step="1" value="${plan.amount}" /></div>
         </div>
         ${plan.over ? `<p class="muted chg-note">${plan.over} session${plan.over === 1 ? "" : "s"} over the ${plan.allowance} on their membership — already counted above.</p>` : ""}
@@ -6369,13 +6510,20 @@
     // gets sent — typing in it is how a discount is applied, so recalculating
     // it out from under the coach would be the app arguing with them.
     let manual = false;
+    // Credit is money already accounted for, so it comes off the working total
+    // BEFORE any of this — otherwise editing the session count would recompute
+    // the charge box back up to the gross and silently drop the credit, and the
+    // discount marker would flag every credited invoice as a hand-typed
+    // discount when the coach had done nothing at all.
+    const credit = Number(plan.credit) || 0;
+    const netOf = (total) => Math.max(0, total - Math.min(credit, total));
     const recalc = () => {
       const s = Number($("#chg-sessions")?.value) || 0;
       const r = Number($("#chg-rate")?.value) || 0;
       const total = Math.round(s * r);
       const totalEl = $("#chg-total");
       if (totalEl) totalEl.textContent = money(total);
-      if (!manual && $("#chg-amount")) $("#chg-amount").value = total;
+      if (!manual && $("#chg-amount")) $("#chg-amount").value = netOf(total);
       markDiscount();
     };
     // A charge under the working total is a discount, and it should be obvious
@@ -6384,12 +6532,12 @@
       const amt = Number($("#chg-amount")?.value) || 0;
       const s = Number($("#chg-sessions")?.value) || 0;
       const r = Number($("#chg-rate")?.value) || 0;
-      const total = Math.round(s * r);
+      const expected = netOf(Math.round(s * r));
       const row = $("#chg-amount")?.closest(".chg-line");
       if (!row) return;
-      row.classList.toggle("is-discount", total > 0 && amt > 0 && amt < total);
-      row.dataset.diff = total > 0 && amt > 0 && amt !== total
-        ? (amt < total ? `−${money(total - amt)}` : `+${money(amt - total)}`) : "";
+      row.classList.toggle("is-discount", expected > 0 && amt > 0 && amt < expected);
+      row.dataset.diff = expected > 0 && amt > 0 && amt !== expected
+        ? (amt < expected ? `−${money(expected - amt)}` : `+${money(amt - expected)}`) : "";
     };
     // Same tap-a-number grid as the batch sheet — it is the same question.
     wireSessionPicker($("#chg-sessions"));
@@ -6420,6 +6568,9 @@
       if (out) out.innerHTML = `<p class="chg-err">${escapeHtml(res?.error || "Square couldn't make that link")}</p>`;
       return;
     }
+    // Spend the credit only now, against the amount the invoice actually went
+    // out at. Before the package sync below, which rewrites the price.
+    applyCreditAfterCharge(c, monthKey, amount, res.id || res.paymentId);
     // Bring the month's package into line with what was actually charged.
     // Without this the balance card still reads the membership's list price
     // ("$725 to collect") next to a link for $819, which is two answers to one
@@ -7843,10 +7994,36 @@
         ? "🔁 Auto-renew on: each month grants their membership's sessions, flagged for you to collect"
         : "Auto-renew off");
     });
+    $("#prof-credit")?.addEventListener("change", (e) => {
+      const c = currentClient(); if (!c) return;
+      ensureSessionBank(c);
+      c.sessionBank.creditUnused = e.target.checked;
+      if (e.target.checked) c.sessionBank.rollover = false; // never both
+      bankMutated(c);
+      saveTrainer();
+      // Turning it ON can immediately create credit out of months that already
+      // closed, so work that out now rather than at some later load — otherwise
+      // the toggle appears to do nothing until the next time the app boots.
+      accrueSessionCredits();
+      renderSessionOptions(c);
+      renderCoachSessions();
+      renderClientSnapshot();
+    });
+    $("#prof-credit-cap")?.addEventListener("change", (e) => {
+      const c = currentClient(); if (!c) return;
+      ensureSessionBank(c);
+      const n = Math.max(0, Math.min(20, Math.round(Number(e.target.value) || 0)));
+      c.sessionBank.creditCap = n;
+      e.target.value = String(n);
+      bankMutated(c);
+      saveTrainer();
+      renderCoachSessions();
+    });
     $("#prof-rollover")?.addEventListener("change", (e) => {
       const c = currentClient(); if (!c) return;
       ensureSessionBank(c);
       c.sessionBank.rollover = e.target.checked;
+      if (e.target.checked) c.sessionBank.creditUnused = false; // never both
       bankMutated(c);
       saveTrainer();
       // Their balance changes the instant this flips, and it shows in four
@@ -13761,6 +13938,9 @@
     if (!data) return;
     _billing = { ...data, loadedAt: Date.now() };
     settleBilledPackages();
+    // After the settle, because a month's leftovers are only worth crediting
+    // once the app agrees on what was actually granted and paid for it.
+    accrueSessionCredits();
   }
   // One shared request, and a staleness window rather than load-once. Two
   // reasons it can't be load-once: the billing row would depend on the
@@ -18211,6 +18391,10 @@
         sessions, rate: r.rate, note, noLink: r.payBy === "manual",
       });
       if (!res?.ok) { failed.push(`${r.client.name || "(unnamed)"} — ${res?.error || "failed"}`); continue; }
+      // The batch round spends credit on exactly the same rule as the single
+      // sheet, and for the same reason — a round of nineteen must not treat
+      // anybody differently from billing them one at a time.
+      applyCreditAfterCharge(r.client, key, amount, res.id);
       // Same alignment the single charge sheet does: the month's package carries
       // what was actually billed, not the membership's list price, or the
       // balance card and the invoice give two answers to one question.

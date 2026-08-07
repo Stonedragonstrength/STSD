@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=books4" />
+  <link rel="stylesheet" href="styles.css?v=credit2" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -851,7 +851,18 @@
                 <label class="autorenew-toggle" title="Off: unused sessions from a monthly membership expire at the end of that month. On: they carry over. Packages bought outright never expire either way.">
                   <input type="checkbox" id="prof-rollover" /> ↻ Roll over unused
                 </label>
+                <!-- The other answer to a month that went unused: instead of
+                     carrying the sessions, pay their value back against the
+                     next invoice. Mutually exclusive with roll over — doing
+                     both would hand them the session AND the money for it —
+                     and capped, so it stays a goodwill gesture rather than
+                     making a no-show free. -->
+                <label class="autorenew-toggle" id="credit-toggle" title="Off: unused sessions from a monthly membership simply expire. On: their value comes off the next invoice, up to the cap.">
+                  <input type="checkbox" id="prof-credit" /> 💸 Credit unused
+                  <input type="number" id="prof-credit-cap" class="input credit-cap" min="0" max="20" step="1" title="Most sessions creditable in a month" />
+                </label>
               </div>
+              <p class="credit-note hidden" id="credit-balance-note"></p>
             </div>
             <!-- Card payments. Renders nothing at all until Square is set up,
                  so an athlete's coach view is unchanged until the coach turns
@@ -1501,9 +1512,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="bugreport.js?v=bug1"></script>
   <script src="config.js?v=horm2"></script>
-  <script src="cloud.js?v=books4"></script>
+  <script src="cloud.js?v=credit2"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=books4"></script>
+  <script src="app.js?v=credit2"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
