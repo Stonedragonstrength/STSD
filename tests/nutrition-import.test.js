@@ -230,6 +230,61 @@ function mapImportRows(source, kind, parsed, opts) {
   }
   return out;
 }
+// Cronometer never exports a food definition -- only servings actually logged.
+// So the library is reconstructed from the diary. That is not a workaround: it
+// yields the foods the athlete really ate, ranked by how often, instead of every
+// abandoned entry they created once and forgot. Its one real limit is that a
+// food created but never eaten does not come across, which is the right trade.
+//
+// A "full recipe" unit is how a logged recipe presents itself, and those belong
+// in savedMeals rather than customFoods.
+const RECIPE_UNIT = /recipe/i;
+
+function deriveLibrary(diary) {
+  const byName = new Map();
+  for (const d of diary) {
+    const key = d.entry.name.toLowerCase();
+    const prev = byName.get(key);
+    // Most recent wins: the newest logged portion is the best guess at how this
+    // person actually eats the thing now. Keeping an older portion would look
+    // plausible and be wrong for every future log.
+    if (!prev || d.date >= prev.date) byName.set(key, { ...d, uses: (prev ? prev.uses : 0) + 1 });
+    else byName.set(key, { ...prev, uses: prev.uses + 1 });
+  }
+
+  const foods = [], recipes = [];
+  for (const { entry, uses } of byName.values()) {
+    if (RECIPE_UNIT.test(entry.unit)) {
+      recipes.push({
+        name: entry.name,
+        kind: "recipe",
+        // The export gives no servings count -- the athlete logged one whole
+        // recipe -- so 1 reproduces exactly what they logged, and never divides
+        // by zero in recipePerServing().
+        servings: 1,
+        items: [{ ...entry, meal: "dinner", qty: 1, unit: "recipe", grams: null }],
+        uses,
+      });
+      continue;
+    }
+    const grams = entry.unit === "g" && entry.qty > 0;
+    // Scale to whichever form the food logger stores: per 100 g when the weight
+    // is known, per one unit otherwise. Getting this backwards silently doubles
+    // or halves every future portion of the food.
+    const k = grams ? 100 / entry.qty : 1 / (entry.qty || 1);
+    const r1 = (n) => Math.round((Number(n) || 0) * k * 10) / 10;
+    foods.push({
+      name: entry.name,
+      per100: !!grams,
+      servingG: grams ? 100 : 0,
+      servingLabel: grams ? "100 g" : entry.unit,
+      kcal: Math.round((Number(entry.kcal) || 0) * k),
+      p: r1(entry.p), c: r1(entry.c), f: r1(entry.f), fib: r1(entry.fib),
+      uses,
+    });
+  }
+  return { foods, recipes };
+}
 // ---- end copy ----
 
 let pass = 0, fail = 0;
@@ -395,6 +450,69 @@ eq("pounds kept", wOn("2026-08-06"), 181.4);
 eq("kg converted", wOn("2026-08-04"), 176.4);
 // Weight is never pruned -- only foodLog has a window.
 eq("old weigh-ins kept", w.weights.some((x) => x.date === "2019-01-01"), true);
+
+console.log("\nderiveLibrary");
+const lib = deriveLibrary([
+  { date: "2026-08-01", entry: { name: "Blueberries", qty: 100, unit: "g", kcal: 57, p: 0.7, c: 14.57, f: 0.31, fib: 2.4 } },
+  { date: "2026-08-03", entry: { name: "Blueberries", qty: 50, unit: "g", kcal: 28, p: 0.35, c: 7.3, f: 0.16, fib: 1.2 } },
+  { date: "2026-08-02", entry: { name: "Whey Shake", qty: 1, unit: "scoop", kcal: 120, p: 24, c: 3, f: 1.5, fib: 0 } },
+  { date: "2026-08-07", entry: { name: "ZZTest Chili", qty: 1, unit: "full recipe", kcal: 291.49, p: 21.28, c: 38.04, f: 6.44, fib: 9.74 } },
+]);
+const food = (n) => lib.foods.find((f) => f.name === n) || {};
+eq("one entry per unique food", lib.foods.length, 2);
+eq("recipes split out of foods", lib.recipes.length, 1);
+// Frequency is why deriving from the diary beats a library export: what someone
+// ate twice outranks what they tried once.
+eq("uses counts how often it was logged", food("Blueberries").uses, 2);
+eq("single log counts once", food("Whey Shake").uses, 1);
+// Gram portions normalise to per-100g so any future portion scales correctly.
+eq("gram foods are per100", food("Blueberries").per100, true);
+// The 2026-08-03 row is the most recent: 50 g at 28 kcal doubles to 56 per 100 g.
+// Taking the older 100 g row instead would give 57 -- close enough to look right
+// and wrong for every portion the athlete logs afterwards.
+eq("per100 normalised from the MOST RECENT row", food("Blueberries").kcal, 56);
+eq("per100 macros scale together", food("Blueberries").p, 0.7);
+eq("servingG set for gram foods", food("Blueberries").servingG, 100);
+eq("serving label for gram foods", food("Blueberries").servingLabel, "100 g");
+// A non-gram unit cannot be normalised by weight, so macros are per one unit.
+eq("non-gram foods are per-unit", food("Whey Shake").per100, false);
+eq("per-unit macros are for one unit", [food("Whey Shake").kcal, food("Whey Shake").p], [120, 24]);
+eq("serving label kept verbatim", food("Whey Shake").servingLabel, "scoop");
+// A recipe logged as one row maps straight onto the recipe shape.
+const rc = lib.recipes[0] || {};
+eq("recipe name", rc.name, "ZZTest Chili");
+eq("recipe kind", rc.kind, "recipe");
+// The export carries no servings count, so 1 reproduces what was logged.
+eq("servings defaults to 1", rc.servings, 1);
+eq("single item carrying whole-recipe totals", (rc.items || []).length, 1);
+eq("item macros are the recipe totals", at(rc.items, 0).kcal, 291.49);
+// Guards the divide in recipePerServing(): 0 servings would be Infinity kcal.
+eq("servings is never zero", rc.servings > 0, true);
+
+// End-to-end on the real export: parse -> sniff -> map -> derive, with no
+// hand-written input anywhere. Everything above tests a stage in isolation; this
+// is the only assertion that the stages actually fit together on a real file.
+console.log("\nfull pipeline over the vendored real export");
+const realHit = sniffImportFile(realCsv.headers);
+const realMapped = mapImportRows(realHit.source, realHit.kind, realCsv,
+  { today: "2026-08-07", windowDays: 180 });
+const realLib = deriveLibrary(realMapped.diary);
+// 4 rows: Water x2, Blueberries, ZZTest Chili.
+eq("two food entries", realMapped.diary.length, 2);
+eq("both water rows routed to the water log", realMapped.water.length, 2);
+eq("nothing skipped", realMapped.skipped, 0);
+eq("nothing out of window", realMapped.tooOld, 0);
+eq("one real food in the library", realLib.foods.length, 1);
+eq("the food is the blueberries", at(realLib.foods, 0).name, "Blueberries, Fresh");
+// The whole reason Task 4 exists: the recipe was logged, so it comes across even
+// though Cronometer never exported its definition.
+eq("one recipe", realLib.recipes.length, 1);
+eq("the recipe is the chili", at(realLib.recipes, 0).name, "ZZTest Chili");
+eq("recipe carries its real totals", at(at(realLib.recipes, 0).items, 0).kcal, 291.49);
+// The custom food ZZTest Protein Powder exists in the account but was never
+// logged, and is correctly absent -- this is the fact the design rests on.
+eq("an unlogged custom food is simply not there",
+   realLib.foods.some((f) => /protein powder/i.test(f.name)), false);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

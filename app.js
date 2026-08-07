@@ -31300,6 +31300,63 @@
     return out;
   }
 
+  // Cronometer never exports a food definition -- only servings actually logged.
+  // So the library is reconstructed from the diary. That is not a workaround: it
+  // yields the foods the athlete really ate, ranked by how often, instead of
+  // every abandoned entry they created once and forgot. Its one real limit is
+  // that a food created but never eaten does not come across, which is the right
+  // trade.
+  //
+  // A "full recipe" unit is how a logged recipe presents itself, and those
+  // belong in savedMeals rather than customFoods.
+  const RECIPE_UNIT = /recipe/i;
+
+  function deriveLibrary(diary) {
+    const byName = new Map();
+    for (const d of diary) {
+      const key = d.entry.name.toLowerCase();
+      const prev = byName.get(key);
+      // Most recent wins: the newest logged portion is the best guess at how
+      // this person actually eats the thing now. Keeping an older portion would
+      // look plausible and be wrong for every future log.
+      if (!prev || d.date >= prev.date) byName.set(key, { ...d, uses: (prev ? prev.uses : 0) + 1 });
+      else byName.set(key, { ...prev, uses: prev.uses + 1 });
+    }
+
+    const foods = [], recipes = [];
+    for (const { entry, uses } of byName.values()) {
+      if (RECIPE_UNIT.test(entry.unit)) {
+        recipes.push({
+          name: entry.name,
+          kind: "recipe",
+          // The export gives no servings count -- the athlete logged one whole
+          // recipe -- so 1 reproduces exactly what they logged, and never
+          // divides by zero in recipePerServing().
+          servings: 1,
+          items: [{ ...entry, meal: "dinner", qty: 1, unit: "recipe", grams: null }],
+          uses,
+        });
+        continue;
+      }
+      const grams = entry.unit === "g" && entry.qty > 0;
+      // Scale to whichever form the food logger stores: per 100 g when the
+      // weight is known, per one unit otherwise. Getting this backwards silently
+      // doubles or halves every future portion of the food.
+      const k = grams ? 100 / entry.qty : 1 / (entry.qty || 1);
+      const r1 = (n) => Math.round((Number(n) || 0) * k * 10) / 10;
+      foods.push({
+        name: entry.name,
+        per100: !!grams,
+        servingG: grams ? 100 : 0,
+        servingLabel: grams ? "100 g" : entry.unit,
+        kcal: Math.round((Number(entry.kcal) || 0) * k),
+        p: r1(entry.p), c: r1(entry.c), f: r1(entry.f), fib: r1(entry.fib),
+        uses,
+      });
+    }
+    return { foods, recipes };
+  }
+
   // -------- Athlete targets --------
   // Plain statement of the four numbers. Deliberately not a chart: the calorie
   // ring and macro bars directly above already plot these same targets against
