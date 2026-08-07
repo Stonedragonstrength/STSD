@@ -18050,8 +18050,13 @@
         : `${r.remaining} left`;
       return `
         <label class="mg-row${r.action === "done" ? " is-granted" : ""}${r.action === "pay" ? " is-pending" : ""}" style="--athlete-rgb:${AVATAR_RGB[idx]}">
-          <input type="checkbox" data-mg="${escapeHtml(c.id)}"${r.action === "done" ? " disabled" : " checked"} />
-          <span class="mg-av">${avatarTileHtml(c, c.importedProgress, { size: "sm", colorIdx: idx })}</span>
+          <!-- Tick stacked over the avatar rather than beside it: on a phone
+               they were two separate columns eating width the name and the
+               numbers both needed. -->
+          <span class="mg-who">
+            <input type="checkbox" data-mg="${escapeHtml(c.id)}"${r.action === "done" ? " disabled" : " checked"} />
+            <span class="mg-av">${avatarTileHtml(c, c.importedProgress, { size: "sm", colorIdx: idx })}</span>
+          </span>
           <span class="mg-main">
             <span class="mg-name">${escapeHtml(c.name || "(unnamed)")}${r.partner ? ` <span class="mg-pair">💞</span>` : ""}</span>
             <span class="mg-tier">${escapeHtml(membershipTitle(m))}${r.partner ? ` · shared with ${escapeHtml(r.partner.name || "partner")}` : ""}</span>
@@ -19747,10 +19752,21 @@
     // quoted a full month, which is the one number they were trying not to bill.
     const given = Number(size);
     const n = Number.isFinite(given) && given >= 0 ? given : m.sessions;
-    return Math.round(athleteSessionRate(c) * n);
+    // To CENTS, not to whole dollars. Real rates carry half-dollars ($85.50,
+    // $67.50), so 85.5 x 9 is $769.50 and rounding that to $770 invents fifty
+    // cents. Round once, here, at the precision money actually has.
+    return Math.round(athleteSessionRate(c) * n * 100) / 100;
   }
+  // Cents only when there are cents. This used to round to whole dollars, which
+  // quietly misreported every amount built from a half-dollar rate -- $85.50 x 9
+  // read as $770 instead of $769.50. Whole amounts are unchanged, so nothing
+  // gains a noisy ".00"; anything with real cents now shows them.
   function money(n) {
-    return "$" + Math.round(n).toLocaleString();
+    const v = Math.round((Number(n) || 0) * 100) / 100;
+    return "$" + v.toLocaleString(undefined, {
+      minimumFractionDigits: Number.isInteger(v) ? 0 : 2,
+      maximumFractionDigits: 2,
+    });
   }
 
   // Today, this week (Sunday-start, to match the month grid's columns), and the

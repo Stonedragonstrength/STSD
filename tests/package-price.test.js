@@ -20,6 +20,7 @@
 const MEMBERSHIPS = [
   { id: "single-2", cat: "Single Sessions", perWeek: 2, sessions: 8, price: 725 },
   { id: "single-3", cat: "Single Sessions", perWeek: 3, sessions: 12, price: 1020 },
+  { id: "single-4", cat: "Single Sessions", perWeek: 4, sessions: 16, price: 1320 },
   { id: "couples-2", cat: "Couples Sessions", perWeek: 2, sessions: 8, price: 1040 },
   { id: "digital", cat: "Monthly Memberships", sessions: 0, price: 250 },
   { id: "no-session", cat: "Monthly Memberships", sessions: 0 },
@@ -41,7 +42,8 @@ function bankPackagePrice(c, m, size) {
   // A given 0 means zero, and only an ABSENT size falls back to the tier.
   const given = Number(size);
   const n = Number.isFinite(given) && given >= 0 ? given : m.sessions;
-  return Math.round(athleteSessionRate(c) * n);
+  // To CENTS, not whole dollars: real rates carry half-dollars.
+  return Math.round(athleteSessionRate(c) * n * 100) / 100;
 }
 // ---- end copy ----
 
@@ -75,8 +77,15 @@ eq("$100 × 8 beats the $725 list price",
 // The bug as reported: a custom rate was ignored and the list price billed.
 eq("a custom rate is never the tier price by accident",
    bankPackagePrice(athlete("single-2", 80), membershipById("single-2"), 8) === 725, false);
-eq("fractional rate rounds to whole dollars",
+eq("a whole-dollar product stays whole",
    bankPackagePrice(athlete("single-2", 90.5), membershipById("single-2"), 8), 724);
+// The reported bug: $85.50 x 9 is $769.50, and rounding it to $770 invents
+// fifty cents on an invoice. Half-dollar rates are the norm here, not an edge.
+eq("half-dollar rate keeps its cents",
+   bankPackagePrice(athlete("single-3", 85.5), membershipById("single-3"), 9), 769.5);
+eq("$67.50 for a single session", bankPackagePrice(athlete("single-4", 67.5), membershipById("single-4"), 1), 67.5);
+eq("half-dollar rate x even count is exact",
+   bankPackagePrice(athlete("single-2", 85.5), membershipById("single-2"), 8), 684);
 
 console.log("\npriced by the PACKAGE's size, not the tier's");
 // A package keeps the size it was granted with; the tier can change under it.

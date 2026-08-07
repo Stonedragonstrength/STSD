@@ -3874,8 +3874,15 @@ input.trial-input {
 /* A couple are one bank, so they are one row — the heart says the grant lands
    on both, the same mark the roster uses for a linked pair. */
 .mg-pair { font-size: 0.8em; }
+/* Tick above the avatar, one narrow column instead of two. */
+.mg-who {
+  flex: 0 0 auto; display: flex; flex-direction: column;
+  align-items: center; gap: 0.25em;
+}
 .mg-av { flex: 0 0 auto; display: inline-flex; }
-.mg-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+/* min-width:0 is what actually lets the ellipsis work — without it a flex item
+   refuses to shrink below its content and shoves the numbers off the row. */
+.mg-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 0.05em; }
 .mg-name {
   font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
@@ -3885,6 +3892,8 @@ input.trial-input {
 }
 .mg-right {
   flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 0.1em;
+  /* Never squeezed by a long name, and never wider than its own content. */
+  min-width: 0; text-align: right;
 }
 .mg-add { font-weight: 800; font-size: 0.85rem; color: var(--primary-bright); }
 .mg-row.is-granted .mg-add { color: var(--muted); }
@@ -3896,11 +3905,13 @@ input.trial-input {
    `input[type="number"]` and that attribute selector outranks a bare class, so
    the plain version lost its width and stretched across the whole row. */
 input.mg-size {
-  width: 3.6em; text-align: right;
+  /* Two digits is the whole range — nobody grants 100 sessions. Sized to the
+     content instead of to a form field, so it reads as a number to correct. */
+  width: 2.5em; text-align: center;
   font-weight: 800; font-size: 0.85rem; color: var(--primary-bright);
   background: rgba(var(--primary-rgb), 0.1);
   border: 1px solid rgba(var(--primary-rgb), 0.35);
-  border-radius: 8px; padding: 0.15em 0.35em;
+  border-radius: 8px; padding: 0.15em 0.25em;
   margin: 0; letter-spacing: normal; text-transform: none;
 }
 input.mg-size:focus { outline: none; border-color: rgba(var(--primary-rgb), 0.85); }
@@ -3909,7 +3920,12 @@ input.mg-size::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; 
 input.mg-size { -moz-appearance: textfield; appearance: textfield; }
 /* What they have taken this month — the figure the granted number is checked
    against, and the reason the box above is editable at all. */
-.mg-used { font-size: 0.7rem; color: var(--text-soft); white-space: nowrap; }
+.mg-used {
+  font-size: 0.7rem; color: var(--text-soft);
+  /* Ellipsis, not wrap. These three lines sit next to a fixed-width column of
+     numbers, and a wrapped one grew the row and ran under them. */
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 /* What the balance becomes if this goes through. Quiet by default; amber when
    the typed number is below what they have already used, which is legal but
    never what anybody meant to do. */
