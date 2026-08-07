@@ -129,9 +129,114 @@ function sniffImportFile(headers) {
   }
   return null;
 }
+// null, never 0. Water really is 0 kcal; a blank protein cell is unknown. Fold
+// those together and every rollup misreports the day.
+function cronNum(raw) {
+  const s = String(raw ?? "").replace(/,/g, "").trim();
+  if (!s) return null;
+  const m = s.match(/-?\d+(\.\d+)?/);
+  if (!m) return null;
+  const n = parseFloat(m[0]);
+  return isFinite(n) ? n : null;
+}
+
+// "100.00 g" / "8.00 fl oz" / "1.00 full recipe". The unit is whatever follows
+// the number, kept verbatim -- re-deriving grams from "full recipe" would be
+// guesswork, and the macros are already correct for the amount logged.
+function splitAmount(raw) {
+  const s = String(raw ?? "").trim();
+  const m = s.match(/^(-?\d+(?:\.\d+)?)\s*(.*)$/);
+  if (!m) return { qty: 1, unit: "serving" };
+  const qty = parseFloat(m[1]);
+  const unit = m[2].trim();
+  return { qty: isFinite(qty) ? qty : 1, unit: unit || "serving" };
+}
+
+const CRON_MEALS = { breakfast: "breakfast", lunch: "lunch", dinner: "dinner", snack: "snack", snacks: "snack" };
+
+// Cronometer's default group is "Uncategorized" and users can rename groups
+// freely, so anything unrecognised becomes a snack rather than being dropped.
+// A meal in the wrong slot is a nuisance; a missing meal is lost history.
+function cronMealKey(raw) {
+  return CRON_MEALS[String(raw ?? "").trim().toLowerCase()] || "snack";
+}
+
+const KG_LB = 2.20462;
+const FL_OZ_ML = 29.5735;
+const WATER_NAME = /^water$/i;
+
+function mapImportRows(source, kind, parsed, opts) {
+  const o = opts || {};
+  const windowDays = Number(o.windowDays) || 180;
+  const { map, missing } = resolveColumns(source, kind, parsed.headers);
+  const out = { source, kind, diary: [], water: [], weights: [], skipped: 0, tooOld: 0 };
+  if (missing.length) return out;
+
+  // Inline rather than calling addDaysISO(): this half stays free of app.js
+  // helpers so the test copy needs nothing around it.
+  const cutoff = new Date(Date.parse(o.today + "T00:00:00Z") - windowDays * 86400000)
+    .toISOString().slice(0, 10);
+
+  for (const row of parsed.rows) {
+    const get = (field) => (map[field] ? row[map[field]] : "");
+    const date = String(get("date") || "").slice(0, 10);
+
+    if (kind === "weight") {
+      // Biometrics is key-value: weight, body fat and blood pressure all share
+      // the file. Anything that is not weight is a different metric, not lost
+      // data, so it is passed over without counting as a skip.
+      if (!/^weight$/i.test(String(get("metric") || "").trim())) continue;
+      const n = cronNum(get("amount"));
+      if (!date || n === null) { out.skipped++; continue; }
+      const kg = /kg/i.test(String(get("unit") || ""));
+      out.weights.push({ date, weightLb: Math.round((kg ? n * KG_LB : n) * 10) / 10 });
+      continue;
+    }
+
+    const name = String(get("food") || "").trim();
+    const kcal = cronNum(get("kcal"));
+    if (!date || !name || kcal === null) { out.skipped++; continue; }
+
+    const { qty, unit } = splitAmount(get("amount"));
+
+    // Water is a food row in Cronometer and a separate log here.
+    if (WATER_NAME.test(name)) {
+      if (date < cutoff) { out.tooOld++; continue; }
+      out.water.push({ date, oz: /oz/i.test(unit) ? qty : qty / FL_OZ_ML });
+      continue;
+    }
+
+    // Dropped here rather than written and pruned later, so the preview can tell
+    // the athlete the truth about what is arriving.
+    if (date < cutoff) { out.tooOld++; continue; }
+
+    out.diary.push({
+      date,
+      entry: {
+        name,
+        meal: cronMealKey(get("group")),
+        qty,
+        unit,
+        grams: unit === "g" ? qty : null,
+        kcal,
+        p: cronNum(get("p")) ?? 0,
+        c: cronNum(get("c")) ?? 0,
+        f: cronNum(get("f")) ?? 0,
+        fib: cronNum(get("fib")) ?? 0,
+        src: source,
+        ref: null,
+      },
+    });
+  }
+  return out;
+}
 // ---- end copy ----
 
 let pass = 0, fail = 0;
+// Reaching into a result that may be empty. Without this a red-stage stub
+// throws on the first deref and aborts the run, hiding every assertion below.
+function at(arr, i) { return (arr && arr[i]) || {}; }
+function entryAt(arr, i) { return at(arr, i).entry || {}; }
 function eq(what, got, want) {
   const ok = JSON.stringify(got) === JSON.stringify(want);
   console.log(`  ${ok ? "PASS" : "FAIL"} ${what}${ok ? "" : ` (got ${JSON.stringify(got)}, want ${JSON.stringify(want)})`}`);
@@ -208,6 +313,88 @@ eq("case and spacing insensitive",
    resolveColumns("cron", "weight", ["  DAY ", "metric", "Amount", "unit"]).map.date, "  DAY ");
 eq("optional absent is not missing",
    resolveColumns("cron", "diary", ["Day", "Food Name", "Amount", "Energy (kcal)"]).missing, []);
+
+console.log("\ncronNum");
+eq("plain", cronNum("42"), 42);
+eq("decimal", cronNum("57.00"), 57);
+eq("thousands separator", cronNum("1,234"), 1234);
+eq("empty is null", cronNum(""), null);
+eq("dash is null", cronNum("-"), null);
+eq("rubbish is null", cronNum("n/a"), null);
+eq("null input", cronNum(null), null);
+// The distinction the whole import rests on: water really is 0 kcal, but a
+// blank protein cell is unknown. Collapsing these libels the athlete's day.
+eq("zero is a real value, not null", cronNum("0.00"), 0);
+
+console.log("\nsplitAmount");
+eq("grams", splitAmount("100.00 g"), { qty: 100, unit: "g" });
+// Multi-word units are real -- both of these are verbatim from the export.
+eq("multi-word unit", splitAmount("8.00 fl oz"), { qty: 8, unit: "fl oz" });
+eq("full recipe", splitAmount("1.00 full recipe"), { qty: 1, unit: "full recipe" });
+eq("no unit defaults to serving", splitAmount("2"), { qty: 2, unit: "serving" });
+eq("empty defaults", splitAmount(""), { qty: 1, unit: "serving" });
+eq("null safe", splitAmount(null), { qty: 1, unit: "serving" });
+
+console.log("\ncronMealKey");
+eq("breakfast", cronMealKey("Breakfast"), "breakfast");
+eq("lunch", cronMealKey("lunch"), "lunch");
+eq("dinner", cronMealKey(" Dinner "), "dinner");
+eq("Snacks plural", cronMealKey("Snacks"), "snack");
+// Cronometer's real default, and users may rename groups freely.
+eq("Uncategorized falls back to snack", cronMealKey("Uncategorized"), "snack");
+eq("custom group name falls back", cronMealKey("Pre-Workout"), "snack");
+eq("empty falls back", cronMealKey(""), "snack");
+
+const OPTS = { today: "2026-08-07", windowDays: 180 };
+const H = "Day,Time,Group,Food Name,Amount,Energy (kcal),Protein (g),Carbs (g),Fat (g),Fiber (g),Water (g)";
+
+console.log("\nmapImportRows diary");
+const d = mapImportRows("cron", "diary", parseCsv([H,
+  "2026-08-06,11:05 AM,Breakfast,Blueberries,100.00 g,57.00,0.70,14.57,0.31,2.40,84.19",
+  "2026-08-07,,Dinner,ZZTest Chili,1.00 full recipe,291.49,21.28,38.04,6.44,9.74,",
+  "2019-01-01,8:00 AM,Lunch,Ancient Toast,1.00 slice,90.00,3.00,17.00,1.00,1.00,",
+  "2026-08-06,11:05 AM,Uncategorized,Water,8.00 fl oz,0.00,0.00,0.00,0.00,0.00,236.59",
+  "2026-08-06,,Lunch,,100.00 g,,,,,,",
+].join("\n")), OPTS);
+eq("two food entries", d.diary.length, 2);
+eq("one water entry", d.water.length, 1);
+eq("one row too old", d.tooOld, 1);
+eq("one unusable row skipped", d.skipped, 1);
+eq("date carried", at(d.diary,0).date, "2026-08-06");
+eq("meal mapped", entryAt(d.diary,0).meal, "breakfast");
+eq("qty split from amount", entryAt(d.diary,0).qty, 100);
+eq("unit split from amount", entryAt(d.diary,0).unit, "g");
+eq("macros", [entryAt(d.diary,0).kcal, entryAt(d.diary,0).p, entryAt(d.diary,0).c, entryAt(d.diary,0).f],
+   [57, 0.7, 14.57, 0.31]);
+eq("tagged with its source", entryAt(d.diary,0).src, "cron");
+eq("no ref into a database it did not come from", entryAt(d.diary,0).ref, null);
+// A blank Time is normal -- the recipe row in the real export has none.
+eq("blank Time is fine", entryAt(d.diary,1).name, "ZZTest Chili");
+eq("multi-word unit survives", entryAt(d.diary,1).unit, "full recipe");
+// Water is a food row in Cronometer but a separate log here.
+eq("water routed out of the food log", at(d.water,0), { date: "2026-08-06", oz: 8 });
+
+console.log("\nmapImportRows weight");
+const w = mapImportRows("cron", "weight", parseCsv([
+  "Day,Time,Group,Metric,Unit,Amount",
+  "2026-08-06,7:00 AM,Uncategorized,Weight,lbs,181.4",
+  "2026-08-05,7:00 AM,Uncategorized,Body Fat,%,18.2",
+  "2026-08-04,7:00 AM,Uncategorized,Weight,kg,80",
+  "2019-01-01,7:00 AM,Uncategorized,Weight,lbs,200",
+].join("\n")), OPTS);
+// Biometrics is key-value: every metric shares the file, so non-weight rows
+// must be passed over rather than imported as bodyweight.
+eq("only Weight rows", w.weights.length, 3);
+eq("body fat is not a weigh-in", w.weights.map((x) => x.date).includes("2026-08-05"), false);
+// Nor is it lost data -- it is another metric, so it must not inflate `skipped`.
+eq("body fat is not counted as a skip", w.skipped, 0);
+// Keyed by date, not position: the skipped body-fat row shifts every index, so
+// positional assertions here silently test the wrong row.
+const wOn = (d) => (w.weights.find((x) => x.date === d) || {}).weightLb;
+eq("pounds kept", wOn("2026-08-06"), 181.4);
+eq("kg converted", wOn("2026-08-04"), 176.4);
+// Weight is never pruned -- only foodLog has a window.
+eq("old weigh-ins kept", w.weights.some((x) => x.date === "2019-01-01"), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

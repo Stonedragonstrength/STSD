@@ -31198,6 +31198,108 @@
     return null;
   }
 
+  // null, never 0. Water really is 0 kcal; a blank protein cell is unknown. Fold
+  // those together and every rollup misreports the day.
+  function cronNum(raw) {
+    const s = String(raw ?? "").replace(/,/g, "").trim();
+    if (!s) return null;
+    const m = s.match(/-?\d+(\.\d+)?/);
+    if (!m) return null;
+    const n = parseFloat(m[0]);
+    return isFinite(n) ? n : null;
+  }
+
+  // "100.00 g" / "8.00 fl oz" / "1.00 full recipe". The unit is whatever follows
+  // the number, kept verbatim -- re-deriving grams from "full recipe" would be
+  // guesswork, and the macros are already correct for the amount logged.
+  function splitAmount(raw) {
+    const s = String(raw ?? "").trim();
+    const m = s.match(/^(-?\d+(?:\.\d+)?)\s*(.*)$/);
+    if (!m) return { qty: 1, unit: "serving" };
+    const qty = parseFloat(m[1]);
+    const unit = m[2].trim();
+    return { qty: isFinite(qty) ? qty : 1, unit: unit || "serving" };
+  }
+
+  const CRON_MEALS = { breakfast: "breakfast", lunch: "lunch", dinner: "dinner", snack: "snack", snacks: "snack" };
+
+  // Cronometer's default group is "Uncategorized" and users can rename groups
+  // freely, so anything unrecognised becomes a snack rather than being dropped.
+  // A meal in the wrong slot is a nuisance; a missing meal is lost history.
+  function cronMealKey(raw) {
+    return CRON_MEALS[String(raw ?? "").trim().toLowerCase()] || "snack";
+  }
+
+  const KG_LB = 2.20462;
+  const FL_OZ_ML = 29.5735;
+  const WATER_NAME = /^water$/i;
+
+  function mapImportRows(source, kind, parsed, opts) {
+    const o = opts || {};
+    const windowDays = Number(o.windowDays) || 180;
+    const { map, missing } = resolveColumns(source, kind, parsed.headers);
+    const out = { source, kind, diary: [], water: [], weights: [], skipped: 0, tooOld: 0 };
+    if (missing.length) return out;
+
+    // Inline rather than calling addDaysISO(): this half stays free of app.js
+    // helpers so the test copy needs nothing around it.
+    const cutoff = new Date(Date.parse(o.today + "T00:00:00Z") - windowDays * 86400000)
+      .toISOString().slice(0, 10);
+
+    for (const row of parsed.rows) {
+      const get = (field) => (map[field] ? row[map[field]] : "");
+      const date = String(get("date") || "").slice(0, 10);
+
+      if (kind === "weight") {
+        // Biometrics is key-value: weight, body fat and blood pressure all share
+        // the file. Anything that is not weight is a different metric, not lost
+        // data, so it is passed over without counting as a skip.
+        if (!/^weight$/i.test(String(get("metric") || "").trim())) continue;
+        const n = cronNum(get("amount"));
+        if (!date || n === null) { out.skipped++; continue; }
+        const kg = /kg/i.test(String(get("unit") || ""));
+        out.weights.push({ date, weightLb: Math.round((kg ? n * KG_LB : n) * 10) / 10 });
+        continue;
+      }
+
+      const name = String(get("food") || "").trim();
+      const kcal = cronNum(get("kcal"));
+      if (!date || !name || kcal === null) { out.skipped++; continue; }
+
+      const { qty, unit } = splitAmount(get("amount"));
+
+      // Water is a food row in Cronometer and a separate log here.
+      if (WATER_NAME.test(name)) {
+        if (date < cutoff) { out.tooOld++; continue; }
+        out.water.push({ date, oz: /oz/i.test(unit) ? qty : qty / FL_OZ_ML });
+        continue;
+      }
+
+      // Dropped here rather than written and pruned later, so the preview can
+      // tell the athlete the truth about what is arriving.
+      if (date < cutoff) { out.tooOld++; continue; }
+
+      out.diary.push({
+        date,
+        entry: {
+          name,
+          meal: cronMealKey(get("group")),
+          qty,
+          unit,
+          grams: unit === "g" ? qty : null,
+          kcal,
+          p: cronNum(get("p")) ?? 0,
+          c: cronNum(get("c")) ?? 0,
+          f: cronNum(get("f")) ?? 0,
+          fib: cronNum(get("fib")) ?? 0,
+          src: source,
+          ref: null,
+        },
+      });
+    }
+    return out;
+  }
+
   // -------- Athlete targets --------
   // Plain statement of the four numbers. Deliberately not a chart: the calorie
   // ring and macro bars directly above already plot these same targets against
