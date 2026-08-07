@@ -200,6 +200,53 @@ No logic changes. **If adding a source needs more than new entries in
 `IMPORT_SOURCES`, the abstraction was wrong — say so rather than working around
 it.**
 
+## Cronometer's export — verified 2026-08-07
+
+Read from a real export. This section is fact, not guesswork.
+
+Six files, always: `servings`, `dailysummary`, `biometrics`, `notes`, `fasts`,
+`exercises`. The export screen offers no others.
+
+**`servings.csv`** — 67 columns, one row per logged food. Carries per-food
+macros, settling the open question.
+
+| Column | Example | Maps to |
+|---|---|---|
+| `Day` | `2026-08-05` | `date` — already ISO |
+| `Time` | `11:05 AM` | unused |
+| `Group` | `Breakfast`, `Uncategorized` | `meal` |
+| `Food Name` | `Blueberries, Fresh` | `name` |
+| `Amount` | `100.00 g`, `8.00 fl oz` | `qty` + `unit` — **one field, must be split** |
+| `Energy (kcal)` | `57.00` | `kcal` |
+| `Protein (g)` / `Carbs (g)` / `Fat (g)` / `Fiber (g)` | | `p` / `c` / `f` / `fib` |
+| `Net Carbs (g)`, `Category`, +55 micronutrients | | unused |
+
+**`biometrics.csv`** — `Day, Time, Group, Metric, Unit, Amount`. Key-value, one
+row per measurement, **not** a wide `Date, Weight` table. Weight means filtering
+`Metric == "Weight"` and reading `Unit` for lb-vs-kg.
+
+**`dailysummary.csv`** — `Date, Group, …same nutrients…, Completed`. `Group` is
+a meal name or `Total`. Redundant with `servings` for our purposes.
+
+**Water is logged as a food row** — `Food Name: "Water"`, `Amount: "8.00 fl oz"`,
+no `Energy (kcal)`, only `Water (g)`. These belong in `progress.waterLog`, not
+`foodLog`. `WATER_CUP_OZ = 8` (`app.js:28518`), so fl oz ÷ 8 is the cup count.
+
+**`Group` is free text.** `Uncategorized` is common and Cronometer users can
+rename groups, so meal mapping needs a fallback rather than a fixed set.
+
+### What Cronometer cannot give us
+
+**There is no custom-foods export and no recipes export.** The food library —
+the single most valuable thing in a migration, and the reason this feature
+exists — is not in Cronometer's export at any subscription tier.
+
+This reverses the reasoning that put Cronometer first. It was chosen because a
+real export could be produced and verified today, which was correct and did
+settle the format. But the ceiling for this source is **diary + weight + water**,
+not the food library. MyFitnessPal's export reportedly *does* include custom
+foods and custom recipes — unverified, since no MFP export exists to check.
+
 ## Known unknowns
 
 - **Cronometer column names.** Pending the real export, which is being fetched.
