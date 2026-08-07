@@ -21540,6 +21540,61 @@
     MSG.openId = null;
     closeModal();
   }
+
+  // ---- The athlete's messaging hub ----
+  // A full screen rather than the modal the coach gets, because the two sides
+  // are not the same shape: the coach has a thread per athlete and needs a list
+  // to choose from, while an athlete has exactly one conversation. So there is
+  // nothing to pick — the conversation IS the page, and it gets the room to look
+  // like one. Everything below reuses renderThreadSheet and sendThreadReply; the
+  // only thing that differs is where they draw. See msgEls().
+  let _athMsgScrollY = 0;
+  function openAthleteMessages() {
+    const c = state.clientData.program?.client;
+    const sheet = $("#athlete-msg-sheet");
+    if (!sheet || !c || state.previewMode) return;
+    MSG.openId = c.id;
+    _athMsgScrollY = window.scrollY;
+    show(sheet);
+    document.body.classList.add("coach-sheet-open");
+    Nav.push(closeAthleteMessages); // phone Back closes the thread, not the app
+    renderThreadSheet();
+    // Opening the thread is reading it. Repaints when the rows land.
+    loadAthleteThread({ markRead: true });
+    // Focus is deliberately NOT taken: on a phone that throws the keyboard up
+    // over the conversation they just opened to read.
+    $("#ath-msg-thread")?.scrollTo?.(0, 999999);
+  }
+  function closeAthleteMessages() {
+    const sheet = $("#athlete-msg-sheet");
+    if (!sheet || sheet.classList.contains("hidden")) return;
+    hide(sheet);
+    document.body.classList.remove("coach-sheet-open");
+    MSG.openId = null;
+    // The pill's unread count is stale the moment the thread was read.
+    renderClientHeaderMessages();
+    requestAnimationFrame(() => window.scrollTo(0, _athMsgScrollY));
+  }
+  function wireAthleteMessages() {
+    const sheet = $("#athlete-msg-sheet");
+    if (!sheet || sheet.dataset.wired) return;
+    sheet.dataset.wired = "1";
+    $("#btn-ath-msg-close")?.addEventListener("click", () => Nav.back(closeAthleteMessages));
+    sheet.querySelector("[data-am-close]")?.addEventListener("click", () => Nav.back(closeAthleteMessages));
+    $("#btn-ath-msg-refresh")?.addEventListener("click", () => loadAthleteThread({ markRead: true }));
+    $("#ath-msg-send")?.addEventListener("click", sendThreadReply);
+    $("#ath-msg-reply")?.addEventListener("keydown", (e) => {
+      // Enter sends, Shift+Enter makes a new line — the messaging convention.
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendThreadReply(); }
+    });
+    // Grows with what they're writing, up to a point, instead of staying a
+    // one-line slot that hides the start of a long question.
+    $("#ath-msg-reply")?.addEventListener("input", (e) => {
+      const el = e.target;
+      el.style.height = "auto";
+      el.style.height = Math.min(el.scrollHeight, 120) + "px";
+    });
+  }
   async function markCoachThreadRead(athleteId) {
     const ids = unreadFrom(MSG.all, "athlete").filter((m) => m.athlete_id === athleteId).map((m) => m.id);
     if (!ids.length) return;
@@ -21551,8 +21606,25 @@
       renderThreadSheet();
     }
   }
+  /**
+   * Which set of elements the thread is currently living in.
+   *
+   * Two surfaces render the same conversation: the coach's modal, and the
+   * athlete's full-screen sheet. They carry DIFFERENT ids on purpose — both
+   * markups exist in every copy of index.html, and sharing ids would have $()
+   * hand the coach's modal the athlete's hidden element, which is in the
+   * document first. The open sheet wins; otherwise the modal.
+   */
+  function msgEls() {
+    const sheet = $("#athlete-msg-sheet");
+    if (sheet && !sheet.classList.contains("hidden")) {
+      return { thread: $("#ath-msg-thread"), input: $("#ath-msg-reply"), send: $("#ath-msg-send") };
+    }
+    return { thread: $("#msg-thread"), input: $("#msg-reply"), send: $("#msg-reply-send") };
+  }
+
   function renderThreadSheet() {
-    const host = $("#msg-thread");
+    const host = msgEls().thread;
     if (!host || !MSG.openId) return;
     const coachSide = state.mode === "trainer" && !state.previewMode;
     const c = coachSide
@@ -21575,8 +21647,7 @@
     host.scrollTop = host.scrollHeight; // newest is the point
   }
   async function sendThreadReply() {
-    const ta = $("#msg-reply");
-    const btn = $("#msg-reply-send");
+    const { input: ta, send: btn } = msgEls();
     const body = (ta?.value || "").trim();
     if (!body || !MSG.openId) return;
     if (!window.Cloud?.enabled) { toast("You're offline. Try again when you're back on."); return; }
@@ -21585,7 +21656,9 @@
     const row = await window.Cloud.sendMessage(MSG.openId, coachSide ? "coach" : "athlete", body);
     if (btn) btn.disabled = false;
     if (!row) { toast("Couldn't send. Check your connection."); return; }
-    if (ta) ta.value = "";
+    // Clear the auto-grown height too, or the box stays as tall as the message
+    // that just left it.
+    if (ta) { ta.value = ""; ta.style.height = ""; }
     if (coachSide) {
       MSG.all.unshift(row);
       window.Cloud.sendPush?.([MSG.openId], "💬 Message from your coach", body.slice(0, 120), "./", "messages");
@@ -24045,8 +24118,9 @@
       : "Message your coach";
     if (!btn.dataset.wired) {
       btn.dataset.wired = "1";
-      btn.addEventListener("click", () => openMessageThread(state.clientData.program?.client?.id));
+      btn.addEventListener("click", openAthleteMessages);
     }
+    wireAthleteMessages();
   }
   // -------- Athlete self-service profile (name / age / height / weight / goals) --------
   function renderAthleteProfileFields() {

@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=cancelwin8" />
+  <link rel="stylesheet" href="styles.css?v=msghub5" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -1455,6 +1455,38 @@
     </div>
   </div>
 
+  <!-- The athlete's conversation with their coach.
+       Same shell as the day and records sheets, but it is the whole screen on a
+       phone rather than a modal: an athlete has exactly ONE thread, so a list of
+       threads (what the coach's Messages view is) would be a list of one. The
+       hub IS the conversation. It used to be a small popup, which with an empty
+       thread — 27 of 28 athletes, since almost nobody had written yet — read as
+       a send-only box rather than somewhere a conversation lives.
+
+       Its ids are deliberately NOT the modal's (#msg-thread, #msg-reply): this
+       markup sits in the DOM on the coach's device too, and a duplicate id would
+       have $() hand the coach's own message modal this hidden element instead of
+       its own. See msgEls() in app.js. -->
+  <div id="athlete-msg-sheet" class="coach-sheet is-msg hidden" role="dialog" aria-modal="true" aria-labelledby="ath-msg-title">
+    <div class="coach-sheet-backdrop" data-am-close></div>
+    <div class="coach-sheet-card">
+      <div class="coach-sheet-head">
+        <div class="coach-sheet-headtext">
+          <span class="coach-sheet-kicker" id="ath-msg-kicker">Messages</span>
+          <h3 id="ath-msg-title">Your coach</h3>
+        </div>
+        <button class="icon-btn" id="btn-ath-msg-refresh" aria-label="Refresh">⟳</button>
+        <button class="icon-btn" id="btn-ath-msg-close" aria-label="Close">×</button>
+      </div>
+      <div class="coach-sheet-body ath-msg-body" id="ath-msg-thread"></div>
+      <div class="coach-sheet-foot ath-msg-foot">
+        <textarea id="ath-msg-reply" class="msg-textarea" rows="1" maxlength="2000"
+                  placeholder="Message your coach…"></textarea>
+        <button class="btn btn-primary btn-sm" id="ath-msg-send" type="button">Send</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Records sheet: what the athlete has DONE. PRs, the strength chart and the
        cardio log were three separate tabs answering the same kind of question,
        and all three are read far more often than they are edited. They are one
@@ -1521,9 +1553,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="bugreport.js?v=bug1"></script>
   <script src="config.js?v=horm2"></script>
-  <script src="cloud.js?v=cancelwin8"></script>
+  <script src="cloud.js?v=msghub5"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=cancelwin8"></script>
+  <script src="app.js?v=msghub5"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

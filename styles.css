@@ -11254,6 +11254,48 @@ input.ownday-sheet-input { margin-top: 0.35em; }
   background: linear-gradient(90deg, var(--primary-bright), rgba(var(--primary-bright-rgb), 0.15));
 }
 .coach-sheet.is-records .coach-sheet-kicker { color: var(--primary-bright); }
+
+/* ---- The athlete's messaging hub ---- */
+/* Same shell as the sheets above, with the theme's own accent rather than the
+   green day sheet's, so it doesn't read as an editor. */
+.coach-sheet.is-msg .coach-sheet-card { border-top-color: rgba(var(--primary-rgb), 0.5); }
+.coach-sheet.is-msg .coach-sheet-card::before {
+  background: linear-gradient(90deg, var(--primary), rgba(var(--primary-rgb), 0.15));
+}
+.coach-sheet.is-msg .coach-sheet-kicker { color: var(--primary-bright); }
+/* This head carries TWO buttons, and the shell's space-between spreads three
+   children evenly — which left ⟳ stranded in the middle of the title bar.
+   The text takes the slack instead, so the pair sits together on the right. */
+.coach-sheet.is-msg .coach-sheet-head { gap: 0.35rem; }
+.coach-sheet.is-msg .coach-sheet-headtext { flex: 1; min-width: 0; }
+/* The conversation. Bottom-anchored: a thread that opens anywhere other than
+   the newest message is a thread you have to scroll before you can read it,
+   and `justify-content: flex-end` also keeps a SHORT history sitting at the
+   bottom by the composer instead of stranded at the top of a tall screen. */
+.ath-msg-body {
+  display: flex; flex-direction: column; justify-content: flex-end;
+  gap: 0.5rem;
+}
+.ath-msg-body .msg-bubble { max-width: 78%; }
+.ath-msg-body .msg-empty { margin: auto 0 0.4rem; }
+/* Composer. Overrides the shell's space-between, which would push the two ends
+   apart and leave the box narrow. */
+.ath-msg-foot {
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 0.5rem;
+}
+/* min-height overrides the global textarea's 80px — this is a chat composer,
+   not a notes field — but it has to clear ONE line plus padding or the box
+   shows a scrollbar while empty and clips its own placeholder. */
+.ath-msg-foot .msg-textarea {
+  flex: 1; margin: 0; min-height: 2.7em; resize: none;
+  max-height: 120px; line-height: 1.4; overflow-y: auto;
+}
+/* The sheet foot grows its buttons to share the row (two equal actions on the
+   day sheet). Here the box is the point and the button is a full stop, so it
+   takes only what it needs. */
+.ath-msg-foot .btn { flex: 0 0 auto; }
 /* The sheet's own two panes. A segmented control, not a second tab bar: it
    switches a pane inside one sheet rather than navigating anywhere. */
 .records-sheet-tabs {
