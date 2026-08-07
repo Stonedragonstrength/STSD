@@ -4392,8 +4392,6 @@
 
     const controls = $("#roster-controls");
     const searchBar = $("#roster-search");
-    renderMonthGrantBtn();
-    renderMonthBillBtn();
     if (state.trainerData.clients.length === 0) {
       show(empty);
       if (controls) hide(controls);
@@ -29524,6 +29522,12 @@
     _foodDate = todayISO();
     _foodMeal = defaultMealKey();
     container.insertAdjacentHTML("beforeend", `<div class="card food-day-card" id="food-day-card"></div>`);
+    // The week, directly under the day. It used to be a sheet behind a button;
+    // the athlete logs one day at a time but the body answers to the week, so
+    // it is the wrong thing to make somebody go and find. Filled by
+    // renderFoodWeek(), which renderFoodDay() calls on every change.
+    container.insertAdjacentHTML("beforeend",
+      `<div class="card food-week-card" id="food-week-host"></div>`);
     renderFoodDay();
   }
 
@@ -29656,10 +29660,11 @@
       const label = d.perfect ? "perfect day" : d.logged ? `${d.score ?? "?"} out of 100` : "nothing logged";
       dots.push(`<span class="food-week-dot ${cls}" title="${escapeHtml(foodDateLabel(date))}: ${label}"></span>`);
     }
-    // The dots already stand for the week, so they are the way into it rather
-    // than another button competing for the same idea.
-    return `<button type="button" class="food-week-dots" id="food-week-btn"
-      aria-label="Last seven days. Open the week.">${dots.join("")}</button>`;
+    // A readout, not a control. These used to open the week sheet; the week is
+    // now a card directly below this one, so a button here would just scroll
+    // the page for you.
+    return `<span class="food-week-dots" id="food-week-btn"
+      role="img" aria-label="Last seven days">${dots.join("")}</span>`;
   }
 
   // -------- The week --------
@@ -29667,14 +29672,9 @@
   // Reads the same rollup the coach reads, so a conversation about "how was
   // last week" is both of them looking at identical arithmetic, and borrows the
   // coach chart's classes so it reads as one system rather than a second style.
-  function openFoodWeekSheet() {
-    openModal({
-      title: "This week",
-      body: `<div id="food-week-sheet"></div>`,
-      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
-    });
-    renderFoodWeek();
-  }
+  // No sheet any more: this is a card sitting under the day, so the week is
+  // readable without a tap. The athlete only ever logs one day at a time and
+  // the body answers to the week, which made it the wrong thing to hide.
 
   // Bodyweight across the same window. Needs two readings inside it — one
   // weigh-in is a number, not a direction.
@@ -29690,14 +29690,21 @@
   }
 
   function renderFoodWeek() {
-    const el = $("#food-week-sheet"); if (!el) return;
+    const el = $("#food-week-host"); if (!el) return;
     const client = state.clientData.program?.client;
     const progress = state.clientData.progress;
     const roll = nutritionRollup(client, progress, 7);
 
+    // The card carries its own heading, matching the cardio block's wp-head so
+    // the two read as one system rather than two takes on "your week".
+    const head = `<div class="wp-head wp-head-foodweek">
+      <span class="wp-head-title">🍽️ This week</span>
+    </div>`;
+
     if (!roll.logged) {
-      el.innerHTML = `<p class="muted" style="margin-top:0">Nothing logged in the last seven days.
-        Log a couple of days and this fills in with how the week actually went.</p>`;
+      el.innerHTML = `${head}
+        <p class="cd-empty">Nothing logged in the last seven days. Log a couple of
+        days and this fills in with how the week actually went.</p>`;
       return;
     }
 
@@ -29720,7 +29727,7 @@
         : `You averaged ${roll.avgKcal.toLocaleString()} against ${roll.calTarget.toLocaleString()}, about ${Math.abs(off).toLocaleString()} ${off > 0 ? "over" : "under"} a day.`;
     const bw = bodyweightDeltaOver(progress, 7);
 
-    el.innerHTML = `
+    el.innerHTML = `${head}
       <div class="adh-stats">
         <div class="adh-stat">
           <div class="adh-stat-num">${roll.logged}<span class="adh-stat-of">/7</span></div>
@@ -29766,8 +29773,11 @@
     el.querySelectorAll("[data-weekday]").forEach((b) => {
       b.addEventListener("click", () => {
         _foodDate = b.dataset.weekday;
-        closeModal();
         renderFoodDay();
+        // The day card is ABOVE this one. Without the scroll the tap changes a
+        // card the athlete cannot see and reads as nothing happening -- this
+        // used to be a modal over the top of it, where the change was obvious.
+        $("#food-day-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
     });
   }
@@ -29923,7 +29933,10 @@
              this stays as the visible one, because the ring advertises itself
              only through an aria-label nobody sighted ever sees. -->
         <button type="button" id="food-targets-btn" class="food-more-edit">✎ Edit targets</button>
-        <button type="button" id="food-week-more">This week</button>
+        <!-- "This week" used to sit here and open a sheet. The week is the thing
+             the body actually answers to, so it is now a card below this one,
+             readable without a tap. -->
+
         <!-- Always rendered, not just when savedCount is set. The sheet used to
              be pointless when empty so it was hidden, but its empty state is now
              where the import lives -- and an athlete with nothing saved is
@@ -29968,10 +29981,8 @@
     const mf = $("#food-myfoods-btn");
     if (mf) mf.addEventListener("click", openMyFoodsSheet);
     $("#food-copy-yesterday").addEventListener("click", copyYesterday);
-    // Two ways in, one sheet: the dots for anyone who reads them as the week,
-    // the labelled button for anyone who doesn't.
-    $("#food-week-btn")?.addEventListener("click", openFoodWeekSheet);
-    $("#food-week-more").addEventListener("click", openFoodWeekSheet);
+    // The week repaints with the day, because logging a meal changes both.
+    renderFoodWeek();
   }
 
   function copyYesterday() {
@@ -31960,11 +31971,14 @@
     refresh();
   }
 
-  // -------- Athlete progress (bodyweight + feedback + send) --------
+  // -------- Athlete progress (bodyweight) --------
+  // The "Notes for my coach" box was removed from the profile; messaging is the
+  // place to say something to a person. progress.feedback is still carried on
+  // the record so anything already written is not thrown away, and old cached
+  // builds still writing it keep working.
   function renderClientProgress() {
     $("#bw-date").value = todayISO();
     $("#bw-weight").value = "";
-    $("#client-feedback").value = state.clientData.progress.feedback || "";
     renderBwHistory();
   }
   // Newest-first: sort by date, then time-of-day when present.
@@ -33249,8 +33263,6 @@
         title: "Earn your rank", text: "Every logged day earns XP: more for landing close to your numbers, a bonus for a perfect day, and more again the longer your streak runs. Fill the bar and you take the next rank, from Pebble all the way up to Stone Dragon." },
       { sel: "#athlete-bw-fold", go: () => setClientTab("diet"),
         title: "Body weight", text: "Log your weight here and watch the trend. The latest number sits on this row, so you can check it without opening anything." },
-      { sel: "#client-feedback", go: () => { setClientTab("profile"); },
-        title: "Notes for your coach", text: "Aches, schedule conflicts, how a week felt: anything you want them to know goes here, and it syncs on its own." },
       { sel: '[data-ctab-panel="sessions"]', go: () => setClientTab("sessions"),
         title: "Sessions", text: "Your session packages, bookings and open slots with your coach." },
       { sel: "#btn-tour-client", go: () => setClientTab("overview"),
@@ -34364,10 +34376,24 @@
           // the entire question being asked. The income card is in the second
           // pass too now that its earned half reads the same billing rows: it
           // would otherwise open on a year total of zero and fill in silently.
+          // Settle and Bill moved here from the Athletes page, so their labels
+          // and badges are painted on arrival here too -- they used to ride on
+          // renderClientGrid() and would otherwise never fill in.
+          renderMonthGrantBtn();
+          renderMonthBillBtn();
+          // Collapsed on every arrival, not just the first. Views are hidden
+          // and shown rather than rebuilt, so a fold the coach opened last time
+          // is still open when they come back -- dropping the `open` attribute
+          // alone would only have worked once per page load.
+          const raiseFold = $("#raise-fold");
+          if (raiseFold) raiseFold.open = false;
           renderIncomeCard();
           renderMoneyRoster();
           renderBooks();
           loadCoachBilling().then(() => {
+            // Bill in particular reads billing rows that only exist after this
+            // resolves, so it repaints in the second pass with the rest.
+            renderMonthGrantBtn(); renderMonthBillBtn();
             renderIncomeCard(); renderMoneyRoster(); renderBooks();
           });
         } else if (target === "anatomy") {
@@ -34662,11 +34688,6 @@
     // range change, so its Log button is wired where it's built.
     ["#ath-prof-name", "#ath-prof-birthday", "#ath-prof-age", "#ath-prof-height-ft", "#ath-prof-height-in", "#ath-prof-weight", "#ath-prof-goals"]
       .forEach((sel) => $(sel)?.addEventListener("change", saveAthleteProfile));
-    $("#client-feedback").addEventListener("input", () => {
-      state.clientData.progress.feedback = $("#client-feedback").value;
-      saveClient();
-    });
-
     document.querySelectorAll("#modal [data-close]").forEach((el) =>
       el.addEventListener("click", closeModal)
     );

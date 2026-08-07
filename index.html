@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=import8" />
+  <link rel="stylesheet" href="styles.css?v=ui2" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -259,22 +259,11 @@
 
       <!-- Dashboard -->
       <div id="view-dashboard" class="view">
+        <!-- Settle / Bill / Session log used to sit here. They are the monthly
+             money round, not roster work, so they live on the Money page with
+             the rest of it. Adding an athlete is the only thing this page's
+             head is for. -->
         <div class="view-head">
-          <!-- The start-of-month round: every athlete on a tier, granted in one
-               pass instead of four taps each. Labelled + badged by
-               renderMonthGrantBtn(); hidden when nobody is on a tier. -->
-          <button class="btn btn-ghost btn-sm slim-btn month-grant-btn hidden" id="btn-month-grant" type="button"></button>
-          <!-- The other half of the same round: Settle hands out the month's
-               sessions, this asks the month's money for them. One row per bank,
-               sessions x rate proposed and editable. Filled and shown by
-               renderMonthBillBtn(); stays hidden until Square is set up, like
-               every other billing surface. -->
-          <button class="btn btn-ghost btn-sm slim-btn month-bill-btn hidden" id="btn-month-bill" type="button"></button>
-          <!-- What was actually delivered, month by month, across the whole
-               roster. Lives here rather than in the nav, which is capped at
-               five — and it belongs beside Settle: one asks what to bill, the
-               other what was done for it. -->
-          <button class="btn btn-ghost btn-sm slim-btn" id="btn-session-lookup" type="button">Session log</button>
           <button class="btn btn-primary btn-sm slim-btn" id="btn-add-client">+ Add athlete</button>
         </div>
         <!-- Type-to-find, above Group by: on a roster this size scrolling for a
@@ -429,8 +418,23 @@
            what was actually paid — so they share a destination, forecast
            first because that is the one you act on. -->
       <div id="view-money" class="view hidden">
+        <!-- The monthly round, grouped because it is one job in three steps:
+             Settle hands out the month's sessions, Bill asks for the money for
+             them, and Session log is what was actually delivered. They were on
+             the Athletes page, where they read as roster work; they are money
+             work, and this is the money page. -->
         <div class="view-head">
-          <h2>Money</h2>
+          <div><h2>Money</h2></div>
+          <div class="library-head-actions">
+            <!-- Labelled + badged by renderMonthGrantBtn(); hidden when nobody
+                 is on a tier. -->
+            <button class="btn btn-ghost btn-sm slim-btn month-grant-btn hidden" id="btn-month-grant" type="button"></button>
+            <!-- One row per bank, sessions x rate proposed and editable. Filled
+                 and shown by renderMonthBillBtn(); stays hidden until Square is
+                 set up, like every other billing surface. -->
+            <button class="btn btn-ghost btn-sm slim-btn month-bill-btn hidden" id="btn-month-bill" type="button"></button>
+            <button class="btn btn-ghost btn-sm slim-btn" id="btn-session-lookup" type="button">Session log</button>
+          </div>
         </div>
 
         <!-- Who owes what, and the way to do something about it. First on the
@@ -439,13 +443,14 @@
              profile, which meant billing the roster was nineteen trips through
              Athletes; this is the same sheet reached from the money screen.
 
-             A fold like the two under it, and open by default, because it is
-             the row of nineteen names: once the month is raised it is the
-             longest thing on the page and the least worth reading, and there
-             was no way to put it away. Its summary carries a COUNT and never a
-             figure, so collapsing it doesn't turn the fold into the money
-             readout the eye toggle exists to cover. -->
-        <details class="pref-fold" id="raise-fold" open>
+             Collapsed on arrival: it is the row of nineteen names, the longest
+             thing on the page once the month is raised, and it pushed Income
+             and Books below the fold every time. The summary carries the count
+             still to raise, so the state of the job is readable without
+             opening it. Its summary carries a COUNT and never a figure, so
+             collapsing it doesn't turn the fold into the money readout the eye
+             toggle exists to cover. -->
+        <details class="pref-fold" id="raise-fold">
           <summary>
             <span class="pref-fold-ico">🧾</span>
             <span class="pref-fold-text">
@@ -1395,17 +1400,21 @@
             <div class="avatar-picker" id="athlete-avatar-picker"></div>
           </details>
         </div>
+        <!-- A fold, matching the avatar picker above it: ten themes is a lot of
+             swatches for something set once and never touched again, and open
+             by default it pushed everything below it off the screen. -->
         <div class="card">
-          <h3>Appearance</h3>
-          <p class="muted" style="margin-bottom:0.8em">Pick a color scheme for your app.</p>
-          <div class="theme-picker" id="athlete-theme-picker"></div>
-        </div>
-        <!-- Notes for the coach: this is a message to a person, so it belongs
-             with the rest of "me and my coach", not buried under the food log. -->
-        <div class="card">
-          <h3>Notes for my coach</h3>
-          <textarea id="client-feedback" rows="4" placeholder="How are things going? Any aches, schedule conflicts, food cravings…"></textarea>
-          <p class="muted">Synced automatically. Your coach will see it.</p>
+          <details class="pref-fold" id="athlete-appearance-fold">
+            <summary>
+              <span class="pref-fold-ico">🎨</span>
+              <span class="pref-fold-text">
+                <span class="pref-fold-title">Appearance</span>
+                <span class="pref-fold-sub">Pick a color scheme for your app</span>
+              </span>
+              <span class="pref-fold-chev">▸</span>
+            </summary>
+            <div class="theme-picker" id="athlete-theme-picker"></div>
+          </details>
         </div>
         <!-- Simple mode + privacy, rendered by renderAthleteSettingsCards() -->
         <div id="athlete-settings-host"></div>
@@ -1555,7 +1564,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=money1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=import8"></script>
+  <script src="app.js?v=ui2"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

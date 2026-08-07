@@ -10688,33 +10688,35 @@ body.live-log-mode #screen-client .header-right { display: none; }
 .food-add-btn:hover { border-color: var(--primary); color: var(--primary-bright); }
 /* Overflow row: the things that used to be whole cards. */
 .food-more {
-  display: flex; flex-wrap: wrap; justify-content: center; gap: 0.3em 0.9em;
-  margin-top: 0.75rem;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5em;
+  margin-top: 0.9rem;
 }
+/* All three match. This was one accent pill beside three bare text links, on
+   the reasoning that only Edit targets CHANGES anything while the rest just go
+   and look. That held while there were four; once "This week" left the row for
+   a card of its own it read as one button and two loose words, which looked
+   unfinished rather than deliberate. Built from --primary-rgb so the row
+   follows every theme, including the light one. */
 .food-more button {
-  background: none; border: none; padding: 0.2em 0; cursor: pointer;
-  color: var(--text-soft); font-size: 0.76rem; font-weight: 700;
-}
-.food-more button:hover { color: var(--primary-bright); }
-/* One of these four is not like the others. "This week", "My foods" and "Copy
-   yesterday" go and look at something; this one CHANGES the numbers the whole
-   card is measured against, and as a fourth identical text link nobody read it
-   as a control at all. It gets the outline, the accent and the pencil so the
-   row reads as one button and three quiet links. Built from --primary-rgb so
-   it follows every theme, including the light one. */
-.food-more button.food-more-edit {
   color: var(--primary-bright);
   border: 1px solid rgba(var(--primary-rgb), 0.45);
   background: rgba(var(--primary-rgb), 0.1);
   border-radius: 999px;
   padding: 0.42em 0.95em;
-  /* Sits first in the row and should stay there when the row wraps. */
-  order: -1;
+  font-size: 0.76rem; font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
-.food-more button.food-more-edit:hover {
+.food-more button:hover {
   border-color: rgba(var(--primary-rgb), 0.8);
   background: rgba(var(--primary-rgb), 0.18);
 }
+/* Edit targets stays first when the row wraps -- it is the one that changes the
+   numbers everything else is measured against. */
+.food-more button.food-more-edit { order: -1; }
+/* The saved-food count rides inside its button, so it takes the accent from the
+   pill rather than carrying its own. */
+.food-more .myfoods-count { opacity: 0.75; font-weight: 800; }
 
 /* Finger-sized targets. The food log's round ✕, the dashed add button and the
    recipe-builder ingredient ✕ are all comfortable with a mouse but land well
@@ -10724,8 +10726,8 @@ body.live-log-mode #screen-client .header-right { display: none; }
   .food-entry-del { width: 40px; height: 40px; font-size: 1.15rem; }
   .food-add-btn { padding: 0.75em 0.4em; font-size: 0.85rem; }
   .rb-item-del { padding: 0.55em 0.7em; font-size: 1.3rem; }
-  /* A 0.76rem text link was a ~18px-tall target. The pill has room to grow. */
-  .food-more button.food-more-edit { min-height: 38px; padding: 0.5em 1.05em; }
+  /* A 0.76rem text link was a ~18px-tall target. The pills have room to grow. */
+  .food-more button { min-height: 38px; padding: 0.5em 1.05em; }
 }
 
 /* Add-food modal */
@@ -11803,6 +11805,10 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 .wp-head-action { margin-left: auto; flex-shrink: 0; }
 .wp-head .bw-range { margin-left: auto; }
 .wp-head .bw-range + .wp-head-action { margin-left: 0.4em; }
+/* The week card's own heading. .wp-head carries a 1.5rem top margin for use
+   between blocks on the training page; at the top of a card that is a gap
+   above the title, so it is zeroed here. */
+.food-week-card .wp-head { margin: 0 0 0.7rem; }
 .wp-head-coach .wp-head-title { color: #fbbf24; }
 .wp-head-own .wp-head-title { color: var(--primary-bright); }
 .wp-head-cardio .wp-head-title { color: var(--accent); }
