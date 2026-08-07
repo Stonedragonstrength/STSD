@@ -24393,13 +24393,19 @@
     if (!state.previewMode) return;
     const t = _coachSheetTarget || liveDayTarget();
     const pos = t && t.week && !t.oneOff ? { weekId: t.week.id, dayId: t.day.id } : null;
+    // Captured BEFORE exitPreview(). It finishes by calling renderDashboard(),
+    // which deliberately nulls currentClientId -- so reading the client after it
+    // returns null, this bails, and the coach is dropped on the roster instead
+    // of the program they asked for. The landing behaviour of "leave a live
+    // session" changed underneath this caller and took the button with it.
+    const clientId = state.currentClientId;
     teardownCoachSheet();
     exitPreview();
     // The live session's nav entries are stale now — Back should return to the
     // athlete list, same as opening the editor from a card.
     Nav.reset();
     Nav.push(renderDashboard);
-    const c = currentClient();
+    const c = state.trainerData.clients.find((x) => x.id === clientId);
     if (!c) return;
     const target = pos || athleteCurrentDay(c);
     if (target) editClientDay(c.id, target.weekId, target.dayId);
