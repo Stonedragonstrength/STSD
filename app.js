@@ -31075,6 +31075,58 @@
     }));
   }
 
+  // -------- Nutrition tracker import --------
+  // A one-time migration off another food app, not a sync. The parse half is
+  // pure so the preview can show what a file holds before a single entry is
+  // written, and so it can be tested without booting the app.
+  //
+  // MIRRORED in tests/nutrition-import.test.js, which duplicates these functions
+  // because app.js is one IIFE with no exports. Change one, change the other.
+
+  // A hand-rolled RFC 4180 reader. No CSV library, because the app ships with one
+  // external dependency and a food import does not earn a second.
+  function parseCsvGrid(text) {
+    const s = String(text ?? "").replace(/^﻿/, "");
+    if (!s) return [];
+    const grid = [];
+    let row = [], field = "", quoted = false, i = 0;
+    while (i < s.length) {
+      const ch = s[i];
+      if (quoted) {
+        // A doubled quote inside a quoted field is one literal quote.
+        if (ch === '"') {
+          if (s[i + 1] === '"') { field += '"'; i += 2; continue; }
+          quoted = false; i++; continue;
+        }
+        field += ch; i++; continue;
+      }
+      if (ch === '"') { quoted = true; i++; continue; }
+      if (ch === ",") { row.push(field); field = ""; i++; continue; }
+      if (ch === "\r") { i++; continue; }
+      if (ch === "\n") { row.push(field); grid.push(row); row = []; field = ""; i++; continue; }
+      field += ch; i++;
+    }
+    // A trailing newline leaves nothing pending; anything else is a final row.
+    if (field !== "" || row.length) { row.push(field); grid.push(row); }
+    return grid;
+  }
+
+  // Grid -> objects keyed by header. Short rows fill with "" rather than
+  // undefined so every consumer can treat a missing cell as an empty string.
+  function parseCsv(text) {
+    const grid = parseCsvGrid(text);
+    if (!grid.length) return { headers: [], rows: [] };
+    const headers = grid[0].map((h) => String(h).trim());
+    const rows = grid.slice(1)
+      .filter((r) => r.some((c) => String(c).trim() !== ""))
+      .map((r) => {
+        const o = {};
+        headers.forEach((h, i) => { o[h] = String(r[i] ?? "").trim(); });
+        return o;
+      });
+    return { headers, rows };
+  }
+
   // -------- Athlete targets --------
   // Plain statement of the four numbers. Deliberately not a chart: the calorie
   // ring and macro bars directly above already plot these same targets against
