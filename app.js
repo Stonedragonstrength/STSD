@@ -30977,8 +30977,17 @@
     openModal({
       title: recipe.name.length > 48 ? recipe.name.slice(0, 47) + "…" : recipe.name,
       body: `
-        <p class="muted" style="margin-top:0">Makes ${Math.max(Number(recipe.servings) || 1, 1)} servings
-          at ${Math.round(per.kcal).toLocaleString()} kcal each.</p>
+        <p class="muted" style="margin-top:0">${(() => {
+            // Single-serving recipes used to be rare enough that "1 servings at
+            // 291 kcal each" went unnoticed. Imported recipes carry no serving
+            // count and default to 1, so this line is now in front of people
+            // constantly -- both the plural and the dangling "each" show.
+            const n = Math.max(Number(recipe.servings) || 1, 1);
+            const kcal = Math.round(per.kcal).toLocaleString();
+            return n === 1
+              ? `Makes 1 serving at ${kcal} kcal.`
+              : `Makes ${n} servings at ${kcal} kcal each.`;
+          })()}</p>
         <label>Servings eaten
           <input type="text" id="rp-qty" value="1" inputmode="decimal" autocomplete="off" placeholder="1 1/2" />
         </label>
