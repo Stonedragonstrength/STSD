@@ -17029,15 +17029,29 @@
 
     // Open-slot alert preference — athlete can mute it themselves. Always
     // shown (even when muted) so they can turn it back on.
+    // Built as a .pref-row, the same switch every other athlete preference
+    // uses. It had its own row class and a bare checkbox, which meant a raw
+    // browser control and -- because .pref-label is what opts a label's text
+    // out of the global uppercase `label` rule -- a line that SHOUTED at the
+    // bottom of the page next to sentence-case cards.
     const prefCard = document.createElement("div");
     prefCard.className = "card open-slot-pref";
     const prefRow = document.createElement("label");
-    prefRow.className = "open-slot-pref-row";
+    prefRow.className = "pref-row";
+    const txtWrap = document.createElement("span");
+    txtWrap.className = "pref-text";
+    const txt = document.createElement("span");
+    txt.className = "pref-label";
+    txt.textContent = "🔔 Notify me about open slots";
+    const hint = document.createElement("span");
+    hint.className = "pref-hint";
+    hint.textContent = "A nudge when your coach frees up a time.";
+    txtWrap.appendChild(txt);
+    txtWrap.appendChild(hint);
     const toggle = document.createElement("input");
     toggle.type = "checkbox";
+    toggle.className = "pref-toggle";
     toggle.checked = !prog.client.hideOpenSlots;
-    const txt = document.createElement("span");
-    txt.textContent = "🔔 Notify me about open slots";
     toggle.addEventListener("change", () => {
       if (state.previewMode) { toggle.checked = !prog.client.hideOpenSlots; return; }
       prog.client.hideOpenSlots = !toggle.checked;
@@ -17046,8 +17060,10 @@
       refreshAthleteOpenSlots();
       toast(toggle.checked ? "Open-slot alerts on" : "Open-slot alerts off");
     });
+    // Text first, switch on the right -- .pref-row is a flex row and every
+    // other preference in the app reads that way round.
+    prefRow.appendChild(txtWrap);
     prefRow.appendChild(toggle);
-    prefRow.appendChild(txt);
     prefCard.appendChild(prefRow);
     container.appendChild(prefCard);
 

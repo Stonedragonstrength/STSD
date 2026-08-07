@@ -2684,6 +2684,17 @@ input.trial-input {
 .session-manage > summary:hover { color: var(--primary-bright); }
 .session-manage-note { margin: 0 1em 0.6em; font-size: 0.83rem; }
 .session-manage-actions { padding: 0 1em 0.4em; display: flex; gap: 0.5em; flex-wrap: wrap; }
+/* The athlete's fold holds ONE button. Left-aligned under a paragraph it read
+   as a stray pill that had come loose from something; on the right it reads as
+   the action belonging to the panel, which is what it is. The coach's copy of
+   this row has several buttons and stays left. */
+#athlete-session-details .session-manage-actions {
+  justify-content: flex-end;
+  padding-bottom: 0.8em;
+}
+/* .pref-row's bottom border is for stacking several in a list. This card holds
+   exactly one, where the rule underlines nothing. */
+.open-slot-pref .pref-row { border-bottom: none; padding-bottom: 0; }
 .session-manage > #session-bank-container,
 .session-manage > #athlete-session-container { display: block; padding: 0 1em 1em; }
 
