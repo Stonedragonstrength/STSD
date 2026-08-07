@@ -12023,9 +12023,14 @@
     const dropHint = document.createElement("div");
     const emptyDay = day.exercises.length === 0;
     dropHint.className = emptyDay ? "ex-list-empty-drop" : "ex-list-drop-hint";
+    // Points at what is actually on screen. The arrow is only honest when a
+    // sidebar is really beside the day; in the coach's day-edit sheet it points
+    // at blank space, which reads as a broken screen rather than a hint.
     dropHint.textContent = opts.athlete
       ? (emptyDay ? "Add your lifts below, or tap 📖 Library" : "")
-      : (emptyDay ? "Drag exercises from the library →" : "drag to add more");
+      : opts.noSidebar
+        ? (emptyDay ? "Add lifts below, or tap 📖 Library" : "")
+        : (emptyDay ? "Drag exercises from the library →" : "drag to add more");
     dropHint.setAttribute("aria-hidden", "true");
     if (dropHint.textContent) list.appendChild(dropHint);
 
@@ -24351,8 +24356,12 @@
     // progress: this sheet opens OVER the live athlete portal, so the live
     // progress is the one holding any exercise just added on the day —
     // currentClient().importedProgress is the coach's mirror and lags it.
+    // noSidebar: this sheet opens OVER the athlete portal, so the exercise
+    // library sidebar is never beside it at any width. Without this the empty
+    // day says "Drag exercises from the library →" and points at blank space,
+    // which reads as a broken screen rather than a hint.
     body.appendChild(renderDayContent(t.week, t.day, renderCoachDaySheet, {
-      hideDelete: true, progress: state.clientData.progress,
+      hideDelete: true, progress: state.clientData.progress, noSidebar: true,
     }));
   }
 
