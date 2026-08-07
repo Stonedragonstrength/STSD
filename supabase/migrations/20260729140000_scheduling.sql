@@ -12,6 +12,9 @@
 --     tz: "America/New_York",
 --     sessionMins: 60, bufferMins: 0,
 --     leadHours: 12,        -- how close to a start an athlete may still book
+--     cancelHours: 24,      -- ...and how close they may still cancel or move
+--                           -- one unaided; inside it they request and the coach
+--                           -- approves (see 20260806200000_booking_changes.sql)
 --     horizonDays: 21,      -- how far ahead slots are offered
 --     weekly: { "1": [{ start: "06:00", end: "11:00" }], ... },  -- 0=Sun
 --     blackouts: ["2026-08-03"],                 -- whole days off

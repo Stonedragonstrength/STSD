@@ -418,6 +418,85 @@
     } catch (e) { console.warn(e); return null; }
   }
 
+  // ---- Changing a booking the athlete already holds ----
+  // Two paths, and which one applies is the database's call rather than the
+  // UI's: outside the coach's notice window the athlete acts, inside it they
+  // ask. The client mirrors the same rule so the buttons make sense, but every
+  // one of these can come back refusing, and the refusal is the truth.
+  //
+  // Every failure arrives as a `reason` string rather than a bare false:
+  //   taken      someone booked that slot first (23505 — the index decides)
+  //   too_late   inside the notice window; use requestBookingChange instead
+  //   just_do_it OUTSIDE it; no request needed, move or cancel directly
+  //   not_open   that time isn't in the coach's published hours
+  //   pending    this booking already has a request waiting on the coach
+
+  // Moving is one RPC and not a cancel followed by an insert, because from a
+  // browser those two are not atomic: the old slot would be released first, and
+  // losing the race for the new one would leave the athlete holding nothing.
+  async function moveMyBooking(bookingId, newId, startISO, endISO) {
+    try {
+      const { data, error } = await sb.rpc("athlete_move_booking", {
+        p_booking_id: bookingId, p_new_id: newId, p_new_start: startISO, p_new_end: endISO,
+      });
+      if (error) { console.warn("[Cloud] moveMyBooking", error.message); return { ok: false, reason: "error" }; }
+      return data || { ok: false, reason: "error" };
+    } catch (e) { console.warn("[Cloud] moveMyBooking", e); return { ok: false, reason: "error" }; }
+  }
+  // `kind` is "cancel" or "move"; the times are ignored for a cancel.
+  async function requestBookingChange(id, bookingId, kind, startISO, endISO, note) {
+    try {
+      const { data, error } = await sb.rpc("request_booking_change", {
+        p_id: id, p_booking_id: bookingId, p_kind: kind,
+        p_new_start: startISO || null, p_new_end: endISO || null, p_note: note || null,
+      });
+      if (error) { console.warn("[Cloud] requestBookingChange", error.message); return { ok: false, reason: "error" }; }
+      return data || { ok: false, reason: "error" };
+    } catch (e) { console.warn("[Cloud] requestBookingChange", e); return { ok: false, reason: "error" }; }
+  }
+  async function withdrawBookingRequest(id) {
+    try {
+      const { data, error } = await sb.rpc("withdraw_booking_request", { p_id: id });
+      if (error) { console.warn("[Cloud] withdrawBookingRequest", error.message); return { ok: false }; }
+      return data || { ok: false };
+    } catch (e) { console.warn("[Cloud] withdrawBookingRequest", e); return { ok: false }; }
+  }
+  // The coach's answer. Approving performs the change and returns what the
+  // calendar needs to follow — `googleEventId` on a cancel, the new `id` on a
+  // move. It can still come back { ok:false, reason:"taken" }: a pending
+  // request never held the slot, deliberately, so somebody may have taken it
+  // while the coach was deciding. The request stays pending in that case.
+  async function resolveBookingRequest(id, approve, newId) {
+    try {
+      const { data, error } = await sb.rpc("resolve_booking_request", {
+        p_id: id, p_approve: !!approve, p_new_id: newId || null,
+      });
+      if (error) { console.warn("[Cloud] resolveBookingRequest", error.message); return { ok: false, reason: "error" }; }
+      return data || { ok: false, reason: "error" };
+    } catch (e) { console.warn("[Cloud] resolveBookingRequest", e); return { ok: false, reason: "error" }; }
+  }
+  // RLS scopes this the same way getBookings does: an athlete sees their own,
+  // the coach sees every athlete's, so both sides call it identically.
+  async function getBookingRequests(pendingOnly) {
+    try {
+      let q = sb.from("booking_requests").select("*").order("created_at", { ascending: false });
+      if (pendingOnly !== false) q = q.eq("status", "pending");
+      const { data, error } = await q;
+      if (error) { console.warn("[Cloud] getBookingRequests", error.message); return null; }
+      return data || [];
+    } catch (e) { console.warn("[Cloud] getBookingRequests", e); return null; }
+  }
+  // Puts a filed request on the coach's phone. Only an id crosses the wire —
+  // the Edge Function writes the wording itself from the rows, so an athlete
+  // can never choose the text that appears on the coach's lock screen.
+  async function notifyCoachOfRequest(requestId) {
+    try {
+      const { data, error } = await sb.functions.invoke("notify-coach", { body: { requestId } });
+      if (error) { console.warn("[Cloud] notifyCoachOfRequest", error.message || error); return null; }
+      return data;
+    } catch (e) { console.warn("[Cloud] notifyCoachOfRequest", e); return null; }
+  }
+
   // ---- Google Calendar ----
   // Every call goes through the Edge Function: the refresh token lives in a
   // table no browser role can read, and the client secret is a function secret.
@@ -654,6 +733,23 @@
       if (error) { console.warn("[Cloud] savePushSubscription", error.message); return false; }
       return true;
     } catch (e) { console.warn("[Cloud] savePushSubscription", e); return false; }
+  }
+  // The coach's own device. Same table, same endpoint-keyed upsert, different
+  // owner column — and `endpoint` is unique, so a browser signed into both
+  // roles owns exactly one row and the last subscribe wins. That is why the
+  // athlete_id is cleared explicitly: without it an upsert onto a row that used
+  // to be an athlete's would leave both columns set and fail the one-owner
+  // check the booking-changes migration added.
+  async function saveCoachPushSubscription(coachId, subscription) {
+    if (!coachId || !subscription?.endpoint) return false;
+    try {
+      const { error } = await sb.from("push_subscriptions").upsert(
+        { coach_id: coachId, athlete_id: null, endpoint: subscription.endpoint, subscription },
+        { onConflict: "endpoint" }
+      );
+      if (error) { console.warn("[Cloud] saveCoachPushSubscription", error.message); return false; }
+      return true;
+    } catch (e) { console.warn("[Cloud] saveCoachPushSubscription", e); return false; }
   }
   async function deletePushSubscription(endpoint) {
     if (!endpoint) return false;
@@ -1171,6 +1267,12 @@
     updateBookingTime,
     cancelBookingSeries,
     getBookings,
+    moveMyBooking,
+    requestBookingChange,
+    withdrawBookingRequest,
+    resolveBookingRequest,
+    getBookingRequests,
+    notifyCoachOfRequest,
     googleCall,
     googleStatus,
     // Athlete
@@ -1216,6 +1318,7 @@
     getCardForAthlete,
     // Web push
     savePushSubscription,
+    saveCoachPushSubscription,
     deletePushSubscription,
     deleteAllPushSubscriptions,
     sendPush,

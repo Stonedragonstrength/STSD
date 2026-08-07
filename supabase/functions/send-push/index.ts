@@ -14,8 +14,8 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { callerUserId } from "../_shared/caller-auth.ts";
-import webpush from "npm:web-push@3.6.7";
 import { allowedTargets, type Prefs, type PushKind } from "../_shared/notify-prefs.ts";
+import { pushPayload, sendToSubscriptions, vapidDetails } from "../_shared/webpush.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -28,10 +28,7 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const vapidPub = Deno.env.get("VAPID_PUBLIC_KEY");
-    const vapidPriv = Deno.env.get("VAPID_PRIVATE_KEY");
-    const vapidSubject = Deno.env.get("VAPID_SUBJECT") ?? "mailto:admin@stonedragonstrengthtraining.com";
-    if (!vapidPub || !vapidPriv) return json({ error: "VAPID keys not configured" }, 500);
+    if (!vapidDetails()) return json({ error: "VAPID keys not configured" }, 500);
 
     // Resolve the caller from their JWT, then require a coach row. Via GoTrue
     // over HTTP rather than a client built from SUPABASE_ANON_KEY — that key is
@@ -70,28 +67,8 @@ Deno.serve(async (req) => {
       .from("push_subscriptions").select("id, subscription").in("athlete_id", ids);
     if (!subs?.length) return json({ ok: true, sent: 0, muted });
 
-    webpush.setVapidDetails(vapidSubject, vapidPub, vapidPriv);
-    const payload = JSON.stringify({
-      title: String(title).slice(0, 120),
-      body: String(body ?? "").slice(0, 400),
-      url: typeof url === "string" ? url : "./",
-    });
-
-    let sent = 0;
-    const dead: string[] = [];
-    await Promise.all(subs.map(async (s: { id: string; subscription: unknown }) => {
-      try {
-        await webpush.sendNotification(s.subscription as never, payload);
-        sent++;
-      } catch (e) {
-        const code = (e as { statusCode?: number })?.statusCode;
-        if (code === 404 || code === 410) dead.push(s.id);
-        else console.error("[send-push] send failed:", code, e);
-      }
-    }));
-    if (dead.length) await sb.from("push_subscriptions").delete().in("id", dead);
-
-    return json({ ok: true, sent, muted, pruned: dead.length });
+    const { sent, pruned } = await sendToSubscriptions(sb, subs, pushPayload(title, body, url));
+    return json({ ok: true, sent, muted, pruned });
   } catch (e) {
     console.error("[send-push] fatal:", e);
     return json({ ok: false, error: String(e) }, 500);

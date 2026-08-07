@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=credit2" />
+  <link rel="stylesheet" href="styles.css?v=cancelwin8" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -948,6 +948,15 @@
             </div>
           </details>
 
+          <!-- Notifications. Directly under Scheduling because that is what
+               they are for: an athlete asking to cancel or move a session
+               inside the notice window is the only thing that pushes the coach,
+               and before this the coach had no device registered at all. The
+               whole <details> is rendered by renderCoachNotifyCard(), which is
+               why this is a bare host div — the fold's contents change shape
+               when notifications are turned on. -->
+          <div id="coach-notify-host"></div>
+
           <!-- Google Calendar lives here, not on the Schedule card: it is set up
                once and then never touched, so a permanent row about it on the
                dashboard is a row about nothing. renderGoogleCard() fills this in
@@ -1512,9 +1521,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="bugreport.js?v=bug1"></script>
   <script src="config.js?v=horm2"></script>
-  <script src="cloud.js?v=credit2"></script>
+  <script src="cloud.js?v=cancelwin8"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=credit2"></script>
+  <script src="app.js?v=cancelwin8"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

@@ -3725,6 +3725,10 @@
     renderDashboard();
     showCoachOverview();
     refreshCycleShares(); // only athletes who opted in come back from this
+    // Push endpoints rotate, so a device that opted in has to re-assert itself
+    // or it quietly stops receiving. Same silent re-assert the athlete portal
+    // does on entry; a no-op on a device that never opted in.
+    refreshPushSubscription(true);
     // First time on this device: OFFER one guided lap. Asked, never imposed.
     if (!localStorage.getItem(KEY_TOUR_COACH)) {
       setTimeout(() => {
@@ -13624,9 +13628,24 @@
   // mirror and is still the only record of some pre-cut-over sessions, so it is
   // merged rather than dropped. A linked partner's slot counts for both halves
   // — the couple books once, under one name.
+  // The zone the schedule is written in — the coach's. A session happens where
+  // the coach is, so every time the app prints for one is in that zone whatever
+  // zone the device reading it is in. Without this an athlete who travels sees
+  // their booked sessions slide by the offset, and the Sessions card (which
+  // reads the coach's hours) and the calendar disagree about the same session.
+  //
+  // Coach device first: on the coach's app trainerData carries the real hours.
+  // On an athlete's, trainerData is the empty default and clientData holds the
+  // copy cached from availability_for_athlete(). Empty means "no hours posted
+  // yet", and callers fall back to device-local rather than to UTC.
+  function scheduleTz() {
+    return state.trainerData?.availability?.tz || state.clientData?.availability?.tz || "";
+  }
+
   function bookingsByDate(client, bookingRows) {
     const map = {};
     const seen = new Set();
+    const tz = scheduleTz();
     // Dedupe on the INSTANT, never on the formatted time. The mirror stores a
     // string that was formatted whenever the sync last ran — possibly by a
     // different browser, locale or Chrome version — and current Chrome puts a
@@ -13658,8 +13677,10 @@
       // known athlete id is somebody else's and is skipped.
       if (ids.size && r.athlete_id && !ids.has(r.athlete_id)) return;
       const ms = +new Date(r.start_at);
-      push(dateISO(new Date(ms)), {
-        at: fmtSlotTime(ms), startAt: r.start_at, bookingId: r.id,
+      // Both the day it lands on and the time printed use the coach's zone, or
+      // a late session reads as the day before for an athlete further west.
+      push(tz ? zonedDateISO(ms, tz) : dateISO(new Date(ms)), {
+        at: fmtSlotTime(ms, tz), startAt: r.start_at, bookingId: r.id,
         seriesId: r.series_id || "", partner: !!(r.athlete_id && r.athlete_id !== client?.id),
       });
     });
@@ -14974,6 +14995,16 @@
           : lineIco("sd:missed") + " Missed — charged"}</div>`;
     }
     if (e?.seriesId) body += `<div class="dvs-note">Part of a weekly series.</div>`;
+    // A session the athlete has asked about must say so HERE, not only in the
+    // inbox: this sheet is where the coach looks when they are thinking about
+    // that particular session, and moving or cancelling it themselves while a
+    // request sits open would leave the athlete waiting on an answer to a
+    // question that no longer applies.
+    const pending = e?.bookingId ? _coachRequests.find((r) => r.booking_id === e.bookingId) : null;
+    if (pending) {
+      body += `<div class="dvs-mark waiting">${lineIco(pending.kind === "cancel" ? "sd:calx" : "sd:calmove")} ` +
+        `${escapeHtml(row.name.split(" ")[0])} ${escapeHtml(reqSummaryText(pending))} — answer it in your inbox</div>`;
+    }
     body += `<div class="dvs-acts">${acts.join("")}</div>`;
 
     // What they actually did, read-only, under the actions. On a day nothing
@@ -18443,6 +18474,7 @@
     sessionMins: 60,
     bufferMins: 0,
     leadHours: 12,   // an athlete may not book closer than this to the start
+    cancelHours: 24, // ...nor cancel or move one unaided inside this; they ask
     horizonDays: 21, // how far ahead slots are offered
     weekly: {},      // { "1": [{ start:"06:00", end:"11:00" }] }, 0 = Sunday
     blackouts: [],   // ["2026-08-03"] whole days off
@@ -18495,6 +18527,11 @@
     a.sessionMins = Math.max(15, Math.min(240, parseInt(a.sessionMins, 10) || 60));
     a.bufferMins = Math.max(0, Math.min(120, parseInt(a.bufferMins, 10) || 0));
     a.leadHours = Math.max(0, Math.min(168, parseFloat(a.leadHours) || 0));
+    // Not `|| 24`: 0 is a real answer meaning "cancel whenever you like", and
+    // the usual falsy fallback would silently overrule the coach who picked it.
+    a.cancelHours = Math.max(0, Math.min(168,
+      a.cancelHours == null || a.cancelHours === "" || isNaN(parseFloat(a.cancelHours))
+        ? 24 : parseFloat(a.cancelHours)));
     a.horizonDays = Math.max(1, Math.min(90, parseInt(a.horizonDays, 10) || 21));
     a.weekly = a.weekly && typeof a.weekly === "object" ? a.weekly : {};
     a.blackouts = Array.isArray(a.blackouts) ? a.blackouts : [];
@@ -18506,6 +18543,22 @@
   function availabilityIsSet(av) {
     const a = normalizeAvailability(av);
     return Object.values(a.weekly).some((w) => Array.isArray(w) && w.length) || a.extra.length > 0;
+  }
+
+  // Past this point an athlete can no longer act on a booking alone: they ask,
+  // and the coach approves or turns it down. Mirrors slotBookingClosed() for
+  // open slots. This only decides which buttons get drawn — the same rule is
+  // enforced by the bookings_guard trigger, which matters because an installed
+  // PWA can still be serving the build that had an unguarded Cancel button.
+  function cancelWindowClosed(startMs, av) {
+    const a = normalizeAvailability(av);
+    if (!a.cancelHours) return false;
+    return Date.now() >= startMs - a.cancelHours * 3600000;
+  }
+  // When that window shuts, so they can be told what they have until rather
+  // than only being told no.
+  function cancelDeadlineMs(startMs, av) {
+    return startMs - normalizeAvailability(av).cancelHours * 3600000;
   }
 
   // Every slot the availability implies in [fromMs, fromMs + days), minus the
@@ -18583,6 +18636,7 @@
   let _athleteSlots = null;      // null = not loaded yet
   let _athleteBookings = [];
   let _athleteAvailability = null;
+  let _athleteRequests = [];     // changes they've asked the coach to approve
   let _bookingBusy = false;      // an insert is in flight
 
   // The Sessions tab only hits the network while `_athleteSlots` is still null,
@@ -18595,6 +18649,7 @@
     _athleteSlots = null;
     _athleteBookings = [];
     _athleteAvailability = null;
+    _athleteRequests = [];
   }
 
   async function refreshAthleteBooking() {
@@ -18624,10 +18679,17 @@
       return;
     }
     const av = await window.Cloud.getAvailabilityForAthlete();
+    const prevTz = state.clientData.availability?.tz || "";
     _athleteAvailability = av || {};
     // Cached so a reopen shows the schedule before the network answers.
     state.clientData.availability = _athleteAvailability;
     saveClient();
+    // The Overview calendar prints booking times in the coach's zone, which it
+    // learns from the line above. On a first-ever open it has already painted
+    // by the time this lands, in device-local time, and nothing else would
+    // repaint it — so a session would read one time on the calendar and another
+    // on this card until something unrelated happened to redraw.
+    if ((_athleteAvailability.tz || "") !== prevTz) renderAthleteCalendar();
     const a = normalizeAvailability(_athleteAvailability);
     const from = Date.now();
     const toMs = from + (a.horizonDays + 1) * 86400000;
@@ -18636,17 +18698,26 @@
     // the taken-slots read, which exists only to subtract from a grid that
     // isn't going to be drawn.
     if (a.canBook === false) {
-      const own = await window.Cloud.getBookings(new Date(from - 86400000).toISOString(), new Date(toMs).toISOString());
+      // Requests still load: an athlete the coach books for can't self-book, but
+      // they can still ask to cancel or move, so they must be able to see that
+      // they already have.
+      const [own, reqs] = await Promise.all([
+        window.Cloud.getBookings(new Date(from - 86400000).toISOString(), new Date(toMs).toISOString()),
+        window.Cloud.getBookingRequests(true),
+      ]);
       _athleteBookings = Array.isArray(own) ? own : [];
+      _athleteRequests = Array.isArray(reqs) ? reqs : [];
       _athleteSlots = [];
       renderAthleteBooking();
       return;
     }
-    const [taken, mine] = await Promise.all([
+    const [taken, mine, reqs] = await Promise.all([
       window.Cloud.getBookedWindow(new Date(from).toISOString(), new Date(toMs).toISOString()),
       window.Cloud.getBookings(new Date(from - 86400000).toISOString(), new Date(toMs).toISOString()),
+      window.Cloud.getBookingRequests(true),
     ]);
     _athleteBookings = Array.isArray(mine) ? mine : [];
+    _athleteRequests = Array.isArray(reqs) ? reqs : [];
     // +1 day of horizon because an instant near midnight still reads as the
     // previous calendar day in the coach's zone, so day 0 can be yesterday.
     _athleteSlots = availabilityIsSet(a)
@@ -18669,10 +18740,31 @@
     if (mine.length) {
       html += `<div class="book-mine">${mine.map((b) => {
         const s = +new Date(b.start_at);
-        return `<div class="book-mine-row">` +
-          `<span class="book-mine-when">${escapeHtml(new Date(s).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }))} · ${escapeHtml(fmtSlotTime(s))}</span>` +
-          `<button type="button" class="btn btn-ghost btn-xs" data-cancel-mine="${escapeHtml(b.id)}">Cancel</button>` +
-        `</div>`;
+        // The coach's zone, not the device's. Every other time on this card —
+        // the slot grid, and both change sheets — is already written in it, and
+        // an athlete who travels must not see the session they hold appear to
+        // move. The session happens where the coach is.
+        const when = `${new Date(s).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: a.tz || undefined })} · ${fmtSlotTime(s, a.tz)}`;
+        const req = _athleteRequests.find((r) => r.booking_id === b.id);
+        let acts, note = "";
+        if (req) {
+          // One open request per booking (the database enforces it), so while
+          // one is waiting the only thing left to offer is taking it back.
+          acts = `<button type="button" class="btn btn-ghost btn-xs" data-withdraw="${escapeHtml(req.id)}">Undo</button>`;
+          note = req.kind === "cancel"
+            ? "Asked your coach to cancel this — waiting to hear back."
+            : `Asked to move this to ${fmtSlotDay(zonedDateISO(+new Date(req.new_start_at), a.tz))} at ${fmtSlotTime(+new Date(req.new_start_at), a.tz)} — waiting to hear back.`;
+        } else if (cancelWindowClosed(s, a)) {
+          acts = `<button type="button" class="btn btn-ghost btn-xs" data-ask-mine="${escapeHtml(b.id)}">Request a change</button>`;
+        } else {
+          acts = `<button type="button" class="btn btn-ghost btn-xs" data-move-mine="${escapeHtml(b.id)}">Move</button>` +
+            `<button type="button" class="btn btn-ghost btn-xs" data-cancel-mine="${escapeHtml(b.id)}">Cancel</button>`;
+        }
+        return `<div class="book-mine-row${req ? " book-mine-waiting" : ""}">` +
+            `<span class="book-mine-when">${escapeHtml(when)}</span>` +
+            `<span class="book-mine-acts">${acts}</span>` +
+          `</div>` +
+          (note ? `<p class="book-mine-note">${escapeHtml(note)}</p>` : "");
       }).join("")}</div>`;
     }
 
@@ -18689,13 +18781,7 @@
     } else if (!_athleteSlots.length) {
       html += `<p class="muted">Nothing open in the next ${a.horizonDays} days. Check back, or message your coach.</p>`;
     } else {
-      const days = groupSlotsByDay(_athleteSlots, a.tz).slice(0, 14);
-      html += `<div class="book-days">${days.map((d) =>
-        `<div class="book-day">` +
-          `<div class="book-day-name">${escapeHtml(fmtSlotDay(d.iso))}</div>` +
-          `<div class="book-slots">${d.slots.map((s) =>
-            `<button type="button" class="book-slot" data-start="${s.startMs}" data-end="${s.endMs}">${escapeHtml(fmtSlotTime(s.startMs, a.tz))}</button>`).join("")}</div>` +
-        `</div>`).join("")}</div>`;
+      html += slotGridHtml(_athleteSlots, a);
       if (!window.Cloud?.enabled) {
         html += `<p class="book-offline">These are your coach's usual hours. You'll need a connection to actually book one.</p>`;
       }
@@ -18705,14 +18791,202 @@
     host.querySelectorAll("[data-start]").forEach((btn) => btn.addEventListener("click", () => {
       confirmBooking(+btn.dataset.start, +btn.dataset.end, btn);
     }));
-    host.querySelectorAll("[data-cancel-mine]").forEach((btn) => btn.addEventListener("click", async () => {
-      if (!window.confirm("Cancel this session?")) return;
-      const ok = await window.Cloud?.cancelBooking?.(btn.dataset.cancelMine);
-      if (!ok) { toast("Couldn't cancel that. Try again."); return; }
-      toast("Session cancelled");
-      refreshAthleteBooking();
-      afterAthleteBookingChange();
+    const find = (id) => _athleteBookings.find((b) => b.id === id);
+    host.querySelectorAll("[data-cancel-mine]").forEach((btn) => btn.addEventListener("click", () => {
+      const b = find(btn.dataset.cancelMine); if (b) confirmAthleteCancel(b);
     }));
+    host.querySelectorAll("[data-move-mine]").forEach((btn) => btn.addEventListener("click", () => {
+      const b = find(btn.dataset.moveMine); if (b) openAthleteMoveSheet(b);
+    }));
+    host.querySelectorAll("[data-ask-mine]").forEach((btn) => btn.addEventListener("click", () => {
+      const b = find(btn.dataset.askMine); if (b) openAthleteChangeRequest(b);
+    }));
+    host.querySelectorAll("[data-withdraw]").forEach((btn) => btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      const res = await window.Cloud?.withdrawBookingRequest?.(btn.dataset.withdraw);
+      if (!res?.ok) { btn.disabled = false; toast("Couldn't undo that. Try again."); return; }
+      toast("Request withdrawn");
+      refreshAthleteBooking();
+    }));
+  }
+
+  // The partner half of a couple never owns the booking row — the slot is
+  // booked under one name (see syncUpcomingBookingsToAthletes) — so only one of
+  // them ever sees these buttons, and cancelling takes the session away from
+  // both. Say so rather than letting them find out from their partner.
+  function partnerWarningHtml() {
+    return state.clientData.program?.client?.partnerId
+      ? `<p class="book-confirm-warn">This is your shared slot, so it comes off your partner's calendar too.</p>`
+      : "";
+  }
+
+  function confirmAthleteCancel(b) {
+    const a = normalizeAvailability(_athleteAvailability);
+    const s = +new Date(b.start_at);
+    openModal({
+      title: "Cancel this session?",
+      body: `<p class="book-confirm-when">${escapeHtml(`${fmtSlotDay(zonedDateISO(s, a.tz))} at ${fmtSlotTime(s, a.tz)}`)}</p>` +
+        `<p class="muted">The slot goes back on your coach's list for someone else.</p>` +
+        partnerWarningHtml(),
+      actions: [
+        { label: "Keep it", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Cancel session", className: "btn btn-primary", onClick: () => doAthleteCancel(b) },
+      ],
+    });
+  }
+
+  async function doAthleteCancel(b) {
+    if (_bookingBusy) return;
+    _bookingBusy = true;
+    closeModal();
+    const ok = await window.Cloud?.cancelBooking?.(b.id);
+    _bookingBusy = false;
+    if (!ok) {
+      // The trigger refuses a cancel inside the notice window, which is what
+      // this usually is: the window shut between the card being drawn and the
+      // tap landing. Re-rendering swaps the button for "Request a change".
+      toast("Couldn't cancel that — it may be too close now.", 4000);
+      refreshAthleteBooking();
+      return;
+    }
+    toast("Session cancelled");
+    // Take it off the coach's Google Calendar. Best-effort, exactly like the
+    // push after a booking: the cancellation already stands either way.
+    if (b.google_event_id) window.Cloud?.googleCall?.("remove", { bookingId: b.id });
+    refreshAthleteBooking();
+    afterAthleteBookingChange();
+  }
+
+  function bookingWhenText(ms, a) {
+    return `${fmtSlotDay(zonedDateISO(ms, a.tz))} at ${fmtSlotTime(ms, a.tz)}`;
+  }
+
+  // The open-slot grid. Shared by the booking card and by both places an
+  // athlete picks a new time for a session they already hold, so all three
+  // offer exactly the same slots and read the same way. Their current booking
+  // is already subtracted upstream (it is one of the busy windows), so the time
+  // they are moving out of never appears as somewhere to move to.
+  function slotGridHtml(slots, a) {
+    const days = groupSlotsByDay(slots || [], a.tz).slice(0, 14);
+    return `<div class="book-days">${days.map((d) =>
+      `<div class="book-day">` +
+        `<div class="book-day-name">${escapeHtml(fmtSlotDay(d.iso))}</div>` +
+        `<div class="book-slots">${d.slots.map((s) =>
+          `<button type="button" class="book-slot" data-start="${s.startMs}" data-end="${s.endMs}">${escapeHtml(fmtSlotTime(s.startMs, a.tz))}</button>`).join("")}</div>` +
+      `</div>`).join("")}</div>`;
+  }
+
+  // Every way one of these can be refused, in the athlete's words. The reasons
+  // come from the RPCs; a refusal is the database's answer and is always more
+  // current than the card they tapped, so each one says what to do next.
+  function bookingChangeFailMessage(reason) {
+    switch (reason) {
+      case "taken":       return "Someone just took that one. Pick another time.";
+      case "too_late":    return "That's too close to the session now — ask your coach instead.";
+      case "just_do_it":  return "You can still change this one yourself.";
+      case "not_open":    return "That time isn't in your coach's hours any more.";
+      case "too_soon":    return "That's too close to the start. Pick a later time.";
+      case "pending":     return "You've already asked your coach about this session.";
+      case "not_allowed": return "Your coach schedules your sessions. Message them to move one.";
+      default:            return "Couldn't do that. Try again.";
+    }
+  }
+
+  // ---- Outside the notice window: they move it themselves ----
+  function openAthleteMoveSheet(b, note) {
+    const a = normalizeAvailability(_athleteAvailability);
+    const slots = _athleteSlots || [];
+    const asking = typeof note === "string"; // came from the request flow
+    openModal({
+      title: asking ? "Ask to move it to…" : "Move this session",
+      body: `<p class="book-confirm-when">Now: ${escapeHtml(bookingWhenText(+new Date(b.start_at), a))}</p>` +
+        (slots.length
+          ? `<p class="muted">${asking
+              ? "Pick the time you'd like. Your coach still has to okay it."
+              : "Pick a new time. You keep your current slot unless the new one goes through."}</p>` +
+            slotGridHtml(slots, a)
+          : `<p class="muted">Nothing else is open in the next ${a.horizonDays} days. Message your coach.</p>`),
+      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
+    });
+    $("#modal-body").querySelectorAll("[data-start]").forEach((btn) => btn.addEventListener("click", () => {
+      const startMs = +btn.dataset.start, endMs = +btn.dataset.end;
+      openModal({
+        title: asking ? "Ask for this time?" : "Move it here?",
+        body: `<p class="book-confirm-when">${escapeHtml(bookingWhenText(startMs, a))}</p>` +
+          `<p class="muted">Instead of ${escapeHtml(bookingWhenText(+new Date(b.start_at), a))}.</p>` +
+          (asking ? "" : partnerWarningHtml()),
+        actions: [
+          { label: "Back", className: "btn btn-ghost", onClick: () => openAthleteMoveSheet(b, note) },
+          { label: asking ? "Send request" : "Move it", className: "btn btn-primary", onClick: () => asking
+            ? doRequestChange(b, "move", startMs, endMs, note)
+            : doAthleteMove(b, startMs, endMs) },
+        ],
+      });
+    }));
+  }
+
+  async function doAthleteMove(b, startMs, endMs) {
+    if (_bookingBusy) return;
+    _bookingBusy = true;
+    closeModal();
+    const newId = uid();
+    const res = await window.Cloud?.moveMyBooking?.(
+      b.id, newId, new Date(startMs).toISOString(), new Date(endMs).toISOString());
+    _bookingBusy = false;
+    if (!res?.ok) {
+      toast(bookingChangeFailMessage(res?.reason), 4000);
+      refreshAthleteBooking();
+      return;
+    }
+    toast("Session moved ✓");
+    // The calendar event rode across to the new row inside the RPC, so this one
+    // push PATCHes it to the new time instead of orphaning the old event and
+    // creating a second one.
+    window.Cloud?.googleCall?.("push", { bookingId: newId });
+    refreshAthleteBooking();
+    afterAthleteBookingChange();
+  }
+
+  // ---- Inside the notice window: they ask ----
+  function openAthleteChangeRequest(b) {
+    const a = normalizeAvailability(_athleteAvailability);
+    const s = +new Date(b.start_at);
+    const note = () => ($("#book-req-note")?.value || "").trim();
+    openModal({
+      title: "Ask your coach",
+      body: `<p class="book-confirm-when">${escapeHtml(bookingWhenText(s, a))}</p>` +
+        `<p class="muted">This is inside your coach's ${a.cancelHours}-hour notice, so they need to okay the change. Nothing moves until they do.</p>` +
+        `<label class="book-req-note">Anything they should know?` +
+          `<textarea id="book-req-note" rows="2" maxlength="300" placeholder="Optional"></textarea></label>`,
+      actions: [
+        { label: "Never mind", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Ask to move", className: "btn btn-ghost", onClick: () => openAthleteMoveSheet(b, note()) },
+        { label: "Ask to cancel", className: "btn btn-primary", onClick: () => doRequestChange(b, "cancel", null, null, note()) },
+      ],
+    });
+  }
+
+  async function doRequestChange(b, kind, startMs, endMs, note) {
+    if (_bookingBusy) return;
+    _bookingBusy = true;
+    closeModal();
+    const id = uid();
+    const res = await window.Cloud?.requestBookingChange?.(
+      id, b.id, kind,
+      startMs ? new Date(startMs).toISOString() : null,
+      endMs ? new Date(endMs).toISOString() : null,
+      note);
+    _bookingBusy = false;
+    if (!res?.ok) {
+      toast(bookingChangeFailMessage(res?.reason), 4000);
+      refreshAthleteBooking();
+      return;
+    }
+    toast("Sent to your coach");
+    // Puts it on their phone. Fire-and-forget: the request is already filed and
+    // waiting in their inbox whether or not the notification lands.
+    window.Cloud?.notifyCoachOfRequest?.(id);
+    refreshAthleteBooking();
   }
 
   // The Overview calendar caches the month's booking rows, so a session booked
@@ -18792,6 +19066,7 @@
   }
 
   let _coachBookings = [];
+  let _coachRequests = [];   // athlete change requests waiting on an answer
   let _googleStatus = null;
 
   async function refreshCoachSchedule() {
@@ -18806,9 +19081,121 @@
       const to = new Date(Date.now() + 400 * 86400000).toISOString();
       const rows = await window.Cloud.getBookings(from, to);
       if (Array.isArray(rows)) _coachBookings = rows;
+      // Pending change requests ride along with the bookings they belong to,
+      // and the inbox is repainted once they land: this call is what puts the
+      // count on the ⚡ pill, and it finishes well after showCoachOverview's own
+      // refreshCoachInbox() has already run against an empty list.
+      const reqs = await window.Cloud.getBookingRequests(true);
+      if (Array.isArray(reqs)) { _coachRequests = reqs; refreshCoachInbox(); }
       _googleStatus = await window.Cloud.googleStatus();
     }
     renderCoachSchedule();
+  }
+
+  // A request's booking, and the times either side of the change, in the
+  // coach's own zone.
+  function reqBooking(req) { return _coachBookings.find((b) => b.id === req.booking_id) || null; }
+  // Short weekday, and the same "·" the athlete's card uses. An inbox row
+  // already carries a face, a name, an icon and two buttons, and spelling out
+  // "Friday" was enough to push the time onto a line of its own.
+  function reqWhenText(iso) {
+    if (!iso) return "a session";
+    const a = normalizeAvailability(coachAvailability());
+    const ms = +new Date(iso);
+    const day = new Date(ms).toLocaleDateString(undefined, {
+      weekday: "short", month: "short", day: "numeric", timeZone: a.tz || undefined });
+    // Non-breaking space inside the time so "4:26" and "AM" can never end up on
+    // different lines, which is exactly where this wrapped in the inbox. Safe
+    // because this string is only ever displayed — nothing keys off it, unlike
+    // the booking dedupe, which compares instants for this very reason.
+    const time = fmtSlotTime(ms, a.tz).replace(/\s/g, " ");
+    return `${day} · ${time}`;
+  }
+  function reqSummaryText(req) {
+    const bk = reqBooking(req);
+    return req.kind === "cancel"
+      ? `wants to cancel ${reqWhenText(bk?.start_at)}`
+      : `wants to move ${reqWhenText(bk?.start_at)} to ${reqWhenText(req.new_start_at)}`;
+  }
+
+  // The coach's answer. Approving performs the change in one transaction, then
+  // the calendar and the athlete are told — in that order, and both
+  // best-effort: the decision already stands in the database, and a Google or
+  // push failure must never look like the approval didn't happen.
+  async function answerBookingRequest(req, approve) {
+    const c = (state.trainerData.clients || []).find((x) => x.id === req.athlete_id);
+    const bk = reqBooking(req);
+    const newId = req.kind === "move" ? uid() : null;
+    const res = await window.Cloud?.resolveBookingRequest?.(req.id, approve, newId);
+    if (!res?.ok) {
+      // A pending request never held the slot, deliberately — so this is the
+      // one real failure: somebody booked that time while the coach thought
+      // about it. The request stays pending so it can still be turned down.
+      toast(res?.reason === "taken"
+        ? "That slot went while you were deciding. Turn it down and sort a time with them."
+        : "Couldn't do that. Try again.", 4500);
+      return;
+    }
+    _coachRequests = _coachRequests.filter((r) => r.id !== req.id);
+
+    if (approve && res.kind === "cancel" && res.googleEventId) {
+      window.Cloud?.googleCall?.("remove", { bookingId: res.bookingId });
+    }
+    if (approve && res.kind === "move" && res.id) {
+      window.Cloud?.googleCall?.("push", { bookingId: res.id });
+    }
+    if (c) {
+      const what = req.kind === "cancel" ? "cancel" : "move";
+      window.Cloud?.sendPush?.([c.id],
+        approve ? "✅ Your coach said yes" : "Your coach couldn't do that",
+        approve
+          ? `Your ${what} is sorted — check your sessions.`
+          : `They've left ${reqWhenText(bk?.start_at)} as it is. Message them to sort something out.`,
+        "./", "message");
+    }
+    toast(approve ? "Approved ✓" : "Turned down");
+    afterBookingChange();
+    refreshCoachInbox();
+    // An approved late cancellation is the only one of these with money in it.
+    if (approve && req.kind === "cancel" && c && bk) askLateCancelCharge(c, bk);
+  }
+
+  // Nathan's call, every time. A cancelled booking is invisible to the
+  // auto-redeem walker, so doing nothing here means the session was free —
+  // which is right for the athlete who is genuinely ill and wrong for the one
+  // who does it every week. Neither answer belongs in the code.
+  function askLateCancelCharge(c, bk) {
+    openModal({
+      title: "Does it still count?",
+      body: `<p class="book-confirm-when">${escapeHtml(c.name)} · ${escapeHtml(reqWhenText(bk.start_at))}</p>` +
+        `<p class="muted">That was inside your notice window. Nothing has been taken off their balance.</p>`,
+      actions: [
+        { label: "Let it go", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Charge the session", className: "btn btn-primary", onClick: () => chargeLateCancel(c, bk) },
+      ],
+    });
+  }
+
+  // Written in exactly the shape autoRedeemFinishedBookings pushes — same
+  // `stsd:` uid, same `slot` minute — so every dedupe guard there recognises it
+  // and refundBookingTokens() can take it straight back off again.
+  function chargeLateCancel(c, bk) {
+    ensureSessionBank(c);
+    const startMs = +new Date(bk.start_at);
+    const key = `stsd:${bk.id}`;
+    const slot = Math.floor(startMs / 60000);
+    const reds = c.sessionBank.redemptions;
+    if (!reds.some((r) => r.setmoreUid === key || r.slot === slot)) {
+      reds.push({
+        id: uid(), date: dateISO(new Date(startMs)), slot,
+        note: `Late cancellation · ${fmtSetmoreTime(bk.start_at)}`,
+        setmoreUid: key,
+      });
+    }
+    pushAthleteBank(c);
+    closeModal();
+    toast(`🎟 Session charged to ${c.name}`);
+    renderDashboardCalendar();
   }
 
   function availabilitySummaryHtml(av) {
@@ -18826,7 +19213,8 @@
     const meta = `${a.sessionMins} min sessions` +
       (a.bufferMins ? ` · ${a.bufferMins} min gap` : "") +
       (a.leadHours ? ` · closes ${a.leadHours}h before` : " · no booking cutoff") +
-      ` · ${a.horizonDays} days out`;
+      ` · ${a.horizonDays} days out` +
+      (a.cancelHours ? ` · cancel by ${a.cancelHours}h before` : " · cancel any time");
     const extras = a.extra.length ? `<div class="sched-note">${a.extra.length} one-off window${a.extra.length === 1 ? "" : "s"}</div>` : "";
     const blocked = a.blackouts.length ? `<div class="sched-note">${a.blackouts.length} day${a.blackouts.length === 1 ? "" : "s"} blocked off</div>` : "";
     return `<div class="sched-days">${rows}</div><div class="sched-meta">${escapeHtml(meta)}</div>${extras}${blocked}`;
@@ -18918,11 +19306,84 @@
     renderSetmoreCard();
     renderCoachSeries();
     renderIncomeCard();
+    renderCoachNotifyCard();
     renderCoachSettingsSubs(); // the fold summaries quote all three
     // Bookings arrive after the roster has already drawn, and the green ticket
     // is counted from them — without this the chips stay missing until some
     // unrelated thing happens to redraw the grid.
     renderClientGrid();
+  }
+
+  // ---- Coach: notifications on this device ----
+  // Deliberately one switch and no categories. The athlete's fold has six,
+  // because they receive several unrelated kinds of thing; the coach receives
+  // exactly one — an athlete asking about a session inside the notice window —
+  // and a preference panel for a single item is furniture, not choice.
+  //
+  // Rebuilt in place like the athlete's, so turning it on doesn't slam the fold
+  // shut under the finger that just tapped it.
+  function renderCoachNotifyCard() {
+    const host = $("#coach-notify-host");
+    if (!host) return;
+    const open = $("#pref-fold-coach-notify")?.open;
+    host.innerHTML = coachNotifyFoldHtml();
+    const fold = $("#pref-fold-coach-notify");
+    if (!fold) return;
+    if (open) fold.open = true;
+    $("#btn-coach-push")?.addEventListener("click", async () => {
+      const btn = $("#btn-coach-push");
+      if (btn) { btn.disabled = true; btn.textContent = "Working…"; }
+      if (pushOn(true)) {
+        await unsubscribePush(true);
+        toast("Notifications off");
+      } else {
+        const ok = await subscribePush(true);
+        toast(ok
+          ? "Notifications on 🔔"
+          : (Notification.permission === "denied"
+            ? "Blocked. Allow notifications in your browser settings"
+            : "Couldn't enable. Check your connection"), 3000);
+      }
+      renderCoachNotifyCard();
+      renderCoachSettingsSubs();
+    });
+  }
+  function coachNotifyFoldSub() {
+    if (!pushSupported()) return "Not supported in this browser";
+    if (Notification.permission === "denied") return "Blocked in your browser settings";
+    return pushOn(true) ? "On for this device" : "Get told when an athlete asks about a session";
+  }
+  function coachNotifyFoldHtml() {
+    const supported = pushSupported();
+    const enabled = pushOn(true);
+    const blocked = supported && Notification.permission === "denied";
+    let inner;
+    if (!supported) {
+      inner = `<p class="pref-foot">This browser doesn't support notifications.</p>`;
+    } else if (blocked) {
+      inner = `<p class="pref-foot">Notifications are blocked for this site. Allow them in your browser settings, then come back.</p>`;
+    } else {
+      inner = `<p class="pref-foot">${enabled
+        ? "This device gets a notification when an athlete asks to cancel or move a session too close to the start to do it themselves. Turn it on again on any other phone or computer you use — it's per device."
+        : "Without this the only sign of a change request is the ⚡ count in the app, which is no use for a session tomorrow morning if you don't happen to open it."}</p>` +
+        (/iphone|ipad|ipod/i.test(navigator.userAgent) && !isStandalone()
+          ? `<p class="pref-foot">On iPhone: install the app first (Share → Add to Home Screen), then enable here.</p>` : "") +
+        `<div class="pref-actions">` +
+          `<button class="btn ${enabled ? "btn-ghost" : "btn-primary"} btn-sm slim-btn" id="btn-coach-push" type="button">` +
+          `${enabled ? "🔕 Turn off notifications" : "🔔 Enable notifications"}</button></div>`;
+    }
+    return `
+      <details class="pref-fold" id="pref-fold-coach-notify">
+        <summary>
+          <span class="pref-fold-ico">🔔</span>
+          <span class="pref-fold-text">
+            <span class="pref-fold-title">Notifications</span>
+            <span class="pref-fold-sub" id="cs-sub-notify">${escapeHtml(coachNotifyFoldSub())}</span>
+          </span>
+          <span class="pref-fold-chev">▸</span>
+        </summary>
+        ${inner}
+      </details>`;
   }
 
   // What each collapsed row on the coach Profile says about itself. This is the
@@ -18942,6 +19403,7 @@
     set("#cs-sub-google", g?.connected
       ? "Google Calendar · " + (g.email || "connected")
       : "Google Calendar not connected");
+    set("#cs-sub-notify", coachNotifyFoldSub());
     const theme = THEMES.find((t) => t.id === currentThemeForRole("coach"));
     set("#cs-sub-theme", theme ? theme.name : "Colour scheme");
     // The books summary names the count, never the money — a fold title is on
@@ -20098,9 +20560,13 @@
             `<option value="${n}"${n === draft.bufferMins ? " selected" : ""}>${n ? n + " min" : "None"}</option>`).join("")}</select></label>` +
           `<label>Cutoff<select id="av-lead">${[0, 2, 4, 8, 12, 24, 48].map((n) =>
             `<option value="${n}"${n === draft.leadHours ? " selected" : ""}>${n ? n + "h ahead" : "Any time"}</option>`).join("")}</select></label>` +
+          `<label>Cancel by<select id="av-cancel">${[0, 4, 8, 12, 16, 24, 48].map((n) =>
+            `<option value="${n}"${n === draft.cancelHours ? " selected" : ""}>${n ? n + "h before" : "Any time"}</option>`).join("")}</select></label>` +
           `<label>Book out to<select id="av-hor">${[7, 14, 21, 28, 60].map((n) =>
             `<option value="${n}"${n === draft.horizonDays ? " selected" : ""}>${n} days</option>`).join("")}</select></label>` +
         `</div>` +
+        `<p class="muted av-policy-note">Inside the cancel window an athlete can't drop or move a ` +
+          `session themselves — they send you a request to approve or turn down.</p>` +
         `<div class="av-block">` +
           `<div class="av-block-head">Days off</div>` +
           `<div class="av-block-list">${draft.blackouts.length
@@ -20132,6 +20598,7 @@
       $("#av-len").addEventListener("change", (e) => { draft.sessionMins = +e.target.value; draw(); });
       $("#av-buf").addEventListener("change", (e) => { draft.bufferMins = +e.target.value; });
       $("#av-lead").addEventListener("change", (e) => { draft.leadHours = +e.target.value; });
+      $("#av-cancel").addEventListener("change", (e) => { draft.cancelHours = +e.target.value; });
       $("#av-hor").addEventListener("change", (e) => { draft.horizonDays = +e.target.value; });
       $("#av-block-btn").addEventListener("click", () => {
         const d = $("#av-block-date").value;
@@ -20469,6 +20936,16 @@
   function coachNeedsRows() {
     const rows = [];
     const unreadMsgs = coachUnreadByAthlete();
+
+    // Above everything else, including a purchase. A session inside the notice
+    // window happens tomorrow whether or not the coach answers, the athlete
+    // cannot act on it themselves, and if it is a move the slot they asked for
+    // is not held — so this is the one row here where waiting costs something.
+    _coachRequests.forEach((r) => {
+      const c = (state.trainerData.clients || []).find((x) => x.id === r.athlete_id);
+      if (c) rows.push({ kind: "bookingreq", pri: -1, c, req: r, ts: +new Date(r.created_at) || 0 });
+    });
+
     (state.trainerData.clients || []).forEach((c) => {
       const ip = c.importedProgress || {};
       openRequestsFor(c).forEach((req) =>
@@ -20518,7 +20995,25 @@
         row.addEventListener("click", () => { closeModal(); fn(); });
       };
 
-      if (n.kind === "request") {
+      if (n.kind === "bookingreq") {
+        row.innerHTML = `
+          <span class="needs-face">${athleteFaceHtml(n.c)}</span>
+          <span class="needs-body"><span class="needs-name">${escapeHtml(n.c.name)}</span>
+            <span class="needs-text">${lineIco(n.req.kind === "cancel" ? "sd:calx" : "sd:calmove")} ${escapeHtml(reqSummaryText(n.req))}</span>
+            ${n.req.note ? `<span class="needs-said">${escapeHtml(n.req.note)}</span>` : ""}</span>
+          <span class="needs-actions">
+            <button class="btn btn-ghost btn-sm" type="button" data-decline>No</button>
+            <button class="btn btn-primary btn-sm" type="button" data-approve>Approve</button>
+          </span>`;
+        row.querySelector("[data-approve]").addEventListener("click", (e) => {
+          e.stopPropagation();
+          answerBookingRequest(n.req, true);
+        });
+        row.querySelector("[data-decline]").addEventListener("click", (e) => {
+          e.stopPropagation();
+          answerBookingRequest(n.req, false);
+        });
+      } else if (n.kind === "request") {
         row.innerHTML = `
           <span class="needs-face">${athleteFaceHtml(n.c)}</span>
           <span class="needs-body"><span class="needs-name">${escapeHtml(n.c.name)}</span>
@@ -32619,11 +33114,18 @@
     }
   }, true);
 
-  // -------- Web push (athlete notifications) --------
-  // The athlete opts in from Profile → 🔔. Their browser subscription is
-  // stored per-device in Supabase (push_subscriptions, RLS: athlete-owned);
-  // the coach's bulletins and nudges go out via the send-push Edge Function.
-  const KEY_PUSH = "trainerpro_push_v1"; // "1" = this device opted in
+  // -------- Web push --------
+  // The athlete opts in from Profile → 🔔; the coach from Settings → 🔔. Both
+  // store a per-device browser subscription in the same `push_subscriptions`
+  // table, under different owner columns, and both are sent to by an Edge
+  // Function holding the VAPID private key (send-push to athletes,
+  // notify-coach the other way).
+  //
+  // Two localStorage flags rather than one, because a single device can be both
+  // — the coach's own phone opens an athlete portal in preview — and one shared
+  // flag would have each role silently switching the other's notifications off.
+  const KEY_PUSH = "trainerpro_push_v1";             // "1" = this device opted in
+  const KEY_PUSH_COACH = "trainerpro_push_coach_v1";
   function pushSupported() {
     return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
   }
@@ -32633,10 +33135,21 @@
     const raw = atob(base);
     return Uint8Array.from([...raw].map((ch) => ch.charCodeAt(0)));
   }
-  async function subscribePush() {
-    const athleteId = state.clientData.program?.clientId;
+  // Everything below takes `coach` as its first argument and defaults to the
+  // athlete when it's absent, so existing athlete-side callers read unchanged.
+  function pushKey(coach) { return coach ? KEY_PUSH_COACH : KEY_PUSH; }
+  function pushOwnerId(coach) {
+    return coach ? state.trainerData.coachId : state.clientData.program?.clientId;
+  }
+  function savePushSub(coach, id, sub) {
+    return coach
+      ? window.Cloud.saveCoachPushSubscription(id, sub)
+      : window.Cloud.savePushSubscription(id, sub);
+  }
+  async function subscribePush(coach) {
+    const id = pushOwnerId(coach);
     const vapid = window.STONE_DRAGON_CONFIG?.VAPID_PUBLIC_KEY;
-    if (!athleteId || !vapid || !window.Cloud?.enabled || !pushSupported()) return false;
+    if (!id || !vapid || !window.Cloud?.enabled || !pushSupported()) return false;
     const perm = await Notification.requestPermission();
     if (perm !== "granted") return false;
     try {
@@ -32645,12 +33158,12 @@
         userVisibleOnly: true,
         applicationServerKey: urlB64ToUint8Array(vapid),
       });
-      const ok = await window.Cloud.savePushSubscription(athleteId, sub.toJSON());
-      if (ok) localStorage.setItem(KEY_PUSH, "1");
+      const ok = await savePushSub(coach, id, sub.toJSON());
+      if (ok) localStorage.setItem(pushKey(coach), "1");
       return ok;
     } catch (e) { console.warn("[Push] subscribe failed", e); return false; }
   }
-  async function unsubscribePush() {
+  async function unsubscribePush(coach) {
     try {
       const reg = await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.getSubscription();
@@ -32659,21 +33172,21 @@
         await sub.unsubscribe();
       }
     } catch (e) {}
-    localStorage.removeItem(KEY_PUSH);
+    localStorage.removeItem(pushKey(coach));
   }
   // Endpoints rotate — silently re-assert the subscription on portal entry.
-  async function refreshPushSubscription() {
+  async function refreshPushSubscription(coach) {
     if (state.previewMode) return;
-    if (localStorage.getItem(KEY_PUSH) !== "1") return;
+    if (localStorage.getItem(pushKey(coach)) !== "1") return;
     if (!pushSupported() || Notification.permission !== "granted") return;
     const vapid = window.STONE_DRAGON_CONFIG?.VAPID_PUBLIC_KEY;
-    const athleteId = state.clientData.program?.clientId;
-    if (!vapid || !athleteId || !window.Cloud?.enabled) return;
+    const id = pushOwnerId(coach);
+    if (!vapid || !id || !window.Cloud?.enabled) return;
     try {
       const reg = await navigator.serviceWorker.ready;
       const sub = (await reg.pushManager.getSubscription()) ||
         (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8Array(vapid) }));
-      await window.Cloud.savePushSubscription(athleteId, sub.toJSON());
+      await savePushSub(coach, id, sub.toJSON());
     } catch (e) {}
   }
   // Notifications is the first fold of the settings card, so it's rebuilt in
@@ -32693,8 +33206,8 @@
     if (Notification.permission === "denied") return "Blocked in your browser settings";
     return pushOn() ? "Notifications are on" : "Get a ping for bulletins and messages";
   }
-  function pushOn() {
-    return pushSupported() && Notification.permission === "granted" && localStorage.getItem(KEY_PUSH) === "1";
+  function pushOn(coach) {
+    return pushSupported() && Notification.permission === "granted" && localStorage.getItem(pushKey(coach)) === "1";
   }
   function notifyFoldHtml() {
     const supported = pushSupported();

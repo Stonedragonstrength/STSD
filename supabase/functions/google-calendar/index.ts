@@ -21,7 +21,9 @@
 //                                       event yet; returns what remains so the
 //                                       caller can loop until done
 //
-// Only the coach may call any of them.
+// The coach may call any of them. An athlete may call only `push` and `remove`,
+// and only for a booking of their own — that is what keeps the coach's calendar
+// honest when an athlete books, moves or cancels a session themselves.
 //
 // Setup (one time, by the coach — none of this can be done from the app):
 //   1. Google Cloud console -> new project -> APIs & Services -> enable
@@ -116,8 +118,35 @@ Deno.serve(async (req) => {
 
     const sb = createClient(supabaseUrl, serviceKey);
     const { data: coach } = await sb.from("coaches").select("id").eq("auth_user_id", userId).maybeSingle();
-    if (!coach) return json({ ok: false, error: "coach only" }, 403);
-    const coachId = coach.id as string;
+
+    // Coaches reach everything. An athlete reaches exactly two actions, for
+    // exactly one booking: their own.
+    //
+    // This used to be a flat "coach only" 403, and that was a silent bug rather
+    // than a policy. `doBook()` has always fired push after a self-booking and
+    // always had it rejected — with the failure swallowed, because a Google
+    // problem must never undo a booking. The result was that an athlete's own
+    // bookings never appeared on the coach's calendar at all, and cancelling
+    // one couldn't take it off. Self-service scheduling is worse than useless
+    // if the coach's calendar quietly disagrees with the app, so the athlete
+    // gets the narrowest possible door: push and remove, nothing else, and the
+    // coach whose calendar is written is read off the BOOKING, never the request.
+    let coachId: string;
+    let athleteId: string | null = null;
+    if (coach) {
+      coachId = coach.id as string;
+    } else {
+      if (action !== "push" && action !== "remove") return json({ ok: false, error: "coach only" }, 403);
+      const { data: athlete } = await sb
+        .from("athletes").select("id").eq("auth_user_id", userId).maybeSingle();
+      if (!athlete) return json({ ok: false, error: "coach only" }, 403);
+      const { data: bk } = await sb
+        .from("bookings").select("athlete_id, coach_id")
+        .eq("id", String(body?.bookingId ?? "")).maybeSingle();
+      if (!bk || bk.athlete_id !== athlete.id) return json({ ok: false, error: "not your booking" }, 403);
+      coachId = bk.coach_id as string;
+      athleteId = athlete.id as string;
+    }
 
     if (!clientId || !clientSecret || !redirectUri) {
       // Named individually: these are matched EXACTLY, and getting one name
@@ -301,6 +330,10 @@ Deno.serve(async (req) => {
         // series would otherwise be 52 round trips from the browser. The whole
         // series is handled in one call instead, capped so a bad id can't spin.
         let q = sb.from("bookings").select("*, athletes(display_name)").eq("coach_id", coachId);
+        // Belt and braces for an athlete caller: ownership was proved above,
+        // but keeping the constraint on the query means it cannot be lost by a
+        // later edit to the block that set athleteId.
+        if (athleteId) q = q.eq("athlete_id", athleteId);
         if (series) {
           const seriesId = String(body?.seriesId ?? "");
           if (!seriesId) return json({ ok: false, error: "no series" }, 400);
