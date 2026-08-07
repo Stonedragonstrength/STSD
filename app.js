@@ -31032,11 +31032,18 @@
   // Without this the only way to reach a saved food is to search for it, so a
   // typo or a one-off recipe would sit in the list forever with no way out.
   function openMyFoodsSheet() {
+    const p = state.clientData.progress;
+    const emptyLibrary = !(p.customFoods || []).length && !(p.savedMeals || []).length;
     openModal({
       title: "My foods and recipes",
       body: `<div id="myfoods-sheet"></div>`,
       actions: [
-        { label: "Import history", className: "btn btn-ghost", onClick: () => openImportSheet() },
+        // Primary only while the library is empty -- that is when importing is
+        // the whole reason to be on this sheet. Once there are foods to manage,
+        // it steps back and Close stops competing with it.
+        { label: "Import history",
+          className: `btn ${emptyLibrary ? "btn-primary" : "btn-ghost"}`,
+          onClick: () => openImportSheet() },
         { label: "Close", className: "btn btn-ghost", onClick: () => { closeModal(); renderFoodDay(); } },
       ],
     });
@@ -31052,10 +31059,10 @@
     const foods = progress.customFoods || [];
     const meals = progress.savedMeals || [];
     if (!foods.length && !meals.length) {
-      // The emptiest moment is exactly when an import is worth offering.
+      // Points at the footer button rather than repeating it as a second
+      // control. One action, named once, in the place it actually lives.
       el.innerHTML = `<p class="muted">Nothing saved yet. Foods you create and recipes you build land here.</p>
-        <p class="muted">Coming from another app? <a href="#" id="myfoods-import">Import your foods and history.</a></p>`;
-      $("#myfoods-import")?.addEventListener("click", (e) => { e.preventDefault(); openImportSheet(); });
+        <p class="muted">Coming from another app? Use <b>Import history</b> below.</p>`;
       return;
     }
     el.innerHTML = `
@@ -31502,20 +31509,35 @@
   function openImportSheet() {
     openModal({
       title: "Import your food history",
+      // The native file input is unstyleable browser chrome -- a light grey
+      // button on a dark modal, which reads as a broken stylesheet. It is
+      // visually hidden and driven by a real <label for>, which keeps the
+      // keyboard and screen-reader behaviour the native control gives us.
       body: `
         <p class="muted" style="margin-top:0">
           Export your data from Cronometer, then pick the CSV files here. Your
           foods, recipes, recent diary, water and weight all come across.</p>
-        <label>Export files
-          <input type="file" id="imp-files" multiple accept=".csv,text/csv" /></label>
+        <input type="file" id="imp-files" multiple accept=".csv,text/csv" class="imp-file" />
+        <label class="btn btn-primary imp-pick" id="imp-pick-label" for="imp-files">Choose CSV files</label>
+        <p class="muted imp-chosen" id="imp-chosen">No files chosen yet.</p>
         <div id="imp-result"></div>`,
       actions: [{ label: "Close", className: "btn btn-ghost",
                   onClick: () => { closeModal(); renderFoodDay(); } }],
     });
     $("#imp-files").addEventListener("change", async (ev) => {
+      const picked = [...ev.target.files];
+      // The native control's own "N files chosen" text goes with the hidden
+      // input, so the filenames have to be echoed back deliberately.
+      $("#imp-chosen").textContent = picked.length
+        ? picked.map((f) => f.name).join(", ")
+        : "No files chosen yet.";
+      // Once files are picked, Import becomes the action and the picker steps
+      // back to ghost. Two primary buttons in one modal make neither one read
+      // as the thing to press.
+      $("#imp-pick-label").className = `btn ${picked.length ? "btn-ghost" : "btn-primary"} imp-pick`;
       const out = $("#imp-result");
       out.innerHTML = `<p class="muted">Reading…</p>`;
-      renderImportPreview(await readImportFiles(ev.target.files), out);
+      renderImportPreview(await readImportFiles(picked), out);
     });
   }
 

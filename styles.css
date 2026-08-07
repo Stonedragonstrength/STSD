@@ -14242,6 +14242,29 @@ input.credit-cap:disabled { opacity: 0.4; }
    (.exn-chip.warn) and does nothing on its own. Colours come from the theme
    vars, not hardcoded hex, so this survives all ten themes including the light
    one. */
+/* The native file input is unstyleable browser chrome and looks like a broken
+   stylesheet on a dark modal. Visually hidden rather than display:none, so it
+   keeps its native keyboard and screen-reader behaviour while a real
+   <label for> supplies the visible, themed control. */
+.imp-file {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+/* A <label> acting as a button has to opt out of the global `label` rule, which
+   block-displays and uppercases every label in the app -- otherwise this reads
+   as a form caption shouting next to the real buttons. */
+.imp-pick {
+  display: inline-flex; cursor: pointer;
+  text-transform: none; letter-spacing: normal;
+  margin-bottom: 0; font-size: 0.95rem; font-weight: 600;
+}
+/* Keyboard users get the same focus ring the real control would have had. The
+   input is placed BEFORE the label in the markup so this sibling selector can
+   reach it -- `+` and `~` only ever look forward. */
+.imp-file:focus-visible + .imp-pick {
+  outline: 2px solid rgba(var(--primary-rgb), 0.8); outline-offset: 2px;
+}
+.imp-chosen { margin: 8px 0 0; font-size: 13px; word-break: break-all; }
 .imp-summary { margin: 12px 0; padding-left: 20px; }
 .imp-summary li { margin: 4px 0; }
 .imp-warn { color: var(--warn); }
