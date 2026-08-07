@@ -31127,6 +31127,77 @@
     return { headers, rows };
   }
 
+  // Header matching is deliberately forgiving: vendors rename columns, and a
+  // trailing space must not cost an athlete their history.
+  function normHeader(h) {
+    return String(h ?? "")
+      .toLowerCase()
+      .replace(/[\s_]+/g, " ")
+      .replace(/[^a-z0-9() ]/g, "")
+      .trim();
+  }
+
+  // THE ONLY SOURCE-SPECIFIC CODE IN THE FEATURE.
+  // `cron` was read from a real export, verified 2026-08-07. There is
+  // deliberately no `mfp` entry: no MyFitnessPal export has ever been seen, and
+  // a stub of invented column names would sit beside verified facts looking
+  // equally trustworthy. Add one from a real file, never from memory.
+  const IMPORT_SOURCES = {
+    cron: {
+      label: "Cronometer",
+      kinds: {
+        diary: {
+          required: { date: ["day"], food: ["food name"], amount: ["amount"], kcal: ["energy (kcal)"] },
+          optional: {
+            group: ["group"], p: ["protein (g)"], c: ["carbs (g)"],
+            f: ["fat (g)"], fib: ["fiber (g)"], water: ["water (g)"], category: ["category"],
+          },
+        },
+        weight: {
+          required: { date: ["day"], metric: ["metric"], amount: ["amount"] },
+          optional: { unit: ["unit"] },
+        },
+      },
+    },
+  };
+
+  function resolveColumns(source, kind, headers) {
+    const spec = IMPORT_SOURCES[source] && IMPORT_SOURCES[source].kinds[kind];
+    if (!spec) return { map: {}, missing: [] };
+    const byNorm = new Map();
+    // First header wins, so a duplicate column cannot shadow the original.
+    for (const h of headers || []) {
+      const n = normHeader(h);
+      if (n && !byNorm.has(n)) byNorm.set(n, h);
+    }
+    const map = {}, missing = [];
+    for (const [field, aliases] of Object.entries(spec.required)) {
+      const hit = aliases.map((a) => byNorm.get(a)).find((x) => x !== undefined);
+      if (hit === undefined) missing.push(field); else map[field] = hit;
+    }
+    for (const [field, aliases] of Object.entries(spec.optional)) {
+      const hit = aliases.map((a) => byNorm.get(a)).find((x) => x !== undefined);
+      if (hit !== undefined) map[field] = hit;
+    }
+    return { map, missing };
+  }
+
+  // Ordered most-specific first. Cronometer's servings and biometrics files
+  // share Day/Time/Group/Amount, so diary must be tried before weight or a food
+  // log would be read as a pile of measurements.
+  const IMPORT_KINDS = ["diary", "weight"];
+
+  function sniffImportFile(headers) {
+    if (!headers || !headers.length) return null;
+    for (const source of Object.keys(IMPORT_SOURCES)) {
+      for (const kind of IMPORT_KINDS) {
+        if (!IMPORT_SOURCES[source].kinds[kind]) continue;
+        if (!resolveColumns(source, kind, headers).missing.length) return { source, kind };
+      }
+    }
+    return null;
+  }
+
   // -------- Athlete targets --------
   // Plain statement of the four numbers. Deliberately not a chart: the calorie
   // ring and macro bars directly above already plot these same targets against
