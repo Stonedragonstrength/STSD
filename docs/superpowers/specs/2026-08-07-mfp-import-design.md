@@ -64,7 +64,8 @@ external dependency.
 |---|---|---|
 | `parseCsv(text)` | RFC-4180 CSV → row objects. Quoted fields, embedded commas and newlines, CRLF. | — |
 | `sniffMfpFile(name, text)` | Identify diary / custom foods / recipes / weight **by header columns**, not filename. | — |
-| `mapMfpRows(kind, rows)` | MFP rows → STSD entry shapes. Pure; writes nothing. | — |
+| `MFP_COLUMNS` | Data table: per field, a list of candidate header names. The **only** part that depends on MFP's real format. | — |
+| `mapMfpRows(kind, rows)` | MFP rows → STSD entry shapes, resolving columns via `MFP_COLUMNS`. Pure; writes nothing. | `MFP_COLUMNS` |
 | `applyMfpImport(parsed)` | Write to `progress`, set XP boundary, `saveClient()`. | `progress` |
 
 Parsing is pure and separated from writing so the preview screen can run the
@@ -164,11 +165,41 @@ A failed import must never leave a half-written log.
 8. Browser: verify on a second athlete — module-level caches in `app.js` survive
    athlete switches.
 
+## Building without a sample file
+
+No MFP export is available at design time, and the feature is being built ahead
+of one arriving. Everything except column naming is independent of MFP's real
+format and is built and tested now: `parseCsv`, `applyMfpImport`, dedupe, the XP
+boundary, the preview modal.
+
+The format dependency is confined to one data table:
+
+```js
+const MFP_COLUMNS = {
+  diary:  { date: ["Date"], meal: ["Meal"], food: ["Food", "Food Name"],
+            kcal: ["Calories", "Energy (kcal)"], p: ["Protein (g)", "Protein"], ... },
+  ...
+};
+```
+
+Correcting it against a real export is editing a list of strings. Matching is
+case-insensitive and whitespace-normalised, so trivial header variations resolve
+without a code change.
+
+**The failure path is the instrument.** When `sniffMfpFile` cannot identify a
+file, or `mapMfpRows` cannot resolve a required column, the error must display
+**the actual header row it found** and offer it as copyable text. The first real
+export then reports its own format back rather than dead-ending, which is the
+difference between one correction pass and a guessing game. This is a
+requirement, not a nicety — it is the whole reason the feature can be built
+before a file exists.
+
 ## Known unknowns
 
-- **Real column headers.** `mapMfpRows` is written against expected MFP headers
-  and will need one correction pass against an actual export file. `sniffMfpFile`
-  detecting by header content rather than filename limits the blast radius.
+- **Real column headers.** Confined to `MFP_COLUMNS` as above.
 - **Free-export format.** If the free export really is an encrypted `.xlsx`, the
   athlete must open it and re-save as CSV. Acceptable for a one-time migration;
   revisit only if it proves to be a real barrier in practice.
+- **Recipe ingredient format.** Whether MFP exports recipe ingredients as
+  separate rows, an embedded list, or not at all. The single-item-recipe fallback
+  above covers the worst case.
