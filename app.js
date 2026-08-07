@@ -29924,7 +29924,14 @@
              only through an aria-label nobody sighted ever sees. -->
         <button type="button" id="food-targets-btn" class="food-more-edit">✎ Edit targets</button>
         <button type="button" id="food-week-more">This week</button>
-        ${savedCount ? `<button type="button" id="food-myfoods-btn">My foods <span class="myfoods-count">${savedCount}</span></button>` : ""}
+        <!-- Always rendered, not just when savedCount is set. The sheet used to
+             be pointless when empty so it was hidden, but its empty state is now
+             where the import lives -- and an athlete with nothing saved is
+             exactly the one with a whole history in another app to bring over.
+             The count badge still only appears once there is something to
+             count. -->
+        <button type="button" id="food-myfoods-btn">My foods${savedCount
+          ? ` <span class="myfoods-count">${savedCount}</span>` : ""}</button>
         <button type="button" id="food-copy-yesterday">Copy yesterday</button>
       </div>`;
 
@@ -31019,7 +31026,10 @@
     openModal({
       title: "My foods and recipes",
       body: `<div id="myfoods-sheet"></div>`,
-      actions: [{ label: "Close", className: "btn btn-ghost", onClick: () => { closeModal(); renderFoodDay(); } }],
+      actions: [
+        { label: "Import history", className: "btn btn-ghost", onClick: () => openImportSheet() },
+        { label: "Close", className: "btn btn-ghost", onClick: () => { closeModal(); renderFoodDay(); } },
+      ],
     });
     renderMyFoods();
   }
@@ -31033,7 +31043,10 @@
     const foods = progress.customFoods || [];
     const meals = progress.savedMeals || [];
     if (!foods.length && !meals.length) {
-      el.innerHTML = `<p class="muted">Nothing saved yet. Foods you create and recipes you build land here.</p>`;
+      // The emptiest moment is exactly when an import is worth offering.
+      el.innerHTML = `<p class="muted">Nothing saved yet. Foods you create and recipes you build land here.</p>
+        <p class="muted">Coming from another app? <a href="#" id="myfoods-import">Import your foods and history.</a></p>`;
+      $("#myfoods-import")?.addEventListener("click", (e) => { e.preventDefault(); openImportSheet(); });
       return;
     }
     el.innerHTML = `
@@ -31461,6 +31474,112 @@
     saveClient();
     return { days: dates.length, entries, foods: addedFoods, recipes: addedRecipes,
              water: waterDays, weighIns, replaced };
+  }
+
+  // "PK" is the zip magic number, which is what an .xlsx actually is. We ship no
+  // decryptor and no xlsx parser for a one-time migration -- we tell the athlete
+  // how to hand us something readable instead.
+  function looksLikeZip(text) { return text.slice(0, 2) === "PK"; }
+
+  function readImportFiles(files) {
+    return Promise.all([...files].map((file) => new Promise((resolve) => {
+      const r = new FileReader();
+      r.onload = () => resolve({ name: file.name, text: String(r.result || "") });
+      r.onerror = () => resolve({ name: file.name, text: "" });
+      r.readAsText(file);
+    })));
+  }
+
+  function openImportSheet() {
+    openModal({
+      title: "Import your food history",
+      body: `
+        <p class="muted" style="margin-top:0">
+          Export your data from Cronometer, then pick the CSV files here. Your
+          foods, recipes, recent diary, water and weight all come across.</p>
+        <label>Export files
+          <input type="file" id="imp-files" multiple accept=".csv,text/csv" /></label>
+        <div id="imp-result"></div>`,
+      actions: [{ label: "Close", className: "btn btn-ghost",
+                  onClick: () => { closeModal(); renderFoodDay(); } }],
+    });
+    $("#imp-files").addEventListener("change", async (ev) => {
+      const out = $("#imp-result");
+      out.innerHTML = `<p class="muted">Reading…</p>`;
+      renderImportPreview(await readImportFiles(ev.target.files), out);
+    });
+  }
+
+  function renderImportPreview(files, out) {
+    const opts = { today: todayISO(), windowDays: FOOD_LOG_DAYS };
+    const mapped = [], unknown = [];
+
+    for (const f of files) {
+      if (looksLikeZip(f.text)) {
+        out.innerHTML = `<p class="imp-warn">${escapeHtml(f.name)} is a zip or spreadsheet,
+          not a CSV. Open it, then use <b>File &rsaquo; Save As</b> and choose CSV.</p>`;
+        return;
+      }
+      const parsed = parseCsv(f.text);
+      const hit = sniffImportFile(parsed.headers);
+      if (!hit) { unknown.push({ name: f.name, headers: parsed.headers }); continue; }
+      mapped.push(mapImportRows(hit.source, hit.kind, parsed, opts));
+    }
+
+    // With one verified source, the first athlete on a different app is how we
+    // learn its column names -- so an unrecognised file must hand those names
+    // back rather than just saying "unrecognised".
+    if (unknown.length) {
+      out.innerHTML = unknown.map((u) => `
+        <p class="imp-warn">Couldn't tell what <b>${escapeHtml(u.name)}</b> holds.</p>
+        <p class="muted">Send your coach this line and it can be added:</p>
+        <textarea readonly rows="3" class="imp-headers"
+          onclick="this.select()">${escapeHtml(u.headers.join(", "))}</textarea>`).join("");
+      if (!mapped.length) return;
+    }
+
+    const diary = mapped.flatMap((m) => m.diary);
+    const lib = deriveLibrary(diary);
+    const days = new Set(diary.map((d) => d.date)).size;
+    const tooOld = mapped.reduce((n, m) => n + m.tooOld, 0);
+    const skipped = mapped.reduce((n, m) => n + m.skipped, 0);
+    const weighIns = mapped.reduce((n, m) => n + m.weights.length, 0);
+
+    // Assigned, never appended: the caller put a "Reading…" placeholder in here,
+    // and appending would leave it sitting above the results forever.
+    // `unknownHtml` carries any per-file complaints forward deliberately.
+    const unknownHtml = unknown.length ? out.innerHTML : "";
+
+    if (!diary.length && !weighIns) {
+      out.innerHTML = unknownHtml + `<p class="muted">Nothing to import from those files.</p>`;
+      return;
+    }
+
+    // One pluraliser for every count, so "1 foods" can never sit next to
+    // "2 diary days".
+    const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`;
+    const row = (count, one, many, tail = "") =>
+      `<li><b>${count}</b> ${count === 1 ? one : many}${tail}</li>`;
+
+    out.innerHTML = unknownHtml + `
+      <ul class="imp-summary">
+        ${row(days, "diary day", "diary days",
+              ` (${plural(diary.length, "entry", "entries")})`)}
+        ${row(lib.foods.length, "food for your library", "foods for your library")}
+        ${row(lib.recipes.length, "recipe", "recipes")}
+        ${row(weighIns, "weigh-in", "weigh-ins")}
+      </ul>
+      ${tooOld ? `<p class="muted">${tooOld} entries are older than ${FOOD_LOG_DAYS} days
+        and won't come across — the log keeps a rolling window.</p>` : ""}
+      ${skipped ? `<p class="muted">${skipped} rows skipped: no name or calorie value.</p>` : ""}
+      <button class="btn btn-primary" id="imp-go">Import</button>`;
+
+    $("#imp-go")?.addEventListener("click", () => {
+      const r = applyImport(mapped);
+      closeModal();
+      renderClientDiet();
+      toast(`Imported ${r.entries} entries, ${r.foods} foods, ${r.recipes} recipes ✓`);
+    });
   }
 
   // -------- Athlete targets --------
