@@ -7203,6 +7203,9 @@ input.pyr-weight-input { -moz-appearance: textfield; appearance: textfield; }
   font-size: 0.62rem; font-weight: 800; color: var(--text-soft);
 }
 .mood-chips.compact .mood-chip { padding: 0; border: none; background: none; font-size: 0.9em; }
+/* On a roster card these ride the name line beside the quiet/birthday chips,
+   so they need the same gap off the name and must never push it to wrap. */
+.row-mood-chips { margin-left: 0.45em; flex-shrink: 0; }
 .mood-emo { line-height: 1; }
 .mood-txt { text-transform: uppercase; letter-spacing: 0.04em; }
 /* The mood picker sheet */

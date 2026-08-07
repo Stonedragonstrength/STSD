@@ -4501,6 +4501,18 @@
         pc.textContent = "💞";
         nameEl.appendChild(pc);
       }
+      // How the last session actually felt, at a glance. The athlete picks up
+      // to two of these when they finish; compact drops the labels so it stays
+      // two emoji on the name line rather than a second row of text.
+      const lastMoods = lastWorkoutMoods(c);
+      if (lastMoods.moods.length) {
+        const wrap = document.createElement("span");
+        wrap.className = "row-mood-chips";
+        wrap.title = `Last session (${lastMoods.date}): ` +
+          lastMoods.moods.map((id) => moodById(id)?.label).filter(Boolean).join(", ");
+        wrap.innerHTML = moodChipsHtml(lastMoods.moods, true);
+        nameEl.appendChild(wrap);
+      }
       main.appendChild(nameEl);
       main.appendChild(subEl);
 
@@ -23145,6 +23157,20 @@
     return `<span class="mood-chips${compact ? " compact" : ""}">${ids.map((m) =>
       `<span class="mood-chip" title="${escapeHtml(m.label)}"><span class="mood-emo">${m.emoji}</span>${compact ? "" : `<span class="mood-txt">${escapeHtml(m.label)}</span>`}</span>`).join("")}</span>`;
   }
+  // The moods on the athlete's MOST RECENT rated session, for the roster card.
+  // Picked by the record's own date rather than by walking the program: a mood
+  // is dated with the session it rates, and the newest one is the answer to
+  // "how did they feel last time" regardless of which week it sat in.
+  // Reads importedProgress -- the coach's mirror -- since the roster is coach-side.
+  function lastWorkoutMoods(client) {
+    const recs = Object.values(client?.importedProgress?.workoutMoods || {})
+      .filter((r) => Array.isArray(r?.moods) && r.moods.length);
+    if (!recs.length) return { date: "", moods: [] };
+    const latest = recs.reduce((a, b) =>
+      String(b.date || "") > String(a.date || "") ? b : a);
+    return { date: latest.date || "", moods: latest.moods.slice(0, MAX_MOODS) };
+  }
+
   // Aggregate mood counts across a client's current program (+ one-off days),
   // newest-heaviest-first, for the coach roll-up. Returns [{ id, emoji, label, n }].
   function moodRollup(client, progress) {
