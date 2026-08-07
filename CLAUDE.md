@@ -61,6 +61,7 @@ Both roles use **Supabase Auth (email + password)** — real accounts, not the o
 - **Program & progress sync** → both directions go through Supabase (`cloud.js` upserts, pulled on sign-in) — no manual code passing
 - **Athlete invite code** → short code stored on Supabase; athlete enters it, app does `Cloud.getAthleteByInviteCode()`
 - **Legacy access code** → athlete-side "Got a long access code instead?" fallback still decodes old base64 program codes via `decodeData()`; nothing generates new ones anymore
+- **Nutrition import** (athlete, one-time migration off another food app) → uploads CSVs → `parseCsv` → `sniffImportFile` → `mapImportRows` → `deriveLibrary` → preview → `applyImport()` writes `foodLog`/`customFoods`/`savedMeals`/`waterLog`/`bodyweightLog` via `saveClient()`. All source-specific knowledge lives in `IMPORT_SOURCES` (Cronometer only, read from a real export) — adding a source should be a data edit, and if it isn't, the abstraction is wrong. Imported days are fenced out of XP and streaks by `nutritionGame.importedThrough`. The food library is **derived from the diary**, because trackers export servings rather than food definitions: a food created but never logged does not come across.
 
 ## Local dev
 ```bash
