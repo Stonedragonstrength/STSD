@@ -28681,6 +28681,11 @@
   // A day only holds the streak if they actually ate on the record, not if they
   // logged a single apple to keep the flame alive.
   function streakDay(progress, basePlan, dateKey) {
+    // Imported history never holds a streak. An import lands months at a stroke,
+    // and a flame that was uploaded rather than earned devalues the ladder for
+    // everyone who earned theirs a day at a time.
+    const through = progress?.nutritionGame?.importedThrough;
+    if (through && dateKey <= through) return false;
     const t = foodDayTotals(foodDayEntries(progress, dateKey));
     const target = Number(planForDate(basePlan, dateKey)?.calories) || 0;
     if (!t.kcal) return false;
@@ -28848,10 +28853,14 @@
     }
     // Only days that exist matter: a blank day scores nothing and breaks the
     // run, so walking all 180 on every render would be 180 no-ops.
+    //
+    // Days at or before importedThrough are history someone uploaded, not effort
+    // they put in, so they are excluded outright rather than scored and zeroed.
+    const imported = g.importedThrough || "";
     const dates = [...new Set([
       ...Object.keys(progress.foodLog || {}),
       ...Object.keys(g.awarded),
-    ])].filter((d) => d >= cutoff && d <= today).sort();
+    ])].filter((d) => d >= cutoff && d <= today && !(imported && d <= imported)).sort();
 
     let run = 0, prev = null;
     for (const date of dates) {
@@ -31355,6 +31364,103 @@
       });
     }
     return { foods, recipes };
+  }
+
+  // The only impure step. Everything above produced plain data; this is where it
+  // lands. Re-running must be safe, so entries from THIS source in the covered
+  // range are cleared first -- re-importing Cronometer must never disturb
+  // history that came from a different app.
+  function applyImport(mapped) {
+    const progress = state.clientData.progress;
+    ensureFoodLog(progress);
+    ensureNutritionGame(progress);
+
+    const source = (mapped[0] && mapped[0].source) || "cron";
+    const diary = mapped.flatMap((m) => m.diary);
+    const water = mapped.flatMap((m) => m.water);
+    const weights = mapped.flatMap((m) => m.weights);
+    const { foods, recipes } = deriveLibrary(diary);
+
+    let replaced = 0;
+    const dates = [...new Set(diary.map((d) => d.date))];
+    for (const date of dates) {
+      const list = progress.foodLog[date];
+      if (!list) continue;
+      const kept = list.filter((e) => e.src !== source);
+      replaced += list.length - kept.length;
+      if (kept.length) progress.foodLog[date] = kept; else delete progress.foodLog[date];
+    }
+
+    let entries = 0;
+    for (const d of diary) {
+      if (!progress.foodLog[d.date]) progress.foodLog[d.date] = [];
+      progress.foodLog[d.date].push({ ...d.entry, id: uid(), at: Date.now() });
+      entries++;
+    }
+
+    // Water is a count of cups per day, so same-day rows sum. Assigned rather
+    // than added, so a second import replaces the day instead of doubling it.
+    const byDay = new Map();
+    for (const w of water) byDay.set(w.date, (byDay.get(w.date) || 0) + w.oz);
+    let waterDays = 0;
+    for (const [date, oz] of byDay) {
+      progress.waterLog[date] = Math.round(oz / WATER_CUP_OZ);
+      waterDays++;
+    }
+
+    const haveFoods = new Set((progress.customFoods || []).map((f) => String(f.name).toLowerCase()));
+    let addedFoods = 0;
+    for (const f of foods) {
+      if (haveFoods.has(f.name.toLowerCase())) continue;
+      haveFoods.add(f.name.toLowerCase());
+      progress.customFoods.push({ id: uid(), ...f, createdAt: todayISO() });
+      addedFoods++;
+    }
+
+    const haveMeals = new Set((progress.savedMeals || []).map((m) => String(m.name).toLowerCase()));
+    let addedRecipes = 0;
+    for (const r of recipes) {
+      if (haveMeals.has(r.name.toLowerCase())) continue;
+      haveMeals.add(r.name.toLowerCase());
+      progress.savedMeals.push({
+        id: uid(), name: r.name, kind: "recipe", servings: r.servings,
+        items: r.items.map((i) => ({ ...i, id: uid() })),
+        uses: 0, createdAt: todayISO(),
+      });
+      addedRecipes++;
+    }
+
+    // One weigh-in per date; an existing entry wins, because it is the one the
+    // athlete can already see and delete.
+    const haveDates = new Set((progress.bodyweightLog || []).map((b) => b.date));
+    let weighIns = 0;
+    for (const w of weights) {
+      if (haveDates.has(w.date)) continue;
+      haveDates.add(w.date);
+      progress.bodyweightLog.push({ id: uid(), date: w.date, weightLb: w.weightLb });
+      weighIns++;
+    }
+
+    // The XP fence. Everything on or before this date is history, not effort.
+    // Only ever moves forward, so a second smaller import cannot unfence days
+    // an earlier one already covered.
+    const latest = diary.map((d) => d.date).sort().pop();
+    if (latest) {
+      const g = progress.nutritionGame;
+      g.importedThrough = g.importedThrough && g.importedThrough > latest ? g.importedThrough : latest;
+      // Days behind the fence give back any XP a previous render already banked.
+      for (const k of Object.keys(g.awarded || {})) {
+        if (k <= g.importedThrough) {
+          g.xp = Math.max(0, g.xp - (Number(g.awarded[k]) || 0));
+          delete g.awarded[k];
+        }
+      }
+    }
+
+    pruneFoodLog(progress);
+    saveClient();
+    return { days: dates.length, entries, foods: addedFoods, recipes: addedRecipes,
+             water: waterDays, weighIns, replaced };
   }
 
   // -------- Athlete targets --------
