@@ -34315,10 +34315,42 @@
   });
 
   // -------- Init --------
+  // Ask the browser not to evict this origin's storage.
+  //
+  // The Supabase session lives in localStorage, which on Android is "best
+  // effort" by default: under storage pressure the browser is free to throw the
+  // whole origin away, and the only symptom is being asked to sign in again with
+  // nothing on the server to explain it. Checked against production during a run
+  // of unexplained sign-outs -- every session was still alive and unrevoked in
+  // auth.sessions, which rules out the server and leaves the client losing its
+  // copy.
+  //
+  // Chrome grants this silently for an installed PWA; elsewhere it may prompt or
+  // refuse, so nothing here depends on the answer. The result is stashed for the
+  // bug report, because after an eviction there is nothing left to inspect.
+  async function ensurePersistentStorage() {
+    try {
+      if (!navigator.storage?.persist) return;
+      const already = navigator.storage.persisted ? await navigator.storage.persisted() : false;
+      window.__stsdPersisted = already || await navigator.storage.persist();
+      if (navigator.storage.estimate) {
+        const { usage = 0, quota = 0 } = await navigator.storage.estimate();
+        window.__stsdQuotaPct = quota ? Math.round((usage / quota) * 100) : 0;
+      }
+    } catch (e) {
+      // A refusal is not a failure worth surfacing — the app works either way.
+      window.__stsdPersisted = false;
+    }
+  }
+
   async function init() {
     // Re-apply the saved color theme immediately (before the session resolves)
     // so a reload keeps the chosen color with no default-blue flash.
     applyTheme(currentThemeForRole(sessionStorage.getItem(KEY_SESSION) === "client" ? "athlete" : "coach"));
+
+    // Not awaited: it must never delay the first paint, and nothing below reads
+    // the answer.
+    ensurePersistentStorage();
 
     // Auth state change listener — catches PASSWORD_RECOVERY from email reset links
     if (window.Cloud?.enabled) {

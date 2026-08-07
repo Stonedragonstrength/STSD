@@ -128,6 +128,13 @@
       storage = {
         trainerBytes: (localStorage.getItem("trainerpro_data_v1") || "").length,
         clientBytes: (localStorage.getItem("trainerpro_client_v1") || "").length,
+        // Whether this origin's data is exempt from eviction, and how close it
+        // is to its quota. An unexplained sign-out is usually the browser
+        // having thrown the Supabase session away with the rest of the origin's
+        // storage, and these two are the only evidence that it happened -- the
+        // session is simply gone afterwards, with nothing to inspect.
+        persisted: window.__stsdPersisted === undefined ? "unknown" : window.__stsdPersisted,
+        quotaPct: window.__stsdQuotaPct === undefined ? "unknown" : window.__stsdQuotaPct,
       };
     } catch (e) { /* ignore */ }
     return {
