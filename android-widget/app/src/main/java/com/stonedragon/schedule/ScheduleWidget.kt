@@ -110,12 +110,52 @@ class ScheduleWidget : AppWidgetProvider() {
             AppWidgetManager.getInstance(app)
                 .getAppWidgetIds(ComponentName(app, ScheduleWidget::class.java))
 
-        /** Fetches every widget again. Used after a successful sign-in. */
+        /**
+         * Widgets this PROCESS has already drawn.
+         *
+         * Deliberately in memory and not in Prefs: it empties whenever Android
+         * restarts the process, which is exactly the signal wanted. A widget
+         * being drawn for the first time in a fresh process has a list sitting
+         * at the top of Monday, so putting the coach at the current session is
+         * strictly better than leaving it there — there is no scroll position
+         * of theirs to lose. The routine 30-minute update in a process that is
+         * already running finds the id here and leaves the list alone, which is
+         * what keeps requestJump's promise not to fight a reading thumb.
+         */
+        private val paintedThisProcess: MutableSet<Int> =
+            java.util.Collections.synchronizedSet(mutableSetOf<Int>())
+
+        /**
+         * Arms the jump when the widget is on the current week.
+         *
+         * Off this week there is nothing sensible to jump TO: scrollIndexForNow
+         * falls through to the first session it can find, which on a future week
+         * is row zero — where the list already is. So a coach who paged forward
+         * and then refreshed would spend the request on a no-op and lose it.
+         */
+        private fun armJumpIfThisWeek(app: Context, widgetId: Int) {
+            if (Prefs.week(app, widgetId) == Supabase.startOfWeek(System.currentTimeMillis())) {
+                Prefs.requestJump(app, widgetId)
+            }
+        }
+
+        /**
+         * Fetches every widget again. Used after a successful sign-in.
+         *
+         * Signing in is the clearest "start me where I am" moment there is, so
+         * it arms the jump. Safe to do before the paint because saveState below
+         * marks the frame loading, and buildFrame refuses to spend a jump on a
+         * loading frame — the request survives to the settled frame the fetch
+         * brings back, which is the only one allowed to scroll.
+         */
         fun refreshAll(ctx: Context) {
             val app = ctx.applicationContext
             val mgr = AppWidgetManager.getInstance(app)
             val ids = widgetIds(app)
-            for (id in ids) Prefs.saveState(app, id, "loading")
+            for (id in ids) {
+                armJumpIfThisWeek(app, id)
+                Prefs.saveState(app, id, "loading")
+            }
             scope.launch { for (id in ids) refresh(app, mgr, id) }
         }
 
@@ -594,6 +634,18 @@ class ScheduleWidget : AppWidgetProvider() {
         // lands or doesn't depending on memory pressure.
         val pending = goAsync()
         val app = ctx.applicationContext
+        // First sight of this widget in this process — it was just placed, or
+        // the process died and Android brought it back, or the phone rebooted.
+        // Either way the list is starting from the top rather than somewhere
+        // the coach put it, so start it at the current session instead. Marked
+        // loading for the same reason refreshAll does it: only the settled frame
+        // may scroll, so this keeps the request alive until the fetch lands.
+        for (id in ids) {
+            if (paintedThisProcess.add(id)) {
+                armJumpIfThisWeek(app, id)
+                Prefs.saveState(app, id, "loading")
+            }
+        }
         // Something on screen immediately. It rarely has a jump to honour — one
         // is normally armed and spent inside a single NOW press — but a process
         // killed between the two would leave one waiting here.
@@ -656,6 +708,11 @@ class ScheduleWidget : AppWidgetProvider() {
                 Prefs.setWeek(app, widgetId, thisWeek)
                 Prefs.requestJump(app, widgetId)
             }
+            // ⟳ is a reload, and a reload should land where NOW lands. Only on
+            // this week: paging forward and refreshing to check something is a
+            // deliberate act, and yanking it back would undo the thing they
+            // just did. PREV/NEXT are absent for the same reason.
+            ACTION_REFRESH -> armJumpIfThisWeek(app, widgetId)
         }
         // ⟳ included, now that "loading" over existing rows shows a ⋯ rather
         // than blanking them. It was excluded when loading meant an empty list,
