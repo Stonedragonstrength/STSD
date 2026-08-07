@@ -1,4 +1,28 @@
-# MyFitnessPal Import Implementation Plan
+# Nutrition Tracker Import Implementation Plan
+
+> **⚠️ AWAITING RETARGET — do not execute yet.**
+>
+> This plan was written against MyFitnessPal with no sample export available, so
+> every column name in it is a guess. The spec has since been retargeted:
+> **Cronometer is now the first source** (see
+> `docs/superpowers/specs/2026-08-07-nutrition-import-design.md`), because a real
+> Cronometer export can be produced today and is plain CSV.
+>
+> The structure below — CSV parser, column-table indirection, pure mapper,
+> idempotent writer, XP fence, header-reporting error path — is unchanged and
+> still correct. What changes when the export lands:
+>
+> - `MFP_COLUMNS` → `IMPORT_SOURCES` (keyed by source, then kind)
+> - `sniffMfpFile(headers)` → `sniffImportFile(headers)` returning `{ source, kind }`
+> - `mapMfpRows(kind, …)` → `mapImportRows(source, kind, …)`
+> - `applyMfpImport` → `applyImport`, clearing prior entries **per source** so a
+>   Cronometer re-import cannot wipe entries from another app
+> - `src: "mfp"` → `src: "cron"`, with `"mfp"` added later
+> - Every fixture CSV replaced with rows cut from the real export
+>
+> Deliberately **not** rewritten yet: turning MFP column guesses into Cronometer
+> column guesses is churn the real file would immediately invalidate. Retarget
+> once, against the actual headers.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
