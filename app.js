@@ -7871,7 +7871,8 @@
     // Keep the saved membership in step with what's shown, then grant.
     c.sessionBank.membership = m.id;
     c.sessionBank.packages.push({
-      id: uid(), size: m.sessions, status: "paid", price: m.price,
+      id: uid(), size: m.sessions, status: "paid",
+      price: bankPackagePrice(c, m, m.sessions),
       addedAt: Date.now(), paidAt: Date.now(),
       note: `Membership: ${membershipTitle(m)} · ${monthLabel}`,
       membershipGrant: monthKey,
@@ -14215,7 +14216,7 @@
       c.sessionBank.packages.push({
         id: uid(), size: m.sessions, status: "paid", unpaid: true,
         addedAt: Date.now(),
-        price: m.price,
+        price: bankPackagePrice(c, m, m.sessions),
         note: `Auto-renew · ${membershipTitle(m)} · ${monthLabel}`,
         autoRenewGrant: monthKey,
         booked,
@@ -18015,8 +18016,15 @@
       // package's own size and its price — this tick is money being confirmed,
       // not an allowance handed out.
       const n = r.action === "pay" ? r.pkg.size : m.sessions;
+      // Priced from the athlete's own rate, not from whatever was stamped on
+      // the package when it was granted. Packages granted before custom rates
+      // were honoured carry the tier's list price, and showing that here would
+      // quote a number the coach never agreed with this person.
+      const due = r.action === "pay"
+        ? bankPackagePrice(c, m, r.pkg.size)
+        : bankPackagePrice(c, m, m.sessions);
       const state = r.action === "done" ? "paid"
-        : r.action === "pay" ? (r.pkg.price ? `to collect · ${money(r.pkg.price)}` : "to collect")
+        : r.action === "pay" ? (due ? `to collect · ${money(due)}` : "to collect")
         : `${r.remaining} left`;
       return `
         <label class="mg-row${r.action === "done" ? " is-granted" : ""}${r.action === "pay" ? " is-pending" : ""}" style="--athlete-rgb:${AVATAR_RGB[idx]}">
@@ -18092,6 +18100,15 @@
       const pkg = monthPackageOf(c, key);
       if (pkg) {
         if (!pkgOwed(pkg)) return;
+        // Settle the amount the sheet quoted, not the one stamped at grant
+        // time. Only ever corrects a price this app derived from a tier
+        // (membershipGrant / autoRenewGrant) -- a figure the coach typed on a
+        // charge is theirs and is never rewritten.
+        if (pkg.membershipGrant || pkg.autoRenewGrant) {
+          const m = bankMembership(c);
+          const due = bankPackagePrice(c, m, pkg.size);
+          if (due > 0) pkg.price = due;
+        }
         pkg.status = "paid";
         delete pkg.unpaid;
         pkg.paidAt = Date.now();
@@ -18102,7 +18119,8 @@
       const m = bankMembership(c);
       if (!m || !m.sessions) return;
       c.sessionBank.packages.push({
-        id: uid(), size: m.sessions, status: "paid", price: m.price,
+        id: uid(), size: m.sessions, status: "paid",
+        price: bankPackagePrice(c, m, m.sessions),
         addedAt: Date.now(), paidAt: Date.now(),
         note: `Membership: ${membershipTitle(m)} · ${label}`,
         membershipGrant: key,
@@ -19609,6 +19627,24 @@
     const own = Number(c.sessionBank?.rate);
     if (own > 0) return own;
     return membershipPerSession(membershipById(c.sessionBank?.membership || ""));
+  }
+  // What a month of this membership costs THIS athlete, which is not always the
+  // tier's list price: a custom per-session rate on the bank overrides it, and
+  // it multiplies by the sessions actually in the package.
+  //
+  // Every grant used to stamp the tier price flat, so an athlete on a custom
+  // rate was billed the list price and the difference was invisible -- the Bill
+  // sheet priced them correctly off athleteSessionRate() while Settle showed
+  // the tier's number, and the two disagreed.
+  //
+  // Without a custom rate this returns exactly the tier price, because the
+  // fallback rate IS price/sessions. Program-only tiers bill a flat monthly
+  // amount and are never multiplied by anything.
+  function bankPackagePrice(c, m, size) {
+    if (!m) return 0;
+    if (!m.sessions) return Number(m.price) || 0;
+    const n = Number(size) > 0 ? Number(size) : m.sessions;
+    return Math.round(athleteSessionRate(c) * n);
   }
   function money(n) {
     return "$" + Math.round(n).toLocaleString();
