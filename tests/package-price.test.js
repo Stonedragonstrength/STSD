@@ -38,7 +38,9 @@ function athleteSessionRate(c) {
 function bankPackagePrice(c, m, size) {
   if (!m) return 0;
   if (!m.sessions) return Number(m.price) || 0;
-  const n = Number(size) > 0 ? Number(size) : m.sessions;
+  // A given 0 means zero, and only an ABSENT size falls back to the tier.
+  const given = Number(size);
+  const n = Number.isFinite(given) && given >= 0 ? given : m.sessions;
   return Math.round(athleteSessionRate(c) * n);
 }
 // ---- end copy ----
@@ -84,8 +86,14 @@ eq("a bigger package than the tier",
    bankPackagePrice(athlete("single-2", 80), membershipById("single-2"), 20), 1600);
 eq("absent size falls back to the tier's sessions",
    bankPackagePrice(athlete("single-2", 80), membershipById("single-2")), 640);
-eq("zero size falls back rather than pricing at nothing",
-   bankPackagePrice(athlete("single-2", 80), membershipById("single-2"), 0), 640);
+// A typed 0 is an answer, not a missing value. Falling back here quoted a full
+// month to a coach who had just said "charge them for none of it".
+eq("an explicit 0 prices at nothing",
+   bankPackagePrice(athlete("single-2", 80), membershipById("single-2"), 0), 0);
+eq("a junk size still falls back rather than pricing at nothing",
+   bankPackagePrice(athlete("single-2", 80), membershipById("single-2"), "abc"), 640);
+eq("a negative size falls back rather than crediting anyone",
+   bankPackagePrice(athlete("single-2", 80), membershipById("single-2"), -3), 640);
 
 console.log("\nprogram-only tiers are flat and never multiplied");
 eq("digital membership is its monthly price",

@@ -3889,6 +3889,32 @@ input.trial-input {
 .mg-add { font-weight: 800; font-size: 0.85rem; color: var(--primary-bright); }
 .mg-row.is-granted .mg-add { color: var(--muted); }
 .mg-state { font-size: 0.7rem; color: var(--muted); white-space: nowrap; }
+/* The session count, typed. Sized to three digits so it reads as a figure to
+   correct rather than a form field, and the number spinners are dropped —
+   they are unusable at this size and steal the width from the digits. */
+/* `input.mg-size`, not `.mg-size`: the global form rule is written as
+   `input[type="number"]` and that attribute selector outranks a bare class, so
+   the plain version lost its width and stretched across the whole row. */
+input.mg-size {
+  width: 3.6em; text-align: right;
+  font-weight: 800; font-size: 0.85rem; color: var(--primary-bright);
+  background: rgba(var(--primary-rgb), 0.1);
+  border: 1px solid rgba(var(--primary-rgb), 0.35);
+  border-radius: 8px; padding: 0.15em 0.35em;
+  margin: 0; letter-spacing: normal; text-transform: none;
+}
+input.mg-size:focus { outline: none; border-color: rgba(var(--primary-rgb), 0.85); }
+input.mg-size::-webkit-outer-spin-button,
+input.mg-size::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input.mg-size { -moz-appearance: textfield; appearance: textfield; }
+/* What they have taken this month — the figure the granted number is checked
+   against, and the reason the box above is editable at all. */
+.mg-used { font-size: 0.7rem; color: var(--text-soft); white-space: nowrap; }
+/* What the balance becomes if this goes through. Quiet by default; amber when
+   the typed number is below what they have already used, which is legal but
+   never what anybody meant to do. */
+.mg-prev { font-size: 0.68rem; color: var(--muted); white-space: nowrap; }
+.mg-prev.is-short { color: var(--warn); font-weight: 700; }
 .mg-skipped { font-size: 0.78rem; margin: 0.7rem 0 0; }
 
 /* "Bill the month": Settle's other half, and it borrows Settle's count badge

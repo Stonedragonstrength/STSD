@@ -17949,11 +17949,33 @@
         pkg,
         action: !pkg ? "grant" : owed ? "pay" : "done",
         granted: !!pkg && !owed,
+        rolloverOn: !!c.sessionBank?.rollover,
         remaining: sessionBankSummary(c).remaining,
+        // What they have actually taken this month. The sheet used to show only
+        // what was granted, which is the number that can be wrong -- a grant of
+        // 9 against 6 used is the discrepancy the coach is trying to spot, and
+        // it was invisible here.
+        usedThisMonth: sessionBankSummary(c).thisMonthUsed,
       });
     });
     return rows;
   }
+  // What the balance WOULD be if this month's allowance were `size`.
+  //
+  // Runs the real ledger over a copy of the bank rather than doing the sum by
+  // hand beside it: rollover, expiry and overspill into bought packs are all
+  // decided in there, and a second implementation would drift from it the first
+  // time one of those rules changed. Nothing is written -- the copy is thrown
+  // away with the answer.
+  function previewBankAtSize(c, monthKey, size) {
+    const bank = c?.sessionBank || {};
+    const packages = (bank.packages || []).map((p) => ({ ...p }));
+    const i = packages.findIndex((p) => pkgMonth(p) === monthKey);
+    if (i >= 0) packages[i].size = size;
+    else packages.push({ id: "__preview", size, status: "paid", membershipGrant: monthKey });
+    return bankLedger({ ...bank, packages }, todayISO().slice(0, 7), !!bank.rollover);
+  }
+
   function monthGrantDue() {
     return monthGrantRoster().filter((r) => r.membership && r.membership.sessions && !r.granted);
   }
@@ -18033,10 +18055,21 @@
           <span class="mg-main">
             <span class="mg-name">${escapeHtml(c.name || "(unnamed)")}${r.partner ? ` <span class="mg-pair">💞</span>` : ""}</span>
             <span class="mg-tier">${escapeHtml(membershipTitle(m))}${r.partner ? ` · shared with ${escapeHtml(r.partner.name || "partner")}` : ""}</span>
+            <span class="mg-used">${r.usedThisMonth} used this month${r.rolloverOn ? " · rolls over" : ""}</span>
           </span>
           <span class="mg-right">
-            <span class="mg-add">${r.action === "pay" ? "" : "+"}${n}</span>
-            <span class="mg-state">${escapeHtml(state)}</span>
+            ${r.action === "done"
+              ? `<span class="mg-add">${n}</span>`
+              // Editable, because the granted number is the one that can be
+              // wrong -- a part-month of imported history or a carry-over that
+              // did not land leaves a figure nobody agreed to. Typing here
+              // changes the month's allowance AND what it costs, since one is
+              // priced off the other.
+              : `<input type="number" class="mg-size" data-mgsize="${escapeHtml(c.id)}"
+                   min="0" step="1" value="${n}" inputmode="numeric"
+                   aria-label="Sessions for ${escapeHtml(c.name || "athlete")}" />`}
+            <span class="mg-state" data-mgstate="${escapeHtml(c.id)}">${escapeHtml(state)}</span>
+            <span class="mg-prev" data-mgprev="${escapeHtml(c.id)}"></span>
           </span>
         </label>`;
     };
@@ -18062,14 +18095,57 @@
     });
     const goBtn = $("#modal-foot .btn-primary");
     const list = $("#mg-list");
+    // The typed session count for a row, falling back to what it was granted
+    // with. One reader, so the price, the preview and the footer can never
+    // disagree about what the coach actually typed.
+    const sizeFor = (r) => {
+      const box = list?.querySelector(`[data-mgsize="${CSS.escape(r.client.id)}"]`);
+      if (!box) return r.action === "pay" ? r.pkg.size : r.membership.sessions;
+      const n = Math.max(0, Math.round(Number(box.value)));
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    // Per-row readouts: what it now costs, and what the athlete would be left
+    // holding if this went through. The second is the reason the box exists --
+    // it is how a wrong carry-over is spotted before it is committed rather
+    // than three weeks later.
+    const repaintRow = (r) => {
+      const size = sizeFor(r);
+      const stateEl = list?.querySelector(`[data-mgstate="${CSS.escape(r.client.id)}"]`);
+      const prevEl = list?.querySelector(`[data-mgprev="${CSS.escape(r.client.id)}"]`);
+      if (stateEl && r.action !== "done") {
+        const due = bankPackagePrice(r.client, r.membership, size);
+        stateEl.textContent = r.action === "pay"
+          ? (due ? `to collect · ${money(due)}` : "to collect")
+          : (due ? `grant · ${money(due)}` : "grant");
+      }
+      if (!prevEl) return;
+      if (r.action === "done") { prevEl.textContent = ""; return; }
+      const l = previewBankAtSize(r.client, monthGrantKey(), size);
+      // A negative balance is real -- it means more was taken than the bank
+      // holds -- but "-2 left" reads as a typo. Said the way a person would.
+      const bits = [l.remaining < 0 ? `${Math.abs(l.remaining)} OVER` : `${l.remaining} left after`];
+      if (l.banked > 0) bits.push(`${l.banked} banked`);
+      if (l.expired > 0) bits.push(`${l.expired} expiring`);
+      // Taking a session back off someone who has already used it is legal --
+      // the ledger pushes the excess onto their bought packs -- but it is never
+      // what the coach meant to do, so it says so out loud.
+      const short = size < r.usedThisMonth;
+      prevEl.classList.toggle("is-short", short);
+      prevEl.textContent = short
+        ? `⚠ ${r.usedThisMonth} already used · ${bits.join(" · ")}`
+        : bits.join(" · ");
+    };
+
     const retotal = () => {
       if (!goBtn || !list) return;
       let grants = 0, pays = 0, sessions = 0;
+      eligible.forEach(repaintRow);
       list.querySelectorAll("input[data-mg]:checked").forEach((box) => {
         const r = eligible.find((x) => x.client.id === box.dataset.mg);
         if (!r) return;
-        if (r.action === "pay") { pays += 1; sessions += r.pkg.size; }
-        else { grants += 1; sessions += r.membership.sessions; }
+        if (r.action === "pay") { pays += 1; sessions += sizeFor(r); }
+        else { grants += 1; sessions += sizeFor(r); }
       });
       goBtn.disabled = !(grants + pays);
       // Named separately because they are different acts on the coach's side:
@@ -18081,13 +18157,22 @@
         ? `${parts.join(" · ")} · ${sessions} sessions`
         : "Nobody ticked";
     };
+    // `input` as well as `change`: the number boxes have to repaint as they are
+    // typed in, not only when they lose focus.
     list?.addEventListener("change", retotal);
+    list?.addEventListener("input", retotal);
     retotal();
   }
   function runMonthGrant() {
     const key = monthGrantKey();
     const label = monthGrantLabel();
     const picked = $$("#mg-list input[data-mg]:checked").map((b) => b.dataset.mg);
+    // Whatever the coach typed in each row's box, read once here so the write
+    // matches the figures the sheet was quoting when they pressed the button.
+    const typed = new Map($$("#mg-list [data-mgsize]").map((b) => {
+      const n = Math.max(0, Math.round(Number(b.value)));
+      return [b.dataset.mgsize, Number.isFinite(n) ? n : 0];
+    }));
     const done = [];
     let sessions = 0, granted = 0, paid = 0;
     picked.forEach((id) => {
@@ -18106,6 +18191,17 @@
         // charge is theirs and is never rewritten.
         if (pkg.membershipGrant || pkg.autoRenewGrant) {
           const m = bankMembership(c);
+          // A corrected count is the month's allowance as well as its price, so
+          // it is written to the package itself. `sizeSetBy: "coach"` is an
+          // audit mark, not a guard -- runAutoRenewGrants() already refuses to
+          // reopen the size or price of an existing package and only ever
+          // updates its advisory booked count. This records WHY a size differs
+          // from the tier, for the next person reading the bank.
+          const want = typed.get(c.id);
+          if (want !== undefined && want !== pkg.size) {
+            pkg.size = want;
+            pkg.sizeSetBy = "coach";
+          }
           const due = bankPackagePrice(c, m, pkg.size);
           if (due > 0) pkg.price = due;
         }
@@ -18118,15 +18214,18 @@
       }
       const m = bankMembership(c);
       if (!m || !m.sessions) return;
+      const want = typed.get(c.id);
+      const size = want !== undefined ? want : m.sessions;
       c.sessionBank.packages.push({
-        id: uid(), size: m.sessions, status: "paid",
-        price: bankPackagePrice(c, m, m.sessions),
+        id: uid(), size, status: "paid",
+        price: bankPackagePrice(c, m, size),
         addedAt: Date.now(), paidAt: Date.now(),
         note: `Membership: ${membershipTitle(m)} · ${label}`,
         membershipGrant: key,
+        ...(size !== m.sessions ? { sizeSetBy: "coach" } : {}),
       });
       bankMutated(c);
-      done.push(c); granted += 1; sessions += m.sessions;
+      done.push(c); granted += 1; sessions += size;
     });
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
     // saveTrainer() only pushes the athlete currently open, and this touched a
@@ -19643,7 +19742,11 @@
   function bankPackagePrice(c, m, size) {
     if (!m) return 0;
     if (!m.sessions) return Number(m.price) || 0;
-    const n = Number(size) > 0 ? Number(size) : m.sessions;
+    // A given 0 means zero, and only an ABSENT size falls back to the tier.
+    // Treating 0 as "unset" made a coach who typed 0 in the settle sheet get
+    // quoted a full month, which is the one number they were trying not to bill.
+    const given = Number(size);
+    const n = Number.isFinite(given) && given >= 0 ? given : m.sessions;
     return Math.round(athleteSessionRate(c) * n);
   }
   function money(n) {
