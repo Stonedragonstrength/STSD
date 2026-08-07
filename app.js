@@ -209,6 +209,8 @@
         // and needs no migration; and it must cross devices, or repricing on the
         // laptop leaves the phone quoting last month's numbers.
         membershipEdits: state.trainerData.membershipEdits || {},
+        // Filing status, local rate, expenses per year and any edited bands.
+        taxSettings: state.trainerData.taxSettings || {},
       });
       if (ok) localStorage.removeItem(KEY_LIBPREFS_DIRTY); // confirmed in the cloud
     });
@@ -3512,6 +3514,9 @@
       if (prefs.membershipEdits && typeof prefs.membershipEdits === "object") {
         state.trainerData.membershipEdits = prefs.membershipEdits;
       }
+      if (prefs.taxSettings && typeof prefs.taxSettings === "object") {
+        state.trainerData.taxSettings = prefs.taxSettings;
+      }
     } else {
       // Unsynced local edits: merge by id like programTemplates, so a template
       // saved on this device and one saved on another both survive.
@@ -6747,16 +6752,26 @@
       const covered = new Set(); // months a charge row already speaks for
       (_billing.payments || []).forEach((p) => {
         if (!ids.includes(p.athlete_id)) return;
-        if (p.status !== "paid" && p.status !== "sent") return;
+        // Refunded rows are KEPT. They used to be filtered out with everything
+        // that wasn't paid-or-sent, and the effect was that giving money back
+        // erased it: the charge left the ledger, the package it had settled was
+        // skipped for carrying `paidBy: "card"`, and the month's total simply
+        // dropped with no line anywhere saying why. A refund is a real movement
+        // of real money and the books have to be able to show it.
+        const refunded = p.status === "refunded";
+        if (p.status !== "paid" && p.status !== "sent" && !refunded) return;
         if (p.month_key) covered.add(p.month_key);
         const paid = p.status === "paid";
         entries.push({
           bankId: c.id, name, membership,
           monthKey: p.month_key || String(p.created_at || "").slice(0, 7),
-          settledAt: paid ? (p.paid_at || p.created_at) : null,
+          // Filed on the day it was GIVEN BACK where we know it, because that
+          // is the date the money left, and the tax year cares which one it is.
+          settledAt: refunded ? (p.refunded_at || p.paid_at || p.created_at)
+            : paid ? (p.paid_at || p.created_at) : null,
           sessions: Number(p.sessions) || 0,
           amount: (Number(p.amount_cents) || 0) / 100,
-          paid,
+          paid, refunded,
           how: p.method === "manual" ? "invoice" : "card",
           charge: p,
         });
@@ -6826,9 +6841,13 @@
         key,
         // Three letters: twelve rows of "September" pushes the bar off a phone.
         label: MONTH_NAMES[m].slice(0, 3),
-        collected: mine.filter((e) => e.paid).reduce((n, e) => n + e.amount, 0),
-        outstanding: mine.filter((e) => !e.paid).reduce((n, e) => n + e.amount, 0),
-        sessions: mine.reduce((n, e) => n + e.sessions, 0),
+        // Refunded money is neither collected nor outstanding — it is its own
+        // third thing. Left in `outstanding` (the old `!e.paid` test) it would
+        // read as money still to chase, which is the opposite of what happened.
+        collected: mine.filter((e) => e.paid && !e.refunded).reduce((n, e) => n + e.amount, 0),
+        outstanding: mine.filter((e) => !e.paid && !e.refunded).reduce((n, e) => n + e.amount, 0),
+        refunded: mine.filter((e) => e.refunded).reduce((n, e) => n + e.amount, 0),
+        sessions: mine.filter((e) => !e.refunded).reduce((n, e) => n + e.sessions, 0),
         entries: mine,
       });
     }
@@ -6876,6 +6895,7 @@
       const collected = months.reduce((n, r) => n + r.collected, 0);
       const outstanding = months.reduce((n, r) => n + r.outstanding, 0);
       const sessions = months.reduce((n, r) => n + r.sessions, 0);
+      const refunded = months.reduce((n, r) => n + (r.refunded || 0), 0);
       // Bars are scaled to the biggest month, so the shape of the year reads at
       // a glance without anybody having to compare figures.
       const peak = Math.max(1, ...months.map((r) => r.collected + r.outstanding));
@@ -6891,10 +6911,30 @@
       const live = months.filter((r) => r.collected + r.outstanding > 0);
       const best = live.reduce((b, r) =>
         (r.collected + r.outstanding) > (b ? b.collected + b.outstanding : 0) ? r : b, null);
+
+      // Against the SAME SPAN of the previous year, not against its full twelve
+      // — comparing eight months of this year with a whole year of last would
+      // report a thriving business as collapsing every January.
+      const lastIdx = months.length
+        ? Number(String(months[months.length - 1].key).slice(5, 7)) - 1 : -1;
+      const prevTotal = moneyLedger().reduce((n, e) => {
+        if (booksYearOf(e) !== year - 1 || e.refunded) return n;
+        const mi = Number(String(e.monthKey).slice(5, 7)) - 1;
+        return mi <= lastIdx ? n + e.amount : n;
+      }, 0);
+      const yoy = prevTotal
+        ? `${total >= prevTotal ? "+" : "−"}${Math.round(Math.abs(total - prevTotal) / prevTotal * 100)}%`
+        : "";
       const stats = [
         ["Average month", live.length ? money(total / live.length) : "—"],
         ["Best month", best ? `${best.label} · ${money(best.collected + best.outstanding)}` : "—"],
         ["Per session", sessions ? money(total / sessions) : "—"],
+        // Only when there is one. A permanent "Refunded $0" would be a line
+        // about nothing on a screen that is trying to say less, not more.
+        ...(refunded ? [["Refunded", `−${money(refunded)}`]] : []),
+        // Last year at this point. The one figure that says whether the
+        // business is growing, and it costs a second pass over the ledger.
+        ...(yoy ? [[`vs ${year - 1}`, yoy]] : []),
       ];
 
       // One ghost row under the real months: the next month that has NOT been
@@ -6979,11 +7019,13 @@
                   )}</p>
                 </div>` : ""}
             </div>
-            ${booksByTierHtml(months)}
+            ${booksBreakdownHtml(months)}
           </div>
         </div>
         <p class="pref-foot">Collected counts card payments Square has confirmed and anything you've ticked off yourself. Outstanding is an invoice raised and not yet settled — sessions are never withheld over it.</p>
         <div class="pref-actions">
+          <button class="btn btn-ghost btn-sm slim-btn" id="btn-tax" type="button">Tax estimate…</button>
+          <button class="btn btn-ghost btn-sm slim-btn" id="btn-books-csv" type="button">Export ${year} (CSV)</button>
           <button class="btn btn-ghost btn-sm slim-btn" id="btn-memberships" type="button">Memberships & prices…</button>
           <button class="btn btn-ghost btn-sm slim-btn" id="btn-invoice-from" type="button">Your details on invoices…</button>
         </div>`;
@@ -7006,51 +7048,399 @@
         const e = all.find((x) => x.charge?.id === b.dataset.booksDoc);
         if (e) openInvoiceSheet(e.charge, e.name, { side: "coach" });
       }));
+      host.querySelectorAll("[data-books-cut]").forEach((b) => b.addEventListener("click", () => {
+        _booksCut = b.dataset.booksCut;
+        renderBooks();
+      }));
       $("#btn-invoice-from")?.addEventListener("click", openInvoiceFromSheet);
       // Reachable from Money because that is where he is standing when a price
       // looks wrong. It also sits on the athlete's Sessions tab, beside the
       // tier picker, which is the other place the question comes up.
       $("#btn-memberships")?.addEventListener("click", openMembershipsSheet);
+      $("#btn-tax")?.addEventListener("click", openTaxSheet);
+      $("#btn-books-csv")?.addEventListener("click", exportBooksCsv);
       renderCoachSettingsSubs();
     });
   }
+
+  // How long an invoice has been sitting there. Only ever shown on money still
+  // owed: "$3,500 outstanding" does not say whether that is last week or since
+  // April, and the age is the whole reason you would do anything about it.
+  function daysOwed(e) {
+    const from = e.charge?.created_at || e.pkg?.addedAt;
+    if (!from) return 0;
+    const t = typeof from === "number" ? from : Date.parse(from);
+    if (!Number.isFinite(t)) return 0;
+    return Math.max(0, Math.floor((Date.now() - t) / 86400000));
+  }
+  const agingClass = (d) => (d >= 60 ? " is-old" : d >= 30 ? " is-due" : "");
 
   function booksEntriesHtml(entries) {
     if (!entries.length) return `<p class="muted">Nothing billed this month.</p>`;
     return [...entries]
       .sort((a, b) => b.amount - a.amount)
-      .map((e) => `
-        <div class="books-ln">
+      .map((e) => {
+        const days = !e.paid && !e.refunded ? daysOwed(e) : 0;
+        const what = e.refunded
+          ? "refunded"
+          : `${e.sessions ? `${e.sessions} session${e.sessions === 1 ? "" : "s"} · ` : ""}${
+              e.how === "card" ? "card" : e.how === "invoice" ? "invoice" : "cash"}` +
+            (days ? ` · ${days}d` : "");
+        return `
+        <div class="books-ln${e.refunded ? " is-refunded" : ""}">
           <span class="books-ln-name">${escapeHtml(e.name)}</span>
-          <span class="books-ln-what">${e.sessions ? `${e.sessions} session${e.sessions === 1 ? "" : "s"} · ` : ""}${
-            e.how === "card" ? "card" : e.how === "invoice" ? "invoice" : "cash"}</span>
-          <span class="books-ln-amt ${e.paid ? "is-paid" : "is-due"}">${escapeHtml(money(e.amount))}</span>
+          <span class="books-ln-what${days ? agingClass(days) : ""}">${escapeHtml(what)}</span>
+          <span class="books-ln-amt ${e.refunded ? "is-back" : e.paid ? "is-paid" : "is-due"}">${
+            escapeHtml((e.refunded ? "−" : "") + money(e.amount))}</span>
           ${e.charge ? `<button type="button" class="books-ln-doc" data-books-doc="${escapeHtml(e.charge.id)}" title="Open the invoice">🧾</button>` : `<span class="books-ln-doc is-none"></span>`}
-        </div>`).join("");
+        </div>`;
+      }).join("");
+  }
+
+  // ================= Tax estimate =================
+  //
+  // An ESTIMATE, and the app says so out loud. It exists because a self-employed
+  // coach's real question is "how much of this is not mine", and the answer is
+  // large enough that guessing it is expensive.
+  //
+  // Three deliberate design decisions:
+  //
+  // 1. CASH BASIS. The books file money under the month it was FOR, which is the
+  //    right answer to "how did July go" and the wrong one for tax — the IRS
+  //    cares which calendar year the money actually LANDED. So this reads
+  //    `settledAt`, not `monthKey`, and the two figures will legitimately
+  //    disagree. The sheet explains that rather than hiding it.
+  // 2. Every rate and threshold is EDITABLE and shown. Tax tables move every
+  //    year, and a table baked into an app is a table that is silently wrong in
+  //    January. Defaults are seeded and labelled with the year they came from,
+  //    so a stale number is visible instead of load-bearing.
+  // 3. Expenses are TYPED IN. This app tracks revenue, not costs, and applying
+  //    brackets to gross revenue would overstate his tax badly. Rather than
+  //    pretend, the sheet asks for a single expenses figure and refuses to be
+  //    quietly wrong about it.
+  const TAX_DEFAULTS = {
+    // Seeded from the 2025 federal tables. Deliberately labelled: I would
+    // rather show a year he can check than invent numbers for the current one.
+    year: 2025,
+    standardDeduction: { single: 15750, mfj: 31500, hoh: 23625 },
+    // [ceiling of the band, rate %] — the last band's ceiling is open-ended.
+    brackets: {
+      single: [[11925, 10], [48475, 12], [103350, 22], [197300, 24], [250525, 32], [626350, 35], [null, 37]],
+      mfj:    [[23850, 10], [96950, 12], [206700, 22], [394600, 24], [501050, 32], [751600, 35], [null, 37]],
+      hoh:    [[17000, 10], [64850, 12], [103350, 22], [197300, 24], [250500, 32], [626350, 35], [null, 37]],
+    },
+    // Self-employment tax. Usually LARGER than the income tax at a coach's
+    // level, which is exactly why leaving it out would be the wrong default.
+    se: { netFactor: 92.35, ssRate: 12.4, ssWageBase: 176100, medicareRate: 2.9 },
+    localRate: 10.3,
+  };
+  const FILING_LABELS = { single: "Single", mfj: "Married, filing jointly", hoh: "Head of household" };
+
+  function taxSettings() {
+    const s = state.trainerData?.taxSettings;
+    return {
+      filing: "single", localRate: TAX_DEFAULTS.localRate, includeSE: true,
+      expenses: {}, brackets: null, standardDeduction: null,
+      ...(s && typeof s === "object" ? s : {}),
+    };
+  }
+  const taxBrackets = (t) => t.brackets || TAX_DEFAULTS.brackets[t.filing] || TAX_DEFAULTS.brackets.single;
+  const taxStdDeduction = (t) =>
+    t.standardDeduction != null ? Number(t.standardDeduction)
+      : (TAX_DEFAULTS.standardDeduction[t.filing] ?? TAX_DEFAULTS.standardDeduction.single);
+
+  // Progressive, band by band, and it returns the bands rather than only the
+  // total — "which tier am I in" is answered by seeing the money split up.
+  function federalIncomeTax(taxable, brackets) {
+    const bands = [];
+    let lower = 0, tax = 0;
+    for (const [ceil, rate] of brackets) {
+      const top = ceil == null ? Infinity : Number(ceil);
+      const inBand = Math.max(0, Math.min(taxable, top) - lower);
+      if (inBand > 0) {
+        const owed = inBand * (Number(rate) / 100);
+        bands.push({ rate: Number(rate), from: lower, to: top, amount: inBand, tax: owed });
+        tax += owed;
+      }
+      lower = top;
+      if (taxable <= top) break;
+    }
+    return { tax, bands };
+  }
+
+  // Money actually RECEIVED in a calendar year, refunds netted off.
+  function cashReceivedIn(year) {
+    let gross = 0, refunds = 0;
+    moneyLedger().forEach((e) => {
+      if (!e.settledAt) return; // never landed, so it is not income yet
+      const y = Number(String(dateISO(new Date(e.settledAt))).slice(0, 4));
+      if (y !== year) return;
+      if (e.refunded) refunds += e.amount; else gross += e.amount;
+    });
+    return { gross, refunds, net: gross - refunds };
+  }
+
+  function taxEstimate(year) {
+    const t = taxSettings();
+    const cash = cashReceivedIn(year);
+    const expenses = Math.max(0, Number(t.expenses?.[year]) || 0);
+    const profit = Math.max(0, cash.net - expenses);
+
+    // SE tax first: half of it is deductible against income tax, so it has to
+    // be known before taxable income can be.
+    const se = TAX_DEFAULTS.se;
+    const seBase = profit * (se.netFactor / 100);
+    const ss = Math.min(seBase, se.ssWageBase) * (se.ssRate / 100);
+    const medicare = seBase * (se.medicareRate / 100);
+    const seTax = t.includeSE ? ss + medicare : 0;
+
+    const stdDeduction = taxStdDeduction(t);
+    const taxable = Math.max(0, profit - seTax / 2 - stdDeduction);
+    const { tax: federal, bands } = federalIncomeTax(taxable, taxBrackets(t));
+    const local = profit * ((Number(t.localRate) || 0) / 100);
+    const total = federal + seTax + local;
+
+    return {
+      year, cash, expenses, profit, seTax, ss, medicare, stdDeduction, taxable,
+      federal, bands, local, total,
+      localRate: Number(t.localRate) || 0,
+      includeSE: !!t.includeSE,
+      filing: t.filing,
+      // The two numbers he can act on: what share of every payment to hold
+      // back, and what that is a month.
+      setAsidePct: cash.net > 0 ? (total / cash.net) * 100 : 0,
+      perMonth: total / 12,
+      // The marginal band, which is what people mean by "my tax bracket".
+      marginal: bands.length ? bands[bands.length - 1].rate : 0,
+    };
+  }
+
+  function openTaxSheet() {
+    const year = booksYear();
+    const t = taxSettings();
+    const r = taxEstimate(year);
+    const bands = taxBrackets(t);
+    const row = (lbl, val, cls = "") =>
+      `<div class="tax-ln ${cls}"><span>${escapeHtml(lbl)}</span><strong>${escapeHtml(val)}</strong></div>`;
+
+    openModal({
+      title: `Tax estimate · ${year}`,
+      body: `
+        <p class="tax-warn">An <strong>estimate</strong>, not tax advice — check it with whoever does your return.
+        Seeded from the ${TAX_DEFAULTS.year} federal tables, so confirm the numbers below are current for ${year}.</p>
+
+        <div class="tax-block">
+          ${row("Money received", money(r.cash.gross))}
+          ${r.cash.refunds ? row("Refunded", `−${money(r.cash.refunds)}`, "is-minus") : ""}
+          <div class="tax-ln"><span>Business expenses</span>
+            <input type="number" class="input tax-in" id="tax-expenses" min="0" step="1"
+                   value="${escapeHtml(String(r.expenses || ""))}" placeholder="0" /></div>
+          ${row("Net profit", money(r.profit), "is-sum")}
+        </div>
+        <p class="tax-note">This app tracks what comes in, not what goes out, so expenses are yours to enter — rent, insurance, equipment, Square's cut. Leave it empty and the estimate will be too high.</p>
+
+        <div class="tax-block">
+          <div class="tax-ln">
+            <label class="tax-check"><input type="checkbox" id="tax-se"${r.includeSE ? " checked" : ""} />
+              <span>Self-employment tax</span></label>
+            <strong>${escapeHtml(r.includeSE ? money(r.seTax) : "—")}</strong>
+          </div>
+          ${r.includeSE ? row("Half of it, deducted", `−${money(r.seTax / 2)}`, "is-minus") : ""}
+          ${row("Standard deduction", `−${money(r.stdDeduction)}`, "is-minus")}
+          ${row("Taxable income", money(r.taxable), "is-sum")}
+        </div>
+
+        <p class="tax-cat">Federal income tax, band by band</p>
+        <div class="tax-bands">
+          ${r.bands.length ? r.bands.map((b) => `
+            <div class="tax-band">
+              <span class="tax-band-rate">${b.rate}%</span>
+              <span class="tax-band-on">on ${escapeHtml(money(b.amount))}</span>
+              <span class="tax-band-amt">${escapeHtml(money(b.tax))}</span>
+            </div>`).join("")
+            : `<p class="muted">Nothing taxable at this income.</p>`}
+        </div>
+
+        <div class="tax-block">
+          ${row("Federal income tax", money(r.federal))}
+          ${r.includeSE ? row("Self-employment tax", money(r.seTax)) : ""}
+          <div class="tax-ln"><span>Local
+            <input type="number" class="input tax-in is-rate" id="tax-local" min="0" max="100" step="0.1"
+                   value="${escapeHtml(String(r.localRate))}" />%</span>
+            <strong>${escapeHtml(money(r.local))}</strong></div>
+          ${row("Total", money(r.total), "is-total")}
+        </div>
+
+        <div class="tax-aside">
+          <span class="tax-aside-pct">${Math.round(r.setAsidePct)}%</span>
+          <span class="tax-aside-txt">of every payment, set aside.<br>About <strong>${escapeHtml(money(r.perMonth))}</strong> a month. Top band: ${r.marginal}%.</span>
+        </div>
+
+        <details class="pref-fold tax-fold">
+          <summary>
+            <span class="pref-fold-ico">⚙️</span>
+            <span class="pref-fold-text">
+              <span class="pref-fold-title">Filing status and tax table</span>
+              <span class="pref-fold-sub">${escapeHtml(FILING_LABELS[r.filing] || "Single")} · ${TAX_DEFAULTS.year} figures</span>
+            </span>
+            <span class="pref-fold-chev">▸</span>
+          </summary>
+          <label>Filing status
+            <select id="tax-filing">
+              ${Object.entries(FILING_LABELS).map(([k, v]) =>
+                `<option value="${k}"${k === r.filing ? " selected" : ""}>${escapeHtml(v)}</option>`).join("")}
+            </select>
+          </label>
+          <label>Standard deduction
+            <input type="number" class="input" id="tax-std" min="0" step="1" value="${escapeHtml(String(r.stdDeduction))}" />
+          </label>
+          <p class="tax-cat">Bands — the income ceiling for each rate</p>
+          ${bands.map(([ceil, rate], i) => `
+            <div class="tax-edit-band">
+              <input type="number" class="input" data-tax-rate="${i}" min="0" max="100" step="0.1" value="${escapeHtml(String(rate))}" aria-label="Rate %" />
+              <span class="tax-edit-x">% up to</span>
+              <input type="number" class="input" data-tax-ceil="${i}" min="0" step="1"
+                     value="${ceil == null ? "" : escapeHtml(String(ceil))}" placeholder="no limit" aria-label="Ceiling" />
+            </div>`).join("")}
+          <p class="tax-note">Leave the last ceiling empty — that band has no top.</p>
+        </details>
+
+        <p class="tax-note">Not included: the QBI deduction, credits, other household income, or anything withheld elsewhere. Filed on a cash basis, so it counts money that actually <em>landed</em> in ${year} — which is why it can differ from the books above, where money is filed under the month it was <em>for</em>.</p>`,
+      actions: [
+        { label: "Close", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Save", className: "btn btn-primary", onClick: saveTaxSheet },
+      ],
+    });
+
+    // Live recompute on the two numbers he is most likely to fiddle with.
+    const redraw = () => { saveTaxSheet({ silent: true }); closeModal(); openTaxSheet(); };
+    $("#tax-expenses")?.addEventListener("change", redraw);
+    $("#tax-local")?.addEventListener("change", redraw);
+    $("#tax-se")?.addEventListener("change", redraw);
+    $("#tax-filing")?.addEventListener("change", redraw);
+  }
+
+  function saveTaxSheet({ silent = false } = {}) {
+    const year = booksYear();
+    const t = taxSettings();
+    const bands = [];
+    document.querySelectorAll("[data-tax-rate]").forEach((el) => {
+      const i = Number(el.dataset.taxRate);
+      const ceilEl = document.querySelector(`[data-tax-ceil="${i}"]`);
+      const rate = Number(el.value) || 0;
+      const raw = (ceilEl?.value || "").trim();
+      bands[i] = [raw === "" ? null : Number(raw), rate];
+    });
+    const expenses = { ...(t.expenses || {}) };
+    const typed = $("#tax-expenses")?.value;
+    if (typed != null) expenses[year] = Math.max(0, Number(typed) || 0);
+
+    state.trainerData.taxSettings = {
+      ...t,
+      filing: $("#tax-filing")?.value || t.filing,
+      localRate: $("#tax-local") ? (Number($("#tax-local").value) || 0) : t.localRate,
+      includeSE: $("#tax-se") ? $("#tax-se").checked : t.includeSE,
+      standardDeduction: $("#tax-std") ? (Number($("#tax-std").value) || 0) : t.standardDeduction,
+      // Only stored once actually edited, so a table left alone keeps tracking
+      // the seeded defaults if those are ever corrected in code.
+      brackets: bands.length ? bands : t.brackets,
+      expenses,
+    };
+    saveTrainer();
+    pushCoachLibPrefs();
+    if (silent) return;
+    closeModal();
+    toast("Tax settings saved ✓");
+  }
+
+  // ---- The year, as a spreadsheet ----
+  // One row per sum of money, which is what an accountant asks for and what
+  // nothing in the app could produce. Same ledger the books draw, so the two
+  // cannot disagree; `settledAt` is included precisely because tax is cash
+  // basis and the month column is not.
+  function exportBooksCsv() {
+    const year = booksYear();
+    const rows = moneyLedger()
+      .filter((e) => booksYearOf(e) === year)
+      .sort((a, b) => String(a.monthKey).localeCompare(String(b.monthKey)) ||
+        (b.amount - a.amount));
+    if (!rows.length) { toast(`Nothing on the books for ${year}`); return; }
+    const out = [
+      [`Stone Dragon Strength Training — ${year}`],
+      ["Exported", todayISO()],
+      [],
+      ["Month billed", "Athlete", "Invoice", "Sessions", "Amount", "Status", "Settled", "Method", "Membership"],
+    ];
+    rows.forEach((e) => out.push([
+      e.monthKey,
+      e.name,
+      e.charge?.invoice_no ? `#${e.charge.invoice_no}` : "",
+      e.sessions || 0,
+      (e.refunded ? -e.amount : e.amount).toFixed(2),
+      e.refunded ? "refunded" : e.paid ? "paid" : "outstanding",
+      e.settledAt ? dateISO(new Date(e.settledAt)) : "",
+      e.how,
+      membershipTitle(e.membership) || "",
+    ]));
+    const collected = rows.filter((e) => e.paid && !e.refunded).reduce((n, e) => n + e.amount, 0);
+    const outstanding = rows.filter((e) => !e.paid && !e.refunded).reduce((n, e) => n + e.amount, 0);
+    const refunded = rows.filter((e) => e.refunded).reduce((n, e) => n + e.amount, 0);
+    out.push([], ["Collected", collected.toFixed(2)], ["Outstanding", outstanding.toFixed(2)]);
+    if (refunded) out.push(["Refunded", (-refunded).toFixed(2)]);
+    const csv = "﻿" + out.map((r) => r.map(csvCell).join(",")).join("\r\n");
+    downloadFile(`books_${year}.csv`, csv, "text/csv;charset=utf-8");
+    toast(`${year} downloaded ✓`);
   }
 
   // Which tiers the year's money actually came from. The membership list is
   // where his pricing gets decided, so seeing a tier earn less than the one
   // below it is the fact that changes a price.
-  function booksByTierHtml(months) {
-    const byTier = new Map();
+  // Two cuts of the same year, behind one switch. By membership answers "which
+  // tier earns", which is what changes a price; by athlete answers "how much
+  // has Cheryl paid me this year", which had no answer at all short of opening
+  // twelve months one at a time. Same rows, grouped differently — so they are
+  // one function with a key, not two that can drift apart.
+  let _booksCut = "tier"; // "tier" | "athlete"
+
+  function booksBreakdownHtml(months) {
+    const byKey = new Map();
     months.forEach((r) => r.entries.forEach((e) => {
-      const key = e.membership ? membershipTitle(e.membership) : "No membership";
-      const cur = byTier.get(key) || { total: 0, banks: new Set() };
+      if (e.refunded) return; // netted off below, never a row of its own here
+      const key = _booksCut === "athlete"
+        ? (e.name || "(unnamed)")
+        : (e.membership ? membershipTitle(e.membership) : "No membership");
+      const cur = byKey.get(key) || { total: 0, banks: new Set(), sessions: 0, due: 0 };
       cur.total += e.amount;
+      cur.sessions += e.sessions || 0;
+      if (!e.paid) cur.due += e.amount;
       cur.banks.add(e.bankId);
-      byTier.set(key, cur);
+      byKey.set(key, cur);
     }));
-    const rows = [...byTier.entries()].sort((a, b) => b[1].total - a[1].total);
+    // Refunds come off whoever they belong to, so a name's total is what he
+    // actually kept from them.
+    months.forEach((r) => r.entries.forEach((e) => {
+      if (!e.refunded) return;
+      const key = _booksCut === "athlete"
+        ? (e.name || "(unnamed)")
+        : (e.membership ? membershipTitle(e.membership) : "No membership");
+      const cur = byKey.get(key);
+      if (cur) cur.total -= e.amount;
+    }));
+    const rows = [...byKey.entries()].sort((a, b) => b[1].total - a[1].total);
     if (!rows.length) return "";
+    const isAth = _booksCut === "athlete";
     return `
       <div class="books-tiers">
-        <div class="books-sub">By membership</div>
+        <div class="books-cut">
+          <button type="button" class="books-cut-btn${isAth ? "" : " is-on"}" data-books-cut="tier">By membership</button>
+          <button type="button" class="books-cut-btn${isAth ? " is-on" : ""}" data-books-cut="athlete">By athlete</button>
+        </div>
         ${rows.map(([name, v]) => `
           <div class="books-tier-row">
             <span class="books-tier-name">${escapeHtml(name)}</span>
-            <span class="books-tier-n">${v.banks.size}</span>
-            <span class="books-tier-amt">${escapeHtml(money(v.total))}</span>
+            <span class="books-tier-n">${isAth ? `${v.sessions}` : v.banks.size}</span>
+            <span class="books-tier-amt">${escapeHtml(money(v.total))}${
+              v.due ? `<span class="books-tier-due"> ${escapeHtml(money(v.due))} due</span>` : ""}</span>
           </div>`).join("")}
       </div>`;
   }
@@ -7070,6 +7460,12 @@
     const rowHtml = (m) => {
       const edited = !!membershipEdits()[m.id];
       const inUse = membershipUseCount(m.id);
+      // Athletes on this tier who carry their OWN session rate. Repricing the
+      // tier does not move them — `athleteSessionRate` prefers the override —
+      // and without saying so the sheet lets him reprice four people and change
+      // one invoice. See [[membership-price-editor]].
+      const offMenu = (state.trainerData.clients || []).filter((c) =>
+        (c.sessionBank?.membership || "") === m.id && Number(c.sessionBank?.rate) > 0).length;
       return `
         <div class="mem-row${m.hidden ? " is-retired" : ""}" data-mem="${escapeHtml(m.id)}">
           <div class="mem-head">
@@ -7096,7 +7492,7 @@
           <p class="mem-foot">${escapeHtml(
             (inUse ? `${inUse} athlete${inUse === 1 ? "" : "s"} on it` : "Nobody on it") +
             " · " + (Number(m.sessions) ? `${money(Math.round((Number(m.price) || 0) / m.sessions))} a session` : "flat monthly"),
-          )}</p>
+          )}${offMenu ? `<span class="mem-warn"> · ${offMenu} on a custom rate, so ${offMenu === 1 ? "they won't" : "they won't"} move</span>` : ""}</p>
         </div>`;
     };
 
@@ -13405,6 +13801,16 @@
       p.month_key === monthKey && p.status === "paid" &&
       (p.athlete_id === c.id || (pid && p.athlete_id === pid)));
   }
+  // The same question about money given back. Used to undo a settle: a package
+  // marked collected because a card paid for it is not collected any more once
+  // that card payment has been refunded.
+  function billingRefundedFor(c, monthKey) {
+    if (!c) return false;
+    const pid = c.partnerId || null;
+    return (_billing.payments || []).some((p) =>
+      p.month_key === monthKey && p.status === "refunded" &&
+      (p.athlete_id === c.id || (pid && p.athlete_id === pid)));
+  }
   // Months with a card charge still outstanding, oldest first. A NOTICE, never
   // a gate: this app's own rule is that sessions are live the day they're
   // granted and the money is chased separately, and quietly withholding
@@ -13435,13 +13841,30 @@
       if (!c.sessionBank?.packages?.length) return;
       c.sessionBank.packages.forEach((p) => {
         const key = pkgMonth(p);
-        if (!key || !p.unpaid) return;
-        if (!billingPaidFor(c, key)) return;
-        delete p.unpaid;
-        p.paidAt = p.paidAt || Date.now();
-        p.paidBy = "card";
-        touched = true;
-        bankMutated(c);
+        if (!key) return;
+        // Settle: a card paid for the month, so the package stops being owed.
+        if (p.unpaid) {
+          if (!billingPaidFor(c, key)) return;
+          delete p.unpaid;
+          p.paidAt = p.paidAt || Date.now();
+          p.paidBy = "card";
+          touched = true;
+          bankMutated(c);
+          return;
+        }
+        // UNsettle, which nothing did until 2026-08-06. A refund flipped the
+        // charge row and stopped there, so the package it had settled kept
+        // `paidBy: "card"` and no `unpaid` flag — and went on showing "Money
+        // collected" ticked for money that had been handed back. Only ever
+        // reverses a settle this function performed (`paidBy === "card"`), so
+        // cash he ticked off by hand is never touched.
+        if (p.paidBy === "card" && !billingPaidFor(c, key) && billingRefundedFor(c, key)) {
+          p.unpaid = true;
+          delete p.paidBy;
+          delete p.paidAt;
+          touched = true;
+          bankMutated(c);
+        }
       });
     });
     // Same discipline as runAutoRenewGrants: this runs on a load, so writing

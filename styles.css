@@ -14042,3 +14042,85 @@ input.mem-in { width: 100%; font-variant-numeric: tabular-nums; }
   .mem-nums { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .mem-acts { grid-column: 1 / -1; justify-content: flex-end; }
 }
+
+/* ============ Books: refunds and ageing ============ */
+.books-ln.is-refunded .books-ln-name { text-decoration: line-through; opacity: 0.75; }
+.books-ln-amt.is-back { color: #f87171; }
+/* How long an invoice has sat there. Amber at a month, red at two — the point
+   is that the number changes colour before he has to think about it. */
+.books-ln-what.is-due { color: #fbbf24; }
+.books-ln-what.is-old { color: #f87171; font-weight: 700; }
+
+/* ============ Tax estimate ============
+   A waterfall, because the question is not just "how much" but "where did it
+   go" — and every rate in it is visible and editable, since a tax table baked
+   into an app is a table that is silently wrong come January. */
+.tax-warn {
+  margin: -0.2em 0 0.9em; padding: 0.6rem 0.75rem;
+  background: #33240f; border: 1px solid #7a5518; border-left-width: 4px;
+  border-radius: 10px; font-size: 0.78rem; color: #f6d9a5;
+}
+.tax-block {
+  border: 1px solid var(--border); border-radius: 12px;
+  padding: 0.35rem 0.75rem; margin-bottom: 0.7rem; background: var(--surface-2);
+}
+.tax-ln {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
+  padding: 0.4em 0; font-size: 0.85rem; color: var(--text-soft);
+}
+.tax-ln + .tax-ln { border-top: 1px solid var(--border); }
+.tax-ln strong { font-variant-numeric: tabular-nums; color: var(--text); font-size: 0.95rem; }
+.tax-ln.is-minus strong { color: var(--muted); }
+.tax-ln.is-sum { font-weight: 700; }
+.tax-ln.is-sum strong { color: #4ade80; font-size: 1.05rem; }
+.tax-ln.is-total strong { color: #fbbf24; font-size: 1.25rem; font-weight: 900; }
+input.tax-in { width: 7rem; text-align: right; font-variant-numeric: tabular-nums; }
+input.tax-in.is-rate { width: 4.2rem; margin: 0 0.2em 0 0.4em; }
+.tax-check { display: flex; align-items: center; gap: 0.5em; padding: 0.4em 0; font-size: 0.85rem; }
+.tax-check input { width: auto; margin: 0; }
+.tax-note { margin: -0.2em 0 0.9em; font-size: 0.7rem; color: var(--muted); line-height: 1.5; }
+.tax-cat {
+  margin: 1em 0 0.35em; font-size: 0.6rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted);
+}
+.tax-bands { display: flex; flex-direction: column; gap: 0.15rem; margin-bottom: 0.8rem; }
+.tax-band {
+  display: grid; grid-template-columns: 3rem minmax(0, 1fr) auto;
+  align-items: center; gap: 0.6rem;
+  padding: 0.35rem 0.5rem; border-radius: 8px; background: var(--surface-2);
+  font-size: 0.8rem;
+}
+.tax-band-rate { font-weight: 900; color: var(--primary-bright); font-variant-numeric: tabular-nums; }
+.tax-band-on { color: var(--muted); font-size: 0.74rem; }
+.tax-band-amt { font-weight: 800; font-variant-numeric: tabular-nums; }
+/* The two numbers he can act on, given the weight to match. */
+.tax-aside {
+  display: flex; align-items: center; gap: 0.9rem;
+  padding: 0.8rem 0.9rem; margin: 0.2rem 0 1rem;
+  border: 1px solid var(--primary-bright); border-radius: 14px;
+  background: var(--primary-soft);
+}
+.tax-aside-pct {
+  font-size: 2rem; font-weight: 900; line-height: 1;
+  color: var(--primary-bright); font-variant-numeric: tabular-nums;
+}
+.tax-aside-txt { font-size: 0.8rem; color: var(--text-soft); line-height: 1.45; }
+.tax-fold { border-top: 1px solid var(--border); }
+.tax-edit-band {
+  display: grid; grid-template-columns: 5rem auto minmax(0, 1fr);
+  align-items: center; gap: 0.5rem; margin-bottom: 0.35rem;
+}
+.tax-edit-x { font-size: 0.7rem; color: var(--muted); white-space: nowrap; }
+.mem-warn { color: #fbbf24; }
+
+/* The books' breakdown switch: one year, two cuts. */
+.books-cut { display: flex; gap: 0.3rem; margin-bottom: 0.5rem; }
+.books-cut-btn {
+  flex: 1 1 0; min-width: 0; padding: 0.35em 0.5em;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: transparent; color: var(--muted); cursor: pointer;
+  font-family: inherit; font-size: 0.62rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.books-cut-btn.is-on { color: var(--primary-bright); border-color: var(--primary-bright); background: var(--primary-soft); }
+.books-tier-due { color: #fbbf24; font-weight: 700; font-size: 0.7rem; }
