@@ -1,50 +1,41 @@
 # Nutrition Tracker Import Implementation Plan
 
-> **⚠️ AWAITING RETARGET — do not execute yet.**
->
-> This plan was written against MyFitnessPal with no sample export available, so
-> every column name in it is a guess. The spec has since been retargeted:
-> **Cronometer is now the first source** (see
-> `docs/superpowers/specs/2026-08-07-nutrition-import-design.md`), because a real
-> Cronometer export can be produced today and is plain CSV.
->
-> The structure below — CSV parser, column-table indirection, pure mapper,
-> idempotent writer, XP fence, header-reporting error path — is unchanged and
-> still correct. What changes when the export lands:
->
-> - `MFP_COLUMNS` → `IMPORT_SOURCES` (keyed by source, then kind)
-> - `sniffMfpFile(headers)` → `sniffImportFile(headers)` returning `{ source, kind }`
-> - `mapMfpRows(kind, …)` → `mapImportRows(source, kind, …)`
-> - `applyMfpImport` → `applyImport`, clearing prior entries **per source** so a
->   Cronometer re-import cannot wipe entries from another app
-> - `src: "mfp"` → `src: "cron"`, with `"mfp"` added later
-> - Every fixture CSV replaced with rows cut from the real export
->
-> Deliberately **not** rewritten yet: turning MFP column guesses into Cronometer
-> column guesses is churn the real file would immediately invalidate. Retarget
-> once, against the actual headers.
-
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Let an athlete upload their MyFitnessPal export and land their custom foods, recipes, recent diary, and weight history in Stone Dragon's existing food logger, so they can stop using MFP.
+**Goal:** Let an athlete upload their Cronometer export and land their diary, food library, recipes, water and weight in Stone Dragon's existing food logger, so they can stop using the other app.
 
-**Architecture:** Four pure functions (CSV parse → file sniff → column resolve → row map) feeding one impure writer (`applyMfpImport`). Purity is what lets the preview screen run the whole pipeline and show results before anything is written. All MFP-format knowledge is confined to one `MFP_COLUMNS` data table, because no real export file exists yet.
+**Architecture:** Pure pipeline — `parseCsv` → `sniffImportFile` → `mapImportRows` → `deriveLibrary` — feeding one impure writer, `applyImport`. Purity is what lets the preview run the whole pipeline and show results before anything is written. All source-specific knowledge lives in `IMPORT_SOURCES`, so adding MyFitnessPal later is a data edit.
 
 **Tech Stack:** Vanilla ES2020 in `app.js` (one IIFE, no exports, no bundler). Tests are plain Node scripts, no framework, no install.
 
+**Spec:** `docs/superpowers/specs/2026-08-07-nutrition-import-design.md`
+**Fixture:** `docs/superpowers/specs/fixtures-cronometer-servings.csv` — a real export, verified 2026-08-07.
+
 ## Global Constraints
 
-- **No new dependencies.** Supabase (CDN) is the only external dependency. No CSV library, no xlsx parser, no decryption.
-- **No build step.** Code goes directly into `app.js`; there is nothing to compile.
-- **`app.js` is one IIFE with no exports.** Tests therefore **duplicate** functions rather than importing them. Every task that adds a function to `app.js` must place a byte-identical copy in the test file, and the test file must carry a `DUPLICATES` comment naming the app.js function. See `tests/README.md`.
-- **Tests are plain Node scripts.** No framework. Use the existing `eq()` harness (copy from `tests/cancel-window.test.js:29-34`) and end with `process.exit(fail ? 1 : 0)`. Run with `node tests/<name>.test.js`.
+- **No new dependencies.** Supabase (CDN) is the only external dependency. No CSV library.
+- **No build step.** Code goes into `app.js` directly.
+- **`app.js` is one IIFE with no exports.** Tests **duplicate** functions rather than importing them. Every task adding a function to `app.js` must place a byte-identical copy in the test file, with a `DUPLICATES` comment. See `tests/README.md`.
+- **Tests are plain Node scripts.** Copy the `eq()` harness from `tests/cancel-window.test.js:29-34`; end with `process.exit(fail ? 1 : 0)`. Run: `node tests/<name>.test.js`.
 - **`FOOD_LOG_DAYS = 180`** (`app.js:28394`). Nothing older may be written to `foodLog`.
-- **Writes go through `saveClient()`**, never `saveTrainer()`. `progress` is athlete-owned; a `saveTrainer()` here would lose athlete work.
+- **Writes go through `saveClient()`**, never `saveTrainer()`.
 - **Imported days must never award XP or extend a streak.**
-- **Meal keys are exactly** `breakfast`, `lunch`, `dinner`, `snack` (`app.js:28388-28393`).
+- **Meal keys are exactly** `breakfast`, `lunch`, `dinner`, `snack` (`app.js:28388`).
 - **Entry shape:** `{ id, name, meal, qty, unit, grams, kcal, p, c, f, fib, src, ref, at }`.
+- **Custom food shape** (`app.js:30472`, the code — *not* the stale migration comment): `{ id, name, per100, servingG, servingLabel, kcal, p, c, f, fib?, uses, createdAt }`. When `per100` is true, macros are per 100 g and logging scales by `grams/100`; otherwise macros are per one unit and scale by `qty`.
 - **Bodyweight shape:** `{ id, date, weightLb }`.
-- **`src: "mfp"`** is the new tag. Existing values are `"db"`, `"custom"`, `"quick"`, `"recipe"`.
+- **`src: "cron"`** is the new tag. Existing: `"db"`, `"custom"`, `"quick"`, `"recipe"`.
+
+### Facts verified from the real export — do not re-derive
+
+- `Day` is already `YYYY-MM-DD`. No date parsing.
+- `Time` **may be blank**. Never require it.
+- `Amount` is `"<number> <unit>"` with a **multi-word** unit: `"100.00 g"`, `"8.00 fl oz"`, `"1.00 full recipe"`.
+- `0.00` is a real logged value. **Only an empty cell means unknown.**
+- **Byte-identical duplicate rows are legitimate** separate servings. Never collapse them.
+- A **logged recipe is one row** carrying combined macros; its ingredients do not appear.
+- An **unlogged custom food does not appear at all**. The library must be derived from the diary.
+- Water logs as `Food Name: "Water"` with `Energy (kcal) = 0.00` and a `Water (g)` value.
 
 ---
 
@@ -52,21 +43,22 @@
 
 | File | Responsibility |
 |---|---|
-| `app.js` — new `// ===== MyFitnessPal import =====` section, placed after the food logger's `renderMyFoods` (~line 31100) | Parser, column table, mapper, writer, UI. Writes `foodLog`, `customFoods`, `savedMeals` (recipes), `bodyweightLog` |
+| `app.js` — new `// ===== Nutrition tracker import =====` section after `renderMyFoods` (~line 31100) | Parser, source table, mappers, library derivation, writer, UI |
 | `app.js:28683` `streakDay()` | Guard: imported days don't hold a streak |
 | `app.js:28854` `syncNutritionGame()` | Guard: imported days award no XP |
 | `app.js:31009` `openMyFoodsSheet()` | Entry point button |
-| `index.html` | `?v=` cache bust only — the modal is built by `openModal()`, no new markup |
-| `tests/mfp-import.test.js` | New. Covers parse, sniff, column resolve, row map |
-| `tests/README.md` | Add a row to the table |
+| `index.html` | `?v=` cache bust only |
+| `styles.css` | `.imp-*` classes |
+| `tests/nutrition-import.test.js` | New |
+| `tests/README.md` | Add a row |
 
 ---
 
 ### Task 1: CSV parser
 
 **Files:**
-- Create: `tests/mfp-import.test.js`
-- Modify: `app.js` (new section after `renderMyFoods`, ~line 31100)
+- Create: `tests/nutrition-import.test.js`
+- Modify: `app.js` (new section, ~line 31100)
 
 **Interfaces:**
 - Consumes: nothing
@@ -74,32 +66,29 @@
 
 - [ ] **Step 1: Write the failing test**
 
-Create `tests/mfp-import.test.js`:
+Create `tests/nutrition-import.test.js`:
 
 ```js
-// The MyFitnessPal importer's pure half: CSV parsing, file identification,
-// column resolution and row mapping.
+// The nutrition-tracker importer's pure half: CSV parsing, source and file
+// identification, column resolution, row mapping, and deriving a food library
+// from a diary.
 //
-// This earns a test because it is the one part of the app that eats a file we
-// have never seen. No real MFP export was available when it was written, so the
-// column names in MFP_COLUMNS are educated guesses and WILL need correcting
-// against a real file. Everything around them — quoting, blank rows, the
-// 180-day cutoff, unit conversion, dedupe keys — is format-independent and is
-// pinned here so that correction pass cannot quietly break it.
+// This earns a test because it eats a file the app does not control. The column
+// names in IMPORT_SOURCES.cron were read from a real Cronometer export
+// (docs/superpowers/specs/fixtures-cronometer-servings.csv), but a vendor can
+// rename a column at any time, and the behaviours pinned here are the ones that
+// break silently when they do: 0.00 is a real value while an empty cell is
+// unknown, duplicate rows are separate servings and must not collapse, a logged
+// recipe is one row, and Amount carries a multi-word unit.
 //
-// DUPLICATES parseCsvGrid, parseCsv, normHeader, MFP_COLUMNS, resolveColumns,
-// sniffMfpFile, mfpMealKey and mapMfpRows (app.js), which is one IIFE with no
-// exports. Change the original, change the copy here too, or this guards
-// nothing.
+// DUPLICATES parseCsvGrid, parseCsv, normHeader, IMPORT_SOURCES, resolveColumns,
+// sniffImportFile, cronNum, splitAmount, cronMealKey, mapImportRows and
+// deriveLibrary (app.js), which is one IIFE with no exports. Change the
+// original, change the copy here too, or this guards nothing.
 
 // ---- copy of app.js ----
-function parseCsvGrid(text) {
-  return [];
-}
-
-function parseCsv(text) {
-  return { headers: [], rows: [] };
-}
+function parseCsvGrid(text) { return []; }
+function parseCsv(text) { return { headers: [], rows: [] }; }
 // ---- end copy ----
 
 let pass = 0, fail = 0;
@@ -120,12 +109,14 @@ eq("BOM stripped", parseCsvGrid("﻿a,b\n1,2"), [["a", "b"], ["1", "2"]]);
 eq("empty input", parseCsvGrid(""), []);
 
 console.log("\nparseCsv");
-eq("headers and objects", parseCsv("Date,Food\n2026-01-01,Eggs"),
-   { headers: ["Date", "Food"], rows: [{ Date: "2026-01-01", Food: "Eggs" }] });
-eq("blank lines dropped", parseCsv("Date,Food\n2026-01-01,Eggs\n\n").rows.length, 1);
+eq("headers and objects", parseCsv("Day,Food Name\n2026-08-05,Eggs"),
+   { headers: ["Day", "Food Name"], rows: [{ Day: "2026-08-05", "Food Name": "Eggs" }] });
+eq("blank lines dropped", parseCsv("Day,Food Name\n2026-08-05,Eggs\n\n").rows.length, 1);
 eq("ragged short row fills empty", parseCsv("a,b,c\n1,2").rows[0], { a: "1", b: "2", c: "" });
 eq("values trimmed", parseCsv("a\n  x  ").rows[0], { a: "x" });
-eq("header only", parseCsv("Date,Food"), { headers: ["Date", "Food"], rows: [] });
+eq("header only", parseCsv("Day,Food Name"), { headers: ["Day", "Food Name"], rows: [] });
+// Two identical servings are two servings. Nothing here may deduplicate.
+eq("identical rows both survive", parseCsv("a\nWater\nWater").rows.length, 2);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
@@ -133,12 +124,12 @@ process.exit(fail ? 1 : 0);
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node tests/mfp-import.test.js`
-Expected: FAIL on every assertion, exit code 1 (the stubs return `[]` / empty).
+Run: `node tests/nutrition-import.test.js`
+Expected: FAIL on every assertion, exit 1.
 
 - [ ] **Step 3: Write the implementation in the test file**
 
-Replace the stub block in `tests/mfp-import.test.js` between the `---- copy of app.js ----` markers:
+Replace the stubs between the copy markers:
 
 ```js
 // A hand-rolled RFC 4180 reader. No CSV library, because the app ships with one
@@ -151,7 +142,6 @@ function parseCsvGrid(text) {
   while (i < s.length) {
     const ch = s[i];
     if (quoted) {
-      // A doubled quote inside a quoted field is one literal quote.
       if (ch === '"') {
         if (s[i + 1] === '"') { field += '"'; i += 2; continue; }
         quoted = false; i++; continue;
@@ -164,13 +154,12 @@ function parseCsvGrid(text) {
     if (ch === "\n") { row.push(field); grid.push(row); row = []; field = ""; i++; continue; }
     field += ch; i++;
   }
-  // A trailing newline leaves nothing pending; anything else is a final row.
   if (field !== "" || row.length) { row.push(field); grid.push(row); }
   return grid;
 }
 
-// Grid -> objects keyed by header. Short rows fill with "" rather than
-// undefined so every consumer can treat a missing cell as an empty string.
+// Grid -> objects keyed by header. Short rows fill with "" so every consumer can
+// treat a missing cell as an empty string.
 function parseCsv(text) {
   const grid = parseCsvGrid(text);
   if (!grid.length) return { headers: [], rows: [] };
@@ -188,29 +177,28 @@ function parseCsv(text) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node tests/mfp-import.test.js`
-Expected: `13 passed, 0 failed`, exit code 0.
+Run: `node tests/nutrition-import.test.js`
+Expected: `14 passed, 0 failed`, exit 0.
 
-- [ ] **Step 5: Copy the two functions into `app.js`**
+- [ ] **Step 5: Copy into `app.js`**
 
-In `app.js`, immediately after `renderMyFoods()` ends (~line 31100), open the new section and paste `parseCsvGrid` and `parseCsv` **byte-identically**:
+After `renderMyFoods()` ends (~line 31100):
 
 ```js
-  // ================= MyFitnessPal import =================
-  // A one-time migration, not a sync: MFP's API is private and closed to new
-  // developers, so a file upload is the only door. The parse half is pure so
-  // the preview can show what a file holds before a single entry is written.
+  // ================= Nutrition tracker import =================
+  // A one-time migration, not a sync. The parse half is pure so the preview can
+  // show what a file holds before a single entry is written.
   //
-  // MIRRORED in tests/mfp-import.test.js. Change one, change the other.
+  // MIRRORED in tests/nutrition-import.test.js. Change one, change the other.
 
-  // ...paste parseCsvGrid and parseCsv here, indented two spaces...
+  // ...paste parseCsvGrid and parseCsv, indented two spaces...
 ```
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add tests/mfp-import.test.js app.js
-git commit -m "Add CSV parser for MyFitnessPal import
+git add tests/nutrition-import.test.js app.js
+git commit -m "Add CSV parser for nutrition tracker import
 
 Hand-rolled RFC 4180 reader rather than a dependency -- the app ships
 with one external dependency and a food import does not earn a second.
@@ -220,77 +208,77 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 2: File identification and column resolution
+### Task 2: Source table and file identification
 
 **Files:**
-- Modify: `tests/mfp-import.test.js`
-- Modify: `app.js` (MFP import section)
+- Modify: `tests/nutrition-import.test.js`, `app.js`
 
 **Interfaces:**
-- Consumes: `parseCsv` (Task 1)
-- Produces: `normHeader(h) -> string`, `MFP_COLUMNS` (const), `resolveColumns(kind, headers) -> { map: Object, missing: string[] }`, `sniffMfpFile(headers) -> "diary"|"foods"|"weight"|null`
+- Consumes: `parseCsv`
+- Produces: `normHeader(h) -> string`, `IMPORT_SOURCES` (const), `resolveColumns(source, kind, headers) -> { map, missing }`, `sniffImportFile(headers) -> { source, kind } | null`
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `tests/mfp-import.test.js`, before the `console.log(\`\n${pass} passed...\`)` line. Add stubs inside the copy block first:
+Add stubs to the copy block:
 
 ```js
 function normHeader(h) { return ""; }
-const MFP_COLUMNS = {};
-function resolveColumns(kind, headers) { return { map: {}, missing: [] }; }
-function sniffMfpFile(headers) { return null; }
+const IMPORT_SOURCES = {};
+function resolveColumns(source, kind, headers) { return { map: {}, missing: [] }; }
+function sniffImportFile(headers) { return null; }
 ```
 
-Then the assertions:
+Assertions:
 
 ```js
 console.log("\nnormHeader");
-eq("lowercases", normHeader("Date"), "date");
+eq("lowercases", normHeader("Day"), "day");
 eq("collapses whitespace", normHeader("Food  Name"), "food name");
 eq("underscores become spaces", normHeader("food_name"), "food name");
-eq("strips punctuation but keeps parens", normHeader("Protein (g)"), "protein (g)");
-eq("trims", normHeader("  Date  "), "date");
+eq("keeps parens", normHeader("Energy (kcal)"), "energy (kcal)");
+eq("trims", normHeader("  Day  "), "day");
 eq("null safe", normHeader(null), "");
 
-console.log("\nsniffMfpFile");
-eq("diary by its columns", sniffMfpFile(["Date", "Meal", "Food", "Calories"]), "diary");
-eq("weight by its columns", sniffMfpFile(["Date", "Weight"]), "weight");
-eq("custom foods by its columns", sniffMfpFile(["Food Name", "Brand", "Calories"]), "foods");
-eq("unknown file", sniffMfpFile(["Colour", "Shape"]), null);
-eq("empty headers", sniffMfpFile([]), null);
-// Detection is by content, not filename, because MFP renames these files.
-eq("column order is irrelevant", sniffMfpFile(["Calories", "Food", "Date", "Meal"]), "diary");
-// Diary and weight both carry Date; the tie must not resolve to weight.
-eq("diary wins over weight when both could match", sniffMfpFile(["Date", "Food", "Calories", "Weight"]), "diary");
+console.log("\nsniffImportFile");
+// The real header rows, verbatim from the verified export.
+const CRON_SERVINGS = ["Day", "Time", "Group", "Food Name", "Amount", "Energy (kcal)",
+  "Carbs (g)", "Fiber (g)", "Fat (g)", "Protein (g)", "Category"];
+const CRON_BIOMETRICS = ["Day", "Time", "Group", "Metric", "Unit", "Amount"];
+eq("cronometer servings", sniffImportFile(CRON_SERVINGS), { source: "cron", kind: "diary" });
+eq("cronometer biometrics", sniffImportFile(CRON_BIOMETRICS), { source: "cron", kind: "weight" });
+eq("unknown file", sniffImportFile(["Colour", "Shape"]), null);
+eq("empty headers", sniffImportFile([]), null);
+// Detection is by content, not filename -- both files are named by the vendor.
+eq("column order is irrelevant",
+   sniffImportFile(["Energy (kcal)", "Food Name", "Day", "Amount"]), { source: "cron", kind: "diary" });
+// servings and biometrics share Day/Time/Group/Amount. Diary must win.
+eq("diary is not mistaken for weight", sniffImportFile(CRON_SERVINGS).kind, "diary");
+// exercises.csv also has Day/Time/Group -- it must match nothing.
+eq("exercises file is ignored",
+   sniffImportFile(["Day", "Time", "Group", "Exercise", "Minutes", "Calories Burned"]), null);
 
 console.log("\nresolveColumns");
-eq("maps aliases to real headers",
-   resolveColumns("weight", ["Date", "Weight"]).map,
-   { date: "Date", weight: "Weight" });
-eq("nothing missing when all present", resolveColumns("weight", ["Date", "Weight"]).missing, []);
-eq("reports what is missing", resolveColumns("weight", ["Date"]).missing, ["weight"]);
+eq("maps real headers",
+   resolveColumns("cron", "diary", CRON_SERVINGS).map.kcal, "Energy (kcal)");
+eq("nothing missing on the real file",
+   resolveColumns("cron", "diary", CRON_SERVINGS).missing, []);
+eq("reports what is missing",
+   resolveColumns("cron", "weight", ["Day"]).missing, ["metric", "amount"]);
 eq("case and spacing insensitive",
-   resolveColumns("weight", ["  DATE ", "weight"]).map,
-   { date: "  DATE ", weight: "weight" });
-eq("optional columns absent is not missing",
-   resolveColumns("diary", ["Date", "Food", "Calories"]).missing, []);
-eq("optional columns map when present",
-   resolveColumns("diary", ["Date", "Food", "Calories", "Protein (g)"]).map.p, "Protein (g)");
+   resolveColumns("cron", "weight", ["  DAY ", "metric", "Amount", "unit"]).map.date, "  DAY ");
+eq("optional absent is not missing",
+   resolveColumns("cron", "diary", ["Day", "Food Name", "Amount", "Energy (kcal)"]).missing, []);
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node tests/mfp-import.test.js`
-Expected: the new assertions FAIL, exit code 1.
+Run: `node tests/nutrition-import.test.js` — new assertions FAIL, exit 1.
 
-- [ ] **Step 3: Write the implementation in the test file**
-
-Replace the four stubs:
+- [ ] **Step 3: Write the implementation**
 
 ```js
-// Header matching is deliberately forgiving: MFP has renamed these columns
-// before and will again, and a trailing space must not cost an athlete their
-// history.
+// Header matching is deliberately forgiving: vendors rename columns, and a
+// trailing space must not cost an athlete their history.
 function normHeader(h) {
   return String(h ?? "")
     .toLowerCase()
@@ -299,54 +287,34 @@ function normHeader(h) {
     .trim();
 }
 
-// THE ONLY PART THAT DEPENDS ON MFP'S REAL FORMAT.
-// Written without a sample export, so treat every name here as a guess.
-// Correcting it against a real file is editing strings — nothing else moves.
-const MFP_COLUMNS = {
-  diary: {
-    required: {
-      date: ["date"],
-      food: ["food", "food name", "item", "description"],
-      kcal: ["calories", "energy (kcal)", "kcal"],
+// THE ONLY SOURCE-SPECIFIC CODE IN THE FEATURE.
+// `cron` was read from a real export, verified 2026-08-07. `mfp` is left
+// deliberately empty: no MyFitnessPal export has ever been seen, and inventing
+// column names would put guesses next to facts. Fill it from a real file.
+const IMPORT_SOURCES = {
+  cron: {
+    label: "Cronometer",
+    kinds: {
+      diary: {
+        required: { date: ["day"], food: ["food name"], amount: ["amount"], kcal: ["energy (kcal)"] },
+        optional: {
+          group: ["group"], p: ["protein (g)"], c: ["carbs (g)"],
+          f: ["fat (g)"], fib: ["fiber (g)"], water: ["water (g)"], category: ["category"],
+        },
+      },
+      weight: {
+        required: { date: ["day"], metric: ["metric"], amount: ["amount"] },
+        optional: { unit: ["unit"] },
+      },
     },
-    optional: {
-      meal: ["meal", "meal name"],
-      qty: ["amount", "quantity", "servings", "number of servings"],
-      unit: ["serving size", "serving", "unit"],
-      p: ["protein (g)", "protein"],
-      c: ["carbohydrates (g)", "carbs (g)", "carbohydrates", "carbs"],
-      f: ["fat (g)", "fat"],
-      fib: ["fiber (g)", "fibre (g)", "fiber", "fibre"],
-    },
-  },
-  foods: {
-    required: {
-      food: ["food name", "food", "name", "description"],
-      kcal: ["calories", "energy (kcal)", "kcal"],
-    },
-    optional: {
-      brand: ["brand", "brand name", "manufacturer"],
-      unit: ["serving size", "serving", "unit"],
-      p: ["protein (g)", "protein"],
-      c: ["carbohydrates (g)", "carbs (g)", "carbohydrates", "carbs"],
-      f: ["fat (g)", "fat"],
-      fib: ["fiber (g)", "fibre (g)", "fiber", "fibre"],
-    },
-  },
-  weight: {
-    required: {
-      date: ["date"],
-      weight: ["weight", "weight (lbs)", "weight (lb)", "weight (kg)"],
-    },
-    optional: {},
   },
 };
 
-function resolveColumns(kind, headers) {
-  const spec = MFP_COLUMNS[kind];
+function resolveColumns(source, kind, headers) {
+  const spec = IMPORT_SOURCES[source]?.kinds?.[kind];
   if (!spec) return { map: {}, missing: [] };
   const byNorm = new Map();
-  // First header wins, so a duplicate column name cannot shadow the original.
+  // First header wins, so a duplicate column cannot shadow the original.
   for (const h of headers || []) {
     const n = normHeader(h);
     if (n && !byNorm.has(n)) byNorm.set(n, h);
@@ -363,14 +331,18 @@ function resolveColumns(kind, headers) {
   return { map, missing };
 }
 
-// Ordered most-specific first: a diary export also carries a Date column, so
-// weight must be considered only after diary has been ruled out.
-const MFP_KINDS = ["diary", "foods", "weight"];
+// Ordered most-specific first. Cronometer's servings and biometrics files share
+// Day/Time/Group/Amount, so diary must be tried before weight or a food log
+// would be read as a pile of measurements.
+const IMPORT_KINDS = ["diary", "weight"];
 
-function sniffMfpFile(headers) {
+function sniffImportFile(headers) {
   if (!headers || !headers.length) return null;
-  for (const kind of MFP_KINDS) {
-    if (!resolveColumns(kind, headers).missing.length) return kind;
+  for (const source of Object.keys(IMPORT_SOURCES)) {
+    for (const kind of IMPORT_KINDS) {
+      if (!IMPORT_SOURCES[source].kinds[kind]) continue;
+      if (!resolveColumns(source, kind, headers).missing.length) return { source, kind };
+    }
   }
   return null;
 }
@@ -378,136 +350,143 @@ function sniffMfpFile(headers) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node tests/mfp-import.test.js`
-Expected: `32 passed, 0 failed`, exit code 0.
+Run: `node tests/nutrition-import.test.js`
+Expected: `31 passed, 0 failed`, exit 0.
 
-- [ ] **Step 5: Copy into `app.js`**
-
-Paste `normHeader`, `MFP_COLUMNS`, `resolveColumns`, `MFP_KINDS`, `sniffMfpFile` byte-identically into the MFP import section, after `parseCsv`.
+- [ ] **Step 5: Copy into `app.js`** — `normHeader`, `IMPORT_SOURCES`, `resolveColumns`, `IMPORT_KINDS`, `sniffImportFile`, byte-identically.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add tests/mfp-import.test.js app.js
-git commit -m "Identify MFP files by column content, not filename
+git add tests/nutrition-import.test.js app.js
+git commit -m "Identify import files by column content, not filename
 
-All format guesswork is confined to MFP_COLUMNS so correcting it against
-a real export is editing strings. Diary is checked before weight because
-both carry a Date column.
+Column names read from a real Cronometer export. The mfp entry is left
+empty on purpose: no MyFitnessPal export has been seen, and inventing
+names would sit guesses next to verified facts.
+
+Diary is matched before weight because Cronometer's servings and
+biometrics files share Day/Time/Group/Amount.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 3: Row mapping
+### Task 3: Amount parsing and row mapping
 
 **Files:**
-- Modify: `tests/mfp-import.test.js`
-- Modify: `app.js` (MFP import section)
+- Modify: `tests/nutrition-import.test.js`, `app.js`
 
 **Interfaces:**
-- Consumes: `parseCsv`, `resolveColumns`, `sniffMfpFile` (Tasks 1-2)
-- Produces: `mfpMealKey(raw) -> string`, `mfpNum(raw) -> number|null`, `mapMfpRows(kind, parsed, opts) -> { kind, items: Object[], skipped: number, tooOld: number }`
+- Consumes: Tasks 1-2
+- Produces: `cronNum(raw) -> number|null`, `splitAmount(raw) -> { qty, unit }`, `cronMealKey(raw) -> string`, `mapImportRows(source, kind, parsed, opts) -> { source, kind, diary, water, weights, skipped, tooOld }`
 
-`opts` is `{ today: "YYYY-MM-DD", windowDays: 180, kgToLb: boolean }`. `today` is injected rather than read from the clock so the test is not time-dependent.
+`opts` is `{ today, windowDays }`. `today` is injected so tests are not time-dependent.
 
 - [ ] **Step 1: Write the failing test**
 
-Add stubs to the copy block:
+Stubs:
 
 ```js
-function mfpMealKey(raw) { return "snack"; }
-function mfpNum(raw) { return null; }
-function mapMfpRows(kind, parsed, opts) { return { kind, items: [], skipped: 0, tooOld: 0 }; }
+function cronNum(raw) { return null; }
+function splitAmount(raw) { return { qty: 1, unit: "serving" }; }
+function cronMealKey(raw) { return "snack"; }
+function mapImportRows(source, kind, parsed, opts) {
+  return { source, kind, diary: [], water: [], weights: [], skipped: 0, tooOld: 0 };
+}
 ```
 
 Assertions:
 
 ```js
-console.log("\nmfpMealKey");
-eq("breakfast", mfpMealKey("Breakfast"), "breakfast");
-eq("lunch lowercase", mfpMealKey("lunch"), "lunch");
-eq("dinner padded", mfpMealKey(" Dinner "), "dinner");
-eq("MFP plural Snacks", mfpMealKey("Snacks"), "snack");
-eq("singular Snack", mfpMealKey("Snack"), "snack");
-// Premium users rename meals; anything unrecognised is a snack, never dropped.
-eq("custom meal name falls back to snack", mfpMealKey("Pre-Workout"), "snack");
-eq("empty falls back to snack", mfpMealKey(""), "snack");
+console.log("\ncronNum");
+eq("plain", cronNum("42"), 42);
+eq("decimal", cronNum("57.00"), 57);
+eq("thousands separator", cronNum("1,234"), 1234);
+eq("empty is null", cronNum(""), null);
+eq("dash is null", cronNum("-"), null);
+eq("rubbish is null", cronNum("n/a"), null);
+eq("null input", cronNum(null), null);
+// The distinction the whole import rests on: water really is 0 kcal, but a
+// blank protein cell is unknown. Collapsing these libels the athlete's day.
+eq("zero is a real value, not null", cronNum("0.00"), 0);
 
-console.log("\nmfpNum");
-eq("plain number", mfpNum("42"), 42);
-eq("decimal", mfpNum("1.5"), 1.5);
-eq("thousands separator", mfpNum("1,234"), 1234);
-eq("unit suffix stripped", mfpNum("12 g"), 12);
-eq("empty is null not zero", mfpNum(""), null);
-eq("dash is null", mfpNum("-"), null);
-eq("rubbish is null", mfpNum("n/a"), null);
-// A null must never become 0: a blank protein cell is unknown, not zero grams.
-eq("null input", mfpNum(null), null);
+console.log("\nsplitAmount");
+eq("grams", splitAmount("100.00 g"), { qty: 100, unit: "g" });
+// Multi-word units are real -- these two are verbatim from the export.
+eq("multi-word unit", splitAmount("8.00 fl oz"), { qty: 8, unit: "fl oz" });
+eq("full recipe", splitAmount("1.00 full recipe"), { qty: 1, unit: "full recipe" });
+eq("no unit defaults to serving", splitAmount("2"), { qty: 2, unit: "serving" });
+eq("empty defaults", splitAmount(""), { qty: 1, unit: "serving" });
+eq("null safe", splitAmount(null), { qty: 1, unit: "serving" });
 
-const OPTS = { today: "2026-08-07", windowDays: 180, kgToLb: false };
+console.log("\ncronMealKey");
+eq("breakfast", cronMealKey("Breakfast"), "breakfast");
+eq("lunch", cronMealKey("lunch"), "lunch");
+eq("dinner", cronMealKey(" Dinner "), "dinner");
+eq("Snacks plural", cronMealKey("Snacks"), "snack");
+// Cronometer's real default, and users may rename groups freely.
+eq("Uncategorized falls back to snack", cronMealKey("Uncategorized"), "snack");
+eq("custom group name falls back", cronMealKey("Pre-Workout"), "snack");
+eq("empty falls back", cronMealKey(""), "snack");
 
-console.log("\nmapMfpRows diary");
-const diary = parseCsv([
-  "Date,Meal,Food,Calories,Protein (g),Carbohydrates (g),Fat (g)",
-  "2026-08-06,Breakfast,Eggs,180,12,1,14",
-  "2026-08-06,Lunch,Rice,205,4,45,0.4",
-  "2020-01-01,Dinner,Ancient Toast,90,3,17,1",
-  "2026-08-05,Snacks,Broken Row,,,,",
-].join("\n"));
-const dm = mapMfpRows("diary", diary, OPTS);
-eq("keeps in-window rows", dm.items.length, 2);
-eq("drops rows older than the window", dm.tooOld, 1);
-eq("skips rows with no calories", dm.skipped, 1);
-eq("maps meal key", dm.items[0].meal, "breakfast");
-eq("carries date", dm.items[0].date, "2026-08-06");
-eq("tags source", dm.items[0].entry.src, "mfp");
-eq("no ref into a database it did not come from", dm.items[0].entry.ref, null);
-eq("macros mapped", [dm.items[0].entry.kcal, dm.items[0].entry.p, dm.items[0].entry.c, dm.items[0].entry.f],
-   [180, 12, 1, 14]);
-eq("name carried", dm.items[0].entry.name, "Eggs");
+const OPTS = { today: "2026-08-07", windowDays: 180 };
+const H = "Day,Time,Group,Food Name,Amount,Energy (kcal),Protein (g),Carbs (g),Fat (g),Fiber (g),Water (g)";
 
-console.log("\nmapMfpRows weight");
-const wt = parseCsv("Date,Weight\n2026-08-06,181.4\n2019-01-01,200\n2026-08-05,\n");
-const wm = mapMfpRows("weight", wt, OPTS);
-// Weight is not pruned, so old weigh-ins are kept -- only foodLog has a window.
-eq("keeps all dates, however old", wm.items.length, 2);
-eq("no tooOld for weight", wm.tooOld, 0);
-eq("skips blank weight", wm.skipped, 1);
-eq("weight in pounds", wm.items[0].weightLb, 181.4);
-eq("kg converts to lb", mapMfpRows("weight", parseCsv("Date,Weight\n2026-08-06,80"),
-   { ...OPTS, kgToLb: true }).items[0].weightLb, 176.4);
+console.log("\nmapImportRows diary");
+const d = mapImportRows("cron", "diary", parseCsv([H,
+  "2026-08-06,11:05 AM,Breakfast,Blueberries,100.00 g,57.00,0.70,14.57,0.31,2.40,84.19",
+  "2026-08-07,,Dinner,ZZTest Chili,1.00 full recipe,291.49,21.28,38.04,6.44,9.74,",
+  "2019-01-01,8:00 AM,Lunch,Ancient Toast,1.00 slice,90.00,3.00,17.00,1.00,1.00,",
+  "2026-08-06,11:05 AM,Uncategorized,Water,8.00 fl oz,0.00,0.00,0.00,0.00,0.00,236.59",
+  "2026-08-06,,Lunch,,100.00 g,,,,,,",
+].join("\n")), OPTS);
+eq("two food entries", d.diary.length, 2);
+eq("one water entry", d.water.length, 1);
+eq("one row too old", d.tooOld, 1);
+eq("one unusable row skipped", d.skipped, 1);
+eq("date carried", d.diary[0].date, "2026-08-06");
+eq("meal mapped", d.diary[0].entry.meal, "breakfast");
+eq("qty split from amount", d.diary[0].entry.qty, 100);
+eq("unit split from amount", d.diary[0].entry.unit, "g");
+eq("macros", [d.diary[0].entry.kcal, d.diary[0].entry.p, d.diary[0].entry.c, d.diary[0].entry.f], [57, 0.7, 14.57, 0.31]);
+eq("tagged with its source", d.diary[0].entry.src, "cron");
+eq("no ref into a database it did not come from", d.diary[0].entry.ref, null);
+// A blank Time is normal -- the recipe row in the real export has none.
+eq("blank Time is fine", d.diary[1].entry.name, "ZZTest Chili");
+eq("multi-word unit survives", d.diary[1].entry.unit, "full recipe");
+// Water is a food row in Cronometer but a separate log here.
+eq("water routed out of the food log", d.water[0], { date: "2026-08-06", oz: 8 });
 
-console.log("\nmapMfpRows foods");
-const fd = parseCsv("Food Name,Brand,Calories,Protein (g),Carbohydrates (g),Fat (g)\nWhey,MyBrand,120,24,3,1\n,,,,,\n");
-const fm = mapMfpRows("foods", fd, OPTS);
-eq("one usable food", fm.items.length, 1);
-eq("food name", fm.items[0].name, "Whey");
-eq("brand kept for dedupe", fm.items[0].brand, "MyBrand");
-eq("calories", fm.items[0].kcal, 120);
+console.log("\nmapImportRows weight");
+const w = mapImportRows("cron", "weight", parseCsv([
+  "Day,Time,Group,Metric,Unit,Amount",
+  "2026-08-06,7:00 AM,Uncategorized,Weight,lbs,181.4",
+  "2026-08-05,7:00 AM,Uncategorized,Body Fat,%,18.2",
+  "2026-08-04,7:00 AM,Uncategorized,Weight,kg,80",
+  "2019-01-01,7:00 AM,Uncategorized,Weight,lbs,200",
+].join("\n")), OPTS);
+// Biometrics is key-value: every metric shares the file, so non-weight rows
+// must be dropped rather than imported as bodyweight.
+eq("only Weight rows", w.weights.length, 3);
+eq("body fat ignored, not counted as skipped data loss", w.weights.map((x) => x.date).includes("2026-08-05"), false);
+eq("pounds kept", w.weights[0].weightLb, 181.4);
+eq("kg converted", w.weights[2].weightLb, 176.4);
+// Weight is never pruned -- only foodLog has a window.
+eq("old weigh-ins kept", w.weights.some((x) => x.date === "2019-01-01"), true);
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node tests/mfp-import.test.js`
-Expected: new assertions FAIL, exit code 1.
+Run: `node tests/nutrition-import.test.js` — new assertions FAIL.
 
-- [ ] **Step 3: Write the implementation in the test file**
+- [ ] **Step 3: Write the implementation**
 
 ```js
-const MFP_MEALS = { breakfast: "breakfast", lunch: "lunch", dinner: "dinner", snack: "snack", snacks: "snack" };
-
-// Premium users rename their meals. An unrecognised name becomes a snack
-// rather than dropping the food -- a meal in the wrong slot is a nuisance, a
-// missing meal is lost history.
-function mfpMealKey(raw) {
-  return MFP_MEALS[String(raw ?? "").trim().toLowerCase()] || "snack";
-}
-
-// null, never 0. A blank protein cell means "MFP did not record this", and
-// zeroing it would quietly libel the athlete's day in every rollup.
-function mfpNum(raw) {
+// null, never 0. Water really is 0 kcal; a blank protein cell is unknown. Fold
+// those together and every rollup misreports the day.
+function cronNum(raw) {
   const s = String(raw ?? "").replace(/,/g, "").trim();
   if (!s) return null;
   const m = s.match(/-?\d+(\.\d+)?/);
@@ -516,75 +495,90 @@ function mfpNum(raw) {
   return isFinite(n) ? n : null;
 }
 
-const KG_LB = 2.20462;
+// "100.00 g" / "8.00 fl oz" / "1.00 full recipe". The unit is whatever follows
+// the number, kept verbatim -- re-deriving grams from "full recipe" would be
+// guesswork, and the macros are already correct for the amount logged.
+function splitAmount(raw) {
+  const s = String(raw ?? "").trim();
+  const m = s.match(/^(-?\d+(?:\.\d+)?)\s*(.*)$/);
+  if (!m) return { qty: 1, unit: "serving" };
+  const qty = parseFloat(m[1]);
+  const unit = m[2].trim();
+  return { qty: isFinite(qty) ? qty : 1, unit: unit || "serving" };
+}
 
-function mapMfpRows(kind, parsed, opts) {
+const CRON_MEALS = { breakfast: "breakfast", lunch: "lunch", dinner: "dinner", snack: "snack", snacks: "snack" };
+
+// Cronometer's default group is "Uncategorized" and users can rename groups
+// freely, so anything unrecognised becomes a snack rather than being dropped.
+// A meal in the wrong slot is a nuisance; a missing meal is lost history.
+function cronMealKey(raw) {
+  return CRON_MEALS[String(raw ?? "").trim().toLowerCase()] || "snack";
+}
+
+const KG_LB = 2.20462;
+const WATER_NAME = /^water$/i;
+
+function mapImportRows(source, kind, parsed, opts) {
   const o = opts || {};
-  const today = o.today;
   const windowDays = Number(o.windowDays) || 180;
-  const { map, missing } = resolveColumns(kind, parsed.headers);
-  const out = { kind, items: [], skipped: 0, tooOld: 0 };
+  const { map, missing } = resolveColumns(source, kind, parsed.headers);
+  const out = { source, kind, diary: [], water: [], weights: [], skipped: 0, tooOld: 0 };
   if (missing.length) return out;
 
-  // Inline rather than calling addDaysISO(): this half stays pure and free of
-  // app.js helpers so the test copy needs nothing around it.
-  const cutoff = new Date(Date.parse(today + "T00:00:00Z") - windowDays * 86400000)
+  // Inline rather than calling addDaysISO(): this half stays free of app.js
+  // helpers so the test copy needs nothing around it.
+  const cutoff = new Date(Date.parse(o.today + "T00:00:00Z") - windowDays * 86400000)
     .toISOString().slice(0, 10);
 
   for (const row of parsed.rows) {
     const get = (field) => (map[field] ? row[map[field]] : "");
+    const date = String(get("date") || "").slice(0, 10);
 
     if (kind === "weight") {
-      const date = String(get("date") || "").slice(0, 10);
-      const w = mfpNum(get("weight"));
-      if (!date || w === null) { out.skipped++; continue; }
-      out.items.push({
-        date,
-        weightLb: Math.round((o.kgToLb ? w * KG_LB : w) * 10) / 10,
-      });
+      // Biometrics is key-value: weight, body fat, blood pressure all share the
+      // file. Anything that is not weight is another metric, not lost data, so
+      // it is passed over without counting as a skip.
+      if (!/^weight$/i.test(String(get("metric") || "").trim())) continue;
+      const n = cronNum(get("amount"));
+      if (!date || n === null) { out.skipped++; continue; }
+      const kg = /kg/i.test(String(get("unit") || ""));
+      out.weights.push({ date, weightLb: Math.round((kg ? n * KG_LB : n) * 10) / 10 });
       continue;
     }
 
-    const kcal = mfpNum(get("kcal"));
     const name = String(get("food") || "").trim();
-    if (!name || kcal === null) { out.skipped++; continue; }
+    const kcal = cronNum(get("kcal"));
+    if (!date || !name || kcal === null) { out.skipped++; continue; }
 
-    const macros = {
-      kcal,
-      p: mfpNum(get("p")) ?? 0,
-      c: mfpNum(get("c")) ?? 0,
-      f: mfpNum(get("f")) ?? 0,
-      fib: mfpNum(get("fib")) ?? 0,
-    };
+    const { qty, unit } = splitAmount(get("amount"));
 
-    if (kind === "foods") {
-      out.items.push({
-        name,
-        brand: String(get("brand") || "").trim(),
-        unit: String(get("unit") || "serving").trim() || "serving",
-        ...macros,
-      });
+    // Water is a food row in Cronometer and a separate log here. Routed before
+    // the window check because waterLog is pruned on the same schedule anyway.
+    if (WATER_NAME.test(name)) {
+      if (date < cutoff) { out.tooOld++; continue; }
+      out.water.push({ date, oz: /oz/i.test(unit) ? qty : qty / 29.5735 });
       continue;
     }
 
-    // diary
-    const date = String(get("date") || "").slice(0, 10);
-    if (!date) { out.skipped++; continue; }
-    // Dropped here rather than written and pruned later, so the preview can
-    // tell the athlete the truth about what is arriving.
+    // Dropped here rather than written and pruned later, so the preview can tell
+    // the athlete the truth about what is arriving.
     if (date < cutoff) { out.tooOld++; continue; }
-    out.items.push({
+
+    out.diary.push({
       date,
       entry: {
         name,
-        meal: mfpMealKey(get("meal")),
-        qty: mfpNum(get("qty")) ?? 1,
-        // Verbatim as MFP recorded it. Re-deriving grams from "1 cup" would be
-        // guesswork on top of guesswork.
-        unit: String(get("unit") || "serving").trim() || "serving",
-        grams: null,
-        ...macros,
-        src: "mfp",
+        meal: cronMealKey(get("group")),
+        qty,
+        unit,
+        grams: unit === "g" ? qty : null,
+        kcal,
+        p: cronNum(get("p")) ?? 0,
+        c: cronNum(get("c")) ?? 0,
+        f: cronNum(get("f")) ?? 0,
+        fib: cronNum(get("fib")) ?? 0,
+        src: source,
         ref: null,
       },
     });
@@ -595,43 +589,180 @@ function mapMfpRows(kind, parsed, opts) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node tests/mfp-import.test.js`
-Expected: `65 passed, 0 failed`, exit code 0.
+Run: `node tests/nutrition-import.test.js`
+Expected: `62 passed, 0 failed`, exit 0.
 
-- [ ] **Step 5: Copy into `app.js`**
-
-Paste `MFP_MEALS`, `mfpMealKey`, `mfpNum`, `KG_LB`, `mapMfpRows` byte-identically after `sniffMfpFile`.
+- [ ] **Step 5: Copy into `app.js`** byte-identically.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add tests/mfp-import.test.js app.js
-git commit -m "Map MFP rows to Stone Dragon shapes
+git add tests/nutrition-import.test.js app.js
+git commit -m "Map Cronometer rows to Stone Dragon shapes
 
-Blank macro cells resolve to null, never 0 -- a missing protein value is
-unknown, not zero grams, and zeroing it would libel the day in every
-rollup. Diary rows past the 180-day window are dropped at map time so the
-preview can report them, rather than written and silently pruned later.
+Amount is one field carrying a number and a multi-word unit, so it is
+split and the unit kept verbatim -- re-deriving grams from "full recipe"
+would be guesswork on top of guesswork.
+
+Water is a food row in Cronometer and a separate log here, so it is
+routed to waterLog. Biometrics is key-value, so non-weight metrics are
+passed over rather than imported as bodyweight.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 4: Apply the import and fence off XP
+### Task 4: Derive the food library from the diary
 
 **Files:**
-- Modify: `app.js` (MFP import section — new `applyMfpImport`)
-- Modify: `app.js:28683` `streakDay()`
-- Modify: `app.js:28854` `syncNutritionGame()`
+- Modify: `tests/nutrition-import.test.js`, `app.js`
 
 **Interfaces:**
-- Consumes: `mapMfpRows` (Task 3), plus existing `ensureFoodLog`, `pruneFoodLog`, `saveClient`, `uid`, `todayISO`
-- Produces: `applyMfpImport(mapped) -> { days, entries, foods, weighIns, replaced }` where `mapped` is an array of `mapMfpRows` results
+- Consumes: Task 3
+- Produces: `deriveLibrary(diary) -> { foods: Object[], recipes: Object[] }`
 
-This task has no unit test — it writes to live app state and is covered by the manual verification below plus the existing test suite staying green. The pure logic it depends on is already pinned by Tasks 1-3.
+**Why this exists:** an unlogged custom food never appears in the export — verified. So the athlete's library is reconstructed by deduplicating `Food Name` across the diary. This is the feature's headline benefit, and it is the piece with no counterpart in the old plan.
 
-- [ ] **Step 1: Add the XP guard to `streakDay()`**
+A `"full recipe"` unit marks a row as a recipe rather than a food; those go to `savedMeals` with `kind: "recipe"`.
+
+- [ ] **Step 1: Write the failing test**
+
+Stub: `function deriveLibrary(diary) { return { foods: [], recipes: [] }; }`
+
+```js
+console.log("\nderiveLibrary");
+const lib = deriveLibrary([
+  { date: "2026-08-01", entry: { name: "Blueberries", qty: 100, unit: "g", kcal: 57, p: 0.7, c: 14.57, f: 0.31, fib: 2.4 } },
+  { date: "2026-08-03", entry: { name: "Blueberries", qty: 50, unit: "g", kcal: 28, p: 0.35, c: 7.3, f: 0.16, fib: 1.2 } },
+  { date: "2026-08-02", entry: { name: "Whey Shake", qty: 1, unit: "scoop", kcal: 120, p: 24, c: 3, f: 1.5, fib: 0 } },
+  { date: "2026-08-07", entry: { name: "ZZTest Chili", qty: 1, unit: "full recipe", kcal: 291.49, p: 21.28, c: 38.04, f: 6.44, fib: 9.74 } },
+]);
+eq("one entry per unique food", lib.foods.length, 2);
+eq("recipes split out", lib.recipes.length, 1);
+// Frequency is why deriving from the diary beats a library export: what someone
+// ate twice outranks what they tried once.
+eq("uses counts how often it was logged", lib.foods.find((f) => f.name === "Blueberries").uses, 2);
+eq("single log counts once", lib.foods.find((f) => f.name === "Whey Shake").uses, 1);
+// Grams normalise to per-100g so any future portion scales correctly.
+const bb = lib.foods.find((f) => f.name === "Blueberries");
+eq("gram foods are per100", bb.per100, true);
+eq("per100 macros normalised from the most recent row", [bb.kcal, bb.p], [57, 0.7]);
+eq("servingG set for gram foods", bb.servingG, 100);
+// A non-gram unit cannot be normalised by weight, so macros are per one unit.
+const ws = lib.foods.find((f) => f.name === "Whey Shake");
+eq("non-gram foods are per-unit", ws.per100, false);
+eq("per-unit macros are for one unit", [ws.kcal, ws.p], [120, 24]);
+eq("serving label kept", ws.servingLabel, "scoop");
+// A recipe logged as one row maps straight onto the recipe shape.
+const rc = lib.recipes[0];
+eq("recipe name", rc.name, "ZZTest Chili");
+eq("recipe kind", rc.kind, "recipe");
+// The export carries no servings count, so 1 reproduces what was logged.
+eq("servings defaults to 1", rc.servings, 1);
+eq("single item carrying whole-recipe totals", rc.items.length, 1);
+eq("item macros are the recipe totals", rc.items[0].kcal, 291.49);
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `node tests/nutrition-import.test.js` — new assertions FAIL.
+
+- [ ] **Step 3: Write the implementation**
+
+```js
+// Cronometer never exports a food definition -- only servings actually logged.
+// So the library is reconstructed from the diary. That is not a workaround: it
+// yields the foods the athlete really ate, ranked by how often, instead of every
+// abandoned entry they created once and forgot.
+//
+// A "full recipe" unit is how a logged recipe presents itself, and those belong
+// in savedMeals rather than customFoods.
+const RECIPE_UNIT = /recipe/i;
+
+function deriveLibrary(diary) {
+  const byName = new Map();
+  for (const d of diary) {
+    const key = d.entry.name.toLowerCase();
+    const prev = byName.get(key);
+    // Most recent wins: the newest logged portion is the best guess at how this
+    // person actually eats the thing today.
+    if (!prev || d.date >= prev.date) byName.set(key, { ...d, uses: (prev?.uses || 0) + 1 });
+    else byName.set(key, { ...prev, uses: prev.uses + 1 });
+  }
+
+  const foods = [], recipes = [];
+  for (const { entry, uses } of byName.values()) {
+    if (RECIPE_UNIT.test(entry.unit)) {
+      recipes.push({
+        name: entry.name, kind: "recipe",
+        // The export gives no servings count -- the athlete logged one whole
+        // recipe -- so 1 reproduces exactly what they logged.
+        servings: 1,
+        items: [{ ...entry, meal: "dinner", qty: 1, unit: "recipe", grams: null }],
+        uses,
+      });
+      continue;
+    }
+    const grams = entry.unit === "g" && entry.qty > 0;
+    // Scale to the unit the app stores: per 100 g when we know the weight, per
+    // one unit otherwise. Getting this backwards silently doubles or halves
+    // every future portion of the food.
+    const k = grams ? 100 / entry.qty : 1 / (entry.qty || 1);
+    const r1 = (n) => Math.round((Number(n) || 0) * k * 10) / 10;
+    foods.push({
+      name: entry.name,
+      per100: !!grams,
+      servingG: grams ? 100 : 0,
+      servingLabel: grams ? "100 g" : entry.unit,
+      kcal: Math.round((Number(entry.kcal) || 0) * k),
+      p: r1(entry.p), c: r1(entry.c), f: r1(entry.f), fib: r1(entry.fib),
+      uses,
+    });
+  }
+  return { foods, recipes };
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `node tests/nutrition-import.test.js`
+Expected: `79 passed, 0 failed`, exit 0.
+
+- [ ] **Step 5: Copy into `app.js`** byte-identically.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add tests/nutrition-import.test.js app.js
+git commit -m "Derive the food library from the diary
+
+Cronometer never exports a food definition, only servings actually
+logged -- verified against a real account. So the library is rebuilt by
+deduplicating food names across the diary, which yields what the athlete
+really ate ranked by frequency rather than every abandoned entry.
+
+Gram portions normalise to per100 and everything else to per-unit,
+matching how the food logger scales a portion. Getting that backwards
+would silently double or halve every future log of the food.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 5: Apply the import and fence off XP
+
+**Files:**
+- Modify: `app.js` — new `applyImport`; `app.js:28683` `streakDay()`; `app.js:28854` `syncNutritionGame()`
+
+**Interfaces:**
+- Consumes: Tasks 3-4, plus existing `ensureFoodLog`, `ensureNutritionGame`, `pruneFoodLog`, `saveClient`, `uid`, `todayISO`
+- Produces: `applyImport(mapped) -> { days, entries, foods, recipes, water, weighIns, replaced }`
+
+No unit test: it writes live app state. Covered by manual verification in Task 6, with its pure inputs already pinned by Tasks 1-4.
+
+- [ ] **Step 1: Guard `streakDay()`**
 
 At `app.js:28683`, immediately after the function opens:
 
@@ -644,9 +775,9 @@ At `app.js:28683`, immediately after the function opens:
     if (through && dateKey <= through) return false;
 ```
 
-- [ ] **Step 2: Add the XP guard to `syncNutritionGame()`**
+- [ ] **Step 2: Guard `syncNutritionGame()`**
 
-At `app.js:28854`, change the date filter:
+At `app.js:28854`:
 
 ```js
     const imported = g.importedThrough || "";
@@ -656,29 +787,30 @@ At `app.js:28854`, change the date filter:
     ])].filter((d) => d >= cutoff && d <= today && !(imported && d <= imported)).sort();
 ```
 
-- [ ] **Step 3: Write `applyMfpImport`**
-
-Add to the MFP import section in `app.js`:
+- [ ] **Step 3: Write `applyImport`**
 
 ```js
-  // The only impure step. Everything above produced plain data; this is where
-  // it lands. Re-running must be safe, so every prior mfp entry in the covered
-  // range goes first -- an athlete who imports twice gets one copy, not two.
-  function applyMfpImport(mapped) {
+  // The only impure step. Everything above produced plain data; this is where it
+  // lands. Re-running must be safe, so entries from THIS source in the covered
+  // range go first -- re-importing Cronometer must not touch anything that came
+  // from another app.
+  function applyImport(mapped) {
     const progress = state.clientData.progress;
     ensureFoodLog(progress);
     ensureNutritionGame(progress);
 
-    const diary = mapped.filter((m) => m.kind === "diary").flatMap((m) => m.items);
-    const foods = mapped.filter((m) => m.kind === "foods").flatMap((m) => m.items);
-    const weights = mapped.filter((m) => m.kind === "weight").flatMap((m) => m.items);
+    const source = mapped[0]?.source || "cron";
+    const diary = mapped.flatMap((m) => m.diary);
+    const water = mapped.flatMap((m) => m.water);
+    const weights = mapped.flatMap((m) => m.weights);
+    const { foods, recipes } = deriveLibrary(diary);
 
     let replaced = 0;
     const dates = [...new Set(diary.map((d) => d.date))];
     for (const date of dates) {
       const list = progress.foodLog[date];
       if (!list) continue;
-      const kept = list.filter((e) => e.src !== "mfp");
+      const kept = list.filter((e) => e.src !== source);
       replaced += list.length - kept.length;
       if (kept.length) progress.foodLog[date] = kept; else delete progress.foodLog[date];
     }
@@ -690,19 +822,36 @@ Add to the MFP import section in `app.js`:
       entries++;
     }
 
-    // Dedupe on name+brand so a second import does not create 87 copies.
-    const seen = new Set((progress.customFoods || [])
-      .map((f) => `${String(f.name).toLowerCase()}|${String(f.brand || "").toLowerCase()}`));
-    let added = 0;
+    // Water is a count of cups per day, so same-day rows sum. Set rather than
+    // add, so a re-import replaces the day instead of doubling it.
+    const byDay = new Map();
+    for (const w of water) byDay.set(w.date, (byDay.get(w.date) || 0) + w.oz);
+    let waterDays = 0;
+    for (const [date, oz] of byDay) {
+      progress.waterLog[date] = Math.round(oz / WATER_CUP_OZ);
+      waterDays++;
+    }
+
+    const haveFoods = new Set((progress.customFoods || []).map((f) => String(f.name).toLowerCase()));
+    let addedFoods = 0;
     for (const f of foods) {
-      const key = `${f.name.toLowerCase()}|${(f.brand || "").toLowerCase()}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      progress.customFoods.push({
-        id: uid(), name: f.name, brand: f.brand, unit: f.unit, unitGrams: null,
-        kcal: f.kcal, p: f.p, c: f.c, f: f.f, uses: 0, createdAt: todayISO(),
+      if (haveFoods.has(f.name.toLowerCase())) continue;
+      haveFoods.add(f.name.toLowerCase());
+      progress.customFoods.push({ id: uid(), ...f, createdAt: todayISO() });
+      addedFoods++;
+    }
+
+    const haveMeals = new Set((progress.savedMeals || []).map((m) => String(m.name).toLowerCase()));
+    let addedRecipes = 0;
+    for (const r of recipes) {
+      if (haveMeals.has(r.name.toLowerCase())) continue;
+      haveMeals.add(r.name.toLowerCase());
+      progress.savedMeals.push({
+        id: uid(), name: r.name, kind: "recipe", servings: r.servings,
+        items: r.items.map((i) => ({ ...i, id: uid() })),
+        uses: 0, createdAt: todayISO(),
       });
-      added++;
+      addedRecipes++;
     }
 
     // One weigh-in per date; an existing entry wins, because it is the one the
@@ -721,7 +870,6 @@ Add to the MFP import section in `app.js`:
     if (latest) {
       const g = progress.nutritionGame;
       g.importedThrough = g.importedThrough && g.importedThrough > latest ? g.importedThrough : latest;
-      // Days behind the fence keep no XP receipt.
       for (const k of Object.keys(g.awarded || {})) {
         if (k <= g.importedThrough) {
           g.xp = Math.max(0, g.xp - (Number(g.awarded[k]) || 0));
@@ -732,206 +880,28 @@ Add to the MFP import section in `app.js`:
 
     pruneFoodLog(progress);
     saveClient();
-    return { days: dates.length, entries, foods: added, weighIns, replaced };
+    return { days: dates.length, entries, foods: addedFoods, recipes: addedRecipes, water: waterDays, weighIns, replaced };
   }
 ```
 
 - [ ] **Step 4: Verify the existing suite still passes**
 
 Run: `for f in tests/*.test.js; do node "$f" || echo "FAILED: $f"; done`
-Expected: every file reports `0 failed`. The `streakDay`/`syncNutritionGame` edits must not disturb them.
+Expected: every file reports `0 failed`.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add app.js
-git commit -m "Apply MFP import and fence imported days out of XP
+git commit -m "Apply the import and fence imported days out of XP
 
 Imported days feed trends and the coach adherence view but award no XP
 and cannot hold a streak -- an import covers months at a stroke, and a
 ladder that can be bought devalues every athlete who climbed it.
 
-Re-import is idempotent: prior mfp entries in the covered range are
-cleared first, custom foods dedupe on name+brand, weigh-ins on date.
-
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
-```
-
----
-
-### Task 5: Recipe import
-
-**Files:**
-- Modify: `tests/mfp-import.test.js`
-- Modify: `app.js` — `MFP_COLUMNS`, `MFP_KINDS`, `mapMfpRows`, `applyMfpImport`
-
-**Interfaces:**
-- Consumes: everything from Tasks 1-4
-- Produces: `MFP_COLUMNS.recipes`, a `"recipes"` branch in `mapMfpRows` producing `{ name, servings, items: [entry] }`, and a `savedMeals` writer inside `applyMfpImport`
-
-**Why this is separate from custom foods:** `savedMeals` holds two different
-things, told apart by `kind: "recipe"` (`app.js:30942`). A plain saved meal is a
-bundle logged as several lines; a recipe carries `servings` plus an `items[]`
-ingredient list and logs as **one** line scaled by servings eaten, through
-`recipePerServing()` (`app.js:30838`) and `openRecipePortionStep()`
-(`app.js:30958`). Importing a recipe as a plain saved meal would silently drop
-the per-serving scaling, which is most of what makes a recipe worth having.
-
-`recipePerServing()` computes `foodDayTotals(items) / servings`, so a recipe
-whose `items[]` is a single entry carrying the whole recipe's totals scales
-correctly. That is the fallback when MFP gives us no usable ingredient
-breakdown — a recipe that logs correctly but cannot be edited ingredient-by-
-ingredient beats one that never arrives.
-
-- [ ] **Step 1: Write the failing test**
-
-Add to the copy block in `tests/mfp-import.test.js`, inside `MFP_COLUMNS`, a
-`recipes` key (stub it as `{ required: {}, optional: {} }` for now), and append:
-
-```js
-console.log("\nmapMfpRows recipes");
-const rc = parseCsv([
-  "Recipe Name,Servings,Calories,Protein (g),Carbohydrates (g),Fat (g)",
-  "Chili,6,2400,180,150,90",
-  "Nameless,4,,,,",
-].join("\n"));
-const rm = mapMfpRows("recipes", rc, OPTS);
-eq("one usable recipe", rm.items.length, 1);
-eq("skips the row with no calories", rm.skipped, 1);
-eq("name", rm.items[0].name, "Chili");
-eq("servings", rm.items[0].servings, 6);
-// One item carrying the whole recipe's totals: recipePerServing divides by
-// servings, so this scales correctly without an ingredient breakdown.
-eq("single fallback item", rm.items[0].items.length, 1);
-eq("item carries whole-recipe totals", rm.items[0].items[0].kcal, 2400);
-eq("item is tagged mfp", rm.items[0].items[0].src, "mfp");
-// Guards the divide in recipePerServing: 0 or absent servings must become 1.
-eq("zero servings clamps to 1",
-   mapMfpRows("recipes", parseCsv("Recipe Name,Servings,Calories\nX,0,100"), OPTS).items[0].servings, 1);
-eq("missing servings column defaults to 1",
-   mapMfpRows("recipes", parseCsv("Recipe Name,Calories\nX,100"), OPTS).items[0].servings, 1);
-
-console.log("\nsniffMfpFile recipes");
-eq("recipes by its columns", sniffMfpFile(["Recipe Name", "Servings", "Calories"]), "recipes");
-// Recipes and custom foods both carry Calories; the tie must not go to foods.
-eq("recipes wins over foods", sniffMfpFile(["Recipe Name", "Servings", "Calories", "Brand"]), "recipes");
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `node tests/mfp-import.test.js`
-Expected: the new assertions FAIL, exit code 1.
-
-- [ ] **Step 3: Add the recipes column spec and sniff order**
-
-In the test file's copy block, replace the `recipes` stub:
-
-```js
-  recipes: {
-    required: {
-      food: ["recipe name", "recipe", "name"],
-      kcal: ["calories", "energy (kcal)", "kcal"],
-    },
-    optional: {
-      servings: ["servings", "number of servings", "yield", "serves"],
-      p: ["protein (g)", "protein"],
-      c: ["carbohydrates (g)", "carbs (g)", "carbohydrates", "carbs"],
-      f: ["fat (g)", "fat"],
-      fib: ["fiber (g)", "fibre (g)", "fiber", "fibre"],
-    },
-  },
-```
-
-And put `recipes` ahead of `foods` in the sniff order — a recipe export also
-carries a Calories column, so `foods` would otherwise claim it:
-
-```js
-const MFP_KINDS = ["diary", "recipes", "foods", "weight"];
-```
-
-- [ ] **Step 4: Add the recipes branch to `mapMfpRows`**
-
-Insert immediately before the `if (kind === "foods")` block, so it shares the
-`name`/`kcal`/`macros` work already done above it:
-
-```js
-    if (kind === "recipes") {
-      // Clamped to at least 1: recipePerServing() divides by this, and a 0
-      // from a malformed export would produce Infinity calories per serving.
-      const servings = Math.max(Math.round(mfpNum(get("servings")) ?? 1), 1);
-      out.items.push({
-        name,
-        servings,
-        // One item holding the recipe's whole totals. MFP's export does not
-        // reliably carry an ingredient breakdown, and foodDayTotals() over a
-        // single entry divided by servings gives the right per-serving number.
-        items: [{
-          name, meal: "dinner", qty: 1, unit: "recipe", grams: null,
-          ...macros, src: "mfp", ref: null,
-        }],
-      });
-      continue;
-    }
-```
-
-- [ ] **Step 5: Run test to verify it passes**
-
-Run: `node tests/mfp-import.test.js`
-Expected: `77 passed, 0 failed`, exit code 0.
-
-- [ ] **Step 6: Copy the changes into `app.js`**
-
-Mirror all three edits — the `recipes` entry in `MFP_COLUMNS`, the reordered
-`MFP_KINDS`, and the `recipes` branch in `mapMfpRows` — byte-identically.
-
-- [ ] **Step 7: Write recipes in `applyMfpImport`**
-
-Add to `applyMfpImport` in `app.js`, after the custom-foods block and before the
-weigh-ins block:
-
-```js
-    const recipes = mapped.filter((m) => m.kind === "recipes").flatMap((m) => m.items);
-    // Dedupe on name alone: savedMeals carries no brand.
-    const haveMeals = new Set((progress.savedMeals || []).map((m) => String(m.name).toLowerCase()));
-    let addedRecipes = 0;
-    for (const r of recipes) {
-      const key = r.name.toLowerCase();
-      if (haveMeals.has(key)) continue;
-      haveMeals.add(key);
-      progress.savedMeals.push({
-        id: uid(), name: r.name, kind: "recipe", servings: r.servings,
-        items: r.items.map((i) => ({ ...i, id: uid() })),
-        uses: 0, createdAt: todayISO(),
-      });
-      addedRecipes++;
-    }
-```
-
-Then extend the return value:
-
-```js
-    return { days: dates.length, entries, foods: added, recipes: addedRecipes, weighIns, replaced };
-```
-
-- [ ] **Step 8: Verify the whole suite**
-
-Run: `for f in tests/*.test.js; do node "$f" || echo "FAILED: $f"; done`
-Expected: every file reports `0 failed`.
-
-- [ ] **Step 9: Commit**
-
-```bash
-git add tests/mfp-import.test.js app.js
-git commit -m "Import MyFitnessPal recipes as recipes, not saved meals
-
-savedMeals holds two shapes told apart by kind: 'recipe'. A recipe carries
-servings and logs as one scaled line; a saved meal logs as several. Mapping
-recipes to plain saved meals would drop the per-serving scaling that makes
-a recipe worth having.
-
-Where MFP gives no usable ingredient breakdown, the recipe is imported as a
-single item carrying its whole totals -- recipePerServing() divides by
-servings, so it still logs correctly.
+Re-import is idempotent per source: only entries tagged with the source
+being imported are cleared, so re-importing one app never disturbs
+history from another.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
@@ -941,23 +911,21 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ### Task 6: Import UI
 
 **Files:**
-- Modify: `app.js` (MFP import section — `openMfpImportSheet`, `readMfpFiles`)
-- Modify: `app.js:31009` `openMyFoodsSheet()` — add the entry button
-- Modify: `app.js:31026` `renderMyFoods()` empty state — add the entry there too
+- Modify: `app.js` (import section, `openMyFoodsSheet` at 31009, `renderMyFoods` empty state at 31027), `styles.css`, `index.html`
 
 **Interfaces:**
-- Consumes: `parseCsv`, `sniffMfpFile`, `normHeader`, `mapMfpRows`, `applyMfpImport` (Tasks 1-5), existing `openModal`, `closeModal`, `toast`, `escapeHtml`, `renderClientDiet`
-- Produces: `openMfpImportSheet()` — no return value
+- Consumes: Tasks 1-5, plus `openModal`, `closeModal`, `toast`, `escapeHtml`, `renderClientDiet`, `FOOD_LOG_DAYS`, `todayISO`
+- Produces: `openImportSheet()`
 
-- [ ] **Step 1: Write the file reader and preview**
+- [ ] **Step 1: File reading and the preview**
 
 ```js
-  // "PK" is the zip magic number, which is what an .xlsx actually is. We do not
-  // ship a decryptor or an xlsx parser for a one-time migration -- we tell the
-  // athlete how to hand us something we can read.
+  // "PK" is the zip magic number, which is what an .xlsx actually is. We ship no
+  // decryptor and no xlsx parser for a one-time migration -- we tell the athlete
+  // how to hand us something readable.
   function looksLikeZip(text) { return text.slice(0, 2) === "PK"; }
 
-  function readMfpFiles(files) {
+  function readImportFiles(files) {
     return Promise.all([...files].map((file) => new Promise((resolve) => {
       const r = new FileReader();
       r.onload = () => resolve({ name: file.name, text: String(r.result || "") });
@@ -966,84 +934,79 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     })));
   }
 
-  function openMfpImportSheet() {
+  function openImportSheet() {
     openModal({
-      title: "Import from MyFitnessPal",
+      title: "Import your food history",
       body: `
         <p class="muted" style="margin-top:0">
-          In MyFitnessPal, request your data export, then pick the CSV files here.
-          Your foods, recipes, recent diary and weight history come across.
+          Export your data from Cronometer, then pick the CSV files here.
+          Your foods, recipes, recent diary, water and weight come across.
         </p>
         <label>Export files
-          <input type="file" id="mfp-files" multiple accept=".csv,text/csv" />
+          <input type="file" id="imp-files" multiple accept=".csv,text/csv" />
         </label>
-        <div id="mfp-result"></div>`,
-      actions: [
-        { label: "Close", className: "btn btn-ghost", onClick: () => { closeModal(); renderFoodDay(); } },
-      ],
+        <div id="imp-result"></div>`,
+      actions: [{ label: "Close", className: "btn btn-ghost", onClick: () => { closeModal(); renderFoodDay(); } }],
     });
-    $("#mfp-files").addEventListener("change", async (ev) => {
-      const out = $("#mfp-result");
+    $("#imp-files").addEventListener("change", async (ev) => {
+      const out = $("#imp-result");
       out.innerHTML = `<p class="muted">Reading…</p>`;
-      const files = await readMfpFiles(ev.target.files);
-      renderMfpPreview(files, out);
+      renderImportPreview(await readImportFiles(ev.target.files), out);
     });
   }
 ```
 
-- [ ] **Step 2: Write the preview, including the header-reporting failure path**
+- [ ] **Step 2: The preview, including the header-reporting failure path**
 
 ```js
-  function renderMfpPreview(files, out) {
-    const opts = { today: todayISO(), windowDays: FOOD_LOG_DAYS, kgToLb: false };
+  function renderImportPreview(files, out) {
+    const opts = { today: todayISO(), windowDays: FOOD_LOG_DAYS };
     const mapped = [], unknown = [];
 
     for (const f of files) {
       if (looksLikeZip(f.text)) {
-        out.innerHTML = `<p class="mfp-warn">${escapeHtml(f.name)} is a zip or spreadsheet, not a CSV.
-          Open it, then use <b>File &rsaquo; Save As</b> and choose CSV. Then pick the CSV here.</p>`;
+        out.innerHTML = `<p class="imp-warn">${escapeHtml(f.name)} is a zip or spreadsheet, not a CSV.
+          Open it, then use <b>File &rsaquo; Save As</b> and choose CSV.</p>`;
         return;
       }
       const parsed = parseCsv(f.text);
-      const kind = sniffMfpFile(parsed.headers);
-      if (!kind) { unknown.push({ name: f.name, headers: parsed.headers }); continue; }
-      // Weight in kg is detectable only from the column name.
-      const kg = parsed.headers.some((h) => normHeader(h).includes("(kg)"));
-      mapped.push(mapMfpRows(kind, parsed, { ...opts, kgToLb: kg }));
+      const hit = sniffImportFile(parsed.headers);
+      if (!hit) { unknown.push({ name: f.name, headers: parsed.headers }); continue; }
+      mapped.push(mapImportRows(hit.source, hit.kind, parsed, opts));
     }
 
-    // The instrument. With no real export to design against, the first athlete
-    // to hit this is how we learn MFP's actual column names -- so the error
-    // must hand those names back, not just say "unrecognised".
+    // With only one verified source, the first athlete on a different app is how
+    // we learn its column names -- so an unrecognised file must hand those names
+    // back, not just say "unrecognised".
     if (unknown.length) {
       out.innerHTML = unknown.map((u) => `
-        <p class="mfp-warn">Couldn't tell what <b>${escapeHtml(u.name)}</b> holds.</p>
+        <p class="imp-warn">Couldn't tell what <b>${escapeHtml(u.name)}</b> holds.</p>
         <p class="muted">Send your coach this line and it can be added:</p>
-        <textarea readonly rows="3" class="mfp-headers"
+        <textarea readonly rows="3" class="imp-headers"
           onclick="this.select()">${escapeHtml(u.headers.join(", "))}</textarea>`).join("");
       if (!mapped.length) return;
     }
 
-    const sum = (kind, key) => mapped.filter((m) => m.kind === kind)
-      .reduce((n, m) => n + (key === "items" ? m.items.length : m[key]), 0);
-    const days = new Set(mapped.filter((m) => m.kind === "diary")
-      .flatMap((m) => m.items.map((i) => i.date))).size;
-    const tooOld = sum("diary", "tooOld");
+    const diary = mapped.flatMap((m) => m.diary);
+    const { foods, recipes } = deriveLibrary(diary);
+    const days = new Set(diary.map((d) => d.date)).size;
+    const tooOld = mapped.reduce((n, m) => n + m.tooOld, 0);
     const skipped = mapped.reduce((n, m) => n + m.skipped, 0);
+    const weighIns = mapped.reduce((n, m) => n + m.weights.length, 0);
 
     out.innerHTML += `
-      <ul class="mfp-summary">
-        <li><b>${days}</b> diary days (${sum("diary", "items")} entries)</li>
-        <li><b>${sum("foods", "items")}</b> custom foods</li>
-        <li><b>${sum("recipes", "items")}</b> recipes</li>
-        <li><b>${sum("weight", "items")}</b> weigh-ins</li>
+      <ul class="imp-summary">
+        <li><b>${days}</b> diary days (${diary.length} entries)</li>
+        <li><b>${foods.length}</b> foods for your library</li>
+        <li><b>${recipes.length}</b> recipes</li>
+        <li><b>${weighIns}</b> weigh-ins</li>
       </ul>
-      ${tooOld ? `<p class="muted">${tooOld} diary entries are older than ${FOOD_LOG_DAYS} days and won't be imported — the log keeps a rolling window.</p>` : ""}
-      ${skipped ? `<p class="muted">${skipped} rows skipped: no calorie value.</p>` : ""}
-      <button class="btn btn-primary" id="mfp-go">Import</button>`;
+      ${tooOld ? `<p class="muted">${tooOld} entries are older than ${FOOD_LOG_DAYS} days and won't be imported — the log keeps a rolling window.</p>` : ""}
+      ${skipped ? `<p class="muted">${skipped} rows skipped: no name or calorie value.</p>` : ""}
+      <button class="btn btn-primary" id="imp-go">Import</button>`;
 
-    $("#mfp-go")?.addEventListener("click", () => {
-      const r = applyMfpImport(mapped);
+    $("#imp-go")?.addEventListener("click", () => {
+      const r = applyImport(mapped);
       closeModal();
       renderClientDiet();
       toast(`Imported ${r.entries} entries, ${r.foods} foods, ${r.recipes} recipes ✓`);
@@ -1051,77 +1014,71 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
   }
 ```
 
-- [ ] **Step 3: Add the entry point**
+- [ ] **Step 3: Entry points**
 
-In `openMyFoodsSheet()` (`app.js:31009`), add a second action before Close:
+In `openMyFoodsSheet()` (`app.js:31009`), add before Close:
 
 ```js
-      actions: [
-        { label: "Import from MFP", className: "btn btn-ghost", onClick: () => openMfpImportSheet() },
-        { label: "Close", className: "btn btn-ghost", onClick: () => { closeModal(); renderFoodDay(); } },
-      ],
+        { label: "Import history", className: "btn btn-ghost", onClick: () => openImportSheet() },
 ```
 
-And in `renderMyFoods()`'s empty state (`app.js:31027`) — the moment an athlete most needs it:
+And in `renderMyFoods()`'s empty state (`app.js:31027`) — where an athlete most needs it:
 
 ```js
       el.innerHTML = `<p class="muted">Nothing saved yet. Foods you create and recipes you build land here.</p>
-        <p class="muted">Coming from MyFitnessPal? <a href="#" id="myfoods-import">Import your foods and history.</a></p>`;
-      $("#myfoods-import")?.addEventListener("click", (e) => { e.preventDefault(); openMfpImportSheet(); });
+        <p class="muted">Coming from another app? <a href="#" id="myfoods-import">Import your foods and history.</a></p>`;
+      $("#myfoods-import")?.addEventListener("click", (e) => { e.preventDefault(); openImportSheet(); });
       return;
 ```
 
-- [ ] **Step 4: Add styles**
-
-In `styles.css`, near the other food-logger rules:
+- [ ] **Step 4: Styles**
 
 ```css
-.mfp-summary { margin: 12px 0; padding-left: 20px; }
-.mfp-summary li { margin: 4px 0; }
-.mfp-warn { color: var(--warn); }
-.mfp-headers { width: 100%; font-family: monospace; font-size: 12px;
+.imp-summary { margin: 12px 0; padding-left: 20px; }
+.imp-summary li { margin: 4px 0; }
+.imp-warn { color: var(--warn); }
+.imp-headers { width: 100%; font-family: monospace; font-size: 12px;
   background: rgba(var(--primary-rgb), 0.06); border: 1px solid rgba(var(--primary-rgb), 0.25);
   border-radius: 8px; padding: 8px; color: var(--text); }
 ```
 
-`.mfp-warn` is needed because `.warn` exists only as a modifier in this codebase
-(`.exn-chip.warn`, `styles.css:6287`) and does nothing on its own. Colours come
-from `--primary-rgb` and `--warn` rather than hardcoded hex, so this survives all
-ten themes including the light one.
+`.imp-warn` is needed because `.warn` exists only as a modifier in this codebase
+(`.exn-chip.warn`, `styles.css:6287`) and does nothing alone. Colours come from
+`--primary-rgb` and `--warn`, so this survives all ten themes including the light one.
 
-- [ ] **Step 5: Bump the cache bust**
+- [ ] **Step 5: Cache bust**
 
-In `index.html`, bump `?v=` on the `app.js` and `styles.css` tags. Without this, installed PWAs keep serving the old build.
+Bump `?v=` on the `app.js` and `styles.css` tags in `index.html`. Without it, installed PWAs keep the old build.
 
 - [ ] **Step 6: Verify in the browser**
 
-```bash
-python3 -m http.server 5190 --directory .
-```
+Use the `STSD:verify` skill to boot the app. Then:
 
-Then, with the offline stub setup from `__preview-setup.html`:
-1. Open the athlete food screen → My foods and recipes → **Import from MFP**.
-2. Upload a CSV built from the Task 3 fixtures. Confirm the preview counts match.
-3. Upload a file with junk headers. **Confirm the actual header line is displayed and selectable** — this is the requirement the whole build-before-the-file strategy rests on.
-4. Rename a `.zip` to `.csv` and upload. Confirm the "Save As CSV" message appears and nothing is written.
-5. Import, then import the same file again. Confirm entry counts are identical, not doubled.
-6. Open an imported recipe and log it through the portion step. Confirm the
-   per-serving macros are the recipe's totals divided by its servings — this is
-   the check that proves a recipe imported *usefully* rather than merely arriving.
-7. Confirm the nutrition rank/XP badge did not move, and the streak flame did not light.
-8. Repeat on a second athlete — module-level caches in `app.js` survive athlete switches.
-9. Check the modal at 390px width.
+1. Athlete food screen → My foods and recipes → **Import history**.
+2. Upload `docs/superpowers/specs/fixtures-cronometer-servings.csv`. The file holds
+   two Water rows, one Blueberries row and one ZZTest Chili row, so the preview
+   must report **2 diary days, 1 food, 1 recipe, 0 weigh-ins** — Water routes to
+   the water log and the recipe is not counted as a food.
+3. Upload a file with junk headers. **Confirm the actual header line displays and is selectable** — the requirement the whole build-before-more-sources strategy rests on.
+4. Rename a `.zip` to `.csv` and upload. Confirm the "Save As CSV" message and that nothing is written.
+5. Import, then import the same file again. Confirm counts are identical, not doubled.
+6. Log the imported recipe through the portion step; confirm per-serving macros equal the recipe totals ÷ servings.
+7. Log an imported gram-based food at a different portion; confirm macros scale correctly (this is the `per100` check).
+8. Confirm the nutrition rank/XP badge did not move and the streak flame did not light.
+9. Confirm water shows on the imported day.
+10. Repeat on a second athlete — module-level caches in `app.js` survive athlete switches.
+11. Check the modal at 390px width.
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add app.js styles.css index.html
-git commit -m "Add MyFitnessPal import UI
+git commit -m "Add the nutrition import UI
 
 The unrecognised-file path reports the actual header row back as
-selectable text. Built without a real MFP export to test against, that
-error is the instrument: the first athlete to hit it tells us the real
-column names instead of dead-ending.
+selectable text. With one verified source, that error is the instrument:
+the first athlete on another app tells us its real column names instead
+of dead-ending.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
@@ -1130,44 +1087,39 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ### Task 7: Documentation
 
-**Files:**
-- Modify: `tests/README.md`
-- Modify: `STSD/CLAUDE.md`
-
-- [ ] **Step 1: Add the test to the README table**
-
-Append a row to the table in `tests/README.md`:
+- [ ] **Step 1: Add a row to `tests/README.md`**
 
 ```markdown
-| `mfp-import.test.js` | the MyFitnessPal importer's pure half — CSV parse, file sniffing, column resolution, row mapping | It eats a file we have never seen. The column names in `MFP_COLUMNS` were written without a real export and will need one correction pass; everything around them — quoting, blank rows, the 180-day cutoff, kg→lb, dedupe keys, and blank macros resolving to null rather than 0 — is format-independent and pinned here so that pass cannot quietly break it. |
+| `nutrition-import.test.js` | the nutrition-tracker importer's pure half — CSV parse, file sniffing, column resolution, row mapping, library derivation | It eats a file the app does not control. `IMPORT_SOURCES.cron` was read from a real export, but a vendor can rename a column any time, and the behaviours pinned here are the ones that break silently when they do: `0.00` is a real value while an empty cell is unknown, duplicate rows are separate servings, a logged recipe is one row, `Amount` carries a multi-word unit, and gram foods must normalise to `per100` or every future portion is silently doubled or halved. |
 ```
 
-- [ ] **Step 2: Note the importer in CLAUDE.md**
-
-Under **Key UI flows**, add:
+- [ ] **Step 2: Note the importer in `CLAUDE.md`** under **Key UI flows**:
 
 ```markdown
-- **MFP import** → athlete uploads CSVs → `parseCsv` → `sniffMfpFile` → `mapMfpRows` → preview → `applyMfpImport()` writes `foodLog`/`customFoods`/`savedMeals`/`bodyweightLog` via `saveClient()`. All MFP-format knowledge lives in `MFP_COLUMNS`; imported days are fenced out of XP by `nutritionGame.importedThrough`.
+- **Nutrition import** → athlete uploads CSVs → `parseCsv` → `sniffImportFile` → `mapImportRows` → `deriveLibrary` → preview → `applyImport()` writes `foodLog`/`customFoods`/`savedMeals`/`waterLog`/`bodyweightLog` via `saveClient()`. All source-specific knowledge lives in `IMPORT_SOURCES`; imported days are fenced out of XP by `nutritionGame.importedThrough`. The food library is derived from the diary because trackers export servings, not definitions.
 ```
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add tests/README.md CLAUDE.md
-git commit -m "Document the MyFitnessPal importer
+git commit -m "Document the nutrition importer
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
 
 ---
 
-## After the real export arrives
+## Adding a second source
 
-The one correction pass this plan is built around:
+`IMPORT_SOURCES` deliberately carries **only** `cron`. There is no `mfp` key,
+empty or otherwise: no MyFitnessPal export has ever been seen, and a stub of
+invented column names would sit guesses beside verified facts and look equally
+trustworthy. When a real MyFitnessPal export exists:
 
-1. Run the export through the importer. If a file is unrecognised, the error hands back its header row.
-2. Add those names to the matching `MFP_COLUMNS` entry.
-3. Add a fixture row to `tests/mfp-import.test.js` using the real headers.
-4. Re-run `node tests/mfp-import.test.js`.
+1. Run it through the importer. An unrecognised file reports its header row back.
+2. Add an `mfp` key with those names and its `kinds`.
+3. Add a fixture and assertions using the real headers.
+4. Re-run `node tests/nutrition-import.test.js`.
 
-No logic changes. If the correction needs more than new strings in `MFP_COLUMNS`, that is a signal the abstraction was wrong — say so rather than working around it.
+**If adding a source needs more than new entries in `IMPORT_SOURCES`, the abstraction was wrong — say so rather than working around it.**
