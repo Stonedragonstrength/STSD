@@ -235,17 +235,51 @@ no `Energy (kcal)`, only `Water (g)`. These belong in `progress.waterLog`, not
 **`Group` is free text.** `Uncategorized` is common and Cronometer users can
 rename groups, so meal mapping needs a fallback rather than a fixed set.
 
-### What Cronometer cannot give us
+### Recipes and custom foods — tested directly, 2026-08-07
 
-**There is no custom-foods export and no recipes export.** The food library —
-the single most valuable thing in a migration, and the reason this feature
-exists — is not in Cronometer's export at any subscription tier.
+A custom food and a two-ingredient recipe were created in a live Cronometer
+account; the recipe was logged to the diary, the custom food deliberately was
+not. The resulting export settles both questions.
 
-This reverses the reasoning that put Cronometer first. It was chosen because a
-real export could be produced and verified today, which was correct and did
-settle the format. But the ceiling for this source is **diary + weight + water**,
-not the food library. MyFitnessPal's export reportedly *does* include custom
-foods and custom recipes — unverified, since no MFP export exists to check.
+**A logged recipe exports as ONE row**, not as its ingredients:
+
+```
+Day: 2026-08-07 | Group: Dinner | Food Name: ZZTest Chili
+Amount: "1.00 full recipe" | Energy: 291.49 | Protein: 21.28 | Carbs: 38.04 | Fat: 6.44
+```
+
+`Ground Beef` and `Kidney Beans` do **not** appear as separate rows. So recipes
+map straight onto `savedMeals` with `kind: "recipe"` and the single-item fallback
+already in this spec — no ingredient reassembly, no `Time`/`Group` clustering.
+The export carries no servings count (the athlete logged one whole recipe), so
+`servings` defaults to **1**, which reproduces exactly what they logged.
+
+**An unlogged custom food does NOT appear.** `ZZTest Protein Powder` existed in
+the account and is absent from the export. The export is strictly *logged
+servings* — food definitions are never exported on their own.
+
+**Therefore the food library is reconstructed from the diary**, by deduplicating
+`Food Name` across `servings.csv` and taking each food's macros and `Amount`.
+This is not a workaround; it is arguably better. It yields the foods the athlete
+actually ate, weighted by frequency, instead of every abandoned entry they
+created once and forgot. Its one real limit: a food created but never logged does
+not come across, which is the correct trade.
+
+**This generalises to every source.** Any tracker that exports a diary yields a
+food library the same way, MyFitnessPal included. It replaces this spec's earlier
+assumption that a dedicated custom-foods file was required and its absence fatal.
+
+### Further facts from the tested export
+
+- **`Time` may be blank.** The recipe row carries no time. Never require it.
+- **`Amount` units can be multi-word** — `"1.00 full recipe"`, `"8.00 fl oz"`.
+  Split on the first whitespace after the number, keep the remainder verbatim.
+- **`0.00` is a real logged value, not a blank.** Water rows carry
+  `Energy (kcal) = 0.00`. Only a genuinely empty cell means "unknown", which is
+  why `mfpNum` must return `null` for empty and `0` for `"0.00"`.
+- **Identical duplicate rows are legitimate.** Two byte-identical Water rows
+  appear, being two separate servings. Import must never collapse duplicate diary
+  rows — idempotency keys on source + date range, never on row content.
 
 ## Known unknowns
 
