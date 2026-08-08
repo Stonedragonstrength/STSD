@@ -7125,13 +7125,27 @@
       // missing. Shown only where it can mean something: the current year, a
       // month inside that year, and only once something is actually booked in
       // it, so December doesn't grow a permanent $0 row.
-      const lastKey = months.length ? months[months.length - 1].key : `${year}-01`;
+      // Anchored to the last month with MONEY on it, not the last row in the
+      // list. booksMonths() runs to whichever is later, this month or the last
+      // month the ledger touches, so a single $0 entry filed a month ahead
+      // extends the list without billing anything -- and anchoring to the row
+      // then pushed the ghost a month past that. Standing in August with an
+      // empty September row, the ghost was OCTOBER: two months out, eight
+      // thousand dollars of calendar, and no use to anybody.
+      const lastMoneyKey = [...months].reverse()
+        .find((r) => r.collected + r.outstanding > 0)?.key;
+      const lastKey = lastMoneyKey
+        || (months.length ? months[months.length - 1].key : `${year}-01`);
       const projKey = shiftMonthKey(lastKey, 1);
       const projMonth = Number(projKey.slice(5, 7)) - 1;
       const proj = projKey.startsWith(`${year}-`) && year === now.getFullYear()
         ? { ...bookedValueForMonth(projKey), key: projKey, label: MONTH_NAMES[projMonth].slice(0, 3) }
         : null;
-      const showProj = !!proj && proj.sessions > 0;
+      // And never a SECOND row for a month the books already list. The ghost
+      // exists to add the month that is missing; once the real row is there it
+      // is the one telling the truth, however quiet it reads.
+      const listedKeys = new Set(months.map((r) => r.key));
+      const showProj = !!proj && proj.sessions > 0 && !listedKeys.has(proj.key);
       // The ghost bar shares the year's scale, so "next month is quiet so far"
       // reads as a short bar rather than as a full-width one in another colour.
       const barPeak = Math.max(peak, showProj ? proj.amount : 0);
