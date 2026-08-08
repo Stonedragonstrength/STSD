@@ -19385,7 +19385,22 @@
     if (window.Cloud?.enabled && coachId) {
       const av = await window.Cloud.getCoachAvailability(coachId);
       if (av && typeof av === "object") { state.trainerData.availability = av; saveTrainer(); }
-      const from = new Date(Date.now() - 86400000).toISOString();
+      // Far enough BACK to cover every period something sums over, which is not
+      // the same as "far enough back to draw the next session". This was 24
+      // hours, and that quietly redefined the income card's "This week" as
+      // "since yesterday": standing on Friday 7 Aug it counted Thu-Sat and never
+      // saw Sun-Wed, so a 28-session week read as 8. "Next 4 weeks" is anchored
+      // to the same Sunday and lost exactly the same days.
+      //
+      // Computed from the anchors rather than a fixed number of days back, so it
+      // cannot drift if the week start moves: the income card counts from
+      // Sunday (weekStartOf) and the books fold counts whole months, so the
+      // window reaches whichever of the two is earlier, at local midnight.
+      const backTo = new Date();
+      backTo.setHours(0, 0, 0, 0);
+      const monthStart = new Date(backTo); monthStart.setDate(1);
+      const weekStart = new Date(backTo); weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+      const from = new Date(Math.min(+monthStart, +weekStart)).toISOString();
       // Far enough out to hold a full year-long weekly series, or "12 left,
       // through October" would under-report the moment a series runs past the
       // window. Booking rows are tiny and there is one query.
