@@ -18467,6 +18467,34 @@
 
   // Shown only once billing is configured, like every other money surface here,
   // and it carries its own count so the round announces itself.
+  // Program-only members, as their own pill. Same sheet and same send path as
+  // Bill; it exists because a flat membership has no session count to check, so
+  // batching them is a different, faster job than working the session roster.
+  // Hidden entirely when nobody is on a program-only tier, like every other
+  // billing surface.
+  function renderMonthFlatBtn() {
+    const btn = $("#btn-month-flat"); if (!btn) return;
+    loadBillingConfig().then((cfg) => {
+      if (!cfg?.configured) { hide(btn); return; }
+      return ensureBillingLoaded(BILLING_STALE_MS).then(() => {
+        if ($("#btn-month-flat") !== btn) return;
+        const key = billMonthKey();
+        const rows = monthBillRoster(key).filter((r) => r.flat);
+        if (!rows.length) { hide(btn); return; }
+        show(btn);
+        const due = rows.filter((r) => r.state === "due").length;
+        btn.classList.toggle("is-due", due > 0);
+        // Named for WHO rather than for the month: it sits beside "Bill
+        // September" and two pills both starting "Bill" read as a duplicate.
+        btn.innerHTML = `💻 Memberships` +
+          (due ? `<span class="month-grant-n">${due}</span>` : `<span class="month-grant-done">✓</span>`);
+        btn.title = due
+          ? `${due} program-only member${due === 1 ? "" : "s"} not yet invoiced`
+          : "Every program-only member has an invoice";
+      });
+    });
+  }
+
   function renderMonthBillBtn() {
     const btn = $("#btn-month-bill"); if (!btn) return;
     loadBillingConfig().then((cfg) => {
@@ -18474,7 +18502,12 @@
       return ensureBillingLoaded(BILLING_STALE_MS).then(() => {
         if ($("#btn-month-bill") !== btn) return;
         const key = billMonthKey();
-        const rows = monthBillRoster(key).filter((r) => r.sessions > 0 || r.flat || r.charge);
+        // Excludes program-only members, because its SHEET now does — they have
+        // their own pill. A badge counting people the sheet then refuses to
+        // show is worse than no badge.
+        const rows = monthBillRoster(key)
+          .filter((r) => !r.flat)
+          .filter((r) => r.sessions > 0 || r.charge);
         if (!rows.length) { hide(btn); return; }
         show(btn);
         const due = rows.filter((r) => r.state === "due").length;
@@ -18490,11 +18523,16 @@
     });
   }
 
-  function openMonthBillSheet() {
+  // `opts.onlyFlat` narrows the round to program-only members. They bill a flat
+  // monthly amount with no sessions behind it, so they need none of the count
+  // picking the rest of the sheet is built around — and mixed into a roster of
+  // session athletes they are easy to skip. Same sheet, same send path.
+  function openMonthBillSheet(opts = {}) {
+    const onlyFlat = !!opts.onlyFlat;
     const key = billMonthKey();
     const monthLabel = new Date(key + "-15T12:00:00Z")
       .toLocaleDateString(undefined, { month: "long", year: "numeric", timeZone: "UTC" });
-    const rows = monthBillRoster(key);
+    const rows = monthBillRoster(key).filter((r) => (onlyFlat ? !!r.flat : !r.flat));
     const billable = rows.filter((r) => r.sessions > 0 || r.flat || r.charge);
     const idle = rows.filter((r) => !r.sessions && !r.flat && !r.charge);
     const off = billMonthOffset();
@@ -18524,9 +18562,9 @@
           </label>
           ${done ? `<button type="button" class="bill-doc" data-bill-doc="${escapeHtml(c.id)}">🧾</button>` : `
           <div class="bill-nums">
-            <label class="bill-in-lbl">Sessions
+            ${r.flat ? "" : `<label class="bill-in-lbl">Sessions
               <input type="number" class="input bill-in" data-bill-sessions="${escapeHtml(c.id)}" min="0" step="1" value="${escapeHtml(String(r.sessions))}" />
-            </label>
+            </label>`}
             <label class="bill-in-lbl">Charge
               <input type="number" class="input bill-in" data-bill-amount="${escapeHtml(c.id)}" min="0" step="1" value="${escapeHtml(String(r.amount))}" />
             </label>
@@ -18537,14 +18575,16 @@
     };
 
     openModal({
-      title: `Bill ${monthLabel}`,
+      title: onlyFlat ? `Bill ${monthLabel} — memberships` : `Bill ${monthLabel}`,
       body: `
         <div class="bill-month">
           <button type="button" class="bill-step" id="bill-prev" ${off <= -BILL_MONTH_SPAN ? "disabled" : ""} aria-label="Previous month">◀</button>
           <span class="bill-month-lbl">${escapeHtml(monthLabel)}</span>
           <button type="button" class="bill-step" id="bill-next" ${off >= BILL_MONTH_SPAN ? "disabled" : ""} aria-label="Next month">▶</button>
         </div>
-        <p class="muted" style="margin-top:0.4rem">Sessions × their rate, ready to adjust. 💳 sends a card link; 💵 raises the invoice and leaves you to collect it. Everyone gets a numbered invoice either way.</p>
+        <p class="muted" style="margin-top:0.4rem">${onlyFlat
+          ? "Program-only members: a flat monthly amount, no sessions behind it."
+          : "Sessions × their rate, ready to adjust."} 💳 sends a card link; 💵 raises the invoice and leaves you to collect it. Everyone gets a numbered invoice either way.</p>
         <div class="bill-search">
           <span class="bill-search-ico" aria-hidden="true">🔍</span>
           <input type="search" id="bill-search-input" placeholder="Search athletes" aria-label="Search athletes" autocomplete="off" />
@@ -18561,8 +18601,10 @@
       ],
     });
 
-    $("#bill-prev")?.addEventListener("click", () => { shiftBillMonth(-1); openMonthBillSheet(); });
-    $("#bill-next")?.addEventListener("click", () => { shiftBillMonth(1); openMonthBillSheet(); });
+    // The scope rides through a month step, or paging back would silently widen
+    // a memberships-only round to the whole roster.
+    $("#bill-prev")?.addEventListener("click", () => { shiftBillMonth(-1); openMonthBillSheet(opts); });
+    $("#bill-next")?.addEventListener("click", () => { shiftBillMonth(1); openMonthBillSheet(opts); });
 
     const goBtn = $("#modal-foot .btn-primary");
     const list = $("#bill-list");
@@ -18707,6 +18749,7 @@
     closeModal();
     renderClientGrid();
     renderMonthBillBtn();
+    renderMonthFlatBtn();
     renderBooks();
     if (state.currentClientId) { renderCoachSessions(); renderBillingRow(currentClient()); }
     if (failed.length) {
@@ -34656,7 +34699,8 @@
     // and a bare listener hands it the MouseEvent, which is truthy and has no
     // `sizes` — the sheet then threw before rendering a single row.
     $("#btn-month-grant")?.addEventListener("click", () => openMonthGrantSheet());
-    $("#btn-month-bill")?.addEventListener("click", openMonthBillSheet);
+    $("#btn-month-bill")?.addEventListener("click", () => openMonthBillSheet());
+    $("#btn-month-flat")?.addEventListener("click", () => openMonthBillSheet({ onlyFlat: true }));
     $("#btn-session-lookup")?.addEventListener("click", openSessionLookup);
     // Roster grouping tabs (A to Z / Membership / Activity / Program)
     $$("#roster-controls [data-roster-group]").forEach((b) =>
@@ -34730,6 +34774,7 @@
           // renderClientGrid() and would otherwise never fill in.
           renderMonthGrantBtn();
           renderMonthBillBtn();
+          renderMonthFlatBtn();
           // Collapsed on every arrival, not just the first. Views are hidden
           // and shown rather than rebuilt, so a fold the coach opened last time
           // is still open when they come back -- dropping the `open` attribute

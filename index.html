@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=flat1" />
+  <link rel="stylesheet" href="styles.css?v=flat4" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -433,6 +433,12 @@
                  and shown by renderMonthBillBtn(); stays hidden until Square is
                  set up, like every other billing surface. -->
             <button class="btn btn-ghost btn-sm slim-btn month-bill-btn hidden" id="btn-month-bill" type="button"></button>
+            <!-- The same round, narrowed to program-only members. They bill a
+                 flat amount with no session count behind it, and mixed into a
+                 roster of session athletes they are the easiest rows to skip.
+                 Filled and shown by renderMonthFlatBtn(); hidden when nobody is
+                 on a program-only tier. -->
+            <button class="btn btn-ghost btn-sm slim-btn month-bill-btn hidden" id="btn-month-flat" type="button"></button>
             <button class="btn btn-ghost btn-sm slim-btn" id="btn-session-lookup" type="button">Session log</button>
           </div>
         </div>
@@ -1564,7 +1570,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=money1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=flat1"></script>
+  <script src="app.js?v=flat4"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
