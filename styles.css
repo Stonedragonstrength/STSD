@@ -14646,7 +14646,7 @@ input.credit-cap:disabled { opacity: 0.4; }
 .myfoods-btn, .myfoods-count, .nut-split-fields,
 .past-programs-fold, .plate-bar-opt, .plate-pop, .plate-size,
 .portion-preview, .pr-chip, .pr-exercise-group, .prog-opt,
-.program-section-count, .pull-src, .pull-src-n, .rank-medallion, .rb-total,
+.program-section-count, .pull-src, .pull-src-n, .rb-total,
 .rdy-block.asking, .rdy-done, .rdy-opt, .rec-cat-chip, .rest-opt-btn,
 .rest-sound-btn, .rest-timer-btn, .rest-timer-pop button,
 .roster-group-tab, .roster-search-clear, .scan-zoom-btn, .sched-google-row,
@@ -14691,48 +14691,42 @@ input.credit-cap:disabled { opacity: 0.4; }
    this class renders in, on purpose. Fixing it the way .cex-wrapper is
    fixed below would just be decorating dead code. Left untouched.
 
-   ---- Thirteen more moved down from Group 2 on final review ----------------
-   TRACKS AND BARS (12). There is a global `* { box-sizing: border-box }` at
-   the top of this file, so Group 2's `border: 1px solid var(--edge)` eats 2px
-   of a thin element's HEIGHT. Each of these is a track with `overflow:hidden`
-   and a `height:100%` fill, and each had ZERO border width before this branch,
-   so the shorthand was pure loss: .ov-trial-track and .cex-progress-line are
-   4px and lost half their fill; .ov-hero-track 5px; .food-lvl-track and
-   .client-row-prog .progress-track 6px; .day-progress-track, .hoard-track and
-   .books-mo-bar 8px; .macro-bar-track 9px (5px in its .is-fiber variant);
-   .cyc-track 10px. .rest-pop-badge is the 12x12 backing disc the ∞ rides on —
-   its child SVG is width/height:100%, so a border shrank the glyph 17% and put
-   a ring on what is meant to read as a hole punched in the bell.
-   .adh-bar is the sharpest case: it declares `border: 0` ON PURPOSE, because
-   `.adh-bar.is-blank`'s `1px dashed var(--border)` was the ONLY border in that
-   chart — it is the "no data" signal, and a border on every sibling made it
-   unreadable. (.is-blank is (0,2,0) so its `background: transparent` still
-   beats this rule's (0,1,0) — blank bars stay empty.)
-   The background half was also a no-op where it was supposed to help: on the
-   eight inheriting themes --surface-2 equals --face-inset exactly.
-   Deliberately NOT moved, having been checked: .snap-pip (5px) and
-   .food-week-dot (7px) are thin too, but both already declare
-   `border: 1px solid var(--border)` and recolour it to signal state
-   (.snap-pip.on, .food-week-dot.is-logged/.is-perfect). They want the ring,
-   box-sizing already accounted for it, and their geometry does not change.
-   BORDER-IMAGE (1). .week-head: `.week-card.open .week-head` sets
-   `border-image` (0,3,0) to fade its open-state divider. border-image replaces
-   border rendering on EVERY side that has width — before this branch only
-   border-bottom had any, so it painted one edge; Group 2's four 1px sides
-   turned it into a white hairline BOX. .week-head has a deliberate
-   `border-bottom`, which is this group's stated criterion. Re-scanned all
-   seven border-image declarations in the file against the newly-bordered
-   selectors: .app-header, .tabs (x2), .coach-nav (x2) and .ovmsg-item are
-   none of them newly bordered, so this was the only collision. */
-.a-result, .adh-bar, .archive-week-head, .bill-row, .books-mo-bar,
-.bulletin-item, .bw-metrics, .cbk-summary, .cday-block, .cex-panel,
-.cex-plate-row, .cex-progress-line, .client-instructions,
-.client-row-prog .progress-track, .coach-sheet-foot, .cyc-concern, .cyc-track,
-.day-log-opt, .day-progress-track, .demo-pick img, .demo-thumb,
-.ex-demo-preview img, .ex-detail-panel, .ex-lib-sidebar, .ex-lib-thumb,
-.ex-library-drawer, .food-lvl-track, .hoard-track, .lk-row, .macro-bar-track,
-.mg-row, .modal-foot, .oneoff-card, .ov-hero-track, .ov-trial-track,
-.ovmsg-card, .rest-pop-badge, .week-head, .wkg-allday, .wkg-ev.is-external {
+   ---- Moved down from Group 2 on final review -----------------------------
+   .week-head: `.week-card.open .week-head` sets `border-image` (0,3,0) to fade
+   its open-state divider. border-image replaces border rendering on EVERY side
+   that has width — before this branch only border-bottom had any, so it painted
+   one edge; Group 2's four 1px sides turned it into a white hairline BOX.
+   .week-head has a deliberate `border-bottom`, which is this group's stated
+   criterion. Re-scanned all seven border-image declarations in the file against
+   the newly-bordered selectors: .app-header, .tabs (x2), .coach-nav (x2) and
+   .ovmsg-item are none of them newly bordered, so that was the only collision.
+
+   .rank-medallion (added in the follow-up pass): its own rule paints a
+   rank-coloured ring —
+   `border: 1px solid color-mix(in srgb, var(--rank-color, var(--gold)) 60%, transparent)`
+   — matched by a --rank-color glow and a `transition: border-color`, all driven
+   by the per-rank --rank-color that renderClientHeaderRank() sets (copper at the
+   bottom of the ladder through white-hot at HOARD). Group 2 is (0,1,0) and
+   later, so it WON: the ring stopped signalling rank, went teal against its own
+   gold glow, and the transition went dead. Background only here so the ring
+   survives.
+
+   .rest-pop-badge (added in the follow-up pass): the 12x12 backing disc the ∞
+   rides on, over the bell glyph. It is the one member of the thin-element group
+   that is NOT a progress track, and it must NOT take Group 7's --surface-3: its
+   own rule paints --surface, which pre-branch sat DARKER than its --surface-2
+   popover (1.116:1), reading as a hole punched through to the popover rather
+   than a chip sitting on it. --surface-3 would invert that relationship and make
+   it lighter than its own parent. It only needed the BORDER removed (a 1px ring
+   shrank its width/height:100% child SVG by 17%), so it is dropped from this
+   group too and simply keeps its own --surface. */
+.a-result, .archive-week-head, .bill-row, .bulletin-item, .bw-metrics,
+.cbk-summary, .cday-block, .cex-panel, .cex-plate-row, .client-instructions,
+.coach-sheet-foot, .cyc-concern, .day-log-opt,
+.demo-pick img, .demo-thumb, .ex-demo-preview img, .ex-detail-panel,
+.ex-lib-sidebar, .ex-lib-thumb, .ex-library-drawer, .lk-row, .mg-row,
+.modal-foot, .oneoff-card, .ovmsg-card, .rank-medallion, .week-head,
+.wkg-allday, .wkg-ev.is-external {
   background: var(--face-inset);
 }
 
@@ -14788,4 +14782,38 @@ input.credit-cap:disabled { opacity: 0.4; }
    (0,2,0) and being last in the file settles it without !important. */
 .coach-mobility-list .ex-row-wrapper {
   background-color: var(--face-inset);
+}
+
+/* ---- Group 7: a track has to show where it ENDS --------------------------
+   Taking the border off the thin tracks (Group 3's note above) fixed their
+   geometry, but the border had become the only thing marking their extent, and
+   --face-inset is BYTE-IDENTICAL to --surface-2 (#0b0f18). So the well of a
+   track went invisible:
+   - .cex-progress-line sits inside .cex-wrapper, which Group 2 paints
+     --face-inset. Track and parent were the same colour: 1.000:1, literally
+     invisible, on the athlete's exercise card. Pre-branch it was 1.116:1.
+   - the four that declared --surface-3 themselves (.ov-trial-track,
+     .macro-bar-track, .food-lvl-track, .client-row-prog .progress-track) were
+     dragged DOWN to --face-inset by Group 3, landing at 1.027:1 against the
+     card face where pre-branch they had 1.375:1.
+   None of them has an inset shadow or any other delineation, and a part-filled
+   bar between a label and a value cannot be read at all without its well: a 30%
+   macro bar becomes a floating dash with no "out of".
+
+   --surface-3 is the well colour: 1.134:1 against a card's --face base and
+   1.105:1 against a --face-inset row, which is where the pre-branch design sat.
+   Stated explicitly here rather than by deleting them from Group 3, because
+   only four of them declare --surface-3 in their own rule — the other seven say
+   --surface-2, which now EQUALS --face-inset, so removing them from Group 3
+   alone would have left them exactly as invisible.
+
+   Not in this group, deliberately: .rest-pop-badge (see Group 3's note — it is
+   a backing disc, not a track, and belongs darker than its parent, not
+   lighter), and .adh-bar.is-blank, whose (0,2,0) `background: transparent`
+   still outranks this rule so a no-data bar stays empty. */
+.adh-bar, .books-mo-bar, .cex-progress-line,
+.client-row-prog .progress-track, .cyc-track, .day-progress-track,
+.food-lvl-track, .hoard-track, .macro-bar-track, .ov-hero-track,
+.ov-trial-track {
+  background: var(--surface-3);
 }
