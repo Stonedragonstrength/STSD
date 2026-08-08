@@ -286,6 +286,15 @@ p { margin: 0 0 0.75em; line-height: 1.5; }
   box-shadow: 0 6px 20px rgba(var(--primary-rgb), 0.35),
               inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
+/* .btn-primary:hover (the glow block, further down) is ALSO specificity
+   (0,2,0) and sits later in source, so it silently wins box-shadow on hover
+   and reverts a .btn-solid button to the dark halo — the exact thing
+   .btn-solid exists to prevent. Two classes + :hover = (0,3,0), so this
+   re-asserts the solid shadow regardless of source order. */
+.btn-primary.btn-solid:hover {
+  box-shadow: 0 6px 20px rgba(var(--primary-rgb), 0.35),
+              inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
 :root[data-theme="white"] .btn-primary.btn-solid { color: #fff; }
 
 .btn-ghost {
