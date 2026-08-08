@@ -9686,6 +9686,16 @@ body.live-log-mode #screen-client .header-right { display: none; }
    (--primary-rgb & friends), so all themes — including white — inherit it.
    ========================================================================== */
 
+/* A LIT TOP EDGE IS A CARD-SCALE DEVICE. On a big surface it reads as a light
+   source. On a 32px pill or a chip it is just a bright line that has to stop
+   somewhere, and where it stops — against the dim side border, mid-radius — is
+   a visible break. Wave 2 applied `border-top-color: var(--edge-lit)` to ~200
+   small in-card surfaces and every one of them broke at both top corners
+   (reported on the Day/Week/Month control, which is `.cal-modes`).
+   So: cards get the fading ring below; everything smaller gets a clean uniform
+   `--edge` and no lit top. The only survivor is `.tour-card::before`, where
+   `border-top-color` draws a CSS triangle rather than an edge. */
+
 /* -------- 1 · Layered cards: accent-lit face + lit edge + depth ---------- */
 .card,
 .client-row,
@@ -14629,7 +14639,6 @@ input.credit-cap:disabled { opacity: 0.4; }
 .ex-cat-move-btn, .dvs-act {
   background: var(--face-inset);
   border: 1px solid var(--edge);
-  border-top-color: var(--edge-lit);
 }
 
 /* ---- Group 2: the rest of the long tail — same treatment ---------------
@@ -14697,7 +14706,6 @@ input.credit-cap:disabled { opacity: 0.4; }
 .wp-head-count {
   background: var(--face-inset);
   border: 1px solid var(--edge);
-  border-top-color: var(--edge-lit);
 }
 
 /* ---- Group 3: same tail, background only --------------------------------
@@ -14800,7 +14808,6 @@ input.credit-cap:disabled { opacity: 0.4; }
 @media (min-width: 721px) {
   .workout-detail-list > .cex-wrapper {
     border-color: var(--edge);
-    border-top-color: var(--edge-lit);
   }
 }
 
