@@ -428,7 +428,16 @@
   // not reached. Correctness here comes from the offset below, not from the
   // page size — a server capping lower than this is handled either way.
   const BOOKINGS_PAGE = 1000;
-  async function getBookings(fromISO, toISO, includeCancelled) {
+  //
+  // `athleteId` narrows it to one athlete, and the ATHLETE SIDE MUST PASS IT.
+  // RLS alone does not mean "mine": the policies are OR'd, so an account that
+  // is both a coach and an athlete — which is any coach who keeps their own
+  // training in the app — matches "coach manages own bookings" as well as
+  // "athlete reads own bookings" and gets the WHOLE ROSTER back. That is not a
+  // leak to anyone else, but on their own athlete page it drew hundreds of
+  // upcoming sessions belonging to other people. Scoping belongs in the query
+  // that knows whose page it is, not in a policy that cannot tell.
+  async function getBookings(fromISO, toISO, includeCancelled, athleteId) {
     try {
       const out = [];
       let total = Infinity;
@@ -443,6 +452,7 @@
           .order("start_at", { ascending: true })
           .range(from, from + BOOKINGS_PAGE - 1);
         if (!includeCancelled) q = q.eq("status", "booked");
+        if (athleteId) q = q.eq("athlete_id", athleteId);
         if (fromISO) q = q.gte("start_at", fromISO);
         if (toISO) q = q.lt("start_at", toISO);
         const { data, error, count } = await q;
@@ -516,12 +526,16 @@
       return data || { ok: false, reason: "error" };
     } catch (e) { console.warn("[Cloud] resolveBookingRequest", e); return { ok: false, reason: "error" }; }
   }
-  // RLS scopes this the same way getBookings does: an athlete sees their own,
-  // the coach sees every athlete's, so both sides call it identically.
-  async function getBookingRequests(pendingOnly) {
+  // RLS scopes this the same way getBookings does — and carries the same catch,
+  // so the athlete side passes `athleteId` rather than trusting it. The policies
+  // are OR'd, so an account that is both a coach and an athlete matches "coach
+  // manages own booking requests" too and sees the whole roster's. The coach
+  // side passes nothing and still gets everyone's, which is the point of it.
+  async function getBookingRequests(pendingOnly, athleteId) {
     try {
       let q = sb.from("booking_requests").select("*").order("created_at", { ascending: false });
       if (pendingOnly !== false) q = q.eq("status", "pending");
+      if (athleteId) q = q.eq("athlete_id", athleteId);
       const { data, error } = await q;
       if (error) { console.warn("[Cloud] getBookingRequests", error.message); return null; }
       return data || [];

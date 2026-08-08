@@ -19104,6 +19104,13 @@
     const a = normalizeAvailability(_athleteAvailability);
     const from = Date.now();
     const toMs = from + (a.horizonDays + 1) * 86400000;
+    // Whose sessions these are, asked for explicitly rather than left to RLS.
+    // The policies are OR'd, so an account that is BOTH a coach and an athlete
+    // — any coach who keeps their own training in the app — satisfies "coach
+    // manages own bookings" as well and gets the entire roster back. On the
+    // athlete page that read as hundreds of upcoming sessions they were never
+    // scheduled for. Scoping belongs here, where we know whose page it is.
+    const meId = state.clientData.program?.clientId || "";
     // Not allowed to book: still load their own sessions — they need to see
     // what the coach put in the diary, and to be able to cancel one — but skip
     // the taken-slots read, which exists only to subtract from a grid that
@@ -19113,8 +19120,8 @@
       // they can still ask to cancel or move, so they must be able to see that
       // they already have.
       const [own, reqs] = await Promise.all([
-        window.Cloud.getBookings(new Date(from - 86400000).toISOString(), new Date(toMs).toISOString()),
-        window.Cloud.getBookingRequests(true),
+        window.Cloud.getBookings(new Date(from - 86400000).toISOString(), new Date(toMs).toISOString(), false, meId),
+        window.Cloud.getBookingRequests(true, meId),
       ]);
       _athleteBookings = Array.isArray(own) ? own : [];
       _athleteRequests = Array.isArray(reqs) ? reqs : [];
@@ -19123,9 +19130,11 @@
       return;
     }
     const [taken, mine, reqs] = await Promise.all([
+      // Deliberately NOT scoped to this athlete: it is every taken slot, so the
+      // grid can subtract them. Only start/end come back, never who.
       window.Cloud.getBookedWindow(new Date(from).toISOString(), new Date(toMs).toISOString()),
-      window.Cloud.getBookings(new Date(from - 86400000).toISOString(), new Date(toMs).toISOString()),
-      window.Cloud.getBookingRequests(true),
+      window.Cloud.getBookings(new Date(from - 86400000).toISOString(), new Date(toMs).toISOString(), false, meId),
+      window.Cloud.getBookingRequests(true, meId),
     ]);
     _athleteBookings = Array.isArray(mine) ? mine : [];
     _athleteRequests = Array.isArray(reqs) ? reqs : [];
@@ -20354,6 +20363,29 @@
     });
     return out.sort((a, b) => a - b);
   }
+  // Which start instants a "repeat this session" pattern actually produces.
+  //
+  // Generated from TODAY, never from the session that was tapped. The coach
+  // reaches this from a session that has often ALREADY HAPPENED, and
+  // nextDowISO() returns the first matching weekday on or *after* the date it
+  // is given — so the tapped date would put last Tuesday back on the calendar.
+  // Anything already gone is then dropped, the same two steps the Setmore
+  // lock-in takes.
+  //
+  // One consequence, and it is intended: the first occurrence can fall away, so
+  // the number of sessions is not always weeks x days. "For how long" is a
+  // horizon, not a promised count. The sheet's summary, its button label and
+  // the write all read THIS function, so the count promised and the count
+  // created cannot drift apart.
+  //
+  // `nowMs` is injectable only so the test can pin a clock; the app never
+  // passes it.
+  function repeatStarts(dows, hh, mm, tz, weeks, nowMs = Date.now()) {
+    if (!(dows || []).length) return [];
+    return patternOccurrences(dateISO(new Date(nowMs)), dows, hh, mm, tz, weeks)
+      .filter((ms) => ms > nowMs);
+  }
+
   // "Tuesdays and Thursdays", "every day", "weekdays" — the pattern read back in
   // words, because a row of highlighted letters is not something to double-check
   // a standing appointment against.
