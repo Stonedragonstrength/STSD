@@ -124,6 +124,101 @@ if (white) {
   );
 }
 
+// ---- 7. the colour themes sit on the OBSIDIAN floor, not the old one ------
+// Section 4 above only stops a colour theme redefining the six RECIPE tokens.
+// It says nothing about the BASE surfaces each theme defines for itself, and
+// that is exactly where these themes drifted: the obsidian branch deepened
+// :root and the seven colour themes inherited the recipe while keeping their
+// old, lighter base. Nobody saw it, because you open blue, it looks perfect,
+// and the other nine are somebody else's problem. Measured at the time: a
+// secondary .btn (--surface-3) against a --face-inset tile was 1.10:1 on blue
+// but 1.61:1 on teal, 1.59 green, 1.54 yellow -- the same control reading as a
+// whisper on one theme and a raised slab on another.
+//
+// So: every base surface a colour theme defines must sit at the same DEPTH as
+// blue's, measured as WCAG contrast against --face-inset (the near-black
+// substrate every theme inherits, which is what these surfaces actually sit
+// against once waves 1-2 are applied).
+//
+// THRESHOLD: 0.10 of contrast ratio, per slot.
+//   - The derived values' worst real drift is 0.009 (teal --bg), where 8-bit
+//     sRGB simply cannot express a cast that dark at blue's luminance. 0.10 is
+//     ~11x that, so rounding can never trip this.
+//   - The regression it exists to catch was far larger: on the old values the
+//     MILDEST of the seven (purple) was still 0.137 out at --surface-3 and
+//     0.360 at --border; teal and green ran to 2.5-2.75 at --border-strong.
+//   So the gap between "correctly derived" and "left on the old floor" is
+//   about 15x, and 0.10 sits in the middle of it.
+const BASE_SURFACES = [
+  "--bg", "--bg-2", "--surface", "--surface-2",
+  "--surface-3", "--surface-elevate", "--border", "--border-strong",
+];
+const DEPTH_TOLERANCE = 0.1;
+
+function hexToRgb(v) {
+  const m = /^#([0-9a-f]{6})$/i.exec((v || "").trim());
+  if (!m) return null;
+  return [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16));
+}
+// WCAG 2.x relative luminance + contrast ratio.
+function luminance(hex) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return null;
+  const [r, g, b] = rgb.map((v) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function contrast(a, b) {
+  const [x, y] = [luminance(a), luminance(b)];
+  if (x === null || y === null) return null;
+  return x > y ? (x + 0.05) / (y + 0.05) : (y + 0.05) / (x + 0.05);
+}
+
+if (root) {
+  const faceInset = valueOf(root, "--face-inset");
+  check(
+    ":root --face-inset is a plain hex the depth check can measure",
+    hexToRgb(faceInset) !== null,
+    "found: " + faceInset
+  );
+
+  if (hexToRgb(faceInset)) {
+    for (const th of COLOUR_THEMES) {
+      const b = block(':root[data-theme="' + th + '"]');
+      if (!b) continue;
+      for (const slot of BASE_SURFACES) {
+        // A theme is allowed to inherit a slot outright; only what it
+        // REdefines has to be on the obsidian floor.
+        if (!defines(b, slot)) continue;
+        const themeVal = valueOf(b, slot);
+        const blueVal = valueOf(root, slot);
+        if (!hexToRgb(themeVal) || !hexToRgb(blueVal)) {
+          check(
+            "theme " + th + " " + slot + " is a plain hex",
+            false,
+            "theme: " + themeVal + ", :root: " + blueVal
+          );
+          continue;
+        }
+        const themeC = contrast(themeVal, faceInset);
+        const blueC = contrast(blueVal, faceInset);
+        check(
+          "theme " + th + " " + slot + " is at obsidian depth",
+          Math.abs(themeC - blueC) <= DEPTH_TOLERANCE,
+          slot + " " + themeVal + " sits at " + themeC.toFixed(2) +
+            ":1 against --face-inset but :root's " + blueVal + " sits at " +
+            blueC.toFixed(2) + ":1 (drift " + Math.abs(themeC - blueC).toFixed(2) +
+            " > " + DEPTH_TOLERANCE + "). The colour themes inherit the obsidian " +
+            "recipe but define their own base surfaces -- deepen this one to " +
+            "match, keeping its own hue and saturation."
+        );
+      }
+    }
+  }
+}
+
 if (failures) {
   console.error("\n" + failures + " check(s) failed.");
   process.exit(1);
