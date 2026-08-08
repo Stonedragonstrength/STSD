@@ -11,14 +11,16 @@
 @font-face { font-family: "Barlow"; font-style: normal; font-weight: 800; font-display: swap; src: url("fonts/barlow-800.woff2") format("woff2"); }
 @font-face { font-family: "Barlow"; font-style: normal; font-weight: 900; font-display: swap; src: url("fonts/barlow-900.woff2") format("woff2"); }
 :root {
-  --bg: #03060c;
-  --bg-2: #060b14;
-  --surface: #0b111d;
-  --surface-2: #131c33;
-  --surface-3: #1e2d4a;
-  --surface-elevate: #2a3a5e;
-  --border: #3a4a75;
-  --border-strong: #4d5f92;
+  /* Obsidian base. The eight colour themes inherit this wholesale; Black and
+     White carry their own and are retuned below. */
+  --bg: #010204;
+  --bg-2: #04070e;
+  --surface: #080b12;
+  --surface-2: #0b0f18;
+  --surface-3: #131a2b;
+  --surface-elevate: #1c2740;
+  --border: #22304e;
+  --border-strong: #35486f;
   --text: #e2e8f0;
   --text-soft: #94a3b8;
   --muted: #64748b;
@@ -57,6 +59,21 @@
   --shadow-lg: 0 20px 50px rgba(0, 0, 0, 0.75);
   --radius: 10px;
   --radius-lg: 16px;
+  /* ---- Obsidian & ember: the surface recipe, defined once ----
+     These name ROLES, not colours, which is what makes ~283 flat surfaces
+     tractable. Every accent value reads the theme channels, so a theme swap
+     re-lights the whole app without touching a component rule.
+     --halo and --lift are composable: always `box-shadow: var(--lift), var(--halo)`. */
+  --face: linear-gradient(135deg, rgba(var(--primary-rgb), 0.14), rgba(9, 12, 19, 0) 54%), #080b12;
+  --face-inset: #0b0f18;
+  --edge: rgba(var(--primary-rgb), 0.26);
+  --edge-lit: rgba(var(--primary-bright-rgb), 0.5);
+  --halo: 0 0 26px -10px rgba(var(--primary-rgb), 0.5);
+  --lift: 0 14px 34px rgba(0, 0, 0, 0.78);
+  /* Primary buttons go dark so the halo has somewhere to land — a bright fill
+     is brighter than its own glow, which is why the glow was invisible. */
+  --btn-face: linear-gradient(180deg, rgba(var(--primary-bright-rgb), 0.17), rgba(8, 13, 20, 0) 46%), #080d14;
+  --btn-ink: #eef2f8;
 }
 
 /* ============ Color themes (full recolor) ============
@@ -103,6 +120,14 @@
   --border: #454550; --border-strong: #5a5a67;
   --primary-rgb: 148, 163, 184; --primary-bright-rgb: 203, 213, 225;
   --primary: #94a3b8; --primary-bright: #cbd5e1; --primary-hover: #64748b;
+  /* Slate at :root's alphas disappears against near-black — this theme needs
+     more wash and a brighter rim to read at all. It is lit in silver because
+     its primary IS silver; nothing blue may leak in. */
+  --face: linear-gradient(135deg, rgba(var(--primary-rgb), 0.10), rgba(9, 12, 19, 0) 54%), #0a0a0d;
+  --face-inset: #111116;
+  --edge: rgba(var(--primary-rgb), 0.20);
+  --edge-lit: rgba(var(--primary-bright-rgb), 0.42);
+  --halo: 0 0 26px -12px rgba(var(--primary-rgb), 0.35);
 }
 :root[data-theme="pink"] {
   --bg: #0c040a; --bg-2: #150611; --surface: #1c0a16; --surface-2: #2c1123; --surface-3: #3f1a32; --surface-elevate: #552343;
@@ -126,6 +151,18 @@
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.12);
   --shadow: 0 6px 20px rgba(15, 23, 42, 0.15);
   --shadow-lg: 0 20px 50px rgba(15, 23, 42, 0.22);
+  /* The light theme. The "light source" becomes a tinted wash plus a real
+     shadow; edges DARKEN instead of brightening; halos go off entirely,
+     because a glow on white reads as smudge. The halo is a zero-alpha shadow
+     rather than `none` — `none` in a comma list invalidates the declaration. */
+  --face: linear-gradient(135deg, rgba(var(--primary-rgb), 0.055), rgba(255, 255, 255, 0) 54%), #ffffff;
+  --face-inset: #f4f7fb;
+  --edge: rgba(var(--primary-rgb), 0.16);
+  --edge-lit: rgba(var(--primary-rgb), 0.26);
+  --halo: 0 0 0 0 rgba(0, 0, 0, 0);
+  --lift: 0 10px 26px rgba(15, 23, 42, 0.10);
+  --btn-face: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 46%), #1e293b;
+  --btn-ink: #ffffff;
 }
 /* The brand wordmark uses a light gradient that vanishes on a light surface. */
 :root[data-theme="white"] .brand h1 {
