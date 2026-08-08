@@ -18028,6 +18028,11 @@
     const rows = monthGrantRoster();
     const eligible = rows.filter((r) => r.membership && r.membership.sessions);
     const noTier = rows.filter((r) => !r.membership);
+    // Program-only members (Digital, No-session) have a membership with ZERO
+    // sessions, so they matched neither list and vanished from this screen
+    // entirely — not listed, not even named as skipped. There is nothing to
+    // grant them, but silence read as "they aren't a member any more".
+    const programOnly = rows.filter((r) => r.membership && !r.membership.sessions);
     const label = monthGrantLabel();
     if (!eligible.length) {
       toast("Nobody is on a session membership yet");
@@ -18093,6 +18098,10 @@
           ? "Auto-renew already granted these athletes their membership for the month, and those sessions are live. Ticking one of those rows only marks the money collected; ticking an empty one grants their month."
           : "One month's sessions onto every ticked bank, marked collected. Anyone already settled this month is unticked."}</p>
         <div class="mg-list" id="mg-list">${eligible.map(rowHtml).join("")}</div>
+        ${programOnly.length ? `<p class="muted mg-skipped">Program only, so nothing to grant —
+          bill them from <b>Bill the month</b>: ${escapeHtml(programOnly
+            .map((r) => `${r.client.name || "(unnamed)"} (${membershipTitle(r.membership)})`)
+            .join(", "))}</p>` : ""}
         ${noTier.length ? `<p class="muted mg-skipped">No membership set, so not in this round: ${escapeHtml(noTier.map((r) => r.client.name || "(unnamed)").join(", "))}</p>` : ""}`,
       actions: [
         { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
