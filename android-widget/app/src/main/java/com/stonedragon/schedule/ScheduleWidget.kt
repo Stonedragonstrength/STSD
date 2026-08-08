@@ -499,9 +499,17 @@ class ScheduleWidget : AppWidgetProvider() {
             // The list rows are coloured by the factory, which reads the same
             // two prefs — see ScheduleWidgetService.
             val light = Prefs.lightBg(ctx)
-            val accent = Theme.accentFor(Prefs.accentId(ctx), light)
+            val sat = Prefs.saturation(ctx)
+            val opacity = Prefs.opacity(ctx)
+            val accent = Theme.saturate(Theme.accentFor(Prefs.accentId(ctx), light), sat)
             val fg = Theme.textColor(light)
-            val dim = Theme.mutedColor(light)
+            // The opacity-aware muted colour, not the flat one: as the panel
+            // clears, secondary text lifts toward the main text colour so the
+            // surface can get quieter without the writing getting harder to
+            // read. The header's own muted text was still using the flat
+            // version, which is exactly the half of that promise that would
+            // have gone unkept.
+            val dim = Theme.mutedColor(light, opacity)
             // The panel is an image behind the content, not a background on it,
             // so its alpha can move without dragging the text with it. See the
             // layout's own note.
@@ -512,6 +520,21 @@ class ScheduleWidget : AppWidgetProvider() {
                 R.id.widget_sheen,
                 if (light) R.drawable.panel_sheen_light else R.drawable.panel_sheen_dark,
             )
+            // The accent's light in the top-left corner. setColorFilter over a
+            // WHITE radial, because a drawable tint is not remotable below API
+            // 31 and a pre-tinted gradient would multiply into mud.
+            //
+            // Only on the dark surface: the same glow on near-white reads as a
+            // smudge, and the light theme's job is to be legible in sunlight
+            // rather than atmospheric.
+            v.setViewVisibility(R.id.widget_glow, if (light) View.GONE else View.VISIBLE)
+            if (!light) {
+                v.setInt(R.id.widget_glow, "setColorFilter", Theme.saturate(accent, sat))
+                // Fades with the panel, like the sheen — a glow left at full
+                // strength over a glass panel is a bright smear with nothing
+                // under it.
+                v.setInt(R.id.widget_glow, "setImageAlpha", panelAlpha)
+            }
             // The sheen fades WITH the panel rather than sitting on top of it at
             // full strength — otherwise a widget turned down to glass keeps a
             // bright band across its top, which reads as a rendering fault

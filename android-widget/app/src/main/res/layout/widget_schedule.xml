@@ -34,6 +34,17 @@
         android:src="@drawable/widget_bg"
         android:contentDescription="@null" />
 
+    <!-- The accent's own light, in one corner. Tinted at runtime through
+         setColorFilter, which is the only way to get a chosen colour onto a
+         drawable in RemoteViews below API 31. -->
+    <ImageView
+        android:id="@+id/widget_glow"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY"
+        android:src="@drawable/panel_glow"
+        android:contentDescription="@null" />
+
     <!-- Above the panel, below the content: a light-to-nothing wash so the
          surface reads as lit from the top instead of as a flat slab. -->
     <ImageView

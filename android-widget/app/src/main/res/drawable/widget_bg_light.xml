@@ -1,8 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The light surface. Same shape and same near-opaque alpha as widget_bg, so
-     switching between them changes only the colour and never the silhouette
-     sitting on the home screen. -->
+<!-- The light surface, given the same treatment as the dark one: a gradient with
+     a direction and a hairline edge. Same silhouette and the same near-opaque
+     alpha, so switching between the two changes only the colour and never the
+     shape sitting on the home screen. The stroke is dark here rather than light,
+     for the same reason the accents carry a deep variant. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="#F2F6FA" />
     <corners android:radius="20dp" />
+    <gradient
+        android:type="linear"
+        android:angle="270"
+        android:startColor="#FFFFFFFF"
+        android:centerColor="#FAF3F7FB"
+        android:endColor="#F5E7EDF6" />
+    <stroke
+        android:width="1dp"
+        android:color="#1F0B1220" />
 </shape>

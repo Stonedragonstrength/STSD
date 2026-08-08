@@ -1,5 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The dark surface.
+     Was a single flat #E60B1220, which is the thing that made it read cheap: a
+     phone wallpaper behind it has texture and light, and a plain slab sitting on
+     top looks like a missing image rather than a designed object.
+
+     Three changes, all cheap and none of them a bitmap:
+       - a vertical gradient, lifted at the top and deeper at the bottom, so the
+         panel has a direction and a bottom edge that sinks into the wallpaper;
+       - a hairline stroke, which is what actually sells "glass" — an edge is how
+         the eye decides a surface is a surface and not a hole;
+       - a richer blue-black than the old near-grey navy, so the accents on top
+         of it have something to be warm against.
+     Alpha stays around E6 so the widget still sits ON the wallpaper rather than
+     blotting it out; the transparency slider moves from here. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="@color/widget_bg" />
     <corners android:radius="20dp" />
+    <gradient
+        android:type="linear"
+        android:angle="270"
+        android:startColor="#F21A2440"
+        android:centerColor="#EF101832"
+        android:endColor="#F2060A16" />
+    <stroke
+        android:width="1dp"
+        android:color="#26FFFFFF" />
 </shape>
