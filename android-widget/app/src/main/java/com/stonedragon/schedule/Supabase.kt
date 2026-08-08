@@ -25,6 +25,13 @@ data class Booking(
     val startMillis: Long,
     val endMillis: Long,
     val athlete: String,
+    /**
+     * Who this is, for colouring. Blank on legacy `setmore_events` rows, which
+     * carry only a name — those fall back to hashing the name and will NOT
+     * match the colour the web app gives that athlete. Accepted rather than
+     * fixed: Setmore is switched off and those rows are history.
+     */
+    val athleteId: String,
     val note: String,
 )
 
@@ -352,7 +359,7 @@ object Supabase {
         // drawn, but it still has to be READ, because its slot is what keeps the
         // legacy mirror from speaking for it.
         val path = "/rest/v1/bookings" +
-            "?select=" + enc("id,start_at,end_at,note,status,athletes(display_name)") +
+            "?select=" + enc("id,start_at,end_at,note,status,athlete_id,athletes(display_name)") +
             "&start_at=gte." + enc(from) +
             "&start_at=lt." + enc(to) +
             "&order=" + enc("start_at.asc")
@@ -372,6 +379,7 @@ object Supabase {
                     startMillis = start,
                     endMillis = parseIso(o.optString("end_at")) ?: start,
                     athlete = o.optJSONObject("athletes")?.optString("display_name").orEmpty(),
+                    athleteId = o.optString("athlete_id"),
                     note = cleanText(o.optString("note")),
                 )
             )
@@ -399,6 +407,8 @@ object Supabase {
                     endMillis = parseIso(o.optString("end_at")) ?: start,
                     athlete = cleanText(o.optString("client_name"))
                         .ifBlank { cleanText(o.optString("title")) },
+                    // The mirror carries no athlete id — the name is all there is.
+                    athleteId = "",
                     note = "",
                 )
             )

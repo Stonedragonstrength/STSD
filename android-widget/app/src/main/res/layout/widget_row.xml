@@ -14,8 +14,28 @@
     android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:gravity="center_vertical"
+    android:baselineAligned="false"
     android:paddingTop="6dp"
     android:paddingBottom="6dp">
+
+    <!-- The athlete's own colour — the same one their avatar carries in the app,
+         so a session is recognisable as theirs before the name is read.
+
+         A background colour rather than a bitmap: setBackgroundColor is
+         remotable, and a bitmap per row would blow the RemoteViews transaction
+         budget on exactly the busy weeks that matter most.
+
+         And a FrameLayout rather than a plain View: RemoteViews accepts only a
+         fixed list of view classes and `View` is not on it. Lint calls that an
+         error, and on the device it is an inflate failure, not a cosmetic one.
+         An empty layout is the lightest thing on that list which can carry a
+         background. -->
+    <FrameLayout
+        android:id="@+id/row_edge"
+        android:layout_width="3dp"
+        android:layout_height="match_parent"
+        android:layout_marginEnd="8dp"
+        android:background="#00000000" />
 
     <LinearLayout
         android:layout_width="52dp"

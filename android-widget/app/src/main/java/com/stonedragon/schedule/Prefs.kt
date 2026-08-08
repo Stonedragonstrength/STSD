@@ -127,6 +127,20 @@ object Prefs {
     fun opacity(ctx: Context): Float = p(ctx).getFloat(K_OPACITY, 1f)
     fun setOpacity(ctx: Context, v: Float) = p(ctx).edit().putFloat(K_OPACITY, v).apply()
 
+    private const val K_COMPACT = "compact"
+    private const val K_DUR = "show_duration"
+    private const val K_NOTES = "show_notes"
+
+    /** Compact drops the duration line and tightens the row. */
+    fun compact(ctx: Context): Boolean = p(ctx).getBoolean(K_COMPACT, false)
+    fun setCompact(ctx: Context, on: Boolean) = p(ctx).edit().putBoolean(K_COMPACT, on).apply()
+
+    fun showDuration(ctx: Context): Boolean = p(ctx).getBoolean(K_DUR, true)
+    fun setShowDuration(ctx: Context, on: Boolean) = p(ctx).edit().putBoolean(K_DUR, on).apply()
+
+    fun showNotes(ctx: Context): Boolean = p(ctx).getBoolean(K_NOTES, true)
+    fun setShowNotes(ctx: Context, on: Boolean) = p(ctx).edit().putBoolean(K_NOTES, on).apply()
+
     private fun jumpKey(id: Int) = "jump_$id"
     private fun weekKey(id: Int) = "week_$id"
     private fun dayKey(id: Int) = "day_$id"
@@ -155,6 +169,11 @@ object Prefs {
                     .put("start", b.startMillis)
                     .put("end", b.endMillis)
                     .put("athlete", b.athlete)
+                    // Cached too, or a widget drawing from cache — which is what
+                    // it does every time the launcher wakes it before the
+                    // network answers — would lose every athlete's colour and
+                    // fall back to hashing names.
+                    .put("athleteId", b.athleteId)
                     .put("note", b.note)
             )
         }
@@ -177,6 +196,10 @@ object Prefs {
                         startMillis = o.optLong("start"),
                         endMillis = o.optLong("end"),
                         athlete = o.optString("athlete"),
+                        // Absent in a cache written by an older build; optString
+                        // gives "", which falls back to the name hash rather
+                        // than crashing on the first draw after an update.
+                        athleteId = o.optString("athleteId"),
                         note = o.optString("note"),
                     )
                 }

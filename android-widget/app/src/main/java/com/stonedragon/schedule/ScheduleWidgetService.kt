@@ -188,25 +188,47 @@ private class ScheduleFactory(
         // process and cannot be handed the palette, so it looks it up itself —
         // if these ever disagreed the header and the list would be two colours.
         val light = Prefs.lightBg(ctx)
-        v.setTextColor(R.id.row_time, Theme.accentFor(Prefs.accentId(ctx), light))
-        v.setTextColor(R.id.row_dur, Theme.mutedColor(light))
+        val sat = Prefs.saturation(ctx)
+        val opacity = Prefs.opacity(ctx)
+        v.setTextColor(R.id.row_time, Theme.saturate(Theme.accentFor(Prefs.accentId(ctx), light), sat))
+        v.setTextColor(R.id.row_dur, Theme.mutedColor(light, opacity))
         v.setTextColor(R.id.row_name, Theme.textColor(light))
-        v.setTextColor(R.id.row_meta, Theme.mutedColor(light))
+        v.setTextColor(R.id.row_meta, Theme.mutedColor(light, opacity))
+
+        // Whose session this is, as a slim edge. Saturation applies here too:
+        // muting the accent and leaving the edges neon would make them shout
+        // over a widget deliberately turned down.
+        v.setInt(
+            R.id.row_edge,
+            "setBackgroundColor",
+            Theme.saturate(Theme.athleteColor(b.athleteId, b.athlete), sat),
+        )
 
         v.setTextViewText(R.id.row_time, timeLabel(b.startMillis))
         v.setTextViewText(R.id.row_name, b.athlete.ifBlank { "Session" })
 
         // Duration rides under the time, in the column that already had the
         // height to spare.
+        //
+        // Compact forces it off: that second line is the whole reason compact
+        // exists, and leaving both switches live would let a coach pick a
+        // "compact" that is exactly as tall as comfortable.
+        val compact = Prefs.compact(ctx)
         val mins = TimeUnit.MILLISECONDS.toMinutes(b.endMillis - b.startMillis).toInt()
+        val showDur = Prefs.showDuration(ctx) && !compact && mins > 0
         v.setTextViewText(R.id.row_dur, if (mins > 0) mins.toString() + "m" else "")
+        v.setViewVisibility(R.id.row_dur, if (showDur) View.VISIBLE else View.GONE)
 
         // The second line is the note or nothing. GONE rather than empty text:
         // an empty TextView still claims its line height, which is the whole
         // thing this was meant to stop spending.
-        val hasNote = b.note.isNotBlank()
+        val hasNote = Prefs.showNotes(ctx) && b.note.isNotBlank()
         v.setTextViewText(R.id.row_meta, b.note)
         v.setViewVisibility(R.id.row_meta, if (hasNote) View.VISIBLE else View.GONE)
+
+        // Compact tightens the row itself, not just what is in it.
+        val padPx = ((if (compact) 2 else 6) * ctx.resources.displayMetrics.density).toInt()
+        v.setViewPadding(R.id.row_root, 0, padPx, 0, padPx)
 
         // A finished session is dimmed rather than hidden: the coach still wants
         // the shape of the whole day, and a list that empties itself as the day
