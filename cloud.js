@@ -43,7 +43,13 @@
     return data.user;
   }
   async function signOut() {
-    try { await sb.auth.signOut(); } catch (e) { console.warn("[Cloud] signOut", e); }
+    // scope "local" is NOT the default — supabase-js signOut() defaults to
+    // "global", which revokes every session this account has on the server.
+    // That is what kept killing the Android widget's own sign-in: any routine
+    // logout here (logout button, "no account found" bounce, remember-me off)
+    // deleted the widget's session out from under it. Signing out everywhere
+    // is a deliberate act and has its own button below.
+    try { await sb.auth.signOut({ scope: "local" }); } catch (e) { console.warn("[Cloud] signOut", e); }
   }
   // Kills every session for this account, not just this browser's. Pairs with
   // clearing the athlete's push subscriptions, so an old phone goes fully dark.
