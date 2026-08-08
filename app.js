@@ -14185,6 +14185,7 @@
     const monthLabel = now.toLocaleDateString("en-US", { month: "long", year: "numeric" });
     const renewed = [];
     const advised = [];
+    const repriced = []; // rate changed after the grant; money still outstanding
     const owing = []; // card links sent for earlier months and still unpaid
     (state.trainerData.clients || []).forEach((c) => {
       if (!c.sessionBank?.autoRenew) return;
@@ -14207,15 +14208,39 @@
       }).length;
       const existing = monthPackageOf(c, monthKey);
       if (existing) {
-        // Only ever the advisory count, and only when it has actually moved —
-        // this runs on every calendar load, and a write per load would be a
-        // cloud push per load. Size and price are never reopened: a manual
-        // grant is the coach's own number, and an auto one is already the
-        // membership.
-        if (!existing.autoRenewGrant || existing.booked === booked) return;
-        existing.booked = booked;
-        advised.push(c);
-        bankMutated(c);
+        // A manual grant is the coach's own number, end to end.
+        if (!existing.autoRenewGrant) return;
+        let touched = false;
+        // The advisory count, and only when it has actually moved — this runs
+        // on every calendar load, and a write per load would be a cloud push
+        // per load.
+        if (existing.booked !== booked) {
+          existing.booked = booked;
+          advised.push(c);
+          touched = true;
+        }
+        // A rate set AFTER the grant was raised used to be invisible. The
+        // package keeps the price stamped on the day it ran, and every "still
+        // to collect" total sums that stamped number rather than re-deriving
+        // it — so a couple granted August at $138 a session and then moved to a
+        // negotiated $125 went on being chased for $552 against a $500 month,
+        // with nothing on screen admitting the two disagreed.
+        //
+        // Corrected only while the money is still OUTSTANDING: once it is
+        // settled the price is what was actually collected, and rewriting that
+        // is worse than showing a stale figure. And never over a number the
+        // coach typed themselves — `priceSetBy` is what records that, and
+        // without the guard the next calendar load quietly undoes their
+        // correction.
+        if (pkgOwed(existing) && existing.priceSetBy !== "coach") {
+          const due = bankPackagePrice(c, m, existing.size);
+          if (due > 0 && due !== Number(existing.price)) {
+            existing.price = due;
+            repriced.push(c);
+            touched = true;
+          }
+        }
+        if (touched) bankMutated(c);
         return;
       }
       // No `if (!booked) return` guard: a paying member gets their ticket even
@@ -14247,12 +14272,18 @@
     if (owing.length) {
       toast(`💳 Still unpaid: ${owing.map((o) => `${o.c.name} (${o.months.length})`).join(", ")}`, 6000);
     }
-    if (!renewed.length && !advised.length) return;
+    if (!renewed.length && !advised.length && !repriced.length) return;
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
-    [...renewed, ...advised].forEach((c) => {
+    [...renewed, ...advised, ...repriced].forEach((c) => {
       if (window.Cloud?.enabled) window.Cloud.debounce(`athlete:${c.id}`, () =>
         window.Cloud.upsertAthlete(c, state.trainerData.coachId));
     });
+    // A correction to what somebody OWES is worth saying out loud — he changed
+    // the rate, and this is the confirmation that the month followed it. Fires
+    // once, because the second pass finds the price already agreeing.
+    if (repriced.length) {
+      toast(`💲 ${monthLabel} re-priced at the new rate: ${repriced.map((c) => c.name).join(", ")}`, 5000);
+    }
     // Only the grant is worth a toast. The advisory count moves every time a
     // booking is made, and the coach did not ask for it.
     if (!renewed.length) return;
@@ -17883,7 +17914,12 @@
           if (raw !== "" && (!Number.isFinite(price) || price < 0)) { showErr(err, "Price must be a number, or blank."); return; }
           const nowCollected = $("#pkg-ed-collected").checked;
           pkg.size = size;
-          if (price === undefined) delete pkg.price; else pkg.price = price;
+          // A price the coach typed is theirs, and runAutoRenewGrants() checks
+          // this before correcting a stale one — without the mark, the next
+          // calendar load quietly undoes what they just typed. Blanking the
+          // field hands the package back to the tier, so the mark goes too.
+          if (price === undefined) { delete pkg.price; delete pkg.priceSetBy; }
+          else { pkg.price = price; pkg.priceSetBy = "coach"; }
           pkg.note = $("#pkg-ed-note").value.trim();
           // Money only. `status` is written either way and only ever "paid":
           // the ledger stopped reading it, but a PWA still running the old
@@ -18298,10 +18334,13 @@
           const m = bankMembership(c);
           // A corrected count is the month's allowance as well as its price, so
           // it is written to the package itself. `sizeSetBy: "coach"` is an
-          // audit mark, not a guard -- runAutoRenewGrants() already refuses to
-          // reopen the size or price of an existing package and only ever
-          // updates its advisory booked count. This records WHY a size differs
-          // from the tier, for the next person reading the bank.
+          // audit mark rather than a guard -- runAutoRenewGrants() never
+          // reopens the SIZE of an existing package. It does re-derive the
+          // price of one still outstanding, so that a rate changed after the
+          // grant reaches the money owed. Two things hold that off: a
+          // `priceSetBy: "coach"` mark, and settling -- which is what the lines
+          // below do, so the price this sheet writes is final. This records WHY
+          // a size differs from the tier, for the next person reading the bank.
           const want = typed.get(c.id);
           if (want !== undefined && want !== pkg.size) {
             pkg.size = want;
@@ -18770,6 +18809,11 @@
     const pkg = monthPackageOf(c, monthKey);
     if (!pkg || Number(pkg.price) === amount) return;
     pkg.price = amount;
+    // Once a real charge has gone out, the package follows the CHARGE and not
+    // the tier. Marked the same way a hand-typed price is, so the auto
+    // re-pricer cannot knock it back to a derived figure while the athlete is
+    // holding a payment link for the amount actually asked for.
+    pkg.priceSetBy = "coach";
     pkg.note = note || pkg.note;
     bankMutated(c);
   }
