@@ -19128,6 +19128,17 @@
     // athlete page that read as hundreds of upcoming sessions they were never
     // scheduled for. Scoping belongs here, where we know whose page it is.
     const meId = state.clientData.program?.clientId || "";
+    // Belt and braces, because the query above degrades QUIETLY: hand it no
+    // athlete id and it falls back to whatever RLS allows, which for a
+    // coach-and-athlete account is the whole roster again — the same wrong
+    // screen, with nothing to show it had happened. This filter re-states the
+    // scope where the rows are consumed. It does nothing when meId is present
+    // (the query already narrowed it) and cannot blank a card that works today,
+    // since it only applies when there IS an id to apply.
+    const onlyMine = (rows) => {
+      const list = Array.isArray(rows) ? rows : [];
+      return meId ? list.filter((b) => !b.athlete_id || b.athlete_id === meId) : list;
+    };
     // Not allowed to book: still load their own sessions — they need to see
     // what the coach put in the diary, and to be able to cancel one — but skip
     // the taken-slots read, which exists only to subtract from a grid that
@@ -19140,8 +19151,8 @@
         window.Cloud.getBookings(new Date(from - 86400000).toISOString(), new Date(toMs).toISOString(), false, meId),
         window.Cloud.getBookingRequests(true, meId),
       ]);
-      _athleteBookings = Array.isArray(own) ? own : [];
-      _athleteRequests = Array.isArray(reqs) ? reqs : [];
+      _athleteBookings = onlyMine(own);
+      _athleteRequests = onlyMine(reqs);
       _athleteSlots = [];
       renderAthleteBooking();
       return;
@@ -19153,8 +19164,8 @@
       window.Cloud.getBookings(new Date(from - 86400000).toISOString(), new Date(toMs).toISOString(), false, meId),
       window.Cloud.getBookingRequests(true, meId),
     ]);
-    _athleteBookings = Array.isArray(mine) ? mine : [];
-    _athleteRequests = Array.isArray(reqs) ? reqs : [];
+    _athleteBookings = onlyMine(mine);
+    _athleteRequests = onlyMine(reqs);
     // +1 day of horizon because an instant near midnight still reads as the
     // previous calendar day in the coach's zone, so day 0 can be yesterday.
     _athleteSlots = availabilityIsSet(a)
