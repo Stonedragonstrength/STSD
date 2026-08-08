@@ -172,12 +172,14 @@
 /* White theme readability fixes:
    (1) the app header + coach nav have HARDCODED dark glass backgrounds that
        don't follow the theme, so on white their (now-dark) text is invisible;
-   (2) primary-colored buttons/pills use dark ink (#062131) that assumes a
-       BRIGHT primary — but white's primary is near-black, so it's dark-on-dark.
-   Repaint the bars light and flip on-primary text to white. */
+   (2) .tab-badge uses dark ink that assumes a BRIGHT primary — but white's
+       primary is near-black, so it's dark-on-dark. (.btn-primary had the same
+       problem here until Wave 3 gave it --btn-ink, which handles it directly —
+       dropped from this list 2026-08-08.)
+   Repaint the bars light and flip the badge's on-primary text to white. */
 :root[data-theme="white"] .app-header { background: rgba(255, 255, 255, 0.9); }
 :root[data-theme="white"] .coach-nav { background: rgba(255, 255, 255, 0.85); }
-:root[data-theme="white"] .btn-primary, :root[data-theme="white"] .tab-badge { color: #fff; }
+:root[data-theme="white"] .tab-badge { color: #fff; }
 /* (Active nav/tab pills dropped from the #fff list 2026-07-15: they're now a
    light tint with --primary-bright text, which is already dark on White.) */
 
@@ -260,15 +262,31 @@ p { margin: 0 0 0.75em; line-height: 1.5; }
 .btn:active { transform: translateY(1px); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* Black face, sheen across the top third, lit rim, outer halo. The old bright
+   fill was brighter than its own glow, which is why the glow never read. The
+   RESTING state carries all of this — hover never fires on touch. */
 .btn-primary {
-  background: linear-gradient(180deg, var(--primary-bright), var(--primary));
-  color: #062131;
-  border-color: var(--primary-hover);
+  position: relative;
+  overflow: hidden;
+  background: var(--btn-face);
+  color: var(--btn-ink);
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.35);
+  border-top-color: rgba(var(--primary-bright-rgb), 0.85);
 }
 .btn-primary:hover {
-  background: linear-gradient(180deg, var(--primary), var(--primary-hover));
-  box-shadow: 0 0 0 3px var(--primary-soft);
+  background: var(--btn-face);
+  border-top-color: rgba(var(--primary-bright-rgb), 1);
 }
+/* Mid-workout actions keep the solid fill. A dark primary is less obviously
+   "the button", which matters when someone is tapping fast between sets. */
+.btn-primary.btn-solid {
+  background: linear-gradient(180deg, var(--primary-bright), var(--primary));
+  border: 1px solid var(--primary-hover);
+  color: #062131;
+  box-shadow: 0 6px 20px rgba(var(--primary-rgb), 0.35),
+              inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+:root[data-theme="white"] .btn-primary.btn-solid { color: #fff; }
 
 .btn-ghost {
   background: transparent;
@@ -5192,15 +5210,18 @@ body.login-success #screen-client {
 .btn:active { transform: scale(0.95); }
 
 .btn-primary {
-  box-shadow: 0 6px 20px rgba(var(--primary-rgb), 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 26px -6px rgba(var(--primary-bright-rgb), 0.45),
+              inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 .btn-primary:hover {
-  box-shadow: 0 10px 32px rgba(var(--primary-rgb), 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 0 0 3px var(--primary-soft);
+  box-shadow: 0 0 34px -5px rgba(var(--primary-bright-rgb), 0.62),
+              inset 0 1px 0 rgba(255, 255, 255, 0.2);
   transform: translateY(-1px);
 }
 .btn-primary:active {
   transform: scale(0.96) translateY(0);
-  box-shadow: 0 2px 8px rgba(var(--primary-rgb), 0.5), inset 0 2px 6px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 0 14px -4px rgba(var(--primary-bright-rgb), 0.5),
+              inset 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
 /* Sheen sweep on primary buttons */
@@ -9792,13 +9813,15 @@ body.live-log-mode #screen-client .header-right { display: none; }
 .btn-primary {
   border-radius: 6px;
   clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
-  /* clip-path clips box-shadow, so the outer glow rides drop-shadow instead */
-  filter: drop-shadow(0 3px 10px rgba(var(--primary-rgb), 0.35));
+  /* box-shadow is left to the Wave 3 glow block above — this rule used to
+     re-declare it here too, which (same specificity, later source) silently
+     blanked out that block's halo on every button. clip-path clips box-shadow
+     regardless of which rule wins it, so the glow has to ride drop-shadow —
+     retuned to --primary-bright-rgb to match the halo it's standing in for. */
+  filter: drop-shadow(0 0 14px rgba(var(--primary-bright-rgb), 0.45));
 }
 .btn-primary:hover {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
-  filter: drop-shadow(0 5px 14px rgba(var(--primary-rgb), 0.55)) brightness(1.07);
+  filter: drop-shadow(0 0 18px rgba(var(--primary-bright-rgb), 0.62)) brightness(1.07);
 }
 .btn-primary:focus-visible {
   /* the shared pressPulse ring gets clipped by the notch — use an inset ring */
