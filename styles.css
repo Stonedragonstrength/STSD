@@ -41,7 +41,7 @@
   /* The same three as channels, so a tint can be mixed at any alpha instead of
      another hardcoded rgba(). Deliberately NOT theme-swapped like --primary-rgb
      is: "forgiven", "charged" and "destructive" must mean the same colour in
-     all ten themes, or the meaning moves with the decoration. */
+     every theme, or the meaning moves with the decoration. */
   --accent-rgb: 16, 185, 129;
   --danger-rgb: 239, 68, 68;
   --warn-rgb: 245, 158, 11;
@@ -158,6 +158,17 @@
   --border: #4e203e; --border-strong: #742f5d;
   --primary-rgb: 236, 72, 153; --primary-bright-rgb: 244, 114, 182;
   --primary: #ec4899; --primary-bright: #f472b6; --primary-hover: #db2777;
+}
+/* Sapphire — the DARK blue, next to which default Blue is the icy one. Added
+   2026-08-08 by the same derivation as the seven above: hue 226 at a richer
+   saturation than blue's (~50% vs ~39%), lightness solved per slot so every
+   surface sits at blue's luminance against --face-inset (worst drift 0.004,
+   guarded by tests/theme-tokens.test.js section 7). */
+:root[data-theme="sapphire"] {
+  --bg: #010205; --bg-2: #050710; --surface: #070a16; --surface-2: #0a0e1e; --surface-3: #111932; --surface-elevate: #1a254b;
+  --border: #202e5b; --border-strong: #34457f;
+  --primary-rgb: 29, 78, 216; --primary-bright-rgb: 79, 124, 249;
+  --primary: #1d4ed8; --primary-bright: #4f7cf9; --primary-hover: #1e40af;
 }
 /* White — the one light theme. Inverts the base to a light surface with dark
    ink and slate accents (the light-mode counterpart to the "black" theme).
@@ -6755,7 +6766,7 @@ input.billing-link {
 /* ---- The saved card ----
    A setting, not a prompt: one quiet line under whatever is owed, never
    competing with the amount above it. Everything here is built from the theme's
-   own --primary-rgb, so it lands correctly in all ten themes including white
+   own --primary-rgb, so it lands correctly in all themes including white
    without a single hardcoded colour. */
 .apm-row {
   display: flex; align-items: center; flex-wrap: wrap; gap: 0.45rem;
@@ -13712,7 +13723,7 @@ body.scroll-locked {
    A left-edge gradient rather than a filled button: the primary row at the top
    is the one that should win the eye, and a stack of solid colour would fight
    it. The edge carries the grouping, the wash only hints at it.
-   Colours are fixed across all ten themes (see --accent-rgb): what these mean
+   Colours are fixed across all themes (see --accent-rgb): what these mean
    must not change when the decoration does. */
 .dvs-act.ok, .dvs-act.warn, .dvs-act.sched, .dvs-act.danger { border-left-width: 3px; }
 .dvs-act.ok {
@@ -14570,7 +14581,7 @@ input.credit-cap:disabled { opacity: 0.4; }
 /* -------- Nutrition tracker import -------- */
 /* .imp-warn exists because .warn is only ever a modifier in this file
    (.exn-chip.warn) and does nothing on its own. Colours come from the theme
-   vars, not hardcoded hex, so this survives all ten themes including the light
+   vars, not hardcoded hex, so this survives all themes including the light
    one. */
 /* The native file input is unstyleable browser chrome and looks like a broken
    stylesheet on a dark modal. Visually hidden rather than display:none, so it

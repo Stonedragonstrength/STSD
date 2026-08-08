@@ -21,8 +21,8 @@ import kotlinx.coroutines.withContext
 class ConfigActivity : AppCompatActivity() {
 
     /**
-     * Ten colour dots, built from Theme.ACCENTS so the picker cannot disagree
-     * with what the widget draws. The selected one wears a ring rather than a
+     * One colour dot per accent, built from Theme.ACCENTS so the picker cannot
+     * disagree with what the widget draws. The selected one wears a ring rather than a
      * tick — at 30dp a tick over a coloured circle is unreadable, and the ring
      * survives being the same colour as the dot.
      */

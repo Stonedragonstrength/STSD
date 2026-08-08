@@ -24,7 +24,8 @@
   // (coach / athlete) remembers its own pick under KEY_THEME.
   const KEY_THEME = "trainerpro_theme_v1";
   const THEMES = [
-    { id: "blue",   name: "Blue",   swatch: "#22d3ee" },
+    { id: "blue",     name: "Blue",     swatch: "#22d3ee" },
+    { id: "sapphire", name: "Sapphire", swatch: "#4f7cf9" },
     { id: "teal",   name: "Teal",   swatch: "#2dd4bf" },
     { id: "green",  name: "Green",  swatch: "#5eea8d" },
     { id: "yellow", name: "Yellow", swatch: "#fbbf24" },

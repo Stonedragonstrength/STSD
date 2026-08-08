@@ -14,7 +14,7 @@ package com.stonedragon.schedule
  *
  * These are hotter than the web app's `--primary-bright` values, which are
  * Tailwind 400s and read muted on a phone at arm's length behind a wallpaper.
- * The hues still track the app's ten themes so the two read as one product.
+ * The hues still track the app's themes so the two read as one product.
  *
  * Slate and Ink are deliberately NOT neon — they are the neutral choices, the
  * widget's equivalent of the app's Black and White themes.
@@ -48,7 +48,11 @@ internal object Theme {
     }
 
     val ACCENTS = listOf(
-        Accent("blue",   "Blue",   c("#00E1FF"), c("#0083A0")),
+        Accent("blue",     "Blue",     c("#00E1FF"), c("#0083A0")),
+        // The DARK blue, tracking the app's sapphire theme — its neon has to
+        // stay this luminous to read on the dark panel; the slider's top half
+        // is how it gets navy-dark, and its deep twin gives that a head start.
+        Accent("sapphire", "Sapphire", c("#4D7EFF"), c("#1D4ED8")),
         Accent("teal",   "Teal",   c("#00FFC6"), c("#00907A")),
         Accent("green",  "Green",  c("#3DFF77"), c("#1B9440")),
         Accent("yellow", "Yellow", c("#FFE01B"), c("#8F6E00")),

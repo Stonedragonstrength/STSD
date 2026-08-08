@@ -3,7 +3,7 @@
 // This earns a test because it fails INVISIBLY. You change :root, open the
 // default blue theme, and it looks perfect. Black and White carry their own
 // surfaces and their own alphas, and nobody opens them until an athlete does.
-// Ten themes x six tokens is not something you verify by looking at a screen.
+// Eleven themes x six tokens is not something you verify by looking at a screen.
 //
 // Run: node tests/theme-tokens.test.js
 
@@ -41,7 +41,7 @@ function valueOf(body, token) {
 
 const RECIPE = ["--face", "--face-inset", "--edge", "--edge-lit", "--halo", "--lift"];
 const BUTTON = ["--btn-face", "--btn-ink"];
-const COLOUR_THEMES = ["red", "orange", "green", "teal", "purple", "yellow", "pink"];
+const COLOUR_THEMES = ["red", "orange", "green", "teal", "purple", "yellow", "pink", "sapphire"];
 
 // ---- 1. :root defines the whole recipe -----------------------------------
 const root = block(":root");
@@ -77,7 +77,7 @@ for (const th of COLOUR_THEMES.concat(["black", "white"])) {
 }
 
 // ---- 4. the eight colour themes must NOT redefine the recipe -------------
-// They inherit it. A local override here is how the ten themes drift apart.
+// They inherit it. A local override here is how the colour themes drift apart.
 for (const th of COLOUR_THEMES) {
   const b = block(':root[data-theme="' + th + '"]');
   if (!b) continue;
