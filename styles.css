@@ -13767,6 +13767,13 @@ body.scroll-locked {
    the ladder. One heat colour drives the crest, the bar and every earned row,
    so the whole card intensifies together as the rank climbs. */
 .hoard-card { padding: 1rem 1.05rem 0.9rem; }
+/* The whole card is a fold and the head row is its summary — collapsed it is
+   one line that still says the rank and the tonnage, which is everything the
+   tab needs from it until it is asked. */
+.hoard-fold > summary { list-style: none; cursor: pointer; user-select: none; }
+.hoard-fold > summary::-webkit-details-marker { display: none; }
+.hoard-chev { color: var(--text-soft); transition: transform 0.15s ease; flex: none; margin-left: 0.35rem; }
+.hoard-fold[open] .hoard-chev { transform: rotate(90deg); }
 .hoard-head { display: flex; align-items: center; gap: 0.8rem; }
 .hoard-crest {
   flex: none;

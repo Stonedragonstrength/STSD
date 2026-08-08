@@ -29857,6 +29857,12 @@
   // in their own heat colour, the current one carrying the bar. Past HOARD the
   // ladder switches to the current prestige lap, so the rows always mean
   // "what's next" rather than "what you finished a year ago".
+  //
+  // Folded shut by default: even as a shelf of tiles it sat above the charts
+  // on the one tab that exists to show them, and the head row already carries
+  // the rank and the lifetime figure. Session-only, same as the PR folds —
+  // an athlete who opens the case keeps it open across re-renders.
+  let _hoardOpen = false;
   function renderHoardCard(host, client, progress) {
     if (!host) return;
     const lb = Number(progress?.hoard?.lb) || 0;
@@ -29896,15 +29902,16 @@
       at += hoardLbForLevel(L);
     }
 
-    host.innerHTML = `<div class="card hoard-card" style="--rank-color:${look.color};--rank-glow:${look.glow}">
-      <div class="hoard-head">
+    host.innerHTML = `<details class="card hoard-card hoard-fold"${_hoardOpen ? " open" : ""} style="--rank-color:${look.color};--rank-glow:${look.glow}">
+      <summary class="hoard-head">
         <span class="hoard-crest" aria-hidden="true">${rank.icon}</span>
         <span class="hoard-headtext">
           <span class="hoard-kicker">The Hoard</span>
           <span class="hoard-rank">${escapeHtml(rank.name)}</span>
         </span>
         <span class="hoard-ton">${escapeHtml(hoardLbLabel(lb))}<small>moved, all time</small></span>
-      </div>
+        <span class="hoard-chev" aria-hidden="true">▸</span>
+      </summary>
       <div class="hoard-track"><span class="hoard-fill" style="width:${pct.toFixed(1)}%"></span></div>
       <div class="hoard-case" role="group" aria-label="Ranks">
         ${tiles.map((t, i) => `
@@ -29915,7 +29922,9 @@
           </button>`).join("")}
       </div>
       <p class="hoard-detail" id="hoard-detail"></p>
-    </div>`;
+    </details>`;
+    const fold = host.querySelector(".hoard-fold");
+    fold.addEventListener("toggle", () => { _hoardOpen = fold.open; });
 
     // Tapping a tile answers the only question the ladder's extra rows were
     // answering: what does that one cost? Opens on the rank they're climbing.
