@@ -36,6 +36,13 @@
   --danger: #ef4444;
   --danger-soft: rgba(239, 68, 68, 0.18);
   --warn: #f59e0b;
+  /* The same three as channels, so a tint can be mixed at any alpha instead of
+     another hardcoded rgba(). Deliberately NOT theme-swapped like --primary-rgb
+     is: "forgiven", "charged" and "destructive" must mean the same colour in
+     all ten themes, or the meaning moves with the decoration. */
+  --accent-rgb: 16, 185, 129;
+  --danger-rgb: 239, 68, 68;
+  --warn-rgb: 245, 158, 11;
   /* Filled-in (edited/accepted) rep-sheet values — light blue, theme-stable
      so it never collides with a theme's primary. */
   --edited-val: #7dd3fc;
@@ -13507,8 +13514,45 @@ body.scroll-locked {
 }
 .dvs-act:hover { border-color: rgba(var(--primary-rgb), 0.6); background: var(--surface-3); }
 .dvs-act.primary { border-color: var(--primary); background: var(--primary-soft); color: var(--primary-bright); }
-.dvs-act.danger { color: #fca5a5; }
-.dvs-act.danger:hover { border-color: rgba(239, 68, 68, 0.6); }
+
+/* Coloured by JOB, not one per row. The sheet stacks four unrelated kinds of
+   action — run the session, forgive or charge a no-show, move it, cancel it —
+   and as identical pills they all read equally routine, so "Missed · still
+   charged" sat looking exactly like "Open their profile".
+   A left-edge gradient rather than a filled button: the primary row at the top
+   is the one that should win the eye, and a stack of solid colour would fight
+   it. The edge carries the grouping, the wash only hints at it.
+   Colours are fixed across all ten themes (see --accent-rgb): what these mean
+   must not change when the decoration does. */
+.dvs-act.ok, .dvs-act.warn, .dvs-act.sched, .dvs-act.danger { border-left-width: 3px; }
+.dvs-act.ok {
+  border-left-color: var(--accent);
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.14), transparent 62%), var(--surface-2);
+}
+.dvs-act.ok .dvs-ico { color: var(--accent); }
+.dvs-act.ok:hover { border-color: rgba(var(--accent-rgb), 0.55); border-left-color: var(--accent); }
+.dvs-act.warn {
+  border-left-color: var(--warn);
+  background: linear-gradient(90deg, rgba(var(--warn-rgb), 0.14), transparent 62%), var(--surface-2);
+}
+.dvs-act.warn .dvs-ico { color: var(--warn); }
+.dvs-act.warn:hover { border-color: rgba(var(--warn-rgb), 0.55); border-left-color: var(--warn); }
+/* Scheduling keeps the theme's own primary: moving and repeating a session are
+   the ordinary business of the app, not a warning or a consequence. */
+.dvs-act.sched {
+  border-left-color: rgba(var(--primary-rgb), 0.85);
+  background: linear-gradient(90deg, rgba(var(--primary-rgb), 0.13), transparent 62%), var(--surface-2);
+}
+.dvs-act.sched .dvs-ico { color: var(--primary-bright); }
+.dvs-act.sched:hover { border-left-color: var(--primary); }
+
+.dvs-act.danger {
+  color: #fca5a5;
+  border-left-color: var(--danger);
+  background: linear-gradient(90deg, rgba(var(--danger-rgb), 0.13), transparent 62%), var(--surface-2);
+}
+.dvs-act.danger .dvs-ico { color: var(--danger); }
+.dvs-act.danger:hover { border-color: rgba(var(--danger-rgb), 0.6); border-left-color: var(--danger); }
 .dvs-mark {
   margin-bottom: 0.7rem; padding: 0.5em 0.8em;
   border-radius: var(--radius); font-size: 0.82rem; font-weight: 700;

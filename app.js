@@ -15116,13 +15116,16 @@
       `<span class="dvs-ico">${dayIconHtml(ico)}</span>${label}</button>`;
     if (c) acts.push(act("profile", "sd:athlete", `Open ${escapeHtml(c.name.split(" ")[0])}'s profile`));
     if (c && e) {
+      // Tinted by job — forgiving a session and charging for one are opposite
+      // answers to the same question, and as identical grey pills they read as
+      // a pair of equally routine choices. See .dvs-act.ok / .warn.
       acts.push(mark
         ? act("unmark", "sd:undo", `Undo &ldquo;${mark.type === "closecall" ? "close call" : "missed"}&rdquo;`)
-        : act("cc", "sd:waive", "Close call · free missed session") +
-          act("charge", "sd:missed", "Missed · still charged"));
+        : act("cc", "sd:waive", "Close call · free missed session", "ok") +
+          act("charge", "sd:missed", "Missed · still charged", "warn"));
       // Moving one comes before cancelling one, because it is the thing the
       // coach usually actually wants: a session rarely disappears, it shifts.
-      if (e.native && e.bookingId) acts.push(act("move", "sd:calmove", "Change the date or time"));
+      if (e.native && e.bookingId) acts.push(act("move", "sd:calmove", "Change the date or time", "sched"));
       // Turning this session into a standing appointment. Offered on a session
       // that has ALREADY HAPPENED as well — that is the common way it gets
       // used, and repeatStarts() begins the pattern from today so nothing can
@@ -15133,7 +15136,7 @@
       // Not offered when this session is already part of a series — the sheet
       // says so a few lines below, and a second series would silently overlap
       // the first. Extending an existing one lives on the Schedule card.
-      if (!e.seriesId) acts.push(act("repeat", "sd:calrepeat", "Make this a regular session"));
+      if (!e.seriesId) acts.push(act("repeat", "sd:calrepeat", "Make this a regular session", "sched"));
       if (e.native && e.bookingId) acts.push(act("cancel", "sd:calx", "Cancel this session", "danger"));
       else if (!e.native) acts.push(act("unlink", "sd:unlink", "Unlink this booking"));
     }
