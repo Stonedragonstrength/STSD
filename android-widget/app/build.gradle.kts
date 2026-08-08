@@ -79,6 +79,12 @@ android {
 }
 
 dependencies {
+    // Plain JVM unit tests. They exist for the things a screenshot cannot
+    // check — hashes, arithmetic, colour maths — and they are deliberately
+    // written to need no Android stubs and no Robolectric, so `gradle
+    // testDebugUnitTest` stays a few seconds rather than a minute.
+    testImplementation("junit:junit:4.13.2")
+
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")

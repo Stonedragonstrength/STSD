@@ -75,6 +75,13 @@ jobs:
           git commit -m "Widget signing key, so updates install over each other [skip ci]"
           git push
 
+      # Before the build, deliberately: a broken colour hash or a bad span
+      # calculation should stop the job rather than produce an APK somebody
+      # then installs by hand to discover the problem.
+      - name: Unit tests
+        working-directory: android-widget
+        run: gradle testDebugUnitTest --no-daemon --stacktrace
+
       - name: Build debug APK
         working-directory: android-widget
         run: gradle assembleDebug --no-daemon --stacktrace

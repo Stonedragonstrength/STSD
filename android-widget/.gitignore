@@ -1,0 +1,6 @@
+# Machine-specific: where the Android SDK lives on THIS computer.
+# Never committed — CI provisions its own SDK.
+local.properties
+.gradle/
+app/build/
+build/
