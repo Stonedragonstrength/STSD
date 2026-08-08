@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The light surface's counterpart: a dark wash rather than a light one, for
+     the same reason the accents carry a deep variant — a white sheen on a
+     near-white panel is invisible. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <corners android:radius="20dp" />
+    <gradient
+        android:type="linear"
+        android:angle="270"
+        android:startColor="#14000000"
+        android:centerColor="#07000000"
+        android:endColor="#00000000" />
+</shape>

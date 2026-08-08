@@ -133,6 +133,35 @@ class ScheduleWidget : AppWidgetProvider() {
          * is row zero — where the list already is. So a coach who paged forward
          * and then refreshed would spend the request on a no-op and lose it.
          */
+        /**
+         * The header label, drawn with a gradient across it.
+         *
+         * The widget's ONE bitmap. RemoteViews cross a Binder transaction with
+         * a hard size budget, and this is the element that earns it: a shader
+         * cannot be put on a RemoteViews TextView by any other means, and a
+         * bitmap per ROW would take the widget down on exactly the busy weeks
+         * that matter most. Sized to the text, so it is a few kilobytes.
+         */
+        private fun wordmark(ctx: Context, text: String, from: Int, to: Int): android.graphics.Bitmap {
+            val density = ctx.resources.displayMetrics.density
+            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                textSize = 12f * density * ctx.resources.configuration.fontScale
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                letterSpacing = 0.05f
+            }
+            val w = Math.ceil(paint.measureText(text).toDouble()).toInt().coerceAtLeast(1)
+            val fm = paint.fontMetrics
+            val h = Math.ceil((fm.bottom - fm.top).toDouble()).toInt().coerceAtLeast(1)
+            val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+            // Left to right across the text itself, not the widget: the gradient
+            // should read on the word regardless of how wide the header is.
+            paint.shader = android.graphics.LinearGradient(
+                0f, 0f, w.toFloat(), 0f, from, to, android.graphics.Shader.TileMode.CLAMP,
+            )
+            android.graphics.Canvas(bmp).drawText(text, 0f, -fm.top, paint)
+            return bmp
+        }
+
         private fun armJumpIfThisWeek(app: Context, widgetId: Int) {
             val now = System.currentTimeMillis()
             if (Prefs.windowStart(app, widgetId) == Span.windowStart(now, Prefs.spanDays(app))) {
@@ -382,10 +411,34 @@ class ScheduleWidget : AppWidgetProvider() {
             // The word when a word applies, the dates otherwise — and which
             // word depends on the span, so it lives in Span where it can be
             // tested. See Span.label.
-            v.setTextViewText(
-                R.id.widget_date,
-                Span.label(week, Prefs.spanDays(ctx), System.currentTimeMillis()),
-            )
+            val label = Span.label(week, Prefs.spanDays(ctx), System.currentTimeMillis())
+            // A word gets the gradient wordmark; a date range stays real text,
+            // because only a TextView can ellipsise when the widget is narrow.
+            val isWord = !label.any { it.isDigit() } || label.startsWith("NEXT ")
+            // Named apart from the `light`/`accent` further down, which belong
+            // to the colour pass: this runs earlier, and reusing those names
+            // would shadow them in a file where the two blocks are screens
+            // apart.
+            val onLight = Prefs.lightBg(ctx)
+            val accentPair = Theme.accentOf(Prefs.accentId(ctx))
+            val satNow = Prefs.saturation(ctx)
+            if (isWord) {
+                v.setImageViewBitmap(
+                    R.id.widget_date_art,
+                    wordmark(
+                        ctx,
+                        label,
+                        Theme.saturate(if (onLight) accentPair.deep else accentPair.neon, satNow),
+                        Theme.saturate(Theme.textColor(onLight), satNow),
+                    ),
+                )
+                v.setViewVisibility(R.id.widget_date_art, View.VISIBLE)
+                v.setViewVisibility(R.id.widget_date, View.GONE)
+            } else {
+                v.setTextViewText(R.id.widget_date, label)
+                v.setViewVisibility(R.id.widget_date_art, View.GONE)
+                v.setViewVisibility(R.id.widget_date, View.VISIBLE)
+            }
             // Status only — no session count. "How many this week" is not a
             // number you act on, and the pill was taking width from a row that
             // already carries five controls. What survives is the part that
@@ -449,7 +502,21 @@ class ScheduleWidget : AppWidgetProvider() {
             val accent = Theme.accentFor(Prefs.accentId(ctx), light)
             val fg = Theme.textColor(light)
             val dim = Theme.mutedColor(light)
-            v.setInt(R.id.widget_root, "setBackgroundResource", Theme.bgRes(light))
+            // The panel is an image behind the content, not a background on it,
+            // so its alpha can move without dragging the text with it. See the
+            // layout's own note.
+            val panelAlpha = Theme.panelAlpha(Prefs.opacity(ctx))
+            v.setImageViewResource(R.id.widget_panel, Theme.bgRes(light))
+            v.setInt(R.id.widget_panel, "setImageAlpha", panelAlpha)
+            v.setImageViewResource(
+                R.id.widget_sheen,
+                if (light) R.drawable.panel_sheen_light else R.drawable.panel_sheen_dark,
+            )
+            // The sheen fades WITH the panel rather than sitting on top of it at
+            // full strength — otherwise a widget turned down to glass keeps a
+            // bright band across its top, which reads as a rendering fault
+            // rather than a choice.
+            v.setInt(R.id.widget_sheen, "setImageAlpha", panelAlpha)
             v.setTextColor(R.id.widget_date, fg)
             v.setTextColor(R.id.widget_count, accent)
             v.setTextColor(R.id.widget_prev, accent)

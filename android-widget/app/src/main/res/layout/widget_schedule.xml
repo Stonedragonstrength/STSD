@@ -14,12 +14,41 @@
      items. One weighted spacer holds all the slack, instead of the date being
      the weighted view and leaving gaps either side of floating centred text
      that read as padding nobody asked for. -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- The surface is TWO ImageViews behind the content rather than a background
+     on the content itself, and that is what makes transparency possible at all:
+     RemoteViews cannot set an arbitrary alpha on a background drawable, and
+     View.setAlpha would fade the text and the athlete edges along with the
+     panel — the one thing that has to stay crisp. ImageView.setImageAlpha is
+     remotable and touches only the image, so the panel can go to glass while
+     the writing on it does not move. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <ImageView
+        android:id="@+id/widget_panel"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY"
+        android:src="@drawable/widget_bg"
+        android:contentDescription="@null" />
+
+    <!-- Above the panel, below the content: a light-to-nothing wash so the
+         surface reads as lit from the top instead of as a flat slab. -->
+    <ImageView
+        android:id="@+id/widget_sheen"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY"
+        android:src="@drawable/panel_sheen_dark"
+        android:contentDescription="@null" />
+
+<LinearLayout
+    android:id="@+id/widget_content"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@drawable/widget_bg"
     android:paddingLeft="8dp"
     android:paddingRight="8dp"
     android:paddingTop="6dp"
@@ -40,6 +69,24 @@
             android:text="‹"
             android:textSize="20sp"
             android:textColor="@color/accent"
+            android:contentDescription="@string/prev_day" />
+
+        <!-- Two views for one label, and only ever one of them visible.
+             The gradient wordmark is a BITMAP — the only way to get a shader
+             onto text through RemoteViews — and a bitmap cannot ellipsise. So
+             it carries the short WORD labels ("THIS WEEK", "NEXT 3 DAYS"),
+             whose widths are known, and a date range falls back to the real
+             TextView, which can shrink and ellipsise like text should.
+             It is also the widget's ONLY bitmap: RemoteViews cross a
+             size-limited Binder transaction, and one small wordmark is
+             affordable where one per row is not. -->
+        <ImageView
+            android:id="@+id/widget_date_art"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:adjustViewBounds="true"
+            android:scaleType="fitCenter"
+            android:visibility="gone"
             android:contentDescription="@string/prev_day" />
 
         <TextView
@@ -157,3 +204,4 @@
         android:textSize="13sp"
         android:textColor="@color/muted" />
 </LinearLayout>
+</FrameLayout>
