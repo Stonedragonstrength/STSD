@@ -7125,6 +7125,24 @@
       // missing. Shown only where it can mean something: the current year, a
       // month inside that year, and only once something is actually booked in
       // it, so December doesn't grow a permanent $0 row.
+      // A month with nothing billed against it yet is not a $0 month — it is a
+      // month not invoiced YET, and what it is worth is already sitting on the
+      // calendar. Priced per athlete by bookedValueForMonth: their own rate
+      // where they have one, the tier's per-session figure where they don't.
+      //
+      // Only from THIS month on. A projection over a month already gone is not
+      // a forecast, it is just a wrong number sitting where the truth ($0, and
+      // nothing was billed) used to be.
+      const nowKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const monthRows = months.map((r) => {
+        const total = r.collected + r.outstanding;
+        if (total || year !== now.getFullYear() || r.key < nowKey) {
+          return { ...r, total, proj: null };
+        }
+        const p = bookedValueForMonth(r.key);
+        return { ...r, total, proj: p.sessions > 0 ? p : null };
+      });
+
       // Anchored to the last month with MONEY on it, not the last row in the
       // list. booksMonths() runs to whichever is later, this month or the last
       // month the ledger touches, so a single $0 entry filed a month ahead
@@ -7146,9 +7164,14 @@
       // is the one telling the truth, however quiet it reads.
       const listedKeys = new Set(months.map((r) => r.key));
       const showProj = !!proj && proj.sessions > 0 && !listedKeys.has(proj.key);
-      // The ghost bar shares the year's scale, so "next month is quiet so far"
-      // reads as a short bar rather than as a full-width one in another colour.
-      const barPeak = Math.max(peak, showProj ? proj.amount : 0);
+      // Every projected bar shares the year's scale, so "next month is quiet so
+      // far" reads as a short bar rather than as a full-width one in another
+      // colour.
+      const barPeak = Math.max(
+        peak,
+        showProj ? proj.amount : 0,
+        ...monthRows.map((r) => (r.proj ? r.proj.amount : 0)),
+      );
 
       host.innerHTML = `
         <div class="books${shown ? "" : " is-hidden"}">
@@ -7183,18 +7206,37 @@
                 </div>`).join("")}
             </div>
             <div class="books-months">
-              ${months.map((r) => {
-                const total = r.collected + r.outstanding;
+              ${monthRows.map((r) => {
                 const open = _booksOpenMonth === r.key;
+                // Nothing invoiced, but sessions on the calendar: the same
+                // projected treatment the trailing ghost row gets, because it
+                // is the same statement about the same kind of month. Not
+                // expandable — a projection has no ledger entries behind it.
+                if (r.proj) {
+                  return `
+                <div class="books-mo is-proj">
+                  <div class="books-mo-row">
+                    <span class="books-mo-name">${escapeHtml(r.label)}</span>
+                    <span class="books-mo-bar">
+                      <span class="books-bar-proj" style="width:${(r.proj.amount / barPeak) * 100}%"></span>
+                    </span>
+                    <span class="books-mo-num">${escapeHtml(money(r.proj.amount))}</span>
+                  </div>
+                  <p class="books-proj-note">${escapeHtml(
+                    `${plural(r.proj.sessions, "session")} booked, at your rates. Not invoiced yet.` +
+                    (r.proj.unpriced ? ` ${r.proj.unpriced} with no rate set.` : ""),
+                  )}</p>
+                </div>`;
+                }
                 return `
-                <div class="books-mo${open ? " is-open" : ""}${total ? "" : " is-empty"}">
-                  <button type="button" class="books-mo-row" data-books-mo="${escapeHtml(r.key)}"${total ? "" : " disabled"}>
+                <div class="books-mo${open ? " is-open" : ""}${r.total ? "" : " is-empty"}">
+                  <button type="button" class="books-mo-row" data-books-mo="${escapeHtml(r.key)}"${r.total ? "" : " disabled"}>
                     <span class="books-mo-name">${escapeHtml(r.label)}</span>
                     <span class="books-mo-bar">
                       <span class="books-bar-in" style="width:${(r.collected / barPeak) * 100}%"></span>
                       <span class="books-bar-out" style="width:${(r.outstanding / barPeak) * 100}%"></span>
                     </span>
-                    <span class="books-mo-num">${escapeHtml(money(total))}</span>
+                    <span class="books-mo-num">${escapeHtml(money(r.total))}</span>
                   </button>
                   ${open ? `<div class="books-mo-list">${booksEntriesHtml(r.entries)}</div>` : ""}
                 </div>`;
