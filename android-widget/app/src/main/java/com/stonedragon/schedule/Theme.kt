@@ -76,6 +76,73 @@ internal object Theme {
 
     fun mutedColor(light: Boolean): Int = c(if (light) LIGHT_MUTED else DARK_MUTED)
 
+    // ---- Saturation and transparency ----
+    //
+    // Both are pure functions on purpose. They are the only part of the
+    // widget's LOOK that can be settled without a phone, so they are written to
+    // be settled that way.
+
+    /**
+     * Scale a colour's saturation toward grey, leaving hue and alpha alone.
+     *
+     * Done by mixing toward the colour's own luma rather than through HSV: the
+     * result is the same to the eye, and it keeps Theme free of
+     * android.graphics, which is what makes every function here testable.
+     *
+     * Rec. 601 luma, not a flat average — a flat average turns yellow muddy and
+     * blue nearly black, because the eye does not weight the channels equally.
+     */
+    fun saturate(color: Int, amount: Float): Int {
+        val a = amount.coerceIn(0f, 1f)
+        if (a >= 1f) return color
+        val r = (color shr 16) and 0xFF
+        val g = (color shr 8) and 0xFF
+        val b = color and 0xFF
+        val grey = 0.299f * r + 0.587f * g + 0.114f * b
+        fun mix(ch: Int) = (grey + (ch - grey) * a).toInt().coerceIn(0, 255)
+        return (color and 0xFF000000.toInt()) or (mix(r) shl 16) or (mix(g) shl 8) or mix(b)
+    }
+
+    /**
+     * How opaque the panel is drawn, 0..255, from a 0f..1f preference.
+     *
+     * Deliberately floored well above zero. A widget that can be made to vanish
+     * completely is one the coach cannot find to fix — and the settings are
+     * reached from the widget, so an invisible widget is an unreachable
+     * setting. "Glass" means faint, not gone.
+     */
+    fun panelAlpha(opacity: Float): Int {
+        val o = opacity.coerceIn(0f, 1f)
+        return (GLASS_FLOOR + (255 - GLASS_FLOOR) * o).toInt().coerceIn(0, 255)
+    }
+
+    private const val GLASS_FLOOR = 38 // ~15%
+
+    /**
+     * Muted text, lifted toward the main text colour as the panel clears.
+     *
+     * The panel getting more transparent must not make the writing harder to
+     * read, and the widget has no idea what wallpaper is behind it — so the
+     * quieter the surface, the less the secondary text is allowed to recede.
+     * At full opacity this is exactly the colour it has always been.
+     */
+    fun mutedColor(light: Boolean, opacity: Float): Int {
+        val o = opacity.coerceIn(0f, 1f)
+        val muted = mutedColor(light)
+        if (o >= 1f) return muted
+        val text = textColor(light)
+        // At glass, three-quarters of the way to full text colour: enough to
+        // stay legible, still distinguishable from the primary text.
+        val lift = (1f - o) * 0.75f
+        fun mix(shift: Int): Int {
+            val m = (muted shr shift) and 0xFF
+            val t = (text shr shift) and 0xFF
+            return (m + (t - m) * lift).toInt().coerceIn(0, 255)
+        }
+        return (muted and 0xFF000000.toInt()) or
+            (mix(16) shl 16) or (mix(8) shl 8) or mix(0)
+    }
+
     fun bgRes(light: Boolean): Int =
         if (light) R.drawable.widget_bg_light else R.drawable.widget_bg
 

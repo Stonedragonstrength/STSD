@@ -114,6 +114,19 @@ object Prefs {
     fun lightBg(ctx: Context): Boolean = p(ctx).getBoolean(K_LIGHT, false)
     fun setLightBg(ctx: Context, on: Boolean) = p(ctx).edit().putBoolean(K_LIGHT, on).apply()
 
+    // Look settings. Every one of these defaults to exactly today's behaviour,
+    // so an existing widget looks identical until its owner changes something.
+    private const val K_SAT = "saturation"
+    private const val K_OPACITY = "opacity"
+
+    /** 0f = grey, 1f = full strength. */
+    fun saturation(ctx: Context): Float = p(ctx).getFloat(K_SAT, 1f)
+    fun setSaturation(ctx: Context, v: Float) = p(ctx).edit().putFloat(K_SAT, v).apply()
+
+    /** 0f = glass (still faintly there), 1f = opaque. */
+    fun opacity(ctx: Context): Float = p(ctx).getFloat(K_OPACITY, 1f)
+    fun setOpacity(ctx: Context, v: Float) = p(ctx).edit().putFloat(K_OPACITY, v).apply()
+
     private fun jumpKey(id: Int) = "jump_$id"
     private fun weekKey(id: Int) = "week_$id"
     private fun dayKey(id: Int) = "day_$id"
