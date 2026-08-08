@@ -6354,6 +6354,22 @@
   function flatMonthly(m) {
     return m && m.price && !m.sessions ? Number(m.price) || 0 : 0;
   }
+  // The same, but honouring a rate the coach set on this athlete's bank.
+  //
+  // A program-only tier has no sessions to multiply, so `sessionBank.rate` is
+  // not a per-session figure there — it is what this person pays a month, full
+  // stop. That is how a GRANDFATHERED member works: Cheryl Ray is on Digital at
+  // $100 while the tier's list price has since moved to $250. Reading the tier
+  // ignored the number the coach had explicitly typed and quietly re-priced her
+  // to today's rate.
+  //
+  // Returns 0 for every ordinary tier, so sessions × rate is untouched.
+  function flatMonthlyFor(c, m) {
+    if (!m || m.sessions) return 0;
+    const own = Number(c?.sessionBank?.rate);
+    if (own > 0) return own;
+    return Number(m.price) || 0;
+  }
 
   function monthChargePlan(c, monthKey) {
     ensureSessionBank(c);
@@ -6367,7 +6383,7 @@
     const pkg = monthPackageOf(c, monthKey);
     const sessions = billSessionsFor(c, monthKey, membership);
     const allowance = Number(pkg?.size) || Number(membership?.sessions) || 0;
-    const flat = flatMonthly(membership);
+    const flat = flatMonthlyFor(c, membership);
     const gross = flat || Math.round(sessions * rate);
     // Credit for months that closed with sessions unused. Never more than the
     // invoice itself — a credit bigger than the bill would produce a negative
@@ -18438,7 +18454,7 @@
       const rate = athleteSessionRate(c) || athleteSessionRate(partner) || 0;
       const sessions = billSessionsFor(c, monthKey, membership);
       const charge = chargeFor(c, monthKey);
-      const flat = flatMonthly(membership);
+      const flat = flatMonthlyFor(c, membership);
       rows.push({
         client: c, partner, target, membership, rate, sessions, charge, flat,
         payBy: bankPayBy(c),
@@ -19830,7 +19846,9 @@
   // amount and are never multiplied by anything.
   function bankPackagePrice(c, m, size) {
     if (!m) return 0;
-    if (!m.sessions) return Number(m.price) || 0;
+    // Program-only: flat, and a rate on the bank IS that flat amount — see
+    // flatMonthlyFor. Never multiplied, because there are no sessions.
+    if (!m.sessions) return flatMonthlyFor(c, m);
     // A given 0 means zero, and only an ABSENT size falls back to the tier.
     // Treating 0 as "unset" made a coach who typed 0 in the settle sheet get
     // quoted a full month, which is the one number they were trying not to bill.

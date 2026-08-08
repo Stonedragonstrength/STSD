@@ -36,9 +36,16 @@ function athleteSessionRate(c) {
   if (own > 0) return own;
   return membershipPerSession(membershipById(c.sessionBank?.membership || ""));
 }
+function flatMonthlyFor(c, m) {
+  if (!m || m.sessions) return 0;
+  const own = Number(c?.sessionBank?.rate);
+  if (own > 0) return own;
+  return Number(m.price) || 0;
+}
 function bankPackagePrice(c, m, size) {
   if (!m) return 0;
-  if (!m.sessions) return Number(m.price) || 0;
+  // Program-only: flat, and a rate on the bank IS that flat amount.
+  if (!m.sessions) return flatMonthlyFor(c, m);
   // A given 0 means zero, and only an ABSENT size falls back to the tier.
   const given = Number(size);
   const n = Number.isFinite(given) && given >= 0 ? given : m.sessions;
@@ -107,9 +114,21 @@ eq("a negative size falls back rather than crediting anyone",
 console.log("\nprogram-only tiers are flat and never multiplied");
 eq("digital membership is its monthly price",
    bankPackagePrice(athlete("digital"), membershipById("digital"), 0), 250);
-// The important one: a session rate must not turn a flat plan into rate × 0.
+// A session rate must not turn a flat plan into rate × 0 — but it is not
+// ignored either. On a program-only tier there is nothing to multiply, so the
+// number the coach typed IS the monthly amount. This is how a grandfathered
+// member keeps their old price when the tier's list price moves: Cheryl Ray is
+// on Digital at $100 against a $250 list.
 eq("a custom rate does not zero a flat plan",
-   bankPackagePrice(athlete("digital", 80), membershipById("digital"), 8), 250);
+   bankPackagePrice(athlete("digital", 80), membershipById("digital"), 8) > 0, true);
+eq("a custom rate IS the flat monthly amount",
+   bankPackagePrice(athlete("digital", 100), membershipById("digital"), 0), 100);
+eq("grandfathered rate beats the tier's list price",
+   bankPackagePrice(athlete("digital", 100), membershipById("digital"), 8), 100);
+eq("no custom rate falls back to the tier's flat price",
+   bankPackagePrice(athlete("digital"), membershipById("digital"), 0), 250);
+eq("a rate on a no-price tier is still the amount",
+   bankPackagePrice(athlete("no-session", 75), membershipById("no-session"), 0), 75);
 eq("no-session no-price tier is 0",
    bankPackagePrice(athlete("no-session"), membershipById("no-session"), 0), 0);
 eq("no membership at all is 0", bankPackagePrice(athlete("single-2", 80), null, 8), 0);
