@@ -18018,7 +18018,13 @@
           ? `${due} to settle · ${pending} auto-renewed package${pending === 1 ? "" : "s"} live but not collected`
           : `${due} athlete${due === 1 ? "" : "s"} still waiting on ${month}'s sessions`;
   }
-  function openMonthGrantSheet() {
+  // `preset` carries the coach's typed counts and ticks back in when they step
+  // back from the confirmation. Without it, backing out of the summary to change
+  // one number silently discarded every other correction they had made.
+  function openMonthGrantSheet(arg) {
+    // Only honour a real preset. Anything else — most likely a MouseEvent from
+    // a listener wired without a wrapper — is ignored rather than half-read.
+    const preset = arg && arg.sizes instanceof Map && arg.picked instanceof Set ? arg : null;
     const rows = monthGrantRoster();
     const eligible = rows.filter((r) => r.membership && r.membership.sessions);
     const noTier = rows.filter((r) => !r.membership);
@@ -18037,14 +18043,13 @@
       // An uncollected row's sessions are already spendable, so it shows the
       // package's own size and its price — this tick is money being confirmed,
       // not an allowance handed out.
-      const n = r.action === "pay" ? r.pkg.size : m.sessions;
+      const granted = r.action === "pay" ? r.pkg.size : m.sessions;
+      const n = preset?.sizes.has(c.id) ? preset.sizes.get(c.id) : granted;
       // Priced from the athlete's own rate, not from whatever was stamped on
       // the package when it was granted. Packages granted before custom rates
       // were honoured carry the tier's list price, and showing that here would
       // quote a number the coach never agreed with this person.
-      const due = r.action === "pay"
-        ? bankPackagePrice(c, m, r.pkg.size)
-        : bankPackagePrice(c, m, m.sessions);
+      const due = bankPackagePrice(c, m, n);
       const state = r.action === "done" ? "paid"
         : r.action === "pay" ? (due ? `to collect · ${money(due)}` : "to collect")
         : `${r.remaining} left`;
@@ -18054,7 +18059,8 @@
                they were two separate columns eating width the name and the
                numbers both needed. -->
           <span class="mg-who">
-            <input type="checkbox" data-mg="${escapeHtml(c.id)}"${r.action === "done" ? " disabled" : " checked"} />
+            <input type="checkbox" data-mg="${escapeHtml(c.id)}"${r.action === "done" ? " disabled"
+              : (preset && !preset.picked.has(c.id) ? "" : " checked")} />
             <span class="mg-av">${avatarTileHtml(c, c.importedProgress, { size: "sm", colorIdx: idx })}</span>
           </span>
           <span class="mg-main">
@@ -18169,8 +18175,6 @@
     retotal();
   }
   function runMonthGrant() {
-    const key = monthGrantKey();
-    const label = monthGrantLabel();
     const picked = $$("#mg-list input[data-mg]:checked").map((b) => b.dataset.mg);
     // Whatever the coach typed in each row's box, read once here so the write
     // matches the figures the sheet was quoting when they pressed the button.
@@ -18178,6 +18182,77 @@
       const n = Math.max(0, Math.round(Number(b.value)));
       return [b.dataset.mgsize, Number.isFinite(n) ? n : 0];
     }));
+    // Nothing is written yet. This hands off to a summary of exactly what is
+    // about to happen to whom -- real money and real allowances, and the sheet
+    // itself only ever showed one row at a time.
+    confirmMonthGrant(picked, typed);
+  }
+
+  // The last look before anything moves. Reads the same roster the sheet did,
+  // so the figures here are the figures that were on screen; the WRITES still
+  // re-derive per athlete in commitMonthGrant, because a couple mirrored mid-pass
+  // has to be seen fresh.
+  function confirmMonthGrant(picked, typed) {
+    const label = monthGrantLabel();
+    const byId = new Map(monthGrantRoster().map((r) => [r.client.id, r]));
+    const lines = picked.map((id) => byId.get(id)).filter((r) => r && r.membership);
+
+    const sizeOf = (r) => {
+      const t = typed.get(r.client.id);
+      const granted = r.action === "pay" ? r.pkg.size : r.membership.sessions;
+      return t === undefined ? granted : t;
+    };
+
+    let sessions = 0, cash = 0, grants = 0, collects = 0;
+    const rowsHtml = lines.map((r) => {
+      const c = r.client;
+      const size = sizeOf(r);
+      const was = r.action === "pay" ? r.pkg.size : r.membership.sessions;
+      const due = bankPackagePrice(c, r.membership, size);
+      sessions += size; cash += due;
+      if (r.action === "pay") collects += 1; else grants += 1;
+      const notes = [];
+      // Only ever says a number CHANGED against what the athlete already had --
+      // the point of the summary is catching a typo, and "9 → 7" is the shape a
+      // typo takes.
+      if (size !== was) notes.push(`<span class="mgc-changed">${was} → ${size}</span>`);
+      if (size < r.usedThisMonth) notes.push(`<span class="mgc-warn">⚠ ${r.usedThisMonth} already used</span>`);
+      return `<div class="mgc-row">
+        <span class="mgc-name">${escapeHtml(c.name || "(unnamed)")}${r.partner ? " 💞" : ""}</span>
+        <span class="mgc-what">${r.action === "pay"
+          ? `collect ${size} session${size === 1 ? "" : "s"}`
+          : `grant ${size} session${size === 1 ? "" : "s"}`}${notes.length ? ` · ${notes.join(" · ")}` : ""}</span>
+        <span class="mgc-amt">${due ? money(due) : "—"}</span>
+      </div>`;
+    }).join("");
+
+    if (!lines.length) { toast("Nobody ticked"); return; }
+
+    openModal({
+      title: `Settle ${label} — check first`,
+      body: `
+        <p class="muted" style="margin-top:-0.4em">Nothing has moved yet. This is
+          what pressing Settle does.</p>
+        <div class="mgc-list">${rowsHtml}</div>
+        <div class="mgc-total">
+          <span>${grants ? `${grants} granted` : ""}${grants && collects ? " · " : ""}${collects ? `${collects} collected` : ""}</span>
+          <span><b>${sessions}</b> sessions · <b>${money(cash)}</b></span>
+        </div>
+        <p class="muted mgc-note">Marking money collected records that it
+          arrived — it does not take payment.</p>`,
+      actions: [
+        // Back, not Cancel: their typed counts and ticks come with them.
+        { label: "← Back", className: "btn btn-ghost",
+          onClick: () => openMonthGrantSheet({ sizes: typed, picked: new Set(picked) }) },
+        { label: "Settle", className: "btn btn-primary",
+          onClick: () => commitMonthGrant(picked, typed) },
+      ],
+    });
+  }
+
+  function commitMonthGrant(picked, typed) {
+    const key = monthGrantKey();
+    const label = monthGrantLabel();
     const done = [];
     let sessions = 0, granted = 0, paid = 0;
     picked.forEach((id) => {
@@ -34550,7 +34625,10 @@
     window.addEventListener("online", flushBugQueue);
     flushBugQueue();
     $("#btn-add-client").addEventListener("click", addClientPrompt);
-    $("#btn-month-grant")?.addEventListener("click", openMonthGrantSheet);
+    // Wrapped, not passed directly: openMonthGrantSheet takes an optional preset
+    // and a bare listener hands it the MouseEvent, which is truthy and has no
+    // `sizes` — the sheet then threw before rendering a single row.
+    $("#btn-month-grant")?.addEventListener("click", () => openMonthGrantSheet());
     $("#btn-month-bill")?.addEventListener("click", openMonthBillSheet);
     $("#btn-session-lookup")?.addEventListener("click", openSessionLookup);
     // Roster grouping tabs (A to Z / Membership / Activity / Program)

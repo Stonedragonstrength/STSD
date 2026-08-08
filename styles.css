@@ -3933,6 +3933,33 @@ input.mg-size { -moz-appearance: textfield; appearance: textfield; }
 .mg-prev.is-short { color: var(--warn); font-weight: 700; }
 .mg-skipped { font-size: 0.78rem; margin: 0.7rem 0 0; }
 
+/* The confirmation before anything moves. A plain list, not cards — it is read
+   top to bottom once, looking for the one line that is wrong. */
+.mgc-list { display: flex; flex-direction: column; gap: 0.1em; margin: 0.6rem 0; }
+.mgc-row {
+  display: flex; align-items: baseline; gap: 0.6em;
+  padding: 0.4em 0.1em;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.86rem;
+}
+.mgc-row:last-child { border-bottom: none; }
+.mgc-name { font-weight: 700; flex: 0 0 auto; max-width: 40%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mgc-what { flex: 1 1 auto; min-width: 0; color: var(--text-soft); font-size: 0.8rem; }
+.mgc-amt { flex: 0 0 auto; font-weight: 800; color: var(--primary-bright); }
+/* A changed number is the whole reason to read this screen, so it is the one
+   thing that is not muted. */
+.mgc-changed { color: var(--primary-bright); font-weight: 700; }
+.mgc-warn { color: var(--warn); font-weight: 700; }
+.mgc-total {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 0.6em;
+  margin-top: 0.6rem; padding-top: 0.6rem;
+  border-top: 1px solid rgba(var(--primary-rgb), 0.35);
+  font-size: 0.9rem; color: var(--text-soft);
+}
+.mgc-total b { color: var(--text); }
+.mgc-note { font-size: 0.74rem; margin: 0.7rem 0 0; }
+
 /* "Bill the month": Settle's other half, and it borrows Settle's count badge
    so the two read as one round rather than two features. */
 .month-bill-btn { display: inline-flex; align-items: center; gap: 0.4em; }
