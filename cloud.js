@@ -406,15 +406,56 @@
   // slots the APP owns, and a cancelled booking still owns its slot. Without it
   // the dead Setmore mirror starts speaking for a session the coach cancelled,
   // and the auto-redeem walker charges for it. Everything else wants booked only.
+  // PostgREST caps a select at the project's max-rows — 1000 by default — and
+  // says nothing when it does. It just hands back a short list.
+  //
+  // Ordered ascending, the rows that go missing are the FURTHEST OUT, which is
+  // the hardest kind of wrong to notice: "12 left, through October" quietly
+  // becomes "9 left, through September" and still reads like an answer. Every
+  // money surface that counts bookings would drift down together, plausibly,
+  // with nothing on screen admitting it. So this pages instead of trusting one
+  // request.
+  //
+  // Paged against an exact COUNT rather than "stop on a short page", because a
+  // short page cannot be told apart from the server's own cap being lower than
+  // the page size — the exact failure being defended against. The count rides
+  // along on the first request; there is no extra round-trip for it, and no
+  // second request at all until the window really does hold more than one page.
+  // Matched to PostgREST's own default cap, so the ordinary case is exactly one
+  // request and nothing about today's cost changes. A SMALLER page would be
+  // safe but wasteful: at 500, a coach already holding 678 rows would pay two
+  // round-trips on every schedule refresh forever, to guard a limit they have
+  // not reached. Correctness here comes from the offset below, not from the
+  // page size — a server capping lower than this is handled either way.
+  const BOOKINGS_PAGE = 1000;
   async function getBookings(fromISO, toISO, includeCancelled) {
     try {
-      let q = sb.from("bookings").select("*").order("start_at", { ascending: true });
-      if (!includeCancelled) q = q.eq("status", "booked");
-      if (fromISO) q = q.gte("start_at", fromISO);
-      if (toISO) q = q.lt("start_at", toISO);
-      const { data, error } = await q;
-      if (error) { console.warn("[Cloud] getBookings", error.message); return null; }
-      return data || [];
+      const out = [];
+      let total = Infinity;
+      while (out.length < total) {
+        // The offset is what we ALREADY HAVE, never a multiple of the page
+        // size. A server whose own cap is smaller than the page hands back a
+        // short page, and stepping by the page size would then skip exactly the
+        // rows it withheld — silently, and only on the busiest coaches.
+        const from = out.length;
+        let q = sb.from("bookings")
+          .select("*", { count: "exact" })
+          .order("start_at", { ascending: true })
+          .range(from, from + BOOKINGS_PAGE - 1);
+        if (!includeCancelled) q = q.eq("status", "booked");
+        if (fromISO) q = q.gte("start_at", fromISO);
+        if (toISO) q = q.lt("start_at", toISO);
+        const { data, error, count } = await q;
+        if (error) { console.warn("[Cloud] getBookings", error.message); return null; }
+        if (typeof count === "number") total = count;
+        const rows = data || [];
+        out.push(...rows);
+        // An empty page means the server has nothing more to give, whatever the
+        // count claimed. Without this, a count that disagrees with the rows —
+        // a delete landing mid-page, say — would spin forever.
+        if (!rows.length) break;
+      }
+      return out;
     } catch (e) { console.warn(e); return null; }
   }
 
