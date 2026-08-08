@@ -52,11 +52,12 @@ internal sealed class Row {
  * disagreed by one row the NOW button would land on the wrong day, so they are
  * not allowed to be two implementations.
  */
-internal fun buildWeekRows(weekStart: Long, bookings: List<Booking>): List<Row> {
+internal fun buildWeekRows(weekStart: Long, bookings: List<Booking>, days: Int = 7): List<Row> {
     if (bookings.isEmpty()) return emptyList()
-    val out = ArrayList<Row>(bookings.size + 7)
+    val span = Span.normalise(days)
+    val out = ArrayList<Row>(bookings.size + span)
     val sorted = bookings.sortedBy { it.startMillis }
-    for (i in 0 until 7) {
+    for (i in 0 until span) {
         val from = Supabase.addDays(weekStart, i)
         val to = Supabase.addDays(weekStart, i + 1)
         val mine = sorted.filter { it.startMillis >= from && it.startMillis < to }
@@ -159,13 +160,13 @@ private class ScheduleFactory(
 
     override fun onDataSetChanged() {
         // Same week the provider drew, or the list and the header disagree.
-        val week = Prefs.week(ctx, widgetId)
+        val week = Prefs.windowStart(ctx, widgetId)
         val bookings = if (Prefs.isLoaded(Prefs.state(ctx, widgetId))) {
             Prefs.bookings(ctx, widgetId, week)
         } else {
             emptyList()
         }
-        rows = buildWeekRows(week, bookings)
+        rows = buildWeekRows(week, bookings, Prefs.spanDays(ctx))
         // The launcher binds this service separately from the provider. If this
         // line never appears, the list is never asked for its contents and the
         // empty view is all the widget can possibly show.

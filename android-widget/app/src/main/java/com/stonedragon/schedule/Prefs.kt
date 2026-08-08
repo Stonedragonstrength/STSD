@@ -48,28 +48,48 @@ object Prefs {
         p(ctx).edit().remove(K_ACCESS).remove(K_REFRESH).remove(K_EXPIRES).apply()
     }
 
-    // ---- which week each widget is showing ----
+    // ---- which window each widget is showing ----
 
     /**
-     * Local midnight on the Monday of the week this widget renders. Defaults to
-     * this week, and re-defaults whenever the stored week is in the past — a
-     * widget left on next week over a weekend should come back showing the week
-     * it is now, not keep rendering a week that has been and gone.
+     * Local midnight at the start of the window this widget renders — the
+     * Monday of a week, or today for the 3- and 14-day spans (see [Span]).
      *
-     * Note the key changed from day_ to week_ when the widget stopped being a
-     * day at a time. An old day_ value is simply ignored: it is a millis inside
-     * some day, and reading it as a week start would put the widget on a week
-     * beginning on a Thursday.
+     * Defaults to the window containing now, and re-defaults whenever the
+     * stored one is in the past: a widget left on next week over a weekend
+     * should come back showing the window it is now, not keep rendering one
+     * that has been and gone. That floor is also what makes CHANGING the span
+     * safe — a Monday stored under a week span is behind today's window under a
+     * 3-day one, so it is pulled forward rather than rendering a stale offset.
+     *
+     * The key is still week_ from when this was always a week. An older day_
+     * value is ignored: it is a millis inside some day, and reading it as a
+     * window start would begin the week on a Thursday.
      */
-    fun week(ctx: Context, widgetId: Int): Long {
+    fun windowStart(ctx: Context, widgetId: Int): Long {
         val stored = p(ctx).getLong(weekKey(widgetId), 0L)
-        val thisWeek = Supabase.startOfWeek(System.currentTimeMillis())
-        return if (stored < thisWeek) thisWeek else stored
+        val here = Span.windowStart(System.currentTimeMillis(), spanDays(ctx))
+        return if (stored < here) here else stored
     }
 
-    fun setWeek(ctx: Context, widgetId: Int, weekStart: Long) {
-        p(ctx).edit().putLong(weekKey(widgetId), weekStart).apply()
+    fun setWindowStart(ctx: Context, widgetId: Int, start: Long) {
+        p(ctx).edit().putLong(weekKey(widgetId), start).apply()
     }
+
+    private const val K_SPAN = "span_days"
+
+    /**
+     * How far ahead the widget looks: 3, 7 or 14 days.
+     *
+     * Global rather than per-widget, like the other look settings — but note it
+     * changes what `windowStart` MEANS, so a stored window from another span
+     * can be a Monday when the span now anchors to today. That is safe because
+     * windowStart floors against the current span's own window: switching span
+     * pulls every widget back to "here", which is also the only sane place for
+     * it to land.
+     */
+    fun spanDays(ctx: Context): Int = Span.normalise(p(ctx).getInt(K_SPAN, 7))
+    fun setSpanDays(ctx: Context, days: Int) =
+        p(ctx).edit().putInt(K_SPAN, Span.normalise(days)).apply()
 
     fun forgetWidget(ctx: Context, widgetId: Int) {
         p(ctx).edit()
