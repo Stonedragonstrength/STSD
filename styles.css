@@ -11,7 +11,7 @@
 @font-face { font-family: "Barlow"; font-style: normal; font-weight: 800; font-display: swap; src: url("fonts/barlow-800.woff2") format("woff2"); }
 @font-face { font-family: "Barlow"; font-style: normal; font-weight: 900; font-display: swap; src: url("fonts/barlow-900.woff2") format("woff2"); }
 :root {
-  /* Obsidian base. The eight colour themes inherit this wholesale; Black and
+  /* Obsidian base. The colour themes inherit this wholesale; Black and
      White carry their own and are retuned below. */
   --bg: #010204;
   --bg-2: #04070e;
@@ -13780,11 +13780,13 @@ body.scroll-locked {
 .hoard-card { padding: 1rem 1.05rem 0.9rem; }
 /* The whole card is a fold and the head row is its summary — collapsed it is
    one line that still says the rank and the tonnage, which is everything the
-   tab needs from it until it is asked. */
+   tab needs from it until it is asked. The chevron is the shared
+   .pref-fold-chev; only its auto margin is overridden, because .hoard-ton
+   already owns the flex gap. */
 .hoard-fold > summary { list-style: none; cursor: pointer; user-select: none; }
 .hoard-fold > summary::-webkit-details-marker { display: none; }
-.hoard-chev { color: var(--text-soft); transition: transform 0.15s ease; flex: none; margin-left: 0.35rem; }
-.hoard-fold[open] .hoard-chev { transform: rotate(90deg); }
+.hoard-head .pref-fold-chev { margin-left: 0.35rem; flex: none; }
+.hoard-fold[open] .pref-fold-chev { transform: rotate(90deg); }
 .hoard-head { display: flex; align-items: center; gap: 0.8rem; }
 .hoard-crest {
   flex: none;

@@ -140,7 +140,11 @@ object Prefs {
     private const val K_OPACITY = "opacity"
 
     /** 0f = grey, 1f = full strength. */
-    fun saturation(ctx: Context): Float = p(ctx).getFloat(K_SAT, 1f)
+    // Clamped on read: the stored float is only ever written by the slider,
+    // but the domain's edges belong to Theme and a stale build's write must
+    // not push a newer build past them.
+    fun saturation(ctx: Context): Float =
+        p(ctx).getFloat(K_SAT, 1f).coerceIn(0f, Theme.SAT_MAX)
     fun setSaturation(ctx: Context, v: Float) = p(ctx).edit().putFloat(K_SAT, v).apply()
 
     /** 0f = glass (still faintly there), 1f = opaque. */

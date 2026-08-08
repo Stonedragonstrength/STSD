@@ -415,20 +415,19 @@ class ScheduleWidget : AppWidgetProvider() {
             // A word gets the gradient wordmark; a date range stays real text,
             // because only a TextView can ellipsise when the widget is narrow.
             val isWord = !label.any { it.isDigit() } || label.startsWith("NEXT ")
-            // Named apart from the `light`/`accent` further down, which belong
-            // to the colour pass: this runs earlier, and reusing those names
-            // would shadow them in a file where the two blocks are screens
-            // apart.
-            val onLight = Prefs.lightBg(ctx)
-            val satNow = Prefs.saturation(ctx)
+            // Read once and reused by the colour pass further down — the
+            // wordmark and the panel must never disagree about the palette.
+            val light = Prefs.lightBg(ctx)
+            val sat = Prefs.saturation(ctx)
+            val accent = Theme.accentToned(Prefs.accentId(ctx), light, sat)
             if (isWord) {
                 v.setImageViewBitmap(
                     R.id.widget_date_art,
                     wordmark(
                         ctx,
                         label,
-                        Theme.accentToned(Prefs.accentId(ctx), onLight, satNow),
-                        Theme.saturate(Theme.textColor(onLight), satNow),
+                        accent,
+                        Theme.saturate(Theme.textColor(light), sat),
                     ),
                 )
                 v.setViewVisibility(R.id.widget_date_art, View.VISIBLE)
@@ -496,11 +495,9 @@ class ScheduleWidget : AppWidgetProvider() {
             // Colours are applied here rather than baked into the layout, since
             // the layout is compiled once and the coach can repaint any time.
             // The list rows are coloured by the factory, which reads the same
-            // two prefs — see ScheduleWidgetService.
-            val light = Prefs.lightBg(ctx)
-            val sat = Prefs.saturation(ctx)
+            // prefs — see ScheduleWidgetService. `light`/`sat`/`accent` were
+            // read once above, where the wordmark needed them first.
             val opacity = Prefs.opacity(ctx)
-            val accent = Theme.accentToned(Prefs.accentId(ctx), light, sat)
             val fg = Theme.textColor(light)
             // The opacity-aware muted colour, not the flat one: as the panel
             // clears, secondary text lifts toward the main text colour so the
@@ -512,7 +509,7 @@ class ScheduleWidget : AppWidgetProvider() {
             // The panel is an image behind the content, not a background on it,
             // so its alpha can move without dragging the text with it. See the
             // layout's own note.
-            val panelAlpha = Theme.panelAlpha(Prefs.opacity(ctx))
+            val panelAlpha = Theme.panelAlpha(opacity)
             v.setImageViewResource(R.id.widget_panel, Theme.bgRes(light))
             v.setInt(R.id.widget_panel, "setImageAlpha", panelAlpha)
             v.setImageViewResource(

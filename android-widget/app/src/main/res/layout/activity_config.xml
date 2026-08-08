@@ -143,19 +143,19 @@
             android:textSize="11sp"
             android:textColor="@color/muted" />
 
+        <!-- max is set in code from Theme.SAT_MAX - the one owner of the range. -->
         <SeekBar
             android:id="@+id/cfg_saturation"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:max="200"
             android:paddingLeft="10dp"
             android:paddingRight="10dp" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/vivid"
+            android:text="@string/sat_deep"
             android:textSize="11sp"
             android:textColor="@color/muted" />
     </LinearLayout>

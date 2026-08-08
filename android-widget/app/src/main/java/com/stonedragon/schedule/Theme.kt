@@ -53,15 +53,15 @@ internal object Theme {
         // stay this luminous to read on the dark panel; the slider's top half
         // is how it gets navy-dark, and its deep twin gives that a head start.
         Accent("sapphire", "Sapphire", c("#4D7EFF"), c("#1D4ED8")),
-        Accent("teal",   "Teal",   c("#00FFC6"), c("#00907A")),
-        Accent("green",  "Green",  c("#3DFF77"), c("#1B9440")),
-        Accent("yellow", "Yellow", c("#FFE01B"), c("#8F6E00")),
-        Accent("orange", "Orange", c("#FF8A1F"), c("#B85200")),
-        Accent("red",    "Red",    c("#FF3355"), c("#BE1330")),
-        Accent("pink",   "Pink",   c("#FF3DA6"), c("#B80F6E")),
-        Accent("purple", "Purple", c("#B266FF"), c("#6D1FD1")),
-        Accent("slate",  "Slate",  c("#D9E2EC"), c("#475569")),
-        Accent("ink",    "Ink",    c("#94A3B8"), c("#1E293B")),
+        Accent("teal",     "Teal",     c("#00FFC6"), c("#00907A")),
+        Accent("green",    "Green",    c("#3DFF77"), c("#1B9440")),
+        Accent("yellow",   "Yellow",   c("#FFE01B"), c("#8F6E00")),
+        Accent("orange",   "Orange",   c("#FF8A1F"), c("#B85200")),
+        Accent("red",      "Red",      c("#FF3355"), c("#BE1330")),
+        Accent("pink",     "Pink",     c("#FF3DA6"), c("#B80F6E")),
+        Accent("purple",   "Purple",   c("#B266FF"), c("#6D1FD1")),
+        Accent("slate",    "Slate",    c("#D9E2EC"), c("#475569")),
+        Accent("ink",      "Ink",      c("#94A3B8"), c("#1E293B")),
     )
 
     fun accentOf(id: String): Accent = ACCENTS.firstOrNull { it.id == id } ?: ACCENTS[0]
@@ -87,6 +87,31 @@ internal object Theme {
     // be settled that way.
 
     /**
+     * The top of the slider's range. One constant, so the config screen's max,
+     * the clamps here and the tests cannot quietly disagree about where the
+     * range ends — a layout capped at 100 would amputate the whole darkening
+     * half with no failure anywhere.
+     */
+    const val SAT_MAX = 2f
+
+    /** How much of a colour the darkest slider position takes away. */
+    private const val DARKEN_MAX = 0.65f
+
+    /**
+     * Straight per-channel mix from one colour toward another, alpha kept from
+     * [from]. The one channel-unpack/lerp/repack in this file — saturate's
+     * darkening half, tone's crossfade and mutedColor's lift are all this.
+     */
+    private fun blend(from: Int, to: Int, t: Float): Int {
+        val k = t.coerceIn(0f, 1f)
+        fun m(s: Int): Int {
+            val f = (from shr s) and 0xFF
+            return (f + (((to shr s) and 0xFF) - f) * k).toInt().coerceIn(0, 255)
+        }
+        return (from and 0xFF000000.toInt()) or (m(16) shl 16) or (m(8) shl 8) or m(0)
+    }
+
+    /**
      * The slider's whole journey for one colour: grey at 0, the colour itself
      * at 1, darker past that. The top half used to not exist — the slider ended
      * at the theme colour, and the coach reads that as only half the range.
@@ -99,61 +124,44 @@ internal object Theme {
      * Rec. 601 luma, not a flat average — a flat average turns yellow muddy and
      * blue nearly black, because the eye does not weight the channels equally.
      *
-     * Above 1 it darkens: channels scale toward black, 65% gone at 2. The cap
-     * is what keeps the far end a colour rather than a hole in the widget —
-     * this path serves text and athlete edges too, not just the accent, and
-     * those have no deep twin to hand the job to (see tone for the one that
-     * does).
+     * Above 1 it blends toward black, 65% gone at SAT_MAX. The cap is what
+     * keeps the far end a colour rather than a hole in the widget — this path
+     * serves text and athlete edges too, not just the accent, and those have
+     * no deep twin to hand the job to (see tone for the one that does).
      */
     fun saturate(color: Int, amount: Float): Int {
-        val a = amount.coerceIn(0f, 2f)
+        val a = amount.coerceIn(0f, SAT_MAX)
         if (a == 1f) return color
+        if (a > 1f) return blend(color, color and 0xFF000000.toInt(), (a - 1f) * DARKEN_MAX)
         val r = (color shr 16) and 0xFF
         val g = (color shr 8) and 0xFF
         val b = color and 0xFF
-        if (a > 1f) {
-            val keep = 1f - (a - 1f) * DARKEN_MAX
-            fun dk(ch: Int) = (ch * keep).toInt().coerceIn(0, 255)
-            return (color and 0xFF000000.toInt()) or (dk(r) shl 16) or (dk(g) shl 8) or dk(b)
-        }
         val grey = 0.299f * r + 0.587f * g + 0.114f * b
         fun mix(ch: Int) = (grey + (ch - grey) * a).toInt().coerceIn(0, 255)
         return (color and 0xFF000000.toInt()) or (mix(r) shl 16) or (mix(g) shl 8) or mix(b)
     }
-
-    /** How much of a colour the darkest slider position takes away. */
-    private const val DARKEN_MAX = 0.65f
 
     /**
      * The accent's journey, which is richer than a lone colour's: past the
      * middle it first crosses to the SAME hue's hand-picked deep twin —
      * "darker" for an accent should mean the curated dark version, not neon
      * with the lights turned down — and only then darkens that toward black.
-     * On the light surface the base already IS the deep twin, so the whole top
-     * half is one long darken; a dead zone where the slider moved and nothing
-     * changed would read as broken.
+     * Told which surface it is on rather than left to infer it: on the light
+     * surface the base already IS the deep twin, so its whole top half is one
+     * long darken — a dead zone where the slider moved and nothing changed
+     * would read as broken.
      */
-    fun tone(base: Int, deep: Int, amount: Float): Int {
-        val a = amount.coerceIn(0f, 2f)
-        if (a <= 1f) return saturate(base, a)
-        if (base == deep) return saturate(base, a)
-        if (a <= 1.5f) return blend(base, deep, (a - 1f) * 2f)
-        return saturate(deep, 1f + (a - 1.5f) * 2f)
+    fun tone(acc: Accent, light: Boolean, amount: Float): Int {
+        val a = amount.coerceIn(0f, SAT_MAX)
+        val base = if (light) acc.deep else acc.neon
+        if (a <= 1f || light) return saturate(base, a)
+        if (a <= 1.5f) return blend(base, acc.deep, (a - 1f) * 2f)
+        return saturate(acc.deep, 1f + (a - 1.5f) * 2f)
     }
 
-    /** The accent for the surface, at the slider's position. */
-    fun accentToned(id: String, light: Boolean, amount: Float): Int {
-        val acc = accentOf(id)
-        return if (light) tone(acc.deep, acc.deep, amount) else tone(acc.neon, acc.deep, amount)
-    }
-
-    /** Straight per-channel mix, alpha kept from [from]. */
-    private fun blend(from: Int, to: Int, t: Float): Int {
-        val k = t.coerceIn(0f, 1f)
-        fun m(s: Int) = (((from shr s) and 0xFF) + ((((to shr s) and 0xFF) - ((from shr s) and 0xFF)) * k))
-            .toInt().coerceIn(0, 255)
-        return (from and 0xFF000000.toInt()) or (m(16) shl 16) or (m(8) shl 8) or m(0)
-    }
+    /** The accent as it is actually drawn: the surface's pick, at the slider. */
+    fun accentToned(id: String, light: Boolean, amount: Float): Int =
+        tone(accentOf(id), light, amount)
 
     /**
      * How opaque the panel is drawn, 0..255, from a 0f..1f preference.
@@ -168,7 +176,10 @@ internal object Theme {
         return (GLASS_FLOOR + (255 - GLASS_FLOOR) * o).toInt().coerceIn(0, 255)
     }
 
-    private const val GLASS_FLOOR = 38 // ~15%
+    // Lowered from 38 (~15%) on request: the coach wanted glassier. The rows
+    // and text never fade with the panel, so the widget stays findable by its
+    // own content — the floor now only guards against a literal zero.
+    private const val GLASS_FLOOR = 10 // ~4%
 
     /**
      * Muted text, lifted toward the main text colour as the panel clears.
@@ -180,19 +191,9 @@ internal object Theme {
      */
     fun mutedColor(light: Boolean, opacity: Float): Int {
         val o = opacity.coerceIn(0f, 1f)
-        val muted = mutedColor(light)
-        if (o >= 1f) return muted
-        val text = textColor(light)
         // At glass, three-quarters of the way to full text colour: enough to
         // stay legible, still distinguishable from the primary text.
-        val lift = (1f - o) * 0.75f
-        fun mix(shift: Int): Int {
-            val m = (muted shr shift) and 0xFF
-            val t = (text shr shift) and 0xFF
-            return (m + (t - m) * lift).toInt().coerceIn(0, 255)
-        }
-        return (muted and 0xFF000000.toInt()) or
-            (mix(16) shl 16) or (mix(8) shl 8) or mix(0)
+        return blend(mutedColor(light), textColor(light), (1f - o) * 0.75f)
     }
 
     fun bgRes(light: Boolean): Int =

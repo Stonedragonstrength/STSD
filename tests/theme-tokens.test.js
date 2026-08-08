@@ -3,7 +3,8 @@
 // This earns a test because it fails INVISIBLY. You change :root, open the
 // default blue theme, and it looks perfect. Black and White carry their own
 // surfaces and their own alphas, and nobody opens them until an athlete does.
-// Eleven themes x six tokens is not something you verify by looking at a screen.
+// A dozen-odd themes x six tokens is not something you verify by looking at a
+// screen — and a hardcoded count here would itself go stale on theme twelve.
 //
 // Run: node tests/theme-tokens.test.js
 
@@ -76,7 +77,7 @@ for (const th of COLOUR_THEMES.concat(["black", "white"])) {
   check("theme " + th + " defines --primary-bright-rgb", defines(b, "--primary-bright-rgb"));
 }
 
-// ---- 4. the eight colour themes must NOT redefine the recipe -------------
+// ---- 4. the colour themes must NOT redefine the recipe -------------------
 // They inherit it. A local override here is how the colour themes drift apart.
 for (const th of COLOUR_THEMES) {
   const b = block(':root[data-theme="' + th + '"]');
@@ -217,6 +218,43 @@ if (root) {
       }
     }
   }
+}
+
+// ---- 8. the app's themes and the widget's accents stay in step ------------
+// THEMES (app.js) and ACCENTS (Theme.kt) are two hand-synced id lists with
+// nothing else asserting parity — sapphire landed in both, but the next theme
+// can land in one and the two products quietly stop matching. Colour themes
+// map 1:1 by id; the neutrals are named differently on purpose (the app's
+// Black/White are the widget's Slate/Ink), so those four are exempt.
+const appJs = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
+const themeKt = fs.readFileSync(
+  path.join(__dirname, "..", "android-widget", "app", "src", "main",
+    "java", "com", "stonedragon", "schedule", "Theme.kt"),
+  "utf8"
+);
+const themesBlock = /const THEMES = \[([\s\S]*?)\];/.exec(appJs);
+check("app.js THEMES list found", themesBlock !== null);
+const appIds = themesBlock
+  ? [...themesBlock[1].matchAll(/id:\s*"([a-z]+)"/g)].map((m) => m[1])
+  : [];
+const widgetIds = [...themeKt.matchAll(/Accent\("([a-z]+)"/g)].map((m) => m[1]);
+check("app.js THEMES parsed non-empty", appIds.length > 0);
+check("Theme.kt ACCENTS parsed non-empty", widgetIds.length > 0);
+const APP_NEUTRALS = ["black", "white"];
+const WIDGET_NEUTRALS = ["slate", "ink"];
+for (const id of appIds.filter((i) => !APP_NEUTRALS.includes(i))) {
+  check(
+    "widget has an accent for app theme " + id,
+    widgetIds.includes(id),
+    "add an Accent(\"" + id + "\", …) pair to android-widget Theme.kt"
+  );
+}
+for (const id of widgetIds.filter((i) => !WIDGET_NEUTRALS.includes(i))) {
+  check(
+    "app has a theme for widget accent " + id,
+    appIds.includes(id),
+    "add { id: \"" + id + "\", … } to THEMES in app.js"
+  );
 }
 
 if (failures) {

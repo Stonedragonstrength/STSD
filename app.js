@@ -26,15 +26,15 @@
   const THEMES = [
     { id: "blue",     name: "Blue",     swatch: "#22d3ee" },
     { id: "sapphire", name: "Sapphire", swatch: "#4f7cf9" },
-    { id: "teal",   name: "Teal",   swatch: "#2dd4bf" },
-    { id: "green",  name: "Green",  swatch: "#5eea8d" },
-    { id: "yellow", name: "Yellow", swatch: "#fbbf24" },
-    { id: "orange", name: "Orange", swatch: "#fb923c" },
-    { id: "red",    name: "Red",    swatch: "#f87171" },
-    { id: "pink",   name: "Pink",   swatch: "#f472b6" },
-    { id: "purple", name: "Purple", swatch: "#c084fc" },
-    { id: "black",  name: "Black",  swatch: "#0b0b0d" },
-    { id: "white",  name: "White",  swatch: "#ffffff" },
+    { id: "teal",     name: "Teal",     swatch: "#2dd4bf" },
+    { id: "green",    name: "Green",    swatch: "#5eea8d" },
+    { id: "yellow",   name: "Yellow",   swatch: "#fbbf24" },
+    { id: "orange",   name: "Orange",   swatch: "#fb923c" },
+    { id: "red",      name: "Red",      swatch: "#f87171" },
+    { id: "pink",     name: "Pink",     swatch: "#f472b6" },
+    { id: "purple",   name: "Purple",   swatch: "#c084fc" },
+    { id: "black",    name: "Black",    swatch: "#0b0b0d" },
+    { id: "white",    name: "White",    swatch: "#ffffff" },
   ];
   function getThemePrefs() {
     try { return JSON.parse(localStorage.getItem(KEY_THEME)) || {}; } catch { return {}; }
@@ -29911,7 +29911,7 @@
           <span class="hoard-rank">${escapeHtml(rank.name)}</span>
         </span>
         <span class="hoard-ton">${escapeHtml(hoardLbLabel(lb))}<small>moved, all time</small></span>
-        <span class="hoard-chev" aria-hidden="true">▸</span>
+        <span class="pref-fold-chev" aria-hidden="true">▸</span>
       </summary>
       <div class="hoard-track"><span class="hoard-fill" style="width:${pct.toFixed(1)}%"></span></div>
       <div class="hoard-case" role="group" aria-label="Ranks">
@@ -29924,9 +29924,6 @@
       </div>
       <p class="hoard-detail" id="hoard-detail"></p>
     </details>`;
-    const fold = host.querySelector(".hoard-fold");
-    fold.addEventListener("toggle", () => { _hoardOpen = fold.open; });
-
     // Tapping a tile answers the only question the ladder's extra rows were
     // answering: what does that one cost? Opens on the rank they're climbing.
     const detail = host.querySelector("#hoard-detail");
@@ -29949,9 +29946,23 @@
       }
       detail.innerHTML = `<span class="hoard-detail-name">${escapeHtml(t.rank.name)}</span>${body}`;
     };
-    host.querySelectorAll(".hoard-tile").forEach((b) =>
-      b.addEventListener("click", () => showTile(Number(b.dataset.i))));
-    showTile(tiles.findIndex((t) => t.state === "on"));
+    // The case is wired the first time the fold opens, not on every render —
+    // collapsed (the default), the card was still paying to hook twelve
+    // buttons and format a cost line nobody could see.
+    const fold = host.querySelector(".hoard-fold");
+    let wired = false;
+    const wireCase = () => {
+      if (wired) return;
+      wired = true;
+      host.querySelectorAll(".hoard-tile").forEach((b) =>
+        b.addEventListener("click", () => showTile(Number(b.dataset.i))));
+      showTile(tiles.findIndex((t) => t.state === "on"));
+    };
+    if (fold.open) wireCase();
+    fold.addEventListener("toggle", () => {
+      _hoardOpen = fold.open;
+      if (fold.open) wireCase();
+    });
   }
 
   // -------- Athlete: the Progress tab --------

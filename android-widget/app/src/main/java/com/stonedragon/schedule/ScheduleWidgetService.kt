@@ -161,9 +161,33 @@ private class ScheduleFactory(
 
     private var rows: List<Row> = emptyList()
 
+    // The palette and switches, read once per data set rather than once per
+    // row: getViewAt runs for every row of the week, and each Prefs call is a
+    // SharedPreferences lookup. This is exactly as fresh as the rows above it
+    // — any pref change repaints, which rebinds the list through
+    // onDataSetChanged, and the launcher shows no row older than that.
+    private var light = false
+    private var sat = 1f
+    private var accent = 0
+    private var text = 0
+    private var mutedLifted = 0
+    private var mutedFlat = 0
+    private var compact = false
+    private var showDuration = false
+    private var showNotes = false
+
     override fun onCreate() {}
 
     override fun onDataSetChanged() {
+        light = Prefs.lightBg(ctx)
+        sat = Prefs.saturation(ctx)
+        accent = Theme.accentToned(Prefs.accentId(ctx), light, sat)
+        text = Theme.textColor(light)
+        mutedLifted = Theme.mutedColor(light, Prefs.opacity(ctx))
+        mutedFlat = Theme.mutedColor(light)
+        compact = Prefs.compact(ctx)
+        showDuration = Prefs.showDuration(ctx)
+        showNotes = Prefs.showNotes(ctx)
         // Same week the provider drew, or the list and the header disagree.
         val week = Prefs.windowStart(ctx, widgetId)
         val bookings = if (Prefs.isLoaded(Prefs.state(ctx, widgetId))) {
@@ -190,16 +214,14 @@ private class ScheduleFactory(
         val v = RemoteViews(ctx.packageName, R.layout.widget_row)
         val b = (row as? Row.Session)?.booking ?: return v
 
-        // Same two prefs the provider reads. The factory runs in the launcher's
-        // process and cannot be handed the palette, so it looks it up itself —
-        // if these ever disagreed the header and the list would be two colours.
-        val light = Prefs.lightBg(ctx)
-        val sat = Prefs.saturation(ctx)
-        val opacity = Prefs.opacity(ctx)
-        v.setTextColor(R.id.row_time, Theme.accentToned(Prefs.accentId(ctx), light, sat))
-        v.setTextColor(R.id.row_dur, Theme.mutedColor(light, opacity))
-        v.setTextColor(R.id.row_name, Theme.textColor(light))
-        v.setTextColor(R.id.row_meta, Theme.mutedColor(light, opacity))
+        // Same prefs the provider reads, cached at onDataSetChanged. The
+        // factory runs in the launcher's process and cannot be handed the
+        // palette, so it looks it up itself — if these ever disagreed the
+        // header and the list would be two colours.
+        v.setTextColor(R.id.row_time, accent)
+        v.setTextColor(R.id.row_dur, mutedLifted)
+        v.setTextColor(R.id.row_name, text)
+        v.setTextColor(R.id.row_meta, mutedLifted)
 
         // Whose session this is, as a slim edge. Saturation applies here too:
         // muting the accent and leaving the edges neon would make them shout
@@ -219,16 +241,15 @@ private class ScheduleFactory(
         // Compact forces it off: that second line is the whole reason compact
         // exists, and leaving both switches live would let a coach pick a
         // "compact" that is exactly as tall as comfortable.
-        val compact = Prefs.compact(ctx)
         val mins = TimeUnit.MILLISECONDS.toMinutes(b.endMillis - b.startMillis).toInt()
-        val showDur = Prefs.showDuration(ctx) && !compact && mins > 0
+        val showDur = showDuration && !compact && mins > 0
         v.setTextViewText(R.id.row_dur, if (mins > 0) mins.toString() + "m" else "")
         v.setViewVisibility(R.id.row_dur, if (showDur) View.VISIBLE else View.GONE)
 
         // The second line is the note or nothing. GONE rather than empty text:
         // an empty TextView still claims its line height, which is the whole
         // thing this was meant to stop spending.
-        val hasNote = Prefs.showNotes(ctx) && b.note.isNotBlank()
+        val hasNote = showNotes && b.note.isNotBlank()
         v.setTextViewText(R.id.row_meta, b.note)
         v.setViewVisibility(R.id.row_meta, if (hasNote) View.VISIBLE else View.GONE)
 
@@ -265,15 +286,14 @@ private class ScheduleFactory(
     private fun headerView(h: Row.Header): RemoteViews {
         val v = RemoteViews(ctx.packageName, R.layout.widget_day_header)
         val today = Supabase.startOfDay(System.currentTimeMillis())
-        val light = Prefs.lightBg(ctx)
-        // Today's divider takes the accent; the rest stay quiet, so the eye
-        // finds the current day without reading a single word.
+        // Today's divider takes the accent — the TONED one, the same value the
+        // row times two pixels below it use, or a slider off centre makes the
+        // divider the one element still wearing the untoned colour.
         v.setTextColor(
             R.id.hdr_day,
-            if (h.dayStart == today) Theme.accentFor(Prefs.accentId(ctx), light)
-            else Theme.mutedColor(light),
+            if (h.dayStart == today) accent else mutedFlat,
         )
-        v.setTextColor(R.id.hdr_count, Theme.mutedColor(light))
+        v.setTextColor(R.id.hdr_count, mutedFlat)
         val label = SimpleDateFormat("EEE d MMM", Locale.getDefault())
             .format(Date(h.dayStart))
             .uppercase(Locale.getDefault())

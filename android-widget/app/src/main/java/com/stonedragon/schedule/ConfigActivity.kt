@@ -41,6 +41,10 @@ class ConfigActivity : AppCompatActivity() {
      */
     private fun wireLookSettings() {
         val sat = findViewById<android.widget.SeekBar>(R.id.cfg_saturation)
+        // The range's top lives in Theme (SAT_MAX), not in the layout — an XML
+        // max would be a second copy that could silently amputate the darker
+        // half if the two ever disagreed.
+        sat.max = (Theme.SAT_MAX * 100).toInt()
         sat.progress = (Prefs.saturation(this) * 100).toInt()
         val opacity = findViewById<android.widget.SeekBar>(R.id.cfg_opacity)
         opacity.progress = (Prefs.opacity(this) * 100).toInt()
@@ -53,7 +57,12 @@ class ConfigActivity : AppCompatActivity() {
             override fun onStartTrackingTouch(s: android.widget.SeekBar) {}
             override fun onStopTrackingTouch(s: android.widget.SeekBar) {
                 when (s.id) {
-                    R.id.cfg_saturation -> Prefs.setSaturation(this@ConfigActivity, s.progress / 100f)
+                    R.id.cfg_saturation -> {
+                        Prefs.setSaturation(this@ConfigActivity, s.progress / 100f)
+                        // The dots preview the accent AS DRAWN, so the slider
+                        // that changes how it is drawn has to redraw them.
+                        buildSwatches()
+                    }
                     R.id.cfg_opacity -> Prefs.setOpacity(this@ConfigActivity, s.progress / 100f)
                 }
                 ScheduleWidget.repaintAll(this@ConfigActivity)
@@ -138,10 +147,11 @@ class ConfigActivity : AppCompatActivity() {
                 dot.layoutParams = lp
                 val shape = android.graphics.drawable.GradientDrawable().apply {
                     this.shape = android.graphics.drawable.GradientDrawable.OVAL
-                    // The colour it will ACTUALLY be on the current surface, not
-                    // the nominal one — otherwise the two that get swapped for
-                    // legibility would preview as something never drawn.
-                    setColor(Theme.accentFor(a.id, light))
+                    // The colour it will ACTUALLY be — surface pick AND the
+                    // slider's position — otherwise the dots stop being a
+                    // preview at the moment the slider is off centre, which is
+                    // exactly when the coach is standing on this screen.
+                    setColor(Theme.accentToned(a.id, light, Prefs.saturation(this@ConfigActivity)))
                     if (a.id == chosen) {
                         setStroke((3 * d).toInt(), Theme.textColor(light))
                     }
