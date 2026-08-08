@@ -119,6 +119,192 @@
             android:layout_height="wrap_content" />
     </LinearLayout>
 
+    <!-- Colour strength and background transparency. SeekBars rather than a
+         Material Slider: this app carries no Material components for the
+         widget's sake, and a slider is not worth a dependency. -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/colour_strength"
+        android:textSize="12sp"
+        android:textColor="@color/muted"
+        android:paddingTop="18dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/muted"
+            android:textSize="11sp"
+            android:textColor="@color/muted" />
+
+        <SeekBar
+            android:id="@+id/cfg_saturation"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:max="100"
+            android:paddingLeft="10dp"
+            android:paddingRight="10dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/vivid"
+            android:textSize="11sp"
+            android:textColor="@color/muted" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/background"
+        android:textSize="12sp"
+        android:textColor="@color/muted"
+        android:paddingTop="10dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/glass"
+            android:textSize="11sp"
+            android:textColor="@color/muted" />
+
+        <SeekBar
+            android:id="@+id/cfg_opacity"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:max="100"
+            android:paddingLeft="10dp"
+            android:paddingRight="10dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/opaque"
+            android:textSize="11sp"
+            android:textColor="@color/muted" />
+    </LinearLayout>
+
+    <!-- What the widget shows -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/how_far_ahead"
+        android:textSize="12sp"
+        android:textColor="@color/muted"
+        android:paddingTop="20dp" />
+
+    <RadioGroup
+        android:id="@+id/cfg_span"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingTop="4dp">
+
+        <RadioButton
+            android:id="@+id/cfg_span_3"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/span_3"
+            android:textSize="13sp"
+            android:textColor="@color/text" />
+
+        <RadioButton
+            android:id="@+id/cfg_span_7"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/span_7"
+            android:textSize="13sp"
+            android:textColor="@color/text" />
+
+        <RadioButton
+            android:id="@+id/cfg_span_14"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/span_14"
+            android:textSize="13sp"
+            android:textColor="@color/text" />
+    </RadioGroup>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="12dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/compact_rows"
+            android:textSize="14sp"
+            android:textColor="@color/text" />
+
+        <Switch
+            android:id="@+id/cfg_compact"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="8dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/show_duration"
+            android:textSize="14sp"
+            android:textColor="@color/text" />
+
+        <Switch
+            android:id="@+id/cfg_duration"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="8dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/show_notes"
+            android:textSize="14sp"
+            android:textColor="@color/text" />
+
+        <Switch
+            android:id="@+id/cfg_notes"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" />
+    </LinearLayout>
+
     <Button
         android:id="@+id/cfg_test"
         android:layout_width="match_parent"

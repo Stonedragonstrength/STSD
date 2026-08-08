@@ -26,6 +26,92 @@ class ConfigActivity : AppCompatActivity() {
      * tick — at 30dp a tick over a coloured circle is unreadable, and the ring
      * survives being the same colour as the dot.
      */
+    /**
+     * The five look settings.
+     *
+     * Every one applies IMMEDIATELY and repaints — there is no Save. This
+     * screen is now reached from the widget's own ⚙ as well as from placement,
+     * and a slider you have to confirm is a slider you cannot judge, because
+     * the thing it changes is behind the screen you are standing on.
+     *
+     * CompoundButton for every switch, never Switch: AppCompat's inflater
+     * quietly swaps <Switch> for SwitchCompat, which extends CompoundButton and
+     * is NOT an android.widget.Switch. Asking for the latter compiles and then
+     * throws the moment this screen opens.
+     */
+    private fun wireLookSettings() {
+        val sat = findViewById<android.widget.SeekBar>(R.id.cfg_saturation)
+        sat.progress = (Prefs.saturation(this) * 100).toInt()
+        val opacity = findViewById<android.widget.SeekBar>(R.id.cfg_opacity)
+        opacity.progress = (Prefs.opacity(this) * 100).toInt()
+
+        // Repaint on RELEASE, not on every pixel of the drag: a widget repaint
+        // crosses a process boundary, and firing one per progress tick makes
+        // the slider stutter against its own updates.
+        val onRelease = object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: android.widget.SeekBar, p: Int, fromUser: Boolean) {}
+            override fun onStartTrackingTouch(s: android.widget.SeekBar) {}
+            override fun onStopTrackingTouch(s: android.widget.SeekBar) {
+                when (s.id) {
+                    R.id.cfg_saturation -> Prefs.setSaturation(this@ConfigActivity, s.progress / 100f)
+                    R.id.cfg_opacity -> Prefs.setOpacity(this@ConfigActivity, s.progress / 100f)
+                }
+                ScheduleWidget.repaintAll(this@ConfigActivity)
+            }
+        }
+        sat.setOnSeekBarChangeListener(onRelease)
+        opacity.setOnSeekBarChangeListener(onRelease)
+
+        val span = findViewById<android.widget.RadioGroup>(R.id.cfg_span)
+        span.check(
+            when (Prefs.spanDays(this)) {
+                3 -> R.id.cfg_span_3
+                14 -> R.id.cfg_span_14
+                else -> R.id.cfg_span_7
+            }
+        )
+        span.setOnCheckedChangeListener { _, checked ->
+            Prefs.setSpanDays(
+                this,
+                when (checked) {
+                    R.id.cfg_span_3 -> 3
+                    R.id.cfg_span_14 -> 14
+                    else -> 7
+                },
+            )
+            // A refetch, not a repaint: the span decides how many days were
+            // ASKED FOR, so the cache holds the wrong range until a new request
+            // goes out. Repainting alone would draw 14 day-headers over a week
+            // of data and read as a fortnight that is half empty.
+            ScheduleWidget.refreshAll(this)
+        }
+
+        val compact = findViewById<android.widget.CompoundButton>(R.id.cfg_compact)
+        val duration = findViewById<android.widget.CompoundButton>(R.id.cfg_duration)
+        val notes = findViewById<android.widget.CompoundButton>(R.id.cfg_notes)
+
+        compact.isChecked = Prefs.compact(this)
+        duration.isChecked = Prefs.showDuration(this)
+        notes.isChecked = Prefs.showNotes(this)
+        // Compact owns the duration line, so the switch it overrides is greyed
+        // rather than left looking live and doing nothing.
+        duration.isEnabled = !compact.isChecked
+
+        compact.setOnCheckedChangeListener { _, on ->
+            Prefs.setCompact(this, on)
+            duration.isEnabled = !on
+            ScheduleWidget.repaintAll(this)
+        }
+        duration.setOnCheckedChangeListener { _, on ->
+            Prefs.setShowDuration(this, on)
+            ScheduleWidget.repaintAll(this)
+        }
+        notes.setOnCheckedChangeListener { _, on ->
+            Prefs.setShowNotes(this, on)
+            ScheduleWidget.repaintAll(this)
+        }
+    }
+
     private fun buildSwatches() {
         val host = findViewById<android.widget.LinearLayout>(R.id.cfg_swatches)
         host.removeAllViews()
@@ -106,6 +192,7 @@ class ConfigActivity : AppCompatActivity() {
             buildSwatches() // the two unreadable accents swap when the surface does
             ScheduleWidget.repaintAll(this)
         }
+        wireLookSettings()
         renderState()
 
         // A crash recorded since last time is the most useful thing on this
@@ -113,6 +200,7 @@ class ConfigActivity : AppCompatActivity() {
         CrashLog.last(this)?.let { diag.text = it }
 
         // (swatch construction lives in buildSwatches, below)
+        // (the look settings live in wireLookSettings, below)
 
         // Runs the widget's own query and prints what came back. The widget has
         // one line of text to explain itself with, which is not enough to tell a

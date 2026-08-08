@@ -29,4 +29,18 @@
     <string name="widget_starting">Starting…</string>
     <string name="test_connection">Test connection</string>
     <string name="testing">Running the query…</string>
+    <string name="how_far_ahead">How far ahead</string>
+    <string name="span_3">3 days</string>
+    <string name="span_7">This week</string>
+    <string name="span_14">14 days</string>
+    <string name="compact_rows">Compact rows</string>
+    <string name="show_duration">Show how long each session is</string>
+    <string name="show_notes">Show notes</string>
+    <string name="colour_strength">Colour</string>
+    <string name="muted">Muted</string>
+    <string name="vivid">Vivid</string>
+    <string name="background">Background</string>
+    <string name="glass">Glass</string>
+    <string name="opaque">Opaque</string>
+    <string name="done">Done</string>
 </resources>
