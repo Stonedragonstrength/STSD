@@ -83,24 +83,72 @@ internal object Theme {
     // be settled that way.
 
     /**
-     * Scale a colour's saturation toward grey, leaving hue and alpha alone.
+     * The slider's whole journey for one colour: grey at 0, the colour itself
+     * at 1, darker past that. The top half used to not exist — the slider ended
+     * at the theme colour, and the coach reads that as only half the range.
      *
+     * Below 1 it scales saturation toward grey, leaving hue and alpha alone.
      * Done by mixing toward the colour's own luma rather than through HSV: the
      * result is the same to the eye, and it keeps Theme free of
      * android.graphics, which is what makes every function here testable.
      *
      * Rec. 601 luma, not a flat average — a flat average turns yellow muddy and
      * blue nearly black, because the eye does not weight the channels equally.
+     *
+     * Above 1 it darkens: channels scale toward black, 65% gone at 2. The cap
+     * is what keeps the far end a colour rather than a hole in the widget —
+     * this path serves text and athlete edges too, not just the accent, and
+     * those have no deep twin to hand the job to (see tone for the one that
+     * does).
      */
     fun saturate(color: Int, amount: Float): Int {
-        val a = amount.coerceIn(0f, 1f)
-        if (a >= 1f) return color
+        val a = amount.coerceIn(0f, 2f)
+        if (a == 1f) return color
         val r = (color shr 16) and 0xFF
         val g = (color shr 8) and 0xFF
         val b = color and 0xFF
+        if (a > 1f) {
+            val keep = 1f - (a - 1f) * DARKEN_MAX
+            fun dk(ch: Int) = (ch * keep).toInt().coerceIn(0, 255)
+            return (color and 0xFF000000.toInt()) or (dk(r) shl 16) or (dk(g) shl 8) or dk(b)
+        }
         val grey = 0.299f * r + 0.587f * g + 0.114f * b
         fun mix(ch: Int) = (grey + (ch - grey) * a).toInt().coerceIn(0, 255)
         return (color and 0xFF000000.toInt()) or (mix(r) shl 16) or (mix(g) shl 8) or mix(b)
+    }
+
+    /** How much of a colour the darkest slider position takes away. */
+    private const val DARKEN_MAX = 0.65f
+
+    /**
+     * The accent's journey, which is richer than a lone colour's: past the
+     * middle it first crosses to the SAME hue's hand-picked deep twin —
+     * "darker" for an accent should mean the curated dark version, not neon
+     * with the lights turned down — and only then darkens that toward black.
+     * On the light surface the base already IS the deep twin, so the whole top
+     * half is one long darken; a dead zone where the slider moved and nothing
+     * changed would read as broken.
+     */
+    fun tone(base: Int, deep: Int, amount: Float): Int {
+        val a = amount.coerceIn(0f, 2f)
+        if (a <= 1f) return saturate(base, a)
+        if (base == deep) return saturate(base, a)
+        if (a <= 1.5f) return blend(base, deep, (a - 1f) * 2f)
+        return saturate(deep, 1f + (a - 1.5f) * 2f)
+    }
+
+    /** The accent for the surface, at the slider's position. */
+    fun accentToned(id: String, light: Boolean, amount: Float): Int {
+        val acc = accentOf(id)
+        return if (light) tone(acc.deep, acc.deep, amount) else tone(acc.neon, acc.deep, amount)
+    }
+
+    /** Straight per-channel mix, alpha kept from [from]. */
+    private fun blend(from: Int, to: Int, t: Float): Int {
+        val k = t.coerceIn(0f, 1f)
+        fun m(s: Int) = (((from shr s) and 0xFF) + ((((to shr s) and 0xFF) - ((from shr s) and 0xFF)) * k))
+            .toInt().coerceIn(0, 255)
+        return (from and 0xFF000000.toInt()) or (m(16) shl 16) or (m(8) shl 8) or m(0)
     }
 
     /**

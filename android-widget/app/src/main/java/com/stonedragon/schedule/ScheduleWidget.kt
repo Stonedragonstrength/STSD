@@ -420,7 +420,6 @@ class ScheduleWidget : AppWidgetProvider() {
             // would shadow them in a file where the two blocks are screens
             // apart.
             val onLight = Prefs.lightBg(ctx)
-            val accentPair = Theme.accentOf(Prefs.accentId(ctx))
             val satNow = Prefs.saturation(ctx)
             if (isWord) {
                 v.setImageViewBitmap(
@@ -428,7 +427,7 @@ class ScheduleWidget : AppWidgetProvider() {
                     wordmark(
                         ctx,
                         label,
-                        Theme.saturate(if (onLight) accentPair.deep else accentPair.neon, satNow),
+                        Theme.accentToned(Prefs.accentId(ctx), onLight, satNow),
                         Theme.saturate(Theme.textColor(onLight), satNow),
                     ),
                 )
@@ -501,7 +500,7 @@ class ScheduleWidget : AppWidgetProvider() {
             val light = Prefs.lightBg(ctx)
             val sat = Prefs.saturation(ctx)
             val opacity = Prefs.opacity(ctx)
-            val accent = Theme.saturate(Theme.accentFor(Prefs.accentId(ctx), light), sat)
+            val accent = Theme.accentToned(Prefs.accentId(ctx), light, sat)
             val fg = Theme.textColor(light)
             // The opacity-aware muted colour, not the flat one: as the panel
             // clears, secondary text lifts toward the main text colour so the
@@ -529,7 +528,11 @@ class ScheduleWidget : AppWidgetProvider() {
             // rather than atmospheric.
             v.setViewVisibility(R.id.widget_glow, if (light) View.GONE else View.VISIBLE)
             if (!light) {
-                v.setInt(R.id.widget_glow, "setColorFilter", Theme.saturate(accent, sat))
+                // `accent` already carries the slider — running it through
+                // saturate again applied the setting twice, which the old
+                // muting half survived by luck and the darkening half would
+                // not: a slider at 2 would have crushed the glow to 12%.
+                v.setInt(R.id.widget_glow, "setColorFilter", accent)
                 // Fades with the panel, like the sheen — a glow left at full
                 // strength over a glass panel is a bright smear with nothing
                 // under it.

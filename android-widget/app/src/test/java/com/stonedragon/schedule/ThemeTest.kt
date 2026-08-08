@@ -73,8 +73,90 @@ class ThemeTest {
     @Test
     fun saturationClampsSillyInput() {
         val c = Theme.athletePalette[0]
-        assertEquals(Theme.saturate(c, 1f), Theme.saturate(c, 4f))
+        // The top of the range is 2 now, not 1 — see the darkening half.
+        assertEquals(Theme.saturate(c, 2f), Theme.saturate(c, 4f))
         assertEquals(Theme.saturate(c, 0f), Theme.saturate(c, -3f))
+    }
+
+    // ---- the darkening half (slider past the middle) ----
+
+    /** Rec. 601 luma — the same weights saturate() itself mixes with. */
+    private fun luma(c: Int) = 0.299f * r(c) + 0.587f * g(c) + 0.114f * b(c)
+
+    @Test
+    fun darkeningIsMonotonicAndNeverReachesBlack() {
+        Theme.athletePalette.forEach { colour ->
+            val steps = listOf(1f, 1.25f, 1.5f, 1.75f, 2f).map { luma(Theme.saturate(colour, it)) }
+            steps.zipWithNext { hi, lo ->
+                assertTrue("luma should only fall past the middle: $steps", lo <= hi)
+            }
+            // 65% is the floor by design: text and athlete edges ride this same
+            // curve, and a slider that can push them to black can erase them.
+            assertTrue(
+                "darkest stop should keep ~35% of the colour: ${steps.last()} vs ${steps.first()}",
+                steps.last() > steps.first() * 0.30f,
+            )
+        }
+    }
+
+    @Test
+    fun darkeningNeverReordersTheChannels() {
+        Theme.athletePalette.forEach { colour ->
+            val before = order(colour)
+            listOf(1.3f, 1.7f, 2f).forEach { amt ->
+                assertEquals("hue moved at $amt", before, order(Theme.saturate(colour, amt)))
+            }
+        }
+    }
+
+    @Test
+    fun darkeningKeepsAlpha() {
+        val c = 0xCC3DFF77.toInt()
+        listOf(1.4f, 2f).forEach { assertEquals(a(c), a(Theme.saturate(c, it))) }
+    }
+
+    // ---- tone: the accent's own journey ----
+
+    @Test
+    fun toneMatchesSaturateBelowTheMiddle() {
+        Theme.ACCENTS.forEach { acc ->
+            listOf(0f, 0.4f, 1f).forEach { amt ->
+                assertEquals(Theme.saturate(acc.neon, amt), Theme.tone(acc.neon, acc.deep, amt))
+            }
+        }
+    }
+
+    @Test
+    fun toneCrossesExactlyThroughTheDeepTwin() {
+        // 1.5 IS the deep colour: the first darker stretch is a crossfade to the
+        // curated twin, not a dimmer — that is the whole point of option C.
+        Theme.ACCENTS.forEach { acc ->
+            assertEquals(acc.deep, Theme.tone(acc.neon, acc.deep, 1.5f))
+        }
+    }
+
+    @Test
+    fun toneEndsDarkerThanTheDeepTwin() {
+        Theme.ACCENTS.forEach { acc ->
+            val end = Theme.tone(acc.neon, acc.deep, 2f)
+            assertTrue(
+                "${acc.id} should end below its deep twin",
+                luma(end) < luma(acc.deep),
+            )
+        }
+    }
+
+    @Test
+    fun toneOnTheLightSurfaceHasNoDeadZone() {
+        // base == deep (the light surface): the top half must still move, as one
+        // long darken — a stretch of slider that does nothing reads as broken.
+        Theme.ACCENTS.forEach { acc ->
+            val lumas = listOf(1f, 1.25f, 1.5f, 1.75f, 2f)
+                .map { luma(Theme.tone(acc.deep, acc.deep, it)) }
+            lumas.zipWithNext { hi, lo ->
+                assertTrue("${acc.id} light-surface tone stalled: $lumas", lo < hi)
+            }
+        }
     }
 
     // ---- transparency ----

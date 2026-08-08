@@ -196,7 +196,7 @@ private class ScheduleFactory(
         val light = Prefs.lightBg(ctx)
         val sat = Prefs.saturation(ctx)
         val opacity = Prefs.opacity(ctx)
-        v.setTextColor(R.id.row_time, Theme.saturate(Theme.accentFor(Prefs.accentId(ctx), light), sat))
+        v.setTextColor(R.id.row_time, Theme.accentToned(Prefs.accentId(ctx), light, sat))
         v.setTextColor(R.id.row_dur, Theme.mutedColor(light, opacity))
         v.setTextColor(R.id.row_name, Theme.textColor(light))
         v.setTextColor(R.id.row_meta, Theme.mutedColor(light, opacity))
