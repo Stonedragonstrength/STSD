@@ -835,18 +835,24 @@ Expected: all pass, no `BROKE:` lines.
 Kill the Node server, and clear the seeded storage from the sandbox origin.
 Never touch port 5190's storage.
 
-- [ ] **Step 7: Commit any fixes and push**
+- [ ] **Step 7: Commit any fixes, then merge**
+
+The work happens on the `obsidian-dark-mode` branch, not `main` — pushing `main`
+**is** the deploy, and a half-finished wave would ship a broken-looking app to
+live athletes.
 
 ```bash
 git add -A
 git commit -m "Obsidian: fixes from the full theme x role x width sweep
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+git checkout main
+git merge --no-ff obsidian-dark-mode
 git push origin main
 ```
 
-`git push origin main` **is** the deploy — GitHub Pages publishes from `main`.
-The `?v=` bumps from Tasks 2–5 are what get the new CSS to installed PWAs.
+Only that final `git push origin main` deploys. The `?v=` bumps from Tasks 2–5
+are what get the new CSS to installed PWAs.
 
 ---
 
