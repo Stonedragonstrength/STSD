@@ -14519,12 +14519,18 @@ input.credit-cap:disabled { opacity: 0.4; }
    its selectors' own rules happen to sit early in the file.
    ========================================================================== */
 
-/* ---- Group 1: rows/tiles/chips named directly in the task brief -------- */
+/* ---- Group 1: rows/tiles/chips named directly in the task brief --------
+   .status-unpaid was in the brief's own example list and is deliberately
+   dropped here on review: its rule (styles.css, "Money still to come...")
+   says outright "Outlined rather than filled... not a second status" —
+   background:transparent + an inset amber ring is the point, not a flat
+   slab that got missed. Filling it and bordering it undoes that on purpose.
+   Left completely untouched. */
 .client-row-view, .coach-row, .wk-row, .wkg-head, .rec-card, .food-tile,
 .food-result, .food-nav, .ex-lib-item, .ex-lib-sb-cat, .dash-cal-day,
 .grid-picker-cell, .demo-pick, .video-pick-btn, .role-btn, .tour-card,
 .records-tab, .day-icon-btn, .day-note-toggle, .cex-set-col, .cd-col,
-.rest-timer-pop, .ex-demo-preview, .status-unpaid, .rec-reroll,
+.rest-timer-pop, .ex-demo-preview, .rec-reroll,
 .ex-cat-move-btn, .dvs-act {
   background: var(--face-inset);
   border: 1px solid var(--edge);
@@ -14541,7 +14547,20 @@ input.credit-cap:disabled { opacity: 0.4; }
    .icon-btn button system (Wave 3's --btn-face/--btn-ink), the four Wave 1
    outer selectors, and plain :hover/:active/:focus/state duplicates of a
    selector already covered above (the existing --surface-3-style hover
-   lift is left alone; only the resting face changes). */
+   lift is left alone; only the resting face changes).
+
+   Two more dropped on review, same reasoning as .status-unpaid above —
+   a comment on the ORIGINAL rule documents a deliberate visual choice this
+   recipe would have undone:
+   - .status-expired: "Deliberately quiet — flat, muted, no colour... not a
+     problem to act on." --edge/--edge-lit are rgba(var(--primary-rgb)/
+     var(--primary-bright-rgb), a) — literally colour. Left as its original
+     flat background: var(--surface-3), no border added.
+   - .cex-plate-row: "Reads as a quiet caption, not another control." Its
+     border is `1px dashed var(--border)` on purpose — dashed reads as
+     informational, solid reads as a pressable tile, which is exactly the
+     "another control" look the comment says to avoid. Moved to Group 3
+     (background only); its dashed border is untouched. */
 #prof-membership, #prog-bw:not(:empty), #prog-volume:not(:empty), .a-card,
 .a-cgroup, .a-cgroup-count, .a-concept, .a-edit-btn, .a-ex-chip, .a-fact,
 .a-search-x, .a-shelf-n, .a-shelves, .added-ex-sec, .adh-bar, .adh-detail,
@@ -14552,7 +14571,7 @@ input.credit-cap:disabled { opacity: 0.4; }
 .bug-report, .bw-chart-card, .bw-chart-tip, .bw-entry, .bw-range, .cal-day,
 .cal-day-pill-rest, .cal-grid, .cal-modes, .calc-out, .cardio-int-btn,
 .cardio-type-btn, .cbk-ath-list, .cbk-bal, .cbk-chip, .cbk-dow, .cbk-seg,
-.cday-line, .cex-hist-set, .cex-plate-row, .cex-progress-line, .cex-rir-btn,
+.cday-line, .cex-hist-set, .cex-progress-line, .cex-rir-btn,
 .cex-step, .cex-tools-menu, .cex-tools-step, .cex-wrapper, .chg-how-opt,
 .chg-working, .client-nudge-btn, .client-row-prog .progress-track,
 .client-sessions-chip.blank, .coach-profile-card, .coach-row-icon,
@@ -14577,7 +14596,7 @@ input.credit-cap:disabled { opacity: 0.4; }
 .roster-group-tab, .roster-search-clear, .scan-zoom-btn, .sched-google-row,
 .sched-win, .sess-tile, .session-manage, .sl-athlete, .sl-manual, .sl-waived,
 .snap-pip, .sq-card-fields, .stat-cust-row, .status-cancelled,
-.status-expired, .tax-band, .tax-block, .theme-swatch, .tour-offer,
+.tax-band, .tax-block, .theme-swatch, .tour-offer,
 .tpl-folder-tag, .trial-card, .trial-icon-btn, .trophy, .warmup-pop,
 .warmup-seg-btn, .water-cup, .water-goal-btn, .week-chips, .week-head, .wkg,
 .wp-head-count {
@@ -14595,15 +14614,29 @@ input.credit-cap:disabled { opacity: 0.4; }
    border-left:none and paints the rail via ::before), a single divider side
    on a header/footer strip that intentionally reads as continuous with its
    neighbour (.modal-foot, .coach-sheet-foot, .archive-week-head, .bw-metrics,
-   .cex-panel, .coach-week-body, .ex-detail-panel), a screen-edge drawer's
-   single inner border (.ex-lib-sidebar, .ex-library-drawer), a status-quiet
-   marker (.wkg-ev.is-external's grey border-left, .oneoff-card's amber
-   border), an accent-rail search result (.a-result), or is a small image
+   .cex-panel, .ex-detail-panel), a screen-edge drawer's single inner border
+   (.ex-lib-sidebar, .ex-library-drawer), a status-quiet marker
+   (.wkg-ev.is-external's grey border-left, .oneoff-card's amber border), an
+   accent-rail search result (.a-result), a dashed "not a control" border
+   (.cex-plate-row — see Group 2's comment above), or is a small image
    swatch that doesn't need a ring (.demo-pick img, .demo-thumb,
-   .ex-demo-preview img, .ex-lib-thumb). */
+   .ex-demo-preview img, .ex-lib-thumb).
+
+   .coach-week-body was here too and is dropped on review: it renders in
+   exactly two places (renderWeeks() in app.js only ever targets
+   #program-editor-weeks or #weeks-container), and BOTH have their own
+   higher-specificity override —
+   `#program-editor-weeks .coach-week-body, #weeks-container .coach-week-body
+   { background: none; border: none; border-radius: 0; }` — whose own
+   comment says why: "drop the surface 'card' panel behind the week/day
+   content — it reads as a stray floating card while building a program.
+   Applies to both the standalone Programs editor and the athlete's Program
+   tab." That's not a flat slab that got missed; it's every real context
+   this class renders in, on purpose. Fixing it the way .cex-wrapper is
+   fixed below would just be decorating dead code. Left untouched. */
 .a-result, .archive-week-head, .bill-row, .bulletin-item, .bw-metrics,
-.cbk-summary, .cday-block, .cex-panel, .client-instructions,
-.coach-sheet-foot, .coach-week-body, .cyc-concern, .day-log-opt,
+.cbk-summary, .cday-block, .cex-panel, .cex-plate-row, .client-instructions,
+.coach-sheet-foot, .cyc-concern, .day-log-opt,
 .demo-pick img, .demo-thumb, .ex-demo-preview img, .ex-detail-panel,
 .ex-lib-sidebar, .ex-lib-thumb, .ex-library-drawer, .lk-row, .mg-row,
 .modal-foot, .oneoff-card, .ovmsg-card, .wkg-allday, .wkg-ev.is-external {
@@ -14621,4 +14654,26 @@ input.credit-cap:disabled { opacity: 0.4; }
   background: var(--face-inset);
   border-left-color: var(--edge);
   border-top-color: var(--edge-lit);
+}
+
+/* ---- Group 5: fixing a specificity conflict, not just a source-order one -
+   The end-of-file placement above only settles EQUAL-specificity ties by
+   source order. It does nothing for a rule that outranks Group 2 on
+   specificity alone — found by re-parsing the whole file into real
+   selector chains and comparing computed specificity, not by inspection:
+   `.workout-detail-list > .cex-wrapper { border: 1px solid var(--border); }`
+   (styles.css, @media (min-width: 721px)) is (0,2,0) against the bare
+   `.cex-wrapper` above at (0,1,0), so it always won at desktop widths
+   regardless of source order — .cex-wrapper kept the old --border there no
+   matter where Group 2 was placed. (The @media (max-width: 720px) mobile
+   variant is also a bare `.cex-wrapper`, so it's an equal-specificity tie
+   Group 2 already wins by being last — only the higher-specificity desktop
+   rule needed this.) Matching its specificity here, still last in the file,
+   settles it the same way. Verified against getComputedStyle at both a
+   400px and a 1024px viewport, not just visually. */
+@media (min-width: 721px) {
+  .workout-detail-list > .cex-wrapper {
+    border-color: var(--edge);
+    border-top-color: var(--edge-lit);
+  }
 }
