@@ -15057,7 +15057,12 @@
       const what = r.rest ? "Rest day"
         : (r.dayName || r.curDayName || (r.events.length ? "Session" : "Training"));
       return (i === nowAt ? nowHtml : "") +
-        `<button type="button" class="dv-row${r.done ? " is-done" : ""}" data-dv="${i}">` +
+        // The athlete's OWN colour, the one their avatar and roster card already
+        // carry, so a session is recognisable as theirs before the name is read.
+        // Falls back to the theme's primary for a row with nobody matched to it.
+        `<button type="button" class="dv-row${r.done ? " is-done" : ""}"${
+          r.client ? ` style="--athlete-rgb:${AVATAR_RGB[athleteColorIdx(r.client)]}"` : ""
+        } data-dv="${i}">` +
         `<span class="dv-face">${r.client ? athleteFaceHtml(r.client) : `<span class="av-tile av-sm av-empty">?</span>`}</span>` +
         `<span class="dv-name">${escapeHtml(r.name)}${r.unlinked ? ` <span class="dv-tag">unlinked</span>` : ""}</span>` +
         schedBalHtml(r.client) +
@@ -15317,7 +15322,12 @@
         // instead of one of them being clipped away.
         const short = h < 32 ? " is-short" : "";
         return `<button type="button" class="wkg-ev${p.e.native ? "" : " is-external"}${short}" ` +
-          `style="top:${top}px;height:${h}px;left:${lane * w}%;width:calc(${w}% - 3px)" ` +
+          // Every block used to be the theme's primary, so a week of sessions
+          // was one solid wall of the same colour. Their own colour makes the
+          // timetable readable at a glance — who is in, not just how many.
+          `style="top:${top}px;height:${h}px;left:${lane * w}%;width:calc(${w}% - 3px)${
+            p.athlete ? `;--athlete-rgb:${AVATAR_RGB[athleteColorIdx(p.athlete)]}` : ""
+          }" ` +
           `data-wk-ev="${d}" data-wk-cid="${escapeHtml(p.athlete?.id || "")}" data-wk-nm="${escapeHtml(p.e.clientName || "")}" ` +
           `title="${escapeHtml((p.athlete?.name || p.e.clientName || "Session") + " · " + fmtSetmoreTime(p.e.startAt))}">` +
           `<span class="wkg-ev-time">${escapeHtml(fmtSetmoreTime(p.e.startAt))}</span>` +
@@ -15409,7 +15419,8 @@
       const planned = clients.filter((c) => c.importedProgress?.selfSchedule?.[d]?.weekId);
       const items = events.map((e) => {
         const a = matchAthleteForEvent(e);
-        return `<span class="wk-chip">${a ? athleteFaceHtml(a, "xs") : ""}` +
+        return `<span class="wk-chip"${a ? ` style="--athlete-rgb:${AVATAR_RGB[athleteColorIdx(a)]}"` : ""}>` +
+          `${a ? athleteFaceHtml(a, "xs") : ""}` +
           `<b>${escapeHtml(fmtSetmoreTime(e.startAt))}</b> ${escapeHtml(a?.name || e.clientName || "Session")}</span>`;
       }).join("") + planned.map((c) =>
         `<span class="wk-chip wk-chip-plan">${athleteFaceHtml(c, "xs")}${escapeHtml(c.name)}</span>`).join("");

@@ -13284,9 +13284,10 @@ body.scroll-locked {
   display: inline-flex; align-items: center; gap: 0.3em;
   max-width: 100%;
   padding: 0.2em 0.5em;
-  border: 1px solid var(--border);
+  border: 1px solid rgba(var(--athlete-rgb, var(--primary-rgb)), 0.45);
   border-radius: 999px;
-  background: var(--surface);
+  background: linear-gradient(90deg,
+    rgba(var(--athlete-rgb, var(--primary-rgb)), 0.16), transparent 72%), var(--surface);
   font-size: 0.75rem; font-weight: 600;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -13368,20 +13369,22 @@ body.scroll-locked {
   display: flex; flex-direction: column; gap: 0.05em;
   overflow: hidden;
   padding: 0.15em 0.35em;
-  border: 1px solid rgba(var(--primary-rgb), 0.55);
-  border-left: 3px solid var(--primary-bright);
+  border: 1px solid rgba(var(--athlete-rgb, var(--primary-rgb)), 0.55);
+  border-left: 3px solid rgb(var(--athlete-rgb, var(--primary-rgb)));
   border-radius: 6px;
-  background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.34), rgba(var(--primary-rgb), 0.18));
+  background: linear-gradient(180deg,
+    rgba(var(--athlete-rgb, var(--primary-rgb)), 0.34),
+    rgba(var(--athlete-rgb, var(--primary-rgb)), 0.18));
   color: inherit; font: inherit; text-align: left; cursor: pointer;
 }
-.wkg-ev:hover { border-color: var(--primary-bright); background: rgba(var(--primary-rgb), 0.42); }
+.wkg-ev:hover { border-color: rgb(var(--athlete-rgb, var(--primary-rgb))); background: rgba(var(--athlete-rgb, var(--primary-rgb)), 0.46); }
 /* A session that came from Setmore rather than the app reads quieter. */
 .wkg-ev.is-external {
   border-color: var(--border); border-left-color: var(--text-soft);
   background: var(--surface-3);
 }
 .wkg-ev-time {
-  font-size: 0.6rem; font-weight: 800; color: var(--primary-bright);
+  font-size: 0.6rem; font-weight: 800; color: rgb(var(--athlete-rgb, var(--primary-rgb)));
   font-variant-numeric: tabular-nums; line-height: 1.1;
 }
 .wkg-ev.is-external .wkg-ev-time { color: var(--text-soft); }
@@ -13426,18 +13429,48 @@ body.scroll-locked {
   font-size: 0.6rem; font-weight: 800; letter-spacing: 0.04em;
   color: var(--warn); font-variant-numeric: tabular-nums;
 }
+/* Each session carries the ATHLETE'S own colour — the one their avatar and
+   roster card already use (--athlete-rgb, set inline from athleteColorIdx) —
+   so a day reads as a list of people rather than a list of times. Falls back
+   to the theme's primary for a row with nobody matched to it.
+   Cards with a coloured edge, not hairline-separated rows: the old list was
+   flat enough that a booked session and a blank line looked alike. */
+.dv-list { gap: 0.35rem; }
 .dv-row {
+  position: relative;
   display: flex; align-items: center; gap: 0.6rem;
   width: 100%;
   min-height: 52px;
-  padding: 0.45rem 0.2rem;
-  border: 0; border-bottom: 1px solid var(--border);
-  background: none; color: inherit; font: inherit; text-align: left;
+  padding: 0.45rem 0.7rem 0.45rem 0.85rem;
+  border: 1px solid rgba(var(--athlete-rgb, var(--primary-rgb)), 0.28);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(90deg, rgba(var(--athlete-rgb, var(--primary-rgb)), 0.13), transparent 58%),
+    var(--surface-2);
+  color: inherit; font: inherit; text-align: left;
   cursor: pointer;
-  transition: background 0.12s;
+  /* Colour and border only — no transform, so nothing re-rasterises a gradient
+     while a finger is on it. */
+  transition: background 0.15s, border-color 0.15s;
 }
-.dv-row:last-child { border-bottom: 0; }
-.dv-row:hover { background: var(--surface-2); }
+/* The edge is a pseudo-element rather than border-left so it can be a gradient
+   of the athlete's colour and still sit inside the rounded corners. */
+.dv-row::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  border-radius: var(--radius) 0 0 var(--radius);
+  background: linear-gradient(180deg,
+    rgba(var(--athlete-rgb, var(--primary-rgb)), 1),
+    rgba(var(--athlete-rgb, var(--primary-rgb)), 0.45));
+}
+.dv-row:hover {
+  border-color: rgba(var(--athlete-rgb, var(--primary-rgb)), 0.65);
+  background:
+    linear-gradient(90deg, rgba(var(--athlete-rgb, var(--primary-rgb)), 0.2), transparent 62%),
+    var(--surface-3);
+}
+/* Done recedes: the colour stays, so it is still recognisably theirs, but it
+   stops competing with what has not happened yet. */
+.dv-row.is-done { opacity: 0.62; }
 .dv-face { flex-shrink: 0; display: flex; }
 .dv-name {
   font-size: 0.9rem; font-weight: 700;
@@ -13452,9 +13485,15 @@ body.scroll-locked {
   flex: 1 1 0; min-width: 0;
   margin-left: auto; text-align: right;
 }
+/* The time is what a coach scans for, so it gets the athlete's colour as a
+   chip rather than being plain text lost against the name. */
 .dv-time {
   flex-shrink: 0;
-  font-size: 0.8rem; font-weight: 700;
+  padding: 0.15em 0.55em;
+  border-radius: 999px;
+  background: rgba(var(--athlete-rgb, var(--primary-rgb)), 0.18);
+  color: rgb(var(--athlete-rgb, var(--primary-rgb)));
+  font-size: 0.8rem; font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
 .dv-state { flex-shrink: 0; width: 1em; color: var(--muted); font-weight: 800; text-align: center; }
