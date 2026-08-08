@@ -14366,3 +14366,14 @@ input.credit-cap:disabled { opacity: 0.4; }
   border: 1px solid rgba(var(--primary-rgb), 0.25);
   border-radius: 8px; padding: 8px; color: var(--text);
 }
+
+/* "Make this a regular session" — the athlete is read back, never re-picked,
+   so this is an identity line rather than a control. Uses the same --muted
+   token as .cbk-hint beside it; no hardcoded colour, so every theme (the
+   light one included) carries it. */
+.cbk-rep-head { display: flex; align-items: center; gap: 0.7rem; margin-bottom: 0.9rem; }
+.cbk-rep-id { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.cbk-rep-id span { font-size: 0.85em; color: var(--muted); }
+/* Reserves its line so the sheet doesn't jump as the summary appears and
+   disappears with the day toggles. */
+.cbk-rep-sum { margin: 0.9rem 0 0; font-size: 0.9em; color: var(--muted); min-height: 1.2em; }

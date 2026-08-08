@@ -10998,6 +10998,11 @@
     // Deliberately not the ✕ calendar (sd:calx) beside it — the two sit in the
     // same list and must not read as the same action at a glance.
     "sd:calmove": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.3" y="5.2" width="17.4" height="15.5" rx="3"/><path d="M3.3 10.1h17.4M8.1 3.3v3.6M15.9 3.3v3.6"/><path d="M8.4 15.4h7.2M13 12.8l2.6 2.6L13 18"/></svg>',
+    // The same calendar body as sd:calmove and sd:calx, with a cycle arrow
+    // instead: this one is the session happening AGAIN, not moving and not
+    // vanishing. All three sit in the session sheet together, so they share a
+    // body and differ only in the mark inside it.
+    "sd:calrepeat": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.3" y="5.2" width="17.4" height="15.5" rx="3"/><path d="M3.3 10.1h17.4M8.1 3.3v3.6M15.9 3.3v3.6"/><path d="M9 15.2a3.1 3.1 0 0 1 5.3-2.2l1.2 1.1"/><path d="M15.8 12.1v2.4h-2.4"/><path d="M15 16.6a3.1 3.1 0 0 1-5.3 2.2l-1.2-1.1"/><path d="M8.2 19.7v-2.4h2.4"/></svg>',
     // The activity column's own kinds. A stroked barbell rather than the solid
     // eq:dumbbell, so the whole column is one weight.
     // Tall plates on purpose: a barbell is a wide, flat shape, and drawn to its
@@ -15118,6 +15123,17 @@
       // Moving one comes before cancelling one, because it is the thing the
       // coach usually actually wants: a session rarely disappears, it shifts.
       if (e.native && e.bookingId) acts.push(act("move", "sd:calmove", "Change the date or time"));
+      // Turning this session into a standing appointment. Offered on a session
+      // that has ALREADY HAPPENED as well — that is the common way it gets
+      // used, and repeatStarts() begins the pattern from today so nothing can
+      // land in the past. Also offered on a Setmore mirror row, which has no
+      // booking of its own: a pattern needs only an athlete and a time, and
+      // turning one of those into a native series is exactly the point.
+      //
+      // Not offered when this session is already part of a series — the sheet
+      // says so a few lines below, and a second series would silently overlap
+      // the first. Extending an existing one lives on the Schedule card.
+      if (!e.seriesId) acts.push(act("repeat", "sd:calrepeat", "Make this a regular session"));
       if (e.native && e.bookingId) acts.push(act("cancel", "sd:calx", "Cancel this session", "danger"));
       else if (!e.native) acts.push(act("unlink", "sd:unlink", "Unlink this booking"));
     }
@@ -15195,6 +15211,7 @@
     on("charge", () => { closeModal(); markBookingMissed(e, c, "charged"); });
     on("unmark", () => { closeModal(); unmarkBookingMissed(e, c); });
     on("move", () => { closeModal(); openMoveBookingSheet(e, c); });
+    on("repeat", () => { closeModal(); openRepeatFromSession(e, c); });
     on("cancel", () => { closeModal(); cancelBookingFlow(e.bookingId, e.seriesId, e.startAt); });
     on("unlink", () => { closeModal(); unlinkSetmoreBooking(e.clientName); });
     on("link", () => { closeModal(); openLinkSetmoreNameModal(e.clientName); });
@@ -20720,6 +20737,144 @@
     // sync problem and never undoes a booking that already saved.
     if (seriesId) window.Cloud.googleCall?.("push-series", { seriesId, from: rows[0].start_at });
     else (res.created || []).forEach((id) => window.Cloud.googleCall?.("push", { bookingId: id }));
+    afterBookingChange();
+  }
+
+  // "Make this a regular session" — a session already on the calendar becomes a
+  // standing appointment.
+  //
+  // Deliberately slimmer than the booking sheet: no athlete roster, because the
+  // athlete was picked by tapping their name, and no time field, because the
+  // whole point is repeating THIS time. A coach who wants a different time
+  // wants a different session, and that is what "＋ Book a session" is for.
+  function openRepeatFromSession(e, c) {
+    const a = normalizeAvailability(coachAvailability());
+    const tz = a.tz || localTz();
+    const startMs = +new Date(e.startAt);
+    const hm = parseHM(zonedHM(startMs, tz)) || { hh: 9, mm: 0 };
+    // The length being repeated. A Setmore mirror row can arrive with no end on
+    // it, so the coach's own session length is the fallback.
+    const endMs = e.endAt ? +new Date(e.endAt) : 0;
+    const mins = endMs > startMs
+      ? Math.max(15, Math.round((endMs - startMs) / 60000))
+      : a.sessionMins;
+    const draft = { dows: [dowOfISO(zonedDateISO(startMs, tz))], weeks: 12 };
+
+    // The same sentence shape the booking sheet reads back, so the two sheets
+    // sound like one app.
+    const summaryText = (starts) => {
+      if (!starts.length) return "";
+      const last = fmtSlotDay(zonedDateISO(starts[starts.length - 1], tz));
+      return `${dowsPhrase(draft.dows)} at ${fmtSlotTime(starts[0], tz)} · ` +
+        `${starts.length} session${starts.length === 1 ? "" : "s"}, through ${last}`;
+    };
+
+    const draw = () => {
+      const body = $("#modal-body"); if (!body) return;
+      const starts = repeatStarts(draft.dows, hm.hh, hm.mm, tz, draft.weeks);
+      body.innerHTML =
+        `<div class="cbk-rep-head">` +
+          `<span class="cbk-face">${athleteFaceHtml(c)}</span>` +
+          `<span class="cbk-rep-id"><b>${escapeHtml(c.name)}</b>` +
+            `<span>${escapeHtml(fmtSlotTime(startMs, tz))} · ${mins} min</span>` +
+          `</span>` +
+        `</div>` +
+        `<div class="cbk-sec">` +
+          `<div class="cbk-lab">Repeats on</div>` +
+          `<div class="cbk-dows">${DOW_NAMES.map((name, i) =>
+            `<button type="button" class="cbk-dow${draft.dows.includes(i) ? " on" : ""}" data-dow="${i}" aria-pressed="${draft.dows.includes(i)}">` +
+              `<span class="cbk-dow-l">${escapeHtml(name[0])}</span>` +
+              `<span class="cbk-dow-s">${escapeHtml(name)}</span>` +
+            `</button>`).join("")}</div>` +
+          (draft.dows.length ? "" : `<p class="cbk-hint">Pick at least one day.</p>`) +
+        `</div>` +
+        `<div class="cbk-sec">` +
+          `<div class="cbk-lab">For how long</div>` +
+          `<div class="cbk-seg">${REPEAT_WEEKS.map((n) =>
+            `<button type="button" class="cbk-seg-btn${n === draft.weeks ? " on" : ""}" data-rw="${n}">${n}</button>`).join("")}</div>` +
+          `<p class="cbk-hint">weeks</p>` +
+        `</div>` +
+        `<p class="cbk-rep-sum">${escapeHtml(summaryText(starts))}</p>`;
+
+      // The button counts from the same list the write maps over, so it can
+      // never promise a number that doesn't get created. That matters most when
+      // the tapped session's own slot has already passed today: a 12-week
+      // repeat is then 11 sessions, and the button says 11.
+      const btn = $("#modal-foot .btn-primary");
+      if (btn) {
+        btn.disabled = !starts.length;
+        btn.textContent = starts.length
+          ? `Book ${starts.length} session${starts.length === 1 ? "" : "s"}`
+          : "Book";
+      }
+
+      body.querySelectorAll("[data-dow]").forEach((b) => b.addEventListener("click", () => {
+        const d = +b.dataset.dow;
+        draft.dows = draft.dows.includes(d)
+          ? draft.dows.filter((x) => x !== d)
+          : draft.dows.concat(d).sort((x, y) => x - y);
+        draw();
+      }));
+      body.querySelectorAll("[data-rw]").forEach((b) => b.addEventListener("click", () => {
+        draft.weeks = +b.dataset.rw;
+        draw();
+      }));
+    };
+
+    openModal({
+      title: `Make ${escapeHtml(String(c.name || "").split(" ")[0])} a regular`,
+      body: "",
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Book", className: "btn btn-primary", onClick: () => {
+          const starts = repeatStarts(draft.dows, hm.hh, hm.mm, tz, draft.weeks);
+          if (!starts.length) { toast("Pick at least one day."); return; }
+          bookRepeatFromSession(c, starts, mins);
+        }},
+      ],
+    });
+    draw();
+  }
+
+  async function bookRepeatFromSession(c, starts, mins) {
+    // Never faked offline: the database is the only thing that can say whether
+    // a slot was free, and a local "booked" is a guess the athlete may act on.
+    if (!window.Cloud?.enabled) {
+      toast("Booking needs a connection. Try again once you're back online.", 5000);
+      return;
+    }
+    // One series id for the whole pattern however many weekdays it spans, so
+    // "Tuesdays and Thursdays" is ONE standing appointment and Extend, End and
+    // "this and all future" act on all of it at once.
+    const seriesId = `sr_${uid()}`;
+    const rows = starts.map((ms) => ({
+      id: uid(),
+      // Sent for the not-null column; a BEFORE INSERT trigger replaces it with
+      // the athlete's real coach either way.
+      coach_id: state.trainerData.coachId || "",
+      athlete_id: c.id,
+      start_at: new Date(ms).toISOString(),
+      end_at: new Date(ms + mins * 60000).toISOString(),
+      status: "booked",
+      created_by: "coach",
+      note: null,
+      series_id: seriesId,
+    }));
+    closeModal();
+    const res = await window.Cloud.createBookings(rows);
+    const made = (res?.created || []).length;
+    const skipped = (res?.taken || []).length;
+    if (!made) {
+      toast(skipped
+        ? "Every one of those times is already booked. Nothing was changed."
+        : "Couldn't save those bookings. Try again.", 5000);
+      return;
+    }
+    toast(`${made} session${made === 1 ? "" : "s"} booked for ${c.name} ✓` +
+      (skipped ? ` · ${skipped} already taken` : ""), 5000);
+    // One call for the whole series rather than one per week. Google failing is
+    // a sync problem and never undoes a booking that already saved.
+    window.Cloud.googleCall?.("push-series", { seriesId, from: rows[0].start_at });
     afterBookingChange();
   }
 
