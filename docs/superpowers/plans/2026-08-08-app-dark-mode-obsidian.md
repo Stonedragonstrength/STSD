@@ -35,6 +35,11 @@ colours, applied in three waves.
   without shrinking the viewport, so media queries never fire and a responsive
   check passes without testing anything.
 - Commit after each task. Push only at the end of Task 6.
+- **Every line number in this plan is measured against `styles.css` as it stands
+  before Task 1.** Task 1 grows the `:root` block by roughly 17 lines, so every
+  citation after it drifts by about that much. **Locate rules by their selector
+  and content, never by jumping to a line number.** The line numbers are
+  orientation, not addresses.
 
 ## File Structure
 
@@ -830,18 +835,24 @@ Expected: all pass, no `BROKE:` lines.
 Kill the Node server, and clear the seeded storage from the sandbox origin.
 Never touch port 5190's storage.
 
-- [ ] **Step 7: Commit any fixes and push**
+- [ ] **Step 7: Commit any fixes, then merge**
+
+The work happens on the `obsidian-dark-mode` branch, not `main` — pushing `main`
+**is** the deploy, and a half-finished wave would ship a broken-looking app to
+live athletes.
 
 ```bash
 git add -A
 git commit -m "Obsidian: fixes from the full theme x role x width sweep
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+git checkout main
+git merge --no-ff obsidian-dark-mode
 git push origin main
 ```
 
-`git push origin main` **is** the deploy — GitHub Pages publishes from `main`.
-The `?v=` bumps from Tasks 2–5 are what get the new CSS to installed PWAs.
+Only that final `git push origin main` deploys. The `?v=` bumps from Tasks 2–5
+are what get the new CSS to installed PWAs.
 
 ---
 

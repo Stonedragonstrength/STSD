@@ -11,14 +11,16 @@
 @font-face { font-family: "Barlow"; font-style: normal; font-weight: 800; font-display: swap; src: url("fonts/barlow-800.woff2") format("woff2"); }
 @font-face { font-family: "Barlow"; font-style: normal; font-weight: 900; font-display: swap; src: url("fonts/barlow-900.woff2") format("woff2"); }
 :root {
-  --bg: #03060c;
-  --bg-2: #060b14;
-  --surface: #0b111d;
-  --surface-2: #131c33;
-  --surface-3: #1e2d4a;
-  --surface-elevate: #2a3a5e;
-  --border: #3a4a75;
-  --border-strong: #4d5f92;
+  /* Obsidian base. The eight colour themes inherit this wholesale; Black and
+     White carry their own and are retuned below. */
+  --bg: #010204;
+  --bg-2: #04070e;
+  --surface: #080b12;
+  --surface-2: #0b0f18;
+  --surface-3: #131a2b;
+  --surface-elevate: #1c2740;
+  --border: #22304e;
+  --border-strong: #35486f;
   --text: #e2e8f0;
   --text-soft: #94a3b8;
   --muted: #64748b;
@@ -57,44 +59,83 @@
   --shadow-lg: 0 20px 50px rgba(0, 0, 0, 0.75);
   --radius: 10px;
   --radius-lg: 16px;
+  /* ---- Obsidian & ember: the surface recipe, defined once ----
+     These name ROLES, not colours, which is what makes ~283 flat surfaces
+     tractable. Every accent value reads the theme channels, so a theme swap
+     re-lights the whole app without touching a component rule.
+     --halo and --lift are composable: always `box-shadow: var(--lift), var(--halo)`. */
+  --face: linear-gradient(135deg, rgba(var(--primary-rgb), 0.14), rgba(9, 12, 19, 0) 54%), #080b12;
+  --face-inset: #0b0f18;
+  --edge: rgba(var(--primary-rgb), 0.26);
+  --edge-lit: rgba(var(--primary-bright-rgb), 0.5);
+  --halo: 0 0 26px -10px rgba(var(--primary-rgb), 0.5);
+  --lift: 0 14px 34px rgba(0, 0, 0, 0.78);
+  /* Primary buttons go dark so the halo has somewhere to land — a bright fill
+     is brighter than its own glow, which is why the glow was invisible. */
+  --btn-face: linear-gradient(180deg, rgba(var(--primary-bright-rgb), 0.17), rgba(8, 13, 20, 0) 46%), #080d14;
+  --btn-ink: #eef2f8;
 }
 
 /* ============ Color themes (full recolor) ============
    Each theme retints the dark base + accent. --accent stays green as the
-   universal "done/success" signal. Blue (original) is the default :root. */
+   universal "done/success" signal. Blue (original) is the default :root.
+
+   ---- Obsidian depth, 2026-08-08 ----
+   These seven themes inherit the obsidian RECIPE (--face/--edge/--halo/…) from
+   :root, but they define their own base surfaces right here, and those were
+   still the pre-obsidian, lighter values — so they inherited the recipe and
+   kept the old floor. It measured: a secondary .btn (--surface-3) against a
+   --face-inset tile was 1.10:1 on blue but 1.61:1 on teal, 1.59 green, 1.54
+   yellow. The same control read as a whisper on one theme and a raised slab
+   on another. All seven are lowered here to blue's floor.
+
+   Derivation, so this can be redone rather than guessed at: each theme keeps
+   its OWN hue and saturation (measured from its own --surface-3/-elevate/
+   --border/--border-strong, the slots with enough bit depth to be trusted),
+   and only its lightness moves. The target for each slot is blue's RELATIVE
+   LUMINANCE, not blue's HSL lightness — WCAG weights green 0.7152 against
+   blue's 0.0722, so matching HSL lightness still left green/teal/yellow at
+   1.25-1.28:1. Matching luminance puts every slot on blue's contrast against
+   --face-inset (1.08 / 1.05 / 1.03 / 1.00 / 1.10 / 1.29 / 1.46 / 2.11).
+   At --bg's depth 8-bit sRGB cannot express a warm or green cast at all — the
+   naive answer collapses five themes onto one neutral #020201 — so the darkest
+   values keep at least blue's own --bg channel spread of 3 (#010204 = 1,2,4).
+   That costs <0.01 of contrast there, which is why --bg lands at 1.07-1.08
+   rather than exactly 1.083. Everything from --surface up is exact.
+   This is guarded by tests/theme-tokens.test.js section 7. */
 :root[data-theme="red"] {
-  --bg: #0c0405; --bg-2: #150607; --surface: #1c0a0b; --surface-2: #2c1214; --surface-3: #3f1c1e; --surface-elevate: #552628;
-  --border: #7a3535; --border-strong: #9e4444;
+  --bg: #050102; --bg-2: #0d0506; --surface: #130809; --surface-2: #190b0c; --surface-3: #2c1314; --surface-elevate: #401d1f;
+  --border: #4f2326; --border-strong: #773334;
   --primary-rgb: 239, 68, 68; --primary-bright-rgb: 248, 113, 113;
   --primary: #ef4444; --primary-bright: #f87171; --primary-hover: #dc2626;
 }
 :root[data-theme="orange"] {
-  --bg: #0c0603; --bg-2: #150a04; --surface: #1c0f07; --surface-2: #2c1a0e; --surface-3: #3f2816; --surface-elevate: #55361e;
-  --border: #7a4a26; --border-strong: #965d31;
+  --bg: #040201; --bg-2: #0b0604; --surface: #100a05; --surface-2: #140e07; --surface-3: #26170c; --surface-elevate: #3b2114;
+  --border: #412c1b; --border-strong: #654020;
   --primary-rgb: 249, 115, 22; --primary-bright-rgb: 251, 146, 60;
   --primary: #f97316; --primary-bright: #fb923c; --primary-hover: #ea580c;
 }
 :root[data-theme="green"] {
-  --bg: #030c06; --bg-2: #06140d; --surface: #0a1b11; --surface-2: #112a1b; --surface-3: #1a3d27; --surface-elevate: #235231;
-  --border: #2f7043; --border-strong: #3d9057;
+  --bg: #010402; --bg-2: #040805; --surface: #050d07; --surface-2: #08110b; --surface-3: #0c1e12; --surface-elevate: #112d1a;
+  --border: #163720; --border-strong: #1f5230;
   --primary-rgb: 37, 211, 102; --primary-bright-rgb: 94, 234, 141;
   --primary: #25d366; --primary-bright: #5eea8d; --primary-hover: #1eb555;
 }
 :root[data-theme="teal"] {
-  --bg: #030c0b; --bg-2: #061412; --surface: #0a1b18; --surface-2: #112a26; --surface-3: #1a3d37; --surface-elevate: #235249;
-  --border: #2f6e63; --border-strong: #3d8a7c;
+  --bg: #010403; --bg-2: #030807; --surface: #060c0b; --surface-2: #07110f; --surface-3: #0e1d1b; --surface-elevate: #112c27;
+  --border: #15362f; --border-strong: #215049;
   --primary-rgb: 20, 184, 166; --primary-bright-rgb: 45, 212, 191;
   --primary: #14b8a6; --primary-bright: #2dd4bf; --primary-hover: #0d9488;
 }
 :root[data-theme="purple"] {
-  --bg: #08040d; --bg-2: #0d0616; --surface: #140a20; --surface-2: #1f1132; --surface-3: #2e1a49; --surface-elevate: #3e2357;
-  --border: #502f73; --border-strong: #643d8f;
+  --bg: #030205; --bg-2: #0a050f; --surface: #0f0816; --surface-2: #140b1d; --surface-3: #221430; --surface-elevate: #321d4b;
+  --border: #3d2557; --border-strong: #5d3584;
   --primary-rgb: 168, 85, 247; --primary-bright-rgb: 192, 132, 252;
   --primary: #a855f7; --primary-bright: #c084fc; --primary-hover: #9333ea;
 }
 :root[data-theme="yellow"] {
-  --bg: #0c0a03; --bg-2: #141005; --surface: #1b160a; --surface-2: #2a2211; --surface-3: #3d331a; --surface-elevate: #524623;
-  --border: #6e5d2f; --border-strong: #8a763d;
+  --bg: #040201; --bg-2: #080703; --surface: #0d0b05; --surface-2: #110f08; --surface-3: #1f1a0d; --surface-elevate: #302615;
+  --border: #3a2f19; --border-strong: #574625;
   --primary-rgb: 245, 158, 11; --primary-bright-rgb: 251, 191, 36;
   --primary: #f59e0b; --primary-bright: #fbbf24; --primary-hover: #d97706;
 }
@@ -103,10 +144,18 @@
   --border: #454550; --border-strong: #5a5a67;
   --primary-rgb: 148, 163, 184; --primary-bright-rgb: 203, 213, 225;
   --primary: #94a3b8; --primary-bright: #cbd5e1; --primary-hover: #64748b;
+  /* Slate at :root's alphas disappears against near-black — this theme needs
+     more wash and a brighter rim to read at all. It is lit in silver because
+     its primary IS silver; nothing blue may leak in. */
+  --face: linear-gradient(135deg, rgba(var(--primary-rgb), 0.10), rgba(9, 12, 19, 0) 54%), #0a0a0d;
+  --face-inset: #111116;
+  --edge: rgba(var(--primary-rgb), 0.20);
+  --edge-lit: rgba(var(--primary-bright-rgb), 0.42);
+  --halo: 0 0 26px -12px rgba(var(--primary-rgb), 0.35);
 }
 :root[data-theme="pink"] {
-  --bg: #0c040a; --bg-2: #150611; --surface: #1c0a16; --surface-2: #2c1123; --surface-3: #3f1a32; --surface-elevate: #552343;
-  --border: #732f5d; --border-strong: #8f3e74;
+  --bg: #040103; --bg-2: #0c050a; --surface: #12080e; --surface-2: #190a14; --surface-3: #2c1122; --surface-elevate: #401a33;
+  --border: #4e203e; --border-strong: #742f5d;
   --primary-rgb: 236, 72, 153; --primary-bright-rgb: 244, 114, 182;
   --primary: #ec4899; --primary-bright: #f472b6; --primary-hover: #db2777;
 }
@@ -126,6 +175,18 @@
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.12);
   --shadow: 0 6px 20px rgba(15, 23, 42, 0.15);
   --shadow-lg: 0 20px 50px rgba(15, 23, 42, 0.22);
+  /* The light theme. The "light source" becomes a tinted wash plus a real
+     shadow; edges DARKEN instead of brightening; halos go off entirely,
+     because a glow on white reads as smudge. The halo is a zero-alpha shadow
+     rather than `none` — `none` in a comma list invalidates the declaration. */
+  --face: linear-gradient(135deg, rgba(var(--primary-rgb), 0.055), rgba(255, 255, 255, 0) 54%), #ffffff;
+  --face-inset: #f4f7fb;
+  --edge: rgba(var(--primary-rgb), 0.16);
+  --edge-lit: rgba(var(--primary-rgb), 0.26);
+  --halo: 0 0 0 0 rgba(0, 0, 0, 0);
+  --lift: 0 10px 26px rgba(15, 23, 42, 0.10);
+  --btn-face: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 46%), #1e293b;
+  --btn-ink: #ffffff;
 }
 /* The brand wordmark uses a light gradient that vanishes on a light surface. */
 :root[data-theme="white"] .brand h1 {
@@ -135,12 +196,14 @@
 /* White theme readability fixes:
    (1) the app header + coach nav have HARDCODED dark glass backgrounds that
        don't follow the theme, so on white their (now-dark) text is invisible;
-   (2) primary-colored buttons/pills use dark ink (#062131) that assumes a
-       BRIGHT primary — but white's primary is near-black, so it's dark-on-dark.
-   Repaint the bars light and flip on-primary text to white. */
+   (2) .tab-badge uses dark ink that assumes a BRIGHT primary — but white's
+       primary is near-black, so it's dark-on-dark. (.btn-primary had the same
+       problem here until Wave 3 gave it --btn-ink, which handles it directly —
+       dropped from this list 2026-08-08.)
+   Repaint the bars light and flip the badge's on-primary text to white. */
 :root[data-theme="white"] .app-header { background: rgba(255, 255, 255, 0.9); }
 :root[data-theme="white"] .coach-nav { background: rgba(255, 255, 255, 0.85); }
-:root[data-theme="white"] .btn-primary, :root[data-theme="white"] .tab-badge { color: #fff; }
+:root[data-theme="white"] .tab-badge { color: #fff; }
 /* (Active nav/tab pills dropped from the #fff list 2026-07-15: they're now a
    light tint with --primary-bright text, which is already dark on White.) */
 
@@ -153,8 +216,8 @@ html, body {
   color: var(--text);
   background: var(--bg);
   background-image:
-    radial-gradient(circle at 20% 0%, rgba(var(--primary-rgb), 0.035) 0%, transparent 38%),
-    radial-gradient(circle at 80% 100%, rgba(var(--primary-bright-rgb), 0.02) 0%, transparent 38%);
+    radial-gradient(75% 48% at 50% 108%, rgba(var(--primary-rgb), 0.20) 0%, transparent 68%),
+    radial-gradient(60% 40% at 8% -6%, rgba(var(--primary-bright-rgb), 0.07) 0%, transparent 62%);
   background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
@@ -223,15 +286,40 @@ p { margin: 0 0 0.75em; line-height: 1.5; }
 .btn:active { transform: translateY(1px); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* Black face, sheen across the top third, lit rim, outer halo. The old bright
+   fill was brighter than its own glow, which is why the glow never read. The
+   RESTING state carries all of this — hover never fires on touch. */
 .btn-primary {
-  background: linear-gradient(180deg, var(--primary-bright), var(--primary));
-  color: #062131;
-  border-color: var(--primary-hover);
+  position: relative;
+  overflow: hidden;
+  background: var(--btn-face);
+  color: var(--btn-ink);
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.35);
+  border-top-color: rgba(var(--primary-bright-rgb), 0.85);
 }
 .btn-primary:hover {
-  background: linear-gradient(180deg, var(--primary), var(--primary-hover));
-  box-shadow: 0 0 0 3px var(--primary-soft);
+  background: var(--btn-face);
+  border-top-color: rgba(var(--primary-bright-rgb), 1);
 }
+/* Mid-workout actions keep the solid fill. A dark primary is less obviously
+   "the button", which matters when someone is tapping fast between sets. */
+.btn-primary.btn-solid {
+  background: linear-gradient(180deg, var(--primary-bright), var(--primary));
+  border: 1px solid var(--primary-hover);
+  color: #062131;
+  box-shadow: 0 6px 20px rgba(var(--primary-rgb), 0.35),
+              inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+/* .btn-primary:hover (the glow block, further down) is ALSO specificity
+   (0,2,0) and sits later in source, so it silently wins box-shadow on hover
+   and reverts a .btn-solid button to the dark halo — the exact thing
+   .btn-solid exists to prevent. Two classes + :hover = (0,3,0), so this
+   re-asserts the solid shadow regardless of source order. */
+.btn-primary.btn-solid:hover {
+  box-shadow: 0 6px 20px rgba(var(--primary-rgb), 0.35),
+              inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+:root[data-theme="white"] .btn-primary.btn-solid { color: #fff; }
 
 .btn-ghost {
   background: transparent;
@@ -430,8 +518,8 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
   align-items: center;
   /* Layered glass: ambient accent bloom bottom-left + vertical depth fade. */
   background:
-    radial-gradient(560px 110px at 8% 130%, rgba(var(--primary-rgb), 0.14), transparent 70%),
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 88%, transparent), color-mix(in srgb, var(--bg) 90%, transparent));
+    radial-gradient(560px 110px at 8% 130%, rgba(var(--primary-rgb), 0.18), transparent 70%),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 88%, transparent), color-mix(in srgb, var(--bg) 92%, transparent));
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   /* Accent hairline that fades out instead of a flat rule. */
@@ -5155,15 +5243,18 @@ body.login-success #screen-client {
 .btn:active { transform: scale(0.95); }
 
 .btn-primary {
-  box-shadow: 0 6px 20px rgba(var(--primary-rgb), 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 26px -6px rgba(var(--primary-bright-rgb), 0.45),
+              inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 .btn-primary:hover {
-  box-shadow: 0 10px 32px rgba(var(--primary-rgb), 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 0 0 3px var(--primary-soft);
+  box-shadow: 0 0 34px -5px rgba(var(--primary-bright-rgb), 0.62),
+              inset 0 1px 0 rgba(255, 255, 255, 0.2);
   transform: translateY(-1px);
 }
 .btn-primary:active {
   transform: scale(0.96) translateY(0);
-  box-shadow: 0 2px 8px rgba(var(--primary-rgb), 0.5), inset 0 2px 6px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 0 14px -4px rgba(var(--primary-bright-rgb), 0.5),
+              inset 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
 /* Sheen sweep on primary buttons */
@@ -5421,7 +5512,7 @@ input:focus, textarea:focus, select:focus {
   gap: 0.4em;
   padding: 0.6rem max(0.85rem, env(safe-area-inset-left)) 0.6rem max(0.85rem, env(safe-area-inset-right));
   /* Same glass recipe as .app-header so header + nav read as one chrome. */
-  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 72%, transparent), color-mix(in srgb, var(--bg) 84%, transparent));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 76%, transparent), color-mix(in srgb, var(--bg) 88%, transparent));
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border-bottom: 1px solid transparent;
@@ -9595,15 +9686,15 @@ body.live-log-mode #screen-client .header-right { display: none; }
    (--primary-rgb & friends), so all themes — including white — inherit it.
    ========================================================================== */
 
-/* -------- 1 · Layered cards: surface gradient + lit top edge + depth ----- */
+/* -------- 1 · Layered cards: accent-lit face + lit edge + depth ---------- */
 .card,
 .client-row,
 .week-card,
 .modal-card {
-  background: linear-gradient(180deg, var(--surface-2), var(--surface) 62%);
-  border-color: color-mix(in srgb, var(--border) 55%, transparent);
-  border-top-color: rgba(255, 255, 255, 0.14);
-  box-shadow: var(--shadow);
+  background: var(--face);
+  border: 1px solid var(--edge);
+  border-top-color: var(--edge-lit);
+  box-shadow: var(--lift), var(--halo);
 }
 .client-row {
   transition: border-color 0.15s, background 0.15s, transform 0.15s, box-shadow 0.2s;
@@ -9755,13 +9846,15 @@ body.live-log-mode #screen-client .header-right { display: none; }
 .btn-primary {
   border-radius: 6px;
   clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
-  /* clip-path clips box-shadow, so the outer glow rides drop-shadow instead */
-  filter: drop-shadow(0 3px 10px rgba(var(--primary-rgb), 0.35));
+  /* box-shadow is left to the Wave 3 glow block above — this rule used to
+     re-declare it here too, which (same specificity, later source) silently
+     blanked out that block's halo on every button. clip-path clips box-shadow
+     regardless of which rule wins it, so the glow has to ride drop-shadow —
+     retuned to --primary-bright-rgb to match the halo it's standing in for. */
+  filter: drop-shadow(0 0 14px rgba(var(--primary-bright-rgb), 0.45));
 }
 .btn-primary:hover {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
-  filter: drop-shadow(0 5px 14px rgba(var(--primary-rgb), 0.55)) brightness(1.07);
+  filter: drop-shadow(0 0 18px rgba(var(--primary-bright-rgb), 0.62)) brightness(1.07);
 }
 .btn-primary:focus-visible {
   /* the shared pressPulse ring gets clipped by the notch — use an inset ring */
@@ -14460,3 +14553,267 @@ input.credit-cap:disabled { opacity: 0.4; }
 /* Reserves its line so the sheet doesn't jump as the summary appears and
    disappears with the day toggles. */
 .cbk-rep-sum { margin: 0.9rem 0 0; font-size: 0.9em; color: var(--muted); min-height: 1.2em; }
+
+/* ==========================================================================
+   Obsidian, wave 2 — the surfaces INSIDE a card
+   The July facelift (section above, "Forged-steel facelift") reached four
+   outer selectors — .card, .client-row, .week-card, .modal-card — and
+   everything nested in them stayed a flat --surface slab, which is what made
+   the whole thing read cheap. These consume --face-inset so a theme swap
+   re-lights them too.
+
+   Placed at the END of the file, not immediately after the facelift block:
+   most of the ~280 target selectors' own rules live FURTHER DOWN the file
+   than the facelift section (component CSS was added over time, so newer
+   features sit textually after the July facelift even though they are the
+   same kind of "flat slab"). CSS resolves equal-specificity conflicts by
+   source order, so a block placed right after the facelift would have been
+   silently re-overridden by e.g. .wkg-head, .wk-row or .tax-band's own,
+   later, still-flat rule. Only appending after EVERYTHING guarantees this
+   section is the last word for every selector below, regardless of where
+   its original rule happens to live. Wave 1 didn't hit this: all four of
+   its selectors' own rules happen to sit early in the file.
+   ========================================================================== */
+
+/* ---- Group 1: rows/tiles/chips named directly in the task brief --------
+   .status-unpaid was in the brief's own example list and is deliberately
+   dropped here on review: its rule (styles.css, "Money still to come...")
+   says outright "Outlined rather than filled... not a second status" —
+   background:transparent + an inset amber ring is the point, not a flat
+   slab that got missed. Filling it and bordering it undoes that on purpose.
+   Left completely untouched. */
+.client-row-view, .coach-row, .wk-row, .wkg-head, .rec-card, .food-tile,
+.food-result, .food-nav, .ex-lib-item, .ex-lib-sb-cat, .dash-cal-day,
+.grid-picker-cell, .demo-pick, .video-pick-btn, .role-btn, .tour-card,
+.records-tab, .day-icon-btn, .day-note-toggle, .cex-set-col, .cd-col,
+.rest-timer-pop, .ex-demo-preview, .rec-reroll,
+.ex-cat-move-btn, .dvs-act {
+  background: var(--face-inset);
+  border: 1px solid var(--edge);
+  border-top-color: var(--edge-lit);
+}
+
+/* ---- Group 2: the rest of the long tail — same treatment ---------------
+   Walked from the full audit (a brace-aware parse of every
+   `background: var(--surface*)` declaration, not the line-oriented awk
+   sketch in the brief — that script attributes one-line :hover rules to
+   whatever multi-line selector preceded them and drops all but the last
+   line of a multi-line comma group, so it both under- and over-counts).
+   Excludes inputs/textareas/selects (Task 4), the generic .btn/.btn-ghost/
+   .icon-btn button system (Wave 3's --btn-face/--btn-ink), the four Wave 1
+   outer selectors, and plain :hover/:active/:focus/state duplicates of a
+   selector already covered above (the existing --surface-3-style hover
+   lift is left alone; only the resting face changes).
+
+   Two more dropped on review, same reasoning as .status-unpaid above —
+   a comment on the ORIGINAL rule documents a deliberate visual choice this
+   recipe would have undone:
+   - .status-expired: "Deliberately quiet — flat, muted, no colour... not a
+     problem to act on." --edge/--edge-lit are rgba(var(--primary-rgb)/
+     var(--primary-bright-rgb), a) — literally colour. Left as its original
+     flat background: var(--surface-3), no border added.
+   - .cex-plate-row: "Reads as a quiet caption, not another control." Its
+     border is `1px dashed var(--border)` on purpose — dashed reads as
+     informational, solid reads as a pressable tile, which is exactly the
+     "another control" look the comment says to avoid. Moved to Group 3
+     (background only); its dashed border is untouched. */
+#prof-membership, #prog-bw:not(:empty), #prog-volume:not(:empty), .a-card,
+.a-cgroup, .a-cgroup-count, .a-concept, .a-edit-btn, .a-ex-chip, .a-fact,
+.a-search-x, .a-shelf-n, .a-shelves, .added-ex-sec, .adh-detail,
+.adh-range, .adh-signal, .adh-stat, .anatomy-toggle, .archive-section,
+.archive-summary, .archive-week-card, .assign-athlete-card, .av-block-chip,
+.av-day, .avatar-opt, .bill-doc, .bill-how, .bill-search-clear, .bill-step,
+.book-slot, .books-tile, .breakdown-note, .breakdown-set-pill,
+.bug-report, .bw-chart-card, .bw-chart-tip, .bw-entry, .bw-range, .cal-day,
+.cal-day-pill-rest, .cal-grid, .cal-modes, .calc-out, .cardio-int-btn,
+.cardio-type-btn, .cbk-ath-list, .cbk-bal, .cbk-chip, .cbk-dow, .cbk-seg,
+.cday-line, .cex-hist-set, .cex-rir-btn,
+.cex-step, .cex-tools-menu, .cex-tools-step, .cex-wrapper, .chg-how-opt,
+.chg-working, .client-nudge-btn,
+.client-sessions-chip.blank, .coach-profile-card, .coach-row-icon,
+.coach-week-tab-strip, .cyc-date, .cyc-flow, .cyc-share, .cyc-share-opt,
+.dash-cal-pill-rest, .day-log-icon-rest,
+.demo-clip-chip, .demo-stage, .dh-date, .dh-progress, .dow-pill, .dvs-bal,
+.effort-opt, .empty-state, .ex-extra-chip, .ex-notes-compact, .ex-row-wrapper,
+.exn-pop, .exn-pop-opt, .extras-pop, .fc-coach-clip, .finisher-pct-btn,
+.finisher-switch, .finisher-toggle, .food-active, .food-daytype.is-rest,
+.food-scan-btn, .food-week-dot, .form-check-row,
+.grid-picker-pop, .grid-picker-tab, .hoard-crest, .hoard-tile,
+.income-eye, .income-tile, .inv-row, .invite-code-bar, .lib-search-clear,
+.load-prog-card, .log-week-card, .macro-calc, .mem-btn,
+.mem-row, .meta-pill, .mod-add-btn, .mod-picker-btn, .mod-picker-pop,
+.mood-opt, .mood-rollup, .msg-bubble, .msg-compose, .msg-modes, .msg-recip,
+.myfoods-btn, .myfoods-count, .nut-split-fields,
+.past-programs-fold, .plate-bar-opt, .plate-pop, .plate-size,
+.portion-preview, .pr-chip, .pr-exercise-group, .prog-opt,
+.program-section-count, .pull-src, .pull-src-n, .rb-total,
+.rdy-block.asking, .rdy-done, .rdy-opt, .rec-cat-chip, .rest-opt-btn,
+.rest-sound-btn, .rest-timer-btn, .rest-timer-pop button,
+.roster-group-tab, .roster-search-clear, .scan-zoom-btn, .sched-google-row,
+.sched-win, .sess-tile, .session-manage, .sl-athlete, .sl-manual, .sl-waived,
+.snap-pip, .sq-card-fields, .stat-cust-row, .status-cancelled,
+.tax-band, .tax-block, .theme-swatch, .tour-offer,
+.tpl-folder-tag, .trial-card, .trial-icon-btn, .trophy, .warmup-pop,
+.warmup-seg-btn, .water-cup, .water-goal-btn, .week-chips, .wkg,
+.wp-head-count {
+  background: var(--face-inset);
+  border: 1px solid var(--edge);
+  border-top-color: var(--edge-lit);
+}
+
+/* ---- Group 3: same tail, background only --------------------------------
+   Each of these already carries a deliberate, meaningful border treatment
+   that the Group 1/2 shorthand would clobber: a coloured 3px left rail
+   (athlete/day/primary/warn accent bars — .client-instructions, .day-log-opt,
+   .cday-block, .bill-row, .lk-row, .mg-row, .cbk-summary, .cyc-concern, plus
+   Wave 1's own rail treatment on .bulletin-item/.ovmsg-card, which sets
+   border-left:none and paints the rail via ::before), a single divider side
+   on a header/footer strip that intentionally reads as continuous with its
+   neighbour (.modal-foot, .coach-sheet-foot, .archive-week-head, .bw-metrics,
+   .cex-panel, .ex-detail-panel), a screen-edge drawer's single inner border
+   (.ex-lib-sidebar, .ex-library-drawer), a status-quiet marker
+   (.wkg-ev.is-external's grey border-left, .oneoff-card's amber border), an
+   accent-rail search result (.a-result), a dashed "not a control" border
+   (.cex-plate-row — see Group 2's comment above), or is a small image
+   swatch that doesn't need a ring (.demo-pick img, .demo-thumb,
+   .ex-demo-preview img, .ex-lib-thumb).
+
+   .coach-week-body was here too and is dropped on review: it renders in
+   exactly two places (renderWeeks() in app.js only ever targets
+   #program-editor-weeks or #weeks-container), and BOTH have their own
+   higher-specificity override —
+   `#program-editor-weeks .coach-week-body, #weeks-container .coach-week-body
+   { background: none; border: none; border-radius: 0; }` — whose own
+   comment says why: "drop the surface 'card' panel behind the week/day
+   content — it reads as a stray floating card while building a program.
+   Applies to both the standalone Programs editor and the athlete's Program
+   tab." That's not a flat slab that got missed; it's every real context
+   this class renders in, on purpose. Fixing it the way .cex-wrapper is
+   fixed below would just be decorating dead code. Left untouched.
+
+   ---- Moved down from Group 2 on final review -----------------------------
+   .week-head: `.week-card.open .week-head` sets `border-image` (0,3,0) to fade
+   its open-state divider. border-image replaces border rendering on EVERY side
+   that has width — before this branch only border-bottom had any, so it painted
+   one edge; Group 2's four 1px sides turned it into a white hairline BOX.
+   .week-head has a deliberate `border-bottom`, which is this group's stated
+   criterion. Re-scanned all seven border-image declarations in the file against
+   the newly-bordered selectors: .app-header, .tabs (x2), .coach-nav (x2) and
+   .ovmsg-item are none of them newly bordered, so that was the only collision.
+
+   .rank-medallion (added in the follow-up pass): its own rule paints a
+   rank-coloured ring —
+   `border: 1px solid color-mix(in srgb, var(--rank-color, var(--gold)) 60%, transparent)`
+   — matched by a --rank-color glow and a `transition: border-color`, all driven
+   by the per-rank --rank-color that renderClientHeaderRank() sets (copper at the
+   bottom of the ladder through white-hot at HOARD). Group 2 is (0,1,0) and
+   later, so it WON: the ring stopped signalling rank, went teal against its own
+   gold glow, and the transition went dead. Background only here so the ring
+   survives.
+
+   .rest-pop-badge (added in the follow-up pass): the 12x12 backing disc the ∞
+   rides on, over the bell glyph. It is the one member of the thin-element group
+   that is NOT a progress track, and it must NOT take Group 7's --surface-3: its
+   own rule paints --surface, which pre-branch sat DARKER than its --surface-2
+   popover (1.116:1), reading as a hole punched through to the popover rather
+   than a chip sitting on it. --surface-3 would invert that relationship and make
+   it lighter than its own parent. It only needed the BORDER removed (a 1px ring
+   shrank its width/height:100% child SVG by 17%), so it is dropped from this
+   group too and simply keeps its own --surface. */
+.a-result, .archive-week-head, .bill-row, .bulletin-item, .bw-metrics,
+.cbk-summary, .cday-block, .cex-panel, .cex-plate-row, .client-instructions,
+.coach-sheet-foot, .cyc-concern, .day-log-opt,
+.demo-pick img, .demo-thumb, .ex-demo-preview img, .ex-detail-panel,
+.ex-lib-sidebar, .ex-lib-thumb, .ex-library-drawer, .lk-row, .mg-row,
+.modal-foot, .oneoff-card, .ovmsg-card, .rank-medallion, .week-head,
+.wkg-allday, .wkg-ev.is-external {
+  background: var(--face-inset);
+}
+
+/* ---- Group 4: the tour tooltip's caret -----------------------------------
+   .tour-card::before is a 12x12 square rotated 45deg, using only
+   border-left/border-top so two edges vanish and it reads as a triangular
+   tail. The Group 1/2 `border` shorthand would reset all four sides and
+   turn the caret into a visible diamond, so its two sides are recoloured
+   individually instead — this keeps the tail the same colour as the card
+   it points from. */
+.tour-card::before {
+  background: var(--face-inset);
+  border-left-color: var(--edge);
+  border-top-color: var(--edge-lit);
+}
+
+/* ---- Group 5: fixing a specificity conflict, not just a source-order one -
+   The end-of-file placement above only settles EQUAL-specificity ties by
+   source order. It does nothing for a rule that outranks Group 2 on
+   specificity alone — found by re-parsing the whole file into real
+   selector chains and comparing computed specificity, not by inspection:
+   `.workout-detail-list > .cex-wrapper { border: 1px solid var(--border); }`
+   (styles.css, @media (min-width: 721px)) is (0,2,0) against the bare
+   `.cex-wrapper` above at (0,1,0), so it always won at desktop widths
+   regardless of source order — .cex-wrapper kept the old --border there no
+   matter where Group 2 was placed. (The @media (max-width: 720px) mobile
+   variant is also a bare `.cex-wrapper`, so it's an equal-specificity tie
+   Group 2 already wins by being last — only the higher-specificity desktop
+   rule needed this.) Matching its specificity here, still last in the file,
+   settles it the same way. Verified against getComputedStyle at both a
+   400px and a 1024px viewport, not just visually. */
+@media (min-width: 721px) {
+  .workout-detail-list > .cex-wrapper {
+    border-color: var(--edge);
+    border-top-color: var(--edge-lit);
+  }
+}
+
+/* ---- Group 6: the second specificity conflict, found the same way ---------
+   `.coach-mobility-list .ex-row-wrapper` is (0,2,0) against Group 2's bare
+   `.ex-row-wrapper` at (0,1,0), so it kept its own base surface no matter
+   where Group 2 sat. It was invisible on the eight inheriting themes — their
+   --surface-2 equals --face-inset exactly — but on Black, White and the seven
+   tinted themes a coach mobility row read LIGHTER than the rows around it.
+   (Its border came from Group 2 either way, so only the fill was out of step.)
+
+   Overriding `background-color` rather than the `background` shorthand is the
+   point here: that rule layers a primary-tinted gradient OVER its base colour
+   to mark recovery work, and the shorthand would wipe the tint out. In
+   `background: <gradient>, var(--surface-2)` the trailing colour IS the
+   background-color layer, so repainting just that swaps the base and leaves
+   the gradient — and the inset rail in its box-shadow — untouched. Matching
+   (0,2,0) and being last in the file settles it without !important. */
+.coach-mobility-list .ex-row-wrapper {
+  background-color: var(--face-inset);
+}
+
+/* ---- Group 7: a track has to show where it ENDS --------------------------
+   Taking the border off the thin tracks (Group 3's note above) fixed their
+   geometry, but the border had become the only thing marking their extent, and
+   --face-inset is BYTE-IDENTICAL to --surface-2 (#0b0f18). So the well of a
+   track went invisible:
+   - .cex-progress-line sits inside .cex-wrapper, which Group 2 paints
+     --face-inset. Track and parent were the same colour: 1.000:1, literally
+     invisible, on the athlete's exercise card. Pre-branch it was 1.116:1.
+   - the four that declared --surface-3 themselves (.ov-trial-track,
+     .macro-bar-track, .food-lvl-track, .client-row-prog .progress-track) were
+     dragged DOWN to --face-inset by Group 3, landing at 1.027:1 against the
+     card face where pre-branch they had 1.375:1.
+   None of them has an inset shadow or any other delineation, and a part-filled
+   bar between a label and a value cannot be read at all without its well: a 30%
+   macro bar becomes a floating dash with no "out of".
+
+   --surface-3 is the well colour: 1.134:1 against a card's --face base and
+   1.105:1 against a --face-inset row, which is where the pre-branch design sat.
+   Stated explicitly here rather than by deleting them from Group 3, because
+   only four of them declare --surface-3 in their own rule — the other seven say
+   --surface-2, which now EQUALS --face-inset, so removing them from Group 3
+   alone would have left them exactly as invisible.
+
+   Not in this group, deliberately: .rest-pop-badge (see Group 3's note — it is
+   a backing disc, not a track, and belongs darker than its parent, not
+   lighter), and .adh-bar.is-blank, whose (0,2,0) `background: transparent`
+   still outranks this rule so a no-data bar stays empty. */
+.adh-bar, .books-mo-bar, .cex-progress-line,
+.client-row-prog .progress-track, .cyc-track, .day-progress-track,
+.food-lvl-track, .hoard-track, .macro-bar-track, .ov-hero-track,
+.ov-trial-track {
+  background: var(--surface-3);
+}

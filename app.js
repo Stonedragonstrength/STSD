@@ -27904,9 +27904,11 @@
 
     // Lock / Edit toggle — lives in the title's lock slot (top-right). The
     // green ✓ only fills in once the athlete explicitly locks completed sets.
+    // btn-solid: tapped mid-workout, between/after sets, without looking
+    // carefully — keeps the old solid fill instead of the dark chrome look.
     const lockBtn = document.createElement("button");
     lockBtn.type = "button";
-    lockBtn.className = "btn btn-primary btn-sm cex-lock-btn";
+    lockBtn.className = "btn btn-primary btn-sm cex-lock-btn btn-solid";
     lockBtn.textContent = "🔒";
     lockBtn.title = "Lock in";
 
