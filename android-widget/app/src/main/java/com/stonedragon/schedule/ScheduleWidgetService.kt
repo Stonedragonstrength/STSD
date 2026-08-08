@@ -52,7 +52,12 @@ internal sealed class Row {
  * disagreed by one row the NOW button would land on the wrong day, so they are
  * not allowed to be two implementations.
  */
-internal fun buildWeekRows(weekStart: Long, bookings: List<Booking>, days: Int = 7): List<Row> {
+// `days` has NO DEFAULT on purpose. It had one, briefly, and the provider went
+// on quietly building seven days while the list built the span — which is
+// exactly the disagreement the note above forbids, and it broke NOW: the scroll
+// index was computed against a row list the screen never had. A required
+// argument is what stops that being possible rather than merely discouraged.
+internal fun buildWeekRows(weekStart: Long, bookings: List<Booking>, days: Int): List<Row> {
     if (bookings.isEmpty()) return emptyList()
     val span = Span.normalise(days)
     val out = ArrayList<Row>(bookings.size + span)

@@ -556,7 +556,7 @@ class ScheduleWidget : AppWidgetProvider() {
             if (state != "loading") {
                 if (bookings.isNotEmpty()) {
                     if (Prefs.takeJump(ctx, widgetId)) {
-                        val weekRows = buildWeekRows(week, bookings)
+                        val weekRows = buildWeekRows(week, bookings, Prefs.spanDays(ctx))
                         val top = scrollIndexForNow(weekRows)
                         // Both rows, not just the one — see settleThenScroll.
                         // Asking for `top` alone parks it at the bottom edge.
