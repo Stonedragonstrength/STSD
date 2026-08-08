@@ -11003,6 +11003,10 @@
     // vanishing. All three sit in the session sheet together, so they share a
     // body and differ only in the mark inside it.
     "sd:calrepeat": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.3" y="5.2" width="17.4" height="15.5" rx="3"/><path d="M3.3 10.1h17.4M8.1 3.3v3.6M15.9 3.3v3.6"/><path d="M9 15.2a3.1 3.1 0 0 1 5.3-2.2l1.2 1.1"/><path d="M15.8 12.1v2.4h-2.4"/><path d="M15 16.6a3.1 3.1 0 0 1-5.3 2.2l-1.2-1.1"/><path d="M8.2 19.7v-2.4h2.4"/></svg>',
+    // Continuing a series, as against repeating a session: a calendar with a
+    // plus. It sits directly under sd:calrepeat in the same list, so the mark
+    // inside has to be unmistakably not-a-cycle.
+    "sd:calplus": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.3" y="5.2" width="17.4" height="15.5" rx="3"/><path d="M3.3 10.1h17.4M8.1 3.3v3.6M15.9 3.3v3.6"/><path d="M12 13v5M9.5 15.5h5"/></svg>',
     // The activity column's own kinds. A stroked barbell rather than the solid
     // eq:dumbbell, so the whole column is one weight.
     // Tall plates on purpose: a barbell is a wide, flat shape, and drawn to its
@@ -15088,6 +15092,13 @@
     const mark = c && e?.uid
       ? (c.sessionBank?.missedSessions || []).find((m) => m.setmoreUid === e.uid)
       : null;
+    // The standing appointment this session belongs to, if it still has future
+    // rows. bookingSeriesList() is future-only, so a series that has finished
+    // resolves to null and offers nothing to continue — which is right, there
+    // is nothing left to add weeks to.
+    const series = e?.seriesId
+      ? bookingSeriesList().find((s) => s.id === e.seriesId) || null
+      : null;
 
     let body = `<div class="dvs">`;
     body += `<div class="dvs-head">` +
@@ -15138,10 +15149,27 @@
       // booking of its own: a pattern needs only an athlete and a time, and
       // turning one of those into a native series is exactly the point.
       //
-      // Not offered when this session is already part of a series — the sheet
-      // says so a few lines below, and a second series would silently overlap
-      // the first. Extending an existing one lives on the Schedule card.
-      if (!e.seriesId) acts.push(act("repeat", "sd:calrepeat", "Make this a regular session", "sched"));
+      // Offered even when this session is ALREADY part of a series. It used to
+      // be hidden then, to stop a second series overlapping the first — and on
+      // a real roster that made the feature invisible: 649 of 650 upcoming
+      // bookings were already in a series, so the option showed on exactly one
+      // session in the whole calendar and read as a mobile bug.
+      //
+      // Overlap was never this rule's to prevent anyway. The partial unique
+      // index refuses a double-booked slot, and createBookings reports those
+      // back as `taken` — so adding "and Thursdays" to an athlete who already
+      // trains Tuesdays does the right thing, and re-picking Tuesday is simply
+      // skipped. Which is the whole point: one athlete, several patterns.
+      //
+      // Two DIFFERENT things once a session is already a regular, and they must
+      // not be collapsed into one row: continuing runs THIS pattern further out
+      // in time, adding starts a second one beside it. A coach whose athlete is
+      // booked through October wants the first; one adding a second training
+      // day wants the second.
+      if (series) acts.push(act("extend", "sd:calplus",
+        `Continue this weekly session · ${series.rows.length} left`, "sched"));
+      acts.push(act("repeat", "sd:calrepeat",
+        e.seriesId ? "Add another weekly time" : "Make this a regular session", "sched"));
       if (e.native && e.bookingId) acts.push(act("cancel", "sd:calx", "Cancel this session", "danger"));
       else if (!e.native) acts.push(act("unlink", "sd:unlink", "Unlink this booking"));
     }
@@ -15220,6 +15248,7 @@
     on("unmark", () => { closeModal(); unmarkBookingMissed(e, c); });
     on("move", () => { closeModal(); openMoveBookingSheet(e, c); });
     on("repeat", () => { closeModal(); openRepeatFromSession(e, c); });
+    on("extend", () => { closeModal(); if (series) openExtendSeries(series); });
     on("cancel", () => { closeModal(); cancelBookingFlow(e.bookingId, e.seriesId, e.startAt); });
     on("unlink", () => { closeModal(); unlinkSetmoreBooking(e.clientName); });
     on("link", () => { closeModal(); openLinkSetmoreNameModal(e.clientName); });
@@ -20783,7 +20812,12 @@
     const mins = endMs > startMs
       ? Math.max(15, Math.round((endMs - startMs) / 60000))
       : a.sessionMins;
-    const draft = { dows: [dowOfISO(zonedDateISO(startMs, tz))], weeks: 12 };
+    // Already a regular: this sheet is ADDING a second pattern beside the first,
+    // so starting with their existing weekday ticked would make the obvious
+    // first tap a same-day clash. Nothing is pre-picked, and the button stays
+    // disabled until a day is — which is exactly the decision they came to make.
+    const alsoHas = !!e.seriesId;
+    const draft = { dows: alsoHas ? [] : [dowOfISO(zonedDateISO(startMs, tz))], weeks: 12 };
 
     // The same sentence shape the booking sheet reads back, so the two sheets
     // sound like one app.
@@ -20811,7 +20845,10 @@
               `<span class="cbk-dow-l">${escapeHtml(name[0])}</span>` +
               `<span class="cbk-dow-s">${escapeHtml(name)}</span>` +
             `</button>`).join("")}</div>` +
-          (draft.dows.length ? "" : `<p class="cbk-hint">Pick at least one day.</p>`) +
+          (draft.dows.length ? ""
+            : `<p class="cbk-hint">${alsoHas
+                ? "Pick the day to add. Their existing weekly session stays exactly as it is, and any time already booked is skipped."
+                : "Pick at least one day."}</p>`) +
         `</div>` +
         `<div class="cbk-sec">` +
           `<div class="cbk-lab">For how long</div>` +
@@ -20847,7 +20884,9 @@
     };
 
     openModal({
-      title: `Make ${escapeHtml(String(c.name || "").split(" ")[0])} a regular`,
+      title: alsoHas
+        ? `Another weekly time for ${escapeHtml(String(c.name || "").split(" ")[0])}`
+        : `Make ${escapeHtml(String(c.name || "").split(" ")[0])} a regular`,
       body: "",
       actions: [
         { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
