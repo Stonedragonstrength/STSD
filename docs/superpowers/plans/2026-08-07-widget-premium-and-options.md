@@ -625,10 +625,72 @@ transparency slider stop being usable.
 
 ---
 
-## Task 7: The settings screen
+## Task 7: The settings screen, reachable FROM the widget
+
+Today `ConfigActivity` opens once, when the widget is placed. Five new settings
+are worthless behind that — nobody removes and re-adds a widget to change a
+slider. The widget gets its own way in.
 
 **Files:**
 - Modify: `activity_config.xml`, `ConfigActivity.kt`, `res/values/strings.xml`
+- Modify: `widget_schedule.xml`, `ScheduleWidget.kt` (the ⚙ control)
+- Modify: `AndroidManifest.xml` (launch mode)
+
+- [ ] **Step 0: A ⚙ on the widget that opens the settings**
+
+Add a settings control to the header row, beside `NOW`:
+
+```xml
+        <TextView
+            android:id="@+id/hdr_settings"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="10dp"
+            android:paddingEnd="4dp"
+            android:text="⚙"
+            android:textSize="13sp"
+            android:contentDescription="@string/settings" />
+```
+
+A `TextView` with the glyph rather than an `ImageView`: it takes the accent
+colour through `setTextColor` like everything else in the header, and costs no
+drawable.
+
+Wire it in `ScheduleWidget` where the other header intents are built:
+
+```kotlin
+        // Opening settings from the widget itself. FLAG_ACTIVITY_NEW_TASK
+        // because this starts from a widget, not an activity.
+        val cfg = Intent(ctx, ConfigActivity::class.java).apply {
+            putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            // A distinct data URI per widget, or PendingIntent.getActivity
+            // hands back the SAME instance for every widget and the second one
+            // opens the first one's settings.
+            data = Uri.parse("stsd://widget/$widgetId/settings")
+        }
+        views.setOnClickPendingIntent(
+            R.id.hdr_settings,
+            PendingIntent.getActivity(
+                ctx, widgetId, cfg,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            ),
+        )
+```
+
+**`ConfigActivity` must now survive two entry paths, and they are not the
+same.** Placed-widget entry expects `setResult(RESULT_OK, …)` with the widget
+id, and a cancel means "do not place the widget". Opened from the ⚙ the widget
+already exists, so:
+
+- Do not `setResult(RESULT_CANCELED)`-and-finish on back press in this path, or
+  Android may treat it as a failed placement.
+- Detect it: launched with a widget id AND the widget already exists in
+  `AppWidgetManager.getAppWidgetIds()`.
+- In that path, every change applies immediately and "Done" simply finishes.
+
+Guard the manifest with `android:launchMode="singleTop"` so tapping ⚙ twice
+does not stack two settings screens.
 
 - [ ] **Step 1: Add the controls**
 

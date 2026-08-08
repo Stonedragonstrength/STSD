@@ -183,6 +183,18 @@ choke points rather than at every call site.
 
 ---
 
+## 2.6 Reaching the settings at all
+
+Today  opens once, when the widget is placed. Five settings
+behind that are worthless — nobody removes and re-adds a widget to move a
+slider. The widget header gains a **⚙** that opens the same screen.
+
+That means the settings activity has TWO entry paths with different contracts:
+placement (where a cancel means “do not place the widget” and a result must be
+set) and direct (where the widget already exists and every change applies
+immediately). They are told apart by whether the widget id is already known to
+.
+
 ## Out of scope
 
 - **Filtering which athletes appear.** Considered and not chosen.
