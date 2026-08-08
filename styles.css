@@ -9693,8 +9693,47 @@ body.live-log-mode #screen-client .header-right { display: none; }
 .modal-card {
   background: var(--face);
   border: 1px solid var(--edge);
-  border-top-color: var(--edge-lit);
   box-shadow: var(--lift), var(--halo);
+  position: relative;
+}
+/* The lit edge, as a ring that fades instead of a rule that stops.
+   A flat `border-top-color: var(--edge-lit)` put a bright line across the top
+   and slammed it into the dim side borders at both upper corners — the corner
+   read as a break rather than a curve.
+   This is the same "hairlines that fade" idiom as .app-header and .coach-nav,
+   but those can use `border-image` because they have no border-radius:
+   BORDER-IMAGE IGNORES BORDER-RADIUS AND SQUARES THE CORNERS OFF, so on a
+   16px-radius card it would look far worse. A mask-composited ring is the one
+   approach that follows the radius.
+   ::after because .client-row::before is already the athlete's colour spine. */
+.card::after,
+.client-row::after,
+.week-card::after,
+.modal-card::after {
+  content: "";
+  position: absolute;
+  inset: -1px;                    /* sit ON the 1px border, not inside it */
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg,
+    rgba(var(--primary-bright-rgb), 0.62) 0%,
+    rgba(var(--primary-bright-rgb), 0.30) 22%,
+    rgba(var(--primary-rgb), 0.10) 55%,
+    rgba(var(--primary-rgb), 0) 85%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events: none;
+  z-index: 0;
+}
+/* Without mask-composite the ring would paint as a solid filled rectangle over
+   the card, so browsers that lack it keep the plain --edge border instead. */
+@supports not ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
+  .card::after,
+  .client-row::after,
+  .week-card::after,
+  .modal-card::after { display: none; }
 }
 .client-row {
   transition: border-color 0.15s, background 0.15s, transform 0.15s, box-shadow 0.2s;
