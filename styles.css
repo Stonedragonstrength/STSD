@@ -289,17 +289,26 @@ p { margin: 0 0 0.75em; line-height: 1.5; }
 /* Black face, sheen across the top third, lit rim, outer halo. The old bright
    fill was brighter than its own glow, which is why the glow never read. The
    RESTING state carries all of this — hover never fires on touch. */
+/* The rim is ONE colour all the way round. It used to run 0.85 across the top
+   against 0.35 on the sides — 2.4x brighter — and the two met at the upper
+   corners with nothing between them, which read as a broken corner rather than
+   a lit one. A flat border cannot fade, so the only fix at button scale is not
+   to create the junction.
+   Nothing is lost by dropping it: the top-third sheen lives in --btn-face, and
+   `inset 0 1px 0 rgba(255,255,255,.16)` (in the glow block below) already draws
+   a highlight along the top — and an inset shadow follows border-radius
+   smoothly, which is exactly what a border colour cannot do. */
 .btn-primary {
   position: relative;
   overflow: hidden;
   background: var(--btn-face);
   color: var(--btn-ink);
-  border: 1px solid rgba(var(--primary-bright-rgb), 0.35);
-  border-top-color: rgba(var(--primary-bright-rgb), 0.85);
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.42);
 }
+/* Hover brightens the whole rim rather than one edge of it. */
 .btn-primary:hover {
   background: var(--btn-face);
-  border-top-color: rgba(var(--primary-bright-rgb), 1);
+  border-color: rgba(var(--primary-bright-rgb), 0.66);
 }
 /* Mid-workout actions keep the solid fill. A dark primary is less obviously
    "the button", which matters when someone is tapping fast between sets. */
