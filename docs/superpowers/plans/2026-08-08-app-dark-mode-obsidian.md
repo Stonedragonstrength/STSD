@@ -35,6 +35,11 @@ colours, applied in three waves.
   without shrinking the viewport, so media queries never fire and a responsive
   check passes without testing anything.
 - Commit after each task. Push only at the end of Task 6.
+- **Every line number in this plan is measured against `styles.css` as it stands
+  before Task 1.** Task 1 grows the `:root` block by roughly 17 lines, so every
+  citation after it drifts by about that much. **Locate rules by their selector
+  and content, never by jumping to a line number.** The line numbers are
+  orientation, not addresses.
 
 ## File Structure
 
