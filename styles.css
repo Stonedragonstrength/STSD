@@ -5107,15 +5107,23 @@ body::before {
   content: "";
   position: fixed;
   inset: 0;
-  background-image:
-    radial-gradient(circle at 50% 0%, transparent 34px, rgba(var(--primary-bright-rgb), 0.05) 34px, rgba(var(--primary-bright-rgb), 0.05) 35px, transparent 36px),
-    radial-gradient(circle at 0% 0%, transparent 34px, rgba(var(--primary-bright-rgb), 0.045) 34px, rgba(var(--primary-bright-rgb), 0.045) 35px, transparent 36px);
-  background-size: 72px 40px;
-  background-position: 0 0, 36px 20px;
+  /* The theme colour, shown only where the mask's scale edges are — so the
+     lattice tints per theme while the SHAPE lives in one tiny SVG. Each edge
+     is two curves meeting in a point: dragon scales come to a tip, and round
+     scallops read as fish. Two mask layers, brick-offset by half a scale. */
+  background: rgba(var(--primary-bright-rgb), 0.033);
+  -webkit-mask-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='44'%3E%3Cpath d='M0 4 C7 6 15 12 18 20 C21 12 29 6 36 4' fill='none' stroke='%23fff' stroke-width='1.2'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='44'%3E%3Cpath d='M0 4 C7 6 15 12 18 20 C21 12 29 6 36 4' fill='none' stroke='%23fff' stroke-width='1.2'/%3E%3C/svg%3E");
+  -webkit-mask-size: 36px 44px;
+  -webkit-mask-position: 0 0, 18px 22px;
+  mask-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='44'%3E%3Cpath d='M0 4 C7 6 15 12 18 20 C21 12 29 6 36 4' fill='none' stroke='%23fff' stroke-width='1.2'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='44'%3E%3Cpath d='M0 4 C7 6 15 12 18 20 C21 12 29 6 36 4' fill='none' stroke='%23fff' stroke-width='1.2'/%3E%3C/svg%3E");
+  mask-size: 36px 44px;
+  mask-position: 0 0, 18px 22px;
   pointer-events: none;
   z-index: 0;
-  mask-image: radial-gradient(ellipse at center, rgba(0,0,0,1) 30%, rgba(0,0,0,0.2) 75%, transparent 100%);
-  -webkit-mask-image: radial-gradient(ellipse at center, rgba(0,0,0,1) 30%, rgba(0,0,0,0.2) 75%, transparent 100%);
 }
 /* The watermark. logo-512, not logo.png — the 512 is already in sw.js's
    precache, so the dragon still shows up offline. vmin keeps it a corner
