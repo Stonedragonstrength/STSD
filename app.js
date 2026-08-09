@@ -4625,12 +4625,109 @@
       });
       card.appendChild(logBtn);
 
-      card.addEventListener("click", () => { Nav.push(renderDashboard); openClient(c.id); setTab("profile"); });
-      grid.appendChild(card);
+      // The row and its drawer are one cell. Tapping the row opens the drawer
+      // in place instead of navigating: the trip through an athlete used to
+      // land on a summary tab nobody asked for and then need a second move to
+      // reach the program, so the summary is a glance now and the doors below
+      // it go straight where you meant.
+      const cell = document.createElement("div");
+      cell.className = "client-cell";
+      cell.appendChild(card);
+      if (_openRosterId === c.id) {
+        cell.classList.add("is-open");
+        cell.appendChild(buildRosterDrawer(c));
+      }
+      card.addEventListener("click", () => {
+        _openRosterId = _openRosterId === c.id ? null : c.id;
+        renderClientGrid();
+      });
+      grid.appendChild(cell);
     }
     }
     fitClientRowNames();
     requestAnimationFrame(fitClientRowNames); // again post-layout, in case the view was still hidden
+  }
+
+  // Which athlete's drawer is open on the roster. One at a time: two open
+  // drawers push everything else off a phone, and the point of the drawer is
+  // to answer a question about ONE person without leaving the list.
+  let _openRosterId = null;
+
+  // A glance and four doors. The glance is the three things a coach checks
+  // before opening anyone — when they last trained, whether they are eating,
+  // whether they are moving — and each one says "nothing logged" out loud
+  // rather than going missing, because a tile that disappears reads exactly
+  // like an athlete nobody has looked at.
+  function buildRosterDrawer(c) {
+    const ip = c.importedProgress || {};
+    const wrap = document.createElement("div");
+    wrap.className = "client-drawer";
+
+    const tile = (o) =>
+      `<div class="cd-tile${o.dim ? " is-dim" : ""}"${o.title ? ` title="${escapeHtml(o.title)}"` : ""}>` +
+        `<span class="cd-lbl">${escapeHtml(o.label)}</span>` +
+        `<span class="cd-val">${escapeHtml(o.value)}</span>` +
+        `<span class="cd-sub${o.stale ? " is-stale" : ""}">${escapeHtml(o.sub)}</span>` +
+      `</div>`;
+
+    const last = snapLastSession(c);
+    const lastTile = last
+      ? tile({ label: "Last", value: snapAgoLabel(last.days), sub: last.name || "Session",
+               dim: last.days >= SNAP_QUIET_DAYS, title: last.date })
+      : tile({ label: "Last", value: "—", sub: "never trained", dim: true, stale: true });
+
+    // Judged against the target that applied on each day, same as the athlete
+    // page's tile — this is a second lens on one number, not a second number.
+    const roll = nutritionRollup(c, ip, 7);
+    const eatTile = roll.logged
+      ? tile({
+          label: "Eating · 7d",
+          value: roll.avgKcal.toLocaleString(),
+          sub: roll.calTarget ? `of ${roll.calTarget.toLocaleString()} · ${roll.logged}/7 days` : `${roll.logged}/7 days`,
+          dim: !roll.calTarget,
+        })
+      : tile({ label: "Eating · 7d", value: "—", sub: "nothing logged", dim: true, stale: true });
+
+    const cardio = snapCardio7d(ip);
+    const cardioTile = cardio.all.n
+      ? tile({
+          label: "Cardio · 7d",
+          value: String(cardio.week.n),
+          sub: cardio.week.n ? cardioMinLabel(cardio.week.min) : "none this week",
+          dim: !cardio.week.n, stale: !cardio.week.n,
+        })
+      : tile({ label: "Cardio · 7d", value: "—", sub: "nothing logged", dim: true, stale: true });
+
+    const tiles = document.createElement("div");
+    tiles.className = "cd-tiles";
+    tiles.innerHTML = lastTile + eatTile + cardioTile;
+    wrap.appendChild(tiles);
+
+    const doors = document.createElement("div");
+    doors.className = "cd-doors";
+    // Program first and marked: it is the reason the athlete page exists.
+    [
+      { tab: "program", ico: "📋", label: "Program", main: true },
+      { tab: "diet", ico: "🥗", label: "Nutrition" },
+      { tab: "sessions", ico: "🎟️", label: "Sessions" },
+      { tab: "profile", ico: "👤", label: "Profile" },
+    ].forEach((d) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "cd-door" + (d.main ? " is-main" : "");
+      b.innerHTML = `<span class="cd-door-ico" aria-hidden="true">${d.ico}</span>${escapeHtml(d.label)}`;
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        Nav.push(renderDashboard);
+        openClient(c.id);
+        setTab(d.tab);
+      });
+      doors.appendChild(b);
+    });
+    // The live session already had its own button on the row; it stays there
+    // rather than being offered twice.
+    wrap.appendChild(doors);
+    return wrap;
   }
 
   // Names stay on one line: shrink the font until the full name fits its row

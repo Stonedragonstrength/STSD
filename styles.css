@@ -829,21 +829,26 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 /* ============ Client grid ============ */
 /* Column-major fill: athletes run alphabetically DOWN the left column, then
    continue down the right (multicol flows top-to-bottom, then next column). */
+/* Was CSS multi-column, which read alphabetically DOWN each column and then
+   across. Rows open in place now, and multicol cannot do that: adding a
+   drawer rebalances the columns, and a row near a column's foot takes its own
+   drawer with it into the NEXT column — so the athlete you just tapped jumps
+   away from your finger. Grid keeps everyone still and lets the open one span
+   the full width. The cost, taken deliberately: the roster now reads across
+   then down, like every other list, instead of down then across. */
 .client-grid {
-  column-count: 2;
-  column-gap: 0.55rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+  align-items: start;
 }
-.client-grid > .client-row {
-  break-inside: avoid;
-  -webkit-column-break-inside: avoid;
-  margin-bottom: 0.55rem;
-}
+/* The row and its drawer are one cell, so the drawer can never be orphaned
+   from the row it belongs to. */
+.client-cell { display: flex; flex-direction: column; min-width: 0; }
+.client-cell.is-open { grid-column: 1 / -1; }
 /* Group headers span the full width; the group's rows re-flow into columns
    beneath each one. */
-.client-grid > .roster-section-head {
-  column-span: all;
-  break-inside: avoid;
-}
+.client-grid > .roster-section-head { grid-column: 1 / -1; }
 /* Compact horizontal athlete rows: avatar · name+position · progress. */
 .client-row {
   display: flex;
@@ -857,6 +862,92 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
   transition: border-color 0.15s, background 0.15s;
 }
 .client-row:hover { border-color: var(--primary); background: var(--surface-2); }
+/* Open: the row and the drawer read as one object, so the seam between them
+   goes and only the outer corners stay round. */
+.client-cell.is-open > .client-row {
+  border-color: var(--primary);
+  border-bottom-color: transparent;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--surface-2);
+}
+/* One gap value (0.45rem) between every pair of things inside, so the drawer
+   reads as compact without anything touching.
+   The open cell spans the full grid width, which on a laptop is ~1000px — far
+   more than three small numbers and four buttons need. So the drawer lays out
+   ACROSS that width rather than down it: glance on the left, doors on the
+   right, one band about 56px tall. Stretching the same content down two rows
+   was the difference between compact and merely roomy. */
+.client-drawer {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 0.7rem;
+  padding: 0.5rem 0.6rem 0.55rem;
+  border: 1px solid var(--primary);
+  border-top: 0;
+  border-radius: 0 0 var(--radius) var(--radius);
+  background: var(--surface-2);
+}
+/* Three across at every width. A fourth would drop the numbers below the
+   readable floor on a phone, and two would leave a hole on a laptop. Capped so
+   the tiles stay snug instead of inflating to fill a wide row. */
+.cd-tiles {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.45rem;
+  flex: 1 1 22rem; min-width: 0; max-width: 34rem;
+}
+.cd-tile {
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.cd-tile.is-dim { opacity: 0.62; }
+.cd-lbl {
+  display: block;
+  font-size: 0.56rem; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cd-val {
+  display: block; line-height: 1.15;
+  font-size: 0.95rem; font-weight: 800; color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cd-sub {
+  display: block;
+  font-size: 0.58rem; color: var(--text-soft);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* An athlete who has logged nothing is a fact worth stating. A tile that
+   simply vanished read the same as one you hadn't looked at. */
+.cd-sub.is-stale { color: var(--warn); font-weight: 700; }
+/* Sits beside the glance while there is room, and drops under it when there
+   isn't — the wrap point is the doors' own content width, not a breakpoint. */
+.cd-doors { display: flex; flex-wrap: wrap; gap: 0.35rem; flex: 1 1 20rem; min-width: 0; }
+.cd-door {
+  flex: 1 1 auto;
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.4em;
+  min-height: 38px;
+  padding: 0.35em 0.7em;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit; font-size: 0.78rem; font-weight: 700;
+  cursor: pointer; white-space: nowrap;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.cd-door:hover { border-color: rgba(var(--primary-rgb), 0.65); background: var(--surface-3); }
+/* The one you came for. Program is the reason this page exists. */
+.cd-door.is-main {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary-bright);
+}
+.cd-door-ico { font-size: 0.9rem; line-height: 1; }
+@media (max-width: 380px) {
+  /* Four doors won't hold their labels at this width; two rows of two do. */
+  .cd-door { flex: 1 1 40%; }
+}
 /* Now a bare wrapper — .av-tile inside owns the look, so a roster row shows
    either a pixel avatar or the initials tile at identical dimensions. */
 .client-avatar { display: flex; flex-shrink: 0; }
@@ -5002,8 +5093,7 @@ input[type="time"],
   .btn-sm { min-height: 34px; padding: 0.4em 0.7em; font-size: 0.78rem; }
 
   /* Client grid: one column */
-  .client-grid { column-count: 1; }
-  .client-grid > .client-row { margin-bottom: 0.5rem; }
+  .client-grid { grid-template-columns: 1fr; gap: 0.5rem; }
   /* Compact the row's fixed columns so the full name gets one uncut line
      (paired with the JS font-shrink in fitClientRowNames). */
   .client-row { gap: 0.5rem; padding: 0.5rem 0.6rem; }
@@ -12767,9 +12857,8 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 @media (min-width: 1200px) {
   /* Below this the coach app keeps the tablet layout, which already works. */
   #screen-app .app-main { max-width: 1400px; }
-  /* The roster is multicol (alphabetical DOWN each column, then across), so
-     the width buys a third column rather than a wider row. */
-  #screen-app .client-grid { column-count: 3; }
+  /* The width buys a third column rather than a wider row. */
+  #screen-app .client-grid { grid-template-columns: repeat(3, 1fr); }
 }
 
 /* Coach Overview on a laptop: the month grid takes the left two thirds and the
