@@ -31,7 +31,15 @@
 // on the old bundle — self-consistent, so nothing looks broken enough to
 // retry. Renaming the cache is the one lever that drops all of it at once:
 // activate purges every key that is not CACHE.
-const CACHE = "stonedragon-v8";
+//
+// v9, 2026-08-08: the same symptom came back ("the whole app reverted") and
+// this time the mechanism was in networkFirst itself — three holes, fixed
+// together there: the fallback shell was only ever written at INSTALL time,
+// any successful response (stale CDN edge, even an error page) was cached
+// over the good copy, and fetch() was allowed to answer navigations from the
+// HTTP cache, which Pages lets go ten minutes stale. The bump evicts every
+// wedged copy in the field in one move.
+const CACHE = "stonedragon-v9";
 
 // Stable, un-versioned URLs worth precaching up front. The versioned css/js
 // (styles.css?v=…, app.js?v=…) are cached at runtime on first online load —
@@ -113,8 +121,21 @@ self.addEventListener("activate", (event) => {
 async function networkFirst(request) {
   const cache = await caches.open(CACHE);
   try {
-    const res = await fetch(request);
-    cache.put(request, res.clone());
+    // no-cache: revalidate with the server rather than accepting the HTTP
+    // cache's copy — Pages serves HTML with max-age=600, and a "successful"
+    // fetch of a ten-minute-old page used to get cached below as fresh.
+    const res = await fetch(request, { cache: "no-cache" });
+    // Only a real success may overwrite the cached shell. An error page put
+    // here would become the offline fallback for every future open.
+    if (res && res.ok) {
+      cache.put(request, res.clone());
+      // Refresh the FALLBACK key too. It used to be written only at worker
+      // install, so the offline fallback could be weeks old while every
+      // recent open had a perfectly fresh copy under its own URL — and a
+      // weeks-old shell resolves weeks-old ?v= assets, all cache hits, which
+      // is a whole old app served without one error anywhere.
+      cache.put("./index.html", res.clone());
+    }
     return res;
   } catch (err) {
     const cached = await cache.match(request);
