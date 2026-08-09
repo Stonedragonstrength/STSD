@@ -6398,10 +6398,12 @@
         } else if (!proj.sessions) {
           calc.innerHTML = `<span>${escapeHtml(monthShort)}: nothing to bill yet</span><span class="mr-dots"></span><span class="mr-amt">—</span>`;
         } else {
-          const bits = [`${proj.sessions} × ${money(proj.rate)}`];
-          if (proj.credit) bits.push(`− ${money(proj.credit)} credit`);
-          if (proj.previewValue) bits.push(`− ${proj.previewSessions} left (${money(proj.previewValue)})`);
-          calc.innerHTML = `<span>${escapeHtml(monthShort)}: ${escapeHtml(bits.join(" "))}</span><span class="mr-dots"></span><span class="mr-amt">${escapeHtml(money(proj.projected))}</span>`;
+          // Nathan's arithmetic, spelled out: buying minus holding. A bank in
+          // debt reads "+ N owed" — sessions already delivered, money not.
+          const held = proj.left >= 0
+            ? (proj.left ? ` − ${proj.left} left` : "")
+            : ` + ${Math.abs(proj.left)} owed`;
+          calc.innerHTML = `<span>${escapeHtml(monthShort)}: ${proj.sessions}${escapeHtml(held)} = ${proj.net} × ${escapeHtml(money(proj.rate))}</span><span class="mr-dots"></span><span class="mr-amt">${escapeHtml(money(proj.projected))}</span>`;
         }
         row.appendChild(calc);
         card.appendChild(row);
@@ -6416,11 +6418,13 @@
       const totals = raiseTotals(monthKey);
       if (totals.banks) {
         const foot = document.createElement("div");
-        foot.className = "mr-total";
+        foot.className = "mr-total mr-total-range";
         foot.innerHTML =
-          `<b>${escapeHtml(monthShort)} projected</b>` +
-          `<span class="mr-total-sub">${totals.sessions} session${totals.sessions === 1 ? "" : "s"} · ${totals.banks} bank${totals.banks === 1 ? "" : "s"}</span>` +
-          `<span class="mr-total-amt">${escapeHtml(money(totals.amount))}</span>`;
+          `<div class="mr-total-head"><b>${escapeHtml(monthShort)} projected</b>` +
+          `<span class="mr-total-sub">${totals.banks} bank${totals.banks === 1 ? "" : "s"} · charges already raised counted as-is</span></div>` +
+          `<div class="mr-scenario"><span>If everyone hits all their sessions</span><span class="mr-dots"></span><span class="mr-total-amt">${escapeHtml(money(totals.hitsAll))}</span></div>` +
+          `<div class="mr-scenario"><span>If everyone missed every other session this month</span><span class="mr-dots"></span><span class="mr-total-amt mid">${escapeHtml(money(totals.missHalf))}</span></div>` +
+          `<div class="mr-scenario quiet"><span>Banks as they stand today (the rows above)</span><span class="mr-dots"></span><span class="mr-total-amt floor">${escapeHtml(money(totals.floor))}</span></div>`;
         card.appendChild(foot);
 
         // Below-list audit: who is on an old rate, and what the gap costs a
@@ -6455,8 +6459,8 @@
         const note = document.createElement("p");
         note.className = "mr-foot muted";
         note.textContent =
-          "Counts the bank as it stands today: leftovers that will expire drop out as the month closes, " +
-          "so this total sharpens toward the 1st. Couples count once. The projected bar in Books is this same figure.";
+          "All three read the banks as they stand right now, so they move with every session attended " +
+          "and meet on the 1st. Couples count once. Books' projected bar carries the bottom figure.";
         card.appendChild(note);
       }
       host.appendChild(card);
@@ -6514,49 +6518,47 @@
       amount: Math.max(0, gross - credit),
     };
   }
-  // The Raise fold's forward look: next month's bill for this bank AS IT
-  // STANDS TODAY. monthChargePlan is the engine — the same one the Bill sheet
-  // charges with, so the projection and the eventual invoice cannot disagree —
-  // and the one addition is a PREVIEW of the credit this month's leftover
-  // would become if the month closed now (accrueSessionCredits makes it real
-  // on the 1st). The preview is what lets the coach watch the figure sharpen
-  // through the month instead of jumping when credits accrue.
+  // The Raise fold's forward look, Nathan's own arithmetic: what this bank
+  // BUYS next month minus what is SITTING IN IT today. A missed session stays
+  // in the bank, so every miss visibly pushes next month's number down the
+  // day it happens — that is the point of the row. The charge button beside
+  // it keeps monthChargePlan's exact invoice amount; this is the lens, not
+  // the bill.
+  //
+  // Three readings per bank, and the footer brackets the roster with two:
+  //   projected — sessions − bank today (the floor; misses already counted)
+  //   hitsAll   — they burn the bank before the 1st, so the full buy stands
+  //   missHalf  — every other remaining session this month gets missed, so
+  //               half the bank carries (ceil: the odd one carries)
+  // A bank in DEBT (negative) adds to every reading — sessions were delivered
+  // unpaid, and next month is where that money comes back.
   function raiseProjection(c, monthKey) {
     const plan = monthChargePlan(c, monthKey);
-    let previewSessions = 0;
-    let previewValue = 0;
-    if (!plan.flat && creditsOn(c)) {
-      const nowKey = todayISO().slice(0, 7);
-      // rollover=false, exactly as accrueSessionCredits reads it: the question
-      // is what THIS month would leave behind, not what has accumulated.
-      const l = bankLedger(c.sessionBank, nowKey, false);
-      const cur = l.byMonth?.get?.(nowKey);
-      previewSessions = Math.min(
-        Math.max(0, Number(cur?.left) || 0),
-        creditCapOf(c),
-      );
-      // Valued like the accrual values it, capped like the plan caps credit:
-      // never past what is left of the invoice itself.
-      previewValue = Math.min(
-        Math.max(0, plan.gross - plan.credit),
-        Math.round(previewSessions * plan.rate),
-      );
+    const left = sessionBankSummary(c).remaining;
+    if (plan.flat) {
+      // Program-only: the bank never offsets a flat price.
+      return { ...plan, left, net: 0, projected: plan.amount, hitsAll: plan.amount, missHalf: plan.amount };
     }
+    const price = (n) => Math.round(n * plan.rate * 100) / 100;
+    const carryHalf = left >= 0 ? Math.ceil(left / 2) : left;
     return {
       ...plan,
-      previewSessions,
-      previewValue,
-      projected: Math.max(0, plan.amount - previewValue),
+      left,
+      net: Math.max(0, plan.sessions - left),
+      projected: price(Math.max(0, plan.sessions - left)),
+      hitsAll: price(plan.sessions),
+      missHalf: price(Math.max(0, plan.sessions - carryHalf)),
     };
   }
 
-  // One number for "what is next month worth", used by the Raise fold's
-  // footer AND by the Books ghost bar — one source, two places, so the chart
-  // can never disagree with the workspace above it. A charge already raised
-  // for the month is reality and beats the projection for that bank.
+  // The roster's three numbers in one pass, used by the Raise footer AND by
+  // the Books ghost bar — one source, so the chart can never disagree with
+  // the workspace above it. The ghost draws the FLOOR, the strictest read,
+  // which is also the sum of the row figures. A charge already raised is
+  // reality and replaces all three readings for that bank.
   function raiseTotals(monthKey) {
     const seen = new Set();
-    let amount = 0, sessions = 0, banks = 0;
+    let floor = 0, hitsAll = 0, missHalf = 0, sessions = 0, banks = 0;
     (state.trainerData.clients || []).forEach((c) => {
       if (seen.has(c.id)) return;
       ensureSessionBank(c);
@@ -6566,15 +6568,18 @@
       const charge = chargeFor(c, monthKey);
       const p = raiseProjection(c, monthKey);
       if (charge && charge.status !== "refunded") {
-        amount += (Number(charge.amount_cents) || 0) / 100;
+        const amt = (Number(charge.amount_cents) || 0) / 100;
+        floor += amt; hitsAll += amt; missHalf += amt;
         sessions += Number(charge.sessions) || p.sessions || 0;
       } else {
-        amount += p.projected;
-        sessions += p.flat ? 0 : p.sessions;
+        floor += p.projected;
+        hitsAll += p.hitsAll;
+        missHalf += p.missHalf;
+        sessions += p.flat ? 0 : p.net;
       }
       banks += 1;
     });
-    return { amount, sessions, banks };
+    return { floor, hitsAll, missHalf, sessions, banks, amount: floor };
   }
 
   // The month's charge for this BANK, not this athlete. A couple share one
