@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=door2" />
+  <link rel="stylesheet" href="styles.css?v=raise4" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -466,6 +466,108 @@
             <button class="btn btn-ghost btn-sm slim-btn month-bill-btn hidden" id="btn-month-flat" type="button"></button>
           </div>
           <div id="money-roster-host"></div>
+          <!-- One athlete's money, in full. There is exactly ONE of these in
+               the document and it is MOVED into whichever Raise row is open —
+               never copied. Every control in here is wired by hardcoded id
+               (#prof-membership, #cal-grid, #session-bank-container …), so a
+               second copy would hand those renderers an invisible element and
+               fail silently. It parks here when nothing is open. -->
+          <div id="raise-panel-park" hidden>
+            <div id="raise-sessions-panel" class="raise-sessions">
+              <div class="program-head">
+                <h3>Sessions</h3>
+                <div class="library-head-actions">
+                  <button class="btn btn-ghost" id="btn-redeem-session">− Redeem session</button>
+                  <button class="btn btn-ghost" id="btn-gift-session" title="Give free sessions">🎁 Gift</button>
+                  <button class="btn btn-primary" id="btn-add-package">+ Add package</button>
+                </div>
+              </div>
+              <!-- Session options: what this athlete is on, what they pay, and the
+                   two policy switches. Everything that decides the number in the
+                   balance card sits directly above it, and each control saves on
+                   change — there is no edit/save mode to enter for a dropdown. -->
+              <div class="card session-options-card">
+                <div class="session-options-head">
+                  <h4>Membership</h4>
+                  <span class="muted session-options-sub" id="session-options-sub"></span>
+                  <!-- The other place a price gets questioned: you are looking at
+                       what this athlete is on when you notice it is wrong. Opens
+                       the same sheet the Books fold does. -->
+                  <button class="btn btn-ghost btn-sm slim-btn" id="btn-edit-memberships" type="button">Edit prices…</button>
+                </div>
+                <div class="session-options-row" id="session-options-row">
+                  <label>Membership
+                    <select id="prof-membership"></select>
+                  </label>
+                  <!-- What this athlete actually pays per session. Blank falls back
+                       to the tier's per-session price, so it only needs filling in
+                       when the deal is off-menu. Feeds Expected income. -->
+                  <label class="profile-field-rate">Session rate ($)
+                    <input type="number" id="prof-rate" min="0" step="1" inputmode="decimal" placeholder="tier price" />
+                  </label>
+                  <!-- The button and the two switches take their own line: bottom-
+                       aligning a pill and two checkboxes against a pair of tall
+                       inputs never lands on one visual line. -->
+                  <div class="session-options-actions">
+                    <button class="btn btn-ghost btn-sm" id="btn-grant-month" type="button">＋ Grant this month's sessions</button>
+                    <label class="autorenew-toggle" title="On the first app open each month, grants this athlete their membership's sessions for that month. They're live immediately and flagged for you to collect — the app never holds sessions back over money.">
+                      <input type="checkbox" id="prof-autorenew" /> 🔁 Auto-renew
+                    </label>
+                    <!-- A monthly allowance is use-it-or-lose-it by default: they
+                         paid for access to this month. This turns that off for the
+                         athlete who was away or hurt, and it never touches a pack
+                         they bought outright, which has always kept its value. -->
+                    <label class="autorenew-toggle" title="Off: unused sessions from a monthly membership expire at the end of that month. On: they carry over. Packages bought outright never expire either way.">
+                      <input type="checkbox" id="prof-rollover" /> ↻ Roll over unused
+                    </label>
+                    <!-- The other answer to a month that went unused: instead of
+                         carrying the sessions, pay their value back against the
+                         next invoice. Mutually exclusive with roll over — doing
+                         both would hand them the session AND the money for it —
+                         and capped, so it stays a goodwill gesture rather than
+                         making a no-show free. -->
+                    <label class="autorenew-toggle" id="credit-toggle" title="Off: unused sessions from a monthly membership simply expire. On: their value comes off the next invoice, up to the cap.">
+                      <input type="checkbox" id="prof-credit" /> 💸 Credit unused
+                      <input type="number" id="prof-credit-cap" class="input credit-cap" min="0" max="20" step="1" title="Most sessions creditable in a month" />
+                    </label>
+                  </div>
+                  <p class="credit-note hidden" id="credit-balance-note"></p>
+                </div>
+                <!-- Card payments. Renders nothing at all until Square is set up,
+                     so an athlete's coach view is unchanged until the coach turns
+                     it on. Filled in by renderBillingRow(). -->
+                <div id="session-billing-row"></div>
+              </div>
+              <div id="session-balance-host"></div>
+              <!-- Folded, because a month grid is 590px and this panel now
+                   opens inside a list of one-line rows — always-open, it was
+                   more than half the drawer's height. It still renders whether
+                   or not the fold is open, so opening it is instant. -->
+              <details class="session-manage" id="coach-cal-fold">
+                <summary>Their calendar</summary>
+                <div class="session-calendar">
+                  <div class="calendar-head">
+                    <div class="cal-nav">
+                      <button class="btn btn-ghost btn-sm" id="cal-prev">‹</button>
+                      <h4 class="cal-title" id="cal-title"></h4>
+                      <button class="btn btn-ghost btn-sm" id="cal-next">›</button>
+                      <button class="btn btn-ghost btn-sm" id="cal-today">Today</button>
+                    </div>
+                    <p class="muted cal-caption">Booked sessions and your athlete's workout log.</p>
+                  </div>
+                  <div id="cal-grid" class="cal-grid"></div>
+                </div>
+              </details>
+              <details class="session-manage" id="coach-session-details">
+                <summary>Manage packages &amp; history</summary>
+                <p class="muted session-manage-note">No money moves through this app — you collect outside it (Venmo, cash, Stripe link), then tick <strong>Mark collected</strong> here. That tick is a note to yourself and nothing more: sessions are live from the moment they're granted, whether you've been paid or not. A monthly allowance expires with its month; a package you add by hand never does.</p>
+                <div class="session-manage-actions">
+                  <button class="btn btn-ghost btn-sm" id="btn-export-sessions" title="Download payment &amp; use history (opens in Excel)">⬇ Export</button>
+                </div>
+                <div id="session-bank-container"></div>
+              </details>
+            </div>
+          </div>
         </details>
 
         <!-- ONE reports section. Income (this month, booked against earned)
@@ -630,7 +732,10 @@
           <button class="tab active" data-tab="profile">Overview</button>
           <button class="tab" data-tab="program">Program</button>
           <button class="tab" data-tab="diet">Nutrition</button>
-          <button class="tab" data-tab="sessions">Sessions</button>
+          <!-- Sessions was the fourth tab. It was the only part of this page
+               that wasn't about training, and reaching an athlete's money meant
+               opening the athlete — so it lives on Money → Raise now, in that
+               athlete's own row. This page is the training workbench. -->
         </div>
 
         <!-- Profile. Opening an athlete used to land on an edit form, with
@@ -801,93 +906,6 @@
         </div>
 
         <!-- Sessions + Calendar (coach, merged) -->
-        <div class="tab-panel" data-tab-panel="sessions">
-          <div class="program-head">
-            <h3>Sessions</h3>
-            <div class="library-head-actions">
-              <button class="btn btn-ghost" id="btn-redeem-session">− Redeem session</button>
-              <button class="btn btn-ghost" id="btn-gift-session" title="Give free sessions">🎁 Gift</button>
-              <button class="btn btn-primary" id="btn-add-package">+ Add package</button>
-            </div>
-          </div>
-          <!-- Session options: what this athlete is on, what they pay, and the
-               two policy switches. Everything that decides the number in the
-               balance card sits directly above it, and each control saves on
-               change — there is no edit/save mode to enter for a dropdown. -->
-          <div class="card session-options-card">
-            <div class="session-options-head">
-              <h4>Membership</h4>
-              <span class="muted session-options-sub" id="session-options-sub"></span>
-              <!-- The other place a price gets questioned: you are looking at
-                   what this athlete is on when you notice it is wrong. Opens
-                   the same sheet the Books fold does. -->
-              <button class="btn btn-ghost btn-sm slim-btn" id="btn-edit-memberships" type="button">Edit prices…</button>
-            </div>
-            <div class="session-options-row" id="session-options-row">
-              <label>Membership
-                <select id="prof-membership"></select>
-              </label>
-              <!-- What this athlete actually pays per session. Blank falls back
-                   to the tier's per-session price, so it only needs filling in
-                   when the deal is off-menu. Feeds Expected income. -->
-              <label class="profile-field-rate">Session rate ($)
-                <input type="number" id="prof-rate" min="0" step="1" inputmode="decimal" placeholder="tier price" />
-              </label>
-              <!-- The button and the two switches take their own line: bottom-
-                   aligning a pill and two checkboxes against a pair of tall
-                   inputs never lands on one visual line. -->
-              <div class="session-options-actions">
-                <button class="btn btn-ghost btn-sm" id="btn-grant-month" type="button">＋ Grant this month's sessions</button>
-                <label class="autorenew-toggle" title="On the first app open each month, grants this athlete their membership's sessions for that month. They're live immediately and flagged for you to collect — the app never holds sessions back over money.">
-                  <input type="checkbox" id="prof-autorenew" /> 🔁 Auto-renew
-                </label>
-                <!-- A monthly allowance is use-it-or-lose-it by default: they
-                     paid for access to this month. This turns that off for the
-                     athlete who was away or hurt, and it never touches a pack
-                     they bought outright, which has always kept its value. -->
-                <label class="autorenew-toggle" title="Off: unused sessions from a monthly membership expire at the end of that month. On: they carry over. Packages bought outright never expire either way.">
-                  <input type="checkbox" id="prof-rollover" /> ↻ Roll over unused
-                </label>
-                <!-- The other answer to a month that went unused: instead of
-                     carrying the sessions, pay their value back against the
-                     next invoice. Mutually exclusive with roll over — doing
-                     both would hand them the session AND the money for it —
-                     and capped, so it stays a goodwill gesture rather than
-                     making a no-show free. -->
-                <label class="autorenew-toggle" id="credit-toggle" title="Off: unused sessions from a monthly membership simply expire. On: their value comes off the next invoice, up to the cap.">
-                  <input type="checkbox" id="prof-credit" /> 💸 Credit unused
-                  <input type="number" id="prof-credit-cap" class="input credit-cap" min="0" max="20" step="1" title="Most sessions creditable in a month" />
-                </label>
-              </div>
-              <p class="credit-note hidden" id="credit-balance-note"></p>
-            </div>
-            <!-- Card payments. Renders nothing at all until Square is set up,
-                 so an athlete's coach view is unchanged until the coach turns
-                 it on. Filled in by renderBillingRow(). -->
-            <div id="session-billing-row"></div>
-          </div>
-          <div id="session-balance-host"></div>
-          <div class="session-calendar">
-            <div class="calendar-head">
-              <div class="cal-nav">
-                <button class="btn btn-ghost btn-sm" id="cal-prev">‹</button>
-                <h4 class="cal-title" id="cal-title"></h4>
-                <button class="btn btn-ghost btn-sm" id="cal-next">›</button>
-                <button class="btn btn-ghost btn-sm" id="cal-today">Today</button>
-              </div>
-              <p class="muted cal-caption">Booked sessions and your athlete's workout log.</p>
-            </div>
-            <div id="cal-grid" class="cal-grid"></div>
-          </div>
-          <details class="session-manage" id="coach-session-details">
-            <summary>Manage packages &amp; history</summary>
-            <p class="muted session-manage-note">No money moves through this app — you collect outside it (Venmo, cash, Stripe link), then tick <strong>Mark collected</strong> here. That tick is a note to yourself and nothing more: sessions are live from the moment they're granted, whether you've been paid or not. A monthly allowance expires with its month; a package you add by hand never does.</p>
-            <div class="session-manage-actions">
-              <button class="btn btn-ghost btn-sm" id="btn-export-sessions" title="Download payment &amp; use history (opens in Excel)">⬇ Export</button>
-            </div>
-            <div id="session-bank-container"></div>
-          </details>
-        </div>
 
       </div>
 
@@ -1567,7 +1585,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=localout1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=door2"></script>
+  <script src="app.js?v=raise4"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

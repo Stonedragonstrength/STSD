@@ -4604,7 +4604,7 @@
         sess.appendChild(pend);
         // Tapping jumps straight to that athlete's Sessions tab, where
         // packages are approved (the rest of the card → profile).
-        sess.addEventListener("click", (e) => { e.stopPropagation(); Nav.push(renderDashboard); openClient(c.id); setTab("sessions"); });
+        sess.addEventListener("click", (e) => { e.stopPropagation(); Nav.push(renderDashboard); openAthleteSessions(c.id); });
         card.appendChild(sess);
       }
 
@@ -4709,7 +4709,9 @@
     [
       { tab: "program", ico: "📋", label: "Program", main: true },
       { tab: "diet", ico: "🥗", label: "Nutrition" },
-      { tab: "sessions", ico: "🎟️", label: "Sessions" },
+      // Not a tab any more — their money lives on Money → Raise, and this
+      // opens their row there.
+      { money: true, ico: "🎟️", label: "Sessions" },
       { tab: "profile", ico: "👤", label: "Profile" },
     ].forEach((d) => {
       const b = document.createElement("button");
@@ -4719,6 +4721,7 @@
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         Nav.push(renderDashboard);
+        if (d.money) { openAthleteSessions(c.id); return; }
         openClient(c.id);
         setTab(d.tab);
       });
@@ -5876,12 +5879,23 @@
     $$(".tab[data-tab]").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
     $$(".tab-panel[data-tab-panel]").forEach((p) => p.classList.toggle("active", p.dataset.tabPanel === name));
     if (name === "program") { showLibSidebar(); renderPastPrograms(); } else { hideLibSidebar(); }
-    // This function only toggles classes — panels keep whatever they were last
-    // rendered with. That's fine for everything except the card-payment row,
-    // which answers "have they paid yet?" and is the one thing here that can
-    // change while the coach sits on the page. It re-reads on a staleness
-    // window, so this costs nothing when nothing has moved.
-    if (name === "sessions") renderBillingRow(currentClient());
+  }
+
+  // The one way to an athlete's sessions now that they aren't a tab: the Money
+  // screen, Raise open, that athlete's row expanded. Every old
+  // `setTab("sessions")` caller comes here instead.
+  function openAthleteSessions(id) {
+    _openRaiseId = id;
+    parkRaiseSessions();
+    switchCoachView("money");
+    const fold = $("#raise-fold");
+    if (fold) fold.open = true;
+    renderMoneyRoster();
+    // renderMoneyRoster fills the rows behind a promise (it waits on the
+    // billing config), so the row to scroll to does not exist yet.
+    setTimeout(() => {
+      $("#raise-sessions-panel")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 240);
   }
 
   // Past programs, formerly the Archive tab. The fold's subtitle carries the
@@ -6371,11 +6385,50 @@
   // appends survived and the whole roster was drawn twice, one card under the
   // other. Checking the host is still mounted didn't catch it: it is the same
   // host both times. Only the newest pass may write.
+  // Which Raise row is showing its full session panel. One at a time, because
+  // there is only one panel in the document — see raiseSessionsInto().
+  let _openRaiseId = null;
+
+  // Moves the single #raise-sessions-panel into a row's drawer and fills it for
+  // that athlete. MOVED, never cloned: every control inside is wired by
+  // hardcoded id, so a copy would give those renderers a second element to find
+  // and the wrong one would win, silently.
+  //
+  // Setting currentClientId is what makes the fill work — renderCoachSessions,
+  // renderSessionOptions, renderBillingRow and renderCoachCalendar all read
+  // currentClient(), exactly as they did when this markup was a tab on the
+  // athlete page. Nothing in them changed.
+  function raiseSessionsInto(drawer, c) {
+    const panel = $("#raise-sessions-panel");
+    if (!panel || !drawer) return;
+    drawer.appendChild(panel);
+    state.currentClientId = c.id;
+    ensureSessionBank(c);
+    renderCoachSessions();
+    renderSessionOptions(c);
+    renderBillingRow(c);
+    const now = new Date();
+    state.coachCal = { year: now.getFullYear(), month: now.getMonth() };
+    renderCoachCalendar();
+  }
+  // Back to the park, so the next open finds it and the DOM never holds two.
+  function parkRaiseSessions() {
+    const panel = $("#raise-sessions-panel");
+    const park = $("#raise-panel-park");
+    if (panel && park && panel.parentElement !== park) park.appendChild(panel);
+  }
+
   let _moneyRosterSeq = 0;
   function renderMoneyRoster() {
     const host = $("#money-roster-host");
     if (!host) return;
     const seq = ++_moneyRosterSeq;
+    // The sessions panel lives inside whichever row is open, and the next line
+    // empties the host. Park it FIRST or the one copy in the document is
+    // destroyed — and every later open finds nothing. This function is called
+    // from a dozen places, so the guard belongs here rather than at each of
+    // them; parking is a no-op when it is already parked.
+    parkRaiseSessions();
     host.innerHTML = "";
     // Charge status and buttons need the cloud + Square; the projection does
     // not — tiers, rates, banks and bookings are all local. So the fold
@@ -6439,6 +6492,8 @@
       }
 
       const monthShort = monthKeyLabel(monthKey).replace(/ \d{4}$/, "");
+      // Set by whichever row is open; acted on once the card is in the document.
+      let openFill = null;
       rows.forEach(({ c, charge, proj, card: saved, left, booked }) => {
         const partner = partnerOf(c);
         const shareMark = partner ? `<span class="chip-share" aria-label="shared">💞</span>` : "";
@@ -6479,13 +6534,12 @@
         // The two tickets that used to sit on the roster cards, now under the
         // athlete whose money they describe. Amber is the bank today, green is
         // the calendar next month; a couple's numbers are the bank's, counted
-        // once and marked shared. Tapping them still opens the Sessions tab.
+        // once and marked shared.
         const chips = document.createElement("div");
         chips.className = "mr-chips";
         chips.innerHTML =
           `<span class="booked-balance-chip${left <= 1 ? " low" : ""}" title="${left} session${Math.abs(left) === 1 ? "" : "s"} left in the bank${partner ? ", shared" : ""}">${lineIco("sd:ticket")} ${left} left${shareMark}</span>` +
           (booked > 0 ? `<span class="next-month-chip" title="${booked} session${booked === 1 ? "" : "s"} booked for ${escapeHtml(monthShort)}${partner ? " across this bank, counted once" : ""}">${lineIco("sd:ticket")} ${booked} booked${shareMark}</span>` : "");
-        chips.addEventListener("click", () => { Nav.push(renderDashboard); openClient(c.id); setTab("sessions"); });
         row.appendChild(chips);
 
         // The working, not just the answer: what next month's invoice will say
@@ -6508,6 +6562,34 @@
           calc.innerHTML = `<span>${escapeHtml(monthShort)}: ${proj.sessions}${escapeHtml(held)} = ${proj.net} × ${escapeHtml(money(proj.rate))}</span><span class="mr-dots"></span><span class="mr-amt">${escapeHtml(money(proj.projected))}</span>`;
         }
         row.appendChild(calc);
+
+        // Everything about this athlete's sessions — membership, rate, the two
+        // policy switches, the balance, their calendar and the package history
+        // — opens here. It was a tab on the athlete page, which meant reaching
+        // an athlete's money by opening the athlete.
+        const drawer = document.createElement("div");
+        drawer.className = "mr-drawer";
+        row.appendChild(drawer);
+        if (_openRaiseId === c.id) {
+          row.classList.add("is-open");
+          // Filled after the card is mounted, not here. Everything that fills
+          // the panel reaches for its fields with document.querySelector, and
+          // this row is still detached — so an early fill finds nothing and
+          // renderCoachCalendar throws on a null #cal-title.
+          openFill = { drawer, c };
+        }
+        // A click on any control in the row, or anywhere inside the open
+        // drawer, must not also toggle the row. The match has to be scoped
+        // with row.contains(): the whole roster sits inside the Raise
+        // <details>, so an unscoped closest("details") matches that ancestor
+        // and swallows every click on every row.
+        row.addEventListener("click", (e) => {
+          const hit = e.target.closest("button, input, select, label, a, summary, textarea, .mr-drawer");
+          if (hit && row.contains(hit)) return;
+          parkRaiseSessions();
+          _openRaiseId = _openRaiseId === c.id ? null : c.id;
+          renderMoneyRoster();
+        });
         card.appendChild(row);
       });
       if (!rows.length) {
@@ -6566,6 +6648,9 @@
         card.appendChild(note);
       }
       host.appendChild(card);
+      // Now that the row is in the document, the panel's own renderers can
+      // find their fields.
+      if (openFill) raiseSessionsInto(openFill.drawer, openFill.c);
     });
   }
 
@@ -8432,8 +8517,8 @@
     });
     $("#btn-grant-month")?.addEventListener("click", grantMembershipMonth);
     $("#client-sessions-chip")?.addEventListener("click", () => {
-      setTab("sessions");
-      $(".tabs")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      const c = currentClient();
+      if (c) openAthleteSessions(c.id);
     });
     $("#prof-autorenew")?.addEventListener("change", (e) => {
       const c = currentClient(); if (!c) return;
@@ -22563,7 +22648,7 @@
           <span class="needs-body"><span class="needs-name">${escapeHtml(n.c.name)}</span>
             <span class="needs-text">${lineIco("sd:ticket")} is out of sessions</span></span>
           <span class="needs-go">→</span>`;
-        jump(() => { Nav.push(showCoachOverview); openClient(n.c.id); setTab("sessions"); });
+        jump(() => { Nav.push(showCoachOverview); openAthleteSessions(n.c.id); });
       } else {
         row.innerHTML = `
           <span class="needs-face">${athleteFaceHtml(n.c)}</span>

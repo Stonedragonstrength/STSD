@@ -6833,9 +6833,42 @@ input:focus, textarea:focus, select:focus {
 .mr-row {
   padding: 0.55rem 0;
   border-bottom: 1px solid rgba(var(--primary-rgb), 0.08);
+  cursor: pointer;
 }
 .mr-row:last-child { border-bottom: 0; }
+.mr-row:hover:not(.is-open) .mr-name { color: var(--primary-bright); }
 .mr-top { display: flex; align-items: center; gap: 0.55rem; }
+/* An athlete's whole session panel, opened under their row. Inset and boxed so
+   a page of one-line rows doesn't read as having suddenly grown a screen. */
+.mr-drawer:empty { display: none; }
+.mr-drawer {
+  margin-top: 0.55rem;
+  padding: 0.6rem 0.7rem 0.7rem;
+  border: 1px solid rgba(var(--primary-rgb), 0.35);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  cursor: default;
+}
+.mr-row.is-open { border-bottom-color: transparent; }
+.mr-row.is-open .mr-name { color: var(--primary-bright); }
+/* Inside the drawer the panel is already in a box, so its own cards drop their
+   outer chrome. Only the "Sessions" heading goes — the athlete's name is on the
+   row directly above it — while Redeem, Gift and Add package stay, pulled left
+   to sit where the heading was. */
+.mr-drawer .raise-sessions > .program-head > h3 { display: none; }
+.mr-drawer .raise-sessions > .program-head {
+  margin-bottom: 0.5rem;
+}
+.mr-drawer .raise-sessions > .program-head .library-head-actions { margin-left: 0; }
+.mr-drawer .raise-sessions > .card {
+  border-left: 0; border-right: 0; border-radius: 0;
+  padding-left: 0; padding-right: 0;
+  background: transparent;
+}
+.mr-drawer .raise-sessions > .card:first-of-type { border-top: 0; padding-top: 0; }
+/* The two folds sit flush under the balance, one rhythm between them. */
+.mr-drawer .raise-sessions > details.session-manage { margin-top: 0.55rem; }
+.mr-drawer .session-calendar { margin-top: 0.5rem; }
 /* The three doors of the monthly round, boxed with the job they open. */
 .raise-actions { display: flex; gap: 0.45rem; flex-wrap: wrap; margin: 0.2rem 0 0.6rem; }
 .raise-actions:not(:has(button:not(.hidden))) { display: none; }
