@@ -5151,6 +5151,11 @@ body::after {
 /* On the one light ground the logo's DARK art does the carrying, and the same
    alpha reads twice the weight — checked side by side, 2026-08-08. */
 :root[data-theme="white"] body::after { opacity: 0.022; filter: saturate(0.3); }
+/* On a phone the content column owns the middle of the screen, so the mark
+   sits a little lower, into the ground the cards leave open. */
+@media (max-width: 600px) {
+  body::after { top: 58%; }
+}
 /* Layer screens above the body::before HUD grid. NOTE: .app-header must NOT
    be in this rule — position:relative here silently overrode the header's
    position:sticky, which is why headers never pinned while scrolling. The
