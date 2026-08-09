@@ -13087,7 +13087,49 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
    below itself, so this only needs its own gap before the Days-off block. */
 .av-policy-note { font-size: 0.72rem; line-height: 1.45; margin: 0 0 0.9rem; }
 
+/* What's next with the coach, under the athlete's month grid. The calendar can
+   only say "something is on that square"; this says when, and is the way in to
+   booking from the page they actually open. */
+.ccal-next { margin-top: 0.7rem; }
+.ccal-next-row, .ccal-next-cta {
+  display: flex; align-items: center; gap: 0.65em;
+  width: 100%;
+  padding: 0.6em 0.85em;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: inherit; font: inherit; text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.ccal-next-row { border-left: 3px solid var(--primary); }
+.ccal-next-row:hover, .ccal-next-cta:hover {
+  border-color: rgba(var(--primary-rgb), 0.6); background: var(--surface-3);
+}
+/* Dashed while there is nothing to show: it is an invitation, not a fact, and
+   it must not read as a session they have. */
+.ccal-next-cta { border-style: dashed; color: var(--text-soft); font-weight: 700; font-size: 0.85rem; }
+.ccal-next-ico { flex-shrink: 0; font-size: 1rem; }
+.ccal-next-txt { display: flex; flex-direction: column; gap: 0.05em; flex: 1 1 auto; min-width: 0; }
+.ccal-next-txt b { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-soft); }
+.ccal-next-txt span {
+  font-size: 0.9rem; font-weight: 800; font-variant-numeric: tabular-nums;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ccal-next-rel {
+  flex-shrink: 0;
+  font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--primary-bright);
+  background: var(--primary-soft);
+  border-radius: 999px; padding: 0.2em 0.6em;
+}
+.ccal-next-go { flex-shrink: 0; color: var(--muted); font-size: 1.1rem; line-height: 1; }
+
 /* Athlete slot picker */
+/* Two headings in one card: the sessions they hold, then the offer to book
+   another. The second only appears when there is something to book. */
+.book-h { margin: 0 0 0.5rem; }
+.book-h + .book-h, .book-mine + .book-h, .book-mine-note + .book-h { margin-top: 1rem; }
 .book-mine { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.7rem; }
 .book-mine-row {
   display: flex; align-items: center; gap: 0.6em;
@@ -13111,20 +13153,47 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 }
 .book-req-note { display: block; font-size: 0.78rem; font-weight: 700; margin-top: 0.7em; }
 .book-req-note textarea { width: 100%; margin-top: 0.3em; }
-/* Two buttons plus a date is more than a phone-width pill holds. Same answer as
-   .needs-actions: keep them inline while there's room, then give them a line.
-   The 999px radius has to go with them — a pill shape reads as a pill on one
-   line and as a blob on two, so it becomes an ordinary card corner instead. */
-@media (max-width: 420px) {
-  .book-mine-row { flex-wrap: wrap; border-radius: var(--radius); gap: 0.2em 0.6em; }
-  .book-mine-acts { width: 100%; justify-content: flex-end; }
+/* Under 420px this row used to set `flex-wrap: wrap` AND `width: 100%` on the
+   actions, which is not "wrap if it has to" — it is "always wrap". The result
+   was a 76px pill with the time alone on one line and Move/Cancel stranded on
+   the next, which was the silliest thing on this page. It fits: "Sun, Aug 16 ·
+   7:00 AM" plus both buttons measures ~250px inside a 289px row on a 390px
+   phone. Wrap stays available for the narrowest devices and the longest label
+   ("Request a change"), and the pill's radius relaxes with it, because a 999px
+   radius reads as a pill on one line and as a blob on two. */
+.book-mine-row { flex-wrap: wrap; row-gap: 0.25em; }
+@media (max-width: 360px) {
+  .book-mine-row { border-radius: var(--radius); }
 }
-.book-days { display: flex; flex-direction: column; gap: 0.6rem; max-height: 22rem; overflow-y: auto; }
-.book-day-name {
-  font-size: 0.7rem; font-weight: 800; text-transform: uppercase;
-  letter-spacing: 0.06em; color: var(--text-soft); margin-bottom: 0.3rem;
+/* Pick the day, then the time. The old grid printed all fourteen days at once
+   inside `max-height: 22rem; overflow-y: auto` — a scroll region nested in the
+   scrolling page, holding 116 near-identical pills for a full-time coach. */
+.book-picker { display: flex; flex-direction: column; gap: 0.6rem; }
+/* Wraps rather than scrolling sideways, for the same reason the time chips
+   below it do: a date you have to swipe to find is a date you don't know is
+   there. Fourteen days is three rows on a phone and one on a laptop, which is
+   cheaper than any "there is more over here" affordance would have been. */
+.book-daybar { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.book-daychip {
+  flex: 0 0 auto;
+  display: flex; flex-direction: column; align-items: center; gap: 0.05em;
+  min-width: 3.1rem; padding: 0.4em 0.5em;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface-2); color: var(--text-soft);
+  font: inherit; cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
 }
-.book-slots { display: flex; flex-wrap: wrap; gap: 0.35em; }
+.book-daychip:hover { border-color: rgba(var(--primary-rgb), 0.6); }
+.book-daychip.on {
+  border-color: var(--primary); background: var(--primary-soft); color: var(--primary-bright);
+}
+.book-daychip-dow { font-size: 0.62rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
+.book-daychip-num { font-size: 1rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
+/* How many times are free that day, so the strip is worth reading before it is
+   tapped — otherwise every day looks equally open until you try one. */
+.book-daychip-n { font-size: 0.58rem; font-weight: 700; color: var(--muted); }
+.book-daychip.on .book-daychip-n { color: var(--primary-bright); opacity: 0.8; }
+.book-dayslots { display: flex; flex-wrap: wrap; gap: 0.35em; }
 .book-slot {
   background: var(--surface-2); border: 1px solid var(--border);
   border-radius: 999px; padding: 0.4em 0.8em;

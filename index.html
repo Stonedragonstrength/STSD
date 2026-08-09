@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=blk5" />
+  <link rel="stylesheet" href="styles.css?v=ath4" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -1171,9 +1171,20 @@
               <button class="btn btn-ghost btn-sm" id="ccal-today">Today</button>
               <div id="ccal-stats" class="cal-stats"></div>
               <span id="ccal-token-balance" class="cal-token-balance hidden"></span>
+              <!-- Only for athletes the coach has switched booking on for.
+                   Everyone else's sessions are put in for them, so an offer to
+                   book would be a button that leads to a card saying no.
+                   Shown/hidden by renderAthleteNextSession(). -->
+              <button class="btn slim-btn btn-sm cal-book-btn hidden" id="ccal-book">＋ Book</button>
             </div>
           </div>
           <div id="ccal-grid" class="cal-grid"></div>
+          <!-- What's next with the coach, under the month it's marked on. The
+               calendar shows a session as a dot on a square; this says when.
+               Built by renderAthleteNextSession().
+               NOT `ccal-next` — that id is the next-month arrow above, and
+               reusing it fed this card's HTML straight into the arrow button. -->
+          <div id="ccal-upnext" class="ccal-next hidden"></div>
         </div>
         <div id="overview-stats" class="overview-stats"></div>
         <div id="overview-trophies"></div>
@@ -1556,7 +1567,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=localout1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=blk5"></script>
+  <script src="app.js?v=ath4"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

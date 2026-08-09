@@ -754,13 +754,18 @@
   // with nothing on screen accounting for the other 17. Those 17 are `expired`,
   // which bankLedger has always computed and no screen has ever shown.
   function balanceStatsHtml(sum, extra) {
-    const tiles = [
-      [sum.thisMonthGrant, "this month"],
-      [sum.thisMonthUsed, "used"],
-    ];
+    const tiles = [];
+    // No allowance this month means the whole monthly frame is the wrong one
+    // for this athlete: "0 this month" states a rule they aren't on, and
+    // "banked" then equals the headline exactly, so a card reading 11 above
+    // 0 / 1 / 11 said eleven twice and zero once. Someone on a package sees
+    // what they have used and nothing else.
+    const onAllowance = !!sum.thisMonthGrant;
+    if (onAllowance) tiles.push([sum.thisMonthGrant, "this month"]);
+    tiles.push([sum.thisMonthUsed, "used"]);
     // Conditional so the ordinary athlete — monthly allowance, no bought packs,
     // nothing left over — still sees a clean two-up and not a row of zeroes.
-    if (sum.banked) tiles.push([sum.banked, "banked"]);
+    if (sum.banked && onAllowance) tiles.push([sum.banked, "banked"]);
     if (sum.expired) tiles.push([sum.expired, "expired"]);
     (extra || []).forEach((t) => tiles.push(t));
     return `<div class="session-balance-stats">` + tiles.map(([n, lbl]) =>
@@ -19611,6 +19616,9 @@
       _athleteRequests = onlyMine(reqs);
       _athleteSlots = [];
       renderAthleteBooking();
+      // They still get the next-session line — knowing when they are next in is
+      // not a booking privilege — just no Book button above it.
+      renderAthleteNextSession();
       return;
     }
     const [taken, mine, reqs] = await Promise.all([
@@ -19628,6 +19636,10 @@
       ? generateSlots(a, from, a.horizonDays + 1, (taken || []).map((t) => ({ start: t.start, end: t.end })))
       : [];
     renderAthleteBooking();
+    // The Overview's Book button and next-session line are both decided by data
+    // this function just fetched, and the Overview has usually already painted
+    // by now — same repaint the tz change above needs, for the same reason.
+    renderAthleteNextSession();
   }
 
   function renderAthleteBooking() {
@@ -19637,11 +19649,14 @@
       .filter((b) => b.status === "booked" && +new Date(b.start_at) >= Date.now() - 3600000)
       .sort((x, y) => String(x.start_at).localeCompare(String(y.start_at)));
 
-    // The card still earns its place when they can't book — it's where their
-    // upcoming sessions are — but it must not be headed with an offer.
-    let html = `<h4 style="margin-top:0">🗓️ ${a.canBook === false ? "Your sessions" : "Book a session"}</h4>`;
+    // Two things, two headings. "Book a session" used to head the athlete's
+    // EXISTING sessions as well as the slot grid, so the first thing under the
+    // offer to book was a session they already had — and the only way to tell
+    // them apart was that one had Move/Cancel on it.
+    let html = "";
 
     if (mine.length) {
+      html += `<h4 class="book-h">🗓️ Your sessions</h4>`;
       html += `<div class="book-mine">${mine.map((b) => {
         const s = +new Date(b.start_at);
         // The coach's zone, not the device's. Every other time on this card —
@@ -19672,26 +19687,33 @@
       }).join("")}</div>`;
     }
 
+    // Second heading, and only when there is actually something to book under
+    // it. An athlete whose coach schedules for them never sees it.
+    const bookable = a.canBook !== false;
     if (_athleteSlots === null) {
       html += `<p class="muted">Loading times…</p>`;
-    } else if (a.canBook === false) {
+    } else if (!bookable) {
       // Not a failure, and not something to apologise for — for most athletes
       // this is simply how it works, so it reads as an arrangement rather than
       // a door that's been shut. Any sessions they already hold stay above,
       // cancellable, because losing the permission mustn't trap them.
-      html += `<p class="muted">Your coach schedules your sessions for you. Message them to set up a time or move one.</p>`;
+      html += (mine.length ? "" : `<h4 class="book-h">🗓️ Your sessions</h4>`) +
+        `<p class="muted">Your coach schedules your sessions for you. Message them to set up a time or move one.</p>`;
     } else if (!availabilityIsSet(a)) {
-      html += `<p class="muted">Your coach hasn't posted their hours yet. Message them to set something up.</p>`;
+      html += `<h4 class="book-h">🗓️ Book a session</h4>` +
+        `<p class="muted">Your coach hasn't posted their hours yet. Message them to set something up.</p>`;
     } else if (!_athleteSlots.length) {
-      html += `<p class="muted">Nothing open in the next ${a.horizonDays} days. Check back, or message your coach.</p>`;
+      html += `<h4 class="book-h">🗓️ Book a session</h4>` +
+        `<p class="muted">Nothing open in the next ${a.horizonDays} days. Check back, or message your coach.</p>`;
     } else {
-      html += slotGridHtml(_athleteSlots, a);
+      html += `<h4 class="book-h">🗓️ Book a session</h4>` + slotGridHtml(_athleteSlots, a);
       if (!window.Cloud?.enabled) {
         html += `<p class="book-offline">These are your coach's usual hours. You'll need a connection to actually book one.</p>`;
       }
     }
     host.innerHTML = html;
 
+    wireSlotDays(host);
     host.querySelectorAll("[data-start]").forEach((btn) => btn.addEventListener("click", () => {
       confirmBooking(+btn.dataset.start, +btn.dataset.end, btn);
     }));
@@ -19770,14 +19792,56 @@
   // offer exactly the same slots and read the same way. Their current booking
   // is already subtracted upstream (it is one of the busy windows), so the time
   // they are moving out of never appears as somewhere to move to.
+  //
+  // Pick the day first, then the time. This used to print every day at once —
+  // a fortnight of a full-time coach's hours is 116 buttons, and they went in a
+  // nested scroller inside the scrolling page, so choosing "Tuesday at 4" meant
+  // dragging a wall of identical pills past a scroll region that fought the
+  // page. One day at a time is ten buttons and no inner scrollbar.
+  //
+  // Both rows wrap rather than scroll, for the reason the time chips already
+  // did: anything you have to swipe to find is something you don't know is
+  // there.
   function slotGridHtml(slots, a) {
     const days = groupSlotsByDay(slots || [], a.tz).slice(0, 14);
-    return `<div class="book-days">${days.map((d) =>
-      `<div class="book-day">` +
-        `<div class="book-day-name">${escapeHtml(fmtSlotDay(d.iso))}</div>` +
-        `<div class="book-slots">${d.slots.map((s) =>
-          `<button type="button" class="book-slot" data-start="${s.startMs}" data-end="${s.endMs}">${escapeHtml(fmtSlotTime(s.startMs, a.tz))}</button>`).join("")}</div>` +
-      `</div>`).join("")}</div>`;
+    if (!days.length) return "";
+    const dayLabel = (iso) => {
+      const d = new Date(iso + "T12:00:00Z");
+      return {
+        dow: d.toLocaleDateString(undefined, { weekday: "short", timeZone: "UTC" }),
+        num: d.toLocaleDateString(undefined, { day: "numeric", timeZone: "UTC" }),
+      };
+    };
+    return `<div class="book-picker">` +
+      `<div class="book-daybar" role="tablist">${days.map((d, i) => {
+        const l = dayLabel(d.iso);
+        return `<button type="button" class="book-daychip${i ? "" : " on"}" role="tab" ` +
+          `aria-selected="${i ? "false" : "true"}" data-day-pick="${i}">` +
+          `<span class="book-daychip-dow">${escapeHtml(l.dow)}</span>` +
+          `<span class="book-daychip-num">${escapeHtml(l.num)}</span>` +
+          `<span class="book-daychip-n">${d.slots.length}</span>` +
+        `</button>`;
+      }).join("")}</div>` +
+      days.map((d, i) =>
+        `<div class="book-dayslots${i ? " hidden" : ""}" data-day-panel="${i}">${d.slots.map((s) =>
+          `<button type="button" class="book-slot" data-start="${s.startMs}" data-end="${s.endMs}">${escapeHtml(fmtSlotTime(s.startMs, a.tz))}</button>`).join("")}</div>`).join("") +
+    `</div>`;
+  }
+  // Wires the day strip. Separate from the slot buttons because every caller
+  // wires those differently — booking, moving, and asking to move all do
+  // something else with a time — while switching days is the same everywhere.
+  function wireSlotDays(host) {
+    if (!host) return;
+    host.querySelectorAll("[data-day-pick]").forEach((chip) => chip.addEventListener("click", () => {
+      const i = chip.dataset.dayPick;
+      host.querySelectorAll("[data-day-pick]").forEach((c) => {
+        const on = c === chip;
+        c.classList.toggle("on", on);
+        c.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      host.querySelectorAll("[data-day-panel]").forEach((p) =>
+        p.classList.toggle("hidden", p.dataset.dayPanel !== i));
+    }));
   }
 
   // Every way one of these can be refused, in the athlete's words. The reasons
@@ -19812,6 +19876,7 @@
           : `<p class="muted">Nothing else is open in the next ${a.horizonDays} days. Message your coach.</p>`),
       actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
     });
+    wireSlotDays($("#modal-body"));
     $("#modal-body").querySelectorAll("[data-start]").forEach((btn) => btn.addEventListener("click", () => {
       const startMs = +btn.dataset.start, endMs = +btn.dataset.end;
       openModal({
@@ -25943,7 +26008,67 @@
         hide(balEl);
       }
     }
+    renderAthleteNextSession();
     if (typeof renderAthleteOverview === "function") renderAthleteOverview(); // weekly days-left tracks completions
+  }
+
+  // Booking, on the page the athlete actually opens. It used to live only
+  // behind the 🎟️ chip in the header — the same place as their package
+  // history — so an athlete the coach had just switched booking on for had no
+  // way of knowing, and nothing on the Overview said when they were next in.
+  //
+  // Reads _athleteAvailability, which arrives asynchronously, so
+  // refreshAthleteBooking() calls this again once it lands.
+  function renderAthleteNextSession() {
+    const btn = $("#ccal-book");
+    const host = $("#ccal-upnext");
+    if (!btn || !host) return;
+    const a = normalizeAvailability(_athleteAvailability);
+    // canBook is undefined until the RPC answers. Treat that as "not yet"
+    // rather than "yes": a button that flashes in and out on every open is
+    // worse than one that appears a beat late.
+    const canBook = a.canBook === true && availabilityIsSet(a);
+    btn.classList.toggle("hidden", !canBook);
+
+    const next = (_athleteBookings || [])
+      .filter((b) => b.status === "booked" && +new Date(b.start_at) >= Date.now() - 3600000)
+      .sort((x, y) => String(x.start_at).localeCompare(String(y.start_at)))[0];
+    if (!next) {
+      // Nothing booked and nothing to offer is not worth a line of its own —
+      // the calendar below already reads as empty.
+      host.innerHTML = canBook
+        ? `<button type="button" class="ccal-next-cta" id="ccal-next-cta">` +
+            `<span class="ccal-next-ico">🗓️</span>` +
+            `<span>No sessions booked — pick a time</span>` +
+            `<span class="ccal-next-go">›</span>` +
+          `</button>`
+        : "";
+      host.classList.toggle("hidden", !canBook);
+      $("#ccal-next-cta")?.addEventListener("click", goToBooking);
+      return;
+    }
+    // The coach's zone, like every other booking time in the app.
+    const ms = +new Date(next.start_at);
+    const when = `${new Date(ms).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric", timeZone: a.tz || undefined })} · ${fmtSlotTime(ms, a.tz)}`;
+    const days = Math.round((ms - Date.now()) / 86400000);
+    const rel = ms < Date.now() ? "now" : days <= 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`;
+    host.innerHTML =
+      `<button type="button" class="ccal-next-row" id="ccal-next-cta">` +
+        `<span class="ccal-next-ico">🗓️</span>` +
+        `<span class="ccal-next-txt"><b>Next session</b><span>${escapeHtml(when)}</span></span>` +
+        `<span class="ccal-next-rel">${escapeHtml(rel)}</span>` +
+        `<span class="ccal-next-go">›</span>` +
+      `</button>`;
+    host.classList.remove("hidden");
+    $("#ccal-next-cta")?.addEventListener("click", goToBooking);
+  }
+
+  // One way in, from both the button and the next-session line: the Sessions
+  // panel, scrolled to the booking card rather than to the top of a page whose
+  // first screen is a balance.
+  function goToBooking() {
+    setClientTab("sessions");
+    setTimeout(() => $("#athlete-book-card")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
   }
 
   function openAthleteLogDayModal(iso) {
@@ -36011,6 +36136,7 @@
       state.athleteCal = { year: now.getFullYear(), month: now.getMonth() };
       renderAthleteCalendar();
     });
+    $("#ccal-book")?.addEventListener("click", goToBooking);
     // Dashboard overview calendar
     // The arrows step by whatever you are zoomed to: a day, a week, a month.
     $("#dash-cal-prev").addEventListener("click", () => stepCal(-1));
