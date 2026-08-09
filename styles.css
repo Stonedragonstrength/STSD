@@ -13812,6 +13812,19 @@ body.scroll-locked {
    The header crest is a status badge with no room to explain itself; this is
    the ladder. One heat colour drives the crest, the bar and every earned row,
    so the whole card intensifies together as the rank climbs. */
+/* The can't-sync warning on money surfaces. Danger-tinted from the
+   theme-stable danger channels: this must mean the same thing on all themes. */
+.money-sync-warn {
+  margin: 0 0 0.8em;
+  padding: 0.6em 0.8em;
+  border-radius: 8px;
+  background: var(--danger-soft);
+  border: 1px solid rgba(var(--danger-rgb), 0.5);
+  color: var(--text);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
 .hoard-card { padding: 1rem 1.05rem 0.9rem; }
 /* The whole card is a fold and the head row is its summary — collapsed it is
    one line that still says the rank and the tonnage, which is everything the

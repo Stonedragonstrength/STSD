@@ -131,6 +131,54 @@
     });
   }
 
+  // ── Money writes must be LOUD ──
+  // Cloud pushes fail silently by design (offline always works), and on
+  // 2026-08-07 that bit hard: a night of settles run on an offline,
+  // signed-out tablet looked identical to settles that synced, lived only in
+  // that device's localStorage, and the next boot's cloud refresh wiped them.
+  // Money is the one place silence is unacceptable, so money surfaces say
+  // BEFORE the action whether a write can sync, and AFTER it whether it did.
+  let _cloudSessionLive = true; // optimistic until getSession answers at boot
+  function setCloudSessionLive(v) { _cloudSessionLive = !!v; }
+  function moneySyncRisk() {
+    if (!window.Cloud?.enabled) return "Cloud is off on this device";
+    if (!navigator.onLine) return "this device is offline";
+    if (!_cloudSessionLive) return "this device is signed out";
+    return null;
+  }
+  function moneySyncBannerHtml() {
+    const risk = moneySyncRisk();
+    if (!risk) return "";
+    return `<div class="money-sync-warn">⚠ <b>${escapeHtml(risk)}</b> — money
+      marked here saves on this device but will <b>not</b> reach the cloud or
+      your other devices until it can sync. Safer to do this on a connected,
+      signed-in device.</div>`;
+  }
+  // The verified push: immediate rather than debounced, dirty-guarded either
+  // way, and it REPORTS. `list` may hold nulls (partnerOf misses) so callers
+  // can be blunt about who rides along.
+  async function verifyMoneySync(list, what) {
+    const targets = [...new Set(list.filter(Boolean))];
+    if (!targets.length) return;
+    if (!window.Cloud?.enabled) {
+      toast(`⚠ ${what} is on THIS DEVICE ONLY — Cloud is off`, 7000);
+      return;
+    }
+    const results = await Promise.all(targets.map(async (c) => {
+      markAthleteDirty(c.id);
+      const ok = await window.Cloud.upsertAthlete(c, state.trainerData.coachId);
+      if (ok) clearAthleteDirty(c.id);
+      return ok;
+    }));
+    const failed = results.filter((ok) => !ok).length;
+    if (failed) {
+      const scope = failed === targets.length ? "NOT synced" : `${failed} of ${targets.length} NOT synced`;
+      toast(`⚠ ${what}: ${scope} — saved on this device and protected from being overwritten; reopen the app online to sync. Don't redo it elsewhere.`, 9000);
+    } else {
+      toast(`☁ ${what} synced ✓`, 2200);
+    }
+  }
+
   // Which store the day editor writes to. Everything in the editor subtree —
   // renderDayContent, renderExerciseRow and every picker they open — saves
   // through saveEditor() instead of calling saveTrainer() directly, so one
@@ -749,8 +797,9 @@
     // A couple pays one rate for the slot they share, and the slot is booked
     // under one of them, so mirroring the rate can't double-count it.
     p.sessionBank.rate = c.sessionBank.rate;
-    if (window.Cloud?.enabled) window.Cloud.debounce(`athlete:${p.id}`, () =>
-      window.Cloud.upsertAthlete(p, state.trainerData.coachId));
+    // Through the dirty guard, like every athlete push. The raw debounce this
+    // used to be was one of the holes the tablet's lost settles went through.
+    pushAthlete(p);
   }
   function linkPartners(a, b) {
     ensureSessionBank(a); ensureSessionBank(b);
@@ -781,8 +830,7 @@
     c.partnerId = null;
     if (p) {
       p.partnerId = null;
-      if (window.Cloud?.enabled) window.Cloud.debounce(`athlete:${p.id}`, () =>
-        window.Cloud.upsertAthlete(p, state.trainerData.coachId));
+      pushAthlete(p);
     }
     saveTrainer();
     renderCoachSessions();
@@ -2854,8 +2902,7 @@
     // Push every migrated athlete so their devices pull the rewritten tags
     // (the debounce gives the auth session time to restore; a failed push
     // self-heals the next time that athlete is edited).
-    if (window.Cloud?.enabled) changedClients.forEach((c) =>
-      window.Cloud.debounce(`athlete:${c.id}`, () => window.Cloud.upsertAthlete(c, state.trainerData.coachId)));
+    changedClients.forEach((c) => pushAthlete(c));
   }
 
   if (_trainerDataDirty) saveTrainer();
@@ -4998,8 +5045,7 @@
         }
         syncWeeksFromTemplate(c, tpl);
         c.tplShape = programShape(c.weeks);
-        if (window.Cloud?.enabled) window.Cloud.debounce(`athlete:${c.id}`, () =>
-          window.Cloud.upsertAthlete(c, state.trainerData.coachId));
+        pushAthlete(c);
       });
       localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
       if (unlinked.length) {
@@ -13846,8 +13892,7 @@
   function pushAthleteBank(c) {
     bankMutated(c);
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
-    if (window.Cloud?.enabled) window.Cloud.debounce(`athlete:${c.id}`, () =>
-      window.Cloud.upsertAthlete(c, state.trainerData.coachId));
+    pushAthlete(c);
   }
   function markBookingMissed(e, c, type) {
     ensureSessionBank(c);
@@ -14045,10 +14090,7 @@
     if (!birthdays.length && !referrals.length) return;
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
     const touched = new Set([...birthdays, ...referrals.map((r) => r.ref)]);
-    if (window.Cloud?.enabled) {
-      touched.forEach((c) => window.Cloud.debounce(`athlete:${c.id}`, () =>
-        window.Cloud.upsertAthlete(c, state.trainerData.coachId)));
-    }
+    touched.forEach((c) => pushAthlete(c));
     const bits = [];
     if (birthdays.length) bits.push(`🎂 ${birthdays.map((c) => c.name).join(", ")}`);
     if (referrals.length) bits.push(`🤝 ${referrals.map((r) => r.ref.name).join(", ")}`);
@@ -17905,6 +17947,7 @@
         p.paidAt = Date.now();
         bankMutated(c);
         saveTrainer();
+        verifyMoneySync([c, partnerOf(c)], "Mark collected");
         // The balance this just released reads in five places at once.
         renderCoachSessions();
         renderClientSessionChip();
@@ -17912,7 +17955,6 @@
         renderClientGrid();
         renderMonthGrantBtn();
         renderIncomeCard();
-        toast(`Marked collected ✓`);
       });
     });
     pkgCard.querySelectorAll("[data-edit]").forEach((btn) => {
@@ -17923,7 +17965,9 @@
         if (!window.confirm("Remove this package? Redemptions are kept.")) return;
         c.sessionBank.packages = c.sessionBank.packages.filter((p) => p.id !== btn.dataset.del);
         bankMutated(c);
-        saveTrainer(); renderCoachSessions();
+        saveTrainer();
+        verifyMoneySync([c, partnerOf(c)], "Package removal");
+        renderCoachSessions();
       });
     });
 
@@ -18059,6 +18103,8 @@
           renderIncomeCard();
           toast(`Package updated · ${size} session${size === 1 ? "" : "s"}${
             price === undefined ? "" : ` · $${price.toLocaleString()}`}${nowCollected ? "" : " · still to collect"} ✓`, 4000);
+          // After the toast: the sync verdict must speak last and overwrite.
+          verifyMoneySync([c, partnerOf(c)], "Package update");
         }},
       ],
     });
@@ -18262,6 +18308,7 @@
     openModal({
       title: `Settle ${label}`,
       body: `
+        ${moneySyncBannerHtml()}
         ${monthGrantDismissed() ? `<p class="muted mg-dismissed" style="margin-top:-0.4em">You marked ${escapeHtml(label)} settled. Anyone still listed below can be granted from here anyway.</p>` : ""}
         <p class="muted" style="margin-top:-0.4em">${anyPending
           ? "Auto-renew already granted these athletes their membership for the month, and those sessions are live. Ticking one of those rows only marks the money collected; ticking an empty one grants their month."
@@ -18409,6 +18456,7 @@
     openModal({
       title: `Settle ${label} — check first`,
       body: `
+        ${moneySyncBannerHtml()}
         <p class="muted" style="margin-top:-0.4em">Nothing has moved yet. This is
           what pressing Settle does.</p>
         <div class="mgc-list">${rowsHtml}</div>
@@ -18489,9 +18537,6 @@
       done.push(c); granted += 1; sessions += size;
     });
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
-    // saveTrainer() only pushes the athlete currently open, and this touched a
-    // roster's worth of banks, so each one is pushed on its own key.
-    done.forEach((c) => pushAthlete(c));
     closeModal();
     renderClientGrid();
     renderMonthGrantBtn();
@@ -18503,6 +18548,13 @@
     toast(done.length
       ? `🎟 ${label}: ${bits.join(" · ")} · ${sessions} sessions ✓`
       : "Nothing left to settle this month", 4000);
+    // Verified, not fire-and-forget: this is the exact write that vanished
+    // silently when a night of settles ran on an offline tablet. Partners
+    // ride along — bankMutated mirrored their banks, and their rows need
+    // pushing too or half a couple stays unpaid in the cloud. AFTER the
+    // celebration toast on purpose: the sync verdict is the one that must
+    // survive, so it speaks last and overwrites, never the other way round.
+    verifyMoneySync(done.flatMap((c) => [c, partnerOf(c)]), `Settle ${label}`);
   }
 
   // -------- Bill the month (the whole roster, one pass) --------
@@ -35005,9 +35057,13 @@
     // the answer.
     ensurePersistentStorage();
 
-    // Auth state change listener — catches PASSWORD_RECOVERY from email reset links
+    // Auth state change listener — catches PASSWORD_RECOVERY from email reset
+    // links, and keeps the money surfaces honest about whether a cloud write
+    // can currently succeed (see moneySyncRisk).
     if (window.Cloud?.enabled) {
-      window.Cloud.onAuthStateChange((event) => {
+      window.Cloud.getSession().then((s) => setCloudSessionLive(!!s));
+      window.Cloud.onAuthStateChange((event, session) => {
+        setCloudSessionLive(!!session);
         if (event === "PASSWORD_RECOVERY") {
           showLoginScreen("#login-reset-password");
           $("#reset-pw-new").value = "";
