@@ -5131,10 +5131,14 @@ body::before {
 body::after {
   content: "";
   position: fixed;
-  right: -4vmin;
-  bottom: -6vmin;
-  width: 64vmin;
-  height: 64vmin;
+  /* Centered, by the coach's pick from four rendered placements: the biggest
+     presence the mark can have, showing through the seams between cards and
+     owning the empty ground on quiet screens. */
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 82vmin;
+  height: 82vmin;
   background: url("logo-512.png") center / contain no-repeat;
   /* 0.05 read as a poster on a real phone-dark ground — the wordmark inside
      the logo is bright enough to carry at almost any alpha. */
