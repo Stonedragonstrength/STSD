@@ -15259,7 +15259,30 @@
   function renderCalDayView(host, iso) {
     if (!host) return;
     const rows = dayRows(iso);
+    // Time the coach closed. A block nobody can see is a block they'll forget
+    // they set, so it rides the same list as the sessions and at its real time.
+    const blocks = blocksOnDate(iso);
+    const blockHtml = blocks.map((b) => {
+      const when = b.allDay ? "All day" : blockPhrase(b).split(" · ").pop();
+      return `<button type="button" class="dv-row dv-blockrow" data-dv-blk="${escapeHtml(b.id)}">` +
+        `<span class="dv-face"><span class="av-tile av-sm av-empty">⛔</span></span>` +
+        `<span class="dv-name">${escapeHtml(b.label || "Blocked off")}</span>` +
+        `<span class="dv-what">Closed</span>` +
+        `<span class="dv-time">${escapeHtml(when)}</span>` +
+        `<span class="dv-state">›</span>` +
+      `</button>`;
+    }).join("");
+    const wireBlocks = () => host.querySelectorAll("[data-dv-blk]").forEach((el) =>
+      el.addEventListener("click", () => openBlockSheet(el.dataset.dvBlk)));
+
     if (!rows.length) {
+      if (blocks.length) {
+        // A closed day is not an empty one, and offering "jump to the next day
+        // with something on it" under a block reads as if the block isn't there.
+        host.innerHTML = `<div class="dv-list">${blockHtml}</div>`;
+        wireBlocks();
+        return;
+      }
       // Day is the mode the app opens in, so an empty one is the front door.
       // "Nothing scheduled" alone reads like the calendar is broken rather than
       // like a Sunday off — the jump proves there IS a week behind it.
@@ -15319,9 +15342,29 @@
       `</button>`;
       // The whole day is done: the line lands at the bottom, which the map
       // above can never reach.
-    }).join("") + (nowAt >= rows.length ? nowHtml : "")}</div>`;
+    }).join("") + (nowAt >= rows.length ? nowHtml : "") + blockHtml}</div>`;
     host.querySelectorAll("[data-dv]").forEach((b) => b.addEventListener("click", () =>
       openDaySessionSheet(iso, rows[Number(b.dataset.dv)])));
+    wireBlocks();
+  }
+
+  // A block, and the one thing there is to do about it.
+  function openBlockSheet(id) {
+    const b = normalizeAvailability(coachAvailability()).blocks.find((x) => x.id === id);
+    if (!b) return;
+    const clash = coachBookingsWithin(b).length;
+    openModal({
+      title: "⛔ Blocked off",
+      body: `<div class="dvs"><div class="dvs-head"><span class="dvs-id">` +
+        `<b>${escapeHtml(b.label || "Blocked off")}</b>` +
+        `<span>${escapeHtml(blockPhrase(b))}</span>` +
+        (clash ? `<span class="dvs-bal low">${clash} session${clash === 1 ? "" : "s"} booked inside it</span>` : "") +
+      `</span></div></div>`,
+      actions: [
+        { label: "Close", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Remove", className: "btn btn-primary", onClick: () => { closeModal(); removeCoachBlock(id); } },
+      ],
+    });
   }
 
   // Everything about one athlete's day, and everything you can do about it.
@@ -15547,10 +15590,29 @@
       });
     });
 
+    // Closed time, laid out the same way. A blocked afternoon has to read as
+    // occupied here or the timetable says the coach is free when they are not.
+    const blocksPerDay = days.map((d) => blocksOnDate(d).map((b) => {
+      const s = b.allDay ? null : parseHM(b.start);
+      const e = b.allDay ? null : parseHM(b.end);
+      return {
+        b,
+        startMin: s ? s.hh * 60 + s.mm : 0,
+        endMin: e ? e.hh * 60 + e.mm : 24 * 60,
+      };
+    }));
+
     // The window only stretches for what is actually booked: an early riser at
-    // 5am or a 9pm session pulls the edge out, nothing else does.
+    // 5am or a 9pm session pulls the edge out, nothing else does. An all-day
+    // block is excluded from the stretch on purpose — it spans midnight to
+    // midnight, and letting it vote would blow the grid out to 24 hours.
     let from = WK_DAY_START * 60, to = WK_DAY_END * 60;
     perDay.flat().forEach((p) => {
+      from = Math.min(from, Math.floor(p.startMin / 60) * 60);
+      to = Math.max(to, Math.ceil(p.endMin / 60) * 60);
+    });
+    blocksPerDay.flat().forEach((p) => {
+      if (p.b.allDay) return;
       from = Math.min(from, Math.floor(p.startMin / 60) * 60);
       to = Math.max(to, Math.ceil(p.endMin / 60) * 60);
     });
@@ -15607,10 +15669,20 @@
             `${escapeHtml(p.athlete?.name || p.e.clientName || "Session")}</span>` +
         `</button>`;
       }).join("");
+      // Blocks sit UNDER the sessions: a session booked inside closed time is
+      // still the more important of the two, and the hatch reads as background.
+      const blocked = blocksPerDay[i].map((p) => {
+        const top = Math.max(0, yOf(p.startMin));
+        const h = Math.max(10, Math.min(bodyH, yOf(p.endMin)) - top);
+        return `<button type="button" class="wkg-blk" style="top:${top}px;height:${h}px" ` +
+          `data-wk-blk="${escapeHtml(p.b.id)}" title="${escapeHtml(blockPhrase(p.b))}">` +
+          `<span>${escapeHtml(p.b.label || "Blocked")}</span></button>`;
+      }).join("");
       // Clicking empty space in a column is the same "show me this day" the
       // agenda's row was.
       return `<div class="wkg-col${d === today ? " is-today" : ""}" data-wk-col="${d}">` +
         hours.map(() => `<div class="wkg-slot"></div>`).join("") +
+        blocked +
         sessions +
       `</div>`;
     }).join("");
@@ -15648,6 +15720,10 @@
       const row = (cid ? rows.find((r) => r.client?.id === cid) : null) ||
         rows.find((r) => !r.client && r.name === nm);
       if (row) openDaySessionSheet(d, row); else toDay(d);
+    }));
+    host.querySelectorAll("[data-wk-blk]").forEach((b) => b.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      openBlockSheet(b.dataset.wkBlk);
     }));
     host.querySelectorAll("[data-wk-col]").forEach((col) =>
       col.addEventListener("click", () => toDay(col.dataset.wkCol)));
@@ -15695,8 +15771,15 @@
           `${a ? athleteFaceHtml(a, "xs") : ""}` +
           `<b>${escapeHtml(fmtSetmoreTime(e.startAt))}</b> ${escapeHtml(a?.name || e.clientName || "Session")}</span>`;
       }).join("") + planned.map((c) =>
-        `<span class="wk-chip wk-chip-plan">${athleteFaceHtml(c, "xs")}${escapeHtml(c.name)}</span>`).join("");
-      return `<button type="button" class="wk-row${d === today ? " is-today" : ""}${events.length || planned.length ? "" : " is-empty"}" data-wk-day="${d}">` +
+        `<span class="wk-chip wk-chip-plan">${athleteFaceHtml(c, "xs")}${escapeHtml(c.name)}</span>`).join("") +
+        // The phone gets this agenda instead of the timetable, so without it a
+        // blocked afternoon is invisible at week zoom on the device the coach
+        // actually carries.
+        blocksOnDate(d).map((b) =>
+          `<span class="wk-chip wk-chip-block">⛔ ${escapeHtml(b.label ||
+            (b.allDay ? "Off" : blockPhrase(b).split(" · ").pop()))}</span>`).join("");
+      const blocked = blocksOnDate(d).length;
+      return `<button type="button" class="wk-row${d === today ? " is-today" : ""}${events.length || planned.length || blocked ? "" : " is-empty"}" data-wk-day="${d}">` +
         `<span class="wk-date"><b>${dd.toLocaleDateString(undefined, { weekday: "short" })}</b>` +
           `<span>${dd.getDate()}</span></span>` +
         `<span class="wk-items">${items || `<span class="wk-none">—</span>`}</span>` +
@@ -15748,6 +15831,13 @@
       if (setmoreEvents.length) {
         html += `<div class="dash-cal-pill dash-cal-pill-booked">📅 ${setmoreEvents.length} booked</div>`;
       }
+      // Time off, on the view a coach actually scans for "when am I away".
+      // A week's holiday is only legible at this zoom — in Day view it is five
+      // separate dates you have to walk through one at a time.
+      blocksOnDate(iso).forEach((b) => {
+        html += `<div class="dash-cal-pill dash-cal-pill-block" title="${escapeHtml(blockPhrase(b))}">` +
+          `⛔ ${escapeHtml(b.label || (b.allDay ? "Off" : blockPhrase(b).split(" · ").pop()))}</div>`;
+      });
       // Missed-session marks (any athlete): green close call / dark charged
       clients.forEach((c) => {
         (c.sessionBank?.missedSessions || []).forEach((m) => {
@@ -19203,6 +19293,15 @@
     weekly: {},      // { "1": [{ start:"06:00", end:"11:00" }] }, 0 = Sunday
     blackouts: [],   // ["2026-08-03"] whole days off
     extra: [],       // [{ date:"2026-08-09", start:"08:00", end:"10:00" }] one-offs
+    // Time the coach has closed. `extra` opens hours; this shuts them.
+    // [{ id, date, endDate, allDay, start, end, label }] — date..endDate is
+    // inclusive, and allDay ignores start/end. Every all-day block is ALSO
+    // written into `blackouts`, because a cached PWA is running the build
+    // before this one and that build honours blackouts and has never heard of
+    // blocks. A timed block has no blackouts equivalent and only the current
+    // build subtracts it; blacking out the whole day for stale clients would
+    // cost far more bookings than the gap does.
+    blocks: [],
   };
   const DOW_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -19260,7 +19359,47 @@
     a.weekly = a.weekly && typeof a.weekly === "object" ? a.weekly : {};
     a.blackouts = Array.isArray(a.blackouts) ? a.blackouts : [];
     a.extra = Array.isArray(a.extra) ? a.extra : [];
+    a.blocks = (Array.isArray(a.blocks) ? a.blocks : [])
+      .filter((b) => b && /^\d{4}-\d{2}-\d{2}$/.test(b.date))
+      .map((b) => ({
+        id: b.id || uid(),
+        date: b.date,
+        // A block that never learned to span days is a one-day block.
+        endDate: /^\d{4}-\d{2}-\d{2}$/.test(b.endDate) && b.endDate > b.date ? b.endDate : b.date,
+        // Half-filled times would silently subtract nothing, so anything that
+        // doesn't parse as a real window closes the whole day instead — the
+        // safer reading of "I am not available".
+        allDay: !!b.allDay || !parseHM(b.start) || !parseHM(b.end) || !(b.end > b.start),
+        start: b.start || "",
+        end: b.end || "",
+        label: String(b.label || "").slice(0, 60),
+      }));
+    // Legacy whole-day "Days off" are all-day blocks that predate the shape.
+    // They are ADOPTED rather than kept alongside, so the sheet, the calendar
+    // and the availability editor all edit one list — and so removing one
+    // actually removes it. The id is derived from the date, which makes the
+    // adoption stable across reloads and idempotent on a cloud refresh that
+    // hands back the old array.
+    const covered = new Set();
+    a.blocks.forEach((b) => { if (b.allDay) blockDates(b).forEach((d) => covered.add(d)); });
+    a.blackouts.forEach((d) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || covered.has(d)) return;
+      covered.add(d);
+      a.blocks.push({ id: `bo_${d}`, date: d, endDate: d, allDay: true, start: "", end: "", label: "" });
+    });
     return a;
+  }
+  // Every date a block covers, inclusive. Capped so a typo in the end date
+  // can't spin the slot generator.
+  function blockDates(b) {
+    const out = [];
+    const d = new Date(b.date + "T12:00:00");
+    const end = new Date((b.endDate || b.date) + "T12:00:00");
+    for (let i = 0; i < 400 && +d <= +end; i++) {
+      out.push(dateISO(d));
+      d.setDate(d.getDate() + 1);
+    }
+    return out;
   }
   // True once the coach has written any window at all — nothing is bookable
   // before that, and the athlete gets told so rather than shown an empty list.
@@ -19294,7 +19433,10 @@
     const lenMs = a.sessionMins * 60000;
     const stepMs = (a.sessionMins + a.bufferMins) * 60000;
     const earliest = fromMs + a.leadHours * 3600000;
+    // An all-day block shuts its dates the same way a blackout does, so the two
+    // ways of saying "I'm off that day" stay one code path from here down.
     const blackouts = new Set(a.blackouts);
+    a.blocks.forEach((b) => { if (b.allDay) blockDates(b).forEach((d) => blackouts.add(d)); });
     const seen = new Set();
     const out = [];
     for (let i = 0; i < days; i++) {
@@ -19321,9 +19463,27 @@
         }
       });
     }
+    // Timed blocks join the busy list rather than getting a filter of their
+    // own: a closed hour and a booked hour are the same fact to a slot, and
+    // folding them here is what makes every caller — the coach's quick-picks,
+    // the athlete's grid, the Node harness — honour them without changing.
+    // Read in the coach's zone, like the windows they are subtracted from.
+    const timed = [];
+    a.blocks.forEach((b) => {
+      if (b.allDay) return;
+      const s = parseHM(b.start), e = parseHM(b.end);
+      if (!s || !e) return;
+      blockDates(b).forEach((dISO) => {
+        const [y, m, d] = dISO.split("-").map(Number);
+        const bs = zonedTimeToUtc(y, m, d, s.hh, s.mm, tz);
+        const be = zonedTimeToUtc(y, m, d, e.hh, e.mm, tz);
+        if (be > bs) timed.push({ s: bs, e: be });
+      });
+    });
     const busyList = (busy || [])
       .map((b) => ({ s: +new Date(b.start), e: +new Date(b.end) }))
-      .filter((b) => isFinite(b.s) && isFinite(b.e) && b.e > b.s);
+      .filter((b) => isFinite(b.s) && isFinite(b.e) && b.e > b.s)
+      .concat(timed);
     return out
       .filter((o) => !busyList.some((b) => o.startMs < b.e && b.s < o.endMs))
       .sort((x, z) => x.startMs - z.startMs);
@@ -19802,10 +19962,23 @@
     return state.trainerData.availability;
   }
   async function saveCoachAvailability(av) {
-    state.trainerData.availability = av;
+    const a = normalizeAvailability(av);
+    // `blackouts` is a MIRROR now, not a second list: every date an all-day
+    // block covers, rebuilt from the blocks on every save so the two can never
+    // disagree. It is written purely for clients running the previous build —
+    // they honour blackouts and have never heard of blocks, so without this an
+    // athlete on a cached PWA would be offered slots on a day the coach closed.
+    // Callers that REMOVE a block must hand us `blackouts: []`, or
+    // normalizeAvailability adopts the stale date straight back into a block.
+    const off = new Set();
+    a.blocks.forEach((b) => { if (b.allDay) blockDates(b).forEach((d) => off.add(d)); });
+    a.blackouts = [...off].sort();
+    state.trainerData.availability = a;
     saveTrainer();
     const coachId = state.trainerData.coachId;
-    if (window.Cloud?.enabled && coachId) await window.Cloud.updateCoachAvailability(coachId, av);
+    // `a`, not `av` — the normalized copy is the one carrying the rebuilt
+    // blackouts mirror, and the cloud row is what athletes read.
+    if (window.Cloud?.enabled && coachId) await window.Cloud.updateCoachAvailability(coachId, a);
     renderCoachSchedule();
   }
 
@@ -20735,18 +20908,33 @@
     const busy = _coachBookings
       .filter((b) => b.status === "booked")
       .map((b) => ({ start: b.start_at, end: b.end_at }));
-    // blackouts cleared too: a day off is a day athletes can't book, not one
-    // the coach is forbidden from putting a session on.
+    // blackouts cleared: a day off is a day athletes can't book, not one the
+    // coach is forbidden from putting a session on.
+    //
+    // Blocks are NOT cleared, and the difference is deliberate. A blackout is a
+    // rule aimed at the roster; a block is the coach's own statement about
+    // their own day, so a sheet that still offered the hour they just closed
+    // would be arguing with the calendar beside it. "Other time" overrides it
+    // in one tap, the same way it does for a day with no published hours.
     return generateSlots({ ...a, sessionMins: mins, leadHours: 0, blackouts: [] }, dayStart, 2, busy)
       .filter((s) => zonedDateISO(s.startMs, tz) === iso && s.startMs > Date.now() - 60000);
   }
 
-  function openBookAthleteSheet(iso) {
+  // The sheet behind ＋ Book. Two things the coach can do with an hour — give it
+  // to an athlete, or close it — because they are the same decision about the
+  // same square of the calendar and used to live three screens apart: booking
+  // here, days off buried in Profile → Scheduling → Your availability.
+  function openBookAthleteSheet(iso, mode) {
     const clients = state.trainerData.clients || [];
-    if (!clients.length) { toast("Add an athlete first, then you can book them."); return; }
+    // Only the athlete half needs a roster. Closing time off is something a
+    // coach with no athletes yet may well want to do first.
+    if (!clients.length && mode !== "block") {
+      toast("Add an athlete first, then you can book them."); return;
+    }
     const a = normalizeAvailability(coachAvailability());
     const tz = a.tz || localTz();
     const draft = {
+      mode: mode === "block" || !clients.length ? "block" : "athlete",
       iso,
       athleteId: clients.length === 1 ? clients[0].id : "",
       time: "",
@@ -20757,8 +20945,32 @@
       // edited rather than a side effect of the date.
       dows: [dowOfISO(iso)],
       custom: false,     // typing a time instead of picking a published one
+      // ...and whether that was the coach's choice or just a day with no hours
+      // going spare. Only the coach's choice survives moving to another day.
+      customByUser: false,
       q: "",             // athlete search
+      // The note is one line the coach almost never wants, so it costs a tap
+      // rather than a permanent row.
+      note: "",
+      noteOpen: false,
+      // Block half. Defaults to a timed window rather than a whole day: an
+      // errand is the common case, and "All day" is one tap away.
+      bAllDay: false,
+      bTo: iso,
+      bStart: "",
+      bEnd: "",
+      bLabel: "",
     };
+    // Seeded from the day's shape so the coach edits a sensible window instead
+    // of filling two empty time fields: the first free hour, or mid-morning.
+    const seedBlockTimes = () => {
+      const s = coachDaySlots(draft.iso, 60)[0];
+      const hm = s ? zonedHM(s.startMs, tz) : "09:00";
+      draft.bStart = hm;
+      const p = parseHM(hm);
+      draft.bEnd = `${String(Math.min(23, p.hh + 1)).padStart(2, "0")}:${String(p.mm).padStart(2, "0")}`;
+    };
+    seedBlockTimes();
     // In weekly mode the quick-pick times come from the first day the pattern
     // actually lands on, not the day that happened to be tapped.
     const anchorISO = () => {
@@ -20782,26 +20994,25 @@
       }
     }
 
-    const summaryText = () => {
-      const c = clients.find((x) => x.id === draft.athleteId);
-      const hm = parseHM(draft.time);
-      // Nothing to read back until there's an athlete. The box hides itself
-      // rather than nagging: the empty roster above it already says what's
-      // missing, and "Book it" says so again if it's tapped anyway.
-      if (!c || !hm) return "";
-      if (!draft.weeks) {
-        const one = weeklyOccurrences(draft.iso, hm.hh, hm.mm, tz, 1);
-        return `${c.name} · ${fmtSlotDay(draft.iso)} at ${fmtSlotTime(one[0], tz)} · ${draft.mins} min`;
+    // The read-back used to be a bordered box above the button, restating the
+    // controls it sat under. It lives ON the button now: the one thing the
+    // controls genuinely can't show is how many sessions a repeat creates —
+    // that is a horizon, not weeks × days — and this is where it matters.
+    const actionLabel = () => {
+      if (draft.mode === "block") {
+        const days = blockDates({ date: draft.iso, endDate: draft.bTo }).length;
+        return days > 1 ? `Close ${days} days` : "Close it off";
       }
-      if (!draft.dows.length) return "";
-      const starts = patternOccurrences(draft.iso, draft.dows, hm.hh, hm.mm, tz, draft.weeks);
-      const last = fmtSlotDay(zonedDateISO(starts[starts.length - 1], tz));
-      return `${c.name} · ${dowsPhrase(draft.dows)} at ${fmtSlotTime(starts[0], tz)} · ` +
-        `${starts.length} sessions, through ${last}`;
+      const hm = parseHM(draft.time);
+      if (!draft.athleteId || !hm) return "Book";
+      if (!draft.weeks) return `Book ${fmtSlotTime(weeklyOccurrences(draft.iso, hm.hh, hm.mm, tz, 1)[0], tz)}`;
+      if (!draft.dows.length) return "Book";
+      const n = patternOccurrences(draft.iso, draft.dows, hm.hh, hm.mm, tz, draft.weeks).length;
+      return `Book ${n} session${n === 1 ? "" : "s"}`;
     };
-    const paintSummary = () => {
-      const el = $("#cbk-summary");
-      if (el) el.textContent = summaryText();
+    const paintAction = () => {
+      const btn = $("#modal-foot .btn-primary");
+      if (btn) btn.textContent = actionLabel();
     };
 
     // One scrolling roster rather than a wall of chips: a coach with thirty
@@ -20820,6 +21031,25 @@
         `</button>`;
       }).join("");
     };
+    // Once someone is picked the roster has said everything it has to say, so it
+    // folds to that one name and hands ~11rem back to the controls below — the
+    // difference between reaching the button on a phone and scrolling for it.
+    const athleteHtml = () => {
+      const c = clients.find((x) => x.id === draft.athleteId);
+      if (c && !draft.pickOpen) {
+        const sum = sessionBankSummary(c);
+        return `<button type="button" class="cbk-picked" id="cbk-repick">` +
+          `<span class="cbk-face">${athleteFaceHtml(c)}</span>` +
+          `<span class="cbk-ath-name">${escapeHtml(c.name)}</span>` +
+          `<span class="cbk-bal${sum.remaining <= 0 ? " low" : ""}" title="Sessions left">${sum.remaining}</span>` +
+          `<span class="cbk-picked-x">Change</span>` +
+        `</button>`;
+      }
+      return (clients.length > 5
+        ? `<input type="search" id="cbk-search" class="cbk-search" placeholder="Search athletes" value="${escapeHtml(draft.q)}" />`
+        : "") +
+        `<div class="cbk-ath-list" id="cbk-ath-list">${athleteRowsHtml()}</div>`;
+    };
     // Repaints only the roster, never the sheet: typing in the search box must
     // not cost the coach the keyboard, and picking someone must not scroll the
     // list back to the top.
@@ -20830,10 +21060,23 @@
       host.scrollTop = keepScroll;
       host.querySelectorAll("[data-ath]").forEach((b) => b.addEventListener("click", () => {
         draft.athleteId = b.dataset.ath;
-        paintAthletes();
-        paintSummary();
+        draft.pickOpen = false;
+        draw();
       }));
-      paintSummary();
+      paintAction();
+    };
+    // Blocks already sitting on the dates being edited. The only informative
+    // thing the sheet keeps, because it is state rather than instruction: it is
+    // how the coach sees what they closed last time, and how they undo it.
+    const existingBlocksHtml = () => {
+      const span = new Set(blockDates({ date: draft.iso, endDate: draft.bTo }));
+      const hits = normalizeAvailability(coachAvailability()).blocks
+        .filter((b) => blockDates(b).some((d) => span.has(d)))
+        .sort((x, y) => x.date.localeCompare(y.date) || String(x.start).localeCompare(String(y.start)));
+      if (!hits.length) return "";
+      return `<div class="cbk-blocks">${hits.map((b) =>
+        `<span class="cbk-block-chip">${escapeHtml(blockPhrase(b))}` +
+          `<button type="button" data-unblk="${escapeHtml(b.id)}" aria-label="Remove">×</button></span>`).join("")}</div>`;
     };
 
     const draw = () => {
@@ -20848,102 +21091,120 @@
       if (!matches && slots.length && !draft.custom) draft.custom = true;
       const picked = matches && !draft.custom;
 
-      body.innerHTML =
-        `<div class="cbk-sheet">` +
-          `<div class="cbk-sec">` +
-            `<div class="cbk-lab">Who</div>` +
-            (clients.length > 5
-              ? `<input type="search" id="cbk-search" class="cbk-search" placeholder="Search athletes" value="${escapeHtml(draft.q)}" />`
-              : "") +
-            `<div class="cbk-ath-list" id="cbk-ath-list">${athleteRowsHtml()}</div>` +
-          `</div>` +
+      const block = draft.mode === "block";
+      // The two things a coach does with an hour, side by side. Hidden when
+      // there is nobody to book — then the sheet is only ever about blocking.
+      const modes = !clients.length ? "" :
+        `<div class="cbk-seg cbk-modes">` +
+          `<button type="button" class="cbk-seg-btn${block ? "" : " on"}" data-mode="athlete">Athlete</button>` +
+          `<button type="button" class="cbk-seg-btn${block ? " on" : ""}" data-mode="block">Block off</button>` +
+        `</div>`;
 
-          // How often comes before when, because it decides what "when" even
-          // means: one date, or a set of weekdays.
-          `<div class="cbk-sec">` +
-            `<div class="cbk-lab">How often</div>` +
+      body.innerHTML = block
+        ? `<div class="cbk-sheet">` +
+            modes +
             `<div class="cbk-seg">` +
-              `<button type="button" class="cbk-seg-btn${draft.weeks ? "" : " on"}" data-weeks="0">Just once</button>` +
-              `<button type="button" class="cbk-seg-btn${draft.weeks ? " on" : ""}" data-weeks="12">Every week</button>` +
+              `<button type="button" class="cbk-seg-btn${draft.bAllDay ? "" : " on"}" data-allday="0">Part of the day</button>` +
+              `<button type="button" class="cbk-seg-btn${draft.bAllDay ? " on" : ""}" data-allday="1">All day</button>` +
             `</div>` +
-          `</div>` +
+            // From/to on one row. A single day is the two dates agreeing, so a
+            // holiday and an errand are the same control rather than two.
+            `<div class="cbk-row">` +
+              `<input type="date" id="cbk-date" class="cbk-date" value="${escapeHtml(draft.iso)}" aria-label="From" />` +
+              `<span class="cbk-arrow">→</span>` +
+              `<input type="date" id="cbk-to" class="cbk-date" value="${escapeHtml(draft.bTo)}" min="${escapeHtml(draft.iso)}" aria-label="To" />` +
+            `</div>` +
+            (draft.bAllDay ? "" :
+              `<div class="cbk-row">` +
+                `<input type="time" id="cbk-bstart" value="${escapeHtml(draft.bStart)}" aria-label="From" />` +
+                `<span class="cbk-arrow">→</span>` +
+                `<input type="time" id="cbk-bend" value="${escapeHtml(draft.bEnd)}" aria-label="To" />` +
+              `</div>`) +
+            `<input type="text" id="cbk-label" class="cbk-note" maxlength="60" placeholder="Reason (optional)" value="${escapeHtml(draft.bLabel)}" />` +
+            existingBlocksHtml() +
+          `</div>`
 
-          (draft.weeks
+        : `<div class="cbk-sheet">` +
+            modes +
+            athleteHtml() +
+
+            // How often decides what "when" even means — one date, or a set of
+            // weekdays — so it comes before the date it governs. The weeks
+            // dropdown rides the same row instead of owning a section of its own.
+            `<div class="cbk-row">` +
+              `<div class="cbk-seg cbk-grow">` +
+                `<button type="button" class="cbk-seg-btn${draft.weeks ? "" : " on"}" data-weeks="0">Once</button>` +
+                `<button type="button" class="cbk-seg-btn${draft.weeks ? " on" : ""}" data-weeks="12">Weekly</button>` +
+              `</div>` +
+              (draft.weeks
+                ? `<select id="cbk-weeks" class="cbk-mini" aria-label="For how long">${REPEAT_WEEKS.map((n) =>
+                    `<option value="${n}"${n === draft.weeks ? " selected" : ""}>${n} wks</option>`).join("")}</select>`
+                : "") +
+            `</div>` +
+
             // A repeat is authored as the weekdays it lands on. Several at once:
             // an athlete who trains Tuesday and Thursday is one standing
             // appointment, not two that have to be managed separately.
-            ? `<div class="cbk-sec">` +
-                `<div class="cbk-lab">Which days</div>` +
-                `<div class="cbk-dows">${DOW_NAMES.map((name, i) =>
+            (draft.weeks
+              ? `<div class="cbk-dows">${DOW_NAMES.map((name, i) =>
                   `<button type="button" class="cbk-dow${draft.dows.includes(i) ? " on" : ""}" data-dow="${i}" aria-pressed="${draft.dows.includes(i)}">` +
                     `<span class="cbk-dow-l">${escapeHtml(name[0])}</span>` +
                     `<span class="cbk-dow-s">${escapeHtml(name)}</span>` +
-                  `</button>`).join("")}</div>` +
-                (draft.dows.length ? "" : `<p class="cbk-hint">Pick at least one day.</p>`) +
-              `</div>`
-            : `<div class="cbk-sec">` +
-                `<div class="cbk-lab">Day</div>` +
-                // Editable even when the sheet was opened by tapping a day: it is
-                // the only way in from the Schedule card, and it saves a close-and-
-                // retap after tapping the wrong square.
-                `<input type="date" id="cbk-date" class="cbk-date" value="${escapeHtml(draft.iso)}" />` +
-              `</div>`) +
+                  `</button>`).join("")}</div>`
+              : "") +
 
-          `<div class="cbk-sec">` +
-            `<div class="cbk-lab">Time <span class="cbk-lab-sub">${escapeHtml(draft.weeks ? dowsPhrase(draft.dows) || "each week" : fmtSlotDay(draft.iso))}</span></div>` +
+            // Date and length share a row: two small questions that used to be
+            // two labelled sections and six 44px chips between them. The date is
+            // editable even when the sheet was opened by tapping a day — it
+            // saves a close-and-retap after tapping the wrong square, and in
+            // weekly mode it is where the pattern starts.
+            `<div class="cbk-row">` +
+              `<input type="date" id="cbk-date" class="cbk-date cbk-grow" value="${escapeHtml(draft.iso)}" aria-label="${draft.weeks ? "Starting" : "Day"}" />` +
+              `<select id="cbk-mins" class="cbk-mini" aria-label="Length">${SESSION_LENGTHS.map((n) =>
+                `<option value="${n}"${n === draft.mins ? " selected" : ""}>${n}m</option>`).join("")}</select>` +
+            `</div>` +
+
+            // Quick-pick times wrap rather than scroll: a time you have to swipe
+            // to find is a time you don't know is there.
             (slots.length
               ? `<div class="cbk-chips">${slots.map((s) => {
                   const hm = zonedHM(s.startMs, tz);
-                  return `<button type="button" class="cbk-chip${picked && hm === draft.time ? " on" : ""}" data-time="${hm}">${escapeHtml(fmtSlotTime(s.startMs, tz))}</button>`;
+                  return `<button type="button" class="cbk-chip cbk-chip-sm${picked && hm === draft.time ? " on" : ""}" data-time="${hm}">${escapeHtml(fmtSlotTime(s.startMs, tz))}</button>`;
                 }).join("")}` +
-                `<button type="button" class="cbk-chip cbk-chip-other${draft.custom ? " on" : ""}" data-other="1">Other time</button></div>`
-              : `<p class="cbk-hint">No published hours going spare${draft.weeks ? "" : " that day"}. Set any time you like.</p>`) +
+                `<button type="button" class="cbk-chip cbk-chip-sm cbk-chip-other${draft.custom ? " on" : ""}" data-other="1">Other</button></div>`
+              : "") +
             (draft.custom || !slots.length
               ? `<div class="cbk-time-row"><input type="time" id="cbk-time" value="${escapeHtml(draft.time)}" /></div>`
               : "") +
-          `</div>` +
 
-          `<div class="cbk-sec">` +
-            `<div class="cbk-lab">Length</div>` +
-            `<div class="cbk-chips">${SESSION_LENGTHS.map((n) =>
-              `<button type="button" class="cbk-chip cbk-chip-sm${n === draft.mins ? " on" : ""}" data-mins="${n}">${n}m</button>`).join("")}</div>` +
-          `</div>` +
+            (draft.noteOpen
+              ? `<input type="text" id="cbk-note" class="cbk-note" maxlength="120" placeholder="Note for this session" value="${escapeHtml(draft.note)}" />`
+              : `<button type="button" class="cbk-addnote" id="cbk-addnote">+ Note</button>`) +
+          `</div>`;
 
-          (draft.weeks
-            ? `<div class="cbk-sec">` +
-                `<div class="cbk-lab">How long</div>` +
-                `<div class="cbk-weeks"><label>for <select id="cbk-weeks">${REPEAT_WEEKS.map((n) =>
-                  `<option value="${n}"${n === draft.weeks ? " selected" : ""}>${n} weeks</option>`).join("")}</select></label>` +
-                 `<span class="cbk-hint">Extend it any time from the Schedule card.</span></div>` +
-                // The pattern starts from the day the sheet was opened on. Worth
-                // showing, and worth being able to change, but it is no longer
-                // the thing that decides which weekday the sessions land on.
-                `<div class="cbk-from"><label>starting <input type="date" id="cbk-date" class="cbk-date" value="${escapeHtml(draft.iso)}" /></label></div>` +
-              `</div>`
-            : "") +
+      $("#modal-title").textContent = block ? "Block off time" : "＋ Book a session";
+      paintAction();
 
-          `<input type="text" id="cbk-note" class="cbk-note" maxlength="120" placeholder="Note for this session (optional)" />` +
-          `<div class="cbk-summary" id="cbk-summary">${escapeHtml(summaryText())}</div>` +
-        `</div>`;
-
+      body.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => {
+        draft.mode = b.dataset.mode;
+        draw();
+      }));
       body.querySelectorAll("[data-ath]").forEach((b) => b.addEventListener("click", () => {
         draft.athleteId = b.dataset.ath;
-        paintAthletes();
-        paintSummary();
+        draft.pickOpen = false;
+        draw();
       }));
+      $("#cbk-repick")?.addEventListener("click", () => { draft.pickOpen = true; draw(); });
       $("#cbk-search")?.addEventListener("input", (e) => {
         draft.q = e.target.value;
         paintAthletes();
       });
       body.querySelectorAll("[data-time]").forEach((b) => b.addEventListener("click", () => {
-        draft.time = b.dataset.time; draft.custom = false; draw();
+        draft.time = b.dataset.time; draft.custom = false; draft.customByUser = false; draw();
       }));
       body.querySelector("[data-other]")?.addEventListener("click", () => {
-        draft.custom = true; draw();
+        draft.custom = true; draft.customByUser = true; draw();
       });
-      body.querySelectorAll("[data-mins]").forEach((b) => b.addEventListener("click", () => {
-        draft.mins = +b.dataset.mins; draw();
-      }));
       body.querySelectorAll("[data-weeks]").forEach((b) => b.addEventListener("click", () => {
         draft.weeks = +b.dataset.weeks;
         // Switching to a repeat with nothing ticked would show an unusable
@@ -20956,21 +21217,49 @@
         draft.dows = draft.dows.includes(d) ? draft.dows.filter((x) => x !== d) : draft.dows.concat(d).sort((x, y) => x - y);
         draw();
       }));
-      // Typed values write straight into the draft and repaint only the summary
-      // line — redrawing the sheet would take the keyboard away mid-entry.
-      $("#cbk-time")?.addEventListener("input", (e) => {
-        if (parseHM(e.target.value)) { draft.time = e.target.value; paintSummary(); }
+      body.querySelectorAll("[data-allday]").forEach((b) => b.addEventListener("click", () => {
+        draft.bAllDay = b.dataset.allday === "1";
+        draw();
+      }));
+      body.querySelectorAll("[data-unblk]").forEach((b) => b.addEventListener("click", () => {
+        removeCoachBlock(b.dataset.unblk).then(draw);
+      }));
+      $("#cbk-addnote")?.addEventListener("click", () => {
+        draft.noteOpen = true; draw();
+        $("#cbk-note")?.focus();
       });
-      $("#cbk-weeks")?.addEventListener("change", (e) => { draft.weeks = +e.target.value; paintSummary(); });
+      // Typed values write straight into the draft and repaint only the button —
+      // redrawing the sheet would take the keyboard away mid-entry.
+      $("#cbk-time")?.addEventListener("input", (e) => {
+        if (parseHM(e.target.value)) { draft.time = e.target.value; paintAction(); }
+      });
+      $("#cbk-note")?.addEventListener("input", (e) => { draft.note = e.target.value; });
+      $("#cbk-label")?.addEventListener("input", (e) => { draft.bLabel = e.target.value; });
+      $("#cbk-bstart")?.addEventListener("input", (e) => { draft.bStart = e.target.value; });
+      $("#cbk-bend")?.addEventListener("input", (e) => { draft.bEnd = e.target.value; });
+      $("#cbk-weeks")?.addEventListener("change", (e) => { draft.weeks = +e.target.value; paintAction(); });
+      $("#cbk-mins")?.addEventListener("change", (e) => { draft.mins = +e.target.value; draw(); });
+      $("#cbk-to")?.addEventListener("change", (e) => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) return;
+        draft.bTo = e.target.value < draft.iso ? draft.iso : e.target.value;
+        draw();
+      });
       // A new day means new quick-pick times, so this one does redraw. The
       // native date picker closes on choose, so nothing loses focus.
       $("#cbk-date")?.addEventListener("change", (e) => {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) return;
         draft.iso = e.target.value;
+        // A "to" date left behind the new start would describe a span that runs
+        // backwards, so it follows rather than being silently clamped later.
+        if (draft.bTo < draft.iso) draft.bTo = draft.iso;
         // Tapping a date in "just once" mode is also picking a weekday, so the
         // repeat picker follows it rather than keeping a stale tick.
         if (!draft.weeks) draft.dows = [dowOfISO(draft.iso)];
         const next = coachDaySlots(anchorISO(), draft.mins)[0];
+        // Moving off a day with no spare hours onto one that has them comes
+        // back to the quick-picks: the typed time was the sheet's fallback, not
+        // a decision, and leaving it set means a day of chips with none chosen.
+        if (next && draft.custom && !draft.customByUser) draft.custom = false;
         if (next && !draft.custom) draft.time = zonedHM(next.startMs, tz);
         draw();
       });
@@ -20981,13 +21270,98 @@
       body: "",
       actions: [
         { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
-        { label: "Book it", className: "btn btn-primary", onClick: () => {
-          draft.note = $("#cbk-note")?.value || "";
-          saveCoachBooking(draft);
+        { label: "Book", className: "btn btn-primary", onClick: () => {
+          if (draft.mode === "block") saveCoachBlock(draft);
+          else saveCoachBooking(draft);
         }},
       ],
     });
     draw();
+  }
+
+  // "Thursday, Aug 13 · 2:00 – 4:00 PM", or "Aug 13–17 · all day". Used on the
+  // chips in the sheet, on the calendar, and in the availability editor, so the
+  // same block reads the same everywhere.
+  function blockPhrase(b) {
+    const tz = scheduleTz();
+    const span = b.endDate && b.endDate > b.date
+      ? `${fmtSlotDay(b.date)} – ${fmtSlotDay(b.endDate)}`
+      : fmtSlotDay(b.date);
+    if (b.allDay) return `${span} · all day`;
+    const [y, m, d] = b.date.split("-").map(Number);
+    const s = parseHM(b.start), e = parseHM(b.end);
+    if (!s || !e) return `${span} · all day`;
+    const from = fmtSlotTime(zonedTimeToUtc(y, m, d, s.hh, s.mm, tz), tz);
+    const to = fmtSlotTime(zonedTimeToUtc(y, m, d, e.hh, e.mm, tz), tz);
+    return `${span} · ${from} – ${to}`;
+  }
+
+  // Blocks live on the coach's availability rather than in a table of their own:
+  // no migration, no Edge Function deploy, and `availability_for_athlete()`
+  // already forwards the whole jsonb, so an athlete's slot grid honours a new
+  // block as soon as they next pull.
+  async function saveCoachBlock(draft) {
+    const a = normalizeAvailability(coachAvailability());
+    const to = draft.bTo && draft.bTo > draft.iso ? draft.bTo : draft.iso;
+    if (!draft.bAllDay) {
+      const s = parseHM(draft.bStart), e = parseHM(draft.bEnd);
+      if (!s || !e) { toast("Set a start and an end time."); return; }
+      if (draft.bEnd <= draft.bStart) { toast("The end time has to be after the start."); return; }
+    }
+    const block = {
+      id: uid(),
+      date: draft.iso,
+      endDate: to,
+      allDay: !!draft.bAllDay,
+      start: draft.bAllDay ? "" : draft.bStart,
+      end: draft.bAllDay ? "" : draft.bEnd,
+      label: String(draft.bLabel || "").trim().slice(0, 60),
+    };
+    const next = normalizeAvailability({ ...a, blocks: a.blocks.concat(block) });
+    closeModal();
+    await saveCoachAvailability(next);
+    // Sessions already on the books are not touched — a block is about what can
+    // still be booked, not a cancellation — so say so rather than leaving the
+    // coach to notice later that the day is both closed and full.
+    const clash = coachBookingsWithin(block).length;
+    toast(`Time closed off ✓${clash ? ` · ${clash} session${clash === 1 ? "" : "s"} already booked in it` : ""}`,
+      clash ? 5000 : 3000);
+    afterBookingChange();
+  }
+
+  async function removeCoachBlock(id) {
+    const a = normalizeAvailability(coachAvailability());
+    if (!a.blocks.some((b) => b.id === id)) return;
+    // blackouts emptied on purpose: it is a mirror of the all-day blocks, and
+    // leaving the removed date in it would have normalizeAvailability adopt it
+    // straight back as a fresh block. saveCoachAvailability rebuilds it.
+    await saveCoachAvailability({ ...a, blocks: a.blocks.filter((b) => b.id !== id), blackouts: [] });
+    toast("Block removed ✓");
+    afterBookingChange();
+  }
+
+  // Bookings that fall inside a block. Only used to warn — closing a time never
+  // cancels anything.
+  function coachBookingsWithin(b) {
+    const tz = scheduleTz() || localTz();
+    const days = new Set(blockDates(b));
+    const s = parseHM(b.start), e = parseHM(b.end);
+    return (_coachBookings || []).filter((bk) => {
+      if (bk.status !== "booked") return false;
+      const ms = +new Date(bk.start_at);
+      const dISO = zonedDateISO(ms, tz);
+      if (!days.has(dISO)) return false;
+      if (b.allDay || !s || !e) return true;
+      const [y, m, d] = dISO.split("-").map(Number);
+      return ms >= zonedTimeToUtc(y, m, d, s.hh, s.mm, tz) && ms < zonedTimeToUtc(y, m, d, e.hh, e.mm, tz);
+    });
+  }
+
+  // Every block touching one date, for the calendar.
+  function blocksOnDate(iso) {
+    return normalizeAvailability(coachAvailability()).blocks
+      .filter((b) => blockDates(b).includes(iso))
+      .sort((x, y) => (x.allDay === y.allDay ? String(x.start).localeCompare(String(y.start)) : x.allDay ? -1 : 1));
   }
 
   async function saveCoachBooking(draft) {
@@ -21532,11 +21906,14 @@
         `</div>` +
         `<p class="muted av-policy-note">Inside the cancel window an athlete can't drop or move a ` +
           `session themselves — they send you a request to approve or turn down.</p>` +
+        // Time off is one list now, whether it was closed from here or from the
+        // ＋ Book sheet, and it holds part-days as well as whole ones.
         `<div class="av-block">` +
-          `<div class="av-block-head">Days off</div>` +
-          `<div class="av-block-list">${draft.blackouts.length
-            ? draft.blackouts.slice().sort().map((d) =>
-                `<span class="av-block-chip">${escapeHtml(fmtSlotDay(d))}<button type="button" data-unblock="${escapeHtml(d)}">×</button></span>`).join("")
+          `<div class="av-block-head">Time off</div>` +
+          `<div class="av-block-list">${draft.blocks.length
+            ? draft.blocks.slice().sort((x, y) => x.date.localeCompare(y.date)).map((b) =>
+                `<span class="av-block-chip">${escapeHtml(blockPhrase(b))}${b.label ? " · " + escapeHtml(b.label) : ""}` +
+                  `<button type="button" data-unblock="${escapeHtml(b.id)}" aria-label="Remove">×</button></span>`).join("")
             : `<span class="muted">None</span>`}</div>` +
           `<div class="av-block-add"><input type="date" id="av-block-date" /><button type="button" class="btn btn-ghost btn-sm" id="av-block-btn">Block this day</button></div>` +
         `</div>` +
@@ -21568,11 +21945,16 @@
       $("#av-block-btn").addEventListener("click", () => {
         const d = $("#av-block-date").value;
         if (!d) { toast("Pick a date to block"); return; }
-        if (!draft.blackouts.includes(d)) draft.blackouts.push(d);
+        if (!draft.blocks.some((b) => b.allDay && blockDates(b).includes(d))) {
+          draft.blocks.push({ id: uid(), date: d, endDate: d, allDay: true, start: "", end: "", label: "" });
+        }
         draw();
       });
       body.querySelectorAll("[data-unblock]").forEach((b) => b.addEventListener("click", () => {
-        draft.blackouts = draft.blackouts.filter((d) => d !== b.dataset.unblock);
+        draft.blocks = draft.blocks.filter((x) => x.id !== b.dataset.unblock);
+        // The mirror has to go with it, or normalizeAvailability adopts the
+        // date straight back as a block on the next read.
+        draft.blackouts = [];
         draw();
       }));
     };

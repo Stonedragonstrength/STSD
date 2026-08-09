@@ -3235,6 +3235,13 @@ input.trial-input {
   border-color: var(--primary); background: var(--primary-soft); color: var(--primary-bright);
   justify-content: center; font-weight: 800;
 }
+/* Time off. Dashed and grey against the day pills' colour, so a week away
+   reads as a gap in the month rather than as five more things on. */
+.dash-cal-pill-block {
+  border-style: dashed; border-color: var(--border);
+  background: var(--surface-3); color: var(--muted);
+  justify-content: center; font-weight: 700;
+}
 .dash-cal-initials {
   font-size: 0.55rem; font-weight: 900; letter-spacing: 0.01em;
   background: var(--day-color, var(--muted));
@@ -13180,7 +13187,11 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
    thumb, the sheet is one column at any width, and nothing needs a keyboard
    except the optional note — a coach booking someone in is usually standing on
    the gym floor with a phone in one hand. */
-.cbk-sheet { display: flex; flex-direction: column; gap: 1.05rem; }
+/* The sheet is a stack of controls with no headings between them. It used to
+   carry six all-caps labels, three explanatory paragraphs and a read-back box,
+   which on a 390px phone put the button that commits the booking a screen and
+   a half below the fold. What each control does is legible from the control. */
+.cbk-sheet { display: flex; flex-direction: column; gap: 0.55rem; }
 .cbk-sec { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
 .cbk-lab {
   font-size: 0.7rem; font-weight: 800; text-transform: uppercase;
@@ -13189,10 +13200,26 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 }
 .cbk-lab-sub { text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--muted); }
 .cbk-hint { font-size: 0.78rem; color: var(--muted); margin: 0; }
+/* Two small questions per row instead of two labelled sections. The bare
+   input/select rule at the top of this file sets width:100% and a top margin
+   on every field in the app, so each one has to be unset by name here or the
+   row wraps to one control per line. */
+.cbk-row { display: flex; align-items: center; gap: 0.45rem; min-width: 0; }
+.cbk-row > input, .cbk-row > select { width: auto; margin-top: 0; min-width: 0; }
+.cbk-row > input[type="date"], .cbk-row > input[type="time"] { flex: 1 1 0; }
+.cbk-grow { flex: 1 1 auto; min-width: 0; }
+.cbk-mini {
+  flex: 0 0 auto;
+  width: auto; margin-top: 0;
+  padding: 0.5em 0.55em;
+  font-size: 0.85rem; font-weight: 700;
+}
+.cbk-arrow { flex: 0 0 auto; color: var(--muted); font-size: 0.85rem; }
+.cbk-modes { margin-bottom: 0.15rem; }
 
 /* Chip rows wrap rather than scroll: a time you have to swipe to find is a
    time you don't know is there. */
-.cbk-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.cbk-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .cbk-chip {
   display: inline-flex; align-items: center; gap: 0.4em;
   min-height: 44px;
@@ -13211,7 +13238,7 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
   background: var(--primary-soft);
   color: var(--primary-bright);
 }
-.cbk-chip-sm { min-height: 40px; padding: 0.4em 0.75em; font-size: 0.8rem; }
+.cbk-chip-sm { min-height: 38px; padding: 0.35em 0.6em; font-size: 0.78rem; }
 .cbk-chip-other { font-weight: 600; color: var(--text-soft); }
 
 /* Athletes: a searchable roster that soft-caps and scrolls, the same shape as
@@ -13252,7 +13279,51 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
   border-radius: 999px; padding: 0.05em 0.45em;
 }
 .cbk-bal.low { background: rgba(239, 68, 68, 0.18); color: #fca5a5; }
-.cbk-time-row, .cbk-date { margin-top: 0.1rem; }
+.cbk-time-row { margin-top: 0.1rem; }
+.cbk-time-row input { margin-top: 0; }
+/* Once an athlete is picked the roster has said all it has to say, so it folds
+   to that one name. On a phone that is the ~11rem the button was hiding behind. */
+.cbk-picked {
+  display: flex; align-items: center; gap: 0.6em;
+  width: 100%; min-height: 46px;
+  padding: 0.45em 0.7em;
+  border: 1px solid rgba(var(--primary-rgb), 0.55);
+  border-radius: var(--radius);
+  background: var(--primary-soft);
+  color: var(--text);
+  font: inherit; font-size: 0.88rem; font-weight: 700;
+  text-align: left; cursor: pointer;
+}
+.cbk-picked-x {
+  flex: 0 0 auto;
+  font-size: 0.7rem; font-weight: 700; color: var(--text-soft);
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+/* The note is one line the coach almost never wants; it costs a tap now
+   instead of a permanent row. */
+.cbk-addnote {
+  align-self: flex-start;
+  border: 0; background: none; padding: 0.35em 0;
+  color: var(--text-soft); font: inherit; font-size: 0.82rem; font-weight: 700;
+  cursor: pointer;
+}
+.cbk-addnote:hover { color: var(--primary-bright); }
+/* Time already closed on the dates being edited. State, not instruction — it
+   is how the coach sees what they blocked last time, and how they undo it.
+   Same chip as the availability editor's Time off list, deliberately: it is
+   the same list seen from the other end. */
+.cbk-blocks { display: flex; flex-wrap: wrap; gap: 0.3em; margin-top: 0.15rem; font-size: 0.8rem; }
+.cbk-block-chip {
+  display: inline-flex; align-items: center; gap: 0.35em;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 0.15em 0.3em 0.15em 0.65em;
+  font-size: 0.75rem; font-weight: 700;
+}
+.cbk-block-chip button {
+  background: none; border: none; color: var(--muted);
+  font-family: inherit; font-size: 0.9rem; line-height: 1; cursor: pointer; padding: 0 0.2em;
+}
+.cbk-block-chip button:hover { color: var(--danger); }
 
 /* Repeats: two halves of one control, so "every week" reads as the other
    option rather than as a setting hidden somewhere else. */
@@ -13273,12 +13344,6 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
   transition: background 0.15s, color 0.15s;
 }
 .cbk-seg-btn.on { background: var(--primary-soft); color: var(--primary-bright); }
-.cbk-weeks { display: flex; flex-direction: column; gap: 0.3rem; }
-.cbk-weeks label { display: flex; align-items: center; gap: 0.6em; font-size: 0.85rem; margin: 0; }
-.cbk-weeks select { margin-top: 0; flex: 1 1 auto; }
-.cbk-from { margin-top: 0.55rem; }
-.cbk-from label { display: flex; align-items: center; gap: 0.6em; font-size: 0.85rem; margin: 0; }
-.cbk-from input { margin-top: 0; flex: 1 1 auto; min-width: 0; }
 /* Which days a repeat lands on: seven equal targets, all on one row even on the
    narrowest phone, so the whole pattern is visible while it is being built.
    The single letter is what shows at that width; the short name takes over as
@@ -13306,20 +13371,33 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
   .cbk-dow-s { display: inline; }
 }
 .cbk-note { margin-top: 0; }
-/* The whole booking in one sentence, right above the button that commits it.
-   Absent until there is a booking to describe — a permanent "pick an athlete
-   and a time" is an instruction sitting where a read-back belongs, and it was
-   wrong about the time, which is always pre-picked. */
-.cbk-summary:empty { display: none; }
-.cbk-summary {
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--primary);
-  border-radius: var(--radius);
-  background: var(--surface-2);
-  padding: 0.7em 0.9em;
-  font-size: 0.85rem; font-weight: 600; line-height: 1.45;
-  color: var(--text);
+/* The read-back that used to sit here in a bordered box is on the primary
+   button now ("Book 12 sessions"). It restated the controls directly above it,
+   and the one fact it carried that they could not show — how many sessions a
+   repeat actually creates, which is a horizon and not weeks × days — belongs
+   on the control that creates them. */
+
+/* Blocked time in the week timetable. Hatched rather than filled: it is the
+   absence of a session, and it must not compete with the athletes' own
+   colours. (The day-view row's styling lives beside .dv-row further down —
+   same specificity, so it has to come after it or .dv-row wins.) */
+.wkg-blk {
+  position: absolute; left: 0; right: 2px;
+  display: flex; align-items: flex-start; justify-content: flex-start;
+  overflow: hidden;
+  padding: 2px 4px;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  background-color: var(--surface-2);
+  background-image: repeating-linear-gradient(
+    45deg, transparent, transparent 4px,
+    rgba(var(--primary-rgb), 0.08) 4px, rgba(var(--primary-rgb), 0.08) 8px);
+  color: var(--muted);
+  font: inherit; font-size: 0.6rem; font-weight: 700;
+  text-align: left; cursor: pointer;
 }
+.wkg-blk span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wkg-blk:hover { border-color: rgba(var(--primary-rgb), 0.5); color: var(--text-soft); }
 
 /* Weekly regulars, in the Schedule card. */
 .sched-series:empty { display: none; }
@@ -13341,10 +13419,15 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 
 @media (max-width: 720px) {
   /* Shorter roster on a phone: the sheet has to keep the time and repeat
-     controls reachable without a long scroll past the athlete list. */
-  .cbk-ath-list { max-height: 11rem; }
-  .cbk-summary { font-size: 0.88rem; }
+     controls reachable without a long scroll past the athlete list. Once
+     somebody is picked the list folds away entirely (.cbk-picked). */
+  .cbk-ath-list { max-height: 10rem; }
   .cbk-series-row { flex-wrap: wrap; }
+  /* A native date input needs ~120px before it clips MM/DD/YYYY, so on the
+     narrowest phones the length select drops under it rather than squeezing
+     the date into an ellipsis. */
+  .cbk-row { flex-wrap: wrap; }
+  .cbk-row > input[type="date"] { flex: 1 1 8.5rem; }
 }
 
 /* Bulletin board, now a fold on the Messages page beside the broadcast. */
@@ -13584,6 +13667,7 @@ body.scroll-locked {
 }
 .wk-chip b { font-variant-numeric: tabular-nums; }
 .wk-chip-plan { border-style: dashed; color: var(--text-soft); }
+.wk-chip-block { border-style: dashed; border-color: var(--border); background: var(--surface-3); color: var(--muted); }
 .wk-none { color: var(--muted); font-size: 0.8rem; }
 
 /* Week as a timetable (>=1000px, set in JS by WEEK_GRID_MQ): days across, the
@@ -13762,6 +13846,21 @@ body.scroll-locked {
 /* Done recedes: the colour stays, so it is still recognisably theirs, but it
    stops competing with what has not happened yet. */
 .dv-row.is-done { opacity: 0.62; }
+/* Closed time borrows the row shape and none of an athlete's colour — it is the
+   one line on the day that is nobody. Dashed edge, grey rail, no gradient.
+   Must sit AFTER .dv-row: both are one class deep, so source order decides. */
+.dv-row.dv-blockrow {
+  border-style: dashed;
+  border-color: var(--border);
+  background: var(--surface-2);
+}
+.dv-row.dv-blockrow::before { background: var(--border); }
+.dv-row.dv-blockrow:hover {
+  border-color: rgba(var(--primary-rgb), 0.5);
+  background: var(--surface-3);
+}
+.dv-blockrow .dv-name, .dv-blockrow .dv-what { color: var(--text-soft); }
+.dv-blockrow .dv-time { background: var(--surface-3); color: var(--muted); }
 .dv-face { flex-shrink: 0; display: flex; }
 .dv-name {
   font-size: 0.9rem; font-weight: 700;
@@ -14883,7 +14982,7 @@ input.credit-cap:disabled { opacity: 0.4; }
    Each of these already carries a deliberate, meaningful border treatment
    that the Group 1/2 shorthand would clobber: a coloured 3px left rail
    (athlete/day/primary/warn accent bars — .client-instructions, .day-log-opt,
-   .cday-block, .bill-row, .lk-row, .mg-row, .cbk-summary, .cyc-concern, plus
+   .cday-block, .bill-row, .lk-row, .mg-row, .cyc-concern, plus
    Wave 1's own rail treatment on .bulletin-item/.ovmsg-card, which sets
    border-left:none and paints the rail via ::before), a single divider side
    on a header/footer strip that intentionally reads as continuous with its
@@ -14939,7 +15038,7 @@ input.credit-cap:disabled { opacity: 0.4; }
    shrank its width/height:100% child SVG by 17%), so it is dropped from this
    group too and simply keeps its own --surface. */
 .a-result, .archive-week-head, .bill-row, .bulletin-item, .bw-metrics,
-.cbk-summary, .cday-block, .cex-panel, .cex-plate-row, .client-instructions,
+.cday-block, .cex-panel, .cex-plate-row, .client-instructions,
 .coach-sheet-foot, .cyc-concern, .day-log-opt,
 .demo-pick img, .demo-thumb, .ex-demo-preview img, .ex-detail-panel,
 .ex-lib-sidebar, .ex-lib-thumb, .ex-library-drawer, .lk-row, .mg-row,
