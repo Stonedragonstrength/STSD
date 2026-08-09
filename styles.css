@@ -6762,6 +6762,7 @@ input:focus, textarea:focus, select:focus {
   margin-top: 0.35rem; font-size: 0.8rem; color: var(--text);
 }
 .mr-scenario.quiet { color: var(--text-soft); font-size: 0.74rem; }
+.mr-scenario.main .mr-total-amt { font-size: 1.15rem; }
 .mr-total-amt {
   font-weight: 900; font-size: 1.05rem;
   color: var(--primary-bright); font-variant-numeric: tabular-nums;
