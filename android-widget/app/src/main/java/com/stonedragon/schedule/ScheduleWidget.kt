@@ -512,6 +512,10 @@ class ScheduleWidget : AppWidgetProvider() {
             val panelAlpha = Theme.panelAlpha(opacity)
             v.setImageViewResource(R.id.widget_panel, Theme.bgRes(light))
             v.setInt(R.id.widget_panel, "setImageAlpha", panelAlpha)
+            // The dragon watermark rides the panel's alpha: at full opacity it
+            // sits at ~6%, and as the panel goes to glass it fades out with it
+            // — the mark belongs to the surface, not to the wallpaper.
+            v.setInt(R.id.widget_watermark, "setImageAlpha", panelAlpha * 16 / 255)
             v.setImageViewResource(
                 R.id.widget_sheen,
                 if (light) R.drawable.panel_sheen_light else R.drawable.panel_sheen_dark,

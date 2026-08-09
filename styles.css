@@ -5097,24 +5097,47 @@ input[type="time"],
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
 
-/* -------- Animated background grid (subtle HUD vibe) -------- */
+/* -------- Background: dragon scales, and the dragon -------- */
+/* Replaced the drifting HUD grid 2026-08-08: squares said nothing about the
+   brand. Two offset rows of scallop arcs read as scales, tinted from the
+   theme channels so every theme lays its own colour of scale — and static on
+   purpose, both because stone shouldn't drift and because the grid's
+   infinite animation was one more thing for a phone GPU to strobe on. */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   background-image:
-    linear-gradient(transparent calc(100% - 1px), rgba(140, 160, 190, 0.035) calc(100% - 1px)),
-    linear-gradient(90deg, transparent calc(100% - 1px), rgba(140, 160, 190, 0.035) calc(100% - 1px));
-  background-size: 56px 56px;
+    radial-gradient(circle at 50% 0%, transparent 34px, rgba(var(--primary-bright-rgb), 0.05) 34px, rgba(var(--primary-bright-rgb), 0.05) 35px, transparent 36px),
+    radial-gradient(circle at 0% 0%, transparent 34px, rgba(var(--primary-bright-rgb), 0.045) 34px, rgba(var(--primary-bright-rgb), 0.045) 35px, transparent 36px);
+  background-size: 72px 40px;
+  background-position: 0 0, 36px 20px;
   pointer-events: none;
   z-index: 0;
-  animation: gridDrift 40s linear infinite;
   mask-image: radial-gradient(ellipse at center, rgba(0,0,0,1) 30%, rgba(0,0,0,0.2) 75%, transparent 100%);
   -webkit-mask-image: radial-gradient(ellipse at center, rgba(0,0,0,1) 30%, rgba(0,0,0,0.2) 75%, transparent 100%);
 }
-@keyframes gridDrift {
-  to { background-position: 56px 56px; }
+/* The watermark. logo-512, not logo.png — the 512 is already in sw.js's
+   precache, so the dragon still shows up offline. vmin keeps it a corner
+   presence on a phone and stops it swallowing a desktop window. */
+body::after {
+  content: "";
+  position: fixed;
+  right: -4vmin;
+  bottom: -6vmin;
+  width: 64vmin;
+  height: 64vmin;
+  background: url("logo-512.png") center / contain no-repeat;
+  /* 0.05 read as a poster on a real phone-dark ground — the wordmark inside
+     the logo is bright enough to carry at almost any alpha. */
+  opacity: 0.035;
+  filter: saturate(0.35) brightness(0.85);
+  pointer-events: none;
+  z-index: 0;
 }
+/* On the one light ground the logo's DARK art does the carrying, and the same
+   alpha reads twice the weight — checked side by side, 2026-08-08. */
+:root[data-theme="white"] body::after { opacity: 0.022; filter: saturate(0.3); }
 /* Layer screens above the body::before HUD grid. NOTE: .app-header must NOT
    be in this rule — position:relative here silently overrode the header's
    position:sticky, which is why headers never pinned while scrolling. The

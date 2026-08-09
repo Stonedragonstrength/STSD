@@ -45,6 +45,23 @@
         android:src="@drawable/panel_glow"
         android:contentDescription="@null" />
 
+    <!-- The dragon, at watermark strength, in the panel's corner. Its alpha is
+         set in code AS A FRACTION OF the panel's: the mark lives on the panel,
+         so a panel turned down to glass takes its dragon with it rather than
+         leaving a logo floating on the wallpaper. Kept inside the edge - the
+         root FrameLayout does not clip, so a bleed off the corner would poke
+         past the panel's rounded corners onto the home screen. -->
+    <ImageView
+        android:id="@+id/widget_watermark"
+        android:layout_width="140dp"
+        android:layout_height="140dp"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="2dp"
+        android:layout_marginBottom="2dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/logo_watermark"
+        android:contentDescription="@null" />
+
     <!-- Above the panel, below the content: a light-to-nothing wash so the
          surface reads as lit from the top instead of as a flat slab. -->
     <ImageView
