@@ -5111,7 +5111,8 @@ body::before {
      lattice tints per theme while the SHAPE lives in one tiny SVG. Each edge
      is two curves meeting in a point: dragon scales come to a tip, and round
      scallops read as fish. Two mask layers, brick-offset by half a scale. */
-  background: rgba(var(--primary-bright-rgb), 0.033);
+  /* "Barely visible" is the brief — a texture you sense more than see. */
+  background: rgba(var(--primary-bright-rgb), 0.02);
   -webkit-mask-image:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='44'%3E%3Cpath d='M0 4 C7 6 15 12 18 20 C21 12 29 6 36 4' fill='none' stroke='%23fff' stroke-width='1.2'/%3E%3C/svg%3E"),
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='44'%3E%3Cpath d='M0 4 C7 6 15 12 18 20 C21 12 29 6 36 4' fill='none' stroke='%23fff' stroke-width='1.2'/%3E%3C/svg%3E");
