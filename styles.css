@@ -14519,142 +14519,13 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
 .bw-cyc-swatch.period { background: rgba(224, 86, 107, 0.45); }
 .bw-cyc-swatch.late   { background: rgba(155, 110, 232, 0.4); }
 
-/* ============ Coach: the athlete snapshot ============
-   The landing panel when a coach opens an athlete. Same racing-stat language as
-   the athlete's own overview rows (skew, left accent, glow on the number), but
-   laid out as a grid: these are read side by side, not scanned down a column.
-   Every tile with a `go` is a door into the tab that owns it. */
-.snap-card { margin-bottom: 1rem; }
-/* auto-FILL, not auto-fit: a fresh athlete has two tiles, and auto-fit would
-   stretch those two across the whole width of a desktop card. Empty tracks keep
-   every tile the same size whether there are two of them or seven. */
-/* 220px tracks fitted only five tiles across a desktop card, so the last two
-   wrapped to a second row — and those two carry previews, so the overflow row
-   was the tall one. 158px fits the whole snapshot on one line at coach widths
-   and the tiles stay legible; the previews are what shrink, not the numbers. */
-.snap-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(158px, 100%), 1fr));
-  gap: 0.35rem;
-}
-.snap-tile {
-  transform: skewX(-15deg);
-  border-radius: 5px;
-  border: 1px solid rgba(var(--primary-bright-rgb), 0.28);
-  border-left: 3px solid var(--primary-bright);
-  background:
-    linear-gradient(100deg, rgba(var(--primary-rgb), 0.3) 0%, rgba(var(--primary-rgb), 0.07) 50%, rgba(var(--primary-rgb), 0) 85%),
-    linear-gradient(180deg, var(--surface-2), var(--surface));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  overflow: hidden;
-  margin: 0 3px;
-  padding: 0;
-  min-width: 0;
-  text-align: left;
-  font: inherit;
-  color: inherit;
-}
-/* Un-skew the contents, exactly as .ov-stat-row .sr-in does. */
-.snap-in {
-  transform: skewX(15deg);
-  display: flex; flex-direction: column; gap: 0.05em;
-  padding: 0.35em 0.75em 0.4em;
-  min-width: 0;
-}
-.snap-tile .sr-lbl { font-size: 0.58rem; letter-spacing: 0.06em; }
-.snap-val { display: flex; align-items: baseline; gap: 0.1em; min-width: 0; }
-/* The value can be a day name ("Upper Body A"), not just a number, so it has to
-   be allowed to shrink and clip rather than blow the grid track open. */
-.snap-tile .sr-val {
-  font-size: 0.98rem;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
-}
-.snap-sub {
-  font-size: 0.62rem; color: var(--muted); line-height: 1.3;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
-}
-.snap-sub .rdy-chip, .snap-sub .mood-chip { vertical-align: -0.15em; }
-/* The preview: the two or three rows behind the headline number, so a tile
-   answers the question instead of promising the answer is one tap away. Sits
-   under a hairline so it reads as detail belonging to the tile above it, not
-   as more subtitle. */
-.snap-preview {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  margin-top: 0.25em;
-  padding-top: 0.22em;
-  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  min-width: 0;
-}
-.snap-mini {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5em;
-  font-size: 0.62rem;
-  line-height: 1.3;
-  min-width: 0;
-}
-.snap-mini-k {
-  color: var(--muted);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
-}
-.snap-mini-v {
-  margin-left: auto;
-  flex-shrink: 0;
-  font-weight: 700;
-  color: var(--text-soft);
-  font-variant-numeric: tabular-nums;
-}
-/* Body-weight trend line. Down is the direction most athletes are aiming, so
-   it takes the calm colour and rising takes the warm one — no verdict either
-   way, just enough contrast to read the direction without the numbers. */
-.snap-spark { display: block; width: 100%; height: 20px; color: var(--muted); }
-.snap-spark svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.snap-spark.is-down { color: #34d399; }
-.snap-spark.is-up { color: #fbbf24; }
-/* Quiet athletes, zeroed banks, targets never set: present but not shouting. */
-.snap-tile.is-dim {
-  border-color: var(--border); border-left-color: var(--muted);
-  background: linear-gradient(180deg, var(--surface-2), var(--surface));
-}
-.snap-tile.is-dim .sr-val { color: var(--text-soft); text-shadow: none; }
-.snap-tile.is-door { cursor: pointer; }
-.snap-tile.is-door:hover {
-  border-color: var(--primary-bright);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 14px rgba(var(--primary-rgb), 0.22);
-}
-/* One pip per day the program holds in a week, filled as they're completed. */
-.snap-pips { display: inline-flex; gap: 3px; vertical-align: middle; }
-.snap-pip {
-  width: 13px; height: 5px; border-radius: 2px;
-  background: var(--surface-3); border: 1px solid var(--border);
-}
-.snap-pip.on { background: var(--primary-bright); border-color: var(--primary-bright); }
-
-/* Goals and coach notes, read-only. "No overhead press" belongs where you see
-   it before opening their program, not inside the fold where it gets typed. */
-.snap-notes {
-  margin-top: 0.85rem; padding-top: 0.75rem;
-  border-top: 1px solid var(--border);
-  display: flex; flex-direction: column; gap: 0.45em;
-}
-.snap-note {
-  margin: 0; display: flex; gap: 0.55em;
-  font-size: 0.83rem; line-height: 1.5; color: var(--text-soft);
-}
-.snap-note-ico { flex: none; line-height: 1.5; }
-.snap-note.is-coach { color: var(--text); }
-
-/* The set-once admin below the snapshot, folded. Reuses the athlete Profile's
-   fold chrome so both sides of the app read as one system. */
+/* The coach's athlete Profile tab: set-once admin, folded. Reuses the athlete
+   Profile's fold chrome so both sides of the app read as one system. The
+   snapshot of tiles that used to sit above this — and the whole Overview tab
+   it was the only content of — was deleted on 2026-08-09. */
 .client-admin { padding-top: 0.35rem; padding-bottom: 0.35rem; }
 .client-admin .profile-card-head { border-bottom: 0; margin-bottom: 0.2em; justify-content: flex-end; }
 .client-admin .invite-code-bar, .client-admin .profile-danger-row { margin: 0.2em 0 0.9em; }
-
-/* A brand-new athlete: no numbers to show, so show the two next steps instead. */
-.snap-fresh-lead { margin: 0 0 0.8em; font-size: 0.9rem; color: var(--text-soft); }
-.snap-fresh-acts { display: flex; flex-wrap: wrap; gap: 0.5em; }
 
 /* ---- Coach Profile: one list of folds ----
    Seven headings with dividers and always-open content became one card. Reuses
@@ -15160,7 +15031,7 @@ input.credit-cap:disabled { opacity: 0.4; }
 .rest-sound-btn, .rest-timer-btn, .rest-timer-pop button,
 .roster-group-tab, .roster-search-clear, .scan-zoom-btn, .sched-google-row,
 .sched-win, .sess-tile, .session-manage, .sl-athlete, .sl-manual, .sl-waived,
-.snap-pip, .sq-card-fields, .stat-cust-row, .status-cancelled,
+.sq-card-fields, .stat-cust-row, .status-cancelled,
 .tax-band, .tax-block, .theme-swatch, .tour-offer,
 .tpl-folder-tag, .trial-card, .trial-icon-btn, .trophy, .warmup-pop,
 .warmup-seg-btn, .water-cup, .water-goal-btn, .week-chips, .wkg,

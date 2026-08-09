@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=raise4" />
+  <link rel="stylesheet" href="styles.css?v=prof1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -729,26 +729,28 @@
              data-tab KEYS stay as they were ("profile", "diet") — renaming them
              would break every setTab caller for a label change. -->
         <div class="tabs">
-          <button class="tab active" data-tab="profile">Overview</button>
-          <button class="tab" data-tab="program">Program</button>
+          <!-- Program first, and it is where opening an athlete lands: it is
+               the workbench, and everything else here is consulted rather than
+               worked in. The data-tab KEY stays "profile" for the last tab —
+               renaming it would break every setTab caller for a label change. -->
+          <button class="tab active" data-tab="program">Program</button>
           <button class="tab" data-tab="diet">Nutrition</button>
+          <button class="tab" data-tab="profile">Profile</button>
           <!-- Sessions was the fourth tab. It was the only part of this page
                that wasn't about training, and reaching an athlete's money meant
                opening the athlete — so it lives on Money → Raise now, in that
                athlete's own row. This page is the training workbench. -->
         </div>
 
-        <!-- Profile. Opening an athlete used to land on an edit form, with
-             everything worth KNOWING about them spread over six other tabs. The
-             snapshot answers "how is this person doing" without a single tab
-             change; the form it replaced is folded away below, because a name
-             and a height get typed once and then never again. Built by
-             renderClientSnapshot(). -->
-        <div class="tab-panel active" data-tab-panel="profile">
-          <div id="client-snapshot"></div>
-          <!-- Everything below the snapshot is set-once admin, so it folds. The
-               .profile-card class stays on the <details> because setProfileLocked
-               keys its read-only styling off it. -->
+        <!-- Profile: who they are and how you reach them, and nothing else.
+             This panel used to open with a snapshot of tiles — last session,
+             this week, eating, cardio, body weight, top lift — and opening an
+             athlete always landed here, so every trip to their program went
+             through a readout first. The tiles are gone and the landing is
+             Program. What's left is set-once admin, which is what a profile is.
+             The .profile-card class stays on the <details> because
+             setProfileLocked keys its read-only styling off it. -->
+        <div class="tab-panel" data-tab-panel="profile">
           <div class="card pref-card client-admin">
           <details class="pref-fold profile-card">
             <summary>
@@ -857,10 +859,15 @@
         </div>
 
         <!-- Program -->
-        <div class="tab-panel" data-tab-panel="program">
+        <div class="tab-panel active" data-tab-panel="program">
           <div class="program-head">
             <h3>Training Program</h3>
             <div class="program-actions">
+              <!-- PRs, the strength chart and the cardio log. These used to be
+                   reached only by tapping tiles on the Overview snapshot, so
+                   deleting that page took their only door with it. They are
+                   training records, and this is the training page. -->
+              <button class="btn btn-ghost" id="btn-open-records" title="PRs, strength progress and the cardio log">🏆 Records</button>
               <button class="btn btn-ghost" id="btn-save-program-to-library" title="Save this program to your Program Library so you can reuse it on any athlete">💾 Save to Library</button>
               <button class="btn btn-ghost" id="btn-archive-program">📁 Archive</button>
               <button class="btn btn-primary" id="btn-load-program">📂 Load Program</button>
@@ -1585,7 +1592,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=localout1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=raise4"></script>
+  <script src="app.js?v=prof1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

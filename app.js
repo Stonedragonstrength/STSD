@@ -5526,8 +5526,10 @@
     $("#client-name-display").textContent = c.name;
     $("#client-meta-display").textContent = clientMetaText(c);
     renderCoachCycleChip();
-    setTab("profile");
-    renderClientSnapshot();
+    // Straight to the workbench. Opening an athlete used to land on a snapshot
+    // of tiles, so reaching the program — the reason you opened them — always
+    // cost a second move.
+    setTab("program");
     renderProfile();
     renderWeeks();
     renderDiet();
@@ -5557,10 +5559,8 @@
     if (!changed) return;
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
     if (state.currentClientId === c.id) {
-      // The snapshot is built entirely out of importedProgress, so it is stale
-      // by definition until this lands. Redraw it first — it's the panel the
-      // coach is looking at while the pull is in flight.
-      renderClientSnapshot();
+      // The calendar draws the athlete's own logged work, so it is stale by
+      // definition until this pull lands.
       renderCoachCalendar();
       renderDiet(); // food log and body weight both live on the Nutrition tab
       renderTrialsSection(c); // auto-scored off the progress that just landed
@@ -5580,17 +5580,13 @@
       renderClientGrid();
     }
   }
-  // -------- Coach: the athlete snapshot --------
-  // Opening an athlete used to land on an edit form, and answering "how is this
-  // person actually doing" meant visiting four tabs and reading three of them
-  // sideways. Every tile here is a number the coach already had, just never in
-  // one place — and every tile is a door, so the tab you wanted is one tap away
-  // instead of a hunt. Nothing here is new data; it is the same objects the
+  // -------- "How is this person doing", in three numbers --------
+  // These fed a grid of tiles on the coach's athlete Overview tab. That tab is
+  // gone (2026-08-09): opening an athlete landed on a readout, so every trip to
+  // their program went through a summary first. What survived is the part
+  // Nathan actually reads, and it lives in the roster row's drawer now — see
+  // buildRosterDrawer(). Nothing here is new data; it is the same objects the
   // other tabs render, summarised.
-  //
-  // Deliberately NOT here: anything from the inbox. Purchase requests, unread
-  // messages and form checks have one home and it is the header pill; a second
-  // copy on this page would be the "blurbs on coach cards" mistake again.
   const SNAP_QUIET_DAYS = 10; // no activity for this long dims the last-session tile
 
   function snapDaysAgo(iso) {
@@ -5622,17 +5618,6 @@
     (ip.athleteDays || []).forEach((d) => { if (d.id === best.dayId) name = d.name || ""; });
     return { ...best, name, days: snapDaysAgo(best.date) };
   }
-  // Completions inside the current Mon-start week, against how many days the
-  // athlete's program actually holds in a week (not a hardcoded 7).
-  function snapThisWeek(c) {
-    const ip = c.importedProgress || {};
-    const from = weekStartISO(todayISO());
-    const done = completionDateList(ip).filter((d) => d >= from).length;
-    const weeks = (c.weeks || []).filter((w) => (w.days || []).length);
-    const per = weeks.length
-      ? Math.round(weeks.reduce((n, w) => n + w.days.length, 0) / weeks.length) : 0;
-    return { done, per };
-  }
   // This week's cardio and the last few entries, so the tile answers "have they
   // been doing their conditioning" without opening anything. `all` is only used
   // to decide whether the tile exists at all: an athlete who has never logged
@@ -5647,220 +5632,6 @@
       week: cardioTotals(logs.filter((l) => l.date >= from && l.date <= today)),
       recent: logs.slice(0, 2),
     };
-  }
-  // A bare trend line for a tile preview: no axes, no labels, no numbers. It is
-  // there to show the SHAPE of a series, which a single delta can't. Stretched
-  // to the tile's width via preserveAspectRatio, with a non-scaling stroke so
-  // the line doesn't fatten as it stretches. Flat series (every value equal)
-  // would divide by zero, so they draw down the middle.
-  function sparklineHtml(values) {
-    const v = (values || []).filter((n) => Number.isFinite(n));
-    if (v.length < 2) return "";
-    const min = Math.min(...v), max = Math.max(...v);
-    const span = max - min || 1;
-    const pts = v.map((n, i) => {
-      const x = (i / (v.length - 1)) * 100;
-      const y = 20 - ((n - min) / span) * 18 - 1; // 1px breathing room top and bottom
-      return `${Math.round(x * 10) / 10},${Math.round(y * 10) / 10}`;
-    }).join(" ");
-    const rising = v[v.length - 1] > v[0];
-    return `<span class="snap-spark${rising ? " is-up" : " is-down"}" aria-hidden="true">
-      <svg viewBox="0 0 100 20" preserveAspectRatio="none" focusable="false">
-        <polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="1.6"
-          stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
-      </svg></span>`;
-  }
-  function snapTileHtml(o) {
-    const tag = o.go ? "button" : "div";
-    return `<${tag} type="button" class="snap-tile${o.dim ? " is-dim" : ""}${o.go ? " is-door" : ""}"${o.go ? ` data-go="${escapeHtml(o.go)}"` : ""}${o.title ? ` title="${escapeHtml(o.title)}"` : ""}>
-      <span class="snap-in">
-        <span class="sr-lbl">${escapeHtml(o.label)}</span>
-        <span class="snap-val"><span class="sr-val">${o.value}</span>${o.unit ? `<span class="sr-unit">${escapeHtml(o.unit)}</span>` : ""}</span>
-        ${o.sub ? `<span class="snap-sub">${o.sub}</span>` : ""}
-        ${o.preview ? `<span class="snap-preview">${o.preview}</span>` : ""}
-      </span>
-    </${tag}>`;
-  }
-  function renderClientSnapshot() {
-    const host = $("#client-snapshot");
-    if (!host) return;
-    const c = currentClient();
-    if (!c) { host.innerHTML = ""; return; }
-    const ip = c.importedProgress || {};
-
-    // A brand-new athlete has nothing to summarise, and two empty tiles say
-    // less than the two things that actually need doing. The snapshot only
-    // earns its space once there is something in it.
-    if (!(c.weeks || []).some((w) => (w.days || []).length) && !lastActivityISO(ip)) {
-      host.innerHTML = `
-        <div class="card snap-card snap-fresh">
-          <p class="snap-fresh-lead"><b>${escapeHtml(c.name || "This athlete")}</b> hasn't started yet. Two things get them going:</p>
-          <div class="snap-fresh-acts">
-            <button type="button" class="btn btn-primary btn-sm slim-btn" data-fresh="program">📋 Build their program</button>
-            <button type="button" class="btn btn-ghost btn-sm slim-btn" data-fresh="invite">🔑 Send their invite</button>
-          </div>
-        </div>`;
-      host.querySelector('[data-fresh="program"]')?.addEventListener("click", () => setTab("program"));
-      host.querySelector('[data-fresh="invite"]')?.addEventListener("click", () => {
-        const fold = $("#cprof-fold-invite");
-        if (fold) { fold.open = true; fold.scrollIntoView({ behavior: "smooth", block: "center" }); }
-      });
-      return;
-    }
-
-    const tiles = [];
-
-    // 1. Last session — the first question anyone opening an athlete has.
-    const last = snapLastSession(c);
-    if (last) {
-      const rdy = dayReadiness(ip, last.dayId);
-      const moods = dayMoods(ip, last.dayId);
-      tiles.push(snapTileHtml({
-        label: "Last session", value: escapeHtml(snapAgoLabel(last.days)),
-        sub: `${escapeHtml(last.name || "Session")}${rdy ? " " + readinessChipHtml(rdy, true) : ""}${moods.length ? " " + moodChipsHtml(moods, true) : ""}`,
-        dim: last.days >= SNAP_QUIET_DAYS, title: last.date,
-      }));
-    } else {
-      tiles.push(snapTileHtml({ label: "Last session", value: "—", sub: "Nothing logged yet", dim: true }));
-    }
-
-    // 2. This week, against their own program's shape.
-    const wk = snapThisWeek(c);
-    tiles.push(snapTileHtml({
-      label: "This week", value: String(wk.done), unit: wk.per ? "of " + wk.per : "sessions",
-      sub: wk.per
-        ? `<span class="snap-pips">${Array.from({ length: wk.per }, (_, i) =>
-            `<span class="snap-pip${i < wk.done ? " on" : ""}"></span>`).join("")}</span>`
-        : "",
-      go: "program",
-    }));
-
-    // 3. Sessions left. Dimmed at zero rather than shouted — the inbox already
-    //    raises "out of sessions" as something needing the coach.
-    const bank = sessionBankSummary(c);
-    if (bank.granted || bank.used) {
-      // "N packages waiting" was the old sub-line, and nothing was waiting on
-      // anything — it meant money not yet collected, on a tile about sessions.
-      // What belongs here is what the month has actually done with them.
-      tiles.push(snapTileHtml({
-        label: "Sessions", value: String(bank.remaining), unit: "left",
-        sub: `${bank.thisMonthUsed} of ${bank.thisMonthGrant} this month`,
-        dim: bank.remaining <= 0, go: "sessions",
-      }));
-    }
-
-    // 4. Eating, last 7 days, judged against the target that applied each day.
-    const roll = nutritionRollup(c, ip, 7);
-    if (roll.logged) {
-      const pct = roll.calTarget ? Math.round((roll.avgKcal / roll.calTarget) * 100) : 0;
-      tiles.push(snapTileHtml({
-        label: "Eating · 7d", value: roll.avgKcal.toLocaleString(),
-        unit: roll.calTarget ? "of " + roll.calTarget.toLocaleString() : "kcal avg",
-        sub: `${roll.logged}/7 days logged${roll.proTarget ? ` · protein ${roll.avgProtein}/${roll.proTarget}g` : ""}`,
-        dim: !roll.calTarget, title: pct ? pct + "% of target" : "", go: "diet",
-      }));
-    }
-
-    // 5. Body weight, with the direction of travel. The number on its own says
-    //    nothing; "down 4 lb over a month" is the whole point of tracking it.
-    const bwLog = [...(ip.bodyweightLog || [])].filter((b) => isFinite(parseFloat(b.weightLb)));
-    if (bwLog.length) {
-      bwLog.sort((a, b) => String(a.date).localeCompare(String(b.date)));
-      const now = parseFloat(bwLog[bwLog.length - 1].weightLb);
-      const monthAgo = addDaysISO(todayISO(), -30);
-      const then = bwLog.filter((b) => b.date <= monthAgo).pop() || bwLog[0];
-      const delta = Math.round((now - parseFloat(then.weightLb)) * 10) / 10;
-      const arrow = Math.abs(delta) < 0.1 ? "neutral" : delta < 0 ? "down" : "up";
-      tiles.push(snapTileHtml({
-        label: "Body weight", value: String(Math.round(dispNum(now, unitOf(c)) * 10) / 10), unit: unitLbl(unitOf(c)),
-        sub: bwLog.length > 1
-          ? `<span class="sr-trend ${arrow}">${arrow === "neutral" ? "▬" : delta < 0 ? "▼" : "▲"} ${Math.abs(Math.round(dispNum(delta, unitOf(c)) * 10) / 10)}</span> since ${escapeHtml(snapAgoLabel(snapDaysAgo(then.date)).toLowerCase())}`
-          : "one weigh-in",
-        // The shape of the last dozen weigh-ins. A single delta can't tell a
-        // steady drop from a bounce that happened to land low today, and that
-        // difference is the whole reason a coach looks at this number.
-        preview: sparklineHtml(bwLog.slice(-12).map((b) => parseFloat(b.weightLb))),
-        go: "diet",
-      }));
-    }
-
-    // 6. Heaviest lift on record, from the coach's PR board or their own logs.
-    //    The runners-up ride along: one number told you the ceiling, three tell
-    //    you what they are actually strong at, which is the reason to look.
-    const pr = highestPR(c, ip);
-    if (pr) {
-      const rest = topPRs(c, ip, 3).slice(1);
-      tiles.push(snapTileHtml({
-        // prWeightLabel, not "N lb" — a dumbbell lift reads "80s", never "80 lb".
-        label: "Top lift", value: prWeightLabel(pr.name, pr.weight),
-        sub: escapeHtml(pr.name),
-        preview: rest.length
-          ? rest.map((p) => `<span class="snap-mini"><span class="snap-mini-k">${escapeHtml(p.name)}</span><span class="snap-mini-v">${prWeightLabel(p.name, p.weight)}</span></span>`).join("")
-          : "",
-        go: "prs", title: "Open records",
-      }));
-    }
-
-    // 7. Cardio, last 7 days. Its own tab for one read-only list was the
-    //    clearest case of travelling somewhere just to learn a number.
-    const cardio = snapCardio7d(ip);
-    if (cardio.all.n) {
-      tiles.push(snapTileHtml({
-        label: "Cardio · 7d", value: String(cardio.week.n), unit: cardio.week.n === 1 ? "session" : "sessions",
-        sub: cardio.week.n
-          ? `${escapeHtml(cardioMinLabel(cardio.week.min))}${cardio.week.mi ? ` · ${escapeHtml(cardioMiLabel(cardio.week.mi))} mi` : ""}`
-          : "nothing this week",
-        preview: cardio.recent.map((l) => `<span class="snap-mini"><span class="snap-mini-k">${escapeHtml(l.type || "Cardio")}</span><span class="snap-mini-v">${escapeHtml(String(l.minutes || 0))} min</span></span>`).join(""),
-        dim: !cardio.week.n, go: "cardio", title: "Open the cardio log",
-      }));
-    }
-
-    // 7. Where they are in the program, and a door straight into that day's
-    //    editor — the single most common reason to open an athlete at all.
-    const cur = athleteCurrentDay(c);
-    let curDay = null;
-    if (cur) {
-      const w = (c.weeks || []).find((x) => x.id === cur.weekId);
-      const d = (w?.days || []).find((x) => x.id === cur.dayId);
-      if (w && d) curDay = { week: w, day: d };
-    }
-    if (curDay) {
-      // The first lifts of that day, so "Up next" says what the session IS and
-      // not just what it is called — the difference between recognising a day
-      // and having to open it to remember.
-      const upEx = (curDay.day.exercises || []).filter((e) => (e.name || "").trim()).slice(0, 2);
-      tiles.push(snapTileHtml({
-        label: "Up next", value: escapeHtml(curDay.day.name || "Day"),
-        sub: escapeHtml(curDay.week.label || ""), go: "editday",
-        preview: upEx.map((e) => {
-          const w = exWeightLabel(e, e.currentWeight, unitOf(c));
-          return `<span class="snap-mini"><span class="snap-mini-k">${escapeHtml(e.name)}</span><span class="snap-mini-v">${w ? escapeHtml(w) : "—"}</span></span>`;
-        }).join(""),
-        title: "Open this day in the program editor",
-      }));
-    }
-
-    const notes = String(c.notes || "").trim();
-    const goals = String(c.goals || "").trim();
-    host.innerHTML = `
-      <div class="card snap-card">
-        <div class="snap-grid">${tiles.join("")}</div>
-        ${notes || goals ? `<div class="snap-notes">
-          ${goals ? `<p class="snap-note"><span class="snap-note-ico">🎯</span><span>${escapeHtml(goals)}</span></p>` : ""}
-          ${notes ? `<p class="snap-note is-coach"><span class="snap-note-ico">📌</span><span>${escapeHtml(notes)}</span></p>` : ""}
-        </div>` : ""}
-      </div>`;
-
-    host.querySelectorAll("[data-go]").forEach((el) => el.addEventListener("click", () => {
-      const to = el.dataset.go;
-      if (to === "editday" && curDay) { editClientDay(c.id, curDay.week.id, curDay.day.id); return; }
-      // "prs" and "cardio" are no longer tabs — they open the Records sheet,
-      // which is why these tiles carry a preview: the sheet is for changing
-      // something, the tile is for knowing it.
-      if (to === "prs" || to === "cardio") { openRecordsSheet(to); return; }
-      setTab(to);
-      $(".tabs")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }));
   }
 
   function clientMetaText(c) {
@@ -6106,7 +5877,7 @@
     wireUnitsFold(host, (u) => {
       c.units = u === "kg" ? "kg" : "lb";
       saveTrainer();
-      // Their program, PR board, snapshot and profile weight are all read back
+      // Their program, PR board and profile weight are all read back
       // through the new unit. Repainted piecemeal rather than through
       // renderProfile(), which would re-lock the fields being edited.
       renderCoachUnitsFold(c);
@@ -6117,7 +5888,6 @@
       if (meta) meta.textContent = clientMetaText(c); // the header carries their weight too
       renderWeeks();
       renderCoachPRs();
-      renderClientSnapshot();
     });
   }
   // Empty means "whatever the tier works out to", so the placeholder has to say
@@ -8338,9 +8108,9 @@
   }
 
   // The ticket beside their name: the balance from every tab, and the door
-  // into Sessions from any of them. The snapshot tile only exists on Overview
-  // and only once there is package history, so an athlete put on a tier this
-  // morning had no route to their session options at all.
+  // into their Raise row from any of them. Sessions is not a tab on this page
+  // any more, so without this an athlete's money would be two screens away
+  // from the page you are looking at them on.
   function renderClientSessionChip() {
     const el = $("#client-sessions-chip"); if (!el) return;
     const c = currentClient();
@@ -8389,7 +8159,6 @@
     // badge all just changed; four of the five were stale until a tab change.
     renderCoachSessions();
     renderClientSessionChip();
-    renderClientSnapshot();
     renderMonthGrantBtn();
     renderIncomeCard();
     toast(`Granted ${m.sessions} sessions for ${monthLabel} ✓`);
@@ -8414,8 +8183,6 @@
     renderIncomeCard();
     $("#client-name-display").textContent = c.name || "(unnamed)";
     $("#client-meta-display").textContent = clientMetaText(c);
-    // Goals and notes both read on the snapshot above.
-    renderClientSnapshot();
     flashSaved($("#prof-saved"));
     setProfileLocked(true);
   }
@@ -8490,9 +8257,8 @@
       const sub = $("#session-options-sub");
       const m = membershipById(c.sessionBank.membership);
       if (sub) sub.textContent = m ? membershipSub(m) : "No membership set";
-      // The tier shows on the snapshot, the roster grouping and the header
-      // ticket, and it decides what Expected income multiplies by.
-      renderClientSnapshot();
+      // The tier shows in the roster grouping and the header ticket, and it
+      // decides what Expected income multiplies by.
       renderClientSessionChip();
       renderClientGrid();
       renderMonthGrantBtn();
@@ -8512,7 +8278,6 @@
       c.sessionBank.rate = rate > 0 ? rate : 0;
       bankMutated(c);
       saveTrainer();
-      renderClientSnapshot();
       renderIncomeCard();
     });
     $("#btn-grant-month")?.addEventListener("click", grantMembershipMonth);
@@ -8543,7 +8308,6 @@
       accrueSessionCredits();
       renderSessionOptions(c);
       renderCoachSessions();
-      renderClientSnapshot();
     });
     $("#prof-credit-cap")?.addEventListener("change", (e) => {
       const c = currentClient(); if (!c) return;
@@ -8564,7 +8328,6 @@
       saveTrainer();
       // Their balance changes the instant this flips, and it shows in four
       // places at once, so redraw rather than let three of them go stale.
-      renderClientSnapshot();
       renderCoachSessions();
       renderCoachCalendar();
       renderClientGrid();
@@ -18428,7 +18191,6 @@
         // The balance this just released reads in five places at once.
         renderCoachSessions();
         renderClientSessionChip();
-        renderClientSnapshot();
         renderClientGrid();
         renderMonthGrantBtn();
         renderIncomeCard();
@@ -18574,7 +18336,6 @@
           // moves the balance just as much as releasing one does.
           renderCoachSessions();
           renderClientSessionChip();
-          renderClientSnapshot();
           renderClientGrid();
           renderMonthGrantBtn();
           renderIncomeCard();
@@ -19018,7 +18779,7 @@
     renderClientGrid();
     renderMonthGrantBtn();
     renderIncomeCard();
-    if (state.currentClientId) { renderCoachSessions(); renderClientSnapshot(); }
+    if (state.currentClientId) renderCoachSessions();
     const bits = [];
     if (granted) bits.push(`${granted} granted`);
     if (paid) bits.push(`${paid} collected`);
@@ -34456,23 +34217,6 @@
     (progress?.personalRecords || []).forEach((p) => consider(p.name, p.weight));
     return best;
   }
-  // The heaviest `n` DISTINCT lifts, heaviest first. Same two sources as
-  // highestPR, deduped by lift so a coach entry and the athlete's own PR for
-  // the same lift don't fill the list with one movement. Feeds the Overview's
-  // Top lift tile, which shows the runners-up under the headline.
-  function topPRs(client, progress, n) {
-    const best = new Map(); // lowercased name -> { name, weight }
-    const consider = (name, w) => {
-      const val = parseFloat(w);
-      if (!isFinite(val) || val <= 0 || !name) return;
-      const key = String(name).trim().toLowerCase();
-      const cur = best.get(key);
-      if (!cur || val > cur.weight) best.set(key, { name: String(name).trim(), weight: val });
-    };
-    (client?.coachPRs || []).forEach((p) => consider(p.name, p.pr1));
-    (progress?.personalRecords || []).forEach((p) => consider(p.name, p.weight));
-    return [...best.values()].sort((a, b) => b.weight - a.weight).slice(0, n || 3);
-  }
   // Every rep ever logged for exercises whose name matches `rx`. Walks the
   // program to map exercise ids → names, the same way bestPullupReps does.
   // Passing no regex counts every logged rep.
@@ -36246,6 +35990,7 @@
     $("#btn-load-program-empty").addEventListener("click", openLoadProgramModal);
     $("#btn-archive-program").addEventListener("click", archiveCurrentProgram);
     $("#btn-save-program-to-library")?.addEventListener("click", saveClientProgramToLibrary);
+    $("#btn-open-records")?.addEventListener("click", () => openRecordsSheet("prs"));
     $("#btn-new-tpl-folder")?.addEventListener("click", openNewTemplateFolder);
     $("#coach-avatar-more")?.addEventListener("click", () => {
       $("#coach-avatar-picker")?.classList.toggle("is-open");
