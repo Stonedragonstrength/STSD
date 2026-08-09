@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=logolow2" />
+  <link rel="stylesheet" href="styles.css?v=raise1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -426,19 +426,9 @@
         <div class="view-head">
           <div><h2>Money</h2></div>
           <div class="library-head-actions">
-            <!-- Labelled + badged by renderMonthGrantBtn(); hidden when nobody
-                 is on a tier. -->
-            <button class="btn btn-ghost btn-sm slim-btn month-grant-btn hidden" id="btn-month-grant" type="button"></button>
-            <!-- One row per bank, sessions x rate proposed and editable. Filled
-                 and shown by renderMonthBillBtn(); stays hidden until Square is
-                 set up, like every other billing surface. -->
-            <button class="btn btn-ghost btn-sm slim-btn month-bill-btn hidden" id="btn-month-bill" type="button"></button>
-            <!-- The same round, narrowed to program-only members. They bill a
-                 flat amount with no session count behind it, and mixed into a
-                 roster of session athletes they are the easiest rows to skip.
-                 Filled and shown by renderMonthFlatBtn(); hidden when nobody is
-                 on a program-only tier. -->
-            <button class="btn btn-ghost btn-sm slim-btn month-bill-btn hidden" id="btn-month-flat" type="button"></button>
+            <!-- Session log stays up here: it is a report you consult, not part
+                 of the monthly round. The round's three buttons live inside
+                 Raise now — same job, same box. -->
             <button class="btn btn-ghost btn-sm slim-btn" id="btn-session-lookup" type="button">Session log</button>
           </div>
         </div>
@@ -465,38 +455,34 @@
             </span>
             <span class="pref-fold-chev">▸</span>
           </summary>
+          <!-- The monthly round is ONE job, so its three doors live in the box
+               where the job happens: Settle hands out sessions, Bill asks for
+               the money, Program-only narrows the same round to flat tiers.
+               They floated top-right before, reading as page chrome. Each is
+               labelled + shown/hidden by its own render fn, unchanged. -->
+          <div class="raise-actions">
+            <button class="btn btn-ghost btn-sm slim-btn month-grant-btn hidden" id="btn-month-grant" type="button"></button>
+            <button class="btn btn-ghost btn-sm slim-btn month-bill-btn hidden" id="btn-month-bill" type="button"></button>
+            <button class="btn btn-ghost btn-sm slim-btn month-bill-btn hidden" id="btn-month-flat" type="button"></button>
+          </div>
           <div id="money-roster-host"></div>
         </details>
 
-        <!-- Booked against earned, in one card. The Overview rail renders the
-             same card at 1200px+, on a screen you can't be looking at at the
-             same time as this one. -->
-        <details class="pref-fold" open>
-          <summary>
-            <span class="pref-fold-ico">💷</span>
-            <span class="pref-fold-text">
-              <span class="pref-fold-title">Income</span>
-              <span class="pref-fold-sub">What's booked, and what you've earned</span>
-            </span>
-            <span class="pref-fold-chev">▸</span>
-          </summary>
-          <div class="income-host income-host-profile"></div>
-        </details>
-
-        <!-- The year, month by month. Income above it answers "how am I doing"
-             in six figures; this is where you go to see which month those came
-             from and who is still to pay. Filled by renderBooks(); the figures
-             stay blurred until the eye is tapped, and it is the SAME switch the
-             income card uses — either eye covers both. -->
+        <!-- ONE reports section. Income (this month, booked against earned)
+             sits on top of the year it feeds — they were two folds telling one
+             story, sharing one privacy eye. The Overview rail still renders
+             its own income card at 1200px+, on a screen you can't be looking
+             at at the same time as this one. -->
         <details class="pref-fold" id="books-fold" open>
           <summary>
             <span class="pref-fold-ico">📒</span>
             <span class="pref-fold-text">
               <span class="pref-fold-title">Books</span>
-              <span class="pref-fold-sub" id="cs-sub-books">Invoices, and what came in</span>
+              <span class="pref-fold-sub" id="cs-sub-books">This month, and the year behind it</span>
             </span>
             <span class="pref-fold-chev">▸</span>
           </summary>
+          <div class="income-host income-host-profile"></div>
           <div id="books-host"></div>
         </details>
       </div>
@@ -1570,7 +1556,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=localout1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=money2"></script>
+  <script src="app.js?v=raise1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

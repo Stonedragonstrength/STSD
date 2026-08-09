@@ -4456,8 +4456,6 @@
     }
     if (searchBar) show(searchBar);
 
-    const nextMonth = nextMonthBounds(todayISO());
-    const nextMonthCounts = nextMonthSessionCounts();
     let sorted = [...state.trainerData.clients].sort((a, b) => a.name.localeCompare(b.name));
     // Filter before grouping, so a group heading only ever counts the athletes
     // actually under it.
@@ -4586,54 +4584,21 @@
       card.appendChild(main);
       card.appendChild(prog);
 
-      // Session-balance chip + pending-request badge (moved here from the old
-      // Packages page). Only shown once an athlete has any package activity.
-      const sum = sessionBankSummary(c);
+      // Pending-request badge only. The two session tickets (bank balance,
+      // booked-next-month) lived here until 2026-08-08 and moved to the Raise
+      // fold on Money, under each athlete's own row — the roster is training
+      // ground, and the money page is where money questions get answered. The
+      // request badge stays because it is a to-do, not an amount.
       const pendingCount = openRequestsFor(c).length;
-      const bank = sum.granted > 0 || sum.used > 0 || pendingCount > 0;
-      // The green ticket stands on its own: an athlete with sessions booked for
-      // next month earns the row even with no package history behind them.
-      const booked = nextMonthCounts.get(c.id) || 0;
-      if (bank || booked > 0) {
+      if (pendingCount) {
         const sess = document.createElement("div");
         sess.className = "client-row-sessions";
-        // Both chips carry the SAME ticket, drawn as a line mark so it takes the
-        // pill's colour: amber for credit owed, green for next month. An emoji
-        // can't be tinted, so 🎟 stayed red inside the amber pill and 🎫 stayed
-        // yellow inside the green one — two different tickets, neither matching
-        // the pill around it. The count alone says what it counts here.
-        // Both of these figures belong to the BANK, and a couple's bank is one
-        // bank — so the same number shows on both cards on purpose. Without a
-        // mark saying so, two 16s on two cards read as 32 sessions.
-        const partner = partnerOf(c);
-        const shareMark = partner
-          ? `<span class="chip-share" aria-label="shared">💞</span>`
-          : "";
-        const sharedWith = partner ? `, shared with ${partner.name || "their partner"}` : "";
-        if (bank) {
-          const chip = document.createElement("span");
-          chip.className = "booked-balance-chip" + (sum.remaining <= 1 ? " low" : "");
-          chip.title = `${sum.remaining} session${Math.abs(sum.remaining) === 1 ? "" : "s"} left in the bank${sharedWith}`;
-          chip.innerHTML = `${lineIco("sd:ticket")} ${sum.remaining}${shareMark}`;
-          sess.appendChild(chip);
-        }
-        if (pendingCount) {
-          const pend = document.createElement("span");
-          pend.className = "pkg-track-pending";
-          pend.textContent = `${pendingCount} req`;
-          sess.appendChild(pend);
-        }
-        if (booked > 0) {
-          const green = document.createElement("span");
-          green.className = "next-month-chip";
-          green.title = partner
-            ? `${booked} session${booked === 1 ? "" : "s"} booked for ${nextMonth.label} across this bank — ${c.name || "this athlete"} and ${partner.name || "their partner"} together, counted once`
-            : `${booked} session${booked === 1 ? "" : "s"} booked for ${nextMonth.label}`;
-          green.innerHTML = `${lineIco("sd:ticket")} ${booked}${shareMark}`;
-          sess.appendChild(green);
-        }
-        // Tapping the chips jumps straight to that athlete's Sessions tab,
-        // where packages are approved/managed (the rest of the card → profile).
+        const pend = document.createElement("span");
+        pend.className = "pkg-track-pending";
+        pend.textContent = `${pendingCount} req`;
+        sess.appendChild(pend);
+        // Tapping jumps straight to that athlete's Sessions tab, where
+        // packages are approved (the rest of the card → profile).
         sess.addEventListener("click", (e) => { e.stopPropagation(); Nav.push(renderDashboard); openClient(c.id); setTab("sessions"); });
         card.appendChild(sess);
       }
@@ -6310,21 +6275,39 @@
     if (!host) return;
     const seq = ++_moneyRosterSeq;
     host.innerHTML = "";
-    if (!window.Cloud?.enabled) return;
-    Promise.all([loadBillingConfig(), ensureBillingLoaded(BILLING_STALE_MS)]).then(([cfg]) => {
+    // Charge status and buttons need the cloud + Square; the projection does
+    // not — tiers, rates, banks and bookings are all local. So the fold
+    // renders for an offline coach too, with the charge column quietly
+    // absent, instead of going blank at exactly the moment he wants the
+    // forecast.
+    const billingReady = window.Cloud?.enabled
+      ? Promise.all([loadBillingConfig(), ensureBillingLoaded(BILLING_STALE_MS)])
+          .then(([cfg]) => !!cfg?.configured)
+          .catch(() => false)
+      : Promise.resolve(false);
+    billingReady.then((hasBilling) => {
       if (seq !== _moneyRosterSeq) return;
-      if (!cfg?.configured || $("#money-roster-host") !== host) return;
+      if ($("#money-roster-host") !== host) return;
       const monthKey = billingMonthKey();
       // A couple share one bank and one invoice, so the partner's half would be
       // a second row for money already listed against the other.
+      // Booked-next-month, straight off the calendar — the green ticket that
+      // used to live on the roster cards. One pass for the whole roster.
+      const bookedNext = nextMonthSessionCounts();
       const seen = new Set();
       const rows = (state.trainerData.clients || []).filter((c) => {
         if (seen.has(c.id)) return false;
         if (c.partnerId) seen.add(c.partnerId);
         return true;
       }).map((c) => {
-        const charge = chargeFor(c, monthKey);
-        return { c, charge, plan: monthChargePlan(c, monthKey), card: savedCardFor(c) };
+        const charge = hasBilling ? chargeFor(c, monthKey) : null;
+        return {
+          c, charge,
+          proj: raiseProjection(c, monthKey),
+          card: hasBilling ? savedCardFor(c) : null,
+          left: sessionBankSummary(c).remaining,
+          booked: bookedNext.get(c.id) || 0,
+        };
       });
       const rank = (r) => (!r.charge ? 0 : r.charge.status === "sent" ? 1 : 2);
       rows.sort((a, b) => rank(a) - rank(b) || (a.c.name || "").localeCompare(b.c.name || ""));
@@ -6353,39 +6336,128 @@
           : "All settled for " + monthKeyLabel(monthKey).replace(/ \d{4}$/, "");
       }
 
-      rows.forEach(({ c, charge, plan, card: saved }) => {
+      const monthShort = monthKeyLabel(monthKey).replace(/ \d{4}$/, "");
+      rows.forEach(({ c, charge, proj, card: saved, left, booked }) => {
+        const partner = partnerOf(c);
+        const shareMark = partner ? `<span class="chip-share" aria-label="shared">💞</span>` : "";
         const row = document.createElement("div");
         row.className = "mr-row";
-        const st = chargeStatusLabel(charge, plan, monthKey);
-        row.innerHTML =
-          `<span class="mr-name">${escapeHtml(c.name || "(unnamed)")}</span>` +
+        const top = document.createElement("div");
+        top.className = "mr-top";
+        const st = chargeStatusLabel(charge, proj, monthKey);
+        top.innerHTML =
+          `<span class="mr-name">${escapeHtml(c.name || "(unnamed)")}${partner ? ` &amp; ${escapeHtml(partner.name || "partner")} 💞` : ""}</span>` +
           (saved ? `<span class="mr-card" title="Card on file">💳${saved.autopay ? "auto" : ""}</span>` : "") +
-          `<span class="billing-status ${st.tone} mr-status">${escapeHtml(st.text)}</span>`;
-        const go = document.createElement("button");
-        go.type = "button";
-        go.className = charge ? "btn btn-ghost btn-sm" : "btn btn-primary btn-sm";
-        go.textContent = charge
-          ? (charge.status === "paid" ? "＋ New" : "Chase")
-          : (plan.amount ? `💳 ${money(plan.amount)}` : "💳 Charge");
-        go.addEventListener("click", () => openChargeSheet(c, monthKey, plan, charge));
-        row.appendChild(go);
-        // Giving it back belongs here too. Money is where billing lives now, so
-        // refunding from it should not send you into the athlete's profile to
-        // find the same button. Same guard as there: only where there is a card
-        // payment behind the charge.
-        if (charge?.status === "paid" && charge.square_payment_id) {
-          const back = document.createElement("button");
-          back.type = "button";
-          back.className = "btn btn-ghost btn-sm mr-refund";
-          back.textContent = "↩";
-          back.title = `Refund ${money((charge.amount_cents || 0) / 100)}`;
-          back.addEventListener("click", () => refundCharge(charge, c));
-          row.appendChild(back);
+          (hasBilling ? `<span class="billing-status ${st.tone} mr-status">${escapeHtml(st.text)}</span>` : "");
+        if (hasBilling) {
+          const go = document.createElement("button");
+          go.type = "button";
+          go.className = charge ? "btn btn-ghost btn-sm" : "btn btn-primary btn-sm";
+          go.textContent = charge
+            ? (charge.status === "paid" ? "＋ New" : "Chase")
+            : (proj.amount ? `💳 ${money(proj.amount)}` : "💳 Charge");
+          go.addEventListener("click", () => openChargeSheet(c, monthKey, proj, charge));
+          top.appendChild(go);
+          // Giving it back belongs here too. Money is where billing lives now,
+          // so refunding should not send you into the athlete's profile to
+          // find the same button. Same guard as there: only where a card
+          // payment sits behind the charge.
+          if (charge?.status === "paid" && charge.square_payment_id) {
+            const back = document.createElement("button");
+            back.type = "button";
+            back.className = "btn btn-ghost btn-sm mr-refund";
+            back.textContent = "↩";
+            back.title = `Refund ${money((charge.amount_cents || 0) / 100)}`;
+            back.addEventListener("click", () => refundCharge(charge, c));
+            top.appendChild(back);
+          }
         }
+        row.appendChild(top);
+
+        // The two tickets that used to sit on the roster cards, now under the
+        // athlete whose money they describe. Amber is the bank today, green is
+        // the calendar next month; a couple's numbers are the bank's, counted
+        // once and marked shared. Tapping them still opens the Sessions tab.
+        const chips = document.createElement("div");
+        chips.className = "mr-chips";
+        chips.innerHTML =
+          `<span class="booked-balance-chip${left <= 1 ? " low" : ""}" title="${left} session${Math.abs(left) === 1 ? "" : "s"} left in the bank${partner ? ", shared" : ""}">${lineIco("sd:ticket")} ${left} left${shareMark}</span>` +
+          (booked > 0 ? `<span class="next-month-chip" title="${booked} session${booked === 1 ? "" : "s"} booked for ${escapeHtml(monthShort)}${partner ? " across this bank, counted once" : ""}">${lineIco("sd:ticket")} ${booked} booked${shareMark}</span>` : "");
+        chips.addEventListener("click", () => { Nav.push(renderDashboard); openClient(c.id); setTab("sessions"); });
+        row.appendChild(chips);
+
+        // The working, not just the answer: what next month's invoice will say
+        // as things stand today. A charge already raised IS the answer, so it
+        // replaces the arithmetic rather than arguing with it.
+        const calc = document.createElement("div");
+        calc.className = "mr-calc";
+        if (charge && charge.status !== "refunded") {
+          calc.innerHTML = `<span>${escapeHtml(monthShort)} raised</span><span class="mr-dots"></span><span class="mr-amt">${escapeHtml(money((Number(charge.amount_cents) || 0) / 100))}</span>`;
+        } else if (proj.flat) {
+          calc.innerHTML = `<span>${escapeHtml(monthShort)}: program-only, flat</span><span class="mr-dots"></span><span class="mr-amt">${escapeHtml(money(proj.projected))}</span>`;
+        } else if (!proj.sessions) {
+          calc.innerHTML = `<span>${escapeHtml(monthShort)}: nothing to bill yet</span><span class="mr-dots"></span><span class="mr-amt">—</span>`;
+        } else {
+          const bits = [`${proj.sessions} × ${money(proj.rate)}`];
+          if (proj.credit) bits.push(`− ${money(proj.credit)} credit`);
+          if (proj.previewValue) bits.push(`− ${proj.previewSessions} left (${money(proj.previewValue)})`);
+          calc.innerHTML = `<span>${escapeHtml(monthShort)}: ${escapeHtml(bits.join(" "))}</span><span class="mr-dots"></span><span class="mr-amt">${escapeHtml(money(proj.projected))}</span>`;
+        }
+        row.appendChild(calc);
         card.appendChild(row);
       });
       if (!rows.length) {
         card.innerHTML += `<p class="muted mr-empty">No athletes yet.</p>`;
+      }
+
+      // The bottom line he asked for: what next month is worth, all banks in,
+      // charges already raised counted as-is. The same figure draws the ghost
+      // bar in Books — one number, two places.
+      const totals = raiseTotals(monthKey);
+      if (totals.banks) {
+        const foot = document.createElement("div");
+        foot.className = "mr-total";
+        foot.innerHTML =
+          `<b>${escapeHtml(monthShort)} projected</b>` +
+          `<span class="mr-total-sub">${totals.sessions} session${totals.sessions === 1 ? "" : "s"} · ${totals.banks} bank${totals.banks === 1 ? "" : "s"}</span>` +
+          `<span class="mr-total-amt">${escapeHtml(money(totals.amount))}</span>`;
+        card.appendChild(foot);
+
+        // Below-list audit: who is on an old rate, and what the gap costs a
+        // month. A line, not a table — tap it for the names.
+        const below = [];
+        rows.forEach(({ c }) => {
+          const m = bankMembership(c);
+          if (!m || !m.sessions) return;
+          const own = Number(c.sessionBank?.rate) || 0;
+          const list = membershipPerSession(m);
+          if (own > 0 && list > 0 && own < list) {
+            below.push({ c, own, list, delta: Math.round((list - own) * m.sessions * 100) / 100 });
+          }
+        });
+        if (below.length) {
+          const gap = below.reduce((n, b) => n + b.delta, 0);
+          const audit = document.createElement("button");
+          audit.type = "button";
+          audit.className = "mr-audit";
+          audit.innerHTML = `⚖ ${below.length} below list price (−${escapeHtml(money(gap))}/mo) · tap to review`;
+          audit.addEventListener("click", () => {
+            openModal({
+              title: "Below list price",
+              body: `<p class="muted" style="margin-top:-0.4em">Athletes whose per-session rate sits under their tier's list price. Raising one happens on their Sessions tab; this is just the map.</p>` +
+                below.map((b) => `<div class="mr-audit-row"><span>${escapeHtml(b.c.name || "(unnamed)")}</span><span>${escapeHtml(money(b.own))} vs ${escapeHtml(money(b.list))} list</span><b>−${escapeHtml(money(b.delta))}/mo</b></div>`).join(""),
+              actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
+            });
+          });
+          card.appendChild(audit);
+        }
+
+        const note = document.createElement("p");
+        note.className = "mr-foot muted";
+        note.textContent =
+          "Counts the bank as it stands today: leftovers that will expire drop out as the month closes, " +
+          "so this total sharpens toward the 1st. Couples count once. The projected bar in Books is this same figure.";
+        card.appendChild(note);
       }
       host.appendChild(card);
     });
@@ -6442,6 +6514,69 @@
       amount: Math.max(0, gross - credit),
     };
   }
+  // The Raise fold's forward look: next month's bill for this bank AS IT
+  // STANDS TODAY. monthChargePlan is the engine — the same one the Bill sheet
+  // charges with, so the projection and the eventual invoice cannot disagree —
+  // and the one addition is a PREVIEW of the credit this month's leftover
+  // would become if the month closed now (accrueSessionCredits makes it real
+  // on the 1st). The preview is what lets the coach watch the figure sharpen
+  // through the month instead of jumping when credits accrue.
+  function raiseProjection(c, monthKey) {
+    const plan = monthChargePlan(c, monthKey);
+    let previewSessions = 0;
+    let previewValue = 0;
+    if (!plan.flat && creditsOn(c)) {
+      const nowKey = todayISO().slice(0, 7);
+      // rollover=false, exactly as accrueSessionCredits reads it: the question
+      // is what THIS month would leave behind, not what has accumulated.
+      const l = bankLedger(c.sessionBank, nowKey, false);
+      const cur = l.byMonth?.get?.(nowKey);
+      previewSessions = Math.min(
+        Math.max(0, Number(cur?.left) || 0),
+        creditCapOf(c),
+      );
+      // Valued like the accrual values it, capped like the plan caps credit:
+      // never past what is left of the invoice itself.
+      previewValue = Math.min(
+        Math.max(0, plan.gross - plan.credit),
+        Math.round(previewSessions * plan.rate),
+      );
+    }
+    return {
+      ...plan,
+      previewSessions,
+      previewValue,
+      projected: Math.max(0, plan.amount - previewValue),
+    };
+  }
+
+  // One number for "what is next month worth", used by the Raise fold's
+  // footer AND by the Books ghost bar — one source, two places, so the chart
+  // can never disagree with the workspace above it. A charge already raised
+  // for the month is reality and beats the projection for that bank.
+  function raiseTotals(monthKey) {
+    const seen = new Set();
+    let amount = 0, sessions = 0, banks = 0;
+    (state.trainerData.clients || []).forEach((c) => {
+      if (seen.has(c.id)) return;
+      ensureSessionBank(c);
+      if (c.partnerId) seen.add(c.partnerId);
+      const m = bankMembership(c);
+      if (!m) return;
+      const charge = chargeFor(c, monthKey);
+      const p = raiseProjection(c, monthKey);
+      if (charge && charge.status !== "refunded") {
+        amount += (Number(charge.amount_cents) || 0) / 100;
+        sessions += Number(charge.sessions) || p.sessions || 0;
+      } else {
+        amount += p.projected;
+        sessions += p.flat ? 0 : p.sessions;
+      }
+      banks += 1;
+    });
+    return { amount, sessions, banks };
+  }
+
   // The month's charge for this BANK, not this athlete. A couple share one
   // allowance and get one invoice, raised against whichever half is the bank's
   // primary — so looking only at `c.id` told the other half's Sessions tab that
@@ -7165,6 +7300,33 @@
         ...(yoy ? [[`vs ${year - 1}`, yoy]] : []),
       ];
 
+      // How long the outstanding money has been outstanding. The unpaid total
+      // alone can't tell "sent on Tuesday" from "ignored since June", and the
+      // difference is the whole difference between waiting and chasing.
+      const ledger = moneyLedger();
+      const aging = { fresh: 0, mid: 0, old: 0 };
+      ledger.forEach((e) => {
+        if (e.paid || e.refunded || !e.amount) return;
+        const anchor = e.charge?.created_at || `${e.monthKey}-01`;
+        const days = Math.floor((Date.now() - new Date(anchor).getTime()) / 86400000);
+        if (days < 30) aging.fresh += e.amount;
+        else if (days < 60) aging.mid += e.amount;
+        else aging.old += e.amount;
+      });
+      const agingTotal = aging.fresh + aging.mid + aging.old;
+
+      // Who the year's money actually came from, banks ranked. Paid entries
+      // only — a raised invoice is a hope, not revenue.
+      const byBank = new Map();
+      ledger.forEach((e) => {
+        if (!e.paid || e.refunded || booksYearOf(e) !== year) return;
+        const cur = byBank.get(e.bankId) || { name: e.name, amount: 0 };
+        cur.amount += e.amount;
+        byBank.set(e.bankId, cur);
+      });
+      const top = [...byBank.values()].sort((a, b) => b.amount - a.amount).slice(0, 6);
+      const topPeak = Math.max(1, ...top.map((t) => t.amount));
+
       // One ghost row under the real months: the next month that has NOT been
       // billed yet, worth whatever is already on the calendar. The books
       // otherwise end at the last invoice, which on a coach who bills a month
@@ -7181,13 +7343,24 @@
       // a forecast, it is just a wrong number sitting where the truth ($0, and
       // nothing was billed) used to be.
       const nowKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      // The billing month's projection comes from the Raise calculator — the
+      // same figure the fold's footer shows, tiers and credit included — so
+      // the chart and the workspace above it can never disagree. Any other
+      // empty month is still priced off the raw calendar, which is all it has.
+      const projectionForMonth = (key) => {
+        if (key === billingMonthKey()) {
+          const t = raiseTotals(key);
+          return { amount: t.amount, sessions: t.sessions, unpriced: 0 };
+        }
+        return bookedValueForMonth(key);
+      };
       const monthRows = months.map((r) => {
         const total = r.collected + r.outstanding;
         if (total || year !== now.getFullYear() || r.key < nowKey) {
           return { ...r, total, proj: null };
         }
-        const p = bookedValueForMonth(r.key);
-        return { ...r, total, proj: p.sessions > 0 ? p : null };
+        const p = projectionForMonth(r.key);
+        return { ...r, total, proj: p.sessions > 0 || p.amount > 0 ? p : null };
       });
 
       // Anchored to the last month with MONEY on it, not the last row in the
@@ -7204,13 +7377,13 @@
       const projKey = shiftMonthKey(lastKey, 1);
       const projMonth = Number(projKey.slice(5, 7)) - 1;
       const proj = projKey.startsWith(`${year}-`) && year === now.getFullYear()
-        ? { ...bookedValueForMonth(projKey), key: projKey, label: MONTH_NAMES[projMonth].slice(0, 3) }
+        ? { ...projectionForMonth(projKey), key: projKey, label: MONTH_NAMES[projMonth].slice(0, 3) }
         : null;
       // And never a SECOND row for a month the books already list. The ghost
       // exists to add the month that is missing; once the real row is there it
       // is the one telling the truth, however quiet it reads.
       const listedKeys = new Set(months.map((r) => r.key));
-      const showProj = !!proj && proj.sessions > 0 && !listedKeys.has(proj.key);
+      const showProj = !!proj && (proj.sessions > 0 || proj.amount > 0) && !listedKeys.has(proj.key);
       // Every projected bar shares the year's scale, so "next month is quiet so
       // far" reads as a short bar rather than as a full-width one in another
       // colour.
@@ -7252,6 +7425,23 @@
                   <span class="books-stat-val">${escapeHtml(val)}</span>
                 </div>`).join("")}
             </div>
+            ${agingTotal > 0 ? `
+            <div class="books-aging" title="How long the outstanding money has been waiting">
+              <span class="books-aging-lbl">Outstanding by age</span>
+              <span class="books-aging-b">&lt;30d <b>${escapeHtml(money(aging.fresh))}</b></span>
+              <span class="books-aging-b${aging.mid ? " warn" : ""}">30–60d <b>${escapeHtml(money(aging.mid))}</b></span>
+              <span class="books-aging-b${aging.old ? " late" : ""}">60d+ <b>${escapeHtml(money(aging.old))}</b></span>
+            </div>` : ""}
+            ${top.length ? `
+            <div class="books-top">
+              <div class="books-top-lbl">Top banks · ${year}</div>
+              ${top.map((t) => `
+                <div class="books-top-row">
+                  <span class="books-top-name">${escapeHtml(t.name)}</span>
+                  <span class="books-top-track"><span class="books-top-bar" style="width:${Math.round((t.amount / topPeak) * 100)}%"></span></span>
+                  <span class="books-top-amt">${escapeHtml(money(t.amount))}</span>
+                </div>`).join("")}
+            </div>` : ""}
             <div class="books-months">
               ${monthRows.map((r) => {
                 const open = _booksOpenMonth === r.key;
@@ -7270,8 +7460,10 @@
                     <span class="books-mo-num">${escapeHtml(money(r.proj.amount))}</span>
                   </div>
                   <p class="books-proj-note">${escapeHtml(
-                    `${plural(r.proj.sessions, "session")} booked, at your rates. Not invoiced yet.` +
-                    (r.proj.unpriced ? ` ${r.proj.unpriced} with no rate set.` : ""),
+                    r.key === billingMonthKey()
+                      ? `${plural(r.proj.sessions, "session")} projected from Raise — tiers, credit and bookings in. Not invoiced yet.`
+                      : `${plural(r.proj.sessions, "session")} booked, at your rates. Not invoiced yet.` +
+                        (r.proj.unpriced ? ` ${r.proj.unpriced} with no rate set.` : ""),
                   )}</p>
                 </div>`;
                 }
@@ -7298,8 +7490,10 @@
                     <span class="books-mo-num">${escapeHtml(money(proj.amount))}</span>
                   </div>
                   <p class="books-proj-note">${escapeHtml(
-                    `${plural(proj.sessions, "session")} booked, at your rates. Not invoiced yet.` +
-                    (proj.unpriced ? ` ${proj.unpriced} with no rate set.` : ""),
+                    proj.key === billingMonthKey()
+                      ? `${plural(proj.sessions, "session")} projected from Raise — tiers, credit and bookings in. Not invoiced yet.`
+                      : `${plural(proj.sessions, "session")} booked, at your rates. Not invoiced yet.` +
+                        (proj.unpriced ? ` ${proj.unpriced} with no rate set.` : ""),
                   )}</p>
                 </div>` : ""}
             </div>

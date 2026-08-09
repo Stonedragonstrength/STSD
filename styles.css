@@ -4195,6 +4195,50 @@ input.bill-in {
 }
 .books.is-hidden .books-figs { filter: blur(8px); user-select: none; }
 .books.is-hidden .books-figs * { pointer-events: none; }
+/* Aging of the outstanding money: three buckets, coloured by how overdue. */
+.books-aging {
+  display: flex; align-items: baseline; gap: 0.45rem; flex-wrap: wrap;
+  margin-top: 0.6rem; font-size: 0.72rem;
+}
+.books-aging-lbl {
+  font-size: 0.62rem; font-weight: 800; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--muted); margin-right: 0.15rem;
+}
+.books-aging-b {
+  border: 1px solid var(--border); border-radius: 8px; padding: 0.2rem 0.5rem;
+  color: var(--text-soft); font-variant-numeric: tabular-nums;
+}
+.books-aging-b b { color: var(--text); }
+.books-aging-b.warn { border-color: rgba(var(--warn-rgb), 0.45); }
+.books-aging-b.warn b { color: var(--warn); }
+.books-aging-b.late { border-color: rgba(var(--danger-rgb), 0.5); }
+.books-aging-b.late b { color: var(--danger); }
+/* Where the year's money came from: banks ranked, one quiet bar each. */
+.books-top { margin-top: 0.7rem; }
+.books-top-lbl {
+  font-size: 0.62rem; font-weight: 800; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 0.3rem;
+}
+.books-top-row {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.16rem 0; font-size: 0.76rem;
+}
+.books-top-name {
+  flex: 0 0 34%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--text);
+}
+.books-top-track {
+  flex: 1 1 auto; height: 7px; border-radius: 999px;
+  background: var(--surface-2); overflow: hidden;
+}
+.books-top-bar {
+  display: block; height: 100%; border-radius: 999px;
+  background: rgba(var(--primary-rgb), 0.75);
+}
+.books-top-amt {
+  flex: 0 0 auto; font-variant-numeric: tabular-nums;
+  color: var(--text-soft); font-weight: 700;
+}
 /* The three headline numbers, in the racing-stat style the overview uses:
    the number carries the weight, the label is a whisper under it. */
 .books-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.45rem; }
@@ -6690,11 +6734,46 @@ input:focus, textarea:focus, select:focus {
   letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-soft);
 }
 .mr-row {
-  display: flex; align-items: center; gap: 0.55rem;
-  padding: 0.5rem 0;
+  padding: 0.55rem 0;
   border-bottom: 1px solid rgba(var(--primary-rgb), 0.08);
 }
 .mr-row:last-child { border-bottom: 0; }
+.mr-top { display: flex; align-items: center; gap: 0.55rem; }
+/* The three doors of the monthly round, boxed with the job they open. */
+.raise-actions { display: flex; gap: 0.45rem; flex-wrap: wrap; margin: 0.2rem 0 0.6rem; }
+.raise-actions:not(:has(button:not(.hidden))) { display: none; }
+/* The tickets that moved off the roster cards, and the working under them. */
+.mr-chips { display: flex; gap: 0.4rem; margin-top: 0.3rem; cursor: pointer; width: fit-content; }
+.mr-calc {
+  display: flex; align-items: baseline; gap: 0.45rem; margin-top: 0.3rem;
+  font-size: 0.76rem; color: var(--text-soft); font-variant-numeric: tabular-nums;
+}
+.mr-dots { flex: 1 1 auto; border-bottom: 1px dotted var(--border-strong); transform: translateY(-3px); }
+.mr-amt { font-weight: 800; color: var(--text); font-size: 0.86rem; }
+.mr-total {
+  display: flex; align-items: baseline; gap: 0.55rem;
+  border-top: 2px solid var(--border-strong);
+  margin-top: 0.5rem; padding-top: 0.6rem; font-size: 0.85rem;
+}
+.mr-total-sub { color: var(--text-soft); font-size: 0.7rem; }
+.mr-total-amt {
+  margin-left: auto; font-weight: 900; font-size: 1.1rem;
+  color: var(--primary-bright); font-variant-numeric: tabular-nums;
+}
+.mr-audit {
+  display: block; width: 100%; text-align: left;
+  margin-top: 0.5rem; padding: 0.35rem 0.5rem;
+  background: rgba(var(--warn-rgb), 0.08);
+  border: 1px solid rgba(var(--warn-rgb), 0.3); border-radius: 8px;
+  color: var(--warn); font-size: 0.74rem; font-weight: 600; cursor: pointer;
+}
+.mr-audit-row {
+  display: flex; gap: 0.6rem; align-items: baseline; justify-content: space-between;
+  padding: 0.35rem 0; border-bottom: 1px solid var(--border); font-size: 0.85rem;
+}
+.mr-audit-row:last-child { border-bottom: 0; }
+.mr-audit-row b { color: var(--warn); font-variant-numeric: tabular-nums; }
+.mr-foot { font-size: 0.7rem; margin: 0.55rem 0 0; line-height: 1.45; }
 .mr-name {
   font-size: 0.84rem; font-weight: 700; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
