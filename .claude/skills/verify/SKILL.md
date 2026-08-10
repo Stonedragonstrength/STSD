@@ -70,4 +70,14 @@ Supabase config, and boot only shows the coach UI with a live Supabase session
   edge, so scroll a card's Skip/lock buttons clear of it before clicking.
 - The Chrome window size varies between sessions — never reuse coordinates
   from an earlier session's screenshots; re-locate elements from a fresh
-  screenshot first.
+  screenshot first. Page ZOOM also changes between screenshots within a
+  session, so coordinates go stale mid-task, not just between tasks. If two
+  clicks in a row land wrong, stop using coordinates and drive by DOM.
+- A roster row opens in place: `.client-row-main` toggles a strip of doors
+  (Program / Nutrition / Sessions / Profile) inside the parent `.client-cell`,
+  and only "Program" runs `openClient()`. Two traps when scripting it: the
+  strip is NOT inside `.client-row`, so query from `.client-cell`; and because
+  it toggles, a second `.click()` closes it again — check whether the doors
+  are already there before clicking. Anything that needs a real
+  `state.currentClientId` (Anatomy coverage, for one) has to go through that
+  door, because the coach nav clears the id on the way to every top-level view.
