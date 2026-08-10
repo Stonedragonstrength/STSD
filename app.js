@@ -387,6 +387,9 @@
   // -------- Program editor state --------
   // When set, renderWeeks/addWeek operate on this template instead of the current client.
   let _programEditorId = null;
+  // The last athlete the coach opened. Survives the nav clearing currentClientId,
+  // so the Anatomy coverage map still knows whose week it is reading.
+  let _lastAthleteId = null;
   let _coachActiveWeekIdx = 0;
   // The pinned "Coaching" tab at the end of the week strip. One-off sessions
   // aren't a week, so they get a flag rather than an index into weeks[].
@@ -5521,6 +5524,10 @@
     if (!c.coachPRs) c.coachPRs = [];
     ensureSessionBank(c);
     state.currentClientId = id;
+    // Coach nav clears currentClientId on the way to any top-level view, so the
+    // Anatomy coverage map would have no subject the moment you navigated to it.
+    // This remembers who you were last working on, purely for that read.
+    _lastAthleteId = id;
     switchCoachView("client");
     updateHeaderBreadcrumb(c);
     $("#client-name-display").textContent = c.name;
@@ -9476,6 +9483,197 @@
     back: ANATOMY_GROUPS.filter((g) => g.region === "back" || g.region === "both").map((g) => g.id),
   };
 
+  // ============================================================
+  // Coverage — what an athlete's current week actually asks of each muscle.
+  // Three exercise→muscle maps already existed and none of them reached the
+  // body map. They layer, best first:
+  //   1. the curated anchors/accessories above — the only source that tells a
+  //      lateral raise from a rear delt fly, because a human wrote it;
+  //   2. the demo database's primary/secondary tags — far more names, but it
+  //      files every shoulder movement under one "shoulders" bucket;
+  //   3. the exercise library's own category — the floor, catching the rest.
+  // ============================================================
+  // Names are normalised with the existing exKey() so this index agrees with
+  // every other name lookup in the app rather than inventing a second spelling.
+
+  // A "shoulders" tag credits all three delts rather than inventing a head.
+  const DEMO_MUSCLE_GROUPS = {
+    abdominals: ["core"], quadriceps: ["quads"], hamstrings: ["hamstrings"],
+    glutes: ["glutes"], calves: ["calves"], adductors: ["adductors"],
+    abductors: ["abductors"], chest: ["chest"], lats: ["lats"],
+    "middle back": ["rhomboids"], "lower back": ["lowerback"], traps: ["traps"],
+    shoulders: ["delts-front", "delts-side", "delts-rear"],
+    biceps: ["biceps"], triceps: ["triceps"], forearms: ["forearms"],
+  };
+  const LIB_CAT_GROUPS = {
+    Chest: ["chest"], Back: ["lats", "rhomboids"], Quads: ["quads"],
+    Hamstrings: ["hamstrings"], Glutes: ["glutes"], Adductors: ["adductors"],
+    Abductors: ["abductors"], Shoulders: ["delts-front", "delts-side", "delts-rear"],
+    Biceps: ["biceps"], Triceps: ["triceps"], Core: ["core", "obliques"],
+    Calves: ["calves"], Carries: ["forearms", "traps"],
+  };
+
+  let _curatedExIdx = null;
+  function curatedExIndex() {
+    if (_curatedExIdx) return _curatedExIdx;
+    _curatedExIdx = new Map();
+    ANATOMY_GROUPS.forEach((g) => {
+      [...(g.anchors || []), ...(g.accessories || [])].forEach((n) => {
+        const k = exKey(n);
+        if (!k) return;
+        const arr = _curatedExIdx.get(k) || [];
+        if (!arr.includes(g.id)) arr.push(g.id);
+        _curatedExIdx.set(k, arr);
+      });
+    });
+    return _curatedExIdx;
+  }
+  let _libCatIdx = null;
+  function libCatIndex() {
+    if (_libCatIdx) return _libCatIdx;
+    _libCatIdx = new Map();
+    EXERCISE_LIBRARY.forEach((c) => (c.ex || []).forEach((n) => _libCatIdx.set(exKey(n), c.cat)));
+    return _libCatIdx;
+  }
+
+  // → [{ id, weight }]. Weight 1 where the muscle does the work, 0.5 where it
+  // only assists, so a deadlift does not read as a full forearm session.
+  //
+  // The curated lists and the demo tags UNION rather than short-circuit. They
+  // answer different questions: "Deadlift" appears in the curated list for
+  // Lower Back because it is a good example of one, not because it is the only
+  // thing a deadlift trains. Letting the curated hit win outright printed a
+  // week of squats, deadlifts and RDLs as zero glute work. The library category
+  // stays a true fallback — it is the coarsest source, so it only speaks when
+  // nothing else recognised the name at all.
+  function musclesForExercise(ex) {
+    const name = typeof ex === "string" ? ex : ex?.name;
+    const k = exKey(name);
+    if (!k) return [];
+    const best = new Map();
+    const add = (id, weight) => { if (!(best.get(id) >= weight)) best.set(id, weight); };
+    const curated = curatedExIndex().get(k) || [];
+    curated.forEach((id) => add(id, 1));
+    // The demo database has one "shoulders" bucket for all three delt heads. If
+    // the curated list already named the head — a lateral raise is side delts,
+    // a face pull is rear — letting that bucket fan back out across all three
+    // undoes the only source that knew the difference, and every delt reads the
+    // same number. So the coarse bucket only speaks when nothing finer has.
+    const curatedDelt = curated.some((id) => id.startsWith("delts-"));
+    const entry = typeof ex === "string" ? demoEntryForName(name) : demoForExercise(ex);
+    if (entry) {
+      const fan = (m, weight) => {
+        if (m === "shoulders" && curatedDelt) return;
+        (DEMO_MUSCLE_GROUPS[m] || []).forEach((id) => add(id, weight));
+      };
+      (entry.p || []).forEach((m) => fan(m, 1));
+      (entry.s || []).forEach((m) => fan(m, 0.5));
+    }
+    if (!best.size) {
+      const cat = libCatIndex().get(k)
+        || (customExerciseList().find((c) => exKey(c.name) === k) || {}).cat;
+      (LIB_CAT_GROUPS[cat] || []).forEach((id) => add(id, 1));
+    }
+    return [...best].map(([id, weight]) => ({ id, weight }));
+  }
+
+  // Placeholder bands from the hypertrophy literature. Change the numbers here
+  // and the figure, the list and the verdict line all follow.
+  function coverageBand(n) {
+    if (n >= 12) return 3;
+    if (n >= 6) return 2;
+    if (n >= 1) return 1;
+    return 0;
+  }
+
+  // The week the picture is about. The coach gets wherever the program has the
+  // athlete right now; the athlete gets whichever week they are looking at.
+  function coverageWeek(client, isCoach) {
+    const weeks = (client?.weeks || []).filter((w) => (w.days || []).length);
+    if (!weeks.length) return null;
+    if (isCoach) {
+      const cur = athleteCurrentDay(client);
+      const w = cur && weeks.find((x) => x.id === cur.weekId);
+      if (w) return w;
+    } else {
+      const id = state.workoutView?.weekId || state.clientData?.selectedWeekId;
+      const w = weeks.find((x) => x.id === id);
+      if (w) return w;
+    }
+    return weeks[0];
+  }
+
+  function anatomyCoverage(client, isCoach) {
+    const week = coverageWeek(client, isCoach);
+    if (!week) return null;
+    const sets = {};
+    ANATOMY_GROUPS.forEach((g) => { sets[g.id] = 0; });
+    let counted = 0, unmapped = 0;
+    (week.days || []).forEach((d) => (d.exercises || []).forEach((ex) => {
+      const n = Number(ex.sets) || 0;
+      if (!n) return;
+      const hits = musclesForExercise(ex);
+      if (!hits.length) { unmapped++; return; }
+      counted++;
+      hits.forEach((h) => { if (sets[h.id] != null) sets[h.id] += n * h.weight; });
+    }));
+    Object.keys(sets).forEach((k) => { sets[k] = Math.round(sets[k] * 10) / 10; });
+    return {
+      week, sets, counted, unmapped,
+      gaps: ANATOMY_GROUPS.filter((g) => !sets[g.id]).map((g) => g.name),
+      light: ANATOMY_GROUPS.filter((g) => sets[g.id] > 0 && sets[g.id] < 6).map((g) => g.name),
+    };
+  }
+
+  // The muscle an exercise most belongs to: heaviest weight wins, ties broken
+  // by the order the groups are written above, so the answer is stable.
+  function primaryMuscleFor(ex) {
+    const hits = musclesForExercise(ex);
+    if (!hits.length) return null;
+    const order = ANATOMY_GROUPS.map((g) => g.id);
+    hits.sort((a, b) => b.weight - a.weight || order.indexOf(a.id) - order.indexOf(b.id));
+    return ANATOMY_BY_ID[hits[0].id] || null;
+  }
+
+  // Jump into a muscle's card on whichever Anatomy mount this role can see.
+  // Athletes had no reason to open the Anatomy tab at all; this gives the
+  // library a door from the workout they are actually standing in.
+  function openAnatomyMuscle(id) {
+    if (!ANATOMY_BY_ID[id]) return;
+    const coachSide = !$("#screen-app")?.classList.contains("hidden");
+    if (coachSide) switchCoachView("anatomy"); else setClientTab("anatomy");
+    const root = document.querySelector(coachSide
+      ? "#view-anatomy [data-anatomy-root]"
+      : '[data-ctab-panel="anatomy"] [data-anatomy-root]');
+    if (root && root._anatomyGoto) root._anatomyGoto(id);
+  }
+
+  // The button itself, so the exercise card and the mobility card share one.
+  function muscleJumpButton(ex) {
+    const g = primaryMuscleFor(ex);
+    if (!g) return null;
+    const btn = document.createElement("button");
+    btn.className = "btn btn-sm btn-ghost muscle-btn";
+    btn.innerHTML = `<span class="muscle-btn-ico" aria-hidden="true">◉</span><span>${escapeHtml(g.name)}</span>`;
+    btn.title = `What ${g.name} does, and how to train it`;
+    btn.addEventListener("click", (e) => { e.stopPropagation(); openAnatomyMuscle(g.id); });
+    return btn;
+  }
+
+  function coverageVerdictHtml(cov, who) {
+    if (!cov) return `<p class="a-cov-none">No program to read yet — add a week with some days and this fills in.</p>`;
+    const list = (arr) => arr.map((n) => `<b>${escapeHtml(n)}</b>`).join(", ");
+    const bits = [];
+    if (cov.gaps.length) bits.push(`Nothing for ${list(cov.gaps)}.`);
+    if (cov.light.length) bits.push(`${list(cov.light)} ${cov.light.length === 1 ? "gets" : "get"} under 6 sets — light.`);
+    if (!bits.length) bits.push("Every muscle group gets work this week.");
+    if (cov.unmapped) bits.push(`<span class="a-cov-unmapped">${cov.unmapped} exercise${cov.unmapped === 1 ? "" : "s"} couldn't be matched to a muscle.</span>`);
+    return `<div class="a-cov-verdict${cov.gaps.length ? " has-gaps" : ""}">
+      <span class="a-cov-lead">${cov.gaps.length ? "⚠ Gaps" : "✓ Covered"} · ${escapeHtml(cov.week.label || "This week")}${who ? " · " + escapeHtml(who) : ""}</span>
+      <p>${bits.join(" ")}</p>
+    </div>`;
+  }
+
   // Muscle-map SVG paths adapted from "Body Muscles" by Ivan Vulovic
   // (github.com/vulovix/body-muscles), Apache-2.0. Grouped many fine-grained
   // muscle regions into Stone Dragon's coarser groups; non-muscle parts (head,
@@ -9595,10 +9793,34 @@
       + `<g class="a-zones">${zones}</g></svg>`;
   }
 
+  // Summary first, depth behind rows. The card used to render all eight sections
+  // at once, which measured 1192px on a 390px phone — a screen and a half of
+  // scrolling before the example lifts. What you say out loud mid-session (what
+  // it does, why it matters, the cues) stays open; the reference depth collapses.
+  // Wide screens have the room, so the two most-reached sections start open there.
   function anatomyDetailHtml(g, editable) {
     const li = (t) => `<li>${escapeHtml(t)}</li>`;
-    const chip = (n, anchor) => `<span class="a-ex-chip${anchor ? " anchor" : ""}">${escapeHtml(n)}</span>`;
+    // Chips are buttons now: the demo index already resolves these names to
+    // photos, it was just never wired to the muscle cards.
+    const chip = (n, anchor) => `<button type="button" class="a-ex-chip${anchor ? " anchor" : ""}" data-demo-ex="${escapeHtml(n)}">${escapeHtml(n)}</button>`;
     const fact = (label, val) => val ? `<div class="a-fact"><span class="a-fact-label">${label}</span><span class="a-fact-val">${escapeHtml(val)}</span></div>` : "";
+    const wide = window.matchMedia("(min-width: 761px)").matches;
+    const sec = (title, n, inner, openWide) => inner
+      ? `<details class="a-sec"${wide && openWide ? " open" : ""}>
+          <summary class="a-sec-sum">
+            <span class="a-sec-title">${title}</span>
+            ${n ? `<span class="a-sec-n">${n}</span>` : ""}
+            <span class="a-sec-chev" aria-hidden="true"></span>
+          </summary>
+          <div class="a-sec-body">${inner}</div>
+        </details>`
+      : "";
+    const muscles = ANATOMY_MUSCLES[g.id] || [];
+    const links = muscleReadMore(g);
+    const stretchInjury = (g.stretches || g.injuries) ? `<div class="a-cols">
+        ${g.stretches ? `<div class="a-col a-stretch"><h4>Stretches</h4><ul>${g.stretches.map(li).join("")}</ul></div>` : ""}
+        ${g.injuries ? `<div class="a-col a-injury"><h4>Common injuries</h4><ul>${g.injuries.map(li).join("")}</ul></div>` : ""}
+      </div>` : "";
     return `<div class="a-card${g._edited ? " is-edited" : ""}">
       <div class="a-card-head">
         <h3>${escapeHtml(g.name)}</h3>
@@ -9609,29 +9831,24 @@
       <p class="a-does">${escapeHtml(g.does)}</p>
       ${g.why ? `<p class="a-why">${escapeHtml(g.why)}</p>` : ""}
       ${g._note ? `<div class="a-note"><span class="a-note-label">Coach note</span><p>${escapeHtml(g._note)}</p></div>` : ""}
-      ${(ANATOMY_MUSCLES[g.id] && ANATOMY_MUSCLES[g.id].length) ? `<div class="a-muscles">
-        <h4>Muscles in this group</h4>
-        <ul class="a-muscle-list">${ANATOMY_MUSCLES[g.id].map((m) => `<li>${escapeHtml(m)}</li>`).join("")}</ul>
-      </div>` : ""}
-      <div class="a-cols">
-        <div class="a-col a-cues"><h4>Coaching cues</h4><ul>${g.cues.map(li).join("")}</ul></div>
-        <div class="a-col a-miss"><h4>Common mistakes</h4><ul>${g.mistakes.map(li).join("")}</ul></div>
+      <div class="a-col a-cues a-cues-lead"><h4>Coaching cues</h4><ul>${g.cues.map(li).join("")}</ul></div>
+      <div class="a-secs">
+        ${sec("Common mistakes", g.mistakes.length, `<ul class="a-plain">${g.mistakes.map(li).join("")}</ul>`, true)}
+        ${sec("Example exercises", g.anchors.length + g.accessories.length, `<div class="a-ex-chips">
+            ${g.anchors.map((n) => chip(n, true)).join("")}
+            ${g.accessories.map((n) => chip(n, false)).join("")}
+          </div>`, true)}
+        ${sec("Stretches &amp; injuries", (g.stretches || []).length + (g.injuries || []).length, stretchInjury, false)}
+        ${sec("Warm-up · pairs · frequency", 0, (g.warmup || g.pairs || g.frequency)
+            ? `<div class="a-facts">${fact("Warm-up", g.warmup)}${fact("Pairs with", g.pairs)}${fact("Frequency", g.frequency)}</div>`
+            : "", false)}
+        ${sec("Muscles in this group", muscles.length,
+            muscles.length ? `<ul class="a-muscle-list">${muscles.map((m) => `<li>${escapeHtml(m)}</li>`).join("")}</ul>` : "", false)}
+        ${sec("The science behind it", links.length, links.length
+            ? `<div class="a-link-chips">${links.map((l) =>
+                `<button type="button" class="a-link-chip" data-goto-card="${escapeHtml(l.kind)}|${escapeHtml(l.cid)}">${escapeHtml(l.term)}</button>`).join("")}</div>`
+            : "", false)}
       </div>
-      ${(g.stretches || g.injuries) ? `<div class="a-cols">
-        ${g.stretches ? `<div class="a-col a-stretch"><h4>Stretches</h4><ul>${g.stretches.map(li).join("")}</ul></div>` : ""}
-        ${g.injuries ? `<div class="a-col a-injury"><h4>Common injuries</h4><ul>${g.injuries.map(li).join("")}</ul></div>` : ""}
-      </div>` : ""}
-      ${(g.warmup || g.pairs || g.frequency) ? `<div class="a-facts">
-        ${fact("Warm-up", g.warmup)}${fact("Pairs with", g.pairs)}${fact("Frequency", g.frequency)}
-      </div>` : ""}
-      <div class="a-ex">
-        <h4>Example exercises</h4>
-        <div class="a-ex-chips">
-          ${g.anchors.map((n) => chip(n, true)).join("")}
-          ${g.accessories.map((n) => chip(n, false)).join("")}
-        </div>
-      </div>
-      ${muscleReadMoreHtml(g)}
     </div>`;
   }
 
@@ -10055,15 +10272,6 @@
     const terms = MUSCLE_READ_MORE[g.id] || MUSCLE_READ_MORE_BY_PATTERN[String(g.pattern || "").toLowerCase()] || [];
     return terms.map((t) => termIndex()[t]).filter(Boolean);
   }
-  function muscleReadMoreHtml(g) {
-    const links = muscleReadMore(g);
-    if (!links.length) return "";
-    return `<div class="a-readmore">
-      <h4>The science behind it</h4>
-      <div class="a-link-chips">${links.map((l) =>
-        `<button type="button" class="a-link-chip" data-goto-card="${escapeHtml(l.kind)}|${escapeHtml(l.cid)}">${escapeHtml(l.term)}</button>`).join("")}</div>
-    </div>`;
-  }
   function conceptMuscleLinksHtml(cardId) {
     const entry = Object.entries(CONCEPT_MUSCLES).find(([term]) => termIndex()[term] && termIndex()[term].cid === cardId);
     if (!entry) return "";
@@ -10135,7 +10343,10 @@
   // Groups are already merged (items carry id/term/short/def/take). `editable`
   // adds the coach's per-card Edit and per-group Add controls.
   function conceptGroupsHtml(groups, label, editable) {
-    return groups.map((grp) => `<details class="a-cgroup" data-group="${escapeHtml(grp.id)}"${grp.accent ? ` style="--a-accent:${escapeHtml(grp.accent)}"` : ""}>
+    // Wrapped in a grid: closed, these are one-line rows and stacking them put
+    // six of them down a 1300px page holding a title and a count each. Open,
+    // a group takes the full row back (see .a-cgroup[open] in the stylesheet).
+    return `<div class="a-cgroups">` + groups.map((grp) => `<details class="a-cgroup" data-group="${escapeHtml(grp.id)}"${grp.accent ? ` style="--a-accent:${escapeHtml(grp.accent)}"` : ""}>
         <summary class="a-cgroup-sum">
           ${grp.icon ? `<span class="a-cgroup-ico" aria-hidden="true">${dayIconHtml(grp.icon)}</span>` : ""}
           <span class="a-cgroup-title">${escapeHtml(grp.group)}</span>
@@ -10160,7 +10371,7 @@
           </details>`).join("")}
           ${editable ? `<button type="button" class="a-add-card" data-add-card="${escapeHtml(grp.id)}">＋ Add a card</button>` : ""}
         </div>
-      </details>`).join("");
+      </details>`).join("") + `</div>`;
   }
 
   function strengthConceptsHtml(editable) {
@@ -10220,18 +10431,25 @@
       </div>
       <div class="a-results hidden" data-anatomy-results></div>
       <div class="a-shelf" data-pane="body">
-        <p class="anatomy-intro">Tap a muscle on the body or in the list to see what it does, how to train it, and example lifts.${editable ? " Tap ✏️ Edit on any card to rewrite it or add your own." : ""}</p>
-        <div class="anatomy-toggle" role="tablist">
-          <button type="button" class="a-view-btn active" data-view="front">Front</button>
-          <button type="button" class="a-view-btn" data-view="back">Back</button>
+        <div class="a-mode-row">
+          <div class="a-mode" role="tablist">
+            <button type="button" class="a-mode-btn active" data-mode="reference">Reference</button>
+            <button type="button" class="a-mode-btn" data-mode="coverage">Coverage</button>
+          </div>
+          <span class="a-mode-who" data-cov-who></span>
         </div>
+        <div class="a-cov-note hidden" data-cov-verdict></div>
         <div class="anatomy-layout">
-          <div class="anatomy-figure">${anatomyFigureSvg("front")}${anatomyFigureSvg("back")}</div>
-          <div class="anatomy-side">
-            <div class="anatomy-list" data-anatomy-list></div>
-            <div class="anatomy-detail" data-anatomy-detail>
-              <div class="anatomy-detail-empty">Select a muscle group to see the details.</div>
+          <div class="anatomy-figure">
+            ${anatomyFigureSvg("front")}${anatomyFigureSvg("back")}
+            <div class="anatomy-toggle" role="tablist">
+              <button type="button" class="a-view-btn active" data-view="front">Front</button>
+              <button type="button" class="a-view-btn" data-view="back">Back</button>
             </div>
+          </div>
+          <div class="anatomy-list" data-anatomy-list></div>
+          <div class="anatomy-detail" data-anatomy-detail>
+            <div class="anatomy-detail-empty">Pick a muscle — on the body or in the list.</div>
           </div>
         </div>
       </div>
@@ -10247,6 +10465,52 @@
     let view = "front";
     let selected = null;
     let shelf = "body";
+    let mode = "reference";
+    let cov = null;
+
+    // Whose week the map is reading. The coach mount follows whichever athlete
+    // is open — that is already how the rest of the coach screen behaves — and
+    // the athlete mount is always their own.
+    function coverageSubject() {
+      if (!editable) return { client: state.clientData, isCoach: false };
+      const c = currentClient()
+        || (state.trainerData?.clients || []).find((x) => x.id === _lastAthleteId);
+      return { client: c || null, isCoach: true };
+    }
+    // Recomputed on every paint, never cached across renders: this mount
+    // outlives athlete switches, and a stale map would quietly show the
+    // previous athlete's week under the new athlete's name.
+    function renderCoverage() {
+      const { client, isCoach } = coverageSubject();
+      cov = mode === "coverage" ? anatomyCoverage(client, isCoach) : null;
+      const whoEl = root.querySelector("[data-cov-who]");
+      const noteEl = root.querySelector("[data-cov-verdict]");
+      root.classList.toggle("is-coverage", mode === "coverage");
+      noteEl.classList.toggle("hidden", mode !== "coverage");
+      if (mode !== "coverage") {
+        whoEl.textContent = "";
+        root.querySelectorAll(".a-zone[data-cov]").forEach((z) => z.removeAttribute("data-cov"));
+        return;
+      }
+      const who = isCoach ? (client?.name || "") : "";
+      whoEl.textContent = client
+        ? [cov?.week?.label, who].filter(Boolean).join(" · ")
+        : "No athlete open";
+      noteEl.innerHTML = client
+        ? coverageVerdictHtml(cov, who)
+        : `<p class="a-cov-none">Open an athlete and this reads their week.</p>`;
+      root.querySelectorAll(".a-zone").forEach((z) => {
+        const n = cov?.sets?.[z.dataset.muscle];
+        z.setAttribute("data-cov", String(coverageBand(n || 0)));
+      });
+    }
+    function setMode(next) {
+      mode = next;
+      root.querySelectorAll(".a-mode-btn").forEach((b) => b.classList.toggle("active", b.dataset.mode === next));
+      renderCoverage();
+      renderList();
+      highlight();
+    }
 
     function renderConcepts() {
       paneEl("str").innerHTML = strengthConceptsHtml(editable);
@@ -10267,9 +10531,19 @@
       root.querySelectorAll("[data-pane]").forEach((p) => p.classList.toggle("hidden", p.dataset.pane !== next));
     }
     function renderList() {
-      listEl.innerHTML = ANATOMY_VIEW_GROUPS[view].map((id) => {
+      let ids = ANATOMY_VIEW_GROUPS[view];
+      // In coverage the list doubles as the ranking, so the worked muscles sort
+      // to the top and the untouched ones collect at the bottom where they read
+      // as a group rather than as scattered zeroes.
+      if (cov) ids = ids.slice().sort((a, b) => (cov.sets[b] || 0) - (cov.sets[a] || 0));
+      listEl.innerHTML = ids.map((id) => {
         const g = ANATOMY_BY_ID[id];
-        return `<button type="button" class="a-chip${id === selected ? " selected" : ""}" data-muscle="${id}">${escapeHtml(g.name)}</button>`;
+        const n = cov ? (cov.sets[id] || 0) : null;
+        return `<button type="button" class="a-chip${id === selected ? " selected" : ""}"`
+          + (cov ? ` data-cov="${coverageBand(n)}"` : "")
+          + ` data-muscle="${id}">${escapeHtml(g.name)}`
+          + (cov ? `<span class="a-chip-n">${n}</span>` : "")
+          + `</button>`;
       }).join("");
     }
     function highlight() {
@@ -10297,7 +10571,7 @@
       // Keep the selection if the group also lives in the new view, else clear.
       if (selected && !ANATOMY_VIEW_GROUPS[view].includes(selected)) {
         selected = null;
-        detailEl.innerHTML = '<div class="anatomy-detail-empty">Select a muscle group to see the details.</div>';
+        detailEl.innerHTML = '<div class="anatomy-detail-empty">Pick a muscle — on the body or in the list.</div>';
       }
       renderList();
       highlight();
@@ -10385,6 +10659,8 @@
 
     root.querySelectorAll(".a-view-btn").forEach((b) =>
       b.addEventListener("click", () => setView(b.dataset.view)));
+    root.querySelectorAll(".a-mode-btn").forEach((b) =>
+      b.addEventListener("click", () => setMode(b.dataset.mode)));
     root.addEventListener("click", (e) => {
       const gotoM = e.target.closest("[data-goto-muscle]");
       if (gotoM && root.contains(gotoM)) { gotoMuscle(gotoM.dataset.gotoMuscle); return; }
@@ -10396,12 +10672,29 @@
       if (addCard && root.contains(addCard)) { openAddConceptCard(addCard.dataset.addCard); return; }
       const editMus = e.target.closest("[data-edit-muscle]");
       if (editMus && root.contains(editMus)) { openMuscleEditor(editMus.dataset.editMuscle); return; }
+      // Example-lift chips open the same demo the athlete sees on that exercise.
+      const demoEx = e.target.closest("[data-demo-ex]");
+      if (demoEx && root.contains(demoEx)) {
+        const name = demoEx.dataset.demoEx;
+        const entry = demoEntryForName(name);
+        if (entry) openDemoModal(entry, name);
+        else toast(`No demo photo for ${name} yet`);
+        return;
+      }
       const zone = e.target.closest(".a-zone, .a-chip");
       if (zone && root.contains(zone)) select(zone.dataset.muscle);
     });
 
+    // The way in from anywhere else in the app (a workout exercise, say).
+    root._anatomyGoto = (id) => { clearSearch(); gotoMuscle(id); };
     // Let coach edits re-render this mount's concepts + open muscle in place.
-    root._anatomyRefresh = () => { renderConcepts(); renderDetail(); };
+    // Coverage recomputes here too: this node is built once and survives every
+    // athlete switch, so without this the map keeps showing the last athlete.
+    root._anatomyRefresh = () => {
+      renderConcepts();
+      renderDetail();
+      if (mode === "coverage") { renderCoverage(); renderList(); highlight(); }
+    };
     _anatomyRoots.add(root);
     renderConcepts();
     renderList();
@@ -27753,7 +28046,8 @@
   }
   function appendDemoRow(panel, ex, demoBtn, fallbackTitle) {
     const ytId = getYouTubeId(ex.videoUrl);
-    if (!ytId && !ex.videoUrl && !demoBtn) return;
+    const muscleBtn = muscleJumpButton(ex);
+    if (!ytId && !ex.videoUrl && !demoBtn && !muscleBtn) return;
     const demoRow = document.createElement("div");
     demoRow.className = "cex-demo-row";
     if (ytId || ex.videoUrl) {
@@ -27768,6 +28062,7 @@
       demoRow.appendChild(vBtn);
     }
     if (demoBtn) demoRow.appendChild(demoBtn);
+    if (muscleBtn) demoRow.appendChild(muscleBtn);
     panel.appendChild(demoRow);
   }
 
@@ -29777,6 +30072,10 @@
       change.addEventListener("click", () => openDemoPicker(ex, paint));
       row.appendChild(label);
       row.appendChild(change);
+      // Same door the athlete gets, for when you are mid-programming and want
+      // to check what this lift actually covers.
+      const muscleBtn = muscleJumpButton(ex);
+      if (muscleBtn) row.appendChild(muscleBtn);
     };
     paint();
     row._repaintDemo = paint; // the name input re-matches as the coach types
@@ -35873,6 +36172,7 @@
           state.currentClientId = null;
           switchCoachView("anatomy");
           hideLibSidebar();
+          refreshAnatomy(); // coverage re-reads whoever you last had open
         } else if (target === "settings") {
           _programEditorId = null;
           state.currentClientId = null;

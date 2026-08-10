@@ -10220,7 +10220,6 @@ body.live-log-mode #screen-client .header-right { display: none; }
    Anatomy Library — body map + muscle detail (coach + athlete)
    ============================================================ */
 .anatomy { display: flex; flex-direction: column; gap: 1.25rem; }
-.anatomy-intro { color: var(--text-soft); font-size: 0.92rem; margin: 0; }
 
 /* Front / Back segmented toggle */
 .anatomy-toggle {
@@ -10251,22 +10250,40 @@ body.live-log-mode #screen-client .header-right { display: none; }
   box-shadow: inset 0 0 0 1px rgba(var(--primary-bright-rgb), 0.35);
 }
 
-/* Figure + legend side by side, stacking on narrow screens */
+/* Figure, muscle list and detail in one grid. The picker — figure beside the
+   list — holds at every width. Stacking them dropped the muscle names 905px
+   down a phone, below the fold, behind a full-height body you had to scroll
+   past before you could read a single name. */
 .anatomy-layout {
   display: grid;
   grid-template-columns: minmax(0, 280px) minmax(0, 1fr);
-  gap: 1.25rem;
+  grid-template-areas:
+    "fig list"
+    "fig detail";
+  gap: 1rem 1.25rem;
   align-items: start;
+  align-content: start;
 }
-/* Legend + detail share the right column so the figure sits beside the info */
-.anatomy-side { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.anatomy-figure { grid-area: fig; }
+.anatomy-list { grid-area: list; }
+.anatomy-detail { grid-area: detail; min-width: 0; }
 .anatomy-figure {
+  position: relative;
   background: radial-gradient(circle at 50% 30%, var(--surface-2), var(--surface));
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 0.75rem;
   display: flex;
   justify-content: center;
+}
+/* Front/Back rides on the figure instead of costing its own row */
+.anatomy-figure .anatomy-toggle {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 2;
+  background: var(--surface-2);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 }
 /* Figure is a tall, narrow muscle map (viewBox ~35x93); cap by width so it
    stays a sensible size, and keep strokes hairline-thin regardless of scale. */
@@ -10387,8 +10404,47 @@ body.live-log-mode #screen-client .header-right { display: none; }
 .a-fact-val { font-size: 0.85rem; line-height: 1.35; color: var(--text); }
 .a-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .a-col h4 { margin: 0 0 0.4em; font-size: 0.85rem; color: var(--text-soft); }
-.a-col ul { margin: 0; padding-left: 1.1em; display: flex; flex-direction: column; gap: 0.35em; }
-.a-col li { font-size: 0.88rem; line-height: 1.4; color: var(--text); }
+.a-col ul, ul.a-plain { margin: 0; padding-left: 1.1em; display: flex; flex-direction: column; gap: 0.35em; }
+.a-col li, ul.a-plain li { font-size: 0.88rem; line-height: 1.4; color: var(--text); }
+
+/* Collapsing sections inside a muscle card. Cues stay open above them — those
+   are the words you say out loud; everything below is reference depth. */
+.a-secs { display: flex; flex-direction: column; gap: 0.4rem; }
+.a-sec {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.a-sec[open] { border-color: rgba(var(--primary-bright-rgb), 0.4); }
+.a-sec-sum {
+  display: flex; align-items: center; gap: 0.55rem;
+  padding: 0.62em 0.85em; cursor: pointer; list-style: none;
+}
+.a-sec-sum::-webkit-details-marker { display: none; }
+.a-sec:not([open]) .a-sec-sum:hover { background: var(--surface-3); }
+.a-sec[open] .a-sec-sum { background: linear-gradient(180deg, var(--surface-3), var(--surface-2)); }
+.a-sec-title { flex: 1; min-width: 0; font-size: 0.87rem; font-weight: 700; color: var(--text); }
+.a-sec-n {
+  flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 1.5em; height: 1.5em; padding: 0 0.35em;
+  font-size: 0.66rem; font-weight: 800; border-radius: 999px;
+  background: var(--surface); color: var(--text-soft); border: 1px solid var(--border);
+}
+.a-sec-chev { flex: none; position: relative; width: 15px; height: 15px; color: var(--primary-bright); }
+.a-sec-chev::before, .a-sec-chev::after {
+  content: ""; position: absolute; left: 50%; top: 50%;
+  background: currentColor; border-radius: 2px;
+  transform: translate(-50%, -50%);
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.a-sec-chev::before { width: 13px; height: 2px; }
+.a-sec-chev::after { width: 2px; height: 13px; }
+.a-sec[open] .a-sec-chev::after { transform: translate(-50%, -50%) rotate(90deg); opacity: 0; }
+.a-sec[open] .a-sec-chev::before { transform: translate(-50%, -50%) rotate(180deg); }
+.a-sec-body { padding: 0 0.85em 0.8em; }
+.a-cues-lead { padding-bottom: 0.2rem; }
 .a-cues li::marker { color: var(--primary-bright); }
 .a-miss li::marker { color: var(--warn); }
 .a-stretch li::marker { color: var(--success, #4ade80); }
@@ -10397,7 +10453,9 @@ body.live-log-mode #screen-client .header-right { display: none; }
 .a-injury h4 { color: #fca5a5; }
 .a-ex h4 { margin: 0 0 0.5em; font-size: 0.85rem; color: var(--text-soft); }
 .a-ex-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+/* A button now, not a span: each chip opens that exercise's demo photos. */
 .a-ex-chip {
+  font-family: inherit;
   font-size: 0.82rem;
   font-weight: 600;
   padding: 0.35em 0.7em;
@@ -10405,12 +10463,20 @@ body.live-log-mode #screen-client .header-right { display: none; }
   background: var(--surface-2);
   border: 1px solid var(--border);
   color: var(--text-soft);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.a-ex-chip:hover {
+  border-color: rgba(var(--primary-bright-rgb), 0.55);
+  color: var(--primary-bright);
+  background: rgba(var(--primary-rgb), 0.1);
 }
 .a-ex-chip.anchor {
   color: var(--primary-bright);
   background: rgba(var(--primary-rgb), 0.12);
   border-color: rgba(var(--primary-bright-rgb), 0.35);
 }
+.a-ex-chip.anchor:hover { background: rgba(var(--primary-rgb), 0.22); }
 
 /* "Muscles in this group": the anatomical breakdown as theme-tinted pills */
 .a-muscles h4 { margin: 0 0 0.5em; font-size: 0.85rem; color: var(--text-soft); }
@@ -10596,17 +10662,139 @@ body.live-log-mode #screen-client .header-right { display: none; }
 }
 .a-editor input:focus, .a-editor textarea:focus { outline: none; border-color: var(--primary); }
 
-/* Tablets and below: stack the figure above the legend + detail */
-@media (max-width: 880px) {
-  .anatomy-layout { grid-template-columns: 1fr; }
-  .anatomy-figure { max-width: 340px; margin: 0 auto; width: 100%; }
+/* Closed, a concept group is a single line — six of them stacked full-width
+   wasted most of a desktop page. They tile instead, and an open one takes the
+   whole row back so its cards have the width to lay out in. */
+.a-cgroups {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 0.6rem;
+  align-items: start;
 }
-/* Phones: single-column detail sections, slightly smaller figure */
+.a-cgroup[open] { grid-column: 1 / -1; }
+/* Same problem one level down: an expanded card used to stretch its own column
+   and leave the two beside it blank, while its text wrapped in the gutter. */
+.a-concept[open] { grid-column: 1 / -1; }
+
+/* The door from a workout exercise into its muscle card */
+.muscle-btn { display: inline-flex; align-items: center; gap: 0.4em; }
+.muscle-btn-ico { color: var(--primary-bright); font-size: 0.9em; line-height: 1; }
+.muscle-btn:hover { border-color: var(--primary); color: var(--primary-bright); }
+
+/* ---- Coverage mode: the same figure, repainted by the athlete's week ---- */
+.a-mode-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.a-mode {
+  display: inline-flex; gap: 2px; padding: 3px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px;
+}
+.a-mode-btn {
+  border: 0; background: transparent; color: var(--text-soft);
+  font-family: inherit; font-weight: 700; font-size: 0.85rem;
+  padding: 0.4em 1.1em; border-radius: 999px; cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.a-mode-btn:hover { color: var(--text); }
+.a-mode-btn.active {
+  background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.22), rgba(var(--primary-rgb), 0.08));
+  color: var(--primary-bright);
+  box-shadow: inset 0 0 0 1px rgba(var(--primary-bright-rgb), 0.35);
+}
+.a-mode-who { font-size: 0.82rem; font-weight: 700; color: var(--text-soft); }
+
+.a-cov-note.hidden { display: none; }
+.a-cov-verdict {
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.35);
+  background: rgba(var(--primary-rgb), 0.07);
+  border-radius: var(--radius-lg);
+  padding: 0.7rem 0.9rem;
+}
+.a-cov-verdict.has-gaps {
+  border-color: rgba(var(--warn-rgb), 0.4);
+  background: rgba(var(--warn-rgb), 0.07);
+}
+.a-cov-lead {
+  display: block; font-size: 0.68rem; font-weight: 800;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--primary-bright); margin-bottom: 0.25em;
+}
+.a-cov-verdict.has-gaps .a-cov-lead { color: var(--warn); }
+.a-cov-verdict p { margin: 0; font-size: 0.9rem; line-height: 1.5; color: var(--text); }
+.a-cov-verdict b { color: var(--text); font-weight: 800; }
+.a-cov-unmapped { display: block; margin-top: 0.3em; font-size: 0.8rem; color: var(--muted); }
+.a-cov-none { margin: 0; color: var(--muted); font-size: 0.9rem; }
+
+/* Volume bands. Zero is the only warm thing on the body, so gaps read first. */
+.anatomy.is-coverage .a-zone { stroke-opacity: 0.35; }
+.anatomy.is-coverage .a-zone[data-cov="3"] { fill: var(--primary-bright); fill-opacity: 0.95; }
+.anatomy.is-coverage .a-zone[data-cov="2"] { fill: var(--primary); fill-opacity: 0.55; }
+.anatomy.is-coverage .a-zone[data-cov="1"] { fill: var(--primary); fill-opacity: 0.22; }
+.anatomy.is-coverage .a-zone[data-cov="0"] {
+  fill: rgba(var(--warn-rgb), 0.09);
+  stroke: var(--warn);
+  stroke-opacity: 0.9;
+  stroke-dasharray: 2 1.6;
+}
+/* Selection still has to win over the heat, or you cannot see what you picked */
+.anatomy.is-coverage .a-zone.selected {
+  fill: var(--primary-bright);
+  fill-opacity: 0.95;
+  stroke: var(--primary-bright);
+  stroke-opacity: 1;
+  stroke-width: 1.6;
+  stroke-dasharray: none;
+  filter: drop-shadow(0 0 5px rgba(var(--primary-bright-rgb), 0.7));
+}
+
+.a-chip-n {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 1.5em; height: 1.5em; margin-left: 0.45em; padding: 0 0.3em;
+  font-size: 0.68rem; font-weight: 800; border-radius: 999px;
+  background: rgba(var(--primary-rgb), 0.18); color: var(--primary-bright);
+}
+.a-chip[data-cov="0"] {
+  border-color: rgba(var(--warn-rgb), 0.45);
+  background: rgba(var(--warn-rgb), 0.07);
+}
+.a-chip[data-cov="0"] .a-chip-n { background: rgba(var(--warn-rgb), 0.18); color: var(--warn); }
+
+/* Tablets: narrow the figure column, detail still under the list */
+@media (max-width: 880px) {
+  .anatomy-layout { grid-template-columns: minmax(0, 230px) minmax(0, 1fr); }
+}
+/* Phones: figure and list share row one so both are above the fold, detail
+   spans row two. The list becomes a scrolling column of full-width rows —
+   at this width wrapped pills reflow into an unreadable ragged block. */
 @media (max-width: 760px) {
-  .anatomy-figure { max-width: 300px; }
-  .a-svg { max-height: 56vh; }
+  .anatomy-layout {
+    grid-template-columns: minmax(0, 42%) minmax(0, 1fr);
+    grid-template-areas:
+      "fig list"
+      "detail detail";
+    gap: 0.6rem;
+  }
+  .anatomy-figure { padding: 0.4rem; }
+  .a-svg { max-width: none; max-height: 34vh; }
+  .anatomy-figure .anatomy-toggle { top: 0.3rem; right: 0.3rem; padding: 2px; }
+  .anatomy-figure .a-view-btn { font-size: 0.72rem; padding: 0.3em 0.7em; }
+  .anatomy-list {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 0.3rem;
+    max-height: 34vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+  .anatomy-list .a-chip { text-align: left; padding: 0.5em 0.75em; }
   .a-cols { grid-template-columns: 1fr; gap: 0.75rem; }
   .a-facts { grid-template-columns: 1fr; }
+  .anatomy-detail-empty { padding: 1rem; font-size: 0.86rem; }
+  .a-mode-row { gap: 0.5rem; }
+  .a-mode-btn { font-size: 0.8rem; padding: 0.35em 0.85em; }
+  .a-mode-who { font-size: 0.76rem; width: 100%; }
+  .anatomy-list .a-chip { display: flex; align-items: center; justify-content: space-between; }
+  .a-chip-n { margin-left: 0.5em; }
 }
 
 /* ============================================================
