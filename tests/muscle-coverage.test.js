@@ -114,14 +114,29 @@ function musclesForExercise(ex) {
   return [...best].map(([id, weight]) => ({ id, weight }));
 }
 
-function coverageBand(n) {
-  if (n >= 12) return 3;
-  if (n >= 6) return 2;
+// The TABLE is read out of app.js, not copied, so these assertions pin the real
+// numbers. A copied table would drift silently and the test would cheerfully
+// guard the copy — and it would also pass before app.js had the table at all,
+// which is no test.
+const TRAINING_LEVELS = extractLiteral(appSrc, "const TRAINING_LEVELS = [");
+const TRAINING_LEVEL_BY_ID = Object.fromEntries(TRAINING_LEVELS.map((l) => [l.id, l]));
+const DEFAULT_TRAINING_LEVEL = "intermediate";
+
+// The LOGIC is copied, per the convention at the top of this file.
+function levelBands(client) {
+  return TRAINING_LEVEL_BY_ID[client?.trainingLevel]
+    || TRAINING_LEVEL_BY_ID[DEFAULT_TRAINING_LEVEL];
+}
+function coverageBand(n, bands) {
+  const b = bands || TRAINING_LEVEL_BY_ID[DEFAULT_TRAINING_LEVEL];
+  if (n >= b.plenty) return 3;
+  if (n >= b.solid) return 2;
   if (n >= 1) return 1;
   return 0;
 }
 
-function coverageForWeek(week) {
+function coverageForWeek(week, client) {
+  const bands = levelBands(client);
   const sets = {};
   ANATOMY_GROUPS.forEach((g) => { sets[g.id] = 0; });
   let unmapped = 0;
@@ -134,9 +149,9 @@ function coverageForWeek(week) {
   }));
   Object.keys(sets).forEach((k) => { sets[k] = Math.round(sets[k] * 10) / 10; });
   return {
-    sets, unmapped,
+    sets, unmapped, bands,
     gaps: ANATOMY_GROUPS.filter((g) => !sets[g.id]).map((g) => g.id),
-    light: ANATOMY_GROUPS.filter((g) => sets[g.id] > 0 && sets[g.id] < 6).map((g) => g.id),
+    light: ANATOMY_GROUPS.filter((g) => sets[g.id] > 0 && sets[g.id] < bands.solid).map((g) => g.id),
   };
 }
 
@@ -229,14 +244,80 @@ check("sets with no number contribute nothing", () => {
 });
 
 // ---- bands ----------------------------------------------------------------
-check("bands split at 1, 6 and 12", () => {
-  assert.strictEqual(coverageBand(0), 0);
-  assert.strictEqual(coverageBand(0.5), 0, "half a set still rounds to nothing shown");
-  assert.strictEqual(coverageBand(1), 1);
-  assert.strictEqual(coverageBand(5.5), 1);
-  assert.strictEqual(coverageBand(6), 2);
-  assert.strictEqual(coverageBand(11.5), 2);
-  assert.strictEqual(coverageBand(12), 3);
+check("the default level is a real row in the table", () => {
+  assert.ok(TRAINING_LEVEL_BY_ID[DEFAULT_TRAINING_LEVEL],
+    `DEFAULT_TRAINING_LEVEL "${DEFAULT_TRAINING_LEVEL}" is not in TRAINING_LEVELS`);
+});
+
+// ---- bands are per level ---------------------------------------------------
+check("intermediate is EXACTLY today's ladder", () => {
+  // The whole migration story rests on this. Every existing athlete is unset,
+  // unset reads as intermediate, and intermediate must be 6/12 — or shipping
+  // this moves every map on the roster before a single level is assigned.
+  const b = TRAINING_LEVEL_BY_ID.intermediate;
+  assert.strictEqual(b.solid, 6);
+  assert.strictEqual(b.plenty, 12);
+  assert.strictEqual(coverageBand(0, b), 0);
+  assert.strictEqual(coverageBand(0.5, b), 0, "half a set still shows nothing");
+  assert.strictEqual(coverageBand(1, b), 1);
+  assert.strictEqual(coverageBand(5.5, b), 1);
+  assert.strictEqual(coverageBand(6, b), 2);
+  assert.strictEqual(coverageBand(11.5, b), 2);
+  assert.strictEqual(coverageBand(12, b), 3);
+});
+
+check("every level splits on its own two numbers", () => {
+  TRAINING_LEVELS.forEach((b) => {
+    assert.strictEqual(coverageBand(0, b), 0, `${b.id}: zero`);
+    assert.strictEqual(coverageBand(b.solid - 0.5, b), 1, `${b.id}: just under solid`);
+    assert.strictEqual(coverageBand(b.solid, b), 2, `${b.id}: on solid`);
+    assert.strictEqual(coverageBand(b.plenty - 0.5, b), 2, `${b.id}: just under plenty`);
+    assert.strictEqual(coverageBand(b.plenty, b), 3, `${b.id}: on plenty`);
+  });
+});
+
+check("the ladder climbs — no level is easier than a lighter one", () => {
+  for (let i = 1; i < TRAINING_LEVELS.length; i++) {
+    assert.ok(TRAINING_LEVELS[i].solid > TRAINING_LEVELS[i - 1].solid,
+      `${TRAINING_LEVELS[i].id} solid must exceed ${TRAINING_LEVELS[i - 1].id}`);
+    assert.ok(TRAINING_LEVELS[i].plenty > TRAINING_LEVELS[i - 1].plenty,
+      `${TRAINING_LEVELS[i].id} plenty must exceed ${TRAINING_LEVELS[i - 1].id}`);
+  }
+});
+
+check("unset and nonsense both fall back to intermediate", () => {
+  const mid = TRAINING_LEVEL_BY_ID.intermediate;
+  assert.deepStrictEqual(levelBands(null), mid, "no client at all");
+  assert.deepStrictEqual(levelBands({}), mid, "field absent — every existing athlete");
+  assert.deepStrictEqual(levelBands({ trainingLevel: "" }), mid, "explicitly unset");
+  assert.deepStrictEqual(levelBands({ trainingLevel: "elite" }), mid, "a value we never wrote");
+});
+
+check("a beginner's week stops reading as a wall of warnings", () => {
+  // The bug this feature exists for. Same week, two levels.
+  const week = { days: [{ exercises: [
+    { name: "Back Squat", sets: 5 },
+    { name: "Bench Press", sets: 5 },
+    { name: "Lateral Raise", sets: 3 },
+  ] }] };
+  const asMid = coverageForWeek(week, { trainingLevel: "intermediate" });
+  const asBeg = coverageForWeek(week, { trainingLevel: "beginner" });
+  assert.deepStrictEqual(asMid.sets, asBeg.sets, "the sets themselves do not change");
+  assert.ok(asBeg.light.length < asMid.light.length,
+    `a beginner should be warned about fewer muscles (${asBeg.light.length} vs ${asMid.light.length})`);
+});
+
+check("light tracks the level's own solid threshold", () => {
+  TRAINING_LEVELS.forEach((lv) => {
+    const cov = coverageForWeek({ days: [{ exercises: [
+      { name: "Bench Press", sets: 5 }, { name: "Plank", sets: 2 },
+    ] }] }, { trainingLevel: lv.id });
+    cov.light.forEach((id) => {
+      assert.ok(cov.sets[id] > 0 && cov.sets[id] < lv.solid,
+        `${lv.id}: ${id} is listed light at ${cov.sets[id]} against solid ${lv.solid}`);
+    });
+    cov.gaps.forEach((id) => assert.ok(!cov.light.includes(id), `${lv.id}: ${id} in both lists`));
+  });
 });
 
 check("gaps and light are disjoint, and cover every group", () => {

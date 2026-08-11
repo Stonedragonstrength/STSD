@@ -9586,11 +9586,36 @@
     return [...best].map(([id, weight]) => ({ id, weight }));
   }
 
-  // Placeholder bands from the hypertrophy literature. Change the numbers here
-  // and the figure, the list and the verdict line all follow.
-  function coverageBand(n) {
-    if (n >= 12) return 3;
-    if (n >= 6) return 2;
+  // How much weekly volume per muscle counts as "solid" and "plenty" for a given
+  // athlete. This shipped as one ladder for everyone — 6 and 12, a trained
+  // lifter's numbers — and a correct beginner program (full body, three days,
+  // four to six sets a muscle) came back as six separate warnings. A map that
+  // cries wolf on its most common case teaches you to stop reading it.
+  //
+  // Intermediate is deliberately today's exact numbers. Every existing athlete
+  // is unset, unset reads as intermediate, so nothing on the roster moves until
+  // a level is deliberately assigned. Tunable by eye here and nowhere else — the
+  // figure, the chips and the verdict all read these two numbers.
+  const TRAINING_LEVELS = [
+    { id: "beginner",     name: "Beginner",     solid: 4, plenty: 8  },
+    { id: "intermediate", name: "Intermediate", solid: 6, plenty: 12 },
+    { id: "advanced",     name: "Advanced",     solid: 8, plenty: 16 },
+  ];
+  const TRAINING_LEVEL_BY_ID = Object.fromEntries(TRAINING_LEVELS.map((l) => [l.id, l]));
+  const DEFAULT_TRAINING_LEVEL = "intermediate";
+  // Unset and unrecognised both resolve to the default. Unrecognised matters
+  // because a cloud pull can hand back a value written by a newer build.
+  function levelBands(client) {
+    return TRAINING_LEVEL_BY_ID[client?.trainingLevel]
+      || TRAINING_LEVEL_BY_ID[DEFAULT_TRAINING_LEVEL];
+  }
+
+  // The bands come from the athlete, not from a constant. The default keeps
+  // every caller that has no athlete in hand on today's ladder.
+  function coverageBand(n, bands) {
+    const b = bands || TRAINING_LEVEL_BY_ID[DEFAULT_TRAINING_LEVEL];
+    if (n >= b.plenty) return 3;
+    if (n >= b.solid) return 2;
     if (n >= 1) return 1;
     return 0;
   }
@@ -9615,6 +9640,9 @@
   function anatomyCoverage(client, isCoach) {
     const week = coverageWeek(client, isCoach);
     if (!week) return null;
+    // Resolved once and returned, so the figure, the chips and the verdict all
+    // grade against the same two numbers instead of re-deriving them three times.
+    const bands = levelBands(client);
     const sets = {};
     ANATOMY_GROUPS.forEach((g) => { sets[g.id] = 0; });
     let counted = 0, unmapped = 0;
@@ -9628,9 +9656,10 @@
     }));
     Object.keys(sets).forEach((k) => { sets[k] = Math.round(sets[k] * 10) / 10; });
     return {
-      week, sets, counted, unmapped,
+      week, sets, counted, unmapped, bands,
+      level: TRAINING_LEVEL_BY_ID[client?.trainingLevel] || null,
       gaps: ANATOMY_GROUPS.filter((g) => !sets[g.id]).map((g) => g.name),
-      light: ANATOMY_GROUPS.filter((g) => sets[g.id] > 0 && sets[g.id] < 6).map((g) => g.name),
+      light: ANATOMY_GROUPS.filter((g) => sets[g.id] > 0 && sets[g.id] < bands.solid).map((g) => g.name),
     };
   }
 
@@ -9674,7 +9703,7 @@
     const list = (arr) => arr.map((n) => `<b>${escapeHtml(n)}</b>`).join(", ");
     const bits = [];
     if (cov.gaps.length) bits.push(`Nothing for ${list(cov.gaps)}.`);
-    if (cov.light.length) bits.push(`${list(cov.light)} ${cov.light.length === 1 ? "gets" : "get"} under 6 sets — light.`);
+    if (cov.light.length) bits.push(`${list(cov.light)} ${cov.light.length === 1 ? "gets" : "get"} under ${cov.bands.solid} sets — light.`);
     if (!bits.length) bits.push("Every muscle group gets work this week.");
     if (cov.unmapped) bits.push(`<span class="a-cov-unmapped">${cov.unmapped} exercise${cov.unmapped === 1 ? "" : "s"} couldn't be matched to a muscle.</span>`);
     return `<div class="a-cov-verdict${cov.gaps.length ? " has-gaps" : ""}">
@@ -10510,7 +10539,7 @@
         : `<p class="a-cov-none">Open an athlete and this reads their week.</p>`;
       root.querySelectorAll(".a-zone").forEach((z) => {
         const n = cov?.sets?.[z.dataset.muscle];
-        z.setAttribute("data-cov", String(coverageBand(n || 0)));
+        z.setAttribute("data-cov", String(coverageBand(n || 0, cov?.bands)));
       });
     }
     function setMode(next) {
@@ -10549,7 +10578,7 @@
         const g = ANATOMY_BY_ID[id];
         const n = cov ? (cov.sets[id] || 0) : null;
         return `<button type="button" class="a-chip${id === selected ? " selected" : ""}"`
-          + (cov ? ` data-cov="${coverageBand(n)}"` : "")
+          + (cov ? ` data-cov="${coverageBand(n, cov.bands)}"` : "")
           + ` data-muscle="${id}">${escapeHtml(g.name)}`
           + (cov ? `<span class="a-chip-n">${n}</span>` : "")
           + `</button>`;
