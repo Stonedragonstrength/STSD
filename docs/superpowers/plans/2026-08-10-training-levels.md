@@ -254,14 +254,15 @@ Expected: one row, `training_level | YES`.
 In `tests/muscle-coverage.test.js`, replace the existing `coverageBand` copy (currently just below `musclesForExercise`) with the level-aware copy, and add the table:
 
 ```js
-// Copied from app.js — see the note at the top of this file.
-const TRAINING_LEVELS = [
-  { id: "beginner",     name: "Beginner",     solid: 4, plenty: 8  },
-  { id: "intermediate", name: "Intermediate", solid: 6, plenty: 12 },
-  { id: "advanced",     name: "Advanced",     solid: 8, plenty: 16 },
-];
+// The TABLE is read out of app.js, not copied, so these assertions pin the real
+// numbers. A copied table would drift silently and the test would cheerfully
+// guard the copy — and it would also pass before app.js had the table at all,
+// which is no test.
+const TRAINING_LEVELS = extractLiteral(appSrc, "const TRAINING_LEVELS = [");
 const TRAINING_LEVEL_BY_ID = Object.fromEntries(TRAINING_LEVELS.map((l) => [l.id, l]));
 const DEFAULT_TRAINING_LEVEL = "intermediate";
+
+// The LOGIC is copied, per the convention at the top of this file.
 function levelBands(client) {
   return TRAINING_LEVEL_BY_ID[client?.trainingLevel]
     || TRAINING_LEVEL_BY_ID[DEFAULT_TRAINING_LEVEL];
@@ -273,6 +274,17 @@ function coverageBand(n, bands) {
   if (n >= 1) return 1;
   return 0;
 }
+```
+
+Add a check that the default actually exists in the extracted table, so a
+renamed id fails here rather than silently making every athlete fall back to
+`undefined`:
+
+```js
+check("the default level is a real row in the table", () => {
+  assert.ok(TRAINING_LEVEL_BY_ID[DEFAULT_TRAINING_LEVEL],
+    `DEFAULT_TRAINING_LEVEL "${DEFAULT_TRAINING_LEVEL}" is not in TRAINING_LEVELS`);
+});
 ```
 
 Then replace `coverageForWeek(week)` with a level-aware version:
@@ -374,14 +386,14 @@ check("light tracks the level's own solid threshold", () => {
 });
 ```
 
-Also update the two earlier call sites in this file that call `coverageForWeek(...)` with one argument — they keep working (unset → intermediate), so leave them; they now double as the "existing behaviour unchanged" case.
+Leave the earlier `coverageForWeek(week)` calls in this file exactly as they are — one argument, no client. They still pass (no client → unset → intermediate → today's 6/12), and that is the point: they now double as the proof that existing behaviour is unchanged. Do not add a client argument to them.
 
 - [ ] **Step 2: Run it to verify it fails**
 
 Run: `node tests/muscle-coverage.test.js`
-Expected: FAIL — `coverageBand` is called with two arguments but the copy in the file takes one, or `levelBands is not defined`.
+Expected: FAIL with `not found: const TRAINING_LEVELS = [` — the table does not exist in `app.js` yet, and the test reads it from there rather than carrying its own copy.
 
-(If it passes, you edited the test copy but not the assertions — re-check Step 1.)
+If it passes, you copied the table into the test instead of extracting it. Go back to Step 1: the extraction is what makes this a test rather than a restatement.
 
 - [ ] **Step 3: Add the table to `app.js`**
 
