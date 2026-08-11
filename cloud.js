@@ -113,6 +113,10 @@
   function rowToAthlete(r) {
     if (!r) return null;
     return {
+      // Server-side revision, bumped by trigger on every update. Carried on
+      // the client object (athleteToRow never sends it back) so guarded
+      // writes can tell "this device's copy is current" from "it isn't".
+      _rev: Number(r.rev) || 0,
       id: r.id,
       name: r.display_name,
       inviteCode: r.invite_code,
@@ -169,6 +173,8 @@
       nutrition_game: p.nutritionGame || {},
       hoard: p.hoard || {},
       avatar_id: p.avatarId || null,
+      day_notes: p.dayNotes || {},
+      pending_deloads: p.pendingDeloads || {},
       synced_at: new Date().toISOString(),
     };
   }
@@ -199,7 +205,10 @@
       nutritionGame: r.nutrition_game || {},
       hoard: r.hoard || {},
       avatarId: r.avatar_id || "",
+      dayNotes: r.day_notes || {},
+      pendingDeloads: r.pending_deloads || {},
       syncedAt: r.synced_at,
+      _rev: Number(r.rev) || 0,
     };
   }
 
@@ -633,13 +642,40 @@
   }
 
   // -------- Athlete methods --------
+  // Guarded whole-row write. When this device knows the row's rev, the update
+  // only lands if the cloud is still at that rev — a write from a copy the
+  // cloud has moved past is DETECTED for the first time. On detection: adopt
+  // the head rev and retry ONCE with this device's content (latest intent
+  // wins, but knowingly), and report the collision through onConflict so the
+  // UI can say so. A device that has never learned a rev (first rollout, new
+  // athlete) takes the old unconditional upsert and learns the rev from it.
+  let _conflictCb = null;
+  function onConflict(cb) { _conflictCb = typeof cb === "function" ? cb : null; }
   async function upsertAthlete(athlete, coachId) {
     const row = athleteToRow(athlete, coachId);
     if (!row) return false;
     try {
-      const { error } = await sb.from("athletes").upsert(row);
-      if (error) console.warn("[Cloud] upsertAthlete error", error.message);
-      return !error;
+      const base = Number(athlete._rev) || 0;
+      if (base > 0) {
+        const { data, error } = await sb.from("athletes")
+          .update(row).eq("id", row.id).eq("rev", base).select("rev");
+        if (error) { console.warn("[Cloud] upsertAthlete error", error.message); return false; }
+        if (data && data.length) { athlete._rev = data[0].rev; return true; }
+        // The cloud moved past this device's copy. Rebase and retry once.
+        const { data: head, error: e2 } = await sb.from("athletes")
+          .select("rev").eq("id", row.id).maybeSingle();
+        if (e2 || !head) { console.warn("[Cloud] upsertAthlete rebase read failed", e2?.message); return false; }
+        const { data: d2, error: e3 } = await sb.from("athletes")
+          .update(row).eq("id", row.id).eq("rev", head.rev).select("rev");
+        if (e3 || !d2 || !d2.length) { console.warn("[Cloud] upsertAthlete rebase write lost a second race"); return false; }
+        athlete._rev = d2[0].rev;
+        try { _conflictCb && _conflictCb(athlete.id, athlete.name || ""); } catch (e) {}
+        return true;
+      }
+      const { data, error } = await sb.from("athletes").upsert(row).select("rev");
+      if (error) { console.warn("[Cloud] upsertAthlete error", error.message); return false; }
+      if (data && data[0]) athlete._rev = Number(data[0].rev) || 0;
+      return true;
     } catch (e) { console.warn("[Cloud] upsertAthlete", e); return false; }
   }
 
@@ -1155,13 +1191,55 @@
   }
 
   // -------- Progress methods --------
+  // Progress goes up through merge_progress, which unions exercise_logs
+  // entry-by-entry server-side under a row lock — two devices writing the same
+  // athlete can no longer erase each other's logged work. Returns
+  // { rev, exerciseLogs } (the server's merged truth; callers fold it back
+  // into local state), a bare `true` on the legacy fallback path, or false.
+  // Stays truthy-on-success so every existing boolean caller keeps working.
   async function upsertProgress(athleteId, progress) {
     if (!athleteId) return false;
     try {
-      const { error } = await sb.from("progress").upsert(progressToRow(progress, athleteId));
-      if (error) console.warn("[Cloud] upsertProgress error", error.message);
-      return !error;
+      const payload = progressToRow(progress, athleteId);
+      delete payload.athlete_id;
+      const { data, error } = await sb.rpc("merge_progress", {
+        p_athlete_id: athleteId, p_payload: payload,
+      });
+      if (!error && data) return { rev: Number(data.rev) || 0, exerciseLogs: data.exercise_logs || null };
+      console.warn("[Cloud] merge_progress failed, falling back to plain upsert", error?.message);
+      const { error: e2 } = await sb.from("progress").upsert(progressToRow(progress, athleteId));
+      if (e2) { console.warn("[Cloud] upsertProgress error", e2.message); return false; }
+      return true;
     } catch (e) { console.warn("[Cloud] upsertProgress", e); return false; }
+  }
+
+  // -------- Realtime (sync stage 3) --------
+  // One set of channels per app session. subscribeSync replaces any prior set,
+  // so re-targeting (opening a different athlete, entering a live session) is
+  // just calling it again. Events respect RLS; handlers receive the raw new
+  // row and decide relevance by rev.
+  let _syncChannels = [];
+  function unsubscribeSync() {
+    _syncChannels.forEach((ch) => { try { sb.removeChannel(ch); } catch (e) {} });
+    _syncChannels = [];
+  }
+  function subscribeSync(opts = {}) {
+    unsubscribeSync();
+    const mk = (name, table, filter, cb) => {
+      const ch = sb.channel(name)
+        .on("postgres_changes", { event: "*", schema: "public", table, filter }, (payload) => {
+          try { cb(payload.new || null); } catch (e) { console.warn("[Cloud] realtime handler", e); }
+        })
+        .subscribe((status) => {
+          // A (re)join means we may have missed events while away — the
+          // caller's onLive typically runs a resync to close the gap.
+          if (status === "SUBSCRIBED" && opts.onLive) { try { opts.onLive(); } catch (e) {} }
+        });
+      _syncChannels.push(ch);
+    };
+    if (opts.coachId && opts.onAthleteRow) mk("sync-roster", "athletes", `coach_id=eq.${opts.coachId}`, opts.onAthleteRow);
+    if (opts.athleteId && opts.onAthleteRow) mk("sync-own-row", "athletes", `id=eq.${opts.athleteId}`, opts.onAthleteRow);
+    if (opts.progressId && opts.onProgressRow) mk("sync-progress", "progress", `athlete_id=eq.${opts.progressId}`, opts.onProgressRow);
   }
 
   async function getProgress(athleteId) {
@@ -1432,6 +1510,13 @@
     onSyncActivity,
     pendingPushes,
     lastPushFailureAt,
+    onConflict,
+    subscribeSync,
+    unsubscribeSync,
+    // Row mappers, exported for the realtime handlers in app.js — a
+    // postgres_changes payload delivers the raw row.
+    rowToAthlete,
+    rowToProgress,
   };
   console.log("[Cloud] ready");
 })();

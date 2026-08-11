@@ -336,6 +336,83 @@
     }
   }
 
+  // -------- Realtime (sync stage 3) --------
+  // One subscription set per session, re-targeted by calling again: the coach
+  // holds the roster channel plus the open athlete's progress channel; the
+  // athlete holds their own two rows. Every applied event goes through the
+  // same merge/populate rules as a pull, guarded by rev so self-echoes and
+  // stale events are no-ops.
+  function startRealtimeSync() {
+    if (!window.Cloud?.enabled || !window.Cloud.subscribeSync) return;
+    const opts = {
+      onLive: () => resyncNow(),
+      onAthleteRow: handleRealtimeAthleteRow,
+      onProgressRow: handleRealtimeProgressRow,
+    };
+    if (state.mode === "trainer" || state.previewMode) {
+      opts.coachId = state.trainerData?.coachId || null;
+      opts.progressId = state.currentClientId || null;
+    } else if (state.clientData?.program?.clientId) {
+      opts.athleteId = state.clientData.program.clientId;
+      opts.progressId = state.clientData.program.clientId;
+    }
+    if (!opts.coachId && !opts.athleteId) return;
+    window.Cloud.subscribeSync(opts);
+  }
+
+  function handleRealtimeAthleteRow(row) {
+    if (!row || !row.id) return;
+    const mapped = window.Cloud.rowToAthlete?.(row);
+    if (!mapped) return;
+    if (state.mode === "trainer" || state.previewMode) {
+      const c = (state.trainerData.clients || []).find((x) => x.id === row.id);
+      if (!c) { resyncNow(true); return; } // a new athlete appeared elsewhere
+      if ((mapped._rev || 0) <= (Number(c._rev) || 0)) return; // echo / stale
+      if (dirtyAthletes()[c.id]) return; // unconfirmed local edits own this row
+      const preserved = c.importedProgress; // lives on the client object, not the row
+      Object.assign(c, mapped);
+      c.importedProgress = preserved;
+      localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+      if (state.previewMode && state.currentClientId === c.id) refreshLiveProgram();
+      rerenderAfterSync();
+    } else {
+      if ((mapped._rev || 0) <= (Number(state.clientData?.program?._rev) || 0)) return;
+      state.clientData.program = buildProgramFromAthlete(mapped);
+      state.clientData.program._rev = mapped._rev;
+      localStorage.setItem(KEY_CLIENT, JSON.stringify(state.clientData));
+      rerenderAfterSync();
+    }
+    SyncStatus.paint();
+  }
+
+  function handleRealtimeProgressRow(row) {
+    if (!row || !row.athlete_id) return;
+    const mapped = window.Cloud.rowToProgress?.(row);
+    if (!mapped) return;
+    if (state.mode === "trainer" || state.previewMode) {
+      const c = (state.trainerData.clients || []).find((x) => x.id === row.athlete_id);
+      if (!c) return;
+      if ((mapped._rev || 0) <= (Number(c.importedProgress?._rev) || 0)) return;
+      const localLogs = c.importedProgress?.exerciseLogs;
+      c.importedProgress = { ...mapped, exerciseLogs: mergeExerciseLogs(localLogs, mapped.exerciseLogs), syncedAt: Date.now() };
+      localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+      // Mid-live-session: the athlete logged from their own phone — the
+      // working clone follows, same merge.
+      if (state.previewMode && state.liveLog && state.currentClientId === c.id && state.clientData?.progress) {
+        state.clientData.progress.exerciseLogs = mergeExerciseLogs(state.clientData.progress.exerciseLogs, mapped.exerciseLogs);
+      }
+      rerenderAfterSync();
+    } else {
+      if ((mapped._rev || 0) <= (Number(state.clientData?.progress?._rev) || 0)) return;
+      const merged = { ...mapped, exerciseLogs: mergeExerciseLogs(state.clientData.progress?.exerciseLogs, mapped.exerciseLogs) };
+      ensureProgressShape(merged);
+      state.clientData.progress = merged;
+      localStorage.setItem(KEY_CLIENT, JSON.stringify(state.clientData));
+      rerenderAfterSync();
+    }
+    SyncStatus.paint();
+  }
+
   // Which store the day editor writes to. Everything in the editor subtree —
   // renderDayContent, renderExerciseRow and every picker they open — saves
   // through saveEditor() instead of calling saveTrainer() directly, so one
@@ -436,7 +513,16 @@
       localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
       if (window.Cloud?.enabled) {
         const snap = liveClient.importedProgress; // capture — exitPreview swaps state.clientData back
-        window.Cloud.debounce(`progress:${liveAthleteId}`, () => window.Cloud.upsertProgress(liveAthleteId, snap));
+        window.Cloud.debounce(`progress:${liveAthleteId}`, async () => {
+          const res = await window.Cloud.upsertProgress(liveAthleteId, snap);
+          // The server merged (the athlete may have logged from their own
+          // phone mid-session) — fold its truth back into both coach copies.
+          if (res && res.exerciseLogs) {
+            adoptMergedLogs(liveClient.importedProgress, res);
+            if (state.liveLog && state.clientData?.progress) adoptMergedLogs(state.clientData.progress, res);
+            localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+          }
+        });
       }
       return;
     }
@@ -444,10 +530,25 @@
     // Cloud: debounced push of athlete progress.
     const athleteId = state.clientData.program?.clientId;
     if (window.Cloud?.enabled && athleteId && state.clientData.progress) {
-      window.Cloud.debounce(`progress:${athleteId}`, () =>
-        window.Cloud.upsertProgress(athleteId, state.clientData.progress)
-      );
+      window.Cloud.debounce(`progress:${athleteId}`, async () => {
+        const res = await window.Cloud.upsertProgress(athleteId, state.clientData.progress);
+        if (res && res.exerciseLogs && state.clientData?.progress) {
+          adoptMergedLogs(state.clientData.progress, res);
+          localStorage.setItem(KEY_CLIENT, JSON.stringify(state.clientData));
+        }
+      });
     }
+  }
+
+  // Fold a merge_progress result back into a local progress object. Merged
+  // AGAIN client-side (not assigned) because the user may have typed during
+  // the round trip — the local copy can be ahead of what was pushed. Writes
+  // localStorage at the call site, never saveClient/saveTrainer: adopting a
+  // server response must not queue another push.
+  function adoptMergedLogs(target, res) {
+    if (!target || !res || !res.exerciseLogs) return;
+    target.exerciseLogs = mergeExerciseLogs(target.exerciseLogs, res.exerciseLogs);
+    target._rev = res.rev || target._rev || 0;
   }
 
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
@@ -4027,7 +4128,17 @@
     // row may predate a write that never landed. Same protection templates get.
     const dirty = dirtyAthletes();
     const localById = new Map((state.trainerData.clients || []).map((c) => [c.id, c]));
-    const merged = (athletes || []).map((a) => (dirty[a.id] && localById.get(a.id)) || a);
+    const merged = (athletes || []).map((a) => {
+      const keepLocal = dirty[a.id] && localById.get(a.id);
+      if (keepLocal) {
+        // Content stays local (it carries unconfirmed edits) but the rev
+        // adopts the cloud's head, so the re-push guards against the RIGHT
+        // baseline instead of conflicting with a version we've already seen.
+        if (a._rev) keepLocal._rev = a._rev;
+        return keepLocal;
+      }
+      return a;
+    });
     // An athlete created locally that the cloud hasn't got yet isn't in the
     // incoming list at all, so it would otherwise disappear entirely.
     localById.forEach((c, id) => {
@@ -4111,6 +4222,7 @@
     // or it quietly stops receiving. Same silent re-assert the athlete portal
     // does on entry; a no-op on a device that never opted in.
     refreshPushSubscription(true);
+    startRealtimeSync();
     // First time on this device: OFFER one guided lap. Asked, never imposed.
     if (!localStorage.getItem(KEY_TOUR_COACH)) {
       setTimeout(() => {
@@ -4125,6 +4237,7 @@
     sessionStorage.removeItem(KEY_SESSION);
     state.currentClientId = null;
     _signOutOnLeave = false;
+    window.Cloud?.unsubscribeSync?.();
     if (window.Cloud?.enabled) window.Cloud.signOut();
     showLoginScreen("#login-role");
   }
@@ -5900,6 +6013,8 @@
     window.scrollTo(0, 0);
     // Pull the latest athlete progress from the cloud (non-blocking).
     if (window.Cloud?.enabled) pullProgressFromCloud(c);
+    // Re-target the realtime progress channel at the athlete now open.
+    startRealtimeSync();
   }
   async function pullProgressFromCloud(c) {
     if (!window.Cloud?.enabled) return;
@@ -16829,7 +16944,13 @@
   function saveAthleteProgressFromCoach(c) {
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
     if (window.Cloud?.enabled && c?.id && c.importedProgress) {
-      window.Cloud.debounce(`progress:${c.id}`, () => window.Cloud.upsertProgress(c.id, c.importedProgress));
+      window.Cloud.debounce(`progress:${c.id}`, async () => {
+        const res = await window.Cloud.upsertProgress(c.id, c.importedProgress);
+        if (res && res.exerciseLogs && c.importedProgress) {
+          adoptMergedLogs(c.importedProgress, res);
+          localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+        }
+      });
     }
   }
 
@@ -25750,6 +25871,7 @@
     renderAthleteSettingsCards(); // renders the notifications fold too
     loadAthleteThread();          // the coach thread, for the Overview card
     refreshPushSubscription();
+    startRealtimeSync();
     pullAthletePrefs(); // cloud copy wins, then re-renders the cards
     pullCycle();        // their own private row, same deal
     // First time on this device: offer one guided lap (never during a coach
@@ -37263,6 +37385,11 @@
     window.addEventListener("online", () => { SyncStatus.paint(); resyncNow(true); });
     window.addEventListener("offline", () => SyncStatus.paint());
     window.Cloud?.onSyncActivity?.(() => SyncStatus.paint());
+    // A guarded write that found the cloud ahead rebased and won — make the
+    // collision visible instead of silent, per the sync design.
+    window.Cloud?.onConflict?.((id, name) => {
+      toast(`⚠ ${name || "An athlete"}'s record changed on another device — this device's version won. Give it a glance.`, 6000);
+    });
     $("#sync-chip")?.addEventListener("click", () => resyncNow(true));
     $("#sync-chip-athlete")?.addEventListener("click", () => resyncNow(true));
 
