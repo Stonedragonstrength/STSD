@@ -7405,8 +7405,13 @@ input.pyr-weight-input { -moz-appearance: textfield; appearance: textfield; }
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-soft);
-  text-align: left;
-  /* Plain S1/S2… marker (gains an ⊘ when skipped from the Tools menu). */
+  /* Centred in its own fixed column. Left-aligned, "S1" sat flush against the
+     left edge of a 1.75rem box while everything to its right filled the row,
+     so the whole left column read ragged down the set list. The trade is that
+     the ⊘ skip marker widens the content, which nudges the S# a few pixels
+     left on a skipped row — a shift on one row reads better than every row
+     being off-centre. */
+  text-align: center;
   padding: 0;
   font-family: inherit;
 }

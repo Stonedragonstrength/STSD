@@ -12355,7 +12355,13 @@
           renderWeeks();
           if (!_programEditorId) { renderDiet(); renderCoachCalendar(); }
         });
-        acts.appendChild(del);
+        // Prepended, NOT appended. `.week-actions` is right-aligned
+        // (margin-left: auto), so a delete button added after Duplicate pushes
+        // Duplicate leftward and lands itself exactly where Duplicate just was.
+        // Week 1 has no delete, so duplicating it made a Delete button appear
+        // under the finger that had just tapped Duplicate. Delete goes on the
+        // left and Duplicate keeps its anchor at the right edge.
+        acts.prepend(del);
       }
       row.appendChild(acts);
     }
