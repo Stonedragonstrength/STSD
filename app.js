@@ -950,6 +950,18 @@
     { group: "Unilateral",  tags: ["1A", "1L"] },
     { group: "Alternation", tags: ["Alternating", "Non-Alternating"] },
     { group: "Equipment",   tags: ["BB", "DB", "DBs", "KB", "EZ Bar", "Cable", "Rope", "Wide Bar", "Band", "Machine", "Landmine", "Slider", "Bench", "Bench Assisted"], multi: true },
+    // Which resistance band, lightest to heaviest. THIS ORDER IS THE LADDER —
+    // nothing else stores it, so reordering these re-prescribes every banded
+    // lift on the roster.
+    //
+    // Single-select on purpose (no `multi`): one band at a time, and picking a
+    // second replaces the first, which also makes the picker row a one-tap way
+    // to move somebody up a rung.
+    //
+    // Deliberately NOT in LIFT_ID_GROUPS: a band is the load, not the implement.
+    // See tests/band-tags.test.js, which exists to stop that from being changed
+    // by accident.
+    { group: "Band",        tags: ["Yellow", "Red", "Purple", "Green", "Grey"] },
     { group: "Position",    tags: ["Incline", "Decline", "Elevated", "Seated", "Standing", "Kneeling", "Raised", "Supported", "Wide", "Lying"] },
     { group: "Grip",        tags: ["Supinated", "Neutral", "Pronated"] },
     { group: "Style",       tags: ["Pause", "Tempo", "Explosive", "Isometric"] },
@@ -977,6 +989,11 @@
     "EZ Bar": "EZ-Bar",
     "1S": "1s Hold", "2S": "2s Hold", "3S": "3s Hold",
     "4S": "4s Hold", "5S": "5s Hold",
+    // A chip that is literally green and reads "Green" needs no decoding, but
+    // the athlete reads a sentence in several places, and "Green Bench Press"
+    // is not one.
+    "Yellow": "Yellow Band", "Red": "Red Band", "Purple": "Purple Band",
+    "Green": "Green Band", "Grey": "Grey Band",
   };
   function tagLong(tag) { return TAG_LONG[tag] || tag; }
 
@@ -1430,6 +1447,15 @@
     "4S":        { color: "#38bdf8", bg: "rgba(56,189,248,0.18)"  },
     "5S":        { color: "#38bdf8", bg: "rgba(56,189,248,0.18)"  },
     "Timed":     { color: "#f59e0b", bg: "rgba(245,158,11,0.18)"  },
+    // The bands wear their own colors — this is the one place in this table
+    // where the color IS the information, so no two may match. Mid-weight
+    // shades rather than pure hues, because these have to stay legible on the
+    // light theme as well as the nine dark ones.
+    "Yellow":    { color: "#eab308", bg: "rgba(234,179,8,0.18)"   },
+    "Red":       { color: "#ef4444", bg: "rgba(239,68,68,0.18)"   },
+    "Purple":    { color: "#a855f7", bg: "rgba(168,85,247,0.18)"  },
+    "Green":     { color: "#22c55e", bg: "rgba(34,197,94,0.18)"   },
+    "Grey":      { color: "#6b7280", bg: "rgba(107,114,128,0.18)" },
   };
   function tagColor(tag) { return TAG_COLORS[tag] || { color: "#94a3b8", bg: "rgba(148,163,184,0.18)" }; }
 
