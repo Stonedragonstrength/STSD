@@ -9911,6 +9911,13 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   border-color: rgba(var(--primary-rgb), 0.45);
   cursor: default;
 }
+/* Which ladder (app.js TRAINING_LEVELS) their coverage map is graded on.
+   Neither a warning nor good news like its siblings above, so it keeps the
+   quiet-chip's amber fill but swaps the text/border to a plain muted read. */
+.level-chip {
+  color: var(--muted);
+  border-color: rgba(var(--primary-rgb), 0.35);
+}
 
 /* -------- Coach "View as athlete" preview -------- */
 .preview-banner {

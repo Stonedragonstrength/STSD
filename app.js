@@ -4556,6 +4556,27 @@
         b.textContent = bDays === 0 ? "🎁 today" : bDays === 1 ? "🎁 tomorrow" : `🎁 ${bDays}d`;
         nameEl.appendChild(b);
       }
+      // Which volume ladder their coverage map is graded against. Unset renders
+      // NOTHING on purpose: an empty slot is honest about a decision not yet
+      // made, where a default-looking "Intermediate" badge would claim one that
+      // was never taken.
+      const lvl = TRAINING_LEVEL_BY_ID[c.trainingLevel];
+      if (lvl) {
+        const el = document.createElement("span");
+        el.className = "quiet-chip level-chip";
+        el.title = `${lvl.name} — coverage grades ${lvl.solid}+ sets as solid, ${lvl.plenty}+ as plenty`;
+        // Abbreviated on the badge; the full word lives in the title above.
+        // Measured at 390px with the birthday + partner + mood chips also
+        // live: that row was already at fitClientRowNames()'s 9px floor with
+        // zero width to spare before this chip existed at all. The full word
+        // ("Intermediate") overflowed it by 62px; three letters fully fits
+        // every less extreme combo (e.g. birthday + partner with no moods
+        // logged yet) and gets the worst case down to a 12px clip instead of
+        // losing the whole badge. Never the name — the shrink loop protects
+        // that first and the ellipsis only ever eats trailing chips.
+        el.textContent = lvl.name.slice(0, 3);
+        nameEl.appendChild(el);
+      }
       const cPartner = partnerOf(c);
       if (cPartner) {
         const pc = document.createElement("span");
