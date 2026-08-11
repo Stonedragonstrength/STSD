@@ -103,15 +103,17 @@ prescription, and prescriptions are the coach's.
 The precedent is bodyweight, which already graduates across a load-type boundary
 at its rep cap (`app.js:1626`) — same ladder shape, different rungs.
 
-## PRs on a band-only lift
+## PRs are left alone
 
 A band-only lift has no weight, so its PR is rep-only. `prIsRepOnly()` already
-handles that and currently prints `—` in the weight slot (`app.js:16615`).
+handles that and prints `—` in the weight slot (`app.js:16615`), and it will keep
+doing exactly that — a band-only PR reads `— × 15` with no indication of which
+band earned it.
 
-A bare "best: 15 reps" is meaningless without knowing which band earned it, so
-the PR record gains a band alongside its reps, and the weight slot renders the
-colored chip instead of the dash. One field on the record; it is what makes the
-history above readable.
+This was considered and deliberately cut, not overlooked. The PR board is not
+where banded work gets read; the exercise's own history is, and that already
+carries the band as its rung. Adding a band to the PR record would touch record
+writing, grouping and rendering to improve a board nobody consults for band work.
 
 ## The group
 
@@ -195,12 +197,13 @@ rung and stopping at grey, and the chip legible on the light theme.
 
 | File | Change |
 |---|---|
-| `app.js` | `EXERCISE_MODIFIERS` +Band group, `TAG_COLORS` +5, `TAG_LONG` +5, next-band control, computed "ready for" target, PR band field + chip in the rep-only weight slot |
+| `app.js` | `EXERCISE_MODIFIERS` +Band group, `TAG_COLORS` +5, `TAG_LONG` +5, next-band control, computed "ready for" target |
 | `styles.css` | the next-band control; contrast help if the light theme needs it |
 | `index.html` | `?v=` bump |
 | `tests/band-tags.test.js` | new |
 | `tests/README.md` | one line, per convention |
 
-`LIFT_ID_GROUPS` and `NAME_GROUP_ORDER` are deliberately **not** touched.
+`LIFT_ID_GROUPS`, `NAME_GROUP_ORDER` and the PR board are deliberately **not**
+touched.
 
 No migration. Modifiers ride `weeks`, which already syncs as jsonb.
