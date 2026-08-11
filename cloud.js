@@ -1273,25 +1273,53 @@
   // Stores the pending fn alongside its timer so callers can force it to run
   // immediately via flush() (e.g. a Save button or when the page is hidden),
   // instead of waiting out the debounce window and risking loss on close.
+  //
+  // Instrumented for the sync-status chip: every queue/fire/settle transition
+  // reports through onSyncActivity, and a failed push is a REPORTED state now
+  // rather than a console line nobody reads. pendingPushes() counts both the
+  // queued (timer not fired) and the in-flight (fired, unsettled) pushes, so
+  // "everything is saved" can only be claimed when it is true.
   const _debounceTimers = new Map(); // key -> { timer, fn }
+  let _inflightPushes = 0;
+  let _pushFailedAt = 0;
+  let _syncCb = null;
+  function onSyncActivity(cb) { _syncCb = typeof cb === "function" ? cb : null; }
+  function pendingPushes() { return _debounceTimers.size + _inflightPushes; }
+  function lastPushFailureAt() { return _pushFailedAt; }
+  function _sync(evt) {
+    if (!_syncCb) return;
+    try { _syncCb(evt, pendingPushes()); } catch (e) { /* the chip must never break a push */ }
+  }
+  function _runPush(fn) {
+    _inflightPushes++;
+    _sync("push-start");
+    return Promise.resolve(fn())
+      .then((r) => { _pushFailedAt = 0; return r; })
+      .catch((e) => { _pushFailedAt = Date.now(); console.warn("[Cloud] push failed", e); })
+      .finally(() => { _inflightPushes--; _sync("push-settled"); });
+  }
   function debounce(key, fn, ms = 1500) {
     const prev = _debounceTimers.get(key);
     if (prev) clearTimeout(prev.timer);
     const timer = setTimeout(() => {
       _debounceTimers.delete(key);
-      Promise.resolve(fn()).catch((e) => console.warn("[Cloud] debounced call failed", e));
+      _runPush(fn);
     }, ms);
     _debounceTimers.set(key, { timer, fn });
+    _sync("queued");
   }
   // Immediately run any pending debounced calls (optionally only those whose key
-  // starts with keyPrefix). Resolves once all have settled.
+  // starts with keyPrefix). Resolves once all have settled — settled, not
+  // succeeded: individual failures are recorded in lastPushFailureAt(), and
+  // callers that intend to PULL after a flush must check it before treating
+  // local state as fully synced (see resyncNow in app.js).
   async function flush(keyPrefix) {
     const entries = [..._debounceTimers.entries()]
       .filter(([k]) => !keyPrefix || k.startsWith(keyPrefix));
     await Promise.all(entries.map(async ([k, entry]) => {
       clearTimeout(entry.timer);
       _debounceTimers.delete(k);
-      try { await entry.fn(); } catch (e) { console.warn("[Cloud] flush failed", e); }
+      await _runPush(entry.fn);
     }));
   }
 
@@ -1401,6 +1429,9 @@
     // Utils
     debounce,
     flush,
+    onSyncActivity,
+    pendingPushes,
+    lastPushFailureAt,
   };
   console.log("[Cloud] ready");
 })();

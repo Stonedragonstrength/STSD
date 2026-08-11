@@ -179,6 +179,163 @@
     }
   }
 
+  // -------- Sync truth (see 2026-08-11-cloud-authoritative-sync-design.md) --------
+  // The chip in both headers. One rule: the app may never present stale or
+  // unsaved state as settled truth. Priority-ordered states; the chip shows
+  // the worst applicable one, hides when everything is settled (after a brief
+  // "Saved ✓"), and stays visible for syncing / issue / offline. Colors come
+  // from theme-stable channel tokens; no animation — pulses strobe on mobile.
+  const SyncStatus = (() => {
+    let pulls = 0;
+    let okFlashTimer = null;
+    let lastShown = "ok";
+    function compute() {
+      if (!window.Cloud?.enabled) return "local";
+      if (!navigator.onLine) return "offline";
+      if (window.Cloud.lastPushFailureAt?.()) return "issue";
+      if (pulls > 0 || (window.Cloud.pendingPushes?.() || 0) > 0) return "syncing";
+      return "ok";
+    }
+    const LABEL = {
+      syncing: "Syncing…",
+      issue: "Sync issue — tap to retry",
+      offline: "Offline — saving here",
+      ok: "Saved ✓",
+      local: "",
+    };
+    function paint() {
+      const s = compute();
+      const busyBefore = lastShown === "syncing";
+      lastShown = s;
+      for (const id of ["sync-chip", "sync-chip-athlete"]) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        el.dataset.sync = s;
+        const txt = el.querySelector(".sync-chip-txt");
+        if (txt) txt.textContent = LABEL[s] || "";
+        if (s === "ok") {
+          // Settled: flash "Saved ✓" only when we were just visibly busy,
+          // then get out of the way. A permanent green chip is furniture.
+          if (busyBefore) {
+            el.classList.remove("hidden");
+            clearTimeout(okFlashTimer);
+            okFlashTimer = setTimeout(() => { if (compute() === "ok") el.classList.add("hidden"); }, 2500);
+          } else {
+            el.classList.add("hidden");
+          }
+        } else {
+          el.classList.toggle("hidden", s === "local");
+        }
+      }
+      // The live-session pill carries the state too — the athlete header-right
+      // (and the chip in it) is hidden during a live session.
+      const pill = document.getElementById("preview-banner");
+      if (pill) pill.dataset.sync = s;
+    }
+    function pullStart() { pulls++; paint(); }
+    function pullEnd() { pulls = Math.max(0, pulls - 1); paint(); }
+    return { paint, pullStart, pullEnd, state: () => compute() };
+  })();
+
+  // Track a pull promise on the chip without changing its behavior.
+  function trackPull(promise) {
+    SyncStatus.pullStart();
+    return Promise.resolve(promise).finally(() => SyncStatus.pullEnd());
+  }
+
+  // Stage-1 client edition of the merge that Stage 2 moves into the database,
+  // for the one catastrophic-loss family: per exercise, union entries by id;
+  // both sides carrying the same id → higher `m` (entry-modified ms, absent =
+  // 0, local wins ties — the device in hand is the one being edited) wins. A
+  // cloud copy can never erase a local entry it hasn't seen, and vice versa.
+  function mergeExerciseLogs(localLogs, cloudLogs) {
+    const out = {};
+    const exIds = new Set([...Object.keys(localLogs || {}), ...Object.keys(cloudLogs || {})]);
+    for (const exId of exIds) {
+      const byId = new Map();
+      for (const src of [cloudLogs?.[exId], localLogs?.[exId]]) {
+        for (const e of Array.isArray(src) ? src : []) {
+          if (!e) continue;
+          const k = e.id || `d:${e.date}`;
+          const cur = byId.get(k);
+          if (!cur || (e.m || 0) >= (cur.m || 0)) byId.set(k, e);
+        }
+      }
+      out[exId] = [...byId.values()];
+    }
+    return out;
+  }
+
+  // Re-pull on returning to the app. Push-then-pull, always: a device's own
+  // fresh work must be in the cloud before the cloud is allowed to overwrite
+  // the device. flush() settles rather than succeeds, so a recorded push
+  // failure vetoes the athlete-side wholesale apply (the coach side is
+  // already protected by the per-athlete dirty flags).
+  let _lastResyncAt = 0;
+  let _resyncing = false;
+  async function resyncNow(force) {
+    if (!window.Cloud?.enabled || !navigator.onLine || _resyncing) { SyncStatus.paint(); return; }
+    if (!force && Date.now() - _lastResyncAt < 20000) return;
+    if (state.mode !== "trainer" && !state.clientData?.program) return; // login screen
+    _resyncing = true;
+    _lastResyncAt = Date.now();
+    SyncStatus.pullStart();
+    try {
+      const session = await window.Cloud.getSession();
+      if (!session) return;
+      await window.Cloud.flush();
+      const pushFailed = !!window.Cloud.lastPushFailureAt?.();
+      if (state.mode === "trainer") {
+        const fresh = await window.Cloud.getCoachByAuthUserId(session.user.id);
+        if (fresh?.coach) {
+          populateCoachFromCloud(fresh.coach, fresh.athletes, {
+            keepLocalTemplates: localStorage.getItem(KEY_TEMPLATES_DIRTY) === "1",
+            keepLocalLibPrefs: localStorage.getItem(KEY_LIBPREFS_DIRTY) === "1",
+          });
+        }
+        const c = currentClient();
+        if (c) await pullProgressFromCloud(c);
+        if (state.previewMode) refreshLiveProgram();
+      } else {
+        const fresh = await window.Cloud.getAthleteByAuthUserId(session.user.id);
+        if (fresh?.athlete && !pushFailed) {
+          state.clientData.program = buildProgramFromAthlete(fresh.athlete);
+          if (fresh.progress) {
+            const merged = fresh.progress;
+            merged.exerciseLogs = mergeExerciseLogs(state.clientData.progress?.exerciseLogs, fresh.progress.exerciseLogs);
+            state.clientData.progress = merged;
+            ensureProgressShape(state.clientData.progress);
+          }
+          saveClient();
+        }
+      }
+      rerenderAfterSync();
+    } catch (e) {
+      console.warn("[Sync] resync failed", e);
+    } finally {
+      _resyncing = false;
+      SyncStatus.pullEnd();
+    }
+  }
+
+  // Repaint only read-mostly surfaces, and never under a typing cursor —
+  // a momentarily stale panel beats a stomped edit. Everything else picks up
+  // the refreshed state on its next navigation.
+  function rerenderAfterSync() {
+    const a = document.activeElement;
+    if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable)) return;
+    const athleteScreenVisible = $("#screen-client") && !$("#screen-client").classList.contains("hidden");
+    if (state.mode === "trainer" && !state.previewMode) {
+      const vis = $$("#screen-app .view").find((v) => !v.classList.contains("hidden"))?.id;
+      if (vis === "view-overview") { renderDashboardCalendar(); refreshCoachInbox(); }
+      else if (vis === "view-dashboard") renderClientGrid();
+    } else if (athleteScreenVisible && state.clientData?.program) {
+      const wv = state.workoutView || {};
+      if (wv.mode === "detail" && wv.dayId) renderWorkoutDetailUI();
+      else if ($("#workout-picker") && !$("#workout-picker").classList.contains("hidden")) renderWorkoutPickerUI();
+    }
+  }
+
   // Which store the day editor writes to. Everything in the editor subtree —
   // renderDayContent, renderExerciseRow and every picker they open — saves
   // through saveEditor() instead of calling saveTrainer() directly, so one
@@ -962,7 +1119,7 @@
     // See tests/band-tags.test.js, which exists to stop that from being changed
     // by accident.
     { group: "Band",        tags: ["Yellow", "Red", "Purple", "Green", "Grey"] },
-    { group: "Position",    tags: ["Incline", "Decline", "Elevated", "Seated", "Standing", "Kneeling", "Raised", "Supported", "Wide", "Lying"] },
+    { group: "Position",    tags: ["Incline", "Decline", "Elevated", "Seated", "Standing", "Kneeling", "Raised", "Supported", "Wide", "Lying", "Staggered"] },
     { group: "Grip",        tags: ["Supinated", "Neutral", "Pronated"] },
     { group: "Style",       tags: ["Pause", "Tempo", "Explosive", "Isometric"] },
     { group: "Hold",        tags: ["1S", "2S", "3S", "4S", "5S"] },
@@ -5746,6 +5903,8 @@
   }
   async function pullProgressFromCloud(c) {
     if (!window.Cloud?.enabled) return;
+    SyncStatus.pullStart();
+    try {
     const [cloudProgress, cloudAthlete] = await Promise.all([
       window.Cloud.getProgress(c.id),
       window.Cloud.getAthleteById(c.id),
@@ -5776,6 +5935,7 @@
       // activity line is about to be wrong by one session unless it redraws.
       renderClientGrid();
     }
+    } finally { SyncStatus.pullEnd(); }
   }
   // -------- "How is this person doing", in three numbers --------
   // These fed a grid of tiles on the coach's athlete Overview tab. That tab is
@@ -23387,6 +23547,10 @@
     const clients = state.trainerData.clients || [];
     if (!clients.length) return;
     _packagesRefreshing = true;
+    // This is the pull that lands AFTER the first paint — logged sets arrive
+    // here. While it runs the chip says "Syncing…", which is what turns the
+    // Elise incident ("my fill is GONE") into "it hasn't landed yet".
+    SyncStatus.pullStart();
     try {
       await Promise.all(clients.map(async (c) => {
         const progress = await window.Cloud.getProgress(c.id);
@@ -23397,6 +23561,7 @@
       console.warn("[Packages] refresh failed", e);
     } finally {
       _packagesRefreshing = false;
+      SyncStatus.pullEnd();
     }
     // Update the athlete-card chips if they're on screen. This pull is also
     // what brings in fresh dayCompletions, so the inbox re-runs here — that's
@@ -27218,7 +27383,7 @@
       // Never overwrite a real entry. The affordance only shows on untouched
       // days, but a stale card is one render away, so the writer guards too.
       if (idx >= 0 && !(arr[idx].skipped && !(arr[idx].sets || []).length)) return;
-      const entry = { id: idx >= 0 ? arr[idx].id : uid(), date, sets: [], skipped: true, locked: true };
+      const entry = { id: idx >= 0 ? arr[idx].id : uid(), date, m: Date.now(), sets: [], skipped: true, locked: true };
       if (idx >= 0) arr[idx] = entry; else arr.push(entry);
     });
     saveClient();
@@ -28551,7 +28716,7 @@
         if (!store[ex.id]) store[ex.id] = [];
         const arr = store[ex.id];
         const idx = arr.findIndex((l) => l.date === logDate);
-        const entry = { id: idx >= 0 ? arr[idx].id : uid(), date: logDate, rounds: [...rounds], locked: allDone() };
+        const entry = { id: idx >= 0 ? arr[idx].id : uid(), date: logDate, m: Date.now(), rounds: [...rounds], locked: allDone() };
         if (idx >= 0) arr[idx] = entry; else arr.push(entry);
       }
       saveClient();
@@ -29470,7 +29635,7 @@
           state.clientData.progress.exerciseLogs[ex.id] = [];
         const exLogs = state.clientData.progress.exerciseLogs[ex.id];
         const idx = exLogs.findIndex(l => l.date === logDate);
-        const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets, locked: false, ...collectWarmups(), ...collectFinishers(), ...collectRir(), ...collectNotes() };
+        const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, m: Date.now(), sets, locked: false, ...collectWarmups(), ...collectFinishers(), ...collectRir(), ...collectNotes() };
         if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
         saveClient();
         renderAthleteCalendar();
@@ -29714,7 +29879,7 @@
       // like a skip instead of a miss at a bar 15% under target. The first
       // stamp pins the pullback to this date; next session is full weight.
       const dl = dayDeloadPending(day, state.clientData.progress, logDate);
-      const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets, locked: true, ...(dl ? { deload: true } : {}), ...collectWarmups(), ...collectFinishers(), ...collectRir(), ...collectNotes() };
+      const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, m: Date.now(), sets, locked: true, ...(dl ? { deload: true } : {}), ...collectWarmups(), ...collectFinishers(), ...collectRir(), ...collectNotes() };
       if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
       if (dl && !dl.date) dl.date = logDate;
       detectAndCelebratePR(ex, entry, wrapper);
@@ -29774,7 +29939,7 @@
         state.clientData.progress.exerciseLogs[ex.id] = [];
       const exLogs = state.clientData.progress.exerciseLogs[ex.id];
       const idx = exLogs.findIndex(l => l.date === logDate);
-      const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets: [], skipped: true, locked: true, ...collectNotes() };
+      const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, m: Date.now(), sets: [], skipped: true, locked: true, ...collectNotes() };
       if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
       saveClient();
       isLocked = true;
@@ -36668,9 +36833,16 @@
     $("#btn-reset-pw").addEventListener("click", submitPasswordReset);
     $("#reset-pw-confirm").addEventListener("keydown", (e) => { if (e.key === "Enter") submitPasswordReset(); });
 
-    // Sign out on page hide when "Remember me" is unchecked
+    // Sign out on page hide when "Remember me" is unchecked. Flush FIRST:
+    // this listener registers before the flush one, so signing out here used
+    // to tear the auth token down under the final pushes — upserts landing
+    // after it failed RLS silently and that session's unflushed logs were
+    // unrecoverable. Unload may still kill the promise chain mid-flight, but
+    // the failure mode is now "maybe unsent" instead of "guaranteed rejected".
     window.addEventListener("pagehide", () => {
-      if (_signOutOnLeave && window.Cloud?.enabled) window.Cloud.signOut();
+      if (_signOutOnLeave && window.Cloud?.enabled) {
+        Promise.resolve(window.Cloud.flush?.()).finally(() => window.Cloud.signOut());
+      }
     });
 
     $("#btn-logout").addEventListener("click", () => { Nav.reset(); signOutTrainer(); });
@@ -37081,9 +37253,18 @@
     // debounced cloud pushes so stepping away can't lose recent edits.
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") { WorkoutClock.onHidden(); window.Cloud?.flush?.(); }
-      else WorkoutClock.onVisible();
+      else { WorkoutClock.onVisible(); resyncNow(); }
     });
     window.addEventListener("pagehide", () => { WorkoutClock.leave(); window.Cloud?.flush?.(); });
+    // Coming back to the app re-reads the cloud — the fix for "the app renders
+    // before the pull lands" reading as lost work. Reconnecting counts as
+    // coming back; going offline just repaints the chip.
+    window.addEventListener("focus", () => resyncNow());
+    window.addEventListener("online", () => { SyncStatus.paint(); resyncNow(true); });
+    window.addEventListener("offline", () => SyncStatus.paint());
+    window.Cloud?.onSyncActivity?.(() => SyncStatus.paint());
+    $("#sync-chip")?.addEventListener("click", () => resyncNow(true));
+    $("#sync-chip-athlete")?.addEventListener("click", () => resyncNow(true));
 
     // Register in-workout interactions so the active clock doesn't idle out mid-set.
     $("#workout-detail-list")?.addEventListener("click", () => WorkoutClock.touch());

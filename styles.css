@@ -775,6 +775,55 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 
 .header-right { display: flex; gap: 0.4em; align-items: center; }
 
+/* ============ Sync truth chip ============ */
+/* Same pill species as .header-sessions. State colors come from the
+   theme-stable semantic channels (--warn-rgb/--danger-rgb/--accent-rgb) and
+   the theme's own primary — never hex — so all ten themes and White inherit.
+   No pulse/animation: glows strobe on mobile. */
+.sync-chip {
+  display: inline-flex; align-items: center; gap: 0.45em;
+  padding: 0.34em 0.7em;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.2), rgba(var(--primary-rgb), 0.07));
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.32);
+  color: var(--text-soft);
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em;
+  cursor: pointer; white-space: nowrap;
+}
+.sync-chip-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto;
+  background: var(--primary-bright);
+}
+.sync-chip[data-sync="ok"] { border-color: rgba(var(--accent-rgb), 0.45); }
+.sync-chip[data-sync="ok"] .sync-chip-dot { background: rgb(var(--accent-rgb)); }
+.sync-chip[data-sync="issue"] {
+  background: linear-gradient(180deg, rgba(var(--warn-rgb), 0.22), rgba(var(--warn-rgb), 0.08));
+  border-color: rgba(var(--warn-rgb), 0.55);
+  color: var(--text);
+}
+.sync-chip[data-sync="issue"] .sync-chip-dot { background: rgb(var(--warn-rgb)); }
+.sync-chip[data-sync="offline"] {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+.sync-chip[data-sync="offline"] .sync-chip-dot { background: var(--muted); }
+@media (max-width: 720px) {
+  /* The words don't fit a phone header; the dot alone carries the state. */
+  .sync-chip { padding: 0.34em; min-width: 30px; min-height: 30px; justify-content: center; }
+  .sync-chip .sync-chip-txt { display: none; }
+}
+/* During a live session the athlete header-right (and its chip) is hidden —
+   the floating live pill carries the state as a leading dot instead. */
+.preview-banner[data-sync="syncing"]::before,
+.preview-banner[data-sync="issue"]::before,
+.preview-banner[data-sync="offline"]::before {
+  content: ""; display: inline-block; width: 8px; height: 8px;
+  border-radius: 50%; margin-right: 0.45em; vertical-align: baseline;
+}
+.preview-banner[data-sync="syncing"]::before { background: var(--primary-bright); }
+.preview-banner[data-sync="issue"]::before { background: rgb(var(--warn-rgb)); }
+.preview-banner[data-sync="offline"]::before { background: var(--muted); }
+
 /* Breadcrumb (shown when inside an athlete) */
 .header-breadcrumb {
   display: flex;
