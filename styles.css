@@ -9230,6 +9230,21 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 }
 .mod-chip:hover { opacity: 0.65; }
 
+/* One tap heavier, beside the band chip it advances. --border (not a made-up
+   --line) matches the neighboring .mod-add-btn/.mod-picker-btn outline. */
+.mod-chip-up {
+  margin-left: -0.15em;
+  padding: 0 0.35em;
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 0.4em;
+  cursor: pointer;
+}
+.mod-chip-up:hover { color: var(--text); border-color: rgba(var(--primary-rgb), 0.5); }
+
 .mod-add-btn {
   display: inline-flex;
   align-items: center;

@@ -1451,16 +1451,42 @@
     // where the color IS the information, so no two may match. Mid-weight
     // shades rather than pure hues, because these have to stay legible on the
     // light theme as well as the nine dark ones.
-    "Yellow":    { color: "#eab308", bg: "rgba(234,179,8,0.18)"   },
+    //
+    // Yellow and Green measured below the WCAG UI-component floor (3:1) for
+    // the chip fill on the White theme — 1.60:1 and 1.84:1, read off
+    // getComputedStyle in the running app (text over the chip's own 0.18
+    // tint composited on --face-inset), not eyeballed. Both had far more
+    // contrast than they needed on the default dark theme (7.20 / 6.29), so
+    // each was walked darker in HSL (same hue/saturation, lower lightness)
+    // until White cleared ~3.3:1 — landing at 3.49 / 3.36 — while staying
+    // comfortably above 3:1 on dark too (3.47 / 3.57). Red/Purple/Grey
+    // already cleared 3:1 on both ends and are untouched.
+    "Yellow":    { color: "#916f05", bg: "rgba(145,111,5,0.18)"   },
     "Red":       { color: "#ef4444", bg: "rgba(239,68,68,0.18)"   },
     "Purple":    { color: "#a855f7", bg: "rgba(168,85,247,0.18)"  },
-    "Green":     { color: "#22c55e", bg: "rgba(34,197,94,0.18)"   },
+    "Green":     { color: "#178841", bg: "rgba(23,136,65,0.18)"   },
     "Grey":      { color: "#6b7280", bg: "rgba(107,114,128,0.18)" },
   };
   function tagColor(tag) { return TAG_COLORS[tag] || { color: "#94a3b8", bg: "rgba(148,163,184,0.18)" }; }
 
   function groupForTag(tag) {
     return EXERCISE_MODIFIERS.find((g) => g.tags.includes(tag)) || null;
+  }
+
+  // ── Bands ──────────────────────────────────────────────────────────────
+  // Read out of the group rather than written twice, so the ladder and the
+  // picker row can never disagree about what comes next.
+  const BAND_TAGS = (EXERCISE_MODIFIERS.find((g) => g.group === "Band") || {}).tags || [];
+  // The exercise's band, if it has one. Note this deliberately does NOT match
+  // the old "Band" Equipment tag: that means "a band, unspecified", predates the
+  // colors, and is not a rung on anything.
+  function bandOf(ex) {
+    return (ex?.modifiers || []).find((t) => BAND_TAGS.includes(t)) || null;
+  }
+  // One rung heavier. Null at grey, and null for anything not on the ladder.
+  function nextBandUp(tag) {
+    const i = BAND_TAGS.indexOf(tag);
+    return i < 0 || i === BAND_TAGS.length - 1 ? null : BAND_TAGS[i + 1];
   }
 
   // ── Finishers (burnout / dropset) ──
@@ -2664,6 +2690,28 @@
         chip.title = g.group;
       }
       container.appendChild(chip);
+
+      // One tap heavier, without opening the picker. Programming a band block
+      // is mostly this move, and the picker is two taps and a hunt.
+      if (openPicker && BAND_TAGS.includes(tag)) {
+        const up = nextBandUp(tag);
+        if (up) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "mod-chip-up";
+          btn.textContent = "↑";
+          btn.title = `Step up to the ${up.toLowerCase()} band`;
+          btn.setAttribute("aria-label", `Step up to the ${up.toLowerCase()} band`);
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            ex.modifiers = (ex.modifiers || []).filter((m) => !BAND_TAGS.includes(m));
+            ex.modifiers.push(up);
+            saveEditor();
+            renderModChips(container, ex, position, openPicker);
+          });
+          container.appendChild(btn);
+        }
+      }
     });
   }
 

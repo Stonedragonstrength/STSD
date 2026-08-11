@@ -160,4 +160,42 @@ check("next band up, and grey is the top", () => {
   assert.strictEqual(nextBand("Chartreuse"), null, "an unknown tag has no next");
 });
 
+// ---- the helpers the card uses -------------------------------------------
+// Copied from app.js — see the note at the top of tests/README.md.
+const BAND_TAGS = (EXERCISE_MODIFIERS.find((g) => g.group === "Band") || {}).tags || [];
+function bandOf(ex) {
+  return (ex?.modifiers || []).find((t) => BAND_TAGS.includes(t)) || null;
+}
+function nextBandUp(tag) {
+  const i = BAND_TAGS.indexOf(tag);
+  return i < 0 || i === BAND_TAGS.length - 1 ? null : BAND_TAGS[i + 1];
+}
+
+check("BAND_TAGS is read from the group, so it cannot drift from the ladder", () => {
+  assert.deepStrictEqual(BAND_TAGS, BANDS);
+});
+
+check("bandOf finds the band among other tags, or says there isn't one", () => {
+  assert.strictEqual(bandOf({ modifiers: ["BB", "Incline", "Purple"] }), "Purple");
+  assert.strictEqual(bandOf({ modifiers: ["BB", "Incline"] }), null);
+  assert.strictEqual(bandOf({ modifiers: [] }), null);
+  assert.strictEqual(bandOf({}), null, "an exercise with no modifiers array at all");
+  assert.strictEqual(bandOf(null), null);
+});
+
+check("bandOf is not fooled by the old unspecified Band equipment tag", () => {
+  // "Band" (Equipment) still means "a band, unspecified" and predates the
+  // colors. It is not a rung and must not be mistaken for one.
+  assert.strictEqual(bandOf({ modifiers: ["Band"] }), null);
+});
+
+check("stepping up stops at grey", () => {
+  assert.strictEqual(nextBandUp("Yellow"), "Red");
+  assert.strictEqual(nextBandUp("Red"), "Purple");
+  assert.strictEqual(nextBandUp("Purple"), "Green");
+  assert.strictEqual(nextBandUp("Green"), "Grey");
+  assert.strictEqual(nextBandUp("Grey"), null, "grey is the top — the control goes away");
+  assert.strictEqual(nextBandUp(null), null);
+});
+
 console.log(`\nband-tags: ${n} checks passed.`);
