@@ -6232,6 +6232,20 @@ input:focus, textarea:focus, select:focus {
   position: relative;
   overflow: hidden;
 }
+/* Pinned under the header + tab strip instead of scrolling away beneath them.
+   Both of those are transparent (backdrop-filter, no background colour), so the
+   day header used to slide under 124px of chrome and stay VISIBLE while being
+   unclickable — the date chip read as dead on desktop for exactly this reason,
+   and only worked near the top of the scroll. Sticky, it is always the real
+   thing. It also happens to be what you want pinned mid-session: the date, the
+   day's name, the complete ✓ and the mood button. */
+.workout-detail-head {
+  position: sticky;
+  /* Under the header AND the tab strip — --stack-h is only the header, and
+     pinning there parked this behind the tabs, which then ate the clicks. */
+  top: var(--under-tabs-h, var(--stack-h, var(--header-h, 63px)));
+  z-index: 7; /* under the tab strip (9); over the scrolling exercise list */
+}
 .workout-detail-head::after {
   content: "";
   position: absolute;
@@ -9942,17 +9956,45 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 /* Live session (coach logging for the athlete): green banner, and no
    read-only blocking — the body class is live-log-mode, not preview-mode,
    so the portal behaves exactly as it does for the athlete. */
-/* Pinned under the header for the whole session: the coach tools have to stay
-   one tap away while scrolling a workout, which is where the session is spent.
-   Opaque, because content scrolls underneath it. */
+/* A floating pill, bottom-left, rather than the full-width bar this used to be.
+   The bar cost ~45px of sticky chrome across the top of every live session, and
+   because it pinned under a header that is transparent (backdrop-filter, no
+   background), the workout's own day header scrolled underneath both and stayed
+   VISIBLE while being unclickable — the date chip in particular. Out of the top
+   stack, that strip is the workout's again.
+
+   Lifted clear of .workout-dock when the dock has anything in it; the dock is a
+   full-width fixed bar at bottom:0 and would otherwise sit on top of this. */
 .preview-banner {
-  position: sticky;
-  top: var(--header-h, 63px);
-  z-index: 11; /* over the athlete tab strip (9) and the header (10) */
+  position: fixed;
+  left: 12px;
+  bottom: calc(0.6rem + env(safe-area-inset-bottom, 0px));
+  z-index: 70; /* over the workout dock (60) */
+  width: auto;
+  max-width: calc(100vw - 24px);
+  flex-wrap: nowrap;
+  gap: 0.5em;
+  padding: 0.4em 0.55em 0.4em 0.85em;
+  border: 1px solid var(--warn);
+  border-radius: 999px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  font-size: 0.8rem;
 }
+body:has(.workout-dock > :not(.hidden)) .preview-banner {
+  bottom: calc(4.6rem + env(safe-area-inset-bottom, 0px));
+}
+.preview-banner .preview-banner-msg {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.preview-banner .btn { padding: 0.35em 0.7em; font-size: 0.78rem; }
 .preview-banner.live {
-  background: linear-gradient(180deg, color-mix(in srgb, #22c55e 17%, var(--bg)), var(--bg));
-  border-bottom-color: #22c55e;
+  /* Opaque, not a gradient into the page: as a floating pill it sits over
+     scrolling content, and a translucent one is unreadable against set rows. */
+  background: color-mix(in srgb, #22c55e 18%, var(--surface));
+  border-color: #22c55e;
 }
 .preview-banner.live .preview-banner-msg strong { color: #4ade80; }
 .preview-banner.live .btn { background: #22c55e; color: #052e12; }

@@ -2991,10 +2991,18 @@
       const px = (n) => Math.round(n * 100) / 100 + "px";
       const h = header.getBoundingClientRect().height;
       s.style.setProperty("--header-h", px(h));
-      // The live-session coach bar pins under the header, so anything sticking
-      // below it (the athlete tab strip) has to clear both.
-      const bar = s.querySelector(".preview-banner:not(.hidden)");
-      s.style.setProperty("--stack-h", px(h + (bar?.getBoundingClientRect().height || 0)));
+      // The live-session bar used to pin under the header, so the athlete tab
+      // strip had to clear both. It is a floating pill at the bottom now and
+      // takes no room at the top, so the stack is the header alone — adding its
+      // height here would push the tab strip down by a bar that isn't there.
+      s.style.setProperty("--stack-h", px(h));
+      // One level deeper again: the athlete's tab strip pins at --stack-h, so
+      // anything pinning under IT (the workout day header) has to clear the
+      // header and the tabs together. Measured rather than assumed — the strip
+      // wraps to two rows at phone width.
+      const tabs = s.querySelector(".tabs");
+      const tabsH = tabs && tabs.offsetHeight ? tabs.getBoundingClientRect().height : 0;
+      s.style.setProperty("--under-tabs-h", px(h + tabsH));
     });
   }
   function syncHeaderHeights() {
@@ -3017,7 +3025,7 @@
     if (!window.ResizeObserver) return;
     _headerRO?.disconnect();
     _headerRO = new ResizeObserver(applyHeaderHeights);
-    $$(".screen .app-header, .screen .preview-banner").forEach((el) => _headerRO.observe(el));
+    $$(".screen .app-header, .screen .tabs").forEach((el) => _headerRO.observe(el));
   }
 
   // ---- Back-button router --------------------------------------------------
@@ -26016,8 +26024,12 @@
     const banner = $("#preview-banner");
     if (!banner) return;
     banner.classList.add("live");
+    // Short, because this is a floating pill now rather than a full-width bar.
+    // The NAME stays: it is the only thing on screen saying whose account the
+    // sets are being written to, and writing a session onto the wrong athlete
+    // is not a mistake you notice later.
     $(".preview-banner-msg").innerHTML =
-      `🏋️ Live session: logging <strong>${escapeHtml(c.name)}</strong>'s workout, saves to their account`;
+      `🏋️ <strong>${escapeHtml(c.name)}</strong>`;
   }
   function exitPreview() {
     if (!state.previewMode) return;
