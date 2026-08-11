@@ -14811,8 +14811,24 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
   .cex-notes-btn { min-height: 38px; }
   .exn-pop-opt { min-height: 42px; }
   .exn-pop-clear { min-height: 40px; }
+  /* Two 26px squares this pass originally walked straight past, both of them
+     real buttons with their own handlers rather than decoration: the mobility
+     round ticks, and the ± in the Tools menu that sets how many sets to skip.
+     Every control around them was grown and these were left at desk size. */
+  .cex-mob-check { width: 36px; height: 36px; }
+  .cex-tools-step { width: 36px; height: 36px; }
   /* The coach's ✎ on an athlete card — pressed with a lifter waiting. */
   .cex-coach-edit { width: 34px; height: 34px; }
+  /* ---- The ✕ that clears a search field ---- */
+  /* Four of these across anatomy, the exercise library, the roster and
+     billing. Three are byte-identical rules that were copy-pasted to each
+     surface, so they were all missed together rather than one at a time.
+     They sit inside their field, which is taller than they are, so the growth
+     costs no layout. */
+  .a-search-x,
+  .roster-search-clear,
+  .bill-search-clear,
+  .lib-search-clear { width: 36px; height: 36px; }
   /* Reusing a filmed clip is a phone-side job: it's where the camera is. */
   .demo-clip-chip { min-height: 38px; }
   /* ---- Day header and readiness ---- */
