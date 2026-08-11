@@ -6210,6 +6210,21 @@ input:focus, textarea:focus, select:focus {
   white-space: nowrap;
 }
 .wc-skip:hover { color: var(--text); }
+/* Coach-only, live session: move this day from the picker card. Same species
+   of inline control as .wc-skip, tinted primary so it reads as coach chrome. */
+.wc-move {
+  margin-left: 0.6em;
+  color: var(--primary-bright);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.wc-move:hover { color: var(--text); }
+@media (pointer: coarse) {
+  .wc-move { padding: 0.55em 0.35em; margin: -0.55em 0 -0.55em 0.25em; }
+}
 /* The same door inside the day detail, pinned at the top of the content. A
    quiet full-width row: visible while deciding, not shouting over the workout. */
 .detail-skip-day { display: flex; justify-content: center; margin: 0.15rem 0 0.75rem; }

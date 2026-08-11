@@ -12387,65 +12387,23 @@
     dayContent.className = "day-content-area";
 
     // Move the active day to a slot in this week or onto the end of another.
-    // The day moves as the SAME OBJECT — logs, completions, moods and
-    // readiness are keyed by day/exercise ids, so identity is what carries a
-    // filled day's history along. Clone it or re-mint its id and every log
-    // orphans silently; tests/move-program-day.test.js pins this.
     function openMoveDaySheet() {
       const dayIdx = Math.min(week._activeDayIdx, week.days.length - 1);
-      const day = week.days[dayIdx];
-      if (!day) return;
-      const wIdx = _coachActiveWeekIdx;
-      const dayLabel = day.name || `Day ${dayIdx + 1}`;
-      let body = "";
-      if (week.days.length > 1) {
-        body += `<p class="muted" style="margin:0 0 0.35em">Within ${escapeHtml(week.label)}</p>` +
-          `<div class="video-pick-list">` +
-          week.days.map((d, i) => {
-            const here = i === dayIdx;
-            return `<button type="button" class="video-pick-btn" data-mv-pos="${i}"${here ? " disabled" : ""}>` +
-              `<strong>#${i + 1}</strong>` +
-              `<span class="muted" style="margin-left:0.45em">${here ? "here" : `now ${escapeHtml(d.name || `Day ${i + 1}`)}`}</span>` +
-            `</button>`;
-          }).join("") + `</div>`;
-      }
-      if (weeks.length > 1) {
-        body += `<p class="muted" style="margin:${week.days.length > 1 ? "0.9em" : "0"} 0 0.35em">To another week</p>` +
-          `<div class="video-pick-list">` +
-          weeks.map((w, i) => i === wIdx ? "" :
-            `<button type="button" class="video-pick-btn" data-mv-week="${i}">` +
-              `<strong>${escapeHtml(w.label)}</strong>` +
-              `<span class="meta-pill" style="margin-left:auto">${w.days.length} day${w.days.length === 1 ? "" : "s"}</span>` +
-            `</button>`).join("") + `</div>`;
-      }
-      openModal({
-        title: `Move ${dayLabel}`,
-        body,
-        actions: [{ label: "Cancel", className: "btn btn-ghost", onClick: closeModal }],
-      });
-      document.querySelectorAll("#modal-body [data-mv-pos]").forEach((b) =>
-        b.addEventListener("click", () => {
-          const at = moveProgramDay(weeks, wIdx, dayIdx, wIdx, Number(b.dataset.mvPos));
-          if (at === null) return;
-          closeModal();
+      if (!week.days[dayIdx]) return;
+      openMoveDaySheetFor(weeks, _coachActiveWeekIdx, dayIdx, (toW, at, cross) => {
+        if (!cross) {
           week._activeDayIdx = at;
           saveTrainer(); renderDayTabs(); renderActiveDayContent();
-        }));
-      document.querySelectorAll("#modal-body [data-mv-week]").forEach((b) =>
-        b.addEventListener("click", () => {
-          const toW = Number(b.dataset.mvWeek);
-          const at = moveProgramDay(weeks, wIdx, dayIdx, toW, weeks[toW].days.length);
-          if (at === null) return;
-          closeModal();
-          // Jump to where it landed, so the move is visible under your hand.
-          _coachActiveWeekIdx = toW;
-          weeks[toW]._activeDayIdx = at;
-          saveTrainer(); renderWeeks();
-          // Same after-move hooks as the week drag: the athlete mount's diet
-          // panel and calendar both read week/day mapping.
-          if (!_programEditorId) { renderDiet(); renderCoachCalendar(); }
-          toast(`${dayLabel} → ${weeks[toW].label} ✓`);
-        }));
+          return;
+        }
+        // Jump to where it landed, so the move is visible under your hand.
+        _coachActiveWeekIdx = toW;
+        weeks[toW]._activeDayIdx = at;
+        saveTrainer(); renderWeeks();
+        // Same after-move hooks as the week drag: the athlete mount's diet
+        // panel and calendar both read week/day mapping.
+        if (!_programEditorId) { renderDiet(); renderCoachCalendar(); }
+      });
     }
 
     let dayDragFrom = null;
@@ -12623,6 +12581,62 @@
     body.appendChild(addRow);
     body.appendChild(dayContent);
     container.appendChild(body);
+  }
+
+  // The Move-day sheet, shared by the week editor and the live-session picker.
+  // The day moves as the SAME OBJECT — logs, completions, moods and readiness
+  // are keyed by day/exercise ids, so identity is what carries a filled day's
+  // history along. Clone it or re-mint its id and every log orphans silently;
+  // tests/move-program-day.test.js pins this. `onMoved(toW, landing, cross)`
+  // runs after a successful splice; persistence and re-render are the caller's.
+  function openMoveDaySheetFor(weeks, wIdx, dayIdx, onMoved) {
+    const week = weeks[wIdx];
+    const day = week?.days?.[dayIdx];
+    if (!day) return;
+    const dayLabel = day.name || `Day ${dayIdx + 1}`;
+    let body = "";
+    if (week.days.length > 1) {
+      body += `<p class="muted" style="margin:0 0 0.35em">Within ${escapeHtml(week.label)}</p>` +
+        `<div class="video-pick-list">` +
+        week.days.map((d, i) => {
+          const here = i === dayIdx;
+          return `<button type="button" class="video-pick-btn" data-mv-pos="${i}"${here ? " disabled" : ""}>` +
+            `<strong>#${i + 1}</strong>` +
+            `<span class="muted" style="margin-left:0.45em">${here ? "here" : `now ${escapeHtml(d.name || `Day ${i + 1}`)}`}</span>` +
+          `</button>`;
+        }).join("") + `</div>`;
+    }
+    if (weeks.length > 1) {
+      body += `<p class="muted" style="margin:${week.days.length > 1 ? "0.9em" : "0"} 0 0.35em">To another week</p>` +
+        `<div class="video-pick-list">` +
+        weeks.map((w, i) => i === wIdx ? "" :
+          `<button type="button" class="video-pick-btn" data-mv-week="${i}">` +
+            `<strong>${escapeHtml(w.label)}</strong>` +
+            `<span class="meta-pill" style="margin-left:auto">${w.days.length} day${w.days.length === 1 ? "" : "s"}</span>` +
+          `</button>`).join("") + `</div>`;
+    }
+    if (!body) return;
+    openModal({
+      title: `Move ${dayLabel}`,
+      body,
+      actions: [{ label: "Cancel", className: "btn btn-ghost", onClick: closeModal }],
+    });
+    document.querySelectorAll("#modal-body [data-mv-pos]").forEach((b) =>
+      b.addEventListener("click", () => {
+        const at = moveProgramDay(weeks, wIdx, dayIdx, wIdx, Number(b.dataset.mvPos));
+        if (at === null) return;
+        closeModal();
+        onMoved(wIdx, at, false);
+      }));
+    document.querySelectorAll("#modal-body [data-mv-week]").forEach((b) =>
+      b.addEventListener("click", () => {
+        const toW = Number(b.dataset.mvWeek);
+        const at = moveProgramDay(weeks, wIdx, dayIdx, toW, weeks[toW].days.length);
+        if (at === null) return;
+        closeModal();
+        onMoved(toW, at, true);
+        toast(`${dayLabel} → ${weeks[toW].label} ✓`);
+      }));
   }
 
   // Splice a day out of one week and into a slot of another (or the same).
@@ -27043,6 +27057,14 @@
       const skipCtl = totalEx > 0 && !checked && (skippedNow || doneEx === 0)
         ? `<span class="wc-skip" role="button" tabindex="0">${skippedToday ? "Undo skip" : "Skipped it?"}</span>`
         : "";
+      // Coach in a live session: move this day — shuffled in its week or into
+      // another — from right here, filled-out days included. The picker shows
+      // the CLONE; the move writes the real record and the clone is re-derived,
+      // same contract as every coach edit in a live session. Athletes never
+      // see this: the program's shape is the coach's.
+      const moveCtl = state.previewMode
+        ? `<span class="wc-move" role="button" tabindex="0" title="Move this day">⇄ Move</span>`
+        : "";
       const moods = dayMoods(state.clientData.progress, day.id);
       const rdy = dayReadiness(state.clientData.progress, day.id);
       // When this session was first filled out, so a week of cards reads as a
@@ -27053,7 +27075,7 @@
         <div class="workout-card-body">
           <h4 class="workout-card-title">${escapeHtml(day.name)}</h4>
           <div class="workout-card-meta">${totalEx} exercise${totalEx === 1 ? "" : "s"} · ${status}${
-            firstLogged ? `<span class="wc-first">${escapeHtml(shortLogDate(firstLogged))}</span>` : ""}${skipCtl}</div>
+            firstLogged ? `<span class="wc-first">${escapeHtml(shortLogDate(firstLogged))}</span>` : ""}${skipCtl}${moveCtl}</div>
           ${rdy || moods.length ? `<span class="wc-tags">${readinessChipHtml(rdy)}${moodChipsHtml(moods)}</span>` : ""}
         </div>
         <div class="workout-card-chevron">›</div>
@@ -27063,6 +27085,24 @@
         e.stopPropagation();
         if (skippedToday) undoSkipDay(day);
         else openSkipDaySheet(day);
+      });
+      const moveEl = card.querySelector(".wc-move");
+      if (moveEl) moveEl.addEventListener("click", (e) => {
+        e.stopPropagation();
+        // The card renders the clone; the move edits the REAL athlete record,
+        // located by ids, then the clone is re-derived from it.
+        const c = currentClient();
+        if (!c) return;
+        const rw = (c.weeks || []).findIndex((w) => w.id === week.id);
+        const rd = rw >= 0 ? c.weeks[rw].days.findIndex((d) => d.id === day.id) : -1;
+        if (rd < 0) return;
+        openMoveDaySheetFor(c.weeks, rw, rd, (toW) => {
+          saveTrainer();
+          refreshLiveProgram();
+          // Follow the day so the coach watches it land, cross-week or not.
+          state.workoutView.weekId = c.weeks[toW].id;
+          renderWorkoutPickerUI();
+        });
       });
       card.addEventListener("click", () => {
         // Resume the date this session is already filed under, so a day that was
