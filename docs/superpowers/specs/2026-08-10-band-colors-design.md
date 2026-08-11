@@ -1,4 +1,4 @@
-# Band colors: which band, as part of what the lift is
+# Band colors: the band is the load
 
 2026-08-10
 
@@ -7,8 +7,8 @@
 A banded lift's resistance is its band, and right now the app cannot say which
 one. `Band` exists as a single Equipment tag (`app.js:948`) meaning "a band is
 involved" — not yellow, not grey, just *some* band. So a program says "Banded
-Row" and the athlete picks whatever is in the rack, the coach has no record of
-what was prescribed, and two months of banded work has no load history at all.
+Row", the athlete picks whatever is in the rack, and months of banded work carry
+no load history at all.
 
 Five bands are in use, lightest to heaviest:
 
@@ -16,99 +16,128 @@ Five bands are in use, lightest to heaviest:
 
 ## What we are building
 
-A new single-select **Band** modifier group carrying those five colors, joining
-the existing lift-identity machinery so a green-band row and a grey-band row keep
-separate progression chains and separate PRs — exactly as a barbell squat and a
-dumbbell squat already do.
+A single-select **Band** modifier group carrying those five colors, rendered as a
+chip in the band's own color on both the coach's and the athlete's card.
 
-The coach prescribes it. The chip renders in the band's own color on both the
-coach's and the athlete's card.
+The coach prescribes it. The five colors are **rungs on one ladder**, not five
+different exercises — so an athlete's banded work reads as one climbing story,
+and the coach gets a one-tap "next band" while programming.
 
 ## Why a tag, and not the two things it looked like
 
 **Not a quick note.** The obvious home was the athlete's pill picker
 (`EX_NOTES`, `app.js:24819`), but those are *observations* — "Felt rough", "Too
-heavy", "Pain or tweak". Each carries a `tone` (good/warn/info/bad) and the
-athlete may pick at most two (`MAX_EX_NOTES`). A band color is a fact about the
-setup, not a feeling about the set, it has no tone, and spending one of two note
-slots on it would cost the athlete the ability to report that a lift both hurt
-and felt heavy.
+heavy", "Pain or tweak". Each carries a `tone` and the athlete may pick at most
+two (`MAX_EX_NOTES`). A band color is a fact about the setup, not a feeling about
+the set, it has no tone, and spending one of two note slots on it would cost the
+athlete the ability to report that a lift both hurt and felt heavy.
 
 **Not a weight value.** The weight field already carries word sentinels — `"BW"`
 and `"BAR"` via `isWeightWord()` (`app.js:1191`) — and a band color looked like a
-third. That model dies on accommodating resistance: a banded bench press is
-**225 lb *and* a red band**, two loads at once, and the weight field holds one
-value. Both kinds of banded work are programmed here, so the model has to carry
-both.
+third. That dies on accommodating resistance: a banded bench press is **225 lb
+*and* a red band**, two loads at once, and the field holds one value. Both kinds
+of banded work get programmed here, so the model must carry both.
 
-**A tag handles both cases with no new model:**
+A tag holds the band while the weight field holds the bar, and neither has to
+learn the other's job:
 
 ```
 Banded Bench Press   [BB] [● RED]    225 lb × 5     tag = band, weight = bar
 Band Pull-Apart      [● GREEN]            × 15      tag = band, no weight
 ```
 
-## What comes for free
+## Rungs, not separate lifts
 
-This is the whole reason for the tag. `LIFT_ID_GROUPS` (`app.js:1005`) already
-contains Equipment, Unilateral, Position and Grip, and `liftKey()` builds a
-matching key from them. Adding `"Band"` to that list means:
+This is the decision everything else hangs off.
 
-- **Progression chains fork per color.** A green-band row and a grey-band row
-  never chain into each other, so the double-progression engine does not read a
-  band change as a stall or a jump.
-- **PRs fork per color.** The same guard that stopped a 315 barbell squat from
-  burying every dumbbell squat PR.
-- **The "Last:" line is per color.**
-- **Single-select is the default.** `if (!multi)` at `app.js:2733` — a group
-  without `multi: true` already replaces rather than stacks, which is right: one
-  band at a time.
-- **Zero tonnage, correctly.** `setLb()` (`app.js:30751`) scores only finite
-  positive weights, so a band-only set contributes nothing to the Hoard, the same
-  as bodyweight. A bar+band set scores its bar weight, which is the honest number.
+`LIFT_ID_GROUPS` (`app.js:1005`) lists the tag groups that make a lift a
+*different lift* — Equipment, Unilateral, Position, Grip. A barbell squat and a
+dumbbell squat load on different scales and rightly keep separate PR ladders and
+separate progression chains.
 
-The colored badge is a data edit. `TAG_COLORS` (`app.js:1389`) is already a
-hardcoded hex map read by `tagColor()`, which feeds `--mc`/`--mb` onto
-`.mod-chip` at every render site (`app.js:8635`, `app.js:12385`). Five more rows
-and the chips are colored on both sides.
+**Band is deliberately NOT added to that list.** That rule is for implements, and
+a band is not an implement — for a band-only lift the band *is* the load, the way
+225 is the load on a bench. Nobody forks a lift's identity between 225 and 315.
 
-## The design
+Putting Band in lift identity would shatter an athlete's banded history into five
+unrelated short chains with nothing climbing between them, and would make "the
+next band" meaningless. One exercise, one history, with the band as the rung:
 
-### The group
+```
+Band Pull-Apart
+  Jun   ● YELLOW  × 12
+  Jul   ● RED     × 15
+  Aug   ● PURPLE  × 15     one story, climbing
+```
+
+**What this costs, accepted knowingly:** a banded bench at 225 × 5 with red and
+the same at 225 × 5 with green read as the same PR. The bar weight matched and
+the app will not separate them by band. That is the price of coherent band-only
+history, and band-only accessory work is the bulk of the banded volume here.
+
+Because Band stays out of `LIFT_ID_GROUPS`, `liftTags()` skips it, so `liftKey()`
+ignores it (one chain) and `liftLabel()` leaves it out of the composed name. That
+is correct: the band is a load, and loads belong in the load slot, not the name.
+`Style` and `Hold` are already tags that render as chips without touching
+identity — the same shape.
+
+## The ladder, and the coach's next step
+
+The tag order in `EXERCISE_MODIFIERS` **is** the ladder, lightest to heaviest.
+Nothing else stores the order.
+
+While programming, a banded exercise gets a one-tap **next band** control that
+advances the tag one rung and does nothing at grey. That is the ask, and on its
+own it needs no engine work at all.
+
+The engine's part is to say *when*. The double-progression engine already
+computes a target from logged history without ever writing to the exercise — the
+convention in this codebase is computed targets, never mutated data. Band
+laddering follows it exactly: when an athlete tops out their rep ceiling on their
+current band, the computed target reads **"ready for ● GREEN"**, and the coach
+takes it with the same one tap.
+
+The engine does **not** advance the band by itself. A band change is a
+prescription, and prescriptions are the coach's.
+
+The precedent is bodyweight, which already graduates across a load-type boundary
+at its rep cap (`app.js:1626`) — same ladder shape, different rungs.
+
+## PRs on a band-only lift
+
+A band-only lift has no weight, so its PR is rep-only. `prIsRepOnly()` already
+handles that and currently prints `—` in the weight slot (`app.js:16615`).
+
+A bare "best: 15 reps" is meaningless without knowing which band earned it, so
+the PR record gains a band alongside its reps, and the weight slot renders the
+colored chip instead of the dash. One field on the record; it is what makes the
+history above readable.
+
+## The group
 
 ```js
 { group: "Band", tags: ["Yellow", "Red", "Purple", "Green", "Grey"] },
 ```
 
-Placed after Equipment in `EXERCISE_MODIFIERS`. No `multi` flag — single-select.
+Placed after Equipment in `EXERCISE_MODIFIERS`, so `orderedModifiers()` renders
+the band chip after the implement: `[BB] [● RED]`. No `multi` flag — `if (!multi)`
+at `app.js:2733` already makes a group single-select, which is right: one band at
+a time, and picking a second replaces the first.
 
 Tags are the bare color words rather than `"Band Y"` shorthand, because the chip
 renders its raw tag text (`escapeHtml(tag)`) and a chip that is literally green
-and reads "Green" needs no decoding. The words are unique across every existing
-group, so `groupForTag()`'s exact-match lookup stays unambiguous.
+and reads "Green" needs no decoding. The words collide with no existing tag, so
+`groupForTag()`'s exact-match lookup stays unambiguous.
 
-`TAG_LONG` expands them for the athlete's sentence — `"Green"` → `"Green Band"` —
-since the athlete reads a name, not a chip row, in several places.
+`TAG_LONG` expands them — `"Green"` → `"Green Band"` — for the places the athlete
+reads a sentence rather than a chip row.
 
-### Ordering
+## Colors
 
-`LIFT_ID_GROUPS` gains `"Band"`. `NAME_GROUP_ORDER` gains `"Band"` at the front,
-so the composed name reads *"Green Band Barbell Bench Press"*.
-
-That is clunky English and worth eyeballing once it renders. It is accepted here
-because the alternative is worse: excluding the band from `liftLabel()` would
-leave two PR-board rows both reading "Barbell Bench Press" with different
-numbers and no way to tell which band earned which. Unambiguous beats graceful on
-the PR board.
-
-Coaches who currently name an exercise "Banded Bench Press" should drop to
-"Bench Press" and let the tag carry it — the same convention that already applies
-to BB and DB.
-
-### Colors
-
-Five rows in `TAG_COLORS`, hex plus an 18%-alpha background, matching the shape
-of every existing entry.
+Five rows in `TAG_COLORS` (`app.js:1389`), hex plus an 18%-alpha background,
+matching every existing entry. `tagColor()` feeds them to `--mc`/`--mb` on
+`.mod-chip` at every render site (`app.js:8635`, `app.js:12385`), so the colored
+badge is a data edit rather than new rendering.
 
 These are **literal colors, deliberately not theme tokens** — a green band is
 green in every theme, and `TAG_COLORS` is already hardcoded hex by design. But
@@ -116,62 +145,62 @@ the app ships ten themes including a light one, and yellow and grey are the two
 most likely to disappear against a pale background. Both must be checked on the
 light theme specifically, not just the default dark.
 
-### Progression
+## Tonnage
 
-- **Bar + band** — the band is part of the setup and holds still; the weight
-  climbs as normal. This is how accommodating resistance is actually programmed:
-  you add plates within a block, not band tension.
-- **Band-only** — no weight to climb, so reps climb and hold, which is the
-  existing `repsOnly` path (`app.js:1638`).
-- **Changing bands is a coach decision**, and it correctly forks the chain,
-  exactly like moving an athlete from barbell to dumbbell. The engine does not
-  auto-promote yellow → red.
+`setLb()` (`app.js:30751`) scores only finite positive weights, so a band-only
+set contributes nothing to the Hoard — the same as bodyweight, and for the same
+stated reason: there is no honest number of pounds to claim. A bar+band set
+scores its bar weight. No change needed.
 
-The light-to-heavy order is recorded in the tag order so a later "they are
-crushing green, consider grey" suggestion has a ladder to read. No such
-suggestion is built here.
+## The old `Band` Equipment tag
 
-### The old `Band` Equipment tag
-
-Left in place, untouched. Existing programs use it, and it still means "a band is
+Left in place, untouched. Existing programs use it and it still means "a band is
 involved, unspecified." Tagging both it and a color is redundant but harmless.
 Nothing is migrated.
 
-### Cached clients
+## Cached clients
 
 A PWA on the previous build has no `Band` group. It renders an unknown tag as a
-chip in the default slate (`tagColor()`'s fallback), and `groupForTag()` returns
-null so `orderedModifiers()` sorts it to the front. Cosmetic only. It will not
-include the tag in `liftKey()`, so an old client groups green-band and grey-band
-history together where a current one separates them — a divergence that resolves
-itself when the client updates, and which loses no data either way.
+chip in `tagColor()`'s slate fallback, and `groupForTag()` returns null so
+`orderedModifiers()` sorts it to the front. Cosmetic only.
+
+Because Band is not in `LIFT_ID_GROUPS`, an old client and a current one compute
+the **same** `liftKey` for a banded lift — so progression chains and PR grouping
+agree across builds. That is a direct consequence of the rungs decision and worth
+noting: the separate-lifts design would have had the two builds disagree.
 
 ## Testing
 
 A new `tests/band-tags.test.js`, reading the real `EXERCISE_MODIFIERS`,
-`TAG_COLORS` and `LIFT_ID_GROUPS` out of `app.js` per the folder's convention:
+`TAG_COLORS`, `TAG_LONG` and `LIFT_ID_GROUPS` out of `app.js` per the folder's
+convention:
 
 - all five colors resolve through `groupForTag()` to the Band group
-- none of the five collides with a tag in any other group
+- none collides with a tag in any other group
 - every one has a `TAG_COLORS` entry — no band falls through to the slate default
-- `liftKey()` gives green-band and grey-band versions of one exercise
-  **different** keys, and a band-only exercise a different key from the untagged
-  original
-- the Band group has no `multi` flag, so picking a second color replaces the first
+- the Band group has no `multi` flag
 - `TAG_LONG` expands all five
+- **`liftKey()` is unchanged by the band** — the green-band and grey-band versions
+  of one exercise produce the *same* key, and the same key as the untagged
+  original. This is the assertion that protects the one-history decision; if
+  someone later adds `"Band"` to `LIFT_ID_GROUPS`, this fails loudly instead of
+  silently fragmenting every athlete's banded history.
+- the ladder is ordered yellow → grey, and "next band" from grey is grey
 
 Then in the running app: a bar+band lift showing both `225 lb` and a red chip, a
-band-only lift showing a chip and no weight, and the chip legible on the light
-theme.
+band-only lift showing a chip and no weight, the next-band control advancing one
+rung and stopping at grey, and the chip legible on the light theme.
 
 ## Files
 
 | File | Change |
 |---|---|
-| `app.js` | `EXERCISE_MODIFIERS` +Band group, `TAG_COLORS` +5, `TAG_LONG` +5, `LIFT_ID_GROUPS` +"Band", `NAME_GROUP_ORDER` +"Band" |
-| `styles.css` | only if the colored chip needs contrast help on the light theme |
+| `app.js` | `EXERCISE_MODIFIERS` +Band group, `TAG_COLORS` +5, `TAG_LONG` +5, next-band control, computed "ready for" target, PR band field + chip in the rep-only weight slot |
+| `styles.css` | the next-band control; contrast help if the light theme needs it |
 | `index.html` | `?v=` bump |
 | `tests/band-tags.test.js` | new |
 | `tests/README.md` | one line, per convention |
 
-No migration. Modifiers already ride `weeks`, which syncs as jsonb.
+`LIFT_ID_GROUPS` and `NAME_GROUP_ORDER` are deliberately **not** touched.
+
+No migration. Modifiers ride `weeks`, which already syncs as jsonb.
