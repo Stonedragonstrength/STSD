@@ -6239,6 +6239,15 @@ input:focus, textarea:focus, select:focus {
    and only worked near the top of the scroll. Sticky, it is always the real
    thing. It also happens to be what you want pinned mid-session: the date, the
    day's name, the complete ✓ and the mood button. */
+/* When the session was first filled out. Set off from the counts before it so
+   a date and a "2/3 logged" don't read as one run-on string. */
+.wc-first {
+  margin-left: 0.45em;
+  padding-left: 0.5em;
+  border-left: 1px solid var(--border);
+  color: var(--text-soft);
+  white-space: nowrap;
+}
 .workout-detail-head {
   position: sticky;
   /* Under the header AND the tab strip — --stack-h is only the header, and

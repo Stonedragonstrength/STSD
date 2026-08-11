@@ -24147,6 +24147,26 @@
     dayAllExercises(day, p).forEach((ex) => (logs[ex.id] || []).forEach((l) => consider(l?.date)));
     return max;
   }
+  // The EARLIEST date anything was written against this day — when it was first
+  // filled out. dayLogDate above answers the opposite question (the latest, so a
+  // resumed session reopens where it left off); the day card wants the start,
+  // because "when did we do this" is about when the work began, not when it was
+  // last touched. Empty string when nothing has ever been logged.
+  function dayFirstLogDate(day, progress) {
+    const p = progress || state.clientData?.progress;
+    let min = "";
+    const consider = (d) => { const s = String(d || ""); if (s && (!min || s < min)) min = s; };
+    ((p?.dayCompletions || {})[day?.id] || []).forEach(consider);
+    const logs = p?.exerciseLogs || {};
+    dayAllExercises(day, p).forEach((ex) => (logs[ex.id] || []).forEach((l) => consider(l?.date)));
+    return min;
+  }
+  // "Aug 3", or "Today" when it is. Shared by the day cards.
+  function shortLogDate(iso) {
+    if (!iso) return "";
+    if (iso === todayISO()) return "Today";
+    return new Date(iso + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
   // The date the open session is being logged under: the date chip if this day
   // is the one on screen, else today. Everything a session writes has to agree
   // on this — it's what the calendars, the PR walkers and the ladder read back.
@@ -26776,11 +26796,15 @@
           : `<span class="wc-status todo">Tap to start</span>`;
       const moods = dayMoods(state.clientData.progress, day.id);
       const rdy = dayReadiness(state.clientData.progress, day.id);
+      // When this session was first filled out, so a week of cards reads as a
+      // history at a glance instead of only saying what is left to do.
+      const firstLogged = dayFirstLogDate(day);
       card.innerHTML = `
         <div class="workout-card-icon">${dayIconHtml(icon)}</div>
         <div class="workout-card-body">
           <h4 class="workout-card-title">${escapeHtml(day.name)}</h4>
-          <div class="workout-card-meta">${totalEx} exercise${totalEx === 1 ? "" : "s"} · ${status}</div>
+          <div class="workout-card-meta">${totalEx} exercise${totalEx === 1 ? "" : "s"} · ${status}${
+            firstLogged ? `<span class="wc-first">${escapeHtml(shortLogDate(firstLogged))}</span>` : ""}</div>
           ${rdy || moods.length ? `<span class="wc-tags">${readinessChipHtml(rdy)}${moodChipsHtml(moods)}</span>` : ""}
         </div>
         <div class="workout-card-chevron">›</div>
