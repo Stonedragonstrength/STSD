@@ -68,11 +68,15 @@ marker (the premise is gone).
 
 **Display (the only place weights change):** the logging card's one
 `effectiveProgression` call (app.js ~28455). While active, a weighted target
-shows `max(base, floorToGrain(target × 0.85, rule.inc))` — the same
-grain-rounding and written-weight floor `progressionBackoff` honours: the
-pullback never cuts below what the coach programmed and lands on clean plate
-numbers. Bodyweight and reps-only exercises are untouched (there is no weight
-to drop; the ladder is not the coach's 15%).
+shows `floorToGrain(target × 0.85, rule.inc)` — grain-rounded so it lands on
+plate-clean numbers, floored at one grain. **Deliberately not floored at the
+written weight** the automatic backoff honours: an early-chain athlete sits AT
+the written weight, and that floor would turn the promised "15% lighter" into
+0% exactly when they are struggling most. The automatic backoff keeps its
+floor (unattended, it must not spiral); this pullback is coach-authored and
+athlete-accepted, so it may undercut the prescription for its one session.
+Bodyweight and reps-only exercises are untouched (there is no weight to drop;
+the ladder is not the coach's 15%).
 
 **Judging:** entries locked while a deload is active are stamped
 `deload: true`. `progressionAttempt` returns `none` for them — the same

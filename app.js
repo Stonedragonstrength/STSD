@@ -1732,6 +1732,11 @@
     const entry = [...arr].sort((a, b) => String(b.date).localeCompare(String(a.date)))
       .find((l) => l.locked === true && (l.skipped || (Array.isArray(l.sets) && l.sets.length)));
     if (!entry || entry.skipped) return none; // whole-exercise skip: targets hold, no stall
+    // A sanctioned one-session pullback (two same-day skips in a row, athlete
+    // accepted 15% off — see the skip-day design doc). Judged like a skip:
+    // chain frozen. Judged as an attempt it would read "under target weight =
+    // miss" and stall the ladder for taking the offer the app itself made.
+    if (entry.deload) return none;
     const need = effSets || 0;
     if (!need || entry.sets.length < need) return none;
     const parsedRir = parseInt(entry.rir, 10);
@@ -1769,6 +1774,67 @@
     st.stall = 0;
     st.deloads += 1;
     st.last = "deload";
+  }
+
+  // The one-session pullback's number: pct off the computed target, floored to
+  // the ladder's own grain so it lands on plate-clean numbers. Deliberately
+  // NOT floored at the written weight the automatic backoff honours: an
+  // early-chain athlete sits AT the written weight, and a floor there turns
+  // the promised "15% lighter" into 0% exactly when they're struggling most.
+  // The offer is coach-authored and athlete-accepted — it may go below the
+  // prescription for its one session. Display-only; the chain never sees it.
+  function deloadTargetWeight(target, grain, pct) {
+    const g = grain || 5;
+    return Math.max(g, Math.floor((target * (1 - pct / 100)) / g) * g);
+  }
+
+  // ---- Skip-a-day bookkeeping (see 2026-08-11-skip-day-design.md) ----
+  // Every date this day was touched — a locked entry on any of its exercises,
+  // skip or real — ascending.
+  function dayOccurrences(day, logsMap) {
+    const dates = new Set();
+    (day?.exercises || []).forEach((ex) => {
+      (logsMap?.[ex.id] || []).forEach((l) => {
+        if (l?.locked && (l.skipped || (Array.isArray(l.sets) && l.sets.length))) dates.add(l.date);
+      });
+    });
+    return [...dates].sort();
+  }
+  // A date where the athlete recorded the miss and nothing else: at least one
+  // skip entry and no exercise with real sets. One logged lift makes the date
+  // a session, however short — they showed up.
+  function isSkipOccurrence(day, logsMap, date) {
+    let sawSkip = false;
+    for (const ex of day?.exercises || []) {
+      for (const l of logsMap?.[ex.id] || []) {
+        if (!l?.locked || l.date !== date) continue;
+        if (Array.isArray(l.sets) && l.sets.length && !l.skipped) return false;
+        if (l.skipped) sawSkip = true;
+      }
+    }
+    return sawSkip;
+  }
+  // How many of the day's most recent occurrences are skips, counting back
+  // from the latest until a real session breaks the run.
+  function consecutiveDaySkips(day, logsMap) {
+    const dates = dayOccurrences(day, logsMap);
+    let n = 0;
+    for (let i = dates.length - 1; i >= 0; i--) {
+      if (!isSkipOccurrence(day, logsMap, dates[i])) break;
+      n++;
+    }
+    return n;
+  }
+
+  // The pending pullback that should govern the session dated `logDate`.
+  // Unconsumed (no .date) it applies to the next session opened; lockIn stamps
+  // it with that session's date, after which it applies only to re-edits of
+  // the same date — the session after comes back at full weight by itself.
+  function dayDeloadPending(day, progress, logDate) {
+    const pd = progress?.pendingDeloads?.[day?.id];
+    if (!pd) return null;
+    if (pd.date && pd.date !== logDate) return null;
+    return pd;
   }
 
   // One week of ladder movement, shared by the bodyweight and weighted chains.
@@ -16037,6 +16103,10 @@
             });
           } else if (le?.weight || le?.reps) {
             body += `<span class="breakdown-set-pill">${le.weight ? escapeHtml(wLabel(le.weight, unitOf(c))) : "—"} × ${le.reps || "—"}</span>`;
+          } else if (le?.skipped) {
+            // "Deliberately didn't" vs "never opened it" is the information
+            // the athlete's skip tap exists to send the coach.
+            body += `<span class="dvs-notlogged">Skipped ✕</span>`;
           } else {
             body += `<span class="dvs-notlogged">Not logged</span>`;
           }
@@ -23959,6 +24029,7 @@
     if (!p.seenMessages) p.seenMessages = {};
     if (typeof p.totalWorkoutMs !== "number" || !isFinite(p.totalWorkoutMs)) p.totalWorkoutMs = 0;
     if (!p.workoutMoods || typeof p.workoutMoods !== "object") p.workoutMoods = {};
+    if (!p.pendingDeloads || typeof p.pendingDeloads !== "object") p.pendingDeloads = {};
     if (!p.readiness || typeof p.readiness !== "object") p.readiness = {};
     if (!Array.isArray(p.athleteDays)) p.athleteDays = [];
     if (!p.formChecks || typeof p.formChecks !== "object") p.formChecks = {};
@@ -26912,8 +26983,11 @@
     const head = $("#workout-week-head");
     if (head) {
       const days = week?.days || [];
+      // A skipped day is all-logged to hasAnyLog but it is not DONE — the
+      // count must not congratulate a week of recorded misses.
       const done = days.filter((d) => isDayChecked(d.id) ||
-        (d.exercises.length && d.exercises.every((ex) => hasAnyLog(ex)))).length;
+        (d.exercises.length && d.exercises.every((ex) => hasAnyLog(ex)) &&
+         !(consecutiveDaySkips(d, state.clientData.progress?.exerciseLogs) > 0))).length;
       head.innerHTML = days.length ? `
         <div class="wp-head">
           <span class="wp-head-title">${escapeHtml(week.label || "This week")}</span>
@@ -26937,19 +27011,38 @@
       const totalEx = day.exercises.length;
       const doneEx = day.exercises.filter((ex) => hasAnyLog(ex)).length;
       const checked = isDayChecked(day.id);
+      // The day's current state is its latest occurrence. This must outrank
+      // "all logged": a fully-skipped day IS all-logged to hasAnyLog (skip
+      // entries count as activity), and reading it as Done ✓ would be a lie.
+      const dayLogs = state.clientData.progress?.exerciseLogs;
+      const skippedNow = !checked && totalEx > 0 && consecutiveDaySkips(day, dayLogs) > 0;
+      // Undo is for a mis-tap, so it only offers on TODAY's skip. An older
+      // skip gets "Skipped it?" again — a repeating day skipped last week is
+      // skippable this week too, which is exactly the streak the pullback
+      // offer watches for. Erasing history is not a card-level action.
+      const occDates = skippedNow ? dayOccurrences(day, dayLogs) : [];
+      const skippedToday = skippedNow && occDates[occDates.length - 1] === todayISO();
       const allLogged = doneEx >= totalEx && totalEx > 0;
-      if (checked || allLogged) card.classList.add("is-done");
+      if (skippedNow) card.classList.add("is-skipped");
+      else if (checked || allLogged) card.classList.add("is-done");
       else if (doneEx > 0) card.classList.add("is-partial");
       card.style.animationDelay = `${idx * 60}ms`;
       // Branded line icons only in this view: honor a coach-picked SVG token,
       // otherwise auto-match from the day name. Coach-picked EMOJI are shown
       // as branded icons here too (they still show in the coach editor).
       const icon = isSvgIcon(day.icon) ? day.icon : workoutIconFor(day.name);
-      const status = checked
+      const status = skippedNow
+        ? `<span class="wc-status skipped">Skipped ✕</span>`
+        : checked
         ? `<span class="wc-status done">Done ✓</span>`
         : doneEx > 0
           ? `<span class="wc-status progress">${doneEx}/${totalEx} logged</span>`
           : `<span class="wc-status todo">Tap to start</span>`;
+      // "I didn't do this day", before entering it — and the way back out.
+      // A span, not a button: the card itself is already a <button>.
+      const skipCtl = totalEx > 0 && !checked && (skippedNow || doneEx === 0)
+        ? `<span class="wc-skip" role="button" tabindex="0">${skippedToday ? "Undo skip" : "Skipped it?"}</span>`
+        : "";
       const moods = dayMoods(state.clientData.progress, day.id);
       const rdy = dayReadiness(state.clientData.progress, day.id);
       // When this session was first filled out, so a week of cards reads as a
@@ -26960,11 +27053,17 @@
         <div class="workout-card-body">
           <h4 class="workout-card-title">${escapeHtml(day.name)}</h4>
           <div class="workout-card-meta">${totalEx} exercise${totalEx === 1 ? "" : "s"} · ${status}${
-            firstLogged ? `<span class="wc-first">${escapeHtml(shortLogDate(firstLogged))}</span>` : ""}</div>
+            firstLogged ? `<span class="wc-first">${escapeHtml(shortLogDate(firstLogged))}</span>` : ""}${skipCtl}</div>
           ${rdy || moods.length ? `<span class="wc-tags">${readinessChipHtml(rdy)}${moodChipsHtml(moods)}</span>` : ""}
         </div>
         <div class="workout-card-chevron">›</div>
       `;
+      const skipEl = card.querySelector(".wc-skip");
+      if (skipEl) skipEl.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (skippedToday) undoSkipDay(day);
+        else openSkipDaySheet(day);
+      });
       card.addEventListener("click", () => {
         // Resume the date this session is already filed under, so a day that was
         // logged late reopens on the day it happened rather than snapping back
@@ -27045,6 +27144,79 @@
         grid.appendChild(card);
       });
     return grid;
+  }
+
+  // ---- Skip a whole day (see 2026-08-11-skip-day-design.md) ----
+  // One tap where there used to be N: the same entry the per-exercise Skip
+  // writes, for every exercise in the day, so the engine and history already
+  // know exactly what it means.
+  function openSkipDaySheet(day) {
+    openModal({
+      title: `Skip ${day.name}?`,
+      body: `<p>Every exercise gets marked skipped — a recorded miss, not a rest day. Your coach can see it, and your targets hold for next time.</p>`,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Skip this day", className: "btn btn-primary", onClick: () => { closeModal(); skipWholeDay(day); } },
+      ],
+    });
+  }
+  function skipWholeDay(day) {
+    const p = state.clientData.progress;
+    ensureProgressShape(p);
+    const date = todayISO();
+    const store = p.exerciseLogs;
+    (day.exercises || []).forEach((ex) => {
+      if (!store[ex.id]) store[ex.id] = [];
+      const arr = store[ex.id];
+      const idx = arr.findIndex((l) => l.date === date);
+      // Never overwrite a real entry. The affordance only shows on untouched
+      // days, but a stale card is one render away, so the writer guards too.
+      if (idx >= 0 && !(arr[idx].skipped && !(arr[idx].sets || []).length)) return;
+      const entry = { id: idx >= 0 ? arr[idx].id : uid(), date, sets: [], skipped: true, locked: true };
+      if (idx >= 0) arr[idx] = entry; else arr.push(entry);
+    });
+    saveClient();
+    renderWorkoutPickerUI();
+    // Two of this day in a row → offer the one-session pullback. A consumed
+    // marker doesn't block a fresh offer; a still-pending one does.
+    const existing = p.pendingDeloads[day.id];
+    if (consecutiveDaySkips(day, store) >= 2 && !(existing && !existing.date)) {
+      openModal({
+        title: "Two in a row",
+        body: `<p>That's two ${escapeHtml(day.name)}s in a row. Want the next one 15% lighter? One session only — your numbers come back after.</p>`,
+        actions: [
+          { label: "Keep my numbers", className: "btn btn-ghost", onClick: closeModal },
+          { label: "Make it lighter", className: "btn btn-primary", onClick: () => {
+            p.pendingDeloads[day.id] = { pct: 15, at: date };
+            saveClient();
+            closeModal();
+            toast("Next session starts 15% lighter ✓");
+          } },
+        ],
+      });
+    } else {
+      toast(`${day.name} skipped`);
+    }
+  }
+  // Removes exactly what skipWholeDay wrote TODAY — undo is for a mis-tap,
+  // never for erasing an older week's record — plus an unconsumed pullback
+  // offer whose premise this undo takes away.
+  function undoSkipDay(day) {
+    const p = state.clientData.progress;
+    const store = p.exerciseLogs || {};
+    const last = todayISO();
+    if (!isSkipOccurrence(day, store, last)) return;
+    (day.exercises || []).forEach((ex) => {
+      if (!store[ex.id]) return;
+      store[ex.id] = store[ex.id].filter((l) =>
+        !(l.date === last && l.skipped && !(l.sets || []).length));
+      if (!store[ex.id].length) delete store[ex.id];
+    });
+    const pd = p.pendingDeloads?.[day.id];
+    if (pd && !pd.date && pd.at === last) delete p.pendingDeloads[day.id];
+    saveClient();
+    renderWorkoutPickerUI();
+    toast("Skip undone");
   }
 
   function renderAthleteOneOffSection() {
@@ -28461,6 +28633,13 @@
     // BW-graduating lift still in its bodyweight phase. Once it graduates
     // (prog.bw === false) the athlete logs real weight, so steppers/seeds return.
     const repsOnlyLog = prog ? !!prog.bw : ex.currentWeight === "BW";
+    // A pending one-session pullback rewrites the DISPLAYED target only. The
+    // chain walk above never saw it, and this session's locked entries are
+    // deload-stamped so progressionAttempt freezes the chain rather than
+    // reading a lighter bar as a miss. Nothing to drop on reps-only work.
+    const dayDeload = prog && prog.weight != null && !repsOnlyLog
+      ? dayDeloadPending(day, state.clientData.progress, logDate) : null;
+    if (dayDeload) prog.weight = deloadTargetWeight(prog.weight, prog.inc, dayDeload.pct || 15);
 
     const wrapper = document.createElement("div");
     wrapper.className = "cex-wrapper" + (isDone ? " logged" : "");
@@ -29458,8 +29637,13 @@
         state.clientData.progress.exerciseLogs[ex.id] = [];
       const exLogs = state.clientData.progress.exerciseLogs[ex.id];
       const idx = exLogs.findIndex(l => l.date === logDate);
-      const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets, locked: true, ...collectWarmups(), ...collectFinishers(), ...collectRir(), ...collectNotes() };
+      // Locked during a sanctioned pullback → stamped, so the engine judges it
+      // like a skip instead of a miss at a bar 15% under target. The first
+      // stamp pins the pullback to this date; next session is full weight.
+      const dl = dayDeloadPending(day, state.clientData.progress, logDate);
+      const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, sets, locked: true, ...(dl ? { deload: true } : {}), ...collectWarmups(), ...collectFinishers(), ...collectRir(), ...collectNotes() };
       if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
+      if (dl && !dl.date) dl.date = logDate;
       detectAndCelebratePR(ex, entry, wrapper);
       saveClient();
       renderStrengthProgress($("#athlete-strength-charts"), state.clientData.program?.client, state.clientData.progress);

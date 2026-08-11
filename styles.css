@@ -6192,6 +6192,29 @@ input:focus, textarea:focus, select:focus {
 .wc-status.done { color: var(--accent); font-weight: 700; }
 .wc-status.progress { color: var(--primary-bright); font-weight: 700; }
 .wc-status.todo { color: var(--muted); }
+/* A recorded miss — not done, not in progress. Muted on purpose: the card
+   should read as "nothing happened here", never as an achievement state. */
+.wc-status.skipped { color: var(--muted); font-weight: 700; text-decoration: line-through; text-decoration-thickness: 1px; }
+.workout-card.is-skipped { opacity: 0.75; }
+.workout-card.is-skipped .workout-card-icon { filter: grayscale(0.7); }
+/* "Skipped it?" / "Undo skip" — a span acting as a button, because the card
+   itself is a <button> and buttons don't nest. Underlined so it reads as an
+   action, not another status word. */
+.wc-skip {
+  margin-left: 0.6em;
+  color: var(--text-soft);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.wc-skip:hover { color: var(--text); }
+@media (pointer: coarse) {
+  /* An inline span can't grow taller without moving the row; padding grows the
+     tap target instead (negative margin keeps the visual line height). */
+  .wc-skip { padding: 0.55em 0.35em; margin: -0.55em 0 -0.55em 0.25em; }
+}
 .meta-pill {
   font-size: 0.65rem;
   font-weight: 700;
