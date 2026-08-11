@@ -9620,6 +9620,15 @@
     return 0;
   }
 
+  // The athlete's own client record. `state.clientData` is a WRAPPER —
+  // { program, progress } — and the weeks live one level down. Reading the
+  // wrapper is why the athlete's coverage map rendered its empty state from the
+  // day it shipped: coverageWeek() got undefined and bailed, with nothing on
+  // screen suggesting anything was wrong.
+  function athleteCoverageClient() {
+    return state.clientData?.program?.client || null;
+  }
+
   // The week the picture is about. The coach gets wherever the program has the
   // athlete right now; the athlete gets whichever week they are looking at.
   function coverageWeek(client, isCoach) {
@@ -9698,8 +9707,10 @@
     return btn;
   }
 
-  function coverageVerdictHtml(cov, who) {
-    if (!cov) return `<p class="a-cov-none">No program to read yet — add a week with some days and this fills in.</p>`;
+  function coverageVerdictHtml(cov, who, isCoach) {
+    if (!cov) return `<p class="a-cov-none">${isCoach
+      ? "No program to read yet — add a week with some days and this fills in."
+      : "No program to read yet. This fills in once your coach builds your week."}</p>`;
     const list = (arr) => arr.map((n) => `<b>${escapeHtml(n)}</b>`).join(", ");
     const bits = [];
     if (cov.gaps.length) bits.push(`Nothing for ${list(cov.gaps)}.`);
@@ -10510,7 +10521,7 @@
     // is open — that is already how the rest of the coach screen behaves — and
     // the athlete mount is always their own.
     function coverageSubject() {
-      if (!editable) return { client: state.clientData, isCoach: false };
+      if (!editable) return { client: athleteCoverageClient(), isCoach: false };
       const c = currentClient()
         || (state.trainerData?.clients || []).find((x) => x.id === _lastAthleteId);
       return { client: c || null, isCoach: true };
@@ -10535,8 +10546,10 @@
         ? [cov?.week?.label, who].filter(Boolean).join(" · ")
         : "No athlete open";
       noteEl.innerHTML = client
-        ? coverageVerdictHtml(cov, who)
-        : `<p class="a-cov-none">Open an athlete and this reads their week.</p>`;
+        ? coverageVerdictHtml(cov, who, isCoach)
+        : `<p class="a-cov-none">${isCoach
+            ? "Open an athlete and this reads their week."
+            : "No program yet. This fills in once your coach builds your week."}</p>`;
       root.querySelectorAll(".a-zone").forEach((z) => {
         const n = cov?.sets?.[z.dataset.muscle];
         z.setAttribute("data-cov", String(coverageBand(n || 0, cov?.bands)));
