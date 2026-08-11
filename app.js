@@ -1687,6 +1687,14 @@
       }
       return { floor, ceil, inc: 0, reset: floor, bw: true, step, timed, ...layers };
     }
+    // A band-only lift has no number to climb — the band is the load. It gets
+    // the same rep ladder bodyweight gets without an increment: reps climb to
+    // the ceiling and hold there, and the card offers the next band at the top.
+    // Without this it bails on the parseFloat below and has no progression at
+    // all, which is what it has had since bands existed.
+    if (!String(ex.currentWeight || "").trim() && bandOf(ex)) {
+      return { floor, ceil, inc: 0, reset: floor, band: true, repsOnly: true, step, timed, ...layers };
+    }
     const base = parseFloat(ex.currentWeight);
     if (!isFinite(base)) return null;
     // Reps-only (weighted): the weight stays as written — reps climb to the
@@ -1819,6 +1827,10 @@
       stall: st.stall,
       deloads: st.deloads,
       justDeloaded: st.last === "deload",
+      // Topped out with nothing left to spend. For a band-only lift this is
+      // "they have earned the next band" — the card offers it, and the coach
+      // still takes it. The engine computes targets; it does not re-prescribe.
+      atCap: st.last === "cap",
       ...rule,
     };
   }

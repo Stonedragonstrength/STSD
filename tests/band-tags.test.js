@@ -32,6 +32,27 @@ function extractLiteral(src, marker) {
   }
   throw new Error(`unbalanced: ${marker}`);
 }
+// Grab a function's body by brace-matching from its declaration. Same helper
+// as tests/training-level-plumbing.test.js and tests/anatomy-coverage-wiring.test.js
+// — reused rather than reinvented. Used below (Task 3) to execute the REAL
+// progressionRule()/progressionResult() out of live app.js, rather than trusting
+// a hand-copied stand-in to stay honest about what the engine actually does.
+function fnBody(src, decl) {
+  const at = src.indexOf(decl);
+  if (at < 0) throw new Error(`not found: ${decl}`);
+  const open = src.indexOf("{", at);
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}") { depth--; if (!depth) return src.slice(open, i + 1); }
+  }
+  throw new Error(`unbalanced: ${decl}`);
+}
+function extractConst(src, name) {
+  const m = src.match(new RegExp(`const ${name}\\s*=\\s*([^;]+);`));
+  if (!m) throw new Error(`not found: ${name}`);
+  return eval(m[1]);
+}
 
 const EXERCISE_MODIFIERS = extractLiteral(appSrc, "const EXERCISE_MODIFIERS = [");
 const TAG_COLORS         = extractLiteral(appSrc, "const TAG_COLORS = {");
@@ -196,6 +217,162 @@ check("stepping up stops at grey", () => {
   assert.strictEqual(nextBandUp("Green"), "Grey");
   assert.strictEqual(nextBandUp("Grey"), null, "grey is the top — the control goes away");
   assert.strictEqual(nextBandUp(null), null);
+});
+
+// ---- when a band-only lift has topped out --------------------------------
+// A band-only lift has no number to climb — the band IS the load — so it gets
+// the same rep ladder bodyweight gets, and tops out at its ceiling. That is the
+// moment the card offers the next band. The engine never takes it: a band change
+// is a prescription, and prescriptions are the coach's.
+function bandOnlyRule(ex) {
+  const floor = parseInt(ex.currentReps, 10);
+  if (!floor) return null;
+  const ceil = parseInt(ex.progression?.ceil, 10);
+  if (!ceil || ceil <= floor) return null;
+  const hasWeight = String(ex.currentWeight || "").trim() !== "";
+  if (hasWeight || !bandOf(ex)) return null;
+  return { floor, ceil, band: true, repsOnly: true };
+}
+
+check("a band-only lift gets a rep ladder where today it gets nothing", () => {
+  const ex = { name: "Band Pull-Apart", modifiers: ["Green"],
+    currentWeight: "", currentReps: "10", progression: { ceil: "15" } };
+  const rule = bandOnlyRule(ex);
+  assert.ok(rule, "it has a progression rule at all");
+  assert.strictEqual(rule.band, true);
+  assert.strictEqual(rule.floor, 10);
+  assert.strictEqual(rule.ceil, 15);
+});
+
+check("a bar+band lift is NOT band-only — the bar climbs, the band holds", () => {
+  const ex = { name: "Bench Press", modifiers: ["BB", "Red"],
+    currentWeight: "225", currentReps: "5", progression: { ceil: "8" } };
+  assert.strictEqual(bandOnlyRule(ex), null,
+    "it has a weight to climb, so it uses the ordinary weight ladder");
+});
+
+check("an unbanded weightless lift is not a band ladder either", () => {
+  const ex = { name: "Plank", modifiers: [],
+    currentWeight: "", currentReps: "30", progression: { ceil: "60" } };
+  assert.strictEqual(bandOnlyRule(ex), null);
+});
+
+check("at the ceiling, the next band is what's offered", () => {
+  const ex = { name: "Band Pull-Apart", modifiers: ["Purple"],
+    currentWeight: "", currentReps: "10", progression: { ceil: "15" } };
+  const rule = bandOnlyRule(ex);
+  const atCap = 15 >= rule.ceil;           // what the engine will report
+  assert.ok(atCap, "topped out");
+  assert.strictEqual(nextBandUp(bandOf(ex)), "Green", "and green is what's earned");
+});
+
+check("on grey there is nothing left to offer", () => {
+  const ex = { name: "Band Pull-Apart", modifiers: ["Grey"],
+    currentWeight: "", currentReps: "15", progression: { ceil: "15" } };
+  assert.strictEqual(nextBandUp(bandOf(ex)), null,
+    "topped out on the heaviest band — the card must not promise a rung that isn't there");
+});
+
+// ---- binding to the REAL app.js functions, not just the stand-in ---------
+// bandOnlyRule() above is a simplified stand-in that expresses the intended
+// shape; it cannot prove app.js was actually changed to match it — a typo in
+// progressionRule() could leave it returning null forever and every check
+// above would still pass. These pull the REAL progressionRule() and
+// progressionResult() out of the live source with fnBody() and execute them,
+// the same technique tests/anatomy-coverage-wiring.test.js uses for exactly
+// this reason (a reviewer proved that file's earlier text-only checks kept
+// passing after the real bug was reintroduced).
+const PROG_TIME_STEP = extractConst(appSrc, "PROG_TIME_STEP");
+const PROG_MAX_ADD_SETS = extractConst(appSrc, "PROG_MAX_ADD_SETS");
+const PROG_BACKOFF_PCTS = extractConst(appSrc, "PROG_BACKOFF_PCTS");
+const PROG_STALL_DEFAULT = extractConst(appSrc, "PROG_STALL_DEFAULT");
+const PROG_NO_CAP = extractConst(appSrc, "PROG_NO_CAP");
+// Stub: real exIsTimed() also name-sniffs carries (isCarryName), which no
+// fixture below relies on — only the explicit ex.timed flag matters here.
+const exIsTimedStub = (ex) => !!(ex && ex.timed === true);
+
+const realProgressionRuleFn = new Function(
+  "ex", "exIsTimed", "bandOf", "PROG_TIME_STEP", "PROG_MAX_ADD_SETS", "PROG_BACKOFF_PCTS", "PROG_STALL_DEFAULT", "PROG_NO_CAP",
+  fnBody(appSrc, "function progressionRule(ex) {")
+);
+function realProgressionRule(ex) {
+  return realProgressionRuleFn(ex, exIsTimedStub, bandOf, PROG_TIME_STEP, PROG_MAX_ADD_SETS, PROG_BACKOFF_PCTS, PROG_STALL_DEFAULT, PROG_NO_CAP);
+}
+const realProgressionResult = new Function(
+  "st", "rule", "writtenSets", "base",
+  fnBody(appSrc, "function progressionResult(st, rule, writtenSets, base) {")
+);
+
+check("REAL progressionRule(): a band-only lift now gets a rep ladder", () => {
+  const ex = { name: "Band Pull-Apart", modifiers: ["Purple"],
+    currentWeight: "", currentReps: "10", progression: { ceil: "15" } };
+  const rule = realProgressionRule(ex);
+  assert.ok(rule, "progressionRule() must no longer bail at the parseFloat for a band-only lift");
+  assert.strictEqual(rule.band, true);
+  assert.strictEqual(rule.repsOnly, true, "it rides the same reps-only ladder bodyweight gets");
+  assert.strictEqual(rule.floor, 10);
+  assert.strictEqual(rule.ceil, 15);
+  assert.strictEqual(rule.inc, 0, "no weight leg — the band is the load");
+  assert.strictEqual(rule.reset, 10, "holds at the floor; nothing to reset to but itself");
+});
+
+check("REAL progressionRule(): atCap flows end to end for a band-only lift at its ceiling", () => {
+  const ex = { name: "Band Pull-Apart", modifiers: ["Purple"],
+    currentWeight: "", currentReps: "10", progression: { ceil: "15" } };
+  const rule = realProgressionRule(ex);
+  const st = { weight: 0, reps: 15, extra: 0, stall: 0, earned: 0, deloads: 0, last: "cap" };
+  const res = realProgressionResult(st, rule, 3, 0);
+  assert.strictEqual(res.atCap, true, "topped out — the next band is earned");
+  assert.strictEqual(res.band, true, "the card can tell this cap means a band, not a weight jump");
+});
+
+check("REAL progressionRule(): a bar+band lift is untouched — weight present wins over the band tag", () => {
+  const ex = { name: "Bench Press", modifiers: ["BB", "Red"],
+    currentWeight: "225", currentReps: "5", progression: { ceil: "8", inc: "5" } };
+  const rule = realProgressionRule(ex);
+  assert.ok(rule, "still has a rule");
+  assert.ok(!rule.band, "not band-only — it has a real weight to climb");
+  assert.strictEqual(rule.inc, 5, "the ordinary weight increment, untouched");
+});
+
+check("REAL progressionRule(): an unbanded weightless lift still gets nothing, exactly as before", () => {
+  const ex = { name: "Plank", modifiers: [], currentWeight: "", currentReps: "30", progression: { ceil: "60" } };
+  assert.strictEqual(realProgressionRule(ex), null,
+    "no band and no weight — still no progression at all, the pre-existing (and correct) behavior");
+});
+
+check("REGRESSION: REAL progressionRule() is byte-identical for a weighted lift", () => {
+  const ex = { currentWeight: "185", currentReps: "5", progression: { ceil: "8", inc: "5" } };
+  assert.deepStrictEqual(realProgressionRule(ex), {
+    floor: 5, ceil: 8, inc: 5, reset: 5, step: 1, timed: false,
+    addSets: 0, backoff: 0, stallAfter: 2,
+  });
+});
+
+check("REGRESSION: REAL progressionRule() is byte-identical for a bodyweight lift (plain and graduating)", () => {
+  const plain = { currentWeight: "BW", currentReps: "10", progression: { ceil: "15" } };
+  assert.deepStrictEqual(realProgressionRule(plain), {
+    floor: 10, ceil: 15, inc: 0, reset: 10, bw: true, step: 1, timed: false,
+    addSets: 0, backoff: 0, stallAfter: 2,
+  });
+  const graduating = { currentWeight: "BW", currentReps: "10", progression: { ceil: "15", inc: "10" } };
+  assert.deepStrictEqual(realProgressionRule(graduating), {
+    floor: 10, ceil: 15, inc: 10, reset: 10, bw: true, graduate: true, step: 1, timed: false,
+    addSets: 0, backoff: 0, stallAfter: 2,
+  });
+});
+
+check("REGRESSION: REAL progressionResult() gains atCap but every other field is untouched for a weighted climb", () => {
+  const rule = realProgressionRule({ currentWeight: "185", currentReps: "5", progression: { ceil: "8", inc: "5" } });
+  const st = { weight: 190, reps: 5, extra: 0, stall: 0, earned: 1, deloads: 0, last: "jump" };
+  const res = realProgressionResult(st, rule, 3, 185);
+  assert.strictEqual(res.atCap, false, "a weight jump is not a band cap");
+  const { atCap, ...withoutAtCap } = res;
+  assert.deepStrictEqual(withoutAtCap, {
+    weight: 190, reps: 5, earned: 1, gained: 5, extra: 0, sets: 3, stall: 0, deloads: 0,
+    justDeloaded: false, floor: 5, ceil: 8, inc: 5, reset: 5, step: 1, timed: false,
+    addSets: 0, backoff: 0, stallAfter: 2,
+  }, "every pre-existing field computes exactly as it did before atCap existed");
 });
 
 console.log(`\nband-tags: ${n} checks passed.`);
