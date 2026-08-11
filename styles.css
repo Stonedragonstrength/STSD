@@ -6210,6 +6210,11 @@ input:focus, textarea:focus, select:focus {
   white-space: nowrap;
 }
 .wc-skip:hover { color: var(--text); }
+/* The same door inside the day detail, pinned at the top of the content. A
+   quiet full-width row: visible while deciding, not shouting over the workout. */
+.detail-skip-day { display: flex; justify-content: center; margin: 0.15rem 0 0.75rem; }
+.detail-skip-btn { color: var(--text-soft); }
+.detail-skip-btn:hover { color: var(--text); }
 @media (pointer: coarse) {
   /* An inline span can't grow taller without moving the row; padding grows the
      tap target instead (negative margin keeps the visual line height). */

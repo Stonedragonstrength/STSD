@@ -27150,13 +27150,19 @@
   // One tap where there used to be N: the same entry the per-exercise Skip
   // writes, for every exercise in the day, so the engine and history already
   // know exactly what it means.
-  function openSkipDaySheet(day) {
+  // `beforeSkip` lets the day-detail door navigate back to the picker first,
+  // so the repaint and the possible two-in-a-row offer land on the day list.
+  function openSkipDaySheet(day, beforeSkip) {
     openModal({
       title: `Skip ${day.name}?`,
       body: `<p>Every exercise gets marked skipped — a recorded miss, not a rest day. Your coach can see it, and your targets hold for next time.</p>`,
       actions: [
         { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
-        { label: "Skip this day", className: "btn btn-primary", onClick: () => { closeModal(); skipWholeDay(day); } },
+        { label: "Skip this day", className: "btn btn-primary", onClick: () => {
+          closeModal();
+          if (beforeSkip) beforeSkip();
+          skipWholeDay(day);
+        } },
       ],
     });
   }
@@ -28160,6 +28166,33 @@
       addWrap.appendChild(addBtn);
     }
     list.appendChild(addWrap);
+
+    // "Opened it to look, decided not to." The card's Skipped it? lives back
+    // on the picker where nobody who is already in here will find it, so the
+    // same door renders at the TOP of the day — the decision is usually made
+    // while reading, not after scrolling everything. Program days only, same
+    // visibility rules as the card.
+    if (!own && week.id !== "oneoff" && day.exercises.length && !isDayChecked(day.id)) {
+      const dLogs = state.clientData.progress?.exerciseLogs;
+      const anyLogged = day.exercises.some((ex) => hasAnyLog(ex));
+      const runs = consecutiveDaySkips(day, dLogs);
+      const sOcc = runs > 0 ? dayOccurrences(day, dLogs) : [];
+      const sToday = runs > 0 && sOcc[sOcc.length - 1] === todayISO();
+      if (sToday || !anyLogged || runs > 0) {
+        const skipWrap = document.createElement("div");
+        skipWrap.className = "detail-skip-day";
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "btn btn-ghost btn-sm detail-skip-btn";
+        b.textContent = sToday ? "Skipped today — undo" : "Didn't do this day? Skip it";
+        b.addEventListener("click", () => {
+          if (sToday) { undoSkipDay(day); renderWorkoutDetailUI(); return; }
+          openSkipDaySheet(day, backToWorkoutPicker);
+        });
+        skipWrap.appendChild(b);
+        list.prepend(skipWrap);
+      }
+    }
 
     list.appendChild(renderDayNoteBlock(day.id));
     list.appendChild(renderFormCheckBlock(day));
