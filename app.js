@@ -9718,7 +9718,7 @@
     if (!bits.length) bits.push("Every muscle group gets work this week.");
     if (cov.unmapped) bits.push(`<span class="a-cov-unmapped">${cov.unmapped} exercise${cov.unmapped === 1 ? "" : "s"} couldn't be matched to a muscle.</span>`);
     return `<div class="a-cov-verdict${cov.gaps.length ? " has-gaps" : ""}">
-      <span class="a-cov-lead">${cov.gaps.length ? "⚠ Gaps" : "✓ Covered"} · ${escapeHtml(cov.week.label || "This week")}${who ? " · " + escapeHtml(who) : ""}</span>
+      <span class="a-cov-lead">${cov.gaps.length ? "⚠ Gaps" : "✓ Covered"} · ${escapeHtml(cov.week.label || "This week")}${who ? " · " + escapeHtml(who) : ""}${who && cov.level ? " · " + escapeHtml(cov.level.name) : ""}</span>
       <p>${bits.join(" ")}</p>
     </div>`;
   }
@@ -10486,6 +10486,10 @@
             <button type="button" class="a-mode-btn" data-mode="coverage">Coverage</button>
           </div>
           <span class="a-mode-who" data-cov-who></span>
+          ${editable ? `<select class="a-level-sel hidden" data-cov-level aria-label="Training level — sets the coverage bands">
+            <option value="">Not set (uses Intermediate)</option>
+            ${TRAINING_LEVELS.map((l) => `<option value="${l.id}">${l.name}</option>`).join("")}
+          </select>` : ""}
         </div>
         <div class="a-cov-note hidden" data-cov-verdict></div>
         <div class="anatomy-layout">
@@ -10538,6 +10542,7 @@
       noteEl.classList.toggle("hidden", mode !== "coverage");
       if (mode !== "coverage") {
         whoEl.textContent = "";
+        root.querySelector("[data-cov-level]")?.classList.add("hidden");
         root.querySelectorAll(".a-zone[data-cov]").forEach((z) => z.removeAttribute("data-cov"));
         return;
       }
@@ -10545,6 +10550,13 @@
       whoEl.textContent = client
         ? [cov?.week?.label, who].filter(Boolean).join(" · ")
         : (isCoach ? "No athlete open" : "No program yet");
+      // Coach only, and only with an athlete open — a level picker with nobody
+      // to apply it to is a control that silently does nothing.
+      const selEl = root.querySelector("[data-cov-level]");
+      if (selEl) {
+        selEl.classList.toggle("hidden", !client);
+        if (client) selEl.value = client.trainingLevel || "";
+      }
       noteEl.innerHTML = client
         ? coverageVerdictHtml(cov, who, isCoach)
         : `<p class="a-cov-none">${isCoach
@@ -10712,6 +10724,24 @@
       b.addEventListener("click", () => setView(b.dataset.view)));
     root.querySelectorAll(".a-mode-btn").forEach((b) =>
       b.addEventListener("click", () => setMode(b.dataset.mode)));
+    // Saves on change. It deliberately does not live inside the locked profile
+    // form — see the note at saveProfileFields(): membership and rate were moved
+    // out of there precisely because a value you set and walked away from got
+    // overwritten by whatever the stale form still held.
+    //
+    // Only this mount repaints. Nothing outside Coverage reads trainingLevel
+    // today (grep it), so there is nothing else to refresh — and renderDashboard()
+    // specifically must NOT be called here: it Nav.resets, nulls currentClientId
+    // and switches the coach screen to the roster, which would boot the coach off
+    // this exact panel the instant they touch the control they're watching repaint.
+    root.querySelector("[data-cov-level]")?.addEventListener("change", (e) => {
+      const { client } = coverageSubject();
+      if (!client) return;
+      client.trainingLevel = e.target.value;
+      saveTrainer();
+      renderCoverage();
+      renderList();
+    });
     root.addEventListener("click", (e) => {
       const gotoM = e.target.closest("[data-goto-muscle]");
       if (gotoM && root.contains(gotoM)) { gotoMuscle(gotoM.dataset.gotoMuscle); return; }
