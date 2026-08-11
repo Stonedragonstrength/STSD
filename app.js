@@ -12320,6 +12320,68 @@
     const dayContent = document.createElement("div");
     dayContent.className = "day-content-area";
 
+    // Move the active day to a slot in this week or onto the end of another.
+    // The day moves as the SAME OBJECT — logs, completions, moods and
+    // readiness are keyed by day/exercise ids, so identity is what carries a
+    // filled day's history along. Clone it or re-mint its id and every log
+    // orphans silently; tests/move-program-day.test.js pins this.
+    function openMoveDaySheet() {
+      const dayIdx = Math.min(week._activeDayIdx, week.days.length - 1);
+      const day = week.days[dayIdx];
+      if (!day) return;
+      const wIdx = _coachActiveWeekIdx;
+      const dayLabel = day.name || `Day ${dayIdx + 1}`;
+      let body = "";
+      if (week.days.length > 1) {
+        body += `<p class="muted" style="margin:0 0 0.35em">Within ${escapeHtml(week.label)}</p>` +
+          `<div class="video-pick-list">` +
+          week.days.map((d, i) => {
+            const here = i === dayIdx;
+            return `<button type="button" class="video-pick-btn" data-mv-pos="${i}"${here ? " disabled" : ""}>` +
+              `<strong>#${i + 1}</strong>` +
+              `<span class="muted" style="margin-left:0.45em">${here ? "here" : `now ${escapeHtml(d.name || `Day ${i + 1}`)}`}</span>` +
+            `</button>`;
+          }).join("") + `</div>`;
+      }
+      if (weeks.length > 1) {
+        body += `<p class="muted" style="margin:${week.days.length > 1 ? "0.9em" : "0"} 0 0.35em">To another week</p>` +
+          `<div class="video-pick-list">` +
+          weeks.map((w, i) => i === wIdx ? "" :
+            `<button type="button" class="video-pick-btn" data-mv-week="${i}">` +
+              `<strong>${escapeHtml(w.label)}</strong>` +
+              `<span class="meta-pill" style="margin-left:auto">${w.days.length} day${w.days.length === 1 ? "" : "s"}</span>` +
+            `</button>`).join("") + `</div>`;
+      }
+      openModal({
+        title: `Move ${dayLabel}`,
+        body,
+        actions: [{ label: "Cancel", className: "btn btn-ghost", onClick: closeModal }],
+      });
+      document.querySelectorAll("#modal-body [data-mv-pos]").forEach((b) =>
+        b.addEventListener("click", () => {
+          const at = moveProgramDay(weeks, wIdx, dayIdx, wIdx, Number(b.dataset.mvPos));
+          if (at === null) return;
+          closeModal();
+          week._activeDayIdx = at;
+          saveTrainer(); renderDayTabs(); renderActiveDayContent();
+        }));
+      document.querySelectorAll("#modal-body [data-mv-week]").forEach((b) =>
+        b.addEventListener("click", () => {
+          const toW = Number(b.dataset.mvWeek);
+          const at = moveProgramDay(weeks, wIdx, dayIdx, toW, weeks[toW].days.length);
+          if (at === null) return;
+          closeModal();
+          // Jump to where it landed, so the move is visible under your hand.
+          _coachActiveWeekIdx = toW;
+          weeks[toW]._activeDayIdx = at;
+          saveTrainer(); renderWeeks();
+          // Same after-move hooks as the week drag: the athlete mount's diet
+          // panel and calendar both read week/day mapping.
+          if (!_programEditorId) { renderDiet(); renderCoachCalendar(); }
+          toast(`${dayLabel} → ${weeks[toW].label} ✓`);
+        }));
+    }
+
     let dayDragFrom = null;
     function renderDayTabs() {
       tabStrip.innerHTML = "";
@@ -12388,6 +12450,20 @@
         openImportDayModal(week, () => { renderDayTabs(); renderActiveDayContent(); });
       });
       addRow.appendChild(importDayBtn);
+
+      // A visible door for what the tab drag was supposed to be: the drag is
+      // desktop-only HTML5 DnD with no affordance, and its own author couldn't
+      // find it on the surface it was built for. Renders only when there is
+      // somewhere for the day to go.
+      if (week.days.length && (week.days.length > 1 || weeks.length > 1)) {
+        const moveBtn = document.createElement("button");
+        moveBtn.type = "button";
+        moveBtn.className = "btn btn-ghost btn-sm slim-btn day-add-btn";
+        moveBtn.textContent = "⇄ Move day";
+        moveBtn.title = "Move this day within the week or to another week";
+        moveBtn.addEventListener("click", openMoveDaySheet);
+        addRow.appendChild(moveBtn);
+      }
       weekActionsInto(addRow);
     }
 
@@ -12481,6 +12557,24 @@
     body.appendChild(addRow);
     body.appendChild(dayContent);
     container.appendChild(body);
+  }
+
+  // Splice a day out of one week and into a slot of another (or the same).
+  // `toPos` is the slot as the user SEES it in the target's current list.
+  // Same-array moves insert after the removal, which lands the day at exactly
+  // that visual slot in both directions — the pre-removal index would put a
+  // forward move one past where the user tapped. Returns the landing index,
+  // or null for a no-op or out-of-range input, having touched nothing.
+  function moveProgramDay(weeks, fromW, dayIdx, toW, toPos) {
+    const src = weeks?.[fromW]?.days;
+    const dst = weeks?.[toW]?.days;
+    if (!src || !dst || dayIdx < 0 || dayIdx >= src.length) return null;
+    const same = src === dst;
+    if (toPos < 0 || toPos > (same ? src.length - 1 : dst.length)) return null;
+    if (same && toPos === dayIdx) return null;
+    const [day] = src.splice(dayIdx, 1);
+    dst.splice(toPos, 0, day);
+    return toPos;
   }
 
   function archiveCurrentProgram() {
