@@ -6330,6 +6330,23 @@ input:focus, textarea:focus, select:focus {
   cursor: pointer;
   color-scheme: dark;
 }
+/* Desktop Chromium only opens the calendar from the little picker-icon region
+   at the input's far right — a click anywhere else focuses an (invisible) date
+   segment and nothing appears. Mobile opens it from anywhere, which is why the
+   overlay trick above worked there and silently didn't here: on a desktop the
+   chip was only "live" in its rightmost ~20px. Stretching the indicator across
+   the whole input makes every click an icon click. Firefox ignores the
+   pseudo-element and already opens on any click. */
+.detail-head-top input.detail-log-date::-webkit-calendar-picker-indicator {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+}
 /* Main row — toggle + name grow, progress pill + mood sit on the right. */
 .detail-head-main {
   display: flex;
@@ -14715,6 +14732,12 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
 .cyc-date input[type="date"] {
   position: absolute; inset: 0; width: 100%; height: 100%;
   opacity: 0; margin: 0; padding: 0; border: none; cursor: pointer;
+}
+/* Same desktop-Chromium fix as .detail-log-date: only the far-right picker
+   icon opens the calendar there, so stretch it across the whole chip. */
+.cyc-date input[type="date"]::-webkit-calendar-picker-indicator {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  margin: 0; padding: 0; opacity: 0; cursor: pointer;
 }
 .cyc-date-txt { white-space: nowrap; }
 
