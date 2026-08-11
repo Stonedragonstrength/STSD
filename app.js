@@ -26265,8 +26265,13 @@
       body: "",
       actions: [{
         label: "Done", className: "btn btn-primary",
-        onClick: () => { closeModal(); onDone?.(); },
+        // Just closes. onDone rides the close hook below so that the ✕ and the
+        // backdrop get it too — closing this sheet any other way used to skip
+        // the caller's refreshLiveProgram() and leave the portal showing the
+        // numbers it cloned at session start.
+        onClick: () => closeModal(),
       }],
+      onClose: () => onDone?.(),
     });
     const host = $("#modal-body");
     if (!host) return;
@@ -26291,6 +26296,11 @@
         if (!window.confirm(`Replace this exercise in ${nW} later week${nW === 1 ? "" : "s"}? Their current sets, weights and reps are overwritten.`)) return;
         applyExerciseToLater(matches, ex);
         saveTrainer();
+        // The write lands on state.trainerData, but in a live session the
+        // portal behind this sheet renders a structuredClone of the program
+        // taken when the session started — so without this the later weeks are
+        // genuinely updated and genuinely invisible. No-ops off preview.
+        refreshLiveProgram();
         toast(`Carried into ${nW} later week${nW === 1 ? "" : "s"}`);
         draw(); // the matches are now identical — redraw so the copy reads true
       });
@@ -26303,8 +26313,7 @@
       // ON leaves nothing to edit, so the sheet leaves with it rather than
       // redrawing a lift that is no longer in the day.
       if (!(day.exercises || []).some((e) => e.id === ex.id)) {
-        closeModal();
-        onDone?.();
+        closeModal(); // carries onDone via the close hook — don't call it twice
         return;
       }
       host.innerHTML = "";
@@ -35310,7 +35319,17 @@
   // No dollar figures on the overview (2026-07-17, per Nathan) — just a quiet
   // "who owes" chip so unpaid packages still surface somewhere.
   // -------- Modal --------
-  function openModal({ title, body, actions = [] }) {
+  // Fires on EVERY way a modal goes away — the footer action, the ✕, the
+  // backdrop — because the ✕ and the backdrop are wired straight to
+  // closeModal() (see the [data-close] binding in boot) and so used to skip
+  // whatever the footer button was doing. A coach who edited an exercise in a
+  // live session and closed the sheet with ✕ got no refreshLiveProgram(), and
+  // the portal — which draws from a structuredClone taken at session start —
+  // kept showing the old numbers. The edit had saved; the screen was stale.
+  // Callers that pass no onClose are unaffected.
+  let _modalOnClose = null;
+  function openModal({ title, body, actions = [], onClose = null }) {
+    _modalOnClose = onClose;
     // Any modal transition tears down a running camera. The scanner replaces
     // itself with the lookup and portion modals without closing first, so
     // hooking both open and close is what guarantees the light goes off.
@@ -35358,7 +35377,14 @@
     m.querySelector(".mood-sheet-win")?.remove();
     m.querySelector(".sess-sum")?.remove();
   }
-  function closeModal() { stopScan(); clearDayCompleteDressing(); hide($("#modal")); lockPageScroll(false); }
+  function closeModal() {
+    stopScan(); clearDayCompleteDressing(); hide($("#modal")); lockPageScroll(false);
+    // Cleared BEFORE it runs: a hook that closes a modal itself would otherwise
+    // recurse, and several flows close one sheet to open the next.
+    const hook = _modalOnClose;
+    _modalOnClose = null;
+    if (hook) { try { hook(); } catch (e) {} }
+  }
 
   // -------- Bug reports --------
   // bugreport.js silently records diagnostics (errors, console, taps); this is
