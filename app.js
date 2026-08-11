@@ -8872,7 +8872,9 @@
 
       const icon = document.createElement("div");
       icon.className = "coach-row-icon";
-      icon.textContent = workoutIconFor(t.name);
+      // workoutIconFor returns an SVG token ("sd:claw"), not an emoji, so it
+      // has to go through setDayIcon — textContent printed the token itself.
+      setDayIcon(icon, workoutIconFor(t.name));
 
       const main = document.createElement("div");
       main.className = "coach-row-main";
@@ -8986,7 +8988,7 @@
       .slice()
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((t) => {
-        const icon = workoutIconFor(t.name);
+        const icon = dayIconHtml(workoutIconFor(t.name));
         return `
           <button class="video-pick-btn" data-tpl="${t.id}" type="button">
             <span class="video-pick-icon">${icon}</span>

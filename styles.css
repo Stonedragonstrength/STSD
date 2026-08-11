@@ -3492,6 +3492,14 @@ input.trial-input {
   margin-right: 0.4em;
   font-weight: 800;
 }
+/* Day templates render a branded line icon here. An inline <svg> with only a
+   viewBox has no intrinsic size, so without this it lays out at the replaced
+   -element default (300x150) and swallows the row. Same rule as
+   .coach-row-icon svg, which is the other half of this picker's look. */
+.video-pick-btn .video-pick-icon svg {
+  width: 1.05em; height: 1.05em;
+  display: inline-block; vertical-align: -0.15em;
+}
 
 /* "Pull from another day" — the exercise picker that builds hybrid days.
    Source days are collapsed rows; opening one lists its lifts with what they
