@@ -10544,7 +10544,7 @@
       const who = isCoach ? (client?.name || "") : "";
       whoEl.textContent = client
         ? [cov?.week?.label, who].filter(Boolean).join(" · ")
-        : "No athlete open";
+        : (isCoach ? "No athlete open" : "No program yet");
       noteEl.innerHTML = client
         ? coverageVerdictHtml(cov, who, isCoach)
         : `<p class="a-cov-none">${isCoach

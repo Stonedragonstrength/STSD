@@ -14,6 +14,21 @@ const path = require("path");
 const assert = require("assert");
 
 const ROOT = path.join(__dirname, "..");
+const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
+
+// Grab a function's body by brace-matching from its declaration. Same helper
+// as tests/training-level-plumbing.test.js — reused rather than reinvented.
+function fnBody(src, decl) {
+  const at = src.indexOf(decl);
+  if (at < 0) throw new Error(`not found: ${decl}`);
+  const open = src.indexOf("{", at);
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}") { depth--; if (!depth) return src.slice(open, i + 1); }
+  }
+  throw new Error(`unbalanced: ${decl}`);
+}
 
 // ---- copies of the app.js logic ------------------------------------------
 function athleteCoverageClient(clientData) {
@@ -91,11 +106,55 @@ check("an athlete with no program yet resolves to null, not a crash", () => {
 
 check("the app really does read program.client.weeks elsewhere", () => {
   // Guards the assumption the whole fix rests on, against the real source.
-  const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
   assert.ok(/prog\.client\.weeks/.test(appSrc),
     "the athlete's workout picker reads prog.client.weeks — same record");
   assert.ok(!/state\.clientData\.weeks\b/.test(appSrc),
     "nothing may read state.clientData.weeks — that is the bug");
+});
+
+check("the REAL coverageSubject(), executed from live app.js, resolves the athlete's own record", () => {
+  // The check above only greps for the literal text "state.clientData.weeks",
+  // which never existed even in the broken build: the bug was
+  // coverageSubject() aliasing `client` straight to state.clientData, with
+  // coverageWeek() reading client.weeks generically afterwards. A parameter
+  // alias isn't a dotted chain, so no regex over app.js's source can see it —
+  // a reviewer proved this by reverting coverageSubject() to exactly that bug
+  // and running the whole suite: all 18 files, including every check above,
+  // passed anyway. This check closes that gap by pulling the real functions
+  // out of the live source with fnBody() and running them, instead of reading
+  // their text.
+  const state = { clientData };
+  const realAthleteCoverageClient = new Function("state",
+    fnBody(appSrc, "function athleteCoverageClient()"));
+  const realCoverageSubject = new Function(
+    "editable", "athleteCoverageClient", "currentClient", "state", "_lastAthleteId",
+    fnBody(appSrc, "function coverageSubject()"));
+
+  // editable=false is the athlete mount. currentClient/_lastAthleteId are only
+  // touched on the coach branch, which this call never reaches — left
+  // undefined on purpose rather than stubbed.
+  const result = realCoverageSubject(
+    false, () => realAthleteCoverageClient(state), undefined, state, undefined);
+
+  assert.strictEqual(result.isCoach, false);
+  assert.ok(result.client, "the athlete branch must resolve to a client record");
+  assert.strictEqual(result.client.name, "Sarah",
+    "if coverageSubject() ever hands back the wrapper again, .name is undefined here");
+  assert.ok(Array.isArray(result.client.weeks) && result.client.weeks.length,
+    "the {program, progress} wrapper itself never carries .weeks — that IS the bug");
+});
+
+check("renderCoverage's who-label also speaks athlete, not just the note beneath it", () => {
+  // Review finding: fixing coverageSubject() made client===null a genuinely
+  // reachable state for an athlete (no program assigned at all) for the first
+  // time — before, the athlete branch always got the truthy state.clientData
+  // wrapper, so this branch was coach-only in practice. The noteEl paragraph
+  // was written to branch on isCoach; the small a-mode-who label directly
+  // above it was not, so an athlete with no program got the coach's "No
+  // athlete open" sitting right above the correctly athlete-voiced note.
+  const body = fnBody(appSrc, "function renderCoverage()");
+  assert.ok(/isCoach\s*\?\s*"No athlete open"\s*:\s*"No program yet"/.test(body),
+    "the who-label's no-client branch must speak athlete too, not just the note beneath it");
 });
 
 console.log(`\nanatomy-coverage-wiring: ${n} checks passed.`);
