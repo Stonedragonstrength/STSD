@@ -494,6 +494,10 @@
       // either way — see the units block below weightToLb().
       units: "lb",
       goals: "", notes: "",
+      // Which volume ladder their coverage map is graded against. "" means not
+      // set and reads as intermediate — today's exact numbers — so assigning
+      // levels is opt-in and nobody's map moves on its own. See TRAINING_LEVELS.
+      trainingLevel: "",
       // Self-booking is granted per athlete on the coach's Scheduling card, so
       // a new athlete starts unable to take slots out of the availability.
       canBook: false,
@@ -3416,6 +3420,11 @@
         weightLb: athlete.weightLb,
         units: athlete.units === "kg" ? "kg" : "lb",
         goals: athlete.goals,
+        // Their coverage map runs on their own device and needs their bands.
+        // This list is an allowlist, not a spread — a field omitted here is
+        // simply absent on the athlete side, and the two maps disagree in
+        // silence.
+        trainingLevel: athlete.trainingLevel || "",
         weeks: athlete.weeks || [],
         oneOffDays: athlete.oneOffDays || [],
         trials: athlete.trials || [],
