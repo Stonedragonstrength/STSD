@@ -289,7 +289,9 @@
   async function updateCoachAnatomyEdits(coachId, edits) {
     if (!coachId) return false;
     try {
-      const { error } = await sb.from("coaches").update({ anatomy_edits: edits || {} }).eq("id", coachId);
+      // Same zero-rows-is-failure guard as updateCoachTemplates.
+      const { data, error } = await sb.from("coaches").update({ anatomy_edits: edits || {} }).eq("id", coachId).select("id");
+      if (!error && !(Array.isArray(data) && data.length)) return false;
       if (error) console.warn("[Cloud] updateCoachAnatomyEdits error", error.message);
       return !error;
     } catch (e) { console.warn("[Cloud] updateCoachAnatomyEdits", e); return false; }

@@ -11100,6 +11100,28 @@ body.live-log-mode #screen-client .header-right { display: none; }
 }
 .a-chip[data-cov="0"] .a-chip-n { background: rgba(var(--warn-rgb), 0.18); color: var(--warn); }
 
+/* Exercise-credits table — what each exercise counts for, as editable chips. */
+.excred-intro { margin: 0 0 0.5rem; font-size: 0.82rem; }
+#excred-search { width: 100%; margin-bottom: 0.65rem; }
+.excred-rows { display: flex; flex-direction: column; gap: 0.55rem; max-height: 52vh; overflow-y: auto; scrollbar-width: thin; }
+.excred-row { border: 1px solid var(--border); border-radius: 10px; padding: 0.5rem 0.65rem; }
+.excred-row.is-edited { border-color: rgba(var(--primary-bright-rgb), 0.45); }
+.excred-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5em; }
+.excred-name { font-weight: 700; font-size: 0.9rem; }
+.excred-reset { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.78rem; padding: 0.1em 0.3em; }
+.excred-reset:hover { color: var(--primary-bright); }
+.excred-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.45rem; align-items: center; }
+.excred-chip { display: inline-flex; align-items: stretch; border: 1px solid rgba(var(--primary-bright-rgb), 0.26); border-radius: 999px; overflow: hidden; }
+.excred-w { background: rgba(var(--primary-rgb), 0.12); color: var(--primary-bright); border: none; padding: 0.25em 0.25em 0.25em 0.7em; font-size: 0.78rem; font-weight: 700; cursor: pointer; }
+.excred-x { background: none; border: none; color: var(--muted); padding: 0 0.5em; cursor: pointer; font-size: 0.85rem; }
+.excred-x:hover { color: var(--danger); }
+.excred-none { font-size: 0.8rem; color: var(--muted); }
+.excred-add { border: 1px dashed var(--border); background: none; color: var(--muted); border-radius: 999px; padding: 0.18em 0.7em; cursor: pointer; font-size: 0.85rem; }
+.excred-add:hover { color: var(--primary-bright); border-color: rgba(var(--primary-bright-rgb), 0.45); }
+.excred-addgrid { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.45rem; }
+.excred-addopt { border: 1px solid var(--border); background: var(--surface-2); color: var(--text-soft); border-radius: 999px; padding: 0.25em 0.7em; font-size: 0.76rem; cursor: pointer; }
+.excred-addopt:hover { color: var(--primary-bright); border-color: rgba(var(--primary-bright-rgb), 0.45); }
+
 /* The tapped muscle's weekly total, leading its detail card in Coverage. */
 .a-cov-count {
   display: inline-flex; align-items: baseline; gap: 0.6em;

@@ -10246,10 +10246,27 @@
   // week of squats, deadlifts and RDLs as zero glute work. The library category
   // stays a true fallback — it is the coarsest source, so it only speaks when
   // nothing else recognised the name at all.
+  // A coach-tuned credit list for one exercise, or null. Lives inside
+  // anatomyEdits so it rides the existing coach→athlete sync (the whole blob
+  // goes up one column and comes back through anatomy_edits_for_athlete).
+  // Athlete-first read for the same reason getAnatomyEdits does it: on an
+  // athlete device trainerData exists but is empty, and empty must not win.
+  function exCreditOverride(k) {
+    const edits = state.clientData?.coachAnatomyEdits || state.trainerData?.anatomyEdits;
+    const ov = edits?.exCredits?.[k];
+    if (!Array.isArray(ov)) return null;
+    return ov.filter((h) => ANATOMY_BY_ID[h.id])
+      .map((h) => ({ id: h.id, weight: h.w === 0.5 ? 0.5 : 1 }));
+  }
+
   function musclesForExercise(ex) {
     const name = typeof ex === "string" ? ex : ex?.name;
     const k = exKey(name);
     if (!k) return [];
+    // The coach looked at THIS exercise and said what it counts — that answer
+    // replaces the derived one outright, empty list included ("counts nothing").
+    const ov = exCreditOverride(k);
+    if (ov) return ov;
     const best = new Map();
     const add = (id, weight) => { if (!(best.get(id) >= weight)) best.set(id, weight); };
     const curated = curatedExIndex().get(k) || [];
@@ -10428,6 +10445,116 @@
       <span class="a-cov-lead">${cov.gaps.length ? "⚠ Gaps" : "✓ Covered"} · ${escapeHtml(cov.week.label || "This week")}${who ? " · " + escapeHtml(who) : ""}${cov.level ? " · " + escapeHtml(cov.level.name) : ""}</span>
       <p>${bits.join(" ")}</p>
     </div>`;
+  }
+
+  // -------- Exercise-credits table (coach) --------
+  // The half-set engine made visible and tunable: every exercise's per-muscle
+  // credits as chips. Tap a credit to flip 1 ↔ ½, ✕ to drop it, ＋ to add a
+  // muscle at ½. An edit stores the whole resolved list in
+  // anatomyEdits.exCredits[exKey], so it reaches every athlete's map.
+  function openExCreditsTable(client) {
+    const week = coverageWeek(client, true);
+    const programNames = [];
+    const seenK = new Set();
+    (week?.days || []).forEach((d) => (d.exercises || []).forEach((ex) => {
+      const k = exKey(ex.name);
+      if (!k || seenK.has(k)) return;
+      seenK.add(k);
+      programNames.push(String(ex.name).trim());
+    }));
+    const searchPool = () => {
+      const out = new Map();
+      programNames.forEach((n) => out.set(exKey(n), n));
+      EXERCISE_LIBRARY.forEach((c) => (c.ex || []).forEach((n) => { const k = exKey(n); if (k && !out.has(k)) out.set(k, n); }));
+      customExerciseList().forEach((c) => { const k = exKey(c.name); if (k && !out.has(k)) out.set(k, c.name); });
+      return out;
+    };
+    const rowHtml = (name) => {
+      const k = exKey(name);
+      const overridden = Array.isArray(state.trainerData?.anatomyEdits?.exCredits?.[k]);
+      const hits = musclesForExercise(name);
+      const chips = hits.map((h) => {
+        const g = ANATOMY_BY_ID[h.id];
+        if (!g) return "";
+        return `<span class="excred-chip" data-m="${h.id}">
+          <button type="button" class="excred-w" data-act="flip" title="Tap: count as a ${h.weight === 1 ? "half" : "full"} set">${escapeHtml(g.name)} · ${h.weight === 1 ? "1" : "½"}</button>
+          <button type="button" class="excred-x" data-act="drop" title="Doesn't count for ${escapeHtml(g.name)}">×</button>
+        </span>`;
+      }).join("");
+      return `<div class="excred-row${overridden ? " is-edited" : ""}" data-k="${escapeHtml(k)}" data-name="${escapeHtml(name)}">
+        <div class="excred-head"><span class="excred-name">${escapeHtml(name)}</span>
+          ${overridden ? `<button type="button" class="excred-reset" title="Back to the built-in credits">↺ reset</button>` : ""}</div>
+        <div class="excred-chips">${chips || `<span class="excred-none">Counts for nothing.</span>`}
+          <button type="button" class="excred-add" title="Credit another muscle">＋</button></div>
+        <div class="excred-addgrid hidden">${ANATOMY_GROUPS
+          .filter((g) => !hits.some((h) => h.id === g.id))
+          .map((g) => `<button type="button" class="excred-addopt" data-m="${g.id}">${escapeHtml(g.name)}</button>`).join("")}</div>
+      </div>`;
+    };
+    openModal({
+      title: "Exercise credits",
+      body: `<p class="muted excred-intro">What each exercise counts for on the Coverage map. Tap a credit to flip it between a full and a half set (secondary muscles earn halves), ✕ drops it, ＋ adds one at ½. Applies to every athlete's map.</p>
+        <input type="search" id="excred-search" placeholder="Search any exercise…" autocomplete="off" />
+        <div class="excred-rows" id="excred-rows"></div>`,
+      actions: [{ label: "Done", className: "btn btn-primary", onClick: closeModal }],
+    });
+    const rowsEl = $("#excred-rows");
+    const renderRows = () => {
+      const q = String($("#excred-search")?.value || "").trim().toLowerCase();
+      let names;
+      if (q.length >= 2) {
+        names = [...searchPool().values()].filter((n) => n.toLowerCase().includes(q)).slice(0, 40);
+      } else {
+        names = programNames;
+      }
+      rowsEl.innerHTML = names.length
+        ? names.map(rowHtml).join("")
+        : `<p class="muted">${q.length >= 2 ? "No exercise by that name." : (client ? "This week has no exercises yet — search any exercise instead." : "No athlete open — search any exercise.")}</p>`;
+    };
+    const writeCredits = (k, hits) => {
+      const t = state.trainerData;
+      t.anatomyEdits = t.anatomyEdits || {};
+      t.anatomyEdits.exCredits = t.anatomyEdits.exCredits || {};
+      t.anatomyEdits.exCredits[k] = hits.map((h) => ({ id: h.id, w: h.weight }));
+      saveAnatomyEdits();
+    };
+    const repaintRow = (row, name) => { row.outerHTML = rowHtml(name); };
+    rowsEl.addEventListener("click", (e) => {
+      const row = e.target.closest(".excred-row");
+      if (!row) return;
+      const k = row.dataset.k, name = row.dataset.name;
+      if (e.target.closest(".excred-reset")) {
+        if (state.trainerData?.anatomyEdits?.exCredits) {
+          delete state.trainerData.anatomyEdits.exCredits[k];
+          saveAnatomyEdits();
+        }
+        repaintRow(row, name);
+        return;
+      }
+      if (e.target.closest(".excred-add")) {
+        row.querySelector(".excred-addgrid")?.classList.toggle("hidden");
+        return;
+      }
+      const addOpt = e.target.closest(".excred-addopt");
+      if (addOpt) {
+        const hits = musclesForExercise(name).filter((h) => h.id !== addOpt.dataset.m);
+        hits.push({ id: addOpt.dataset.m, weight: 0.5 });
+        writeCredits(k, hits);
+        repaintRow(row, name);
+        return;
+      }
+      const chip = e.target.closest(".excred-chip");
+      if (chip) {
+        const m = chip.dataset.m;
+        let hits = musclesForExercise(name);
+        if (e.target.closest('[data-act="drop"]')) hits = hits.filter((h) => h.id !== m);
+        else hits = hits.map((h) => h.id === m ? { id: h.id, weight: h.weight === 1 ? 0.5 : 1 } : h);
+        writeCredits(k, hits);
+        repaintRow(row, name);
+      }
+    });
+    $("#excred-search")?.addEventListener("input", renderRows);
+    renderRows();
   }
 
   // Muscle-map SVG paths adapted from "Body Muscles" by Ivan Vulovic
@@ -11196,7 +11323,8 @@
           ${editable ? `<select class="a-level-sel hidden" data-cov-level aria-label="Training age — sets the coverage grading" title="Training age — also on their Profile">
             <option value="">Training age not set (graded as Intermediate)</option>
             ${TRAINING_LEVELS.map((l) => `<option value="${l.id}">${l.name}</option>`).join("")}
-          </select>` : ""}
+          </select>
+          <button type="button" class="btn btn-ghost btn-sm slim-btn a-credits-btn hidden" data-cov-credits title="What each exercise counts for, editable">🧮 Set credits</button>` : ""}
         </div>
         <div class="a-cov-note hidden" data-cov-verdict></div>
         <div class="anatomy-layout">
@@ -11250,6 +11378,7 @@
       if (mode !== "coverage") {
         whoEl.textContent = "";
         root.querySelector("[data-cov-level]")?.classList.add("hidden");
+        root.querySelector("[data-cov-credits]")?.classList.add("hidden");
         root.querySelectorAll(".a-zone[data-cov]").forEach((z) => z.removeAttribute("data-cov"));
         return;
       }
@@ -11264,6 +11393,7 @@
         selEl.classList.toggle("hidden", !client);
         if (client) selEl.value = client.trainingLevel || "";
       }
+      root.querySelector("[data-cov-credits]")?.classList.toggle("hidden", !client);
       noteEl.innerHTML = client
         ? coverageVerdictHtml(cov, who, isCoach)
         : `<p class="a-cov-none">${isCoach
@@ -11461,6 +11591,10 @@
       renderCoverage();
       renderList();
       renderDetail(); // the open card's grading strip reads the new bands
+    });
+    root.querySelector("[data-cov-credits]")?.addEventListener("click", () => {
+      const { client } = coverageSubject();
+      openExCreditsTable(client);
     });
     root.addEventListener("click", (e) => {
       const gotoM = e.target.closest("[data-goto-muscle]");

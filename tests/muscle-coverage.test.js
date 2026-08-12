@@ -89,10 +89,16 @@ function demoEntryForName(name) {
   return demoByKey.get(k) || demoByKey.get(DEMO_ALIAS_FOR_TEST[k] || "") || null;
 }
 
+// app.js checks coach per-exercise overrides (anatomyEdits.exCredits) first;
+// the tests run against the BUILT-IN derivation, so the stub always passes.
+function exCreditOverride() { return null; }
+
 function musclesForExercise(ex) {
   const name = typeof ex === "string" ? ex : ex && ex.name;
   const k = exKey(name);
   if (!k) return [];
+  const ov = exCreditOverride(k);
+  if (ov) return ov;
   const best = new Map();
   const add = (id, weight) => { if (!(best.get(id) >= weight)) best.set(id, weight); };
   const curated = curatedEx.get(k) || [];
