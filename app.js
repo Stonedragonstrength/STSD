@@ -2051,10 +2051,12 @@
     const rir = Number.isFinite(parsedRir) ? parsedRir : null;
     // Only a check-in dated to the session being judged counts. A readiness
     // answer from a later pass through this day must not reach back and excuse
-    // an older log.
+    // an older log. A "very hungover" answer protects on its own — it sits
+    // outside the score (see READINESS_FLAG) but it is the same honest brake.
     const rdy = ctx?.readyMap?.[ctx.dayId];
     const protect = !!rdy && String(rdy.date) === String(entry.date) &&
-      readinessScore(rdy) >= READINESS_QS.length && readinessScore(rdy) <= READY_LOW_MAX;
+      ((readinessScore(rdy) >= READINESS_QS.length && readinessScore(rdy) <= READY_LOW_MAX) ||
+        readinessFlagAnswer(rdy) === 1);
     let min = Infinity;
     for (const s of entry.sets.slice(0, need)) {
       if (s.skipped) return { logged: true, min: null, rir, protect }; // skipped set = a real miss
@@ -6726,10 +6728,96 @@
     if (panel && park && panel.parentElement !== park) park.appendChild(panel);
   }
 
+  // ---- The next seven days, priced (2026-08-11, Nathan asked for "money per
+  // day in the upcoming week"). ----
+  // Same two booking paths and the same per-BANK slot dedupe as
+  // nextMonthSessionCounts — a couple's shared slot is one session at one
+  // rate, whichever half it is booked under. Each unique slot is valued at
+  // the bank's rate; program-only (flat) members' sessions price at zero,
+  // because their money is the flat month, not the session (flatMonthlyFor).
+  function weekMoneyDays() {
+    const clients = state.trainerData.clients || [];
+    const byId = new Map(clients.map((c) => [c.id, c]));
+    // One key per BANK: both halves of a couple collapse onto the same key.
+    const bankKeyOf = (id) => {
+      const c = byId.get(id);
+      return c && c.partnerId ? [c.id, c.partnerId].sort()[0] : id;
+    };
+    const startISO = todayISO();
+    const endISO = addDaysISO(startISO, 7);
+    const slots = new Map(); // iso -> Map(bankKey -> Set("HH:MM"))
+    const add = (athleteId, iso, at) => {
+      if (!athleteId || !iso || iso < startISO || iso >= endISO) return;
+      const key = bankKeyOf(athleteId);
+      if (!slots.has(iso)) slots.set(iso, new Map());
+      const banks = slots.get(iso);
+      if (!banks.has(key)) banks.set(key, new Set());
+      banks.get(key).add(at);
+    };
+    const hhmm = (d) => `${d.getHours()}:${d.getMinutes()}`;
+    (_coachBookings || []).forEach((b) => {
+      if (b.status !== "booked" || !b.start_at) return;
+      const d = new Date(b.start_at);
+      add(b.athlete_id, dateISO(d), hhmm(d));
+    });
+    clients.forEach((c) => {
+      (c.sessionBank?.upcomingBookings || []).forEach((b) => {
+        if (!b || !b.date) return;
+        add(c.id, b.date, b.startAt ? hhmm(new Date(b.startAt)) : (b.time || ""));
+      });
+    });
+    const rateOf = (bankKey) => {
+      const c = byId.get(bankKey);
+      if (!c) return 0;
+      if (flatMonthlyFor(c, bankMembership(c)) > 0) return 0;
+      // The halves share one bank and one rate; read whichever carries it.
+      return athleteSessionRate(c) || athleteSessionRate(partnerOf(c)) || 0;
+    };
+    const out = [];
+    for (let i = 0; i < 7; i++) {
+      const iso = addDaysISO(startISO, i);
+      let sessions = 0, amount = 0;
+      (slots.get(iso) || new Map()).forEach((times, key) => {
+        sessions += times.size;
+        amount += times.size * rateOf(key);
+      });
+      out.push({ iso, sessions, amount: Math.round(amount) });
+    }
+    return out;
+  }
+
+  function renderMoneyWeekStrip() {
+    const host = $("#money-week-strip");
+    if (!host) return;
+    const days = weekMoneyDays();
+    const total = days.reduce((n, d) => n + d.amount, 0);
+    if (!days.some((d) => d.sessions)) { host.innerHTML = ""; return; }
+    const peak = Math.max(1, ...days.map((d) => d.amount));
+    const today = todayISO();
+    host.innerHTML =
+      `<div class="mw-strip">` +
+        `<div class="mw-head"><span class="mw-title">Next 7 days</span>` +
+          `<span class="mw-total">${escapeHtml(money(total))}</span></div>` +
+        `<div class="mw-days">${days.map((d) => {
+          const dd = new Date(d.iso + "T12:00:00");
+          const dow = dd.toLocaleDateString(undefined, { weekday: "short" });
+          return `<div class="mw-day${d.iso === today ? " is-today" : ""}" title="${
+            d.sessions ? `${d.sessions} session${d.sessions === 1 ? "" : "s"} · ${escapeHtml(money(d.amount))}` : "Nothing booked"}">` +
+            `<span class="mw-bar"><span style="height:${d.amount ? Math.max(8, Math.round((d.amount / peak) * 100)) : 0}%"></span></span>` +
+            `<span class="mw-dow">${escapeHtml(dow)}</span>` +
+            `<span class="mw-amt${d.amount ? "" : " none"}">${d.amount ? escapeHtml(money(d.amount)) : "—"}</span>` +
+          `</div>`;
+        }).join("")}</div>` +
+      `</div>`;
+  }
+
   let _moneyRosterSeq = 0;
   function renderMoneyRoster() {
     const host = $("#money-roster-host");
     if (!host) return;
+    // The week strip rides every roster repaint: all-local data, so it also
+    // renders for an offline coach, same stance as the projection.
+    renderMoneyWeekStrip();
     const seq = ++_moneyRosterSeq;
     // The sessions panel lives inside whichever row is open, and the next line
     // empties the host. Park it FIRST or the one copy in the document is
@@ -24842,8 +24930,9 @@
     if (p.workoutMoods?.[day.id]?.date === fromDate) p.workoutMoods[day.id].date = toDate;
   }
   // -------- Pre-workout readiness check-in --------
-  // Three taps before the first set: sleep, soreness, stress. Each answer is
-  // 1-3 (rough / okay / good) and they sum to a 3-9 score.
+  // Four taps before the first set: sleep, soreness, stress (four faces each,
+  // summing to a 3-12 score) and a hungover side-axis that stays out of the
+  // sum (see READINESS_FLAG).
   //
   // The effect on the progression ladder is deliberately ONE WAY: a low score
   // can only protect (a miss on a wrecked day stops counting as a stall), never
@@ -24858,22 +24947,58 @@
   const READINESS_QS = [
     // Soreness and stress deliberately share one scale: the question above the
     // row is what they answer, so the buttons stay short and the block compact.
-    { id: "sleep",  icon: "😴", label: "Sleep",    ask: "How did you sleep?",    opts: ["Badly", "Okay", "Great"] },
-    { id: "sore",   icon: "💪", label: "Soreness", ask: "How sore are you?",     opts: ["Very", "A bit", "Not at all"] },
-    { id: "stress", icon: "🧠", label: "Stress",   ask: "How stressed are you?", opts: ["Very", "A bit", "Not at all"] },
+    // Four steps since 2026-08-11 (Nathan wanted a "somewhat positive" between
+    // the middle and the top; he picked the faces layout from a rendered
+    // side-by-side). The words no longer appear on the asking buttons — the
+    // faces are the buttons — but they still carry the answered summary, the
+    // chip titles and the coach's read.
+    { id: "sleep",  icon: "😴", label: "Sleep",    ask: "How did you sleep?",    opts: ["Badly", "Okay", "Good", "Great"] },
+    { id: "sore",   icon: "💪", label: "Soreness", ask: "How sore are you?",     opts: ["Very", "A bit", "Barely", "Not at all"] },
+    { id: "stress", icon: "🧠", label: "Stress",   ask: "How stressed are you?", opts: ["Very", "A bit", "Barely", "Not at all"] },
   ];
+  // One face per step, worst to best, shared by all three questions — the
+  // face is how that axis FEELS, so one scale reads the same on every row.
+  const READINESS_FACES = ["😖", "🙂", "😄", "🤩"];
+  // The fourth row is a SIDE AXIS, not a fourth scale in the sum: three faces
+  // (sick / kind of sick / good), kept out of the 3-12 score on purpose — a
+  // differently-sized answer in the sum would shift every threshold and
+  // reclassify years of saved check-ins. Its worst step protects the day
+  // directly, same brake as a low score. Rides the record as `hungover: 1-3`
+  // (worst → best). Legacy records simply don't have it — unknown is not
+  // "No", so nothing is shown for them.
+  const READINESS_FLAG = {
+    id: "hungover", icon: "🍺", label: "Hungover", ask: "Hungover?",
+    opts: ["Very", "A bit", "No"], faces: ["🤢", "🥴", "😄"],
+  };
+  // ---- Two scales live in the data forever. ----
+  // Records written before the fourth step exist store 1-3 with 3 meaning the
+  // TOP answer; new records store 1-4 and stamp `v: 2`. Cached builds keep
+  // writing the old shape for weeks (see stsd-old-clients-read-old-fields), so
+  // this is a permanent read-time remap, not a one-time migration: only the
+  // top of the old scale moved (3 → 4). Badly/Okay kept their values, which
+  // keeps the neutral score at 6 and READY_LOW_MAX honest on both scales.
+  function readinessAnswer(rec, qid) {
+    const v = parseInt(rec?.[qid], 10) || 0;
+    if (!v) return 0;
+    if ((parseInt(rec.v, 10) || 1) >= 2) return v;
+    return v === 3 ? 4 : v;
+  }
   // At or below this the day reads as "beat up" and stalls stop counting. The
-  // neutral score is 6 (all three answered "okay"), so this is genuinely below
-  // par rather than merely "not great".
+  // neutral score is 6 (all three answered "okay") on BOTH scales, so this is
+  // genuinely below par rather than merely "not great".
   const READY_LOW_MAX = 5;
+  const READINESS_MAX = READINESS_QS.reduce((n, q) => n + q.opts.length, 0);
+  // Thresholds chosen so every legacy record classifies exactly as it used to
+  // once remapped: old 3-7 → new 3-8 stay low/mid on the same boundaries, old
+  // 8-9 → new 10-12 stay high.
   const READY_LEVELS = [
     { max: READY_LOW_MAX, id: "low",  emoji: "🪫", label: "Beat up" },
-    { max: 7,             id: "mid",  emoji: "🔋", label: "Okay" },
-    { max: 9,             id: "high", emoji: "⚡", label: "Ready" },
+    { max: 8,             id: "mid",  emoji: "🔋", label: "Okay" },
+    { max: READINESS_MAX, id: "high", emoji: "⚡", label: "Ready" },
   ];
   function readinessScore(rec) {
     if (!rec) return 0;
-    return READINESS_QS.reduce((n, q) => n + (parseInt(rec[q.id], 10) || 0), 0);
+    return READINESS_QS.reduce((n, q) => n + readinessAnswer(rec, q.id), 0);
   }
   // null until all three are answered — a partial answer has no score to read.
   function readinessLevel(rec) {
@@ -24896,20 +25021,38 @@
     const clean = {};
     READINESS_QS.forEach((q) => {
       const v = parseInt(answers?.[q.id], 10);
-      if (v >= 1 && v <= 3) clean[q.id] = v;
+      if (v >= 1 && v <= q.opts.length) clean[q.id] = v;
     });
     if (Object.keys(clean).length < READINESS_QS.length) return;
+    const flag = parseInt(answers?.[READINESS_FLAG.id], 10);
+    if (!(flag >= 1 && flag <= READINESS_FLAG.opts.length)) return;
+    clean[READINESS_FLAG.id] = flag;
+    // v2 = the four-step scale. Readers use it to tell a new 3 ("Good") from
+    // a legacy 3 (the old top answer) — see readinessAnswer.
+    clean.v = 2;
     clean.date = logDate || todayISO();
     clean.score = readinessScore(clean);
     p.readiness[dayId] = clean;
     saveClient();
   }
+  // The side axis, normalized: 0 when the record predates it.
+  function readinessFlagAnswer(rec) {
+    const v = parseInt(rec?.[READINESS_FLAG.id], 10) || 0;
+    return v >= 1 && v <= READINESS_FLAG.opts.length ? v : 0;
+  }
   // The slim chip both the athlete and the coach read. `compact` drops the word.
   function readinessChipHtml(rec, compact) {
     const lvl = readinessLevel(rec); if (!lvl) return "";
-    const detail = READINESS_QS.map((q) => `${q.label}: ${q.opts[rec[q.id] - 1] || "?"}`).join(" · ");
-    return `<span class="rdy-chip ${lvl.id}" title="Readiness ${readinessScore(rec)}/9 · ${escapeHtml(detail)}">` +
+    const flag = readinessFlagAnswer(rec);
+    const detail = READINESS_QS.map((q) => `${q.label}: ${q.opts[readinessAnswer(rec, q.id) - 1] || "?"}`)
+      .concat(flag ? [`${READINESS_FLAG.label}: ${READINESS_FLAG.opts[flag - 1]}`] : [])
+      .join(" · ");
+    // The chip itself flags a rough hangover — the one answer the level's
+    // battery emoji can't carry, and exactly what the coach wants to spot
+    // before loading the bar.
+    return `<span class="rdy-chip ${lvl.id}" title="Readiness ${readinessScore(rec)}/${READINESS_MAX} · ${escapeHtml(detail)}">` +
       `<span class="rdy-chip-emo">${lvl.emoji}</span>` +
+      (flag === 1 ? `<span class="rdy-chip-emo">${READINESS_FLAG.faces[0]}</span>` : "") +
       (compact ? "" : `<span class="rdy-chip-txt">${escapeHtml(lvl.label)}</span>`) + `</span>`;
   }
 
@@ -28237,10 +28380,11 @@
   // "not right now", not an answer, and it should come back next visit.
   const _readinessSkipped = new Set();
 
-  // The three-tap readiness check-in that sits above the first exercise.
-  // Unanswered it's three rows of three buttons; answered it collapses to a
-  // single chip row you can tap to change. Answering the third question saves
-  // and collapses in the same tap, so the whole thing really is three taps.
+  // The four-tap readiness check-in that sits above the first exercise.
+  // Unanswered it's four one-line face rows (sleep/soreness/stress on the
+  // shared four-step scale, hungover on its own three); answered it collapses
+  // to a single chip row you can tap to change. The last answer saves and
+  // collapses in the same tap, so the whole thing really is four taps.
   function renderReadinessBlock(day, logDate) {
     const wrap = document.createElement("div");
     const p = state.clientData.progress;
@@ -28256,6 +28400,7 @@
       wrap.innerHTML = "";
       if (rec && !editing) {
         const lvl = readinessLevel(rec);
+        const flag = readinessFlagAnswer(rec);
         wrap.className = `rdy-block answered ${lvl.id}`;
         wrap.innerHTML =
           `<button type="button" class="rdy-done"${canAnswer ? "" : " disabled"} title="Your check-in for this session">` +
@@ -28264,17 +28409,27 @@
             `<span class="rdy-done-ans">${READINESS_QS.map((q) =>
               // The emoji names the topic in the collapsed row; the title spells
               // it out, because "A bit" is only clear next to what it answers.
-              `<span class="rdy-done-a" title="${escapeHtml(q.label)}: ${escapeHtml(q.opts[rec[q.id] - 1] || "?")}">` +
-                `<span class="rdy-done-i">${q.icon}</span>${escapeHtml(q.opts[rec[q.id] - 1] || "?")}</span>`).join("")}</span>` +
+              `<span class="rdy-done-a" title="${escapeHtml(q.label)}: ${escapeHtml(q.opts[readinessAnswer(rec, q.id) - 1] || "?")}">` +
+                `<span class="rdy-done-i">${q.icon}</span>${escapeHtml(q.opts[readinessAnswer(rec, q.id) - 1] || "?")}</span>`).join("")
+            // "No" would be noise on every ordinary morning — the hangover
+            // only earns a spot in the row when there is one.
+            }${flag && flag < READINESS_FLAG.opts.length
+              ? `<span class="rdy-done-a" title="${escapeHtml(READINESS_FLAG.label)}: ${escapeHtml(READINESS_FLAG.opts[flag - 1])}">` +
+                  `<span class="rdy-done-i">${READINESS_FLAG.faces[flag - 1]}</span>${escapeHtml(READINESS_FLAG.opts[flag - 1])}</span>`
+              : ""}</span>` +
             (canAnswer ? `<span class="rdy-done-edit">Change</span>` : "") +
           `</button>` +
-          (lvl.id === "low"
+          (lvl.id === "low" || flag === 1
             ? `<p class="rdy-note">Rough day. Keep the reps honest and take weight off if you need it. Nothing you miss today counts against your targets.</p>`
             : "");
         if (canAnswer) wrap.querySelector(".rdy-done").addEventListener("click", () => {
           editing = true;
           draft = {};
-          READINESS_QS.forEach((q) => { draft[q.id] = rec[q.id]; });
+          // Prefill NORMALIZED, so a legacy record's old top answer preselects
+          // the new top face rather than the third step.
+          READINESS_QS.forEach((q) => { draft[q.id] = readinessAnswer(rec, q.id) || undefined; });
+          const f = readinessFlagAnswer(rec);
+          if (f) draft[READINESS_FLAG.id] = f;
           draw();
         });
         return;
@@ -28285,28 +28440,36 @@
         wrap.className = "rdy-block hidden";
         return;
       }
+      // Four one-line rows: the noun, then the faces. Faces carry the scale
+      // (worst → best, same faces on every four-step row) so there is nothing
+      // to read — the words live on in the summary and the chip titles.
+      const faceRow = (q, faces) =>
+        `<div class="rdy-q rdy-q-faces" data-q="${q.id}">` +
+          `<span class="rdy-q-lbl"><span class="rdy-q-ico">${q.icon}</span><span class="rdy-q-txt">${escapeHtml(q.label)}</span></span>` +
+          `<div class="rdy-faces">${faces.map((f, i) =>
+            `<button type="button" class="rdy-face l${i + 1} n${faces.length}${draft[q.id] === i + 1 ? " on" : ""}" data-v="${i + 1}"` +
+              ` title="${escapeHtml(q.ask)} ${escapeHtml(q.opts[i])}" aria-label="${escapeHtml(q.ask)} ${escapeHtml(q.opts[i])}">${f}</button>`).join("")}</div>` +
+        `</div>`;
       wrap.className = "rdy-block asking";
       wrap.innerHTML =
         `<div class="rdy-head">` +
           `<span class="rdy-head-ico">🔋</span>` +
-          `<span class="rdy-head-txt"><b>How are you today?</b><span>Three taps. A rough day will not count against your targets.</span></span>` +
+          `<span class="rdy-head-txt"><b>How are you today?</b><span>Four taps. A rough day will not count against your targets.</span></span>` +
           `<button type="button" class="rdy-skip" title="Not now" aria-label="Not now">✕</button>` +
         `</div>` +
-        `<div class="rdy-qs">${READINESS_QS.map((q) =>
-          `<div class="rdy-q" data-q="${q.id}">` +
-            `<span class="rdy-q-lbl"><span class="rdy-q-ico">${q.icon}</span><span class="rdy-q-txt">${escapeHtml(q.ask || q.label)}</span></span>` +
-            `<div class="rdy-q-opts">${q.opts.map((o, i) =>
-              `<button type="button" class="rdy-opt l${i + 1}${draft[q.id] === i + 1 ? " on" : ""}" data-v="${i + 1}">${escapeHtml(o)}</button>`).join("")}</div>` +
-          `</div>`).join("")}</div>`;
+        `<div class="rdy-qs">${READINESS_QS.map((q) => faceRow(q, READINESS_FACES)).join("")}${
+          faceRow(READINESS_FLAG, READINESS_FLAG.faces)}</div>`;
       wrap.querySelector(".rdy-skip").addEventListener("click", () => {
         _readinessSkipped.add(day.id);
         draw();
       });
+      const complete = () =>
+        READINESS_QS.every((q) => draft[q.id]) && draft[READINESS_FLAG.id];
       wrap.querySelectorAll(".rdy-q").forEach((row) => {
-        row.querySelectorAll(".rdy-opt").forEach((btn) => btn.addEventListener("click", () => {
+        row.querySelectorAll(".rdy-face").forEach((btn) => btn.addEventListener("click", () => {
           draft[row.dataset.q] = parseInt(btn.dataset.v, 10);
-          // Third answer commits: no Save button to hunt for.
-          if (READINESS_QS.every((q) => draft[q.id])) {
+          // Last answer commits: no Save button to hunt for.
+          if (complete()) {
             setDayReadiness(day.id, draft, logDate);
             collapse();
             // The ladder may now be reading this session differently, so the
@@ -35944,7 +36107,7 @@
       { sel: '[data-ctab-panel="workouts"]', go: () => setClientTab("workouts"),
         title: "Your program", text: "Everything your coach wrote for you. Tap a day to open the session and start logging." },
       { sel: ".workout-detail-list .rdy-block", go: goDetail,
-        title: "Before your first set", text: "Three taps: how you slept, how sore you are, how stressed. Answer honestly. A rough day never counts against your targets, it only tells the app to stop pushing for one session." },
+        title: "Before your first set", text: "Four taps: how you slept, how sore you are, how stressed, and whether you're hungover. Tap the face that fits and answer honestly. A rough day never counts against your targets, it only tells the app to stop pushing for one session." },
       { sel: ".workout-detail-list .cex-rx", go: goDetail,
         title: "Your target", text: "Each exercise shows what to do: sets, weight and reps (or seconds for timed moves). The number climbs automatically as you hit it week to week." },
       { sel: ".workout-detail-list .demo-btn", go: goDetail,

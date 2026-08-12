@@ -6959,6 +6959,45 @@ input:focus, textarea:focus, select:focus {
 
 /* The roster's money, one row each. Dense on purpose: nineteen athletes have to
    be scannable without scrolling past the ones that need nothing. */
+/* ---- The next-7-days strip, above the Raise roster ----
+   One slim card: a bar and a figure per day, today ringed. Lives inside the
+   fold so the amounts stay behind the same door as the projection. */
+.mw-strip {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 0.55rem 0.75rem 0.6rem;
+  margin-bottom: 0.6rem;
+}
+.mw-head { display: flex; align-items: baseline; gap: 0.6rem; margin-bottom: 0.45rem; }
+.mw-title {
+  font-size: 0.68rem; font-weight: 800; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--text-soft);
+}
+.mw-total {
+  margin-left: auto; font-weight: 900; font-size: 0.95rem;
+  color: var(--primary-bright); font-variant-numeric: tabular-nums;
+}
+.mw-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.3rem; }
+.mw-day { display: flex; flex-direction: column; align-items: center; gap: 0.15rem; min-width: 0; }
+.mw-bar {
+  width: 100%; max-width: 2.2rem; height: 34px;
+  display: flex; align-items: flex-end; justify-content: center;
+  background: var(--surface-2); border-radius: 6px; overflow: hidden;
+}
+.mw-bar span {
+  display: block; width: 100%;
+  background: linear-gradient(180deg, rgba(var(--primary-bright-rgb), 0.85), rgba(var(--primary-rgb), 0.55));
+  border-radius: 6px 6px 0 0;
+}
+.mw-dow { font-size: 0.6rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-soft); }
+.mw-day.is-today .mw-dow { color: var(--primary-bright); }
+.mw-day.is-today .mw-bar { box-shadow: inset 0 0 0 1px rgba(var(--primary-bright-rgb), 0.5); }
+.mw-amt {
+  font-size: 0.64rem; font-weight: 800; color: var(--text);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+.mw-amt.none { color: var(--muted); font-weight: 600; }
+
 .money-roster { display: flex; flex-direction: column; gap: 0; padding: 0.9rem 1rem; }
 .mr-head {
   display: flex; align-items: baseline; gap: 0.6rem;
@@ -13475,6 +13514,31 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 .rdy-opt.l2.on { background: var(--primary); color: #fff; }
 .rdy-opt.l3.on { background: var(--accent); }
 
+/* ---- Face rows (the 2026-08-11 four-step redesign, Nathan's pick C) ----
+   The noun and its faces share one line, so four questions still sit under
+   the old three's height. Unpicked faces are dimmed to greyscale; the picked
+   one lights up with the step's colour ring. l1..l4 = worst..best; the
+   hungover row is three faces (n3), so its top step is l3 and must read as
+   the full green, not the four-step scale's soft third. */
+.rdy-q-faces { flex-direction: row; align-items: center; gap: 0.5em; }
+.rdy-q-faces .rdy-q-lbl { margin-bottom: 0; flex: 1; min-width: 0; }
+.rdy-faces { display: flex; gap: 0.34em; flex: 0 0 auto; }
+.rdy-face {
+  width: 2.35rem; height: 2.35rem; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 50%; font-size: 1.2rem; line-height: 1; cursor: pointer;
+  filter: grayscale(0.55); opacity: 0.72;
+  transition: border-color 0.12s, background 0.12s, filter 0.12s, opacity 0.12s;
+}
+.rdy-face:hover { border-color: var(--border-strong); opacity: 0.9; }
+.rdy-face.on { filter: none; opacity: 1; border-width: 2px; }
+.rdy-face.l1.on { border-color: var(--warn); background: rgba(245, 158, 11, 0.15); }
+.rdy-face.l2.on { border-color: var(--primary); background: rgba(var(--primary-rgb), 0.14); }
+.rdy-face.l3.on { border-color: rgba(var(--accent-rgb, 16, 185, 129), 0.6); background: rgba(var(--accent-rgb, 16, 185, 129), 0.12); }
+.rdy-face.n4.l4.on,
+.rdy-face.n3.l3.on { border-color: var(--accent); background: rgba(var(--accent-rgb, 16, 185, 129), 0.2); }
+
 /* Answered: one row, tap to change. */
 .rdy-done {
   width: 100%; display: flex; align-items: center; gap: 0.55em;
@@ -15121,6 +15185,7 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
   .dh-date { min-height: 38px; }
   .rdy-skip { width: 2.2rem; height: 2.2rem; }
   .rdy-opt { min-height: 40px; }
+  .rdy-face { width: 40px; height: 40px; }
   /* ---- The rest dock ---- */
   .rest-sound-btn { width: 40px; height: 40px; }
   .rest-opt-btn { min-height: 38px; }
