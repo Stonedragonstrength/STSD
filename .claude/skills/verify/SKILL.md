@@ -36,6 +36,36 @@ Supabase config, and boot only shows the coach UI with a live Supabase session
 3. You land on the coach dashboard. The exercise-library sidebar lives in the
    day editor: Programs → "+ New day".
 
+## Cache layers (each one cost a debugging cycle on 2026-08-11)
+
+The sandbox has FOUR caches between an edit and the running page, and they
+fail one at a time, in this order of likelihood:
+
+1. **The service worker re-registers on every boot.** Unregistering it once
+   is not enough — the next app load registers it again and re-caches the
+   current `?v=` URLs. Either unregister + clear `caches` in the same script
+   that reloads, or rely on rule 2.
+2. **The only reliable cache-buster is a NEW `?v=` URL.** Chrome's disk
+   cache keeps the headers an entry was BORN with: a script cached before
+   the server sent `Cache-Control: no-store` stays heuristically fresh and
+   ignores the new header forever. `fetch(url, {cache:'reload'})` priming is
+   unreliable. When an edit doesn't seem to arrive, bump the tag in
+   index.html — and bump it for EVERY file you changed (`cloud.js` has its
+   own tag and is easy to forget; forgetting it in production is how a
+   cloud.js fix silently didn't ship this morning).
+3. **A mock served in place of `/cloud.js` boots Cloud ENABLED**, so the
+   post-overhaul boot pulls from the mock and OVERWRITES whatever you seeded
+   in localStorage (program, progress, readiness — everything but merged
+   logs). Seed fixtures INSIDE the mock's responses, not in localStorage.
+   And when the feature under test unions two sources (e.g. `_coachBookings`
+   ∪ `upcomingBookings`), run one pass per source with the other empty — a
+   mirror-only seed "verified" the Money strip while its real source path
+   was broken.
+4. **`computer` screenshots go stale on these tabs** — captureScreenshot
+   times out, then serves an old frame that no longer matches the DOM.
+   Assert state by DOM queries (classes, rects, values), treat screenshots
+   as illustration only, and prefer a fresh tab per test round.
+
 ## Gotchas
 
 - Never seed/mutate data on the user's real origin (localhost:5190) — their
