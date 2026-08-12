@@ -5099,7 +5099,7 @@
       if (lvl) {
         const el = document.createElement("span");
         el.className = "quiet-chip level-chip";
-        el.title = `${lvl.name} — coverage grades ${lvl.solid}+ sets as solid, ${lvl.plenty}+ as plenty`;
+        el.title = `Training age ${lvl.name} — coverage grades ${lvl.solid}+ sets as solid, ${lvl.plenty}+ as plenty`;
         // Abbreviated on the badge; the full word lives in the title above.
         // Measured at 390px with the birthday + partner + mood chips also
         // live: that row was already at fitClientRowNames()'s 9px floor with
@@ -6365,6 +6365,7 @@
     $("#invite-code-display").textContent = c.inviteCode;
     setInviteCodeVisible(false); // code stays tucked away until "Show code"
     renderCoachReferralFold(c);
+    renderCoachTrainingAgeFold(c);
     renderCoachUnitsFold(c);
     syncUnitLabels();
     setProfileLocked(true);
@@ -6461,6 +6462,22 @@
   // The coach's copy of the athlete's unit. Programming for a kg gym means the
   // weight picker has to speak kg while the program is being written, so the
   // switch lives on both sides of the same flag.
+  // Coach's copy of the athlete's training age, same fold the athlete sees.
+  // Repaints in place, keeping the fold open under the finger that tapped it.
+  function renderCoachTrainingAgeFold(c) {
+    const host = $("#cprof-trainage-host");
+    if (!host || !c) return;
+    const wasOpen = host.querySelector("details")?.open;
+    host.innerHTML = trainingAgeFoldHtml(c.trainingLevel || "", { id: "cprof-fold-trainage", name: "cprof-trainage-pick" });
+    if (wasOpen) host.querySelector("details").open = true;
+    wireTrainingAgeFold(host, (v) => {
+      c.trainingLevel = TRAINING_LEVEL_BY_ID[v] ? v : "";
+      saveTrainer(); // debounce-pushes the athlete row; training_level rides along
+      renderCoachTrainingAgeFold(c);
+      renderClientGrid(); // the roster's level chip reads this
+    });
+  }
+
   function renderCoachUnitsFold(c) {
     const host = $("#cprof-units-host");
     if (!host || !c) return;
@@ -10270,10 +10287,13 @@
   // is unset, unset reads as intermediate, so nothing on the roster moves until
   // a level is deliberately assigned. Tunable by eye here and nowhere else — the
   // figure, the chips and the verdict all read these two numbers.
+  // Surfaced to users as "training age" — the S&C term for years of real
+  // lifting, which is what the ladder actually measures. Ids stay level-words
+  // because they're stored on every athletes row; only labels changed.
   const TRAINING_LEVELS = [
-    { id: "beginner",     name: "Beginner",     solid: 4, plenty: 8  },
-    { id: "intermediate", name: "Intermediate", solid: 6, plenty: 12 },
-    { id: "advanced",     name: "Advanced",     solid: 8, plenty: 16 },
+    { id: "beginner",     name: "Beginner",     emoji: "🌱", years: "Under a year of consistent lifting",  solid: 4, plenty: 8  },
+    { id: "intermediate", name: "Intermediate", emoji: "🌿", years: "One to three years of lifting",       solid: 6, plenty: 12 },
+    { id: "advanced",     name: "Advanced",     emoji: "🌳", years: "Three or more years of hard training", solid: 8, plenty: 16 },
   ];
   const TRAINING_LEVEL_BY_ID = Object.fromEntries(TRAINING_LEVELS.map((l) => [l.id, l]));
   const DEFAULT_TRAINING_LEVEL = "intermediate";
@@ -10390,9 +10410,12 @@
     if (cov.gaps.length) bits.push(`Nothing for ${list(cov.gaps)}.`);
     if (cov.light.length) bits.push(`${list(cov.light)} ${cov.light.length === 1 ? "gets" : "get"} under ${cov.bands.solid} sets — light.`);
     if (!bits.length) bits.push("Every muscle group gets work this week.");
+    // Unset says so and points at where to fix it — this setting was
+    // undiscoverable for exactly as long as nothing on this screen named it.
+    if (!cov.level) bits.push(`Graded as Intermediate — set a training age in ${isCoach ? "their" : "your"} Profile to tune this.`);
     if (cov.unmapped) bits.push(`<span class="a-cov-unmapped">${cov.unmapped} exercise${cov.unmapped === 1 ? "" : "s"} couldn't be matched to a muscle.</span>`);
     return `<div class="a-cov-verdict${cov.gaps.length ? " has-gaps" : ""}">
-      <span class="a-cov-lead">${cov.gaps.length ? "⚠ Gaps" : "✓ Covered"} · ${escapeHtml(cov.week.label || "This week")}${who ? " · " + escapeHtml(who) : ""}${who && cov.level ? " · " + escapeHtml(cov.level.name) : ""}</span>
+      <span class="a-cov-lead">${cov.gaps.length ? "⚠ Gaps" : "✓ Covered"} · ${escapeHtml(cov.week.label || "This week")}${who ? " · " + escapeHtml(who) : ""}${cov.level ? " · " + escapeHtml(cov.level.name) : ""}</span>
       <p>${bits.join(" ")}</p>
     </div>`;
   }
@@ -11160,8 +11183,8 @@
             <button type="button" class="a-mode-btn" data-mode="coverage">Coverage</button>
           </div>
           <span class="a-mode-who" data-cov-who></span>
-          ${editable ? `<select class="a-level-sel hidden" data-cov-level aria-label="Training level — sets the coverage bands">
-            <option value="">Not set (uses Intermediate)</option>
+          ${editable ? `<select class="a-level-sel hidden" data-cov-level aria-label="Training age — sets the coverage grading" title="Training age — also on their Profile">
+            <option value="">Training age not set (graded as Intermediate)</option>
             ${TRAINING_LEVELS.map((l) => `<option value="${l.id}">${l.name}</option>`).join("")}
           </select>` : ""}
         </div>
@@ -11403,8 +11426,9 @@
     // out of there precisely because a value you set and walked away from got
     // overwritten by whatever the stale form still held.
     //
-    // Only this mount repaints. Nothing outside Coverage reads trainingLevel
-    // today (grep it), so there is nothing else to refresh — and renderDashboard()
+    // Only this mount repaints. The other readers of trainingLevel (the
+    // Profile "Training age" folds, the roster chip) re-read it on their own
+    // next paint, so there is nothing else to refresh here — and renderDashboard()
     // specifically must NOT be called here: it Nav.resets, nulls currentClientId
     // and switches the coach screen to the roster, which would boot the coach off
     // this exact panel the instant they touch the control they're watching repaint.
@@ -25603,6 +25627,64 @@
       toast(r.value === "kg" ? "Switched to kilos ⚖️" : "Switched to pounds ⚖️");
     }));
   }
+  // ---- Training age fold ----
+  // The setting that grades the Coverage map used to exist only inside
+  // Anatomy → Coverage, coach-side — nobody could find it and athletes
+  // couldn't set it at all. Same fold on both Profiles now, athlete's own
+  // pick riding the same vitals push as their name and units.
+  function trainingAgeSub(cur) {
+    const lvl = TRAINING_LEVEL_BY_ID[cur];
+    return lvl ? `${lvl.name} — ${lvl.years.toLowerCase()}` : "Not set — graded as Intermediate";
+  }
+  function trainingAgeFoldHtml(cur, { id = "pref-fold-trainage", name = "trainage-pick" } = {}) {
+    const opts = [
+      { id: "", emoji: "➖", label: "Not set", hint: "Graded on the Intermediate ladder until picked." },
+      ...TRAINING_LEVELS.map((l) => ({
+        id: l.id, emoji: l.emoji, label: l.name,
+        hint: `${l.years}. Solid at ${l.solid}+ sets a muscle each week, plenty at ${l.plenty}+.`,
+      })),
+    ];
+    return `
+      <details class="pref-fold" id="${id}">
+        <summary>
+          <span class="pref-fold-ico">⏳</span>
+          <span class="pref-fold-text">
+            <span class="pref-fold-title">Training age</span>
+            <span class="pref-fold-sub">${escapeHtml(trainingAgeSub(cur))}</span>
+          </span>
+          <span class="pref-fold-chev">▸</span>
+        </summary>
+        <p class="pref-foot">Years of real lifting, not years since the first gym visit. The Coverage map on the Anatomy page grades each muscle's weekly sets against this — a beginner's "solid" takes fewer sets than a veteran's.</p>
+        <div class="cyc-share-pick">
+          ${opts.map((o) => `
+            <label class="cyc-share-opt${(cur || "") === o.id ? " on" : ""}">
+              <input type="radio" name="${name}" value="${o.id}"${(cur || "") === o.id ? " checked" : ""} />
+              <span class="cyc-share-emo">${o.emoji}</span>
+              <span class="cyc-share-text"><span class="pref-label">${escapeHtml(o.label)}</span><span class="pref-hint">${escapeHtml(o.hint)}</span></span>
+            </label>`).join("")}
+        </div>
+      </details>`;
+  }
+  function wireTrainingAgeFold(host, onPick) {
+    host.querySelectorAll('input[name$="trainage-pick"]').forEach((r) => r.addEventListener("change", () => {
+      onPick(r.value);
+      const lvl = TRAINING_LEVEL_BY_ID[r.value];
+      toast(lvl ? `Training age: ${lvl.name} ⏳` : "Training age cleared");
+    }));
+  }
+  // The athlete's own pick. Rides the same vitals push as name and units.
+  function setAthleteTrainingLevel(v) {
+    const c = state.clientData.program?.client;
+    if (!c) return;
+    c.trainingLevel = TRAINING_LEVEL_BY_ID[v] ? v : "";
+    saveClient();
+    const athleteId = state.clientData.program?.clientId;
+    if (window.Cloud?.enabled && athleteId) {
+      window.Cloud.debounce(`athleteProfile:${athleteId}`, () =>
+        window.Cloud.updateAthleteProfileFields(athleteId, { trainingLevel: c.trainingLevel }));
+    }
+  }
+
   // Static "(lb)" labels in index.html wear .unit-lbl so one pass keeps them
   // honest without every screen owning its own re-render.
   function syncUnitLabels() {
@@ -37037,6 +37119,7 @@
             ${prefSwitchHtml("simple", "Simple mode", "Hides ranks, XP, trophies and streaks. Your workouts, stats and trials stay.", p.simple)}
           </div>
         </details>
+        ${trainingAgeFoldHtml(athleteCoverageClient()?.trainingLevel || "")}
         ${unitsFoldHtml(unitNow())}
         ${cycleFoldHtml()}
         <details class="pref-fold">
@@ -37078,6 +37161,16 @@
     // them too — so they get their own wiring like the cycle fold.
     const unitsFold = host.querySelector("#pref-fold-units");
     if (unitsFold) wireUnitsFold(unitsFold, (u) => { setAthleteUnits(u); repaintForUnits(); });
+    // Training age also lives on the athlete row. The summary line and the
+    // picked highlight are patched in place so the fold stays open.
+    const taFold = host.querySelector("#pref-fold-trainage");
+    if (taFold) wireTrainingAgeFold(taFold, (v) => {
+      setAthleteTrainingLevel(v);
+      const sub = taFold.querySelector(".pref-fold-sub");
+      if (sub) sub.textContent = trainingAgeSub(v);
+      taFold.querySelectorAll(".cyc-share-opt").forEach((el) =>
+        el.classList.toggle("on", el.querySelector("input")?.value === v));
+    });
     // Cycle tracking owns its own toggle and radios (not [data-pref] switches —
     // it doesn't live in athlete_prefs and must never be sent to that table).
     const cycleFold = host.querySelector("#pref-fold-cycle");

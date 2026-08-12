@@ -786,6 +786,7 @@
       if ("weightLb" in fields) row.weight_lb = fields.weightLb || null;
       if ("units" in fields) row.units = fields.units === "kg" ? "kg" : "lb";
       if ("goals" in fields) row.goals = fields.goals || null;
+      if ("trainingLevel" in fields) row.training_level = fields.trainingLevel || null;
       const { error } = await sb.from("athletes").update(row).eq("id", athleteId);
       if (error) console.warn("[Cloud] updateAthleteProfileFields error", error.message);
       return !error;
