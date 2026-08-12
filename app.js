@@ -6728,13 +6728,16 @@
     if (panel && park && panel.parentElement !== park) park.appendChild(panel);
   }
 
-  // ---- The next seven days, priced (2026-08-11, Nathan asked for "money per
-  // day in the upcoming week"). ----
+  // ---- Day-by-day money: the last three days and the next seven, priced
+  // (2026-08-11, Nathan asked for "money per day in the upcoming week", then
+  // for the three days behind for context). ----
   // Same two booking paths and the same per-BANK slot dedupe as
   // nextMonthSessionCounts — a couple's shared slot is one session at one
   // rate, whichever half it is booked under. Each unique slot is valued at
   // the bank's rate; program-only (flat) members' sessions price at zero,
   // because their money is the flat month, not the session (flatMonthlyFor).
+  const MONEY_STRIP_BACK = 3;   // context, drawn dimmed
+  const MONEY_STRIP_AHEAD = 7;  // today included — the forward total's span
   function weekMoneyDays() {
     const clients = state.trainerData.clients || [];
     const byId = new Map(clients.map((c) => [c.id, c]));
@@ -6743,8 +6746,8 @@
       const c = byId.get(id);
       return c && c.partnerId ? [c.id, c.partnerId].sort()[0] : id;
     };
-    const startISO = todayISO();
-    const endISO = addDaysISO(startISO, 7);
+    const startISO = addDaysISO(todayISO(), -MONEY_STRIP_BACK);
+    const endISO = addDaysISO(todayISO(), MONEY_STRIP_AHEAD);
     const slots = new Map(); // iso -> Map(bankKey -> Set("HH:MM"))
     const add = (athleteId, iso, at) => {
       if (!athleteId || !iso || iso < startISO || iso >= endISO) return;
@@ -6774,14 +6777,14 @@
       return athleteSessionRate(c) || athleteSessionRate(partnerOf(c)) || 0;
     };
     const out = [];
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < MONEY_STRIP_BACK + MONEY_STRIP_AHEAD; i++) {
       const iso = addDaysISO(startISO, i);
       let sessions = 0, amount = 0;
       (slots.get(iso) || new Map()).forEach((times, key) => {
         sessions += times.size;
         amount += times.size * rateOf(key);
       });
-      out.push({ iso, sessions, amount: Math.round(amount) });
+      out.push({ iso, sessions, amount: Math.round(amount), past: iso < todayISO() });
     }
     return out;
   }
@@ -6790,18 +6793,20 @@
     const host = $("#money-week-strip");
     if (!host) return;
     const days = weekMoneyDays();
-    const total = days.reduce((n, d) => n + d.amount, 0);
+    // The headline total stays the FORWARD read (today onward) — the three
+    // dimmed context days must not quietly inflate "what's coming".
+    const total = days.filter((d) => !d.past).reduce((n, d) => n + d.amount, 0);
     if (!days.some((d) => d.sessions)) { host.innerHTML = ""; return; }
     const peak = Math.max(1, ...days.map((d) => d.amount));
     const today = todayISO();
     host.innerHTML =
       `<div class="mw-strip">` +
-        `<div class="mw-head"><span class="mw-title">Next 7 days</span>` +
-          `<span class="mw-total">${escapeHtml(money(total))}</span></div>` +
+        `<div class="mw-head"><span class="mw-title">Day by day</span>` +
+          `<span class="mw-total"><span class="mw-total-lbl">next 7</span>${escapeHtml(money(total))}</span></div>` +
         `<div class="mw-days">${days.map((d) => {
           const dd = new Date(d.iso + "T12:00:00");
           const dow = dd.toLocaleDateString(undefined, { weekday: "short" });
-          return `<div class="mw-day${d.iso === today ? " is-today" : ""}" title="${
+          return `<div class="mw-day${d.iso === today ? " is-today" : ""}${d.past ? " is-past" : ""}" title="${
             d.sessions ? `${d.sessions} session${d.sessions === 1 ? "" : "s"} · ${escapeHtml(money(d.amount))}` : "Nothing booked"}">` +
             `<span class="mw-bar"><span style="height:${d.amount ? Math.max(8, Math.round((d.amount / peak) * 100)) : 0}%"></span></span>` +
             `<span class="mw-dow">${escapeHtml(dow)}</span>` +
@@ -6809,6 +6814,12 @@
           `</div>`;
         }).join("")}</div>` +
       `</div>`;
+    // Narrow screens scroll the row; land on today with the three context
+    // days behind a left swipe, not in front of the week that matters.
+    const row = host.querySelector(".mw-days");
+    if (row && row.scrollWidth > row.clientWidth) {
+      row.scrollLeft = row.children[MONEY_STRIP_BACK]?.offsetLeft - row.children[0].offsetLeft || 0;
+    }
   }
 
   let _moneyRosterSeq = 0;
@@ -21163,7 +21174,11 @@
       backTo.setHours(0, 0, 0, 0);
       const monthStart = new Date(backTo); monthStart.setDate(1);
       const weekStart = new Date(backTo); weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-      const from = new Date(Math.min(+monthStart, +weekStart)).toISOString();
+      // Third anchor: the Money strip draws the last MONEY_STRIP_BACK days,
+      // which on the 1st-2nd of a month that opens the week can sit before
+      // both other anchors.
+      const stripStart = new Date(backTo); stripStart.setDate(stripStart.getDate() - MONEY_STRIP_BACK);
+      const from = new Date(Math.min(+monthStart, +weekStart, +stripStart)).toISOString();
       // Far enough out to hold a full year-long weekly series, or "12 left,
       // through October" would under-report the moment a series runs past the
       // window. Booking rows are tiny and there is one query.

@@ -6965,8 +6965,16 @@ input:focus, textarea:focus, select:focus {
 .mw-strip {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius-lg); padding: 0.55rem 0.75rem 0.6rem;
-  margin-bottom: 0.6rem;
 }
+/* On the HOST, not the card: the Money fold rhythm zeroes every fold-child's
+   last-child margin (#view-money .pref-fold > * > :last-child), which
+   silently ate a margin on .mw-strip — the strip sat flush on the roster.
+   :not(:empty) so an empty strip leaves no stray gap. */
+#view-money #money-week-strip:not(:empty) { margin-bottom: 0.6rem; }
+/* Same collision one fold down: the income card's own margin-bottom is the
+   fold-rhythm rule's :last-child, so the Books figures started flush against
+   the income card's border. */
+#view-money .income-host-profile:not(:empty) { margin-bottom: 0.8rem; }
 .mw-head { display: flex; align-items: baseline; gap: 0.6rem; margin-bottom: 0.45rem; }
 .mw-title {
   font-size: 0.68rem; font-weight: 800; letter-spacing: 0.05em;
@@ -6975,8 +6983,19 @@ input:focus, textarea:focus, select:focus {
 .mw-total {
   margin-left: auto; font-weight: 900; font-size: 0.95rem;
   color: var(--primary-bright); font-variant-numeric: tabular-nums;
+  display: inline-flex; align-items: baseline; gap: 0.45em;
 }
-.mw-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.3rem; }
+.mw-total-lbl {
+  font-size: 0.6rem; font-weight: 800; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--text-soft);
+}
+/* Ten columns (3 back + 7 ahead). On a phone they'd crush the amounts, so the
+   row scrolls in its own container instead — never the page body. */
+.mw-days { display: grid; grid-template-columns: repeat(10, minmax(2.5rem, 1fr)); gap: 0.3rem; overflow-x: auto; padding-bottom: 2px; }
+/* Yesterday and back: already-earned context, kept quiet so the eye lands on
+   today and what's ahead. */
+.mw-day.is-past { opacity: 0.45; }
+.mw-day.is-past .mw-bar span { background: var(--border-strong); }
 .mw-day { display: flex; flex-direction: column; align-items: center; gap: 0.15rem; min-width: 0; }
 .mw-bar {
   width: 100%; max-width: 2.2rem; height: 34px;
