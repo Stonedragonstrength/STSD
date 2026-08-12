@@ -14713,12 +14713,25 @@
     // What they've actually been eating against those targets.
     container.appendChild(adherenceCardEl(c));
 
-    // Athlete's logged body weight (read-only) — lives with nutrition now.
+    // Athlete's logged body weight — lives with nutrition now. The athlete
+    // logs their own, but the coach can pour in a Renpho export for them.
     const bwLog = c.importedProgress?.bodyweightLog || [];
     const bwCard = document.createElement("div");
     bwCard.className = "card";
     bwCard.style.marginTop = "1.75rem";
-    bwCard.innerHTML = `<h4 style="margin-top:0">Body weight</h4>`;
+    bwCard.innerHTML = `<h4 style="margin-top:0">Body weight</h4>
+      <div class="bw-import">
+        <button class="btn btn-ghost btn-sm slim-btn" type="button" id="btn-coach-import-scale">Import from scale…</button>
+        <span class="muted">Renpho CSV. Weigh-ins land on ${escapeHtml(c.name)}'s log.</span>
+        <input type="file" id="coach-scale-csv-input" accept=".csv,text/csv" hidden />
+      </div>`;
+    bwCard.querySelector("#btn-coach-import-scale").addEventListener("click", () =>
+      bwCard.querySelector("#coach-scale-csv-input").click());
+    bwCard.querySelector("#coach-scale-csv-input").addEventListener("change", (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (f) coachImportScaleCsv(f, c);
+      e.target.value = ""; // allow re-selecting the same file
+    });
     if (bwLog.length) {
       const charts = document.createElement("div");
       charts.id = "bw-charts-coach";
@@ -35024,11 +35037,42 @@
     out.push(cur);
     return out.map((s) => s.trim());
   }
+  // Renpho writes "2026.06.26"; the same file after a trip through Excel comes
+  // back as "6/26/2026", sometimes with the time riding in the date cell. All
+  // of those are the same weigh-in, so all of them parse. Day-first dates are
+  // only honored when the day makes month impossible (26/06/2026) — an
+  // ambiguous 6/5/2026 reads as US order, which is where the scale lives.
+  function scaleDateISO(raw) {
+    const m = String(raw || "").trim()
+      .match(/^(\d{1,4})[-./](\d{1,2})[-./](\d{1,4})(?:[T ]+(.+))?$/);
+    if (!m) return null;
+    let y, mo, d;
+    if (m[1].length === 4) { y = m[1]; mo = +m[2]; d = +m[3]; }
+    else if (m[3].length === 4) { y = m[3]; mo = +m[1]; d = +m[2]; }
+    else return null;
+    if (mo > 12 && d <= 12) { const t = mo; mo = d; d = t; }
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    const pad = (n) => String(n).padStart(2, "0");
+    return { date: `${y}-${pad(mo)}-${pad(d)}`, time: m[4] || "" };
+  }
+  // "7:12:34 AM" (Excel, sometimes with a narrow space) → "07:12:34", so the
+  // same weigh-in keys identically however the file was saved, and the charts
+  // get a real timestamp instead of falling back to noon.
+  function normScaleTime(raw) {
+    const s = String(raw || "").replace(/[  ]/g, " ").trim();
+    const m = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AP]\.?M\.?)?$/i);
+    if (!m) return s;
+    let h = +m[1];
+    const ap = (m[4] || "").toUpperCase();
+    if (ap.startsWith("P") && h < 12) h += 12;
+    if (ap.startsWith("A") && h === 12) h = 0;
+    return `${String(h).padStart(2, "0")}:${m[2]}:${m[3] || "00"}`;
+  }
   // Parse a Renpho "Health" CSV export into weigh-in entries. Tolerant of
   // column order, missing readings ("--"), and lb-vs-kg (unit lives in the
   // header, e.g. "Weight(lb)"); kg columns are converted to lb.
   function parseScaleCsv(text) {
-    const lines = text.split(/\r?\n/).filter((l) => l.trim().length);
+    const lines = String(text).replace(/^﻿/, "").split(/\r?\n/).filter((l) => l.trim().length);
     if (lines.length < 2) return { entries: [], error: "That file has no data rows." };
     const headers = csvSplitLine(lines[0]);
     // A trailing "(...)" is only a unit if it looks like one — otherwise it's a
@@ -35053,9 +35097,10 @@
     const entries = [];
     for (let r = 1; r < lines.length; r++) {
       const cells = csvSplitLine(lines[r]);
-      const date = (cells[dateIdx] || "").replace(/[./]/g, "-"); // 2026.06.26 → 2026-06-26
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
-      const time = timeIdx >= 0 ? (cells[timeIdx] || "") : "";
+      const dt = scaleDateISO(cells[dateIdx]);
+      if (!dt) continue;
+      const date = dt.date;
+      const time = normScaleTime(timeIdx >= 0 && cells[timeIdx] ? cells[timeIdx] : dt.time);
       const rawW = cells[weightIdx];
       if (!rawW || rawW === "--") continue;
       let wv = parseFloat(rawW);
@@ -35082,24 +35127,46 @@
     }
     return { entries, error: null };
   }
+  // Merge parsed weigh-ins into a bodyweight log. Dedupe by date + time so
+  // multiple weigh-ins on one day are all kept, but re-importing the same
+  // file adds nothing.
+  function mergeScaleEntries(log, entries) {
+    const seen = new Set(log.map((e) => e.date + "|" + (e.time || "")));
+    let added = 0;
+    entries.forEach((e) => {
+      const key = e.date + "|" + (e.time || "");
+      if (seen.has(key)) return;
+      seen.add(key);
+      log.push({ id: uid(), date: e.date, time: e.time, weightLb: e.weightLb, metrics: e.metrics, source: "renpho" });
+      added++;
+    });
+    return added;
+  }
+  // Coach-side: same parser, into the athlete's mirrored progress, pushed back
+  // up the same way form-check replies are.
+  function coachImportScaleCsv(file, c) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const { entries, error } = parseScaleCsv(String(reader.result || ""));
+      if (error) { toast(error); return; }
+      if (!entries.length) { toast("No weigh-ins found in that file."); return; }
+      if (!c.importedProgress) c.importedProgress = { ...emptyProgress(), syncedAt: Date.now() };
+      if (!c.importedProgress.bodyweightLog) c.importedProgress.bodyweightLog = [];
+      const added = mergeScaleEntries(c.importedProgress.bodyweightLog, entries);
+      saveAthleteProgressFromCoach(c);
+      renderDiet();
+      toast(added ? `Imported ${added} weigh-in${added === 1 ? "" : "s"} for ${c.name} ✓` : "Already up to date. Nothing new.");
+    };
+    reader.onerror = () => toast("Couldn't read that file.");
+    reader.readAsText(file);
+  }
   function importScaleCsv(file) {
     const reader = new FileReader();
     reader.onload = () => {
       const { entries, error } = parseScaleCsv(String(reader.result || ""));
       if (error) { toast(error); return; }
       if (!entries.length) { toast("No weigh-ins found in that file."); return; }
-      const log = state.clientData.progress.bodyweightLog;
-      // Dedupe by date + time so multiple weigh-ins on one day are all kept,
-      // but re-importing the same file adds nothing.
-      const seen = new Set(log.map((e) => e.date + "|" + (e.time || "")));
-      let added = 0;
-      entries.forEach((e) => {
-        const key = e.date + "|" + (e.time || "");
-        if (seen.has(key)) return;
-        seen.add(key);
-        log.push({ id: uid(), date: e.date, time: e.time, weightLb: e.weightLb, metrics: e.metrics, source: "renpho" });
-        added++;
-      });
+      const added = mergeScaleEntries(state.clientData.progress.bodyweightLog, entries);
       saveClient();
       syncProfileWeightFromLog();
       renderBwHistory();

@@ -245,12 +245,16 @@
   async function updateCoachTemplates(coachId, programTemplates, workoutTemplates) {
     if (!coachId) return false;
     try {
-      const { error } = await sb.from("coaches").update({
+      // .select() so an update RLS filtered to zero rows (stale session, wrong
+      // auth) reads as the failure it is. Without it `error` is null, the
+      // caller clears its dirty flag, and the edit is recorded as synced while
+      // the cloud never changed — the other devices then look "stale" forever.
+      const { data, error } = await sb.from("coaches").update({
         program_templates: programTemplates || [],
         workout_templates: workoutTemplates || [],
-      }).eq("id", coachId);
+      }).eq("id", coachId).select("id");
       if (error) console.warn("[Cloud] updateCoachTemplates error", error.message);
-      return !error;
+      return !error && Array.isArray(data) && data.length > 0;
     } catch (e) { console.warn("[Cloud] updateCoachTemplates", e); return false; }
   }
 
@@ -270,11 +274,13 @@
   async function updateCoachLibraryPrefs(coachId, prefs) {
     if (!coachId) return false;
     try {
-      const { error } = await sb.from("coaches").update({
+      // Same zero-rows-is-failure guard as updateCoachTemplates: this push
+      // also answers to a dirty flag, so a silent no-op must not clear it.
+      const { data, error } = await sb.from("coaches").update({
         library_prefs: prefs || {},
-      }).eq("id", coachId);
+      }).eq("id", coachId).select("id");
       if (error) console.warn("[Cloud] updateCoachLibraryPrefs error", error.message);
-      return !error;
+      return !error && Array.isArray(data) && data.length > 0;
     } catch (e) { console.warn("[Cloud] updateCoachLibraryPrefs", e); return false; }
   }
 

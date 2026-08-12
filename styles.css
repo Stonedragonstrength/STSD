@@ -775,6 +775,16 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 
 .header-right { display: flex; gap: 0.4em; align-items: center; }
 
+/* Sign out is a door icon now — the word was the widest thing in the header. */
+.hdr-exit-btn { display: inline-flex; align-items: center; }
+.hdr-exit-btn .nav-ico {
+  width: 1.15em; height: 1.15em; display: block;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+/* A two-word coach name folds at the space instead of stretching the header. */
+#header-trainer-name { white-space: normal; width: min-content; line-height: 1.15; }
+
 /* ============ Sync truth chip ============ */
 /* Same pill species as .header-sessions. State colors come from the
    theme-stable semantic channels (--warn-rgb/--danger-rgb/--accent-rgb) and
