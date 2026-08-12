@@ -464,6 +464,12 @@
   function saveEditor() { (_editorSave || saveTrainer)(); }
 
   function saveTrainer() {
+    // Every editor-driven mutation of a template funnels through here with
+    // _programEditorId set, so this is the one stamp point mergeById trusts.
+    if (_programEditorId) {
+      const tpl = (state.trainerData.programTemplates || []).find((p) => p.id === _programEditorId);
+      if (tpl) tpl.updatedAt = Date.now();
+    }
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
     // Editing a program template live-syncs every athlete it's assigned to.
     if (_programEditorId) scheduleTemplateSync(_programEditorId);
@@ -474,22 +480,29 @@
     }
     // Cloud: debounced push of the coach's program/workout template library,
     // so templates created on one device show up on every other device.
-    if (window.Cloud?.enabled && state.trainerData.coachId) {
-      localStorage.setItem(KEY_TEMPLATES_DIRTY, "1");
-      window.Cloud.debounce(`coach-templates:${state.trainerData.coachId}`, async () => {
-        const ok = await window.Cloud.updateCoachTemplates(
-          state.trainerData.coachId,
-          state.trainerData.programTemplates,
-          state.trainerData.workoutTemplates
-        );
-        // Only on success. This used to clear unconditionally, so a failed push
-        // was recorded as synced and the next boot overwrote the local
-        // templates from the cloud — losing the program outright.
-        if (ok) localStorage.removeItem(KEY_TEMPLATES_DIRTY);
-      });
-    }
+    pushCoachTemplates();
     // Cloud: debounced push of the coach's exercise-library customizations.
     pushCoachLibPrefs();
+  }
+
+  // Debounced push of the template library. Split out of saveTrainer so a
+  // cloud PULL can also call it: when the merge finds the cloud copy staler
+  // than local (another device pushed an old array), the device that knows
+  // better re-uploads instead of letting the stale version stand.
+  function pushCoachTemplates() {
+    if (!window.Cloud?.enabled || !state.trainerData.coachId) return;
+    localStorage.setItem(KEY_TEMPLATES_DIRTY, "1");
+    window.Cloud.debounce(`coach-templates:${state.trainerData.coachId}`, async () => {
+      const ok = await window.Cloud.updateCoachTemplates(
+        state.trainerData.coachId,
+        state.trainerData.programTemplates,
+        state.trainerData.workoutTemplates
+      );
+      // Only on success. This used to clear unconditionally, so a failed push
+      // was recorded as synced and the next boot overwrote the local
+      // templates from the cloud — losing the program outright.
+      if (ok) localStorage.removeItem(KEY_TEMPLATES_DIRTY);
+    });
   }
 
   // Push the coach's per-account preferences jsonb blob (exercise-library
@@ -4102,16 +4115,39 @@
   }
 
   // Union two lists of {id,...} — cloud entries first so their order is kept,
-  // local entries winning for shared ids (they hold the unsynced edit), and
   // local-only entries appended so a template created here but not yet pushed
-  // survives the refresh.
-  function mergeById(cloudList, localList) {
+  // survives the refresh. For shared ids the NEWER updatedAt stamp wins, and a
+  // stamped copy always beats an unstamped one. This is what stops a device
+  // that has been closed for a week from resurrecting last week's copy of
+  // every template the moment it reconnects: it used to win wholesale ("local
+  // holds the unsynced edit"), which is how two fully built programs were
+  // flattened to stubs on 2026-08-12. Unstamped vs unstamped keeps the old
+  // local-wins behavior, only reachable for templates untouched since stamps
+  // shipped.
+  // opts.prefer decides ties (both copies unstamped): "local" while unsynced
+  // edits exist — they hold the change — and "cloud" on a clean pull, which
+  // was that path's old wholesale behavior. opts.keepLocalOnly appends
+  // local-only ids; a clean pull leaves it off so a template deleted on
+  // another device stays deleted.
+  function mergeById(cloudList, localList, opts) {
+    const o = opts || {};
+    const prefer = o.prefer || "local";
+    const keepLocalOnly = o.keepLocalOnly !== false;
     const local = Array.isArray(localList) ? localList : [];
     const cloud = Array.isArray(cloudList) ? cloudList : [];
     const byId = new Map(local.map((t) => [t.id, t]));
-    const out = cloud.map((t) => byId.get(t.id) || t);
-    const seen = new Set(cloud.map((t) => t.id));
-    local.forEach((t) => { if (!seen.has(t.id)) out.push(t); });
+    const out = cloud.map((t) => {
+      const mine = byId.get(t.id);
+      if (!mine) return t;
+      const tu = Number(t.updatedAt) || 0, mu = Number(mine.updatedAt) || 0;
+      if (mu > tu) return mine;
+      if (tu > mu) return t;
+      return prefer === "local" ? mine : t;
+    });
+    if (keepLocalOnly) {
+      const seen = new Set(cloud.map((t) => t.id));
+      local.forEach((t) => { if (!seen.has(t.id)) out.push(t); });
+    }
     return out;
   }
 
@@ -4127,8 +4163,21 @@
     // templates are appended. Previously this kept the local array wholesale
     // and re-pushed it, wiping other devices' programs from the cloud.
     if (!opts.keepLocalTemplates) {
-      state.trainerData.programTemplates = coach.program_templates || [];
-      state.trainerData.workoutTemplates = coach.workout_templates || [];
+      // Even with no unsynced local work, a template we hold with a NEWER
+      // updatedAt than the cloud's copy means another device pushed an old
+      // array over a newer one (the 2026-08-12 stub clobber). Merge instead
+      // of adopting, and re-push so the cloud stops presenting stale truth.
+      // Ties and local-only ids still go cloud's way — that part of the old
+      // wholesale adoption was correct (deletions stay deleted).
+      const clean = { prefer: "cloud", keepLocalOnly: false };
+      const mergedP = mergeById(coach.program_templates, state.trainerData.programTemplates, clean);
+      const mergedW = mergeById(coach.workout_templates, state.trainerData.workoutTemplates, clean);
+      const healed =
+        JSON.stringify(mergedP) !== JSON.stringify(coach.program_templates || []) ||
+        JSON.stringify(mergedW) !== JSON.stringify(coach.workout_templates || []);
+      state.trainerData.programTemplates = mergedP;
+      state.trainerData.workoutTemplates = mergedW;
+      if (healed) pushCoachTemplates();
     } else {
       state.trainerData.programTemplates =
         mergeById(coach.program_templates, state.trainerData.programTemplates);
@@ -5472,6 +5521,7 @@
 
   function setProgramStatus(tpl, status) {
     tpl.status = status;
+    tpl.updatedAt = Date.now();
     saveTrainer();
     if (status === "ready") toast(`"${tpl.name || "Program"}" marked ready to assign ✓`);
     else toast(`"${tpl.name || "Program"}" moved back to in progress`);
@@ -5497,6 +5547,7 @@
       e.stopPropagation();
       openIconPicker(tpl.icon || "📋", (ic) => {
         tpl.icon = ic;
+        tpl.updatedAt = Date.now();
         setDayIcon(icon, ic);
         saveTrainer();
       }, icon);
@@ -5707,7 +5758,7 @@
     const tpl = {
       id: uid(), name: "", description: "", status: "draft",
       weeks: Array.from({ length: 1 }, (_, i) => { const w = makeWeek(i); w.days = [makeDay(1)]; return w; }),
-      createdAt: Date.now(),
+      createdAt: Date.now(), updatedAt: Date.now(),
     };
     state.trainerData.programTemplates.push(tpl);
     saveTrainer();
