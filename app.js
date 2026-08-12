@@ -10490,7 +10490,11 @@
     openModal({
       title: "Exercise credits",
       body: `<p class="muted excred-intro">What each exercise counts for on the Coverage map. Tap a credit to flip it between a full and a half set (secondary muscles earn halves), ✕ drops it, ＋ adds one at ½. Applies to every athlete's map.</p>
-        <input type="search" id="excred-search" placeholder="Search any exercise…" autocomplete="off" />
+        <div class="a-search-box excred-searchbox">
+          <span class="a-search-ico" aria-hidden="true">${dayIconHtml("lu:search")}</span>
+          <input type="search" id="excred-search" class="a-search" placeholder="Search any exercise…" autocomplete="off" aria-label="Search any exercise" />
+          <button type="button" class="a-search-x hidden" id="excred-clear" aria-label="Clear search">✕</button>
+        </div>
         <div class="excred-rows" id="excred-rows"></div>`,
       actions: [{ label: "Done", className: "btn btn-primary", onClick: closeModal }],
     });
@@ -10549,7 +10553,17 @@
         repaintRow(row, name);
       }
     });
-    $("#excred-search")?.addEventListener("input", renderRows);
+    $("#excred-search")?.addEventListener("input", () => {
+      $("#excred-clear")?.classList.toggle("hidden", !$("#excred-search").value.trim());
+      renderRows();
+    });
+    $("#excred-clear")?.addEventListener("click", () => {
+      const inp = $("#excred-search");
+      inp.value = "";
+      $("#excred-clear").classList.add("hidden");
+      renderRows();
+      inp.focus();
+    });
     renderRows();
   }
 
@@ -11298,10 +11312,12 @@
     // shelf first to reach it had the order backwards.
     root.innerHTML = `
       <div class="a-search-row">
-        <span class="a-search-ico" aria-hidden="true">${dayIconHtml("lu:search")}</span>
-        <input type="search" class="a-search" data-anatomy-search placeholder="Search muscles and topics" aria-label="Search muscles and topics">
-        <button type="button" class="a-search-x hidden" data-search-clear aria-label="Clear search">✕</button>
-        ${editable ? `<button type="button" class="btn btn-ghost btn-sm slim-btn a-credits-btn" data-cov-credits title="What each exercise counts for on the Coverage map, editable">🧮 Credits</button>` : ""}
+        <div class="a-search-box">
+          <span class="a-search-ico" aria-hidden="true">${dayIconHtml("lu:search")}</span>
+          <input type="search" class="a-search" data-anatomy-search placeholder="Search muscles and topics" aria-label="Search muscles and topics">
+          <button type="button" class="a-search-x hidden" data-search-clear aria-label="Clear search">✕</button>
+        </div>
+        ${editable ? `<button type="button" class="btn btn-ghost btn-sm slim-btn a-credits-btn" data-cov-credits title="What each exercise counts for on the Coverage map, editable">🧮<span class="a-credits-txt"> Credits</span></button>` : ""}
       </div>
       <div class="a-shelves" role="tablist">
         <button type="button" class="a-shelf-btn active" data-shelf="body" role="tab" aria-selected="true">Body<span class="a-shelf-n" data-count="body"></span></button>

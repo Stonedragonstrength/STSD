@@ -11050,7 +11050,7 @@ body.live-log-mode #screen-client .header-right { display: none; }
 .a-cov-quiet { margin: 0; font-size: 0.82rem; color: var(--muted); }
 .a-cov-none { margin: 0; color: var(--muted); font-size: 0.9rem; }
 /* Exercise credits rides the search row — a page tool, not a mode one. */
-.a-search-row .a-credits-btn { margin-left: 0.5rem; flex: none; white-space: nowrap; }
+.a-search-row .a-credits-btn { flex: none; white-space: nowrap; }
 
 /* Volume bands. Zero is the only warm thing on the body, so gaps read first. */
 .anatomy.is-coverage .a-zone { stroke-opacity: 0.35; }
@@ -11088,7 +11088,7 @@ body.live-log-mode #screen-client .header-right { display: none; }
 
 /* Exercise-credits table — what each exercise counts for, as editable chips. */
 .excred-intro { margin: 0 0 0.5rem; font-size: 0.82rem; }
-#excred-search { width: 100%; margin-bottom: 0.65rem; }
+.excred-searchbox { margin-bottom: 0.65rem; }
 .excred-rows { display: flex; flex-direction: column; gap: 0.55rem; max-height: 52vh; overflow-y: auto; scrollbar-width: thin; }
 .excred-row { border: 1px solid var(--border); border-radius: 10px; padding: 0.5rem 0.65rem; }
 .excred-row.is-edited { border-color: rgba(var(--primary-bright-rgb), 0.45); }
@@ -11135,6 +11135,8 @@ body.live-log-mode #screen-client .header-right { display: none; }
   }
   .anatomy-figure { padding: 0.4rem; }
   .a-svg { max-width: none; max-height: 34vh; }
+  /* The Credits button sheds its word so the search placeholder never clips. */
+  .a-credits-btn .a-credits-txt { display: none; }
   /* At this width the corner overlay sat on the shoulders — the toggle drops
      into flow below the figure so the whole body stays visible. */
   .anatomy-figure .anatomy-toggle {
@@ -12595,7 +12597,13 @@ body.coach-sheet-open .rest-timer { display: none; }
 .a-shelf > .a-concepts + .a-concepts { margin-top: 0; }
 
 .a-search-row {
+  display: flex; align-items: center; gap: 0.5rem;
+}
+/* Icon, input and the clear ✕ anchor to this box, not the row — the coach's
+   Credits button is a flex sibling, so the ✕ stays on the input's own edge. */
+.a-search-box {
   position: relative; display: flex; align-items: center;
+  flex: 1 1 auto; min-width: 0;
 }
 .a-search-ico {
   position: absolute; left: 0.85rem; width: 16px; height: 16px;
