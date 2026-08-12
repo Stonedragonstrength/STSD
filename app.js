@@ -10428,23 +10428,19 @@
     return btn;
   }
 
+  // No banner: the chips already tell the whole gaps/light story — a 0 chip
+  // is yellow and sorts to the bottom — and a box shouting GAPS above them was
+  // the same fact twice, pushing the map below the fold on phones. This note
+  // only speaks when the chips can't: an unmatched exercise, or a training
+  // age nobody has set.
   function coverageVerdictHtml(cov, who, isCoach) {
     if (!cov) return `<p class="a-cov-none">${isCoach
       ? "No program to read yet — add a week with some days and this fills in."
       : "No program to read yet. This fills in once your coach builds your week."}</p>`;
-    const list = (arr) => arr.map((n) => `<b>${escapeHtml(n)}</b>`).join(", ");
     const bits = [];
-    if (cov.gaps.length) bits.push(`Nothing for ${list(cov.gaps)}.`);
-    if (cov.light.length) bits.push(`${list(cov.light)} ${cov.light.length === 1 ? "gets" : "get"} under ${cov.bands.solid} sets — light.`);
-    if (!bits.length) bits.push("Every muscle group gets work this week.");
-    // Unset says so and points at where to fix it — this setting was
-    // undiscoverable for exactly as long as nothing on this screen named it.
     if (!cov.level) bits.push(`Graded as Intermediate — set a training age in ${isCoach ? "their" : "your"} Profile to tune this.`);
-    if (cov.unmapped) bits.push(`<span class="a-cov-unmapped">${cov.unmapped} exercise${cov.unmapped === 1 ? "" : "s"} couldn't be matched to a muscle.</span>`);
-    return `<div class="a-cov-verdict${cov.gaps.length ? " has-gaps" : ""}">
-      <span class="a-cov-lead">${cov.gaps.length ? "⚠ Gaps" : "✓ Covered"} · ${escapeHtml(cov.week.label || "This week")}${who ? " · " + escapeHtml(who) : ""}${cov.level ? " · " + escapeHtml(cov.level.name) : ""}</span>
-      <p>${bits.join(" ")}</p>
-    </div>`;
+    if (cov.unmapped) bits.push(`${cov.unmapped} exercise${cov.unmapped === 1 ? "" : "s"} couldn't be matched to a muscle and count${cov.unmapped === 1 ? "s" : ""} for nothing${isCoach ? " — 🧮 Exercise credits can fix that" : ""}.`);
+    return bits.length ? `<p class="a-cov-quiet">${bits.join(" ")}</p>` : "";
   }
 
   // -------- Exercise-credits table (coach) --------
@@ -11305,6 +11301,7 @@
         <span class="a-search-ico" aria-hidden="true">${dayIconHtml("lu:search")}</span>
         <input type="search" class="a-search" data-anatomy-search placeholder="Search muscles and topics" aria-label="Search muscles and topics">
         <button type="button" class="a-search-x hidden" data-search-clear aria-label="Clear search">✕</button>
+        ${editable ? `<button type="button" class="btn btn-ghost btn-sm slim-btn a-credits-btn" data-cov-credits title="What each exercise counts for on the Coverage map, editable">🧮 Credits</button>` : ""}
       </div>
       <div class="a-shelves" role="tablist">
         <button type="button" class="a-shelf-btn active" data-shelf="body" role="tab" aria-selected="true">Body<span class="a-shelf-n" data-count="body"></span></button>
@@ -11323,8 +11320,7 @@
           ${editable ? `<select class="a-level-sel hidden" data-cov-level aria-label="Training age — sets the coverage grading" title="Training age — also on their Profile">
             <option value="">Training age not set (graded as Intermediate)</option>
             ${TRAINING_LEVELS.map((l) => `<option value="${l.id}">${l.name}</option>`).join("")}
-          </select>
-          <button type="button" class="btn btn-ghost btn-sm slim-btn a-credits-btn hidden" data-cov-credits title="What each exercise counts for, editable">🧮 Set credits</button>` : ""}
+          </select>` : ""}
         </div>
         <div class="a-cov-note hidden" data-cov-verdict></div>
         <div class="anatomy-layout">
@@ -11378,7 +11374,6 @@
       if (mode !== "coverage") {
         whoEl.textContent = "";
         root.querySelector("[data-cov-level]")?.classList.add("hidden");
-        root.querySelector("[data-cov-credits]")?.classList.add("hidden");
         root.querySelectorAll(".a-zone[data-cov]").forEach((z) => z.removeAttribute("data-cov"));
         return;
       }
@@ -11393,12 +11388,13 @@
         selEl.classList.toggle("hidden", !client);
         if (client) selEl.value = client.trainingLevel || "";
       }
-      root.querySelector("[data-cov-credits]")?.classList.toggle("hidden", !client);
       noteEl.innerHTML = client
         ? coverageVerdictHtml(cov, who, isCoach)
         : `<p class="a-cov-none">${isCoach
             ? "Open an athlete and this reads their week."
             : "No program yet. This fills in once your coach builds your week."}</p>`;
+      // An empty note keeps its box out of the flow entirely.
+      noteEl.classList.toggle("hidden", !noteEl.innerHTML.trim());
       root.querySelectorAll(".a-zone").forEach((z) => {
         const n = cov?.sets?.[z.dataset.muscle];
         z.setAttribute("data-cov", String(coverageBand(n || 0, cov?.bands)));
@@ -37624,6 +37620,11 @@
     });
 
     $("#btn-logout").addEventListener("click", () => { Nav.reset(); signOutTrainer(); });
+    // The money strip's land-on-today scroll can only measure while its fold
+    // is open — re-render on open so a reopened Books lands on today.
+    $("#books-fold")?.addEventListener("toggle", () => {
+      if ($("#books-fold").open) renderMoneyWeekStrip();
+    });
     $("#btn-coach-profile")?.addEventListener("click", openCoachProfile);
     $("#btn-coach-bug-report")?.addEventListener("click", openBugReportModal);
     $("#btn-view-bug-reports")?.addEventListener("click", openBugReportsViewer);

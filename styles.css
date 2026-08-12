@@ -11045,26 +11045,12 @@ body.live-log-mode #screen-client .header-right { display: none; }
 .a-level-sel.hidden { display: none; }
 
 .a-cov-note.hidden { display: none; }
-.a-cov-verdict {
-  border: 1px solid rgba(var(--primary-bright-rgb), 0.35);
-  background: rgba(var(--primary-rgb), 0.07);
-  border-radius: var(--radius-lg);
-  padding: 0.7rem 0.9rem;
-}
-.a-cov-verdict.has-gaps {
-  border-color: rgba(var(--warn-rgb), 0.4);
-  background: rgba(var(--warn-rgb), 0.07);
-}
-.a-cov-lead {
-  display: block; font-size: 0.68rem; font-weight: 800;
-  letter-spacing: 0.1em; text-transform: uppercase;
-  color: var(--primary-bright); margin-bottom: 0.25em;
-}
-.a-cov-verdict.has-gaps .a-cov-lead { color: var(--warn); }
-.a-cov-verdict p { margin: 0; font-size: 0.9rem; line-height: 1.5; color: var(--text); }
-.a-cov-verdict b { color: var(--text); font-weight: 800; }
-.a-cov-unmapped { display: block; margin-top: 0.3em; font-size: 0.8rem; color: var(--muted); }
+/* The banner verdict is gone (the chips carry it); what remains is a quiet
+   footnote for the two facts the chips can't show. */
+.a-cov-quiet { margin: 0; font-size: 0.82rem; color: var(--muted); }
 .a-cov-none { margin: 0; color: var(--muted); font-size: 0.9rem; }
+/* Exercise credits rides the search row — a page tool, not a mode one. */
+.a-search-row .a-credits-btn { margin-left: 0.5rem; flex: none; white-space: nowrap; }
 
 /* Volume bands. Zero is the only warm thing on the body, so gaps read first. */
 .anatomy.is-coverage .a-zone { stroke-opacity: 0.35; }
@@ -11149,7 +11135,15 @@ body.live-log-mode #screen-client .header-right { display: none; }
   }
   .anatomy-figure { padding: 0.4rem; }
   .a-svg { max-width: none; max-height: 34vh; }
-  .anatomy-figure .anatomy-toggle { top: 0.3rem; right: 0.3rem; padding: 2px; }
+  /* At this width the corner overlay sat on the shoulders — the toggle drops
+     into flow below the figure so the whole body stays visible. */
+  .anatomy-figure .anatomy-toggle {
+    position: static;
+    display: flex;
+    width: max-content;
+    margin: 0.4rem auto 0;
+    padding: 2px;
+  }
   .anatomy-figure .a-view-btn { font-size: 0.72rem; padding: 0.3em 0.7em; }
   .anatomy-list {
     flex-direction: column;

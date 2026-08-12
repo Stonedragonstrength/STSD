@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=cred1" />
+  <link rel="stylesheet" href="styles.css?v=cred2" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -471,10 +471,6 @@
             <button class="btn btn-ghost btn-sm slim-btn month-bill-btn hidden" id="btn-month-bill" type="button"></button>
             <button class="btn btn-ghost btn-sm slim-btn month-bill-btn hidden" id="btn-month-flat" type="button"></button>
           </div>
-          <!-- The next seven days, day by day, priced off the booked calendar.
-               Inside the fold on purpose: figures stay off screen until Raise
-               opens, the same eye-doctrine as the projection below. -->
-          <div id="money-week-strip"></div>
           <div id="money-roster-host"></div>
           <!-- One athlete's money, in full. There is exactly ONE of these in
                the document and it is MOVED into whichever Raise row is open —
@@ -594,6 +590,12 @@
             </span>
             <span class="pref-fold-chev">▸</span>
           </summary>
+          <!-- The ten-day strip (3 back, 7 ahead), day by day, priced off the
+               booked calendar. Lives in Books since 2026-08-12: it is a money
+               readout, not part of the Raise round. Inside the fold on
+               purpose — figures stay off screen until Books opens, the same
+               eye-doctrine as everything else in here. -->
+          <div id="money-week-strip"></div>
           <div class="income-host income-host-profile"></div>
           <div id="books-host"></div>
         </details>
@@ -1607,7 +1609,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=cred1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=cred1"></script>
+  <script src="app.js?v=cred2"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
