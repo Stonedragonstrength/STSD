@@ -16152,13 +16152,24 @@
     }
     return null;
   }
+  // A block's instant on the date being drawn, for sorting it among the
+  // sessions. All-day blocks get -Infinity: they close the whole day, not a
+  // slot in it, so they lead the list (and stay out of the now-line's
+  // finite-time bookkeeping).
+  function blockTsOn(iso, b) {
+    if (b.allDay) return -Infinity;
+    const s = parseHM(b.start);
+    if (!s) return -Infinity;
+    const [y, m, d] = iso.split("-").map(Number);
+    return zonedTimeToUtc(y, m, d, s.hh, s.mm, scheduleTz() || localTz());
+  }
   function renderCalDayView(host, iso) {
     if (!host) return;
     const rows = dayRows(iso);
     // Time the coach closed. A block nobody can see is a block they'll forget
     // they set, so it rides the same list as the sessions and at its real time.
     const blocks = blocksOnDate(iso);
-    const blockHtml = blocks.map((b) => {
+    const blockRowHtml = (b) => {
       const when = b.allDay ? "All day" : blockPhrase(b).split(" · ").pop();
       return `<button type="button" class="dv-row dv-blockrow" data-dv-blk="${escapeHtml(b.id)}">` +
         `<span class="dv-face"><span class="av-tile av-sm av-empty">⛔</span></span>` +
@@ -16167,7 +16178,7 @@
         `<span class="dv-time">${escapeHtml(when)}</span>` +
         `<span class="dv-state">›</span>` +
       `</button>`;
-    }).join("");
+    };
     const wireBlocks = () => host.querySelectorAll("[data-dv-blk]").forEach((el) =>
       el.addEventListener("click", () => openBlockSheet(el.dataset.dvBlk)));
 
@@ -16175,7 +16186,7 @@
       if (blocks.length) {
         // A closed day is not an empty one, and offering "jump to the next day
         // with something on it" under a block reads as if the block isn't there.
-        host.innerHTML = `<div class="dv-list">${blockHtml}</div>`;
+        host.innerHTML = `<div class="dv-list">${blocks.map(blockRowHtml).join("")}</div>`;
         wireBlocks();
         return;
       }
@@ -16202,33 +16213,44 @@
       });
       return;
     }
+    // Blocks take their place in the list at the time they close, not a pile
+    // at the bottom: a 2pm "gone to the dentist" belongs between the noon and
+    // 4pm sessions. All-day blocks lead the list; untimed rows still trail it.
+    const items = [
+      ...rows.map((r, i) => ({ row: r, idx: i, ts: r.ts, name: r.name || "" })),
+      ...blocks.map((b) => ({ block: b, ts: blockTsOn(iso, b), name: b.label || "" })),
+    ].sort((a, b) => (a.ts - b.ts) || a.name.localeCompare(b.name));
+
     // The same "you are here" line the week timetable draws, in the only shape
     // a list can carry it: a marker between what has been and what is next. It
-    // needs at least one timed session to sit between, and only on today.
+    // needs at least one timed entry to sit between, and only on today.
     const nowMs = Date.now();
-    const timed = rows.filter((r) => Number.isFinite(r.ts));
+    const timed = items.filter((it) => Number.isFinite(it.ts));
     const nowBefore = iso !== todayISO() || !timed.length ? -1
-      : rows.findIndex((r) => Number.isFinite(r.ts) && r.ts > nowMs);
-    // Every session is behind us: the line goes after the last timed row, ahead
-    // of the untimed ones rather than at the very bottom.
-    const nowAt = nowBefore >= 0 ? nowBefore : rows.indexOf(timed[timed.length - 1]) + 1;
+      : items.findIndex((it) => Number.isFinite(it.ts) && it.ts > nowMs);
+    // Every timed entry is behind us: the line goes after the last of them,
+    // ahead of the untimed ones rather than at the very bottom.
+    const nowAt = nowBefore >= 0 ? nowBefore : items.indexOf(timed[timed.length - 1]) + 1;
     const nowHtml = iso !== todayISO() || !timed.length ? "" :
       `<div class="dv-now"><span class="dv-now-lbl">${escapeHtml(fmtSlotTime(nowMs))}</span></div>`;
 
-    host.innerHTML = `<div class="dv-list">${rows.map((r, i) => {
+    host.innerHTML = `<div class="dv-list">${items.map((it, i) => {
+      const pre = i === nowAt ? nowHtml : "";
+      if (it.block) return pre + blockRowHtml(it.block);
+      const r = it.row;
       // Nothing scheduled falls back to where they are in the program, marked
       // as the softer claim it is: this is what's next for them, not something
       // they committed to on this date.
       const guess = !r.rest && !r.dayName && !!r.curDayName;
       const what = r.rest ? "Rest day"
         : (r.dayName || r.curDayName || (r.events.length ? "Session" : "Training"));
-      return (i === nowAt ? nowHtml : "") +
+      return pre +
         // The athlete's OWN colour, the one their avatar and roster card already
         // carry, so a session is recognisable as theirs before the name is read.
         // Falls back to the theme's primary for a row with nobody matched to it.
         `<button type="button" class="dv-row${r.done ? " is-done" : ""}"${
           r.client ? ` style="--athlete-rgb:${AVATAR_RGB[athleteColorIdx(r.client)]}"` : ""
-        } data-dv="${i}">` +
+        } data-dv="${it.idx}">` +
         `<span class="dv-face">${r.client ? athleteFaceHtml(r.client) : `<span class="av-tile av-sm av-empty">?</span>`}</span>` +
         `<span class="dv-name">${escapeHtml(r.name)}${r.unlinked ? ` <span class="dv-tag">unlinked</span>` : ""}</span>` +
         schedBalHtml(r.client) +
@@ -16238,7 +16260,7 @@
       `</button>`;
       // The whole day is done: the line lands at the bottom, which the map
       // above can never reach.
-    }).join("") + (nowAt >= rows.length ? nowHtml : "") + blockHtml}</div>`;
+    }).join("") + (nowAt >= items.length ? nowHtml : "")}</div>`;
     host.querySelectorAll("[data-dv]").forEach((b) => b.addEventListener("click", () =>
       openDaySessionSheet(iso, rows[Number(b.dataset.dv)])));
     wireBlocks();
@@ -16665,19 +16687,23 @@
       // Programmed days count too: a workout an athlete has scheduled is part
       // of the week even when no session is booked around it.
       const planned = clients.filter((c) => c.importedProgress?.selfSchedule?.[d]?.weekId);
-      const items = events.map((e) => {
-        const a = matchAthleteForEvent(e);
-        return `<span class="wk-chip"${a ? ` style="--athlete-rgb:${AVATAR_RGB[athleteColorIdx(a)]}"` : ""}>` +
-          `${a ? athleteFaceHtml(a, "xs") : ""}` +
-          `<b>${escapeHtml(fmtSetmoreTime(e.startAt))}</b> ${escapeHtml(a?.name || e.clientName || "Session")}</span>`;
-      }).join("") + planned.map((c) =>
-        `<span class="wk-chip wk-chip-plan">${athleteFaceHtml(c, "xs")}${escapeHtml(c.name)}</span>`).join("") +
-        // The phone gets this agenda instead of the timetable, so without it a
-        // blocked afternoon is invisible at week zoom on the device the coach
-        // actually carries.
-        blocksOnDate(d).map((b) =>
+      // The phone gets this agenda instead of the timetable, so without the
+      // block chips a blocked afternoon is invisible at week zoom on the
+      // device the coach actually carries. They sit at their time among the
+      // sessions, same as the day list — not tacked on the end.
+      const items = [
+        ...events.map((e) => ({ ts: +new Date(e.startAt), html: (() => {
+          const a = matchAthleteForEvent(e);
+          return `<span class="wk-chip"${a ? ` style="--athlete-rgb:${AVATAR_RGB[athleteColorIdx(a)]}"` : ""}>` +
+            `${a ? athleteFaceHtml(a, "xs") : ""}` +
+            `<b>${escapeHtml(fmtSetmoreTime(e.startAt))}</b> ${escapeHtml(a?.name || e.clientName || "Session")}</span>`;
+        })() })),
+        ...blocksOnDate(d).map((b) => ({ ts: blockTsOn(d, b), html:
           `<span class="wk-chip wk-chip-block">⛔ ${escapeHtml(b.label ||
-            (b.allDay ? "Off" : blockPhrase(b).split(" · ").pop()))}</span>`).join("");
+            (b.allDay ? "Off" : blockPhrase(b).split(" · ").pop()))}</span>` })),
+      ].sort((a, b) => (a.ts - b.ts) || 0).map((x) => x.html).join("") +
+        planned.map((c) =>
+          `<span class="wk-chip wk-chip-plan">${athleteFaceHtml(c, "xs")}${escapeHtml(c.name)}</span>`).join("");
       const blocked = blocksOnDate(d).length;
       return `<button type="button" class="wk-row${d === today ? " is-today" : ""}${events.length || planned.length || blocked ? "" : " is-empty"}" data-wk-day="${d}">` +
         `<span class="wk-date"><b>${dd.toLocaleDateString(undefined, { weekday: "short" })}</b>` +
