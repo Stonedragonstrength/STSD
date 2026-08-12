@@ -7635,6 +7635,62 @@ input.pyr-weight-input { -moz-appearance: textfield; appearance: textfield; }
     overflow: hidden;
   }
 }
+/* Tablet & desktop: the session filler, compacted. Phone spacing rolled up to
+   a bigger screen just spends it — a two-row sticky header, a chip row over
+   every set sheet, padded sections — and a five-exercise day came out three
+   screens of scrolling mid-session. Density above the phone breakpoint only;
+   phones keep the roomier layout their tap targets need. */
+@media (min-width: 721px) {
+  /* The sticky day header on ONE line: toggle · day name · week kicker, with
+     the count, date and mood pinned right. display:contents lifts both rows'
+     children into a single flex line without touching the markup; the kicker
+     row's margin dies with its box. .dh-progress keeps its global
+     margin-left:auto, which is what starts the right-hand group. */
+  .workout-detail-head {
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    padding: 0.4rem 0.85rem;
+  }
+  .workout-detail-head .detail-head-top,
+  .workout-detail-head .detail-head-main { display: contents; }
+  .workout-detail-head .day-check-toggle { order: -3; }
+  .workout-detail-head .detail-head-main h2 { order: -2; margin: 0; }
+  .workout-detail-head .dh-week { order: -1; }
+  .workout-detail-head .dh-date { order: 1; }
+  .workout-detail-head .detail-mood-btn { order: 2; }
+
+  /* Exercise cards: same controls, less air. */
+  .cex-row { padding: 0.4rem 0.75rem; min-height: 40px; }
+  .cex-log-form { gap: 0.25rem; }
+  .cex-set-table { gap: 0.25rem; }
+  /* NB the input and plate-row halves of this compaction live further down,
+     below the base rules they override — file order decides those fights. */
+  .cex-set-done { width: 1.8rem; height: 1.8rem; }
+
+  /* The demo/muscle chips ride the dead gutter to the right of the capped set
+     sheet instead of buying their own row above it. Column 1 is everything
+     else in panel order; an explicit grid-row pins the chips beside whatever
+     lands first (set sheet or coach note). */
+  .cex-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.3rem 0.75rem;
+    align-items: start;
+    padding: 0.4rem 0.75rem 0.5rem;
+  }
+  .cex-panel > * { grid-column: 1; }
+  .cex-panel > .cex-demo-row {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+
+  /* Quick note: a chip in the panel's flow, not a ruled-off section. */
+  .cex-notes-row { margin-top: 0.15rem; padding-top: 0; border-top: none; }
+}
 /* Lock / Edit control pinned to the top-right of the exercise title row. */
 .cex-lock-slot {
   flex-shrink: 0;
@@ -7940,6 +7996,12 @@ input.pyr-weight-input { -moz-appearance: textfield; appearance: textfield; }
   color: var(--primary-bright);
   font-weight: 700;
   opacity: 1;
+}
+/* Tablet & desktop: shorter set rows. Part of the session-filler compaction up
+   by the workout-detail-list block; it sits HERE because the base rule above
+   would out-order it from there. */
+@media (min-width: 721px) {
+  .cex-set-col .cex-input { padding: 0.22em 0.1em; font-size: 0.9rem; }
 }
 
 
@@ -13057,6 +13119,28 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
 }
 /* What the rack can't make up — better to say so than to round it silently. */
 .cex-plate-off { flex-shrink: 0; font-size: 0.7rem; font-weight: 700; color: var(--warn); }
+/* Tablet & desktop: plate math on one line — the label, then the loadings
+   flowing beside it. Part of the session-filler compaction; sits below its
+   base rules because file order decides same-specificity fights. The demo-row
+   line re-asserts the right alignment its base rule (also above) centres. */
+@media (min-width: 721px) {
+  .cex-panel > .cex-demo-row { align-items: flex-end; }
+  .cex-plate-row {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.7rem;
+    margin-top: 0.3rem;
+    padding: 0.28rem 0.55rem;
+  }
+  .cex-plate-lines {
+    flex: 1;
+    min-width: 0;
+    flex-direction: row;
+    flex-wrap: wrap;
+    column-gap: 1rem;
+    align-items: baseline;
+  }
+}
 
 /* Bar + rack picker, anchored to the strip (or the Tools button). */
 .plate-pop {
