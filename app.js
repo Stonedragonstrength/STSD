@@ -21184,7 +21184,13 @@
       // window. Booking rows are tiny and there is one query.
       const to = new Date(Date.now() + 400 * 86400000).toISOString();
       const rows = await window.Cloud.getBookings(from, to);
-      if (Array.isArray(rows)) _coachBookings = rows;
+      if (Array.isArray(rows)) {
+        _coachBookings = rows;
+        // The Money strip's three context days read ONLY this list — the
+        // athlete mirror is future-only — so a strip painted before this
+        // fetch landed drew them empty and nothing ever came back for it.
+        if (!$("#view-money")?.classList.contains("hidden")) renderMoneyWeekStrip();
+      }
       // Pending change requests ride along with the bookings they belong to,
       // and the inbox is repainted once they land: this call is what puts the
       // count on the ⚡ pill, and it finishes well after showCoachOverview's own
@@ -37338,6 +37344,10 @@
           renderMonthGrantBtn();
           renderMonthBillBtn();
           renderMonthFlatBtn();
+          // A session that never managed to load the bookings (boot offline,
+          // fetch failed) would draw the strip's context days empty forever —
+          // the refresh both fills the list and repaints the strip when done.
+          if (!_coachBookings.length) refreshCoachSchedule();
           // Collapsed on every arrival, not just the first. Views are hidden
           // and shown rather than rebuilt, so a fold the coach opened last time
           // is still open when they come back -- dropping the `open` attribute
