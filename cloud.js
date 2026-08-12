@@ -719,12 +719,16 @@
 
   // Athlete-side write: PRs are a shared list, so the athlete can push their
   // own edits back to the same athletes row the coach reads/writes.
+  // Returns the row's new rev (the update bumps it via trigger) so the caller
+  // can recognise the realtime echo of this write as its own; true if the
+  // write landed but no rev came back, false on failure.
   async function updateAthleteCoachPRs(athleteId, coachPRs) {
     if (!athleteId) return false;
     try {
-      const { error } = await sb.from("athletes").update({ coach_prs: coachPRs || [] }).eq("id", athleteId);
-      if (error) console.warn("[Cloud] updateAthleteCoachPRs error", error.message);
-      return !error;
+      const { data, error } = await sb.from("athletes")
+        .update({ coach_prs: coachPRs || [] }).eq("id", athleteId).select("rev");
+      if (error) { console.warn("[Cloud] updateAthleteCoachPRs error", error.message); return false; }
+      return Number(data?.[0]?.rev) || true;
     } catch (e) { console.warn("[Cloud] updateAthleteCoachPRs", e); return false; }
   }
 

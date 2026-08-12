@@ -273,6 +273,17 @@
   // already protected by the per-athlete dirty flags).
   let _lastResyncAt = 0;
   let _resyncing = false;
+  // Unpushed athlete-portal edits own the progress surface — the same rule the
+  // coach side gets from dirtyAthletes(). Nonzero from the moment saveClient
+  // queues a push until that push confirms, and while it is nonzero no pulled
+  // or realtime progress row may replace local state. This is also what closes
+  // the self-echo race: the websocket echo of our own push can beat the RPC
+  // response that teaches us the new rev, and without this window that echo
+  // reads as a foreign update and stomps whatever was typed since.
+  let _progressDirtyAt = 0;
+  // Same window for the athlete's own writes to their athletes row (the shared
+  // PR list) — its echo otherwise rebuilds the whole program mid-workout.
+  let _athleteRowPushAt = 0;
   async function resyncNow(force) {
     if (!window.Cloud?.enabled || !navigator.onLine || _resyncing) { SyncStatus.paint(); return; }
     if (!force && Date.now() - _lastResyncAt < 20000) return;
@@ -300,7 +311,11 @@
         const fresh = await window.Cloud.getAthleteByAuthUserId(session.user.id);
         if (fresh?.athlete && !pushFailed) {
           state.clientData.program = buildProgramFromAthlete(fresh.athlete);
-          if (fresh.progress) {
+          // The flush above pushed everything known then, but an edit made
+          // DURING this fetch is in neither the flush nor `fresh` — while one
+          // exists, the local copy stays the authority (same window the
+          // realtime handler honours).
+          if (fresh.progress && !_progressDirtyAt) {
             const merged = fresh.progress;
             merged.exerciseLogs = mergeExerciseLogs(state.clientData.progress?.exerciseLogs, fresh.progress.exerciseLogs);
             state.clientData.progress = merged;
@@ -331,7 +346,10 @@
       else if (vis === "view-dashboard") renderClientGrid();
     } else if (athleteScreenVisible && state.clientData?.program) {
       const wv = state.workoutView || {};
-      if (wv.mode === "detail" && wv.dayId) renderWorkoutDetailUI();
+      // keepScroll: this fires mid-workout. Repainting the filler is fine;
+      // yanking the athlete back to the top of the day is what read as
+      // "kicked out mid-fill".
+      if (wv.mode === "detail" && wv.dayId) renderWorkoutDetailUI({ keepScroll: true });
       else if ($("#workout-picker") && !$("#workout-picker").classList.contains("hidden")) renderWorkoutPickerUI();
     }
   }
@@ -376,6 +394,10 @@
       if (state.previewMode && state.currentClientId === c.id) refreshLiveProgram();
       rerenderAfterSync();
     } else {
+      // Our own PR push is about to bump this row's rev — its echo must not
+      // rebuild the program mid-workout. The push's response adopts the rev,
+      // after which the normal guard below covers any repeat.
+      if (_athleteRowPushAt) return;
       if ((mapped._rev || 0) <= (Number(state.clientData?.program?._rev) || 0)) return;
       state.clientData.program = buildProgramFromAthlete(mapped);
       state.clientData.program._rev = mapped._rev;
@@ -403,6 +425,11 @@
       }
       rerenderAfterSync();
     } else {
+      // Unpushed local edits own this surface (mirrors the coach side's
+      // dirtyAthletes guard). This is usually our own push echoing back
+      // before its response taught us the new rev; either way the next
+      // confirmed push or resync reconciles.
+      if (_progressDirtyAt) return;
       if ((mapped._rev || 0) <= (Number(state.clientData?.progress?._rev) || 0)) return;
       const merged = { ...mapped, exerciseLogs: mergeExerciseLogs(state.clientData.progress?.exerciseLogs, mapped.exerciseLogs) };
       ensureProgressShape(merged);
@@ -530,12 +557,21 @@
     // Cloud: debounced push of athlete progress.
     const athleteId = state.clientData.program?.clientId;
     if (window.Cloud?.enabled && athleteId && state.clientData.progress) {
+      _progressDirtyAt = Date.now();
       window.Cloud.debounce(`progress:${athleteId}`, async () => {
+        // Captured before the await: an edit made during the round trip stamps
+        // a newer time, and that edit is NOT in this push — the window has to
+        // stay open for it.
+        const dirtyAt = _progressDirtyAt;
         const res = await window.Cloud.upsertProgress(athleteId, state.clientData.progress);
         if (res && res.exerciseLogs && state.clientData?.progress) {
           adoptMergedLogs(state.clientData.progress, res);
           localStorage.setItem(KEY_CLIENT, JSON.stringify(state.clientData));
         }
+        // Only a confirmed push closes the window. A failed one leaves it
+        // open, which keeps every pull off this surface until the work is
+        // actually in the cloud — same stance as resyncNow's pushFailed veto.
+        if (res && _progressDirtyAt === dirtyAt) _progressDirtyAt = 0;
       });
     }
   }
@@ -3830,6 +3866,10 @@
       clientId: athlete.id,
       trainerName: "",
       sharedAt: Date.now(),
+      // The row rev this program was built from. Without it every boot left
+      // the realtime guard at 0, so the first own-row echo after any reload
+      // always applied — a wholesale program rebuild mid-whatever.
+      _rev: Number(athlete._rev) || 0,
       client: {
         id: athlete.id,
         name: athlete.name,
@@ -17730,8 +17770,18 @@
     const prog = state.clientData.program; if (!prog) return;
     saveClient();
     if (window.Cloud?.enabled && prog.clientId) {
-      window.Cloud.debounce(`coachprs:${prog.clientId}`,
-        () => window.Cloud.updateAthleteCoachPRs(prog.clientId, prog.client.coachPRs), 1200);
+      _athleteRowPushAt = Date.now();
+      window.Cloud.debounce(`coachprs:${prog.clientId}`, async () => {
+        const at = _athleteRowPushAt;
+        const res = await window.Cloud.updateAthleteCoachPRs(prog.clientId, prog.client.coachPRs);
+        // The update bumped the row's rev; learn it so the echo reads as ours.
+        if (typeof res === "number" && state.clientData?.program) {
+          state.clientData.program._rev = Math.max(Number(state.clientData.program._rev) || 0, res);
+        }
+        // Window closes either way: on failure no echo is coming, and a
+        // genuinely foreign row event should go back to applying.
+        if (_athleteRowPushAt === at) _athleteRowPushAt = 0;
+      }, 1200);
     }
   }
 
@@ -37488,7 +37538,13 @@
               const fresh = await window.Cloud.getAthleteByAuthUserId(userId);
               if (fresh?.athlete) {
                 state.clientData.program = buildProgramFromAthlete(fresh.athlete);
-                if (fresh.progress) state.clientData.progress = fresh.progress;
+                if (fresh.progress) {
+                  // Same entry-level merge the resync path does. Wholesale
+                  // adoption dropped anything typed in the last seconds before
+                  // the previous close, when the pagehide flush didn't finish.
+                  fresh.progress.exerciseLogs = mergeExerciseLogs(state.clientData.progress?.exerciseLogs, fresh.progress.exerciseLogs);
+                  state.clientData.progress = fresh.progress;
+                }
                 ensureProgressShape(state.clientData.progress);
                 saveClient();
               }
