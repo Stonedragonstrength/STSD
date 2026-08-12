@@ -1,7 +1,7 @@
 # Stone Dragon Strength Training — CLAUDE.md
 
 ## What this is
-A coach-athlete strength training manager. Coaches design programs and track athletes; athletes view workouts, log progress, and send it back. Deployed as a static PWA via GitHub Pages at `https://stonedragonstrength.github.io/STSD/` (built from this repo's `main` branch — `git push origin main` publishes). Note it's served from the **`/STSD/` subpath**, so all asset paths stay relative and `manifest.json`/`sw.js` use `./`.
+A coach-athlete strength training manager. Coaches design programs and track athletes; athletes view workouts, log progress, and send it back. Deployed as a static PWA via GitHub Pages at `https://app.stonedragonstrengthtraining.com/` (built from this repo's `main` branch — `git push origin main` publishes; the old `https://stonedragonstrength.github.io/STSD/` URL 301s to the custom domain, and curl of it returns an empty body without `-L`). Asset paths stay relative and `manifest.json`/`sw.js` use `./`.
 
 ## Tech stack
 - Vanilla HTML/CSS/JS — no framework, no bundler, no build step
