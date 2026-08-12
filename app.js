@@ -10314,6 +10314,16 @@
     return 0;
   }
 
+  // 7.5 → "7½". Secondary muscles earn half a set per set (see
+  // musclesForExercise), so halves are the only fraction the engine produces —
+  // and a vulgar half reads as a count where "7.5" reads as a measurement.
+  function covSetsLabel(n) {
+    const whole = Math.floor(n || 0);
+    const half = (n || 0) - whole >= 0.5;
+    if (!whole) return half ? "½" : "0";
+    return `${whole}${half ? "½" : ""}`;
+  }
+
   // The athlete's own client record. `state.clientData` is a WRAPPER —
   // { program, progress } — and the weeks live one level down. Reading the
   // wrapper is why the athlete's coverage map rendered its empty state from the
@@ -11269,6 +11279,7 @@
       root.querySelectorAll(".a-mode-btn").forEach((b) => b.classList.toggle("active", b.dataset.mode === next));
       renderCoverage();
       renderList();
+      renderDetail(); // the open card gains/loses its weekly-sets strip
       highlight();
     }
 
@@ -11300,9 +11311,9 @@
         const g = ANATOMY_BY_ID[id];
         const n = cov ? (cov.sets[id] || 0) : null;
         return `<button type="button" class="a-chip${id === selected ? " selected" : ""}"`
-          + (cov ? ` data-cov="${coverageBand(n, cov.bands)}"` : "")
+          + (cov ? ` data-cov="${coverageBand(n, cov.bands)}" title="${covSetsLabel(n)} sets this week"` : "")
           + ` data-muscle="${id}">${escapeHtml(g.name)}`
-          + (cov ? `<span class="a-chip-n">${n}</span>` : "")
+          + (cov ? `<span class="a-chip-n">${covSetsLabel(n)}</span>` : "")
           + `</button>`;
       }).join("");
     }
@@ -11315,7 +11326,17 @@
     function renderDetail() {
       if (!selected) return;
       const g = ANATOMY_BY_ID[selected];
-      if (g) detailEl.innerHTML = anatomyDetailHtml(mergedMuscle(g, getAnatomyEdits(editable)), editable);
+      if (!g) return;
+      detailEl.innerHTML = anatomyDetailHtml(mergedMuscle(g, getAnatomyEdits(editable)), editable);
+      // In coverage the tap asked a question — how much does this muscle get
+      // this week? — so the card leads with the answer, graded like the chips.
+      if (cov) {
+        const n = cov.sets[selected] || 0;
+        detailEl.insertAdjacentHTML("afterbegin",
+          `<div class="a-cov-count" data-cov="${coverageBand(n, cov.bands)}">` +
+          `${covSetsLabel(n)} set${n === 1 ? "" : "s"} this week` +
+          `<span class="a-cov-count-bands">solid at ${cov.bands.solid} · plenty at ${cov.bands.plenty}</span></div>`);
+      }
     }
     function select(id) {
       if (!ANATOMY_BY_ID[id]) return;
@@ -11439,6 +11460,7 @@
       saveTrainer();
       renderCoverage();
       renderList();
+      renderDetail(); // the open card's grading strip reads the new bands
     });
     root.addEventListener("click", (e) => {
       const gotoM = e.target.closest("[data-goto-muscle]");

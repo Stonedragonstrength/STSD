@@ -11100,6 +11100,16 @@ body.live-log-mode #screen-client .header-right { display: none; }
 }
 .a-chip[data-cov="0"] .a-chip-n { background: rgba(var(--warn-rgb), 0.18); color: var(--warn); }
 
+/* The tapped muscle's weekly total, leading its detail card in Coverage. */
+.a-cov-count {
+  display: inline-flex; align-items: baseline; gap: 0.6em;
+  margin: 0 0 0.65rem; padding: 0.32em 0.75em; border-radius: 999px;
+  font-size: 0.82rem; font-weight: 800;
+  background: rgba(var(--primary-rgb), 0.14); color: var(--primary-bright);
+}
+.a-cov-count[data-cov="0"] { background: rgba(var(--warn-rgb), 0.14); color: var(--warn); }
+.a-cov-count-bands { font-size: 0.72rem; font-weight: 600; color: var(--text-soft); }
+
 /* Tablets: narrow the figure column, detail still under the list */
 @media (max-width: 880px) {
   .anatomy-layout { grid-template-columns: minmax(0, 230px) minmax(0, 1fr); }
