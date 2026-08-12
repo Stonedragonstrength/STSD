@@ -284,6 +284,11 @@
   // Same window for the athlete's own writes to their athletes row (the shared
   // PR list) — its echo otherwise rebuilds the whole program mid-workout.
   let _athleteRowPushAt = 0;
+  // The coach-side twin, keyed by athlete id: unconfirmed coach writes to an
+  // athlete's progress row (live-session logging, form-check replies) own that
+  // row's local copy until the push confirms. dirtyAthletes() covers the
+  // athletes table; this covers progress, which it never did.
+  const _coachProgressDirtyAt = {};
   async function resyncNow(force) {
     if (!window.Cloud?.enabled || !navigator.onLine || _resyncing) { SyncStatus.paint(); return; }
     if (!force && Date.now() - _lastResyncAt < 20000) return;
@@ -414,6 +419,10 @@
     if (state.mode === "trainer" || state.previewMode) {
       const c = (state.trainerData.clients || []).find((x) => x.id === row.athlete_id);
       if (!c) return;
+      // Unconfirmed coach edits (live-session logging mid-push) own this row —
+      // usually this event is that push's own echo, arrived before its
+      // response taught us the new rev.
+      if (_coachProgressDirtyAt[c.id]) return;
       if ((mapped._rev || 0) <= (Number(c.importedProgress?._rev) || 0)) return;
       const localLogs = c.importedProgress?.exerciseLogs;
       c.importedProgress = { ...mapped, exerciseLogs: mergeExerciseLogs(localLogs, mapped.exerciseLogs), syncedAt: Date.now() };
@@ -540,7 +549,9 @@
       localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
       if (window.Cloud?.enabled) {
         const snap = liveClient.importedProgress; // capture — exitPreview swaps state.clientData back
+        _coachProgressDirtyAt[liveAthleteId] = Date.now();
         window.Cloud.debounce(`progress:${liveAthleteId}`, async () => {
+          const dirtyAt = _coachProgressDirtyAt[liveAthleteId];
           const res = await window.Cloud.upsertProgress(liveAthleteId, snap);
           // The server merged (the athlete may have logged from their own
           // phone mid-session) — fold its truth back into both coach copies.
@@ -549,6 +560,9 @@
             if (state.liveLog && state.clientData?.progress) adoptMergedLogs(state.clientData.progress, res);
             localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
           }
+          // Confirmed pushes close the window (captured-stamp: an edit made
+          // during the round trip keeps it open — it isn't in this push).
+          if (res && _coachProgressDirtyAt[liveAthleteId] === dirtyAt) delete _coachProgressDirtyAt[liveAthleteId];
         });
       }
       return;
@@ -6065,7 +6079,19 @@
       window.Cloud.getAthleteById(c.id),
     ]);
     let changed = false;
-    if (cloudProgress) { c.importedProgress = { ...cloudProgress, syncedAt: Date.now() }; changed = true; }
+    // Merge the logs instead of adopting wholesale — this pull fires right
+    // after exitPreview, when the live session's last sets can still be
+    // sitting in the debounce, and a raw replace dropped them locally. And
+    // while a coach push is unconfirmed the local copy stays the authority,
+    // same window the realtime handler honours.
+    if (cloudProgress && !_coachProgressDirtyAt[c.id]) {
+      c.importedProgress = {
+        ...cloudProgress,
+        exerciseLogs: mergeExerciseLogs(c.importedProgress?.exerciseLogs, cloudProgress.exerciseLogs),
+        syncedAt: Date.now(),
+      };
+      changed = true;
+    }
     if (cloudAthlete?.coachPRs) { c.coachPRs = cloudAthlete.coachPRs; changed = true; }
     if (!changed) return;
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
@@ -17010,12 +17036,15 @@
   function saveAthleteProgressFromCoach(c) {
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
     if (window.Cloud?.enabled && c?.id && c.importedProgress) {
+      _coachProgressDirtyAt[c.id] = Date.now();
       window.Cloud.debounce(`progress:${c.id}`, async () => {
+        const dirtyAt = _coachProgressDirtyAt[c.id];
         const res = await window.Cloud.upsertProgress(c.id, c.importedProgress);
         if (res && res.exerciseLogs && c.importedProgress) {
           adoptMergedLogs(c.importedProgress, res);
           localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
         }
+        if (res && _coachProgressDirtyAt[c.id] === dirtyAt) delete _coachProgressDirtyAt[c.id];
       });
     }
   }
