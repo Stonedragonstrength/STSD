@@ -1337,7 +1337,12 @@
             <div class="bw-import">
               <button class="btn btn-ghost btn-sm slim-btn" type="button" id="btn-import-scale">Import from scale…</button>
               <span class="muted">Renpho: Profile → Settings → Export Data, then upload the CSV.</span>
-              <input type="file" id="scale-csv-input" accept=".csv,text/csv" hidden />
+              <!-- accept is deliberately broad: Android's picker filters by
+                   reported MIME, and CSVs arrive as vnd.ms-excel or
+                   comma-separated-values often enough that ".csv,text/csv"
+                   greys the real file out. The parser rejects wrong files
+                   with a clear message anyway. -->
+              <input type="file" id="scale-csv-input" accept=".csv,text/csv,text/comma-separated-values,application/csv,application/vnd.ms-excel" hidden />
             </div>
             <div id="bw-history" class="bw-secret"></div>
           </div>
@@ -1615,7 +1620,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=cred1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=hdr10"></script>
+  <script src="app.js?v=joby1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

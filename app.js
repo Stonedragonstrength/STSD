@@ -14966,7 +14966,7 @@
       <div class="bw-import">
         <button class="btn btn-ghost btn-sm slim-btn" type="button" id="btn-coach-import-scale">Import from scale…</button>
         <span class="muted">Renpho CSV. Weigh-ins land on ${escapeHtml(c.name)}'s log.</span>
-        <input type="file" id="coach-scale-csv-input" accept=".csv,text/csv" hidden />
+        <input type="file" id="coach-scale-csv-input" accept=".csv,text/csv,text/comma-separated-values,application/csv,application/vnd.ms-excel" hidden />
       </div>`;
     bwCard.querySelector("#btn-coach-import-scale").addEventListener("click", () =>
       bwCard.querySelector("#coach-scale-csv-input").click());
@@ -35388,6 +35388,10 @@
     let y, mo, d;
     if (m[1].length === 4) { y = m[1]; mo = +m[2]; d = +m[3]; }
     else if (m[3].length === 4) { y = m[3]; mo = +m[1]; d = +m[2]; }
+    // Two-digit year, trailing (8/12/26 — Joby's real export; the format
+    // depends on the PHONE's locale settings, so every athlete can differ).
+    // Renpho didn't exist before 2000, so the century is not in question.
+    else if (m[3].length === 2) { y = String(2000 + +m[3]); mo = +m[1]; d = +m[2]; }
     else return null;
     if (mo > 12 && d <= 12) { const t = mo; mo = d; d = t; }
     if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
