@@ -4502,14 +4502,12 @@
       <button type="button" class="avatar-opt${cur ? "" : " on"}" data-cavatar=""
               aria-pressed="${!cur}" title="No avatar">
         <span class="av-tile av-lg av-empty" style="${style}">${escapeHtml(nameInitials(name))}</span>
-        <span class="avatar-opt-name">None</span>
       </button>` + AVATARS.map((a) => `
       <button type="button" class="avatar-opt${a.id === cur ? " on" : ""}" data-cavatar="${a.id}"
               aria-pressed="${a.id === cur}" title="${escapeHtml(a.name)}">
         <span class="av-tile av-lg" style="--av-color:${avatarColor(name)};--av-rgb:6, 182, 212">
           <img src="${avatarSrc(a.id)}" alt="" loading="lazy" decoding="async" />
         </span>
-        <span class="avatar-opt-name">${escapeHtml(a.name)}</span>
       </button>`).join("");
     host.querySelectorAll("[data-cavatar]").forEach((b) => {
       b.addEventListener("click", () => {
@@ -4765,17 +4763,16 @@
     return avatarTileHtml(c, c.importedProgress, { size });
   }
 
-  // What the folded-up picker shows on its own line: the current tile and its
-  // name, or the initials tile and "None" for anyone who'd rather not have one.
+  // What the folded-up picker shows on its own line: just the current tile.
+  // The avatars used to carry name captions here and in the grids ("Berserker",
+  // "None") — removed 2026-08-13 at Nathan's ask, they're figures, not
+  // characters to introduce. Names survive only as hover titles on the grid.
   function renderAvatarFoldSummary(who, cur, name, style) {
     const tile = $(`#${who}-avatar-current`);
-    const lbl = $(`#${who}-avatar-current-name`);
-    if (tile) {
-      tile.innerHTML = cur
-        ? `<span class="av-tile av-sm" style="${style}"><img src="${avatarSrc(cur)}" alt="" decoding="async" /></span>`
-        : `<span class="av-tile av-sm av-empty" style="${style}">${escapeHtml(nameInitials(name))}</span>`;
-    }
-    if (lbl) lbl.textContent = cur ? avatarById(cur).name : "None";
+    if (!tile) return;
+    tile.innerHTML = cur
+      ? `<span class="av-tile av-sm" style="${style}"><img src="${avatarSrc(cur)}" alt="" decoding="async" /></span>`
+      : `<span class="av-tile av-sm av-empty" style="${style}">${escapeHtml(nameInitials(name))}</span>`;
   }
 
   // The athlete's picker. Tapping a tile saves immediately — this is a
@@ -4794,14 +4791,12 @@
       <button type="button" class="avatar-opt${cur ? "" : " on"}" data-avatar=""
               aria-pressed="${!cur}" title="No avatar">
         <span class="av-tile av-lg av-empty" style="${style}">${escapeHtml(nameInitials(client?.name))}</span>
-        <span class="avatar-opt-name">None</span>
       </button>` + AVATARS.map((a) => `
       <button type="button" class="avatar-opt${a.id === cur ? " on" : ""}" data-avatar="${a.id}"
               aria-pressed="${a.id === cur}" title="${escapeHtml(a.name)}">
         <span class="av-tile av-lg" style="--av-color:${AVATAR_COLORS[idx]};--av-rgb:${AVATAR_RGB[idx]}">
           <img src="${avatarSrc(a.id)}" alt="" loading="lazy" decoding="async" />
         </span>
-        <span class="avatar-opt-name">${escapeHtml(a.name)}</span>
       </button>`).join("");
     host.querySelectorAll("[data-avatar]").forEach((b) => {
       b.addEventListener("click", () => setAthleteAvatar(b.dataset.avatar));

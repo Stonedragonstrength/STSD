@@ -12488,13 +12488,6 @@ body.records-sheet-open .rest-timer { display: none; }
 .avatar-fold > summary:hover .avatar-fold-text strong { color: var(--primary-bright); }
 .avatar-fold-text { display: flex; flex-direction: column; gap: 0.1em; line-height: 1.2; }
 .avatar-fold-text strong { font-size: 1rem; font-weight: 800; }
-.avatar-fold-now {
-  font-size: 0.76rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-soft);
-}
 .avatar-fold[open] > summary { margin-bottom: 0.7em; }
 
 .avatar-picker {
@@ -12522,15 +12515,9 @@ body.records-sheet-open .rest-timer { display: none; }
   background: var(--primary-soft);
   box-shadow: 0 0 0 1px rgba(var(--primary-rgb), 0.45);
 }
-.avatar-opt.on .avatar-opt-name { color: var(--primary-bright); }
-.avatar-opt-name {
-  font-size: 0.62rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  text-align: center;
-  line-height: 1.1;
-}
+/* The tiles carry no name captions (removed 2026-08-13, Nathan's call:
+   they're figures, not characters to introduce) — names live on as hover
+   titles only. */
 
 /* No body-level scroll lock on purpose: `overflow: hidden` on body makes it a
    scroll container on mobile and kills every sticky descendant (see the
