@@ -11402,6 +11402,12 @@
               <button type="button" class="a-view-btn active" data-view="front">Front</button>
               <button type="button" class="a-view-btn" data-view="back">Back</button>
             </div>
+            <div class="a-cov-key">
+              <span class="a-key-item"><i class="a-key-dot" data-cov="0"></i>Gap</span>
+              <span class="a-key-item"><i class="a-key-dot" data-cov="1"></i>Some</span>
+              <span class="a-key-item"><i class="a-key-dot" data-cov="2"></i>Solid</span>
+              <span class="a-key-item"><i class="a-key-dot" data-cov="3"></i>Plenty</span>
+            </div>
           </div>
           <div class="anatomy-list" data-anatomy-list></div>
           <div class="anatomy-detail" data-anatomy-detail>

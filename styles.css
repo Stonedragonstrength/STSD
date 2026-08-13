@@ -10547,8 +10547,14 @@ body.live-log-mode #screen-client .header-right #sync-chip-athlete { display: in
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 0.75rem;
+  /* A COLUMN, not a row. This was a row that centered the one visible svg —
+     until the phone toggle went position:static (2026-08-12) and became a
+     row SIBLING, squeezing the body to a ~22px sliver. Anything that drops
+     into the figure's flow (the toggle on phones, the coverage key) must
+     stack under the body, so the column is the rule everywhere. */
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
 }
 /* Front/Back rides on the figure instead of costing its own row */
 .anatomy-figure .anatomy-toggle {
@@ -10998,17 +11004,39 @@ body.live-log-mode #screen-client .header-right #sync-chip-athlete { display: in
 /* Exercise credits rides the search row — a page tool, not a mode one. */
 .a-search-row .a-credits-btn { flex: none; white-space: nowrap; }
 
-/* Volume bands. Zero is the only warm thing on the body, so gaps read first. */
-.anatomy.is-coverage .a-zone { stroke-opacity: 0.35; }
-.anatomy.is-coverage .a-zone[data-cov="3"] { fill: var(--primary-bright); fill-opacity: 0.95; }
-.anatomy.is-coverage .a-zone[data-cov="2"] { fill: var(--primary); fill-opacity: 0.55; }
-.anatomy.is-coverage .a-zone[data-cov="1"] { fill: var(--primary); fill-opacity: 0.22; }
+/* Volume bands. Zero is the only warm thing on the body, so gaps read first.
+   One hue, three clearly separate steps — the old 0.22/0.55 opacities
+   collapsed into the body fill on a phone (band 1 sat at 1.27:1 against the
+   surface, darker than the resting reference tint). Re-stepped and validated
+   against the dark surface at ~2.5 / 5.5 / 11 to 1, adjacent-step ΔE ≈ 18.
+   The stroke steps with the band so small zones keep their edge, and the hot
+   band is ringed bright. Keep .a-key-dot below in step with these fills. */
+.anatomy.is-coverage .a-zone { stroke-opacity: 0.5; }
+.anatomy.is-coverage .a-zone[data-cov="3"] { fill: var(--primary-bright); fill-opacity: 1; stroke-opacity: 1; stroke-width: 1.3; }
+.anatomy.is-coverage .a-zone[data-cov="2"] { fill: var(--primary); fill-opacity: 0.8; stroke-opacity: 0.7; }
+.anatomy.is-coverage .a-zone[data-cov="1"] { fill: var(--primary); fill-opacity: 0.45; }
 .anatomy.is-coverage .a-zone[data-cov="0"] {
   fill: rgba(var(--warn-rgb), 0.09);
   stroke: var(--warn);
   stroke-opacity: 0.9;
   stroke-dasharray: 2 1.6;
 }
+/* The map's key — Gap / Some / Solid / Plenty, mirroring the band fills
+   above so "hot" is labeled rather than guessed. Coverage-only. */
+.a-cov-key { display: none; }
+.anatomy.is-coverage .a-cov-key {
+  display: flex; justify-content: center; flex-wrap: wrap;
+  gap: 0.3rem 0.85rem; margin-top: 0.45rem;
+  font-size: 0.68rem; font-weight: 700; color: var(--text-soft);
+}
+.a-key-item { display: inline-flex; align-items: center; gap: 0.4em; }
+.a-key-dot {
+  width: 10px; height: 10px; border-radius: 3px; flex: none;
+  background: rgba(var(--primary-rgb), 0.45);
+}
+.a-key-dot[data-cov="2"] { background: rgba(var(--primary-rgb), 0.8); }
+.a-key-dot[data-cov="3"] { background: var(--primary-bright); }
+.a-key-dot[data-cov="0"] { background: rgba(var(--warn-rgb), 0.12); border: 1px dashed var(--warn); }
 /* Selection still has to win over the heat, or you cannot see what you picked */
 .anatomy.is-coverage .a-zone.selected {
   fill: var(--primary-bright);
@@ -11073,14 +11101,16 @@ body.live-log-mode #screen-client .header-right #sync-chip-athlete { display: in
    at this width wrapped pills reflow into an unreadable ragged block. */
 @media (max-width: 760px) {
   .anatomy-layout {
-    grid-template-columns: minmax(0, 42%) minmax(0, 1fr);
+    /* Half the row and 44vh, up from 42%/34vh: at the old cap the heat map
+       was too small to read at all — the body wins the space argument. */
+    grid-template-columns: minmax(0, 50%) minmax(0, 1fr);
     grid-template-areas:
       "fig list"
       "detail detail";
     gap: 0.6rem;
   }
   .anatomy-figure { padding: 0.4rem; }
-  .a-svg { max-width: none; max-height: 34vh; }
+  .a-svg { max-width: none; max-height: 44vh; }
   /* The Credits button sheds its word so the search placeholder never clips. */
   .a-credits-btn .a-credits-txt { display: none; }
   /* At this width the corner overlay sat on the shoulders — the toggle drops
@@ -11098,7 +11128,7 @@ body.live-log-mode #screen-client .header-right #sync-chip-athlete { display: in
     flex-wrap: nowrap;
     align-items: stretch;
     gap: 0.3rem;
-    max-height: 34vh;
+    max-height: 44vh;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: thin;
