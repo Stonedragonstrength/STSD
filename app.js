@@ -302,6 +302,7 @@
           populateCoachFromCloud(fresh.coach, fresh.athletes, {
             keepLocalTemplates: localStorage.getItem(KEY_TEMPLATES_DIRTY) === "1",
             keepLocalLibPrefs: localStorage.getItem(KEY_LIBPREFS_DIRTY) === "1",
+            progressById: fresh.progressById,
           });
         }
         const c = currentClient();
@@ -4089,7 +4090,7 @@
       }
 
       if (coachData) {
-        populateCoachFromCloud(coachData.coach, coachData.athletes);
+        populateCoachFromCloud(coachData.coach, coachData.athletes, { progressById: coachData.progressById });
         err.classList.add("hidden");
         playLoginFlash();
         signIntoTrainer();
@@ -4180,6 +4181,27 @@
   function purgeTemplateTombstones(list) {
     const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
     return (list || []).filter((t) => !t.deleted || (Number(t.updatedAt) || 0) > cutoff);
+  }
+
+  // What a coach-side athlete keeps as importedProgress after a cloud read.
+  // Cloud row present → adopt it, but union exerciseLogs through
+  // mergeExerciseLogs (a pull can never erase local work) — and never while
+  // an unconfirmed coach write owns the local copy (_coachProgressDirtyAt).
+  // Cloud row ABSENT → keep the local copy, identity-returned so callers can
+  // tell "unchanged". Shared by pullProgressFromCloud (one athlete, on open)
+  // and populateCoachFromCloud (whole roster): the latter used to adopt the
+  // athletes-table rows wholesale, whose importedProgress is always null, so
+  // every boot and resync wiped the roster back to "No sync" until each
+  // athlete was opened one at a time.
+  function mergedRosterProgress(localProgress, cloudProgress, progressDirty) {
+    if (cloudProgress && !progressDirty) {
+      return {
+        ...cloudProgress,
+        exerciseLogs: mergeExerciseLogs(localProgress?.exerciseLogs, cloudProgress.exerciseLogs),
+        syncedAt: Date.now(),
+      };
+    }
+    return localProgress || null;
   }
 
   function populateCoachFromCloud(coach, athletes, opts = {}) {
@@ -4280,6 +4302,7 @@
     localById.forEach((c, id) => {
       if (dirty[id] && !merged.some((a) => a.id === id)) merged.push(c);
     });
+    const progressById = opts.progressById || {};
     state.trainerData.clients = merged.map((a) => {
       if (!a.schedule) a.schedule = {};
       if (!a.coachPRs) a.coachPRs = [];
@@ -4287,6 +4310,14 @@
       if (!Array.isArray(a.trials)) a.trials = [];
       ensureSessionBank(a);
       if (!a.inviteCode) a.inviteCode = makeInviteCode();
+      // The athletes-table rows above carry no progress (rowToAthlete stamps
+      // importedProgress: null), so adopting them wholesale wiped what the
+      // roster runs on — completion %, avatars, mood chips, quiet flags all
+      // read "No sync" until each athlete was opened one by one. Attach the
+      // bulk-pulled progress row, or keep the local copy when the fetch
+      // didn't bring one.
+      a.importedProgress = mergedRosterProgress(
+        localById.get(a.id)?.importedProgress, progressById[a.id], !!_coachProgressDirtyAt[a.id]);
       return a;
     });
     saveTrainer();
@@ -6165,13 +6196,11 @@
     // after exitPreview, when the live session's last sets can still be
     // sitting in the debounce, and a raw replace dropped them locally. And
     // while a coach push is unconfirmed the local copy stays the authority,
-    // same window the realtime handler honours.
-    if (cloudProgress && !_coachProgressDirtyAt[c.id]) {
-      c.importedProgress = {
-        ...cloudProgress,
-        exerciseLogs: mergeExerciseLogs(c.importedProgress?.exerciseLogs, cloudProgress.exerciseLogs),
-        syncedAt: Date.now(),
-      };
+    // same window the realtime handler honours. (Those rules live in
+    // mergedRosterProgress, shared with the roster's bulk attach.)
+    const next = mergedRosterProgress(c.importedProgress, cloudProgress, !!_coachProgressDirtyAt[c.id]);
+    if (next !== c.importedProgress) {
+      c.importedProgress = next;
       changed = true;
     }
     if (cloudAthlete?.coachPRs) { c.coachPRs = cloudAthlete.coachPRs; changed = true; }
@@ -38156,7 +38185,7 @@
             const libPrefsDirty = localStorage.getItem(KEY_LIBPREFS_DIRTY) === "1";
             try {
               const fresh = await window.Cloud.getCoachByAuthUserId(userId);
-              if (fresh) populateCoachFromCloud(fresh.coach, fresh.athletes, { keepLocalTemplates: templatesDirty, keepLocalLibPrefs: libPrefsDirty });
+              if (fresh) populateCoachFromCloud(fresh.coach, fresh.athletes, { keepLocalTemplates: templatesDirty, keepLocalLibPrefs: libPrefsDirty, progressById: fresh.progressById });
             } catch (e) { console.warn("[Boot] Coach refresh failed, using cached data", e); }
             if (templatesDirty || libPrefsDirty) saveTrainer(); // reconcile unsynced local work up to the cloud
             // Retry athlete writes that never reached the cloud, so they stop
@@ -38191,7 +38220,7 @@
           // Slow path: unknown device, fetch role from cloud
           const coachData = await window.Cloud.getCoachByAuthUserId(userId);
           if (coachData) {
-            populateCoachFromCloud(coachData.coach, coachData.athletes);
+            populateCoachFromCloud(coachData.coach, coachData.athletes, { progressById: coachData.progressById });
             signIntoTrainer(); return;
           }
           const athleteResult = await window.Cloud.getAthleteByAuthUserId(userId);

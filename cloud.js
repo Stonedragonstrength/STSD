@@ -236,7 +236,21 @@
       const { data: athletes } = await sb.from("athletes")
         .select("*")
         .eq("coach_id", coach.id);
-      return { coach, athletes: (athletes || []).map(rowToAthlete) };
+      // The roster is progress-driven UI — completion %, avatars, mood chips
+      // and quiet flags all read importedProgress — and the athletes rows
+      // above carry none of it. One bulk fetch serves every card (66 kB
+      // across 22 athletes, measured in production 2026-08-13). Fail-silent
+      // like everything else here: an empty map means the caller keeps
+      // whatever local copies it already holds.
+      const progressById = {};
+      try {
+        const ids = (athletes || []).map((a) => a.id);
+        if (ids.length) {
+          const { data: rows } = await sb.from("progress").select("*").in("athlete_id", ids);
+          (rows || []).forEach((r) => { progressById[r.athlete_id] = rowToProgress(r); });
+        }
+      } catch (e) { console.warn("[Cloud] roster progress fetch", e); }
+      return { coach, athletes: (athletes || []).map(rowToAthlete), progressById };
     } catch (e) { console.warn("[Cloud] getCoachByAuthUserId", e); return null; }
   }
 
