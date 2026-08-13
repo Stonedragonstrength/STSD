@@ -10274,7 +10274,10 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   border-radius: 999px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
   font-size: 0.8rem;
+  /* One row, always: the msg ellipsizes; wrapping made it a two-story pill. */
+  flex-wrap: nowrap;
 }
+.preview-banner .preview-banner-actions { flex-wrap: nowrap; }
 body:has(.workout-dock > :not(.hidden)) .preview-banner {
   bottom: calc(4.6rem + env(safe-area-inset-bottom, 0px));
 }
