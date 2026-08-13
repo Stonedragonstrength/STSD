@@ -822,17 +822,10 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
   .sync-chip { padding: 0.34em; min-width: 30px; min-height: 30px; justify-content: center; }
   .sync-chip .sync-chip-txt { display: none; }
 }
-/* During a live session the athlete header-right (and its chip) is hidden —
-   the floating live pill carries the state as a leading dot instead. */
-.preview-banner[data-sync="syncing"]::before,
-.preview-banner[data-sync="issue"]::before,
-.preview-banner[data-sync="offline"]::before {
-  content: ""; display: inline-block; width: 8px; height: 8px;
-  border-radius: 50%; margin-right: 0.45em; vertical-align: baseline;
-}
-.preview-banner[data-sync="syncing"]::before { background: var(--primary-bright); }
-.preview-banner[data-sync="issue"]::before { background: rgb(var(--warn-rgb)); }
-.preview-banner[data-sync="offline"]::before { background: var(--muted); }
+/* The floating live pill used to carry the sync state as a leading dot; it
+   morphed mid-workout and read as noise (Nathan, 2026-08-12). The header's
+   own chip stays visible during live sessions instead — see the
+   live-log-mode header-right rules. */
 
 /* Breadcrumb (shown when inside an athlete) */
 .header-breadcrumb {
@@ -10311,7 +10304,12 @@ body:has(.workout-dock > :not(.hidden)) .preview-banner {
 /* (The read-only preview mode and its interaction blocking were retired
    2026-07-17 — the live session is the only coach door into the portal.)
    Header Exit/Install would sign the coach out — hide during a live session. */
-body.live-log-mode #screen-client .header-right { display: none; }
+/* Everything else in header-right (Exit, Install, sessions, messages) would
+   sign the coach out or belongs to the athlete — but the SYNC CHIP is exactly
+   what a coach mid-session needs to see, in the same corner it always lives.
+   The chip's own .hidden (display:none !important) still outranks this. */
+body.live-log-mode #screen-client .header-right > * { display: none; }
+body.live-log-mode #screen-client .header-right #sync-chip-athlete { display: inline-flex; }
 
 /* ==========================================================================
    Forged-steel facelift
