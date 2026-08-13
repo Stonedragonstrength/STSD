@@ -5073,6 +5073,15 @@ input[type="time"],
      stays in the chip's tooltip. The athlete's own header still names it. */
   .breadcrumb-rank .bcr-name { display: none; }
   .breadcrumb-rank { padding: 0.1em 0.35em; }
+  /* An open athlete owns the phone header. The inbox pill and the tour ?
+     belong to the wider app and were crowding the breadcrumb (Nathan,
+     2026-08-13: "really cramped... why is my notification pill up there") —
+     both are one "← Athletes" tap away. Sync truth and sign-out stay: the
+     first is load-bearing honesty, the second is an exit. The name gets the
+     freed room. */
+  .app-header:has(#header-breadcrumb:not(.hidden)) #btn-coach-inbox,
+  .app-header:has(#header-breadcrumb:not(.hidden)) #btn-tour-coach { display: none; }
+  .app-header:has(#header-breadcrumb:not(.hidden)) .breadcrumb-athlete { max-width: 42vw; }
 
   .brand-mark.sm { width: 34px; height: 34px; border-radius: 9px; }
   .header-left { gap: 0.55em; }
