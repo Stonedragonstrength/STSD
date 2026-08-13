@@ -6992,8 +6992,10 @@ input:focus, textarea:focus, select:focus {
   text-transform: uppercase; color: var(--text-soft);
 }
 /* Ten columns (3 back + 7 ahead). On a phone they'd crush the amounts, so the
-   row scrolls in its own container instead — never the page body. */
-.mw-days { display: grid; grid-template-columns: repeat(10, minmax(2.5rem, 1fr)); gap: 0.3rem; overflow-x: auto; padding-bottom: 2px; }
+   row scrolls in its own container instead — never the page body. The bottom
+   padding is the scrollbar's seat: the phone's overlay scrollbar draws at the
+   container's bottom edge, and at 2px it sat on top of the amounts. */
+.mw-days { display: grid; grid-template-columns: repeat(10, minmax(2.5rem, 1fr)); gap: 0.3rem; overflow-x: auto; padding-bottom: 9px; }
 /* Yesterday and back: already-earned context, kept quiet so the eye lands on
    today and what's ahead. */
 .mw-day.is-past { opacity: 0.45; }
