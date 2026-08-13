@@ -66,6 +66,30 @@ fail one at a time, in this order of likelihood:
    Assert state by DOM queries (classes, rects, values), treat screenshots
    as illustration only, and prefer a fresh tab per test round.
 
+## Iframe width testing (tablet/mobile passes)
+
+An iframe on the sandbox origin gets its own viewport, so media queries can
+be tested at 390/768/1024 without resizing Chrome. Rules learned 2026-08-12:
+
+- **Run exactly ONE app instance.** The outer tab and the iframe share
+  localStorage AND sessionStorage; if the outer tab is also running the app,
+  its timers re-save its own in-memory state and silently overwrite whatever
+  you seed for the iframe. Park the outer tab on `/manifest.json` (same
+  origin, no app boot) before seeding, then create the iframe.
+- **Clear localStorage fully when switching roles.** Leftover coach
+  `trainerpro_data_v1` next to a seeded athlete `trainerpro_client_v1` boots
+  the athlete screen in live-log/preview mode ("← Back to coach view"), where
+  previews suppress athlete-only UI (the readiness ask, for one) and nothing
+  looks wrong — it just quietly isn't the real athlete path.
+- The home hero's "Start workout" label lives in a SPAN inside the button —
+  match on any element's text, not `querySelectorAll("button")`.
+- `pointer: coarse` blocks never apply in a desktop iframe — tap-target
+  sizes from the end-of-file coarse pass can only be verified by reading the
+  CSS, not by measuring in this sandbox.
+- Media queries resolve against the iframe's CSS viewport, but a same-`?v=`
+  stylesheet reload can come from the MEMORY cache even with no-store
+  headers — cache-layer rule 2 applies to iframes too: bump the tag.
+
 ## Gotchas
 
 - Never seed/mutate data on the user's real origin (localhost:5190) — their
