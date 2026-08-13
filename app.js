@@ -28820,50 +28820,27 @@
     return wrap;
   }
 
-  // The little card beside "← Workouts": the exercise-count/progress pill and
-  // the check-in, together and out of the header, which is what lets the
-  // header be one line (Nathan, 2026-08-12). Rendered separately so the
-  // readiness skip/answer paths can refresh it without rebuilding the header.
+  // Beside "← Workouts" there is just the ⋯ now (Nathan's final arrangement,
+  // 2026-08-12 evening): check-in, mood and skip all live in the menu, the
+  // date sits in the header after the week, the count pill on its right edge.
   function renderWdSideCard(day) {
     const host = $("#wd-side-card");
     if (!host) return;
-    const totalEx = day.exercises.length;
-    const doneEx = day.exercises.filter((ex) => hasAnyLog(ex)).length;
-    const checked = isDayChecked(day.id);
-    const prog = checked
-      ? `<span class="dh-progress done">Done ✓</span>`
-      : doneEx > 0
-        ? `<span class="dh-progress going">${doneEx}/${totalEx} logged</span>`
-        : `<span class="dh-progress">${totalEx} exercise${totalEx === 1 ? "" : "s"}</span>`;
-    const rec = dayReadiness(state.clientData.progress, day.id);
     const canAnswer = state.mode === "client" || state.liveLog;
-    let rdy = "";
-    if (rec) {
-      rdy = `<button type="button" class="wd-rdy-btn" id="wd-rdy-btn"${canAnswer ? "" : " disabled"} title="Your check-in for this session — tap to change">${readinessChipHtml(rec, false)}</button>`;
-    } else if (canAnswer && !checked) {
-      rdy = `<button type="button" class="wd-rdy-btn wd-rdy-ask" id="wd-rdy-btn" title="Quick check-in before you start">🔋 How are you?</button>`;
-    }
-    // The ⋯ menu holds the episodic actions — mood, skip — so they cost one
-    // tap instead of permanent header/list space. Session-takers only.
-    const menu = canAnswer
-      ? `<span class="wd-card-sep"></span><button type="button" class="wd-rdy-btn wd-menu-btn" id="wd-menu-btn" title="How it went, skip this day…" aria-label="Session menu">⋯</button>`
+    host.classList.toggle("hidden", !canAnswer);
+    host.innerHTML = canAnswer
+      ? `<button type="button" class="wd-rdy-btn wd-menu-btn" id="wd-menu-btn" title="Check-in, how it went, skip this day…" aria-label="Session menu">⋯</button>`
       : "";
-    host.innerHTML = `${prog}${rdy ? `<span class="wd-card-sep"></span>${rdy}` : ""}${menu}`;
-    $("#wd-rdy-btn")?.addEventListener("click", () => {
-      if (rec) _rdyEditRequest = day.id;
-      else { _rdyAskOpen.add(day.id); _readinessSkipped.delete(day.id); }
-      renderWorkoutDetailUI({ keepScroll: true });
-      setTimeout(() => $("#workout-detail-list .rdy-block:not(.hidden)")
-        ?.scrollIntoView({ block: "center", behavior: "smooth" }), 80);
-    });
     $("#wd-menu-btn")?.addEventListener("click", () => openSessionMenuSheet(day));
   }
 
-  // The card's ⋯: how the workout went, and the skip-this-day door that used
-  // to be a strip above the first exercise. Skip keeps the strip's visibility
-  // rules (program days only, not yet checked); undo keeps its today-only rule.
+  // The card's ⋯: the pre-workout check-in, how the workout went, and the
+  // skip-this-day door that used to be a strip above the first exercise. Skip
+  // keeps the strip's visibility rules (program days only, not yet checked);
+  // undo keeps its today-only rule.
   function openSessionMenuSheet(day) {
     const p = state.clientData.progress;
+    const rec = dayReadiness(p, day.id);
     const moods = dayMoods(p, day.id);
     const logs = p?.exerciseLogs || {};
     const sToday = isSkipOccurrence(day, logs, todayISO());
@@ -28872,10 +28849,19 @@
     openModal({
       title: day.name || "This session",
       body: `<div class="wd-menu">
+        <button type="button" class="btn btn-ghost wd-menu-item" id="wdm-rdy">${rec ? `${readinessChipHtml(rec, false)} — change` : "🔋 How are you today?"}</button>
         <button type="button" class="btn btn-ghost wd-menu-item" id="wdm-mood">🫀 ${moods.length ? `How it went ${moodChipsHtml(moods, true)} — change` : "How was your workout?"}</button>
         ${skippable || sToday ? `<button type="button" class="btn btn-ghost wd-menu-item" id="wdm-skip">${sToday ? "↩ Undo today's skip" : "⏭ Didn't train? Skip this day"}</button>` : ""}
       </div>`,
       actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
+    });
+    $("#wdm-rdy")?.addEventListener("click", () => {
+      closeModal();
+      if (rec) _rdyEditRequest = day.id;
+      else { _rdyAskOpen.add(day.id); _readinessSkipped.delete(day.id); }
+      renderWorkoutDetailUI({ keepScroll: true });
+      setTimeout(() => $("#workout-detail-list .rdy-block:not(.hidden)")
+        ?.scrollIntoView({ block: "center", behavior: "smooth" }), 80);
     });
     $("#wdm-mood")?.addEventListener("click", () => { closeModal(); openWorkoutMoodSheet(day); });
     $("#wdm-skip")?.addEventListener("click", () => {
@@ -28908,10 +28894,17 @@
     // reads as context rather than as failure. It says where they are, nothing
     // more — no suggestion to back off, and no colour that implies one.
     const cycHtml = cycleChipHtml(myCyclePhase(state.workoutView.date), true);
-    // ONE line: toggle · name · week · phase · cycle · (date+mood on the right
-    // edge). The exercise pill and the check-in live in the side card by the
-    // back button, which is what bought the room. The two inner divs survive
-    // as display:contents so the date-input overlay selectors keep working.
+    // ONE line: toggle · name · week · date · phase · cycle, count pill on the
+    // right edge. The check-in, mood and skip live behind the ⋯ by the back
+    // button. The two inner divs survive as display:contents so the date-input
+    // overlay selectors keep working.
+    const totalEx = day.exercises.length;
+    const doneEx = day.exercises.filter((ex) => hasAnyLog(ex)).length;
+    const progHtml = checked
+      ? `<span class="dh-progress done">Done ✓</span>`
+      : doneEx > 0
+        ? `<span class="dh-progress going">${doneEx}/${totalEx} logged</span>`
+        : `<span class="dh-progress">${totalEx} exercise${totalEx === 1 ? "" : "s"}</span>`;
     head.innerHTML = `
       <div class="detail-head-main">
         <button class="day-check-toggle ${checked ? "checked" : ""}" id="detail-toggle" aria-label="Mark whole day complete">${checked ? "✓" : ""}</button>
@@ -28921,12 +28914,13 @@
       </div>
       <div class="detail-head-top">
         <span class="dh-week">${escapeHtml(week.label)}${focus}</span>
-        ${week.phaseLabel ? `<span class="phase-badge">${escapeHtml(week.phaseLabel)}</span>` : ""}
-        ${cycHtml}
         <label class="dh-date" title="Date these logs are for">
           <span class="dh-date-txt">📅 ${escapeHtml(dateTxt)}</span>
           <input type="date" class="detail-log-date" id="detail-log-date" value="${escapeHtml(state.workoutView.date)}" aria-label="Date these logs are for" />
         </label>
+        ${week.phaseLabel ? `<span class="phase-badge">${escapeHtml(week.phaseLabel)}</span>` : ""}
+        ${cycHtml}
+        ${progHtml}
       </div>
     `;
     head.querySelector("#detail-rename")?.addEventListener("click", () => openRenameOwnSessionSheet(day));

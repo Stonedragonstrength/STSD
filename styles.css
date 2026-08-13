@@ -6422,16 +6422,22 @@ input:focus, textarea:focus, select:focus {
 /* Both header rows flatten into the one flex line; ordering below arranges
    toggle · name · week · phase · cycle · date · mood. */
 .detail-head-top, .detail-head-main { display: contents; }
-.workout-detail-head .day-check-toggle { order: -4; }
-.workout-detail-head .detail-head-main h2 { order: -3; }
-.workout-detail-head .dh-week { order: -2; }
+.workout-detail-head .day-check-toggle { order: -5; }
+.workout-detail-head .detail-head-main h2 { order: -4; }
+.workout-detail-head .dh-week { order: -3; }
+.workout-detail-head .dh-date { order: -2; }
 .workout-detail-head .phase-badge { order: -1; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.workout-detail-head .dh-date { order: 1; margin-left: auto; }
+.workout-detail-head .dh-progress { order: 1; margin-left: auto; }
 /* Phones: shave the paddings so name · week · badge · date · mood genuinely
    share the one line at 390px. The name and badge are the shrinkable ones. */
 @media (max-width: 480px) {
-  .workout-detail-head { gap: 0.3em 0.28em; padding-left: 0.55rem; padding-right: 0.55rem; }
-  .workout-detail-head .phase-badge { letter-spacing: 0.04em; padding: 0.15em 0.45em; }
+  /* nowrap, because flex wraps before it shrinks: with wrap on, the count
+     pill hops to a second line instead of the name and badge ellipsizing. */
+  .workout-detail-head { flex-wrap: nowrap; gap: 0.3em 0.28em; padding-left: 0.55rem; padding-right: 0.55rem; }
+  .workout-detail-head .detail-head-main h2 { min-width: 2.5em; }
+  /* "WEEK 1" is the line's point — it never gives way; the badge does. */
+  .workout-detail-head .dh-week { flex-shrink: 0; }
+  .workout-detail-head .phase-badge { letter-spacing: 0.04em; padding: 0.15em 0.45em; min-width: 2em; }
   .workout-detail-head .dh-date { padding: 0.2em 0.45em; }
 }
 .dh-week {
