@@ -10363,10 +10363,14 @@
   // Surfaced to users as "training age" — the S&C term for years of real
   // lifting, which is what the ladder actually measures. Ids stay level-words
   // because they're stored on every athletes row; only labels changed.
+  // Thresholds tightened 2026-08-13 on Nathan's call: the volume research
+  // keeps landing on ~12 weekly sets as plenty even for advanced lifters, so
+  // the old 16-set ceiling graded well-built weeks as gaps. Solid rises with
+  // training age, plenty caps at 12.
   const TRAINING_LEVELS = [
-    { id: "beginner",     name: "Beginner",     emoji: "🌱", years: "Under a year of consistent lifting",  solid: 4, plenty: 8  },
-    { id: "intermediate", name: "Intermediate", emoji: "🌿", years: "One to three years of lifting",       solid: 6, plenty: 12 },
-    { id: "advanced",     name: "Advanced",     emoji: "🌳", years: "Three or more years of hard training", solid: 8, plenty: 16 },
+    { id: "beginner",     name: "Beginner",     emoji: "🌱", years: "Under a year of consistent lifting",  solid: 4,  plenty: 6  },
+    { id: "intermediate", name: "Intermediate", emoji: "🌿", years: "One to three years of lifting",       solid: 8,  plenty: 10 },
+    { id: "advanced",     name: "Advanced",     emoji: "🌳", years: "Three or more years of hard training", solid: 10, plenty: 12 },
   ];
   const TRAINING_LEVEL_BY_ID = Object.fromEntries(TRAINING_LEVELS.map((l) => [l.id, l]));
   const DEFAULT_TRAINING_LEVEL = "intermediate";
@@ -12367,6 +12371,21 @@
     "eq:rack": '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3.9" y="2.6" width="2.3" height="18.8" rx="1"/><rect x="17.8" y="2.6" width="2.3" height="18.8" rx="1"/><rect x="2.8" y="7.8" width="18.4" height="2.3" rx="1"/><rect x="2.2" y="6.8" width="2" height="4.2" rx=".9"/><rect x="19.8" y="6.8" width="2" height="4.2" rx=".9"/></svg>',
     "eq:pullup": '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="2.4" y="3.8" width="19.2" height="2.4" rx="1.2"/><rect x="3.8" y="2.6" width="2.1" height="4.2" rx=".9"/><rect x="18.1" y="2.6" width="2.1" height="4.2" rx=".9"/><rect x="8.1" y="6" width="1.8" height="7.2" rx=".9"/><rect x="14.1" y="6" width="1.8" height="7.2" rx=".9"/><rect x="7.4" y="12.6" width="3.2" height="1.9" rx=".9"/><rect x="13.4" y="12.6" width="3.2" height="1.9" rx=".9"/></svg>',
     "eq:medball": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18" stroke-width="1.4"/></svg>',
+    // Second equipment batch (2026-08-13, Nathan asked for more gear). Same
+    // solid-silhouette hand as the eq: set above; a loop (band) and a frame
+    // (trap bar, box) go stroked where a solid blob wouldn't read, the same
+    // call eq:medball already made. Iterated at 20/28/44px on the dark
+    // surface before shipping — the first band and jump rope both read as
+    // headphones, the first sled read as a scale.
+    "eq:trapbar": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M8.3 6.2h7.4l3.4 5.8-3.4 5.8H8.3l-3.4-5.8Z"/><path d="M1.6 12h3.3M19.1 12h3.3" stroke-width="2.6"/><path d="M9.8 10.4h4.4" stroke-width="2.2" stroke-linecap="round"/></svg>',
+    "eq:cable": '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4.2" y="2.6" width="2.4" height="18.8" rx="1"/><rect x="4.2" y="2.6" width="11.6" height="2.2" rx="1"/><circle cx="14.6" cy="6.6" r="1.6" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="13.7" y="8" width="1.8" height="4.8"/><rect x="10.2" y="12.6" width="8.8" height="2.1" rx="1"/></svg>',
+    "eq:band": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.2C7 7.6 9.6 10.4 12 10.4s5-2.8 8-1.2c1.4 2 1.4 3.6 0 5.6-3 1.6-5.6-1.2-8-1.2s-5 2.8-8 1.2c-1.4-2-1.4-3.6 0-5.6Z"/></svg>',
+    "eq:rower": '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="13.6" r="3.2" fill="none" stroke="currentColor" stroke-width="1.9"/><circle cx="5" cy="13.6" r="1.1"/><rect x="7.8" y="15.2" width="13.9" height="2.1" rx="1"/><rect x="12.2" y="12.4" width="3.6" height="2.5" rx="1"/><path d="M6.5 10.9 15 8.6l.5 1.9-8.4 2.3z"/><rect x="14.6" y="6.8" width="2" height="4" rx="1"/></svg>',
+    "eq:treadmill": '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M2.6 16.2 19 12.9a2.4 2.4 0 0 1 1 4.7L3.5 20.9a2.4 2.4 0 0 1-.9-4.7Z"/><rect x="17.6" y="3.4" width="2.2" height="11" rx="1" transform="rotate(9 18.7 8.9)"/><rect x="13.6" y="3.6" width="6" height="2.1" rx="1"/></svg>',
+    "eq:jumprope": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M7.2 9.2c.4 6.2 9.2 6.2 9.6 0"/><rect x="4.9" y="2.6" width="3" height="7" rx="1.4" fill="currentColor" stroke="none" transform="rotate(-20 6.4 6.1)"/><rect x="16.1" y="2.6" width="3" height="7" rx="1.4" fill="currentColor" stroke="none" transform="rotate(20 17.6 6.1)"/></svg>',
+    "eq:sled": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 18.6H6.2c-2 0-3.4-1.6-3-3.6"/><path d="M15.4 18.4 13 6.6h-2.6"/><path d="M13.6 9.6h4.2"/><circle cx="17.2" cy="14.2" r="2.3" fill="currentColor" stroke="none"/></svg>',
+    "eq:box": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.4 21 7.6l-9 4.2-9-4.2Z"/><path d="M3 7.6v8.6l9 4.2 9-4.2V7.6"/><path d="M12 11.8v8.6"/></svg>',
+    "eq:dipbars": '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="2.8" y="6.8" width="8" height="2.2" rx="1.1"/><rect x="13.2" y="6.8" width="8" height="2.2" rx="1.1"/><rect x="4" y="8.6" width="2.2" height="12" rx="1"/><rect x="17.8" y="8.6" width="2.2" height="12" rx="1"/><rect x="8.4" y="8.6" width="2.2" height="5" rx="1"/><rect x="13.4" y="8.6" width="2.2" height="5" rx="1"/></svg>',
     // Stone Dragon branded set — thin-line marks matching the logo's theme.
     // Auto-picked per day name by workoutIconFor(); also coach-pickable.
     "sd:claw": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M5.3 4.2C8 7 9.2 11.5 8.3 16.5"/><path d="M11.6 3c3 3.6 4.2 8.8 3.2 14.8"/><path d="M17.8 4.2c2.4 2.8 3.2 6.8 2.4 10.8"/></svg>',
@@ -12376,6 +12395,26 @@
     "sd:scale": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.2c2.6 1.9 5 2.8 7.3 2.9-.1 5.9-2.3 10.9-7.3 14.7-5-3.8-7.2-8.8-7.3-14.7 2.3-.1 4.7-1 7.3-2.9Z"/><path d="M12 8v7.5"/></svg>',
     "sd:flame": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.2c.9 2.8 2.7 4.4 3.9 5.9 1.3 1.6 2 3.1 2 4.7a5.9 5.9 0 0 1-11.8 0c0-2.2 1-3.9 2.2-5.4 0 1.6.6 2.7 1.8 3.3.1-3.2.8-5.7 1.9-8.5Z"/></svg>',
     "sd:moon": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/></svg>',
+    // Bodies in motion (2026-08-13, Nathan asked for figures doing the moves).
+    // Same sd: hand — 1.9 round stroke — plus a FILLED head dot, which is what
+    // keeps a 20px figure reading as a person instead of noodles. Drawn as
+    // side-profile pictograms with one exaggerated posture cue each (the
+    // squat's bar at the chest, the hinge's bar at the shin, the plank's
+    // vertical forearm) and iterated against screenshots at 20/28/44px:
+    // the first hinge draft put the bar at hip height and read obscene —
+    // Nathan's words — so the bar hangs from the shoulders now. These are
+    // also workoutIconFor()'s day-name defaults.
+    "sd:squat": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12.2" cy="4.4" r="1.9" fill="currentColor" stroke="none"/><path d="M11.8 6.6 10.2 12.6"/><path d="M10.2 12.6l6 .9"/><path d="M16.2 13.5l-.7 5.7"/><path d="M11.3 8.3h6.3" stroke-width="1.7"/></svg>',
+    "sd:bench": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.9" cy="12.3" r="1.9" fill="currentColor" stroke="none"/><path d="M7.9 13.3h6.9"/><path d="M14.8 13.3l2.3-2.7 1.9 2.9"/><path d="M10.3 12.9V7.6"/><path d="M6 7.2h8.6" stroke-width="1.7"/><path d="M4 15.5h16M6.6 15.5v3.7M17.4 15.5v3.7"/></svg>',
+    "sd:hinge": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="16.8" cy="6.4" r="1.9" fill="currentColor" stroke="none"/><path d="M15.4 7.7 8.8 10.4"/><path d="M8.8 10.4l1.4 4.4-1 4.4"/><path d="M14.6 8l-.4 5.8"/><path d="M11.6 14.2h5.2" stroke-width="1.7"/></svg>',
+    "sd:ohp": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="6.6" r="1.9" fill="currentColor" stroke="none"/><path d="M12 8.6v5.6"/><path d="M12 14.2l-2.6 5.4M12 14.2l2.6 5.4"/><path d="M10.4 9.4 9 5M13.6 9.4 15 5"/><path d="M5.6 4.4h12.8" stroke-width="1.7"/></svg>',
+    "sd:lunge": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9.8" cy="4.9" r="1.9" fill="currentColor" stroke="none"/><path d="M9.8 7v6"/><path d="M9.8 13l4.4.8v5.4"/><path d="M9.8 13l-2.4 4.4-3 1.6"/><path d="M9.8 8.4l2.6 2.6"/></svg>',
+    "sd:pushup": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18.6" cy="8.4" r="1.9" fill="currentColor" stroke="none"/><path d="M16.8 9.8 4.2 13.2"/><path d="M16.2 10l1 6"/><path d="M3.2 18.9h17.6" stroke-width="1.7"/></svg>',
+    "sd:sprint": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="15" cy="4.6" r="1.9" fill="currentColor" stroke="none"/><path d="M13.9 6.3 11.4 11.6"/><path d="M11.4 11.6l3.8 1.4-.6 4"/><path d="M11.4 11.6l-4.4 2.6-2.4 3.6"/><path d="M13.4 7.4l4.2 1.4M12.8 8.8 8.6 8"/></svg>',
+    "sd:jump": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="4.4" r="1.9" fill="currentColor" stroke="none"/><path d="M12 6.4v4.4"/><path d="M12 10.8l-3 2.8 1.4 2.8M12 10.8l3 2.8-1.4 2.8"/><path d="M10.6 7 7.6 3.4M13.4 7l3-3.6"/><path d="M6.4 20.7h11.2" stroke-width="1.7" stroke-dasharray="2 2.4"/></svg>',
+    "sd:plank": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18.6" cy="11" r="1.9" fill="currentColor" stroke="none"/><path d="M16.8 12.2 4.2 14.6"/><path d="M16.4 12.4v4.8M16.4 17.2h3"/><path d="M3.2 18.9h17.6" stroke-width="1.7"/></svg>',
+    "sd:pullupfig": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.4 3.8h15.2" stroke-width="1.7"/><circle cx="12" cy="6.9" r="1.9" fill="currentColor" stroke="none"/><path d="M8.6 3.8l2 4.8M15.4 3.8l-2 4.8"/><path d="M12 8.8v5.2"/><path d="M12 14l-1.8 4.2M12 14l1.8 4.2"/></svg>',
+    "sd:stretchfig": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="14.4" cy="6.6" r="1.9" fill="currentColor" stroke="none"/><path d="M12 14.4l-2.6 5.2M12 14.4l2.6 5.2"/><path d="M12 14.4c-.3-2.8.5-4.8 1.6-6.4"/><path d="M13.2 8.6C12.4 5 9.6 4.4 7.4 6.4"/></svg>',
     // Lucide line set (ISC license) — the same family as the nav icons, so the
     // coach's day-icon picks match the app's icon language. 24px grid, 2px
     // round strokes, currentColor. Stored as "lu:<name>" tokens.
@@ -12534,6 +12573,9 @@
     { label: "Stone Dragon", icons: [
       "sd:claw","sd:talon","sd:press","sd:mountain","sd:scale","sd:flame","sd:moon",
     ] },
+    { label: "Moves", icons: [
+      "sd:squat","sd:bench","sd:hinge","sd:ohp","sd:lunge","sd:pushup","sd:pullupfig","sd:sprint","sd:jump","sd:plank","sd:stretchfig",
+    ] },
     // Lucide line categories — the app's icon language (same family as the nav).
     // These lead the picker so day icons read as one cohesive set.
     { label: "Strength", icons: [
@@ -12553,6 +12595,7 @@
     ] },
     { label: "Equipment", icons: [
       "eq:barbell","eq:dumbbell","eq:kettlebell","eq:plate","eq:bench","eq:rack","eq:pullup","eq:medball",
+      "eq:trapbar","eq:cable","eq:band","eq:rower","eq:treadmill","eq:jumprope","eq:sled","eq:box","eq:dipbars",
     ] },
     // Emoji categories kept for flavor / brand fun where line icons don't reach.
     { label: "Dragons", icons: [
@@ -28453,15 +28496,23 @@
   // Pick a fun emoji based on day name keywords. Pure UI flavor.
   // Branded line icons per day type (the athlete picker's look). Emoji are
   // gone from the picker — coach-set SVG tokens win, otherwise keyword match.
+  // Day-name → icon defaults. Upgraded 2026-08-13 from the abstract brand
+  // marks to the sd: movement figures — a day called "Leg Day" now shows a
+  // body squatting rather than a mountain. Order matters: "bench" must match
+  // before the generic push words, and the hinge words before the squat
+  // group's "leg". A coach-picked icon on the day always wins; this is only
+  // the unset default.
   function workoutIconFor(name) {
     const n = String(name || "").toLowerCase();
-    if (/(squat|lower|leg|quad|hamstring|glute|calf)/.test(n)) return "sd:mountain";
-    if (/(deadlift|pull|back|row|lat)/.test(n)) return "sd:talon";
-    if (/(push|chest|bench|press|shoulder|delt|tricep)/.test(n)) return "sd:press";
+    if (/(deadlift|hinge|hamstring|glute|rdl)/.test(n)) return "sd:hinge";
+    if (/(squat|lower|leg|quad|calf)/.test(n)) return "sd:squat";
+    if (/(bench|chest)/.test(n)) return "sd:bench";
+    if (/(push|press|shoulder|delt|tricep)/.test(n)) return "sd:ohp";
+    if (/(pull|back|row|lat)/.test(n)) return "sd:pullupfig";
     if (/(bicep|arm|curl)/.test(n)) return "sd:claw";
-    if (/(core|abs|trunk)/.test(n)) return "sd:scale";
-    if (/(cardio|condition|run|sprint|hiit)/.test(n)) return "sd:flame";
-    if (/(rest|recovery|mobility|stretch|yoga)/.test(n)) return "sd:moon";
+    if (/(core|abs|trunk|plank)/.test(n)) return "sd:plank";
+    if (/(cardio|condition|run|sprint|hiit)/.test(n)) return "sd:sprint";
+    if (/(rest|recovery|mobility|stretch|yoga)/.test(n)) return "sd:stretchfig";
     return "sd:claw";
   }
 
