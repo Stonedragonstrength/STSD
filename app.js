@@ -737,7 +737,10 @@
   let _prNewLifts = [];
   let _prDragSrcId = null;
   function currentProgramTemplate() {
-    return (state.trainerData.programTemplates || []).find((p) => p.id === _programEditorId) || null;
+    // A deletion tombstone (merged in from another device mid-edit) reads as
+    // "no template" — the editor bails rather than editing a dead entry.
+    const tpl = (state.trainerData.programTemplates || []).find((p) => p.id === _programEditorId);
+    return tpl && !tpl.deleted ? tpl : null;
   }
 
   // -------- Data factories --------
@@ -3303,6 +3306,12 @@
   if (!Array.isArray(state.trainerData.programTemplates)) {
     state.trainerData.programTemplates = [];
   }
+  // Deletion tombstones ride the template arrays through sync (see
+  // deleteTemplateById). Drop the ones every device has long since synced
+  // past; no push needed — the next natural template save carries the purge.
+  state.trainerData.programTemplates = purgeTemplateTombstones(state.trainerData.programTemplates);
+  state.trainerData.workoutTemplates = purgeTemplateTombstones(state.trainerData.workoutTemplates);
+  state.trainerData.athleteTemplates = purgeTemplateTombstones(state.trainerData.athleteTemplates);
   // Coach-side list of exercise names hidden from the library sidebar.
   if (!Array.isArray(state.trainerData.hiddenExercises)) {
     state.trainerData.hiddenExercises = [];
@@ -4148,6 +4157,31 @@
     return out;
   }
 
+  // Deleting a template has to leave a trace, or sync undoes it: mergeById
+  // reads a missing id as "created on the other device" and resurrects it on
+  // the next pull. That is exactly what kept happening on the phone — the
+  // 1.5s debounced push dies when the page reloads or the PWA is
+  // backgrounded, so the cloud never hears about the delete, the boot pull
+  // brings the template back, and the dirty-flag re-push cements it. So
+  // delete swaps the entry for a stamped tombstone: newest-wins carries the
+  // deletion through every merge path, and whichever push eventually lands
+  // records it in the cloud. Render paths read through liveTemplates();
+  // tombstones older than 30 days are purged at boot, by which time every
+  // device has synced past them. (The known hole is a device that sleeps
+  // longer than the purge window and then pushes its stale array — the same
+  // window the 2026-08-12 stamp work accepted.)
+  function deleteTemplateById(list, id) {
+    return (list || []).map((t) =>
+      t.id === id ? { id: t.id, name: t.name, deleted: true, updatedAt: Date.now() } : t);
+  }
+  function liveTemplates(list) {
+    return (list || []).filter((t) => !t.deleted);
+  }
+  function purgeTemplateTombstones(list) {
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    return (list || []).filter((t) => !t.deleted || (Number(t.updatedAt) || 0) > cutoff);
+  }
+
   function populateCoachFromCloud(coach, athletes, opts = {}) {
     state.trainerData.trainer = { name: coach.display_name || "", email: coach.email || "" };
     state.trainerData.coachId = coach.id;
@@ -4497,8 +4531,8 @@
     const clients = data.clients || [];
     return {
       athletes: clients.length,
-      programs: (data.programTemplates || []).length,
-      days: (data.workoutTemplates || []).length,
+      programs: liveTemplates(data.programTemplates).length,
+      days: liveTemplates(data.workoutTemplates).length,
       weeks: clients.reduce((n, c) => n + (c.weeks || []).length, 0),
       logged: clients.reduce((n, c) =>
         n + Object.keys(c.importedProgress?.exerciseLogs || {}).length, 0),
@@ -5340,7 +5374,7 @@
     const grid = $("#tpl-grid");
     const empty = $("#tpl-empty");
     if (!bar || !grid) return;
-    const all = state.trainerData.athleteTemplates;
+    const all = liveTemplates(state.trainerData.athleteTemplates);
     const folders = state.trainerData.templateFolders;
 
     // ── Folder chips: All, each folder, then Unsorted when anything needs it ──
@@ -5398,7 +5432,9 @@
     row.querySelector('[data-act="del"]').addEventListener("click", (e) => {
       e.stopPropagation();
       if (!window.confirm(`Delete "${tpl.name || "this template"}"?`)) return;
-      state.trainerData.athleteTemplates = state.trainerData.athleteTemplates.filter((t) => t.id !== tpl.id);
+      // Tombstone, not removal — same resurrection-by-pull as programs (these
+      // ride the libPrefs blob through the same mergeById on the dirty path).
+      state.trainerData.athleteTemplates = deleteTemplateById(state.trainerData.athleteTemplates, tpl.id);
       saveTrainer(); renderTemplatesView();
     });
     return row;
@@ -5505,6 +5541,7 @@
     }
     // Backfill draft/ready status on programs saved before the split existed.
     state.trainerData.programTemplates.forEach((p) => {
+      if (p.deleted) return; // tombstones carry no status
       if (p.status !== "ready" && p.status !== "draft") p.status = "draft";
     });
   }
@@ -5579,7 +5616,9 @@
     deleteBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       if (!window.confirm(`Delete "${tpl.name || "this program"}"?`)) return;
-      state.trainerData.programTemplates = state.trainerData.programTemplates.filter((p) => p.id !== tpl.id);
+      // Tombstone, not removal — a plain filter gets resurrected by the next
+      // cloud pull whenever the debounced push didn't land (see deleteTemplateById).
+      state.trainerData.programTemplates = deleteTemplateById(state.trainerData.programTemplates, tpl.id);
       saveTrainer(); renderProgramsList();
     });
     actions.appendChild(deleteBtn);
@@ -5599,7 +5638,7 @@
     const grid = $("#program-template-grid");
     const empty = $("#program-template-empty");
     grid.innerHTML = "";
-    const templates = state.trainerData.programTemplates;
+    const templates = liveTemplates(state.trainerData.programTemplates);
     if (!templates.length) { show(empty); hide(grid); return; }
     hide(empty); show(grid);
 
@@ -5660,7 +5699,7 @@
     clearTimeout(_tplSyncTimer);
     _tplSyncTimer = setTimeout(() => {
       const tpl = (state.trainerData.programTemplates || []).find((p) => p.id === tplId);
-      if (!tpl) return;
+      if (!tpl || tpl.deleted) return;
       const linked = linkedClientsFor(tplId);
       if (!linked.length) return;
       const unlinked = [];
@@ -5821,7 +5860,7 @@
 
   function assignProgramPrompt(tplId) {
     const tpl = (state.trainerData.programTemplates || []).find((p) => p.id === tplId);
-    if (!tpl) return;
+    if (!tpl || tpl.deleted) return;
     const clients = state.trainerData.clients;
     if (!clients.length) { toast("No athletes yet. Add one first."); return; }
 
@@ -5917,7 +5956,7 @@
 
   function openLoadProgramModal() {
     const c = currentClient(); if (!c) return;
-    const programs = state.trainerData.programTemplates || [];
+    const programs = liveTemplates(state.trainerData.programTemplates);
 
     if (!programs.length) {
       openModal({
@@ -9423,7 +9462,7 @@
     const empty = $("#day-lib-empty");
     if (!grid) return;
     grid.innerHTML = "";
-    const templates = [...(state.trainerData.workoutTemplates || [])].sort((a, b) => a.name.localeCompare(b.name));
+    const templates = liveTemplates(state.trainerData.workoutTemplates).sort((a, b) => a.name.localeCompare(b.name));
     if (!templates.length) { show(empty); hide(grid); return; }
     hide(empty); show(grid);
     templates.forEach((t) => {
@@ -9461,8 +9500,9 @@
       deleteBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         if (!window.confirm(`Delete day template "${t.name}"?`)) return;
+        // Tombstone, not removal — same resurrection-by-pull as programs.
         state.trainerData.workoutTemplates =
-          state.trainerData.workoutTemplates.filter((x) => x.id !== t.id);
+          deleteTemplateById(state.trainerData.workoutTemplates, t.id);
         saveTrainer();
         renderDayLibrary();
         toast("Day template deleted");
@@ -9540,7 +9580,7 @@
   // day. There was once a second door that replaced an existing day instead;
   // nothing called it, so adding is the only way in.
   function openImportDayModal(week, rerenderFn) {
-    const templates = state.trainerData.workoutTemplates || [];
+    const templates = liveTemplates(state.trainerData.workoutTemplates);
     if (!templates.length) {
       toast("No day templates yet. Build one in Workout Library");
       return;
