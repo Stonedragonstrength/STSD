@@ -6379,6 +6379,11 @@ input:focus, textarea:focus, select:focus {
   font-size: 0.78rem;
   white-space: nowrap;
 }
+.wd-menu-btn { color: var(--text-soft); font-weight: 800; font-size: 1rem; line-height: 1; padding: 0 0.15em; }
+.wd-menu-btn:hover { color: var(--primary-bright); }
+/* The ⋯ sheet: two full-width rows, labels left-aligned. */
+.wd-menu { display: flex; flex-direction: column; gap: 0.5rem; }
+.wd-menu-item { justify-content: flex-start; text-align: left; width: 100%; display: flex; align-items: center; gap: 0.4em; }
 /* Pinned under the header + tab strip instead of scrolling away beneath them.
    Both of those are transparent (backdrop-filter, no background colour), so the
    day header used to slide under 124px of chrome and stay VISIBLE while being
@@ -6422,7 +6427,6 @@ input:focus, textarea:focus, select:focus {
 .workout-detail-head .dh-week { order: -2; }
 .workout-detail-head .phase-badge { order: -1; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .workout-detail-head .dh-date { order: 1; margin-left: auto; }
-.workout-detail-head .detail-mood-btn { order: 2; }
 /* Phones: shave the paddings so name · week · badge · date · mood genuinely
    share the one line at 390px. The name and badge are the shrinkable ones. */
 @media (max-width: 480px) {

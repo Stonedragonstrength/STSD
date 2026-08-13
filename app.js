@@ -28843,7 +28843,12 @@
     } else if (canAnswer && !checked) {
       rdy = `<button type="button" class="wd-rdy-btn wd-rdy-ask" id="wd-rdy-btn" title="Quick check-in before you start">🔋 How are you?</button>`;
     }
-    host.innerHTML = `${prog}${rdy ? `<span class="wd-card-sep"></span>${rdy}` : ""}`;
+    // The ⋯ menu holds the episodic actions — mood, skip — so they cost one
+    // tap instead of permanent header/list space. Session-takers only.
+    const menu = canAnswer
+      ? `<span class="wd-card-sep"></span><button type="button" class="wd-rdy-btn wd-menu-btn" id="wd-menu-btn" title="How it went, skip this day…" aria-label="Session menu">⋯</button>`
+      : "";
+    host.innerHTML = `${prog}${rdy ? `<span class="wd-card-sep"></span>${rdy}` : ""}${menu}`;
     $("#wd-rdy-btn")?.addEventListener("click", () => {
       if (rec) _rdyEditRequest = day.id;
       else { _rdyAskOpen.add(day.id); _readinessSkipped.delete(day.id); }
@@ -28851,13 +28856,39 @@
       setTimeout(() => $("#workout-detail-list .rdy-block:not(.hidden)")
         ?.scrollIntoView({ block: "center", behavior: "smooth" }), 80);
     });
+    $("#wd-menu-btn")?.addEventListener("click", () => openSessionMenuSheet(day));
+  }
+
+  // The card's ⋯: how the workout went, and the skip-this-day door that used
+  // to be a strip above the first exercise. Skip keeps the strip's visibility
+  // rules (program days only, not yet checked); undo keeps its today-only rule.
+  function openSessionMenuSheet(day) {
+    const p = state.clientData.progress;
+    const moods = dayMoods(p, day.id);
+    const logs = p?.exerciseLogs || {};
+    const sToday = isSkipOccurrence(day, logs, todayISO());
+    const skippable = !isOwnDay(day) && state.workoutView.weekId !== "oneoff"
+      && day.exercises.length && !isDayChecked(day.id);
+    openModal({
+      title: day.name || "This session",
+      body: `<div class="wd-menu">
+        <button type="button" class="btn btn-ghost wd-menu-item" id="wdm-mood">🫀 ${moods.length ? `How it went ${moodChipsHtml(moods, true)} — change` : "How was your workout?"}</button>
+        ${skippable || sToday ? `<button type="button" class="btn btn-ghost wd-menu-item" id="wdm-skip">${sToday ? "↩ Undo today's skip" : "⏭ Didn't train? Skip this day"}</button>` : ""}
+      </div>`,
+      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
+    });
+    $("#wdm-mood")?.addEventListener("click", () => { closeModal(); openWorkoutMoodSheet(day); });
+    $("#wdm-skip")?.addEventListener("click", () => {
+      closeModal();
+      if (sToday) { undoSkipDay(day); renderWorkoutDetailUI(); return; }
+      openSkipDaySheet(day, backToWorkoutPicker);
+    });
   }
 
   function renderWorkoutDetailHeader(week, day) {
     if (!state.workoutView.date) state.workoutView.date = todayISO();
     const head = $("#workout-detail-head");
     const checked = isDayChecked(day.id);
-    const moods = dayMoods(state.clientData.progress, day.id);
     renderWdSideCard(day);
     // The kicker used to hold four things and lose the fight on a phone: the
     // week label collapsed to "W..." and a raw date input sat in the header
@@ -28887,7 +28918,6 @@
         ${isOwnDay(day)
           ? `<h2 class="dh-name-editable" id="detail-rename" role="button" tabindex="0" title="Rename this session">${escapeHtml(day.name)}<span class="dh-name-pencil">✏️</span></h2>`
           : `<h2>${escapeHtml(day.name)}</h2>`}
-        <button type="button" class="detail-mood-btn ${moods.length ? "has-mood" : ""}" id="detail-mood-btn" title="How was your workout?" aria-label="How was your workout?">${moods.length ? moodChipsHtml(moods, true) : "🫀"}</button>
       </div>
       <div class="detail-head-top">
         <span class="dh-week">${escapeHtml(week.label)}${focus}</span>
@@ -28900,11 +28930,15 @@
       </div>
     `;
     head.querySelector("#detail-rename")?.addEventListener("click", () => openRenameOwnSessionSheet(day));
-    head.querySelector("#detail-mood-btn").addEventListener("click", () => openWorkoutMoodSheet(day));
     head.querySelector("#detail-toggle").addEventListener("click", () => {
       toggleDayComplete(day.id, state.workoutView.date);
       toast(checked ? "Unchecked" : "Day complete ✓");
       renderWorkoutDetailUI();
+      // Checking the day IS finishing the workout — ask how it went, same as
+      // the auto-lock path does. Unrated days only; the sheet guards the rest.
+      if (!checked && !dayMoods(state.clientData.progress, day.id).length) {
+        setTimeout(() => openWorkoutMoodSheet(day, { celebrate: true }), 300);
+      }
     });
     head.querySelector("#detail-log-date").addEventListener("change", (e) => {
       const from = state.workoutView.date;
@@ -29125,32 +29159,9 @@
     }
     list.appendChild(addWrap);
 
-    // "Opened it to look, decided not to." The card's Skipped it? lives back
-    // on the picker where nobody who is already in here will find it, so the
-    // same door renders at the TOP of the day — the decision is usually made
-    // while reading, not after scrolling everything. Program days only, same
-    // visibility rules as the card.
-    if (!own && week.id !== "oneoff" && day.exercises.length && !isDayChecked(day.id)) {
-      const dLogs = state.clientData.progress?.exerciseLogs;
-      const anyLogged = day.exercises.some((ex) => hasAnyLog(ex));
-      const runs = consecutiveDaySkips(day, dLogs);
-      const sOcc = runs > 0 ? dayOccurrences(day, dLogs) : [];
-      const sToday = runs > 0 && sOcc[sOcc.length - 1] === todayISO();
-      if (sToday || !anyLogged || runs > 0) {
-        const skipWrap = document.createElement("div");
-        skipWrap.className = "detail-skip-day";
-        const b = document.createElement("button");
-        b.type = "button";
-        b.className = "btn btn-ghost btn-sm detail-skip-btn";
-        b.textContent = sToday ? "Skipped today — undo" : "Didn't do this day? Skip it";
-        b.addEventListener("click", () => {
-          if (sToday) { undoSkipDay(day); renderWorkoutDetailUI(); return; }
-          openSkipDaySheet(day, backToWorkoutPicker);
-        });
-        skipWrap.appendChild(b);
-        list.prepend(skipWrap);
-      }
-    }
+    // The "Didn't do this day?" strip that used to prepend here moved into the
+    // side card's ⋯ session menu (2026-08-12) — one quiet door instead of a
+    // permanent bar above the first exercise.
 
     list.appendChild(renderDayNoteBlock(day.id));
     list.appendChild(renderFormCheckBlock(day));
