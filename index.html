@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=live1" />
+  <link rel="stylesheet" href="styles.css?v=sweep3" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -549,7 +549,7 @@
                    opens inside a list of one-line rows — always-open, it was
                    more than half the drawer's height. It still renders whether
                    or not the fold is open, so opening it is instant. -->
-              <details class="session-manage" id="coach-cal-fold">
+              <details class="session-manage">
                 <summary>Their calendar</summary>
                 <div class="session-calendar">
                   <div class="calendar-head">
@@ -824,7 +824,7 @@
           <!-- Weight units, rendered by renderCoachUnitsFold() -->
           <div id="cprof-trainage-host"></div>
           <div id="cprof-units-host"></div>
-          <details class="pref-fold" id="cprof-fold-invite">
+          <details class="pref-fold">
             <summary>
               <span class="pref-fold-ico">🔑</span>
               <span class="pref-fold-text">
@@ -844,7 +844,7 @@
           </details>
           <!-- Their referral code and who they've brought in. Built by
                renderCoachReferralFold(). -->
-          <details class="pref-fold" id="cprof-fold-referral">
+          <details class="pref-fold">
             <summary>
               <span class="pref-fold-ico">🤝</span>
               <span class="pref-fold-text">
@@ -1078,7 +1078,7 @@
       </main>
 
       <!-- Persistent Exercise Library Sidebar (shown only in program-building views) -->
-      <aside id="ex-lib-sidebar" class="ex-lib-sidebar" aria-label="Exercise Library">
+      <aside class="ex-lib-sidebar" aria-label="Exercise Library">
         <div class="ex-lib-sb-head">
           <span class="ex-lib-sb-title">Exercise Library</span>
           <span class="ex-lib-sb-hint" id="ex-lib-sb-hint">Drag onto a day</span>
@@ -1129,7 +1129,6 @@
         <div>
           <div class="header-title" id="client-header-title">Stone Dragon</div>
           <button class="header-name-btn" id="btn-client-profile" type="button" title="View & edit your profile">
-            <span class="header-av" id="client-header-avatar"></span>
             <span class="header-sub" id="client-portal-name"></span>
             <span class="header-name-caret">⚙</span>
           </button>
@@ -1269,7 +1268,7 @@
              float separately over the content, and the timer sat exactly where
              the last set row's ✓ is. As a bar, the detail's padding clears it
              and nothing is ever underneath it. -->
-        <div id="workout-dock" class="workout-dock">
+        <div class="workout-dock">
         <!-- Floating whole-day progress — fills as sets are completed -->
         <div id="day-progress" class="day-progress hidden">
           <div class="day-progress-track"><div class="day-progress-fill" id="day-progress-fill"></div></div>
@@ -1538,7 +1537,7 @@
     <div class="coach-sheet-card">
       <div class="coach-sheet-head">
         <div class="coach-sheet-headtext">
-          <span class="coach-sheet-kicker" id="ath-msg-kicker">Messages</span>
+          <span class="coach-sheet-kicker">Messages</span>
           <h3 id="ath-msg-title">Your coach</h3>
         </div>
         <button class="icon-btn" id="btn-ath-msg-refresh" aria-label="Refresh">⟳</button>
@@ -1621,7 +1620,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=cred1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=joby1"></script>
+  <script src="app.js?v=sweep3"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

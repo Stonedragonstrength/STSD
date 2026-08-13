@@ -237,11 +237,6 @@
     return { paint, pullStart, pullEnd, state: () => compute() };
   })();
 
-  // Track a pull promise on the chip without changing its behavior.
-  function trackPull(promise) {
-    SyncStatus.pullStart();
-    return Promise.resolve(promise).finally(() => SyncStatus.pullEnd());
-  }
 
   // Stage-1 client edition of the merge that Stage 2 moves into the database,
   // for the one catastrophic-loss family: per exercise, union entries by id;
@@ -691,13 +686,15 @@
   }
 
   function todayISO() {
-    const d = new Date();
-    const tz = d.getTimezoneOffset() * 60000;
-    return new Date(d - tz).toISOString().slice(0, 10);
+    return dateISO(new Date());
   }
   function dateISO(d) {
     const tz = d.getTimezoneOffset() * 60000;
     return new Date(d - tz).toISOString().slice(0, 10);
+  }
+  // Whole days since a local YYYY-MM-DD (noon-anchored so DST can't skew it).
+  function daysSince(iso) {
+    return Math.floor((Date.now() - new Date(iso + "T12:00:00").getTime()) / 86400000);
   }
   function decodeData(str) {
     const cleaned = String(str).replace(/\s+/g, "");
@@ -4759,28 +4756,21 @@
   }
 
   function renderClientHeaderAvatar() {
-    const host = $("#client-header-avatar");
     const crest = $("#client-rank-crest");
     const slot = $("#client-crest-avatar");
     const client = state.clientData?.program?.client;
     const id = avatarIdFor(client, state.clientData?.progress);
     // Their character stands in the crest, wearing the rank ring and medallion
     // the logo used to wear. Nothing picked: the logo keeps the frame.
+    // (No tile beside their name — that would be the same figure twice.)
     if (slot && crest) {
       slot.innerHTML = id
         ? `<img src="${avatarSrc(id)}" alt="" decoding="async" />`
         : "";
       crest.classList.toggle("has-av", !!id);
     }
-    if (!host) return;
-    // The small tile beside their name would now be the same figure twice.
-    host.innerHTML = "";
-    host.classList.add("hidden");
   }
 
-  function clientInitials(name) {
-    return (name || "?").split(" ").map(p => p[0] || "").join("").slice(0, 2).toUpperCase();
-  }
   function nameInitials(name) {
     const parts = (name || "?").trim().split(/\s+/);
     return (parts[0][0] + (parts[1]?.[0] || "")).toUpperCase();
@@ -4955,7 +4945,7 @@
       clients.forEach((c) => {
         const iso = lastActivityISO(c.importedProgress);
         if (!iso) return none.clients.push(c);
-        const days = Math.floor((Date.now() - new Date(iso + "T12:00:00").getTime()) / 86400000);
+        const days = daysSince(iso);
         (days >= 7 ? quiet : act).clients.push(c);
       });
       return [act, quiet, none].filter((g) => g.clients.length);
@@ -7134,12 +7124,8 @@
   // should be able to see WHY it says $819 before they send it.
   // A tier that is priced but grants no sessions bills its price FLAT: the
   // coaching is the product, so sessions × rate is $0 and would offer nothing
-  // to bill for an athlete who owes $250. Returns 0 for every ordinary tier,
-  // which leaves the sessions × rate arithmetic exactly as it was.
-  function flatMonthly(m) {
-    return m && m.price && !m.sessions ? Number(m.price) || 0 : 0;
-  }
-  // The same, but honouring a rate the coach set on this athlete's bank.
+  // to bill for an athlete who owes $250. Honours a rate the coach set on
+  // this athlete's bank.
   //
   // A program-only tier has no sessions to multiply, so `sessionBank.rate` is
   // not a per-session figure there — it is what this person pays a month, full
@@ -7310,7 +7296,6 @@
     // is submitted and there is nothing to send at all.
     const saved = savedCardFor(c);
     const auto = !!saved?.autopay;
-    if (existing?.url) { /* a re-open shows the same link below */ }
     openModal({
       title: `Charge ${c.name || "athlete"} · ${monthLabel}`,
       body: `
@@ -8651,7 +8636,7 @@
           <p class="mem-foot">${escapeHtml(
             (inUse ? `${inUse} athlete${inUse === 1 ? "" : "s"} on it` : "Nobody on it") +
             " · " + (Number(m.sessions) ? `${money(Math.round((Number(m.price) || 0) / m.sessions))} a session` : "flat monthly"),
-          )}${offMenu ? `<span class="mem-warn"> · ${offMenu} on a custom rate, so ${offMenu === 1 ? "they won't" : "they won't"} move</span>` : ""}</p>
+          )}${offMenu ? `<span class="mem-warn"> · ${offMenu} on a custom rate, so they won't move</span>` : ""}</p>
         </div>`;
     };
 
@@ -8845,7 +8830,9 @@
     if (!m) { toast("Pick a membership first"); return; }
     if (!m.sessions) { toast("This membership has no sessions to grant"); return; }
     ensureSessionBank(c);
-    const monthKey = new Date().toISOString().slice(0, 7); // YYYY-MM
+    // Local month key, NOT toISOString(): a late-evening grant on the last
+    // day of a month must not file under next month (UTC rolls over first).
+    const monthKey = todayISO().slice(0, 7); // YYYY-MM
     const monthLabel = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
     const already = grantedThisMonth(c, monthKey);
     if (already && !window.confirm(`You already granted ${monthLabel}'s sessions to ${c.name || "this athlete"}. Grant another ${m.sessions}?`)) return;
@@ -12947,6 +12934,11 @@
       });
   }
 
+  // Default "Week N" labels follow their position after a drag/duplicate/
+  // delete; a custom label never gets renumbered.
+  function renumberDefaultWeekLabels(list) {
+    list.forEach((w, i) => { if (/^Week \d+$/.test(w.label)) w.label = `Week ${i + 1}`; });
+  }
   function renderCoachWeekTabs(weeks, container, showAdd = true) {
     // ── Tab strip ──
     const strip = document.createElement("div");
@@ -13003,7 +12995,7 @@
         const [moved] = list.splice(weekDragFrom, 1);
         list.splice(wIdx, 0, moved);
         // Default "Week N" labels follow position; custom/phase labels are left alone.
-        list.forEach((w, i) => { if (/^Week \d+$/.test(w.label)) w.label = `Week ${i + 1}`; });
+        renumberDefaultWeekLabels(list);
         const newActive = list.findIndex((w) => w.id === activeId);
         _coachActiveWeekIdx = newActive >= 0 ? newActive : wIdx;
         weekDragFrom = null;
@@ -13205,7 +13197,7 @@
           })),
         };
         list.splice(at + 1, 0, clone);
-        list.forEach((w, i) => { if (/^Week \d+$/.test(w.label)) w.label = `Week ${i + 1}`; });
+        renumberDefaultWeekLabels(list);
         _coachActiveWeekIdx = at + 1;
         saveTrainer();
         renderWeeks();
@@ -13228,7 +13220,7 @@
           if (!list || !list[at]) return;
           if (!window.confirm(`Delete ${list[at].label}? This cannot be undone.`)) return;
           list.splice(at, 1);
-          list.forEach((w, i) => { if (/^Week \d+$/.test(w.label)) w.label = `Week ${i + 1}`; });
+          renumberDefaultWeekLabels(list);
           _coachActiveWeekIdx = Math.max(0, Math.min(at, list.length - 1));
           saveTrainer();
           renderWeeks();
@@ -15899,10 +15891,7 @@
     }
     if (!renewed.length && !advised.length && !repriced.length) return;
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
-    [...renewed, ...advised, ...repriced].forEach((c) => {
-      if (window.Cloud?.enabled) window.Cloud.debounce(`athlete:${c.id}`, () =>
-        window.Cloud.upsertAthlete(c, state.trainerData.coachId));
-    });
+    [...renewed, ...advised, ...repriced].forEach((c) => pushAthlete(c));
     // A correction to what somebody OWES is worth saying out loud — he changed
     // the rate, and this is the confirmation that the month followed it. Fires
     // once, because the second pass finds the price already agreeing.
@@ -15949,7 +15938,7 @@
     const rowHtml = (s, once) => {
       const idx = athleteColorIdx(s.client);
       const when = once
-        ? `${fmtSlotDay(zonedDateISO(s.ms, plan.tz), plan.tz)} · ${fmtSlotTime(s.ms, plan.tz)}`
+        ? `${fmtSlotDay(zonedDateISO(s.ms, plan.tz))} · ${fmtSlotTime(s.ms, plan.tz)}`
         : `${dowsPhrase(s.dows)} · ${fmtSlotTime(
             zonedTimeToUtc(2026, 1, 5, s.hh, s.mm, plan.tz), plan.tz)}`;
       return `<div class="lk-row" style="--athlete-rgb:${AVATAR_RGB[idx]}">
@@ -16268,11 +16257,7 @@
     if (!spent.length) return;
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
     // Push each charged athlete (saveTrainer only pushes the open one)
-    if (window.Cloud?.enabled) {
-      spent.forEach((c) => window.Cloud.debounce(`athlete:${c.id}`, () =>
-        window.Cloud.upsertAthlete(c, state.trainerData.coachId)
-      ));
-    }
+    spent.forEach((c) => pushAthlete(c));
     toast(`🎟 Session token spent: ${spent.map((c) => c.name).join(", ")}`);
     if (state.currentClientId && spent.some((c) => c.id === state.currentClientId)) {
       renderCoachSessions();
@@ -16323,9 +16308,7 @@
       if (key(merged) !== key(c.sessionBank.upcomingBookings)) {
         c.sessionBank.upcomingBookings = merged;
         anyChanged = true;
-        if (window.Cloud?.enabled) window.Cloud.debounce(`athlete:${c.id}`, () =>
-          window.Cloud.upsertAthlete(c, state.trainerData.coachId)
-        );
+        pushAthlete(c);
       }
     });
     if (anyChanged) localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
@@ -16353,9 +16336,7 @@
         const n = normSetmoreName(bookingName);
         if (!c.setmoreAliases.includes(n)) c.setmoreAliases.push(n);
         saveTrainer();
-        if (window.Cloud?.enabled) window.Cloud.debounce(`athlete:${c.id}`, () =>
-          window.Cloud.upsertAthlete(c, state.trainerData.coachId)
-        );
+        pushAthlete(c);
         closeModal();
         toast(`Linked to ${c.name} ✓`);
         autoRedeemFinishedBookings();
@@ -16405,14 +16386,8 @@
     const [y, m] = String(iso).split("-").map(Number);
     return y === year && m - 1 === month;
   }
-  // Sunday-start, to match the month grid's columns.
-  function weekStartOf(iso) {
-    const d = new Date(iso + "T12:00:00");
-    d.setDate(d.getDate() - d.getDay());
-    return dateISO(d);
-  }
   function weekDatesOf(iso) {
-    const start = new Date(weekStartOf(iso) + "T12:00:00");
+    const start = new Date(sundayOfISO(iso) + "T12:00:00");
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(start);
       d.setDate(start.getDate() + i);
@@ -16968,7 +16943,7 @@
       const ampm = h < 12 ? "AM" : "PM";
       const h12 = h % 12 === 0 ? 12 : h % 12;
       // The meridiem only where it changes, so the column reads 6 AM, 7, 8 … 12 PM.
-      return (h === from / 60 || h === 12 || h === 0) ? `${h12} ${ampm}` : String(h12);
+      return (h === from / 60 || h === 12) ? `${h12} ${ampm}` : String(h12);
     };
 
     const heads = days.map((d) => {
@@ -17168,9 +17143,9 @@
       let html = `<div class="dash-cal-date">${d.getDate()}</div>`;
       shown.forEach(e => {
         if (e.rest) {
-          html += `<div class="dash-cal-pill dash-cal-pill-rest"><span class="dash-cal-initials">${escapeHtml(clientInitials(e.client.name))}</span><span class="dash-cal-day-name">Rest</span></div>`;
+          html += `<div class="dash-cal-pill dash-cal-pill-rest"><span class="dash-cal-initials">${escapeHtml(nameInitials(e.client.name))}</span><span class="dash-cal-day-name">Rest</span></div>`;
         } else {
-          html += `<div class="dash-cal-pill" style="--day-color:${e.dc.color};--day-color-soft:${e.dc.soft}"><span class="dash-cal-initials">${escapeHtml(clientInitials(e.client.name))}</span><span class="dash-cal-day-name">${escapeHtml(e.dayName)}</span></div>`;
+          html += `<div class="dash-cal-pill" style="--day-color:${e.dc.color};--day-color-soft:${e.dc.soft}"><span class="dash-cal-initials">${escapeHtml(nameInitials(e.client.name))}</span><span class="dash-cal-day-name">${escapeHtml(e.dayName)}</span></div>`;
         }
       });
       if (overflow > 0) html += `<div class="dash-cal-more">+${overflow} more</div>`;
@@ -17190,8 +17165,8 @@
         (c.sessionBank?.missedSessions || []).forEach((m) => {
           if (m.date !== iso) return;
           html += m.type === "closecall"
-            ? `<div class="dash-cal-pill cal-day-pill-closecall" title="${escapeHtml(c.name)}: close call (free)">🤝 ${escapeHtml(clientInitials(c.name))}</div>`
-            : `<div class="dash-cal-pill cal-day-pill-missed" title="${escapeHtml(c.name)}: missed, charged">✕ ${escapeHtml(clientInitials(c.name))}</div>`;
+            ? `<div class="dash-cal-pill cal-day-pill-closecall" title="${escapeHtml(c.name)}: close call (free)">🤝 ${escapeHtml(nameInitials(c.name))}</div>`
+            : `<div class="dash-cal-pill cal-day-pill-missed" title="${escapeHtml(c.name)}: missed, charged">✕ ${escapeHtml(nameInitials(c.name))}</div>`;
         });
       });
       // Mobile shows a compact count badge instead of pills (CSS swaps them)
@@ -17214,7 +17189,7 @@
   }
 
   function fmtSetmoreTime(iso) {
-    return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    return fmtSlotTime(+new Date(iso));
   }
 
   // Disconnect a Setmore booking name from an athlete by removing the alias
@@ -17232,9 +17207,7 @@
     if (!window.confirm(`Unlink "${bookingName}" from ${c.name}? Future bookings under this name won't match ${c.name} (and won't auto-spend a session).`)) return;
     c.setmoreAliases = c.setmoreAliases.filter((a) => a !== n);
     saveTrainer();
-    if (window.Cloud?.enabled) window.Cloud.debounce(`athlete:${c.id}`, () =>
-      window.Cloud.upsertAthlete(c, state.trainerData.coachId)
-    );
+    pushAthlete(c);
     toast(`Unlinked from ${c.name} ✓`);
     closeModal();
     renderDashboardCalendar();
@@ -19267,9 +19240,7 @@
     host.querySelectorAll("[data-sl-step]").forEach((b) => b.addEventListener("click", () => {
       const step = Number(b.dataset.slStep);
       if (!step) { _lookupMonth = todayISO().slice(0, 7); renderSessionLookup(); return; }
-      const [y, m] = _lookupMonth.split("-").map(Number);
-      const d = new Date(y, m - 1 + step, 1);
-      _lookupMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      _lookupMonth = shiftMonthKey(_lookupMonth, step);
       renderSessionLookup();
     }));
     // Re-rendering on every keystroke would blur the field, so the value is
@@ -19339,7 +19310,7 @@
     // membershipSub composes the usual "N sessions / month · $X/mo".
     { id: "monthly-2",  cat: "Monthly Memberships", sessions: 2, price: 315, title: "2 Session Monthly Membership", optLabel: "2 sessions / month" },
     // Program only, and priced — the coaching IS the product, so it bills a
-    // FLAT monthly amount rather than sessions × rate. See flatMonthly().
+    // FLAT monthly amount rather than sessions × rate. See flatMonthlyFor().
     { id: "digital",    cat: "Monthly Memberships", sessions: 0, price: 250, title: "Digital Membership", short: "Program only · $250/mo", optLabel: "Digital Membership (program only)" },
     { id: "no-session", cat: "Monthly Memberships", sessions: 0, title: "No Session Membership",       short: "Program only · no sessions", optLabel: "No sessions (program only)" },
   ];
@@ -19781,7 +19752,7 @@
   // and collect it, never to grant a second allowance beside the first.
   function grantedThisMonth(c, key) { return !!monthPackageOf(c, key); }
   function monthGrantLabel() {
-    return new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    return monthKeyLabel(monthGrantKey());
   }
   // The tier a bank runs on. A couple's two halves are one bank, so either
   // half's membership answers for both — bankMutated mirrors it, but a row
@@ -19845,9 +19816,6 @@
     return bankLedger({ ...bank, packages }, todayISO().slice(0, 7), !!bank.rollover);
   }
 
-  function monthGrantDue() {
-    return monthGrantRoster().filter((r) => r.membership && r.membership.sessions && !r.granted);
-  }
   // The roster-header button carries its own count, so the start-of-month round
   // announces itself instead of being something the coach has to remember.
   // A month he settled OUTSIDE this sheet — by hand, package by package, or
@@ -20227,18 +20195,14 @@
   // session count — a month that hasn't happened has nothing booked against it
   // yet, and waiting for it to would mean invoicing in arrears.
   function nextMonthKey(fromISO) {
-    const [y, m] = String(fromISO || todayISO()).slice(0, 7).split("-").map(Number);
-    const d = new Date(y, m, 1); // m is 1-based, so this lands on the next month
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    return shiftMonthKey(String(fromISO || todayISO()).slice(0, 7), 1);
   }
   const billingMonthKey = () => nextMonthKey(todayISO());
 
   let _billMonthKey = null;
   const billMonthKey = () => _billMonthKey || billingMonthKey();
   function shiftBillMonth(delta) {
-    const [y, m] = billMonthKey().split("-").map(Number);
-    const d = new Date(y, m - 1 + delta, 1);
-    _billMonthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    _billMonthKey = shiftMonthKey(billMonthKey(), delta);
   }
   // How far either way the stepper will go. Billing three months back is
   // catching up; billing three months forward is a mistake, and the arrow
@@ -20667,7 +20631,6 @@
     // cost far more bookings than the gap does.
     blocks: [],
   };
-  const DOW_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
   function localTz() {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (e) { return "UTC"; }
@@ -20782,11 +20745,6 @@
     if (!a.cancelHours) return false;
     return Date.now() >= startMs - a.cancelHours * 3600000;
   }
-  // When that window shuts, so they can be told what they have until rather
-  // than only being told no.
-  function cancelDeadlineMs(startMs, av) {
-    return startMs - normalizeAvailability(av).cancelHours * 3600000;
-  }
 
   // Every slot the availability implies in [fromMs, fromMs + days), minus the
   // lead time and minus anything in `busy` (existing bookings, and the coach's
@@ -20807,9 +20765,7 @@
       const dayISO = zonedDateISO(fromMs + i * 86400000, tz);
       if (blackouts.has(dayISO)) continue;
       const [y, m, d] = dayISO.split("-").map(Number);
-      // Day of week for that calendar date, computed off a UTC noon so no
-      // offset can push it onto the neighbouring day.
-      const dow = new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay();
+      const dow = dowOfISO(dayISO);
       const windows = [
         ...(Array.isArray(a.weekly[String(dow)]) ? a.weekly[String(dow)] : []),
         ...a.extra.filter((e) => e && e.date === dayISO),
@@ -20870,7 +20826,9 @@
       hour: "numeric", minute: "2-digit", timeZone: tz || undefined,
     });
   }
-  function fmtSlotDay(iso, tz) {
+  // The date is already zoned by the caller (zonedDateISO), so this reads it
+  // back at a fixed UTC noon — no tz parameter, none is consulted.
+  function fmtSlotDay(iso) {
     return new Date(iso + "T12:00:00Z").toLocaleDateString(undefined, {
       weekday: "long", month: "short", day: "numeric", timeZone: "UTC",
     });
@@ -21424,7 +21382,7 @@
       //
       // Computed from the anchors rather than a fixed number of days back, so it
       // cannot drift if the week start moves: the income card counts from
-      // Sunday (weekStartOf) and the books fold counts whole months, so the
+      // Sunday (sundayOfISO) and the books fold counts whole months, so the
       // window reaches whichever of the two is earlier, at local midnight.
       const backTo = new Date();
       backTo.setHours(0, 0, 0, 0);
@@ -21569,7 +21527,7 @@
     if (!availabilityIsSet(a)) {
       return `<p class="sched-empty">No availability set yet. Athletes can't book until you add the hours you work.</p>`;
     }
-    const rows = DOW_NAMES.map((name, i) => {
+    const rows = DOW_LABELS.map((name, i) => {
       const wins = Array.isArray(a.weekly[String(i)]) ? a.weekly[String(i)] : [];
       if (!wins.length) return "";
       return `<div class="sched-day"><span class="sched-day-name">${name}</span>` +
@@ -21591,7 +21549,7 @@
   function availabilityLine(av) {
     const a = normalizeAvailability(av);
     if (!availabilityIsSet(a)) return "Not set yet";
-    const days = DOW_NAMES.filter((_, i) => (a.weekly[String(i)] || []).length);
+    const days = DOW_LABELS.filter((_, i) => (a.weekly[String(i)] || []).length);
     const which = days.length === 7 ? "Every day"
       : days.length > 3 ? `${days.length} days a week`
       : days.join(", ");
@@ -21977,7 +21935,7 @@
   function incomeForecast() {
     const rates = new Map((state.trainerData.clients || []).map((c) => [c.id, athleteSessionRate(c)]));
     const today = todayISO();
-    const wkStart = weekStartOf(today);
+    const wkStart = sundayOfISO(today);
     const wkEnd = addDaysISO(wkStart, 7);      // exclusive
     const fourEnd = addDaysISO(wkStart, 28);   // exclusive
     let day = 0, week = 0, four = 0, unpriced = 0, sessions = 0, fourSessions = 0;
@@ -22580,7 +22538,7 @@
             // an athlete who trains Tuesday and Thursday is one standing
             // appointment, not two that have to be managed separately.
             (draft.weeks
-              ? `<div class="cbk-dows">${DOW_NAMES.map((name, i) =>
+              ? `<div class="cbk-dows">${DOW_LABELS.map((name, i) =>
                   `<button type="button" class="cbk-dow${draft.dows.includes(i) ? " on" : ""}" data-dow="${i}" aria-pressed="${draft.dows.includes(i)}">` +
                     `<span class="cbk-dow-l">${escapeHtml(name[0])}</span>` +
                     `<span class="cbk-dow-s">${escapeHtml(name)}</span>` +
@@ -22901,7 +22859,7 @@
         `</div>` +
         `<div class="cbk-sec">` +
           `<div class="cbk-lab">Repeats on</div>` +
-          `<div class="cbk-dows">${DOW_NAMES.map((name, i) =>
+          `<div class="cbk-dows">${DOW_LABELS.map((name, i) =>
             `<button type="button" class="cbk-dow${draft.dows.includes(i) ? " on" : ""}" data-dow="${i}" aria-pressed="${draft.dows.includes(i)}">` +
               `<span class="cbk-dow-l">${escapeHtml(name[0])}</span>` +
               `<span class="cbk-dow-s">${escapeHtml(name)}</span>` +
@@ -23310,7 +23268,7 @@
       const body = $("#modal-body"); if (!body) return;
       body.innerHTML =
         `<p class="muted" style="margin-top:-0.4em">The hours you work each week. Athletes see these split into ${draft.sessionMins}-minute slots, minus anything already booked.</p>` +
-        `<div class="av-days">${DOW_NAMES.map((name, i) => {
+        `<div class="av-days">${DOW_LABELS.map((name, i) => {
           const wins = Array.isArray(draft.weekly[String(i)]) ? draft.weekly[String(i)] : [];
           return `<div class="av-day">` +
             `<div class="av-day-head"><span class="av-day-name">${name}</span>` +
@@ -23699,11 +23657,7 @@
   function afterPackageRequestAction(c) {
     bankMutated(c);
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
-    if (window.Cloud?.enabled) {
-      window.Cloud.debounce(`athlete:${c.id}`, () =>
-        window.Cloud.upsertAthlete(c, state.trainerData.coachId)
-      );
-    }
+    pushAthlete(c);
     if (state.currentClientId === c.id) renderCoachSessions();
     // Keep the athlete-card 🎟 chips fresh if the Athletes list is showing.
     if (!$("#view-dashboard").classList.contains("hidden")) renderClientGrid();
@@ -23754,7 +23708,7 @@
 
       const last = lastActivityISO(ip);
       if (last) {
-        const days = Math.floor((Date.now() - new Date(last + "T12:00:00").getTime()) / 86400000);
+        const days = daysSince(last);
         if (days >= NEEDS_QUIET_DAYS) rows.push({ kind: "quiet", pri: 3, c, days, ts: -days });
       }
     });
