@@ -257,19 +257,22 @@ check("the default level is a real row in the table", () => {
 
 // ---- bands are per level ---------------------------------------------------
 check("intermediate is EXACTLY today's ladder", () => {
-  // The whole migration story rests on this. Every existing athlete is unset,
-  // unset reads as intermediate, and intermediate must be 6/12 — or shipping
-  // this moves every map on the roster before a single level is assigned.
+  // Every unset athlete reads as intermediate, so these two numbers move
+  // every map on the roster at once. 8/10 is Nathan's 2026-08-13 call —
+  // the volume research keeps landing on ~10-12 weekly sets as plenty, so
+  // the old 6/12 spread graded well-built weeks as merely solid and thin
+  // ones as fine. A deliberate re-grade, not drift: if this fails, someone
+  // moved the thresholds without telling the coach.
   const b = TRAINING_LEVEL_BY_ID.intermediate;
-  assert.strictEqual(b.solid, 6);
-  assert.strictEqual(b.plenty, 12);
+  assert.strictEqual(b.solid, 8);
+  assert.strictEqual(b.plenty, 10);
   assert.strictEqual(coverageBand(0, b), 0);
   assert.strictEqual(coverageBand(0.5, b), 0, "half a set still shows nothing");
   assert.strictEqual(coverageBand(1, b), 1);
-  assert.strictEqual(coverageBand(5.5, b), 1);
-  assert.strictEqual(coverageBand(6, b), 2);
-  assert.strictEqual(coverageBand(11.5, b), 2);
-  assert.strictEqual(coverageBand(12, b), 3);
+  assert.strictEqual(coverageBand(7.5, b), 1);
+  assert.strictEqual(coverageBand(8, b), 2);
+  assert.strictEqual(coverageBand(9.5, b), 2);
+  assert.strictEqual(coverageBand(10, b), 3);
 });
 
 check("every level splits on its own two numbers", () => {
