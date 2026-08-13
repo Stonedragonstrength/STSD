@@ -6358,19 +6358,17 @@ input:focus, textarea:focus, select:focus {
   margin-bottom: 0.85rem;
 }
 .wd-topbar .back-link { margin-bottom: 0; }
-.wd-side-card {
+/* Right of the back button: the date pill and the ⋯ pill, separate pills. */
+.wd-top-right { display: flex; align-items: center; gap: 0.45rem; }
+.wd-side-pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.55em;
-  padding: 0.32em 0.75em;
+  padding: 0.32em 0.65em;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 999px;
   white-space: nowrap;
 }
-/* The pill flattens inside the card — a pill in a pill reads as two controls. */
-.wd-side-card .dh-progress { background: none; border: 0; padding: 0; }
-.wd-card-sep { width: 1px; height: 1.1em; background: var(--border); flex: none; }
 .wd-rdy-btn { border: 0; background: none; padding: 0; cursor: pointer; display: inline-flex; align-items: center; }
 .wd-rdy-btn[disabled] { cursor: default; }
 .wd-rdy-ask {
@@ -6425,7 +6423,6 @@ input:focus, textarea:focus, select:focus {
 .workout-detail-head .day-check-toggle { order: -5; }
 .workout-detail-head .detail-head-main h2 { order: -4; }
 .workout-detail-head .dh-week { order: -3; }
-.workout-detail-head .dh-date { order: -2; }
 .workout-detail-head .phase-badge { order: -1; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .workout-detail-head .dh-progress { order: 1; margin-left: auto; }
 /* Phones: shave the paddings so name · week · badge · date · mood genuinely
@@ -6438,7 +6435,6 @@ input:focus, textarea:focus, select:focus {
   /* "WEEK 1" is the line's point — it never gives way; the badge does. */
   .workout-detail-head .dh-week { flex-shrink: 0; }
   .workout-detail-head .phase-badge { letter-spacing: 0.04em; padding: 0.15em 0.45em; min-width: 2em; }
-  .workout-detail-head .dh-date { padding: 0.2em 0.45em; }
 }
 .dh-week {
   font-size: 0.68rem;
@@ -6473,7 +6469,7 @@ input:focus, textarea:focus, select:focus {
   font-size: 0.7rem; font-weight: 800; letter-spacing: 0.03em;
   color: var(--text-soft); white-space: nowrap;
 }
-.detail-head-top input.detail-log-date {
+.dh-date input.detail-log-date {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -6493,7 +6489,7 @@ input:focus, textarea:focus, select:focus {
    chip was only "live" in its rightmost ~20px. Stretching the indicator across
    the whole input makes every click an icon click. Firefox ignores the
    pseudo-element and already opens on any click. */
-.detail-head-top input.detail-log-date::-webkit-calendar-picker-indicator {
+.dh-date input.detail-log-date::-webkit-calendar-picker-indicator {
   position: absolute;
   inset: 0;
   width: 100%;

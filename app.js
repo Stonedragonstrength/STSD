@@ -28820,18 +28820,44 @@
     return wrap;
   }
 
-  // Beside "← Workouts" there is just the ⋯ now (Nathan's final arrangement,
-  // 2026-08-12 evening): check-in, mood and skip all live in the menu, the
-  // date sits in the header after the week, the count pill on its right edge.
+  // Top-right of the workout view: the log-date in its own pill, then the ⋯
+  // pill (check-in, mood, skip). The header line below keeps day · week ·
+  // phase · cycle with the count on its right edge.
   function renderWdSideCard(day) {
     const host = $("#wd-side-card");
     if (!host) return;
     const canAnswer = state.mode === "client" || state.liveLog;
-    host.classList.toggle("hidden", !canAnswer);
-    host.innerHTML = canAnswer
-      ? `<button type="button" class="wd-rdy-btn wd-menu-btn" id="wd-menu-btn" title="Check-in, how it went, skip this day…" aria-label="Session menu">⋯</button>`
-      : "";
+    const dateTxt = state.workoutView.date === todayISO()
+      ? "Today"
+      : new Date(state.workoutView.date + "T12:00:00Z").toLocaleDateString(undefined, {
+          month: "short", day: "numeric", timeZone: "UTC",
+        });
+    host.innerHTML = `
+      <label class="dh-date" title="Date these logs are for">
+        <span class="dh-date-txt">📅 ${escapeHtml(dateTxt)}</span>
+        <input type="date" class="detail-log-date" id="detail-log-date" value="${escapeHtml(state.workoutView.date)}" aria-label="Date these logs are for" />
+      </label>
+      ${canAnswer ? `<span class="wd-side-pill"><button type="button" class="wd-rdy-btn wd-menu-btn" id="wd-menu-btn" title="Check-in, how it went, skip this day…" aria-label="Session menu">⋯</button></span>` : ""}`;
     $("#wd-menu-btn")?.addEventListener("click", () => openSessionMenuSheet(day));
+    $("#detail-log-date")?.addEventListener("change", (e) => {
+      const from = state.workoutView.date;
+      const to = e.target.value || todayISO();
+      if (to === from) return;
+      state.workoutView.date = to;
+      // Carry what's already logged across with the date. Without this the sets
+      // stay stamped with the old date, which the form no longer looks at — the
+      // athlete re-dates a session they just filled in and watches it go blank.
+      moveDayLogsTo(day, from, to);
+      // An athlete-built session IS its date — one control, not two, so moving
+      // the log date moves the session with it.
+      if (isOwnDay(day)) day.date = to;
+      saveClient();
+      renderWorkoutDetailUI();
+      renderAthleteCalendar();
+      toast(to === todayISO()
+        ? "Logging under today"
+        : `Logging under ${new Date(to + "T12:00:00Z").toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" })}`);
+    });
   }
 
   // The card's ⋯: the pre-workout check-in, how the workout went, and the
@@ -28876,20 +28902,11 @@
     const head = $("#workout-detail-head");
     const checked = isDayChecked(day.id);
     renderWdSideCard(day);
-    // The kicker used to hold four things and lose the fight on a phone: the
-    // week label collapsed to "W..." and a raw date input sat in the header
-    // looking like a form field. Two fixes. The focus is dropped when it just
-    // repeats the phase badge above it (a HYPERTROPHY badge beside "WEEK 1 ·
-    // HYPERTROPHY" said it twice), and the date is a chip reading "Today" with
-    // the input laid over it invisibly, so tapping still opens the native
-    // picker on every browser.
+    // The focus is dropped when it just repeats the phase badge (a HYPERTROPHY
+    // badge beside "WEEK 1 · HYPERTROPHY" said it twice). The date chip lives
+    // in the topbar pill now — see renderWdSideCard.
     const focus = week.focus && week.focus.toLowerCase() !== String(week.phaseLabel || "").toLowerCase()
       ? " · " + escapeHtml(week.focus) : "";
-    const dateTxt = state.workoutView.date === todayISO()
-      ? "Today"
-      : new Date(state.workoutView.date + "T12:00:00Z").toLocaleDateString(undefined, {
-          month: "short", day: "numeric", timeZone: "UTC",
-        });
     // Phase beside the session, so a heavy day in the worst week of the month
     // reads as context rather than as failure. It says where they are, nothing
     // more — no suggestion to back off, and no colour that implies one.
@@ -28900,11 +28917,23 @@
     // overlay selectors keep working.
     const totalEx = day.exercises.length;
     const doneEx = day.exercises.filter((ex) => hasAnyLog(ex)).length;
+    // Icons, not words — one badge per kind, only when the day has any:
+    // 💪 lifts, 🧘 stretches, ⚡ sprint/agility work (the app's own section
+    // emojis for the latter two).
+    const rNames = day.exercises.map((ex) => exResolvedName(ex, state.clientData.progress));
+    const stretchN = rNames.filter((n) => isMobilityName(n)).length;
+    const speedN = rNames.filter((n) => isSpeedName(n)).length;
+    const liftN = totalEx - stretchN - speedN;
+    const countHtml = [liftN ? `${liftN} 💪` : "", stretchN ? `${stretchN} 🧘` : "", speedN ? `${speedN} ⚡` : ""]
+      .filter(Boolean).join(" · ") || "0 💪";
+    const countTitle = [`${liftN} lift${liftN === 1 ? "" : "s"}`,
+      stretchN ? `${stretchN} stretch${stretchN === 1 ? "" : "es"}` : "",
+      speedN ? `${speedN} drill${speedN === 1 ? "" : "s"}` : ""].filter(Boolean).join(", ");
     const progHtml = checked
       ? `<span class="dh-progress done">Done ✓</span>`
       : doneEx > 0
         ? `<span class="dh-progress going">${doneEx}/${totalEx} logged</span>`
-        : `<span class="dh-progress">${totalEx} exercise${totalEx === 1 ? "" : "s"}</span>`;
+        : `<span class="dh-progress" title="${escapeHtml(countTitle)}">${countHtml}</span>`;
     head.innerHTML = `
       <div class="detail-head-main">
         <button class="day-check-toggle ${checked ? "checked" : ""}" id="detail-toggle" aria-label="Mark whole day complete">${checked ? "✓" : ""}</button>
@@ -28914,10 +28943,6 @@
       </div>
       <div class="detail-head-top">
         <span class="dh-week">${escapeHtml(week.label)}${focus}</span>
-        <label class="dh-date" title="Date these logs are for">
-          <span class="dh-date-txt">📅 ${escapeHtml(dateTxt)}</span>
-          <input type="date" class="detail-log-date" id="detail-log-date" value="${escapeHtml(state.workoutView.date)}" aria-label="Date these logs are for" />
-        </label>
         ${week.phaseLabel ? `<span class="phase-badge">${escapeHtml(week.phaseLabel)}</span>` : ""}
         ${cycHtml}
         ${progHtml}
@@ -28934,28 +28959,8 @@
         setTimeout(() => openWorkoutMoodSheet(day, { celebrate: true }), 300);
       }
     });
-    head.querySelector("#detail-log-date").addEventListener("change", (e) => {
-      const from = state.workoutView.date;
-      const to = e.target.value || todayISO();
-      if (to === from) return;
-      state.workoutView.date = to;
-      // Carry what's already logged across with the date. Without this the sets
-      // stay stamped with the old date, which the form no longer looks at — the
-      // athlete re-dates a session they just filled in and watches it go blank.
-      moveDayLogsTo(day, from, to);
-      // An athlete-built session IS its date — one control, not two, so moving
-      // the log date moves the session with it.
-      if (isOwnDay(day)) day.date = to;
-      saveClient();
-      renderWorkoutDetailUI();
-      renderAthleteCalendar();
-      const moved = to === todayISO()
-        ? "Logging under today"
-        : `Logging under ${new Date(to + "T12:00:00Z").toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" })}`;
-      toast(moved);
-    });
-    // Day-level "Clear day" was retired 2026-07-22 — each exercise's Tools menu
-    // now owns clearing its own numbers, so the day-wide button was redundant.
+    // The log-date chip and its change handler moved to the topbar pill —
+    // see renderWdSideCard. Day-level "Clear day" was retired 2026-07-22.
   }
 
   // -------- Active workout-time clock (feeds the "Time trained" lifetime stat) --------
