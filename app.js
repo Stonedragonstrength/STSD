@@ -28714,6 +28714,12 @@
   // Days the athlete waved off this session. In memory only: dismissing is a
   // "not right now", not an answer, and it should come back next visit.
   const _readinessSkipped = new Set();
+  // The ask lives behind the header side-card now (2026-08-12): the card
+  // carries "How are you?" / the answered chip, and the in-list block only
+  // renders for days the athlete opened it on. In memory, same stance as
+  // skipping — the card re-offers next visit.
+  const _rdyAskOpen = new Set();
+  let _rdyEditRequest = null;
 
   // The four-tap readiness check-in that sits above the first exercise.
   // Unanswered it's four one-line face rows (sleep/soreness/stress on the
@@ -28733,45 +28739,38 @@
     const draw = () => {
       const rec = dayReadiness(p, day.id);
       wrap.innerHTML = "";
-      if (rec && !editing) {
-        const lvl = readinessLevel(rec);
-        const flag = readinessFlagAnswer(rec);
-        wrap.className = `rdy-block answered ${lvl.id}`;
-        wrap.innerHTML =
-          `<button type="button" class="rdy-done"${canAnswer ? "" : " disabled"} title="Your check-in for this session">` +
-            `<span class="rdy-done-emo">${lvl.emoji}</span>` +
-            `<span class="rdy-done-lbl">${escapeHtml(lvl.label)}</span>` +
-            `<span class="rdy-done-ans">${READINESS_QS.map((q) =>
-              // The emoji names the topic in the collapsed row; the title spells
-              // it out, because "A bit" is only clear next to what it answers.
-              `<span class="rdy-done-a" title="${escapeHtml(q.label)}: ${escapeHtml(q.opts[readinessAnswer(rec, q.id) - 1] || "?")}">` +
-                `<span class="rdy-done-i">${q.icon}</span>${escapeHtml(q.opts[readinessAnswer(rec, q.id) - 1] || "?")}</span>`).join("")
-            // "No" would be noise on every ordinary morning — the hangover
-            // only earns a spot in the row when there is one.
-            }${flag && flag < READINESS_FLAG.opts.length
-              ? `<span class="rdy-done-a" title="${escapeHtml(READINESS_FLAG.label)}: ${escapeHtml(READINESS_FLAG.opts[flag - 1])}">` +
-                  `<span class="rdy-done-i">${READINESS_FLAG.faces[flag - 1]}</span>${escapeHtml(READINESS_FLAG.opts[flag - 1])}</span>`
-              : ""}</span>` +
-            (canAnswer ? `<span class="rdy-done-edit">Change</span>` : "") +
-          `</button>` +
-          (lvl.id === "low" || flag === 1
-            ? `<p class="rdy-note">Rough day. Keep the reps honest and take weight off if you need it. Nothing you miss today counts against your targets.</p>`
-            : "");
-        if (canAnswer) wrap.querySelector(".rdy-done").addEventListener("click", () => {
+      // The header card asked to edit this day's answer — enter editing with
+      // the record prefilled NORMALIZED, so a legacy record's old top answer
+      // preselects the new top face rather than the third step.
+      if (_rdyEditRequest === day.id) {
+        _rdyEditRequest = null;
+        if (rec && canAnswer) {
           editing = true;
           draft = {};
-          // Prefill NORMALIZED, so a legacy record's old top answer preselects
-          // the new top face rather than the third step.
           READINESS_QS.forEach((q) => { draft[q.id] = readinessAnswer(rec, q.id) || undefined; });
           const f = readinessFlagAnswer(rec);
           if (f) draft[READINESS_FLAG.id] = f;
-          draw();
-        });
+        }
+      }
+      if (rec && !editing) {
+        // The answered summary lives on the header card now. What remains in
+        // the list is the one thing worth the space: the brake's message on a
+        // rough day.
+        const lvl = readinessLevel(rec);
+        const flag = readinessFlagAnswer(rec);
+        if (lvl.id === "low" || flag === 1) {
+          wrap.className = `rdy-block answered ${lvl.id}`;
+          wrap.innerHTML = `<p class="rdy-note">Rough day. Keep the reps honest and take weight off if you need it. Nothing you miss today counts against your targets.</p>`;
+        } else {
+          wrap.className = "rdy-block hidden";
+        }
         return;
       }
       // Nothing to show a coach previewing a day the athlete never answered,
-      // and no point asking how someone feels about a workout they finished.
-      if (!canAnswer || _readinessSkipped.has(day.id) || (!editing && isDayChecked(day.id))) {
+      // no point asking about a finished workout, and — since the header card
+      // is the door — nothing at all until this day's card was tapped.
+      if (!canAnswer || _readinessSkipped.has(day.id) || (!editing && isDayChecked(day.id))
+        || (!editing && !_rdyAskOpen.has(day.id))) {
         wrap.className = "rdy-block hidden";
         return;
       }
@@ -28821,19 +28820,45 @@
     return wrap;
   }
 
-  function renderWorkoutDetailHeader(week, day) {
-    if (!state.workoutView.date) state.workoutView.date = todayISO();
-    const head = $("#workout-detail-head");
+  // The little card beside "← Workouts": the exercise-count/progress pill and
+  // the check-in, together and out of the header, which is what lets the
+  // header be one line (Nathan, 2026-08-12). Rendered separately so the
+  // readiness skip/answer paths can refresh it without rebuilding the header.
+  function renderWdSideCard(day) {
+    const host = $("#wd-side-card");
+    if (!host) return;
     const totalEx = day.exercises.length;
     const doneEx = day.exercises.filter((ex) => hasAnyLog(ex)).length;
     const checked = isDayChecked(day.id);
-    const moods = dayMoods(state.clientData.progress, day.id);
-    // One compact progress pill: done → count-of-total → plain count.
-    const progHtml = checked
+    const prog = checked
       ? `<span class="dh-progress done">Done ✓</span>`
       : doneEx > 0
         ? `<span class="dh-progress going">${doneEx}/${totalEx} logged</span>`
         : `<span class="dh-progress">${totalEx} exercise${totalEx === 1 ? "" : "s"}</span>`;
+    const rec = dayReadiness(state.clientData.progress, day.id);
+    const canAnswer = state.mode === "client" || state.liveLog;
+    let rdy = "";
+    if (rec) {
+      rdy = `<button type="button" class="wd-rdy-btn" id="wd-rdy-btn"${canAnswer ? "" : " disabled"} title="Your check-in for this session — tap to change">${readinessChipHtml(rec, false)}</button>`;
+    } else if (canAnswer && !checked) {
+      rdy = `<button type="button" class="wd-rdy-btn wd-rdy-ask" id="wd-rdy-btn" title="Quick check-in before you start">🔋 How are you?</button>`;
+    }
+    host.innerHTML = `${prog}${rdy ? `<span class="wd-card-sep"></span>${rdy}` : ""}`;
+    $("#wd-rdy-btn")?.addEventListener("click", () => {
+      if (rec) _rdyEditRequest = day.id;
+      else { _rdyAskOpen.add(day.id); _readinessSkipped.delete(day.id); }
+      renderWorkoutDetailUI({ keepScroll: true });
+      setTimeout(() => $("#workout-detail-list .rdy-block:not(.hidden)")
+        ?.scrollIntoView({ block: "center", behavior: "smooth" }), 80);
+    });
+  }
+
+  function renderWorkoutDetailHeader(week, day) {
+    if (!state.workoutView.date) state.workoutView.date = todayISO();
+    const head = $("#workout-detail-head");
+    const checked = isDayChecked(day.id);
+    const moods = dayMoods(state.clientData.progress, day.id);
+    renderWdSideCard(day);
     // The kicker used to hold four things and lose the fight on a phone: the
     // week label collapsed to "W..." and a raw date input sat in the header
     // looking like a form field. Two fixes. The focus is dropped when it just
@@ -28852,23 +28877,26 @@
     // reads as context rather than as failure. It says where they are, nothing
     // more — no suggestion to back off, and no colour that implies one.
     const cycHtml = cycleChipHtml(myCyclePhase(state.workoutView.date), true);
+    // ONE line: toggle · name · week · phase · cycle · (date+mood on the right
+    // edge). The exercise pill and the check-in live in the side card by the
+    // back button, which is what bought the room. The two inner divs survive
+    // as display:contents so the date-input overlay selectors keep working.
     head.innerHTML = `
-      <div class="detail-head-top">
-        ${week.phaseLabel ? `<span class="phase-badge">${escapeHtml(week.phaseLabel)}</span>` : ""}
-        <span class="dh-week">${escapeHtml(week.label)}${focus}</span>
-        ${progHtml}
-        ${cycHtml}
-        <label class="dh-date" title="Date these logs are for">
-          <span class="dh-date-txt">📅 ${escapeHtml(dateTxt)}</span>
-          <input type="date" class="detail-log-date" id="detail-log-date" value="${escapeHtml(state.workoutView.date)}" aria-label="Date these logs are for" />
-        </label>
-      </div>
       <div class="detail-head-main">
         <button class="day-check-toggle ${checked ? "checked" : ""}" id="detail-toggle" aria-label="Mark whole day complete">${checked ? "✓" : ""}</button>
         ${isOwnDay(day)
           ? `<h2 class="dh-name-editable" id="detail-rename" role="button" tabindex="0" title="Rename this session">${escapeHtml(day.name)}<span class="dh-name-pencil">✏️</span></h2>`
           : `<h2>${escapeHtml(day.name)}</h2>`}
         <button type="button" class="detail-mood-btn ${moods.length ? "has-mood" : ""}" id="detail-mood-btn" title="How was your workout?" aria-label="How was your workout?">${moods.length ? moodChipsHtml(moods, true) : "🫀"}</button>
+      </div>
+      <div class="detail-head-top">
+        <span class="dh-week">${escapeHtml(week.label)}${focus}</span>
+        ${week.phaseLabel ? `<span class="phase-badge">${escapeHtml(week.phaseLabel)}</span>` : ""}
+        ${cycHtml}
+        <label class="dh-date" title="Date these logs are for">
+          <span class="dh-date-txt">📅 ${escapeHtml(dateTxt)}</span>
+          <input type="date" class="detail-log-date" id="detail-log-date" value="${escapeHtml(state.workoutView.date)}" aria-label="Date these logs are for" />
+        </label>
       </div>
     `;
     head.querySelector("#detail-rename")?.addEventListener("click", () => openRenameOwnSessionSheet(day));

@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=hdr2" />
+  <link rel="stylesheet" href="styles.css?v=hdr5" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -1253,7 +1253,12 @@
         </div>
         <!-- Detail: shown when a day is selected -->
         <div id="workout-detail" class="workout-detail hidden">
-          <button class="btn btn-ghost btn-sm back-link" id="btn-back-to-picker">← Workouts</button>
+          <!-- The little card by the back button: exercise count + check-in.
+               Both used to live in the header, which now fits one line. -->
+          <div class="wd-topbar">
+            <button class="btn btn-ghost btn-sm back-link" id="btn-back-to-picker">← Workouts</button>
+            <div class="wd-side-card" id="wd-side-card"></div>
+          </div>
           <div id="workout-detail-head" class="workout-detail-head"></div>
           <div id="workout-detail-list" class="workout-detail-list"></div>
         </div>
@@ -1609,7 +1614,7 @@
   <script src="config.js?v=horm2"></script>
   <script src="cloud.js?v=cred1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=cred3"></script>
+  <script src="app.js?v=hdr3"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

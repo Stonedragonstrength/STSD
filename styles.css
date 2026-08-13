@@ -6330,8 +6330,11 @@ input:focus, textarea:focus, select:focus {
 .workout-detail .back-link {
   margin-bottom: 1rem;
 }
-/* Sleek 2-row day header: kicker (week · focus · date) + main (toggle · name ·
-   progress · mood). Redundant day-level "Clear day" was retired. */
+/* Sleek ONE-line day header at every width (2026-08-12): toggle · name · week
+   · phase · cycle, date + mood pinned right. The exercise pill and the
+   check-in moved to the side card by the back button, which is what bought
+   the room — on a phone a long name truncates rather than wrapping the row.
+   Redundant day-level "Clear day" was retired. */
 .workout-detail-head {
   background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
   border: 1px solid var(--border);
@@ -6341,6 +6344,40 @@ input:focus, textarea:focus, select:focus {
   box-shadow: var(--shadow-sm);
   position: relative;
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.3em 0.55em;
+}
+/* The row beside "← Workouts": exercise count + the check-in, as one card. */
+.wd-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.85rem;
+}
+.wd-topbar .back-link { margin-bottom: 0; }
+.wd-side-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55em;
+  padding: 0.32em 0.75em;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+/* The pill flattens inside the card — a pill in a pill reads as two controls. */
+.wd-side-card .dh-progress { background: none; border: 0; padding: 0; }
+.wd-card-sep { width: 1px; height: 1.1em; background: var(--border); flex: none; }
+.wd-rdy-btn { border: 0; background: none; padding: 0; cursor: pointer; display: inline-flex; align-items: center; }
+.wd-rdy-btn[disabled] { cursor: default; }
+.wd-rdy-ask {
+  color: var(--primary-bright);
+  font-weight: 800;
+  font-size: 0.78rem;
+  white-space: nowrap;
 }
 /* Pinned under the header + tab strip instead of scrolling away beneath them.
    Both of those are transparent (backdrop-filter, no background colour), so the
@@ -6373,18 +6410,25 @@ input:focus, textarea:focus, select:focus {
   opacity: 0.6;
   pointer-events: none;
 }
-.workout-detail-head > * { position: relative; z-index: 1; }
-/* Kicker row — small uppercase week label, date pushed to the right. */
-.detail-head-top {
-  display: flex;
-  gap: 0.5em;
-  row-gap: 0.35em;
-  /* Wraps rather than truncating: on a phone the week label used to lose the
-     fight with the pill and the date and read "W...". */
-  flex-wrap: wrap;
-  align-items: center;
-  margin-bottom: 0.4em;
-  min-width: 0;
+/* The subdivs are display:contents, so the glow overlay's z-index lift has to
+   reach their children — the actual flex items. */
+.workout-detail-head .detail-head-top > *,
+.workout-detail-head .detail-head-main > * { position: relative; z-index: 1; }
+/* Both header rows flatten into the one flex line; ordering below arranges
+   toggle · name · week · phase · cycle · date · mood. */
+.detail-head-top, .detail-head-main { display: contents; }
+.workout-detail-head .day-check-toggle { order: -4; }
+.workout-detail-head .detail-head-main h2 { order: -3; }
+.workout-detail-head .dh-week { order: -2; }
+.workout-detail-head .phase-badge { order: -1; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.workout-detail-head .dh-date { order: 1; margin-left: auto; }
+.workout-detail-head .detail-mood-btn { order: 2; }
+/* Phones: shave the paddings so name · week · badge · date · mood genuinely
+   share the one line at 390px. The name and badge are the shrinkable ones. */
+@media (max-width: 480px) {
+  .workout-detail-head { gap: 0.3em 0.28em; padding-left: 0.55rem; padding-right: 0.55rem; }
+  .workout-detail-head .phase-badge { letter-spacing: 0.04em; padding: 0.15em 0.45em; }
+  .workout-detail-head .dh-date { padding: 0.2em 0.45em; }
 }
 .dh-week {
   font-size: 0.68rem;
@@ -6449,21 +6493,17 @@ input:focus, textarea:focus, select:focus {
   opacity: 0;
   cursor: pointer;
 }
-/* Main row — toggle + name grow, progress pill + mood sit on the right. */
-.detail-head-main {
-  display: flex;
-  align-items: center;
-  gap: 0.6em;
-  margin-bottom: 0;
-}
+/* The day name — one flex item among the line now; the date's margin-left:auto
+   owns the right-edge push, so the week label sits right beside the name. */
 .detail-head-main h2 {
-  margin: 0 auto 0 0; /* grow: pushes progress + mood to the right edge */
+  margin: 0;
   font-size: 1.25rem;
   font-weight: 800;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+  flex: 0 1 auto;
 }
 .dh-progress {
   flex: none;
@@ -7709,24 +7749,9 @@ input.pyr-weight-input { -moz-appearance: textfield; appearance: textfield; }
    screens of scrolling mid-session. Density above the phone breakpoint only;
    phones keep the roomier layout their tap targets need. */
 @media (min-width: 721px) {
-  /* The sticky day header on ONE line: toggle · day name · week kicker, with
-     the count, date and mood pinned right. display:contents lifts both rows'
-     children into a single flex line without touching the markup; the kicker
-     row's margin dies with its box. .dh-progress keeps its global
-     margin-left:auto, which is what starts the right-hand group. */
-  .workout-detail-head {
-    display: flex;
-    align-items: center;
-    gap: 0.6em;
-    padding: 0.4rem 0.85rem;
-  }
-  .workout-detail-head .detail-head-top,
-  .workout-detail-head .detail-head-main { display: contents; }
-  .workout-detail-head .day-check-toggle { order: -3; }
-  .workout-detail-head .detail-head-main h2 { order: -2; margin: 0; }
-  .workout-detail-head .dh-week { order: -1; }
-  .workout-detail-head .dh-date { order: 1; }
-  .workout-detail-head .detail-mood-btn { order: 2; }
+  /* The one-line day header is GLOBAL now (see the base rules) — this block
+     just keeps the above-phone density. */
+  .workout-detail-head { padding: 0.4rem 0.85rem; }
 
   /* Exercise cards: same controls, less air. */
   .cex-row { padding: 0.4rem 0.75rem; min-height: 40px; }
