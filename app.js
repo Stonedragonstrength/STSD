@@ -10468,6 +10468,12 @@
     const root = document.querySelector(coachSide
       ? "#view-anatomy [data-anatomy-root]"
       : '[data-ctab-panel="anatomy"] [data-anatomy-root]');
+    // The mount outlives athlete switches and this door KEEPS currentClientId
+    // (unlike the top nav, which nulls it and already refreshes). Without a
+    // refresh here, arriving under a new athlete with Coverage still on
+    // showed the PREVIOUS athlete's heat until the mode was toggled — Nathan
+    // hit exactly that going Nathan → Kristyn.
+    if (root && root._anatomyRefresh) root._anatomyRefresh();
     if (root && root._anatomyGoto) root._anatomyGoto(id);
   }
 
@@ -11388,10 +11394,6 @@
             <button type="button" class="a-mode-btn" data-mode="coverage">Coverage</button>
           </div>
           <span class="a-mode-who" data-cov-who></span>
-          ${editable ? `<select class="a-level-sel hidden" data-cov-level aria-label="Training age — sets the coverage grading" title="Training age — also on their Profile">
-            <option value="">Training age not set (graded as Intermediate)</option>
-            ${TRAINING_LEVELS.map((l) => `<option value="${l.id}">${l.name}</option>`).join("")}
-          </select>` : ""}
         </div>
         <div class="a-cov-note hidden" data-cov-verdict></div>
         <div class="anatomy-layout">
@@ -11407,6 +11409,7 @@
               <span class="a-key-item"><i class="a-key-dot" data-cov="2"></i>Solid</span>
               <span class="a-key-item"><i class="a-key-dot" data-cov="3"></i>Plenty</span>
             </div>
+            <div class="a-cov-subject" data-cov-subject></div>
           </div>
           <div class="anatomy-list" data-anatomy-list></div>
           <div class="anatomy-detail" data-anatomy-detail>
@@ -11446,24 +11449,45 @@
       cov = mode === "coverage" ? anatomyCoverage(client, isCoach) : null;
       const whoEl = root.querySelector("[data-cov-who]");
       const noteEl = root.querySelector("[data-cov-verdict]");
+      const subjEl = root.querySelector("[data-cov-subject]");
       root.classList.toggle("is-coverage", mode === "coverage");
       noteEl.classList.toggle("hidden", mode !== "coverage");
       if (mode !== "coverage") {
         whoEl.textContent = "";
-        root.querySelector("[data-cov-level]")?.classList.add("hidden");
+        if (subjEl) subjEl.innerHTML = "";
         root.querySelectorAll(".a-zone[data-cov]").forEach((z) => z.removeAttribute("data-cov"));
         return;
       }
       const who = isCoach ? (client?.name || "") : "";
+      // Just the week up here — the athlete's name lives under the figure now.
       whoEl.textContent = client
-        ? [cov?.week?.label, who].filter(Boolean).join(" · ")
+        ? (cov?.week?.label || "")
         : (isCoach ? "No athlete open" : "No program yet");
-      // Coach only, and only with an athlete open — a level picker with nobody
-      // to apply it to is a control that silently does nothing.
-      const selEl = root.querySelector("[data-cov-level]");
-      if (selEl) {
-        selEl.classList.toggle("hidden", !client);
-        if (client) selEl.value = client.trainingLevel || "";
+      // Under the figure: whose body this is. The name shows wherever the
+      // COACH is looking at someone else's map — the coach mount, and the
+      // athlete mount during a live session (which is where Nathan actually
+      // works; an athlete looking at their own body needs no label). The
+      // training-age pill is coach-mount only: there it writes straight to
+      // trainerData, where the live session's client is a built COPY whose
+      // edits would silently not persist. Replaced the old full-width select
+      // in the mode row, 2026-08-13, Nathan's ask.
+      if (subjEl) {
+        const coachEyes = isCoach || state.previewMode;
+        // Live sessions read a BUILT copy of the client, so the pill writes
+        // through currentClient() — the trainerData original — and rebuilds.
+        const canEditAge = isCoach || (state.previewMode && !!currentClient());
+        if (!coachEyes || !client?.name) {
+          subjEl.innerHTML = "";
+        } else {
+          const lvl = TRAINING_LEVEL_BY_ID[client.trainingLevel];
+          subjEl.innerHTML =
+            `<span class="a-cov-subject-name">${escapeHtml(client.name)}</span>` +
+            (canEditAge
+              ? `<button type="button" class="a-age-pill${lvl ? "" : " unset"}" data-age-pill` +
+                ` title="Training age — grades the coverage bands. Also on their Profile.">` +
+                `${lvl ? `${lvl.emoji} ${escapeHtml(lvl.name)}` : "Training age?"}</button>`
+              : (lvl ? `<span class="a-age-pill readonly">${lvl.emoji} ${escapeHtml(lvl.name)}</span>` : ""));
+        }
       }
       noteEl.innerHTML = client
         ? coverageVerdictHtml(cov, who, isCoach)
@@ -11645,9 +11669,10 @@
       b.addEventListener("click", () => setView(b.dataset.view)));
     root.querySelectorAll(".a-mode-btn").forEach((b) =>
       b.addEventListener("click", () => setMode(b.dataset.mode)));
-    // Saves on change. It deliberately does not live inside the locked profile
-    // form — see the note at saveProfileFields(): membership and rate were moved
-    // out of there precisely because a value you set and walked away from got
+    // The training-age pill under the figure (was a full-width select in the
+    // mode row). Saves on pick, deliberately outside the locked profile form —
+    // see the note at saveProfileFields(): membership and rate were moved out
+    // of there precisely because a value you set and walked away from got
     // overwritten by whatever the stale form still held.
     //
     // Only this mount repaints. The other readers of trainingLevel (the
@@ -11656,15 +11681,37 @@
     // specifically must NOT be called here: it Nav.resets, nulls currentClientId
     // and switches the coach screen to the roster, which would boot the coach off
     // this exact panel the instant they touch the control they're watching repaint.
-    root.querySelector("[data-cov-level]")?.addEventListener("change", (e) => {
-      const { client } = coverageSubject();
-      if (!client) return;
-      client.trainingLevel = e.target.value;
-      saveTrainer();
-      renderCoverage();
-      renderList();
-      renderDetail(); // the open card's grading strip reads the new bands
-    });
+    function openAgePopover(anchor) {
+      const { client, isCoach } = coverageSubject();
+      // The coach mount's client IS the trainerData record; a live session's
+      // is a built copy, so the write goes to currentClient() and the live
+      // program rebuilds to pick it up.
+      const target = isCoach ? client : (state.previewMode ? currentClient() : null);
+      if (!target) return;
+      document.querySelector(".age-pill-pop")?.remove();
+      const pop = document.createElement("div");
+      pop.className = "age-pill-pop";
+      const opt = (id, label, emoji) =>
+        `<button type="button" data-age="${id}" class="${(target.trainingLevel || "") === id ? "on" : ""}">${emoji ? emoji + " " : ""}${escapeHtml(label)}</button>`;
+      pop.innerHTML = TRAINING_LEVELS.map((l) => opt(l.id, l.name, l.emoji)).join("") + opt("", "Not set", "");
+      document.body.appendChild(pop);
+      const r = anchor.getBoundingClientRect();
+      pop.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8))}px`;
+      pop.style.top = r.bottom + pop.offsetHeight + 8 > window.innerHeight
+        ? `${r.top - pop.offsetHeight - 6}px` : `${r.bottom + 6}px`;
+      const close = () => { pop.remove(); document.removeEventListener("click", away, true); };
+      const away = (e) => { if (!pop.contains(e.target)) close(); };
+      setTimeout(() => document.addEventListener("click", away, true), 0);
+      pop.querySelectorAll("[data-age]").forEach((b) => b.addEventListener("click", () => {
+        target.trainingLevel = b.dataset.age;
+        saveTrainer();
+        close();
+        if (!isCoach && state.previewMode) refreshLiveProgram();
+        renderCoverage();
+        renderList();
+        renderDetail(); // the open card's grading strip reads the new bands
+      }));
+    }
     root.querySelector("[data-cov-credits]")?.addEventListener("click", () => {
       const { client } = coverageSubject();
       openExCreditsTable(client);
@@ -11689,6 +11736,10 @@
         else toast(`No demo photo for ${name} yet`);
         return;
       }
+      // The training-age pill is re-rendered by every renderCoverage, so it
+      // rides this delegated handler rather than a per-render listener.
+      const agePill = e.target.closest("[data-age-pill]");
+      if (agePill && root.contains(agePill)) { openAgePopover(agePill); return; }
       const zone = e.target.closest(".a-zone, .a-chip");
       if (zone && root.contains(zone)) select(zone.dataset.muscle);
     });
@@ -27558,6 +27609,13 @@
     // Same deal for the body-comp block: a weigh-in or a period logged since
     // the last visit moves both the trend and the phase bands on it.
     if (name === "diet") renderAthleteBodyComp();
+    // And for the body map: the mount is built once and survives live-session
+    // athlete switches, so Coverage left on shows the PREVIOUS athlete's heat
+    // until something recomputes. Every way in re-renders now — this tab,
+    // openAnatomyMuscle's door, and the coach nav.
+    if (name === "anatomy") {
+      document.querySelector('[data-ctab-panel="anatomy"] [data-anatomy-root]')?._anatomyRefresh?.();
+    }
     // Rest timer only floats over the workouts tab (and only in day detail)
     if (name !== "workouts") { hideRestTimer(); WorkoutClock.leave(); }
     else if (state.workoutView?.mode === "detail") showRestTimer();
