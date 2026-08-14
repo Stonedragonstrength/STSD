@@ -15893,3 +15893,197 @@ input.credit-cap:disabled { opacity: 0.4; }
 .ov-trial-track {
   background: var(--surface-3);
 }
+
+/* ============ The stat field and its chassis ============
+   The Hoard stopped being a card of its own and became the CHASSIS the field
+   sits in: crest and rank on the top edge, tonnage right, a progress sliver
+   with the build name and the next rank along the bottom. The frame's metal IS
+   the rank — --rank-color / --rank-glow are set inline per rank by
+   renderStatFieldCard(), the same way the header crest is lit.
+   Two colours, two jobs: the frame is career metal, the field is the theme
+   accent. They never fight because they never mean the same thing.
+   The ladder behind the fold reuses .hoard-case / .hoard-tile / .hoard-detail
+   unchanged rather than growing a parallel set that can drift. */
+.sf-card {
+  padding: 0.9rem 1.05rem 0.85rem;
+  border-color: color-mix(in srgb, var(--rank-color) 42%, var(--border));
+  /* --halo stays in the stack so the first two ranks (glow 0, deliberately —
+     a beginner's frame should look clean, not faintly broken) keep the same
+     resting card light as everything else on the tab. reforgeFlash() writes
+     this same stack inline with a fourth layer, so clearing it lands here. */
+  box-shadow: var(--lift), var(--halo),
+              0 0 calc(var(--rank-glow) * 20px) color-mix(in srgb, var(--rank-color) 22%, transparent);
+}
+/* The whole frame is the ladder's door, so the marker goes and the summary
+   carries the affordance. */
+.sf-card > summary { list-style: none; cursor: pointer; user-select: none; }
+.sf-card > summary::-webkit-details-marker { display: none; }
+.sf-card[open] .pref-fold-chev { transform: rotate(90deg); }
+
+/* ---- Top edge ---- */
+.sf-top { display: flex; align-items: center; gap: 0.7rem; }
+.sf-crest {
+  flex: none;
+  width: 46px; height: 46px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.5rem; line-height: 1;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--rank-color) 12%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--rank-color) 55%, transparent);
+  box-shadow: 0 0 calc(var(--rank-glow) * 14px) color-mix(in srgb, var(--rank-color) 40%, transparent);
+}
+.sf-head { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.sf-kicker {
+  font-size: 0.6rem; font-weight: 800; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--muted);
+}
+.sf-rank {
+  font-size: 1.2rem; font-weight: 800; line-height: 1.1;
+  color: var(--rank-ink, var(--rank-color));
+  text-shadow: 0 0 calc(var(--rank-glow) * 10px) color-mix(in srgb, var(--rank-color) 45%, transparent);
+}
+.sf-ton {
+  margin-left: auto; flex: none; text-align: right;
+  font-size: 0.95rem; font-weight: 800; color: var(--text);
+  font-variant-numeric: tabular-nums; line-height: 1.15;
+}
+.sf-ton small {
+  display: block;
+  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--muted);
+}
+.sf-top .pref-fold-chev { margin-left: 0.3rem; flex: none; }
+
+/* ---- The field ---- */
+.sf-field { display: flex; justify-content: center; padding: 0.4rem 0 0.2rem; }
+/* Capped rather than full-bleed: past ~300px the pentagon stops gaining any
+   readability and starts owning the tab, which is what the old twelve-row
+   ladder did. */
+.sf-field .sf-svg { width: min(100%, 300px); height: auto; display: block; }
+
+/* The grid is the RULER. It never glows and never takes the accent — a ruler
+   that lights up stops being one — and it starts at the hub, so the hull's
+   minimum radius cannot be mistaken for points that are not there. */
+.sf-grid polygon, .sf-grid line {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+/* The outer ring is "full" and reads as the boundary, so it gets the stronger
+   edge. Scoped inside .sf-grid: the hull and the ghost are polygons too. */
+.sf-grid polygon:last-of-type { stroke: var(--border-strong); }
+
+/* The permanent high-water mark. Dashed, quiet, and pointedly colourless: it
+   is something to reclaim, never a reproach, and no red goes anywhere near
+   this feature. */
+.sf-peak {
+  fill: none;
+  stroke: var(--text-soft);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 2.5;
+  opacity: 0.5;
+  vector-effect: non-scaling-stroke;
+}
+/* The glow is a blurred DUPLICATE of the hull behind it, so the filter never
+   touches the grid or the labels. */
+.sf-glow { fill: rgba(var(--primary-bright-rgb), 0.5); stroke: none; opacity: 0.5; }
+.sf-hull {
+  fill: rgba(var(--primary-rgb), 0.3);
+  stroke: var(--primary-bright);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.sf-node { fill: var(--primary-bright); }
+/* SVG text inherits Barlow from body — nothing to declare but weight and size,
+   which are user units inside the 100-unit box. */
+.sf-axis {
+  fill: var(--text-soft);
+  font-size: 6px; font-weight: 800; letter-spacing: 0.06em;
+}
+.sf-axis-val {
+  fill: var(--muted);
+  font-size: 5px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Bottom edge: build, sliver, next rank ---- */
+.sf-bottom { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.35rem; }
+.sf-build {
+  flex: none;
+  font-size: 0.82rem; font-weight: 800; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--text);
+}
+.sf-sliver {
+  flex: 1 1 auto; min-width: 0;
+  height: 5px; border-radius: 999px;
+  background: var(--surface-3);   /* stated here, not inherited from Group 7 */
+  overflow: hidden;
+}
+.sf-sliver-fill {
+  display: block; height: 100%; border-radius: 999px;
+  background: var(--rank-color);
+  box-shadow: 0 0 calc(var(--rank-glow) * 8px) color-mix(in srgb, var(--rank-color) 55%, transparent);
+}
+.sf-next {
+  flex: none; white-space: nowrap;
+  font-size: 0.66rem; font-weight: 700; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--muted);
+}
+/* The ladder sits under the frame's own bottom edge, so it needs the divider
+   .hoard-case already carries and nothing else. */
+.sf-card .hoard-detail { margin-top: 0.7rem; }
+
+/* ---- Coach roster mini (spec 7.1b) ---- */
+/* Hull, grid and peak ghost at 46px: enough to spot a cold axis at a scanning
+   glance, from the SAME renderer, so the coach and the athlete can never be
+   looking at two different pentagons. */
+.sf-mini { flex: none; display: flex; align-items: center; margin-left: 0.4rem; }
+.sf-mini .sf-svg { display: block; }
+.sf-mini .sf-peak { opacity: 0.35; }
+.sf-mini .sf-glow { opacity: 0.35; }
+
+/* ---- White, the one light theme ----
+   Its own recipe says it plainly: a glow on white reads as smudge, and edges
+   DARKEN instead of brightening. The extra problem here is the ladder itself —
+   the metals run copper to WHITE-HOT, so the top four ranks would paint white
+   text and a white sliver on a white card. --rank-ink mixes the metal toward
+   the ink and every text/fill use reads it, so the rank stays itself and stays
+   legible. */
+:root[data-theme="white"] .sf-card {
+  --rank-ink: color-mix(in srgb, var(--rank-color) 55%, #0f172a);
+  box-shadow: var(--lift);
+}
+:root[data-theme="white"] .sf-glow { opacity: 0; }
+:root[data-theme="white"] .sf-rank { text-shadow: none; }
+:root[data-theme="white"] .sf-crest {
+  background: color-mix(in srgb, var(--rank-color) 20%, var(--surface-2));
+  border-color: color-mix(in srgb, var(--rank-color) 60%, #0f172a);
+  box-shadow: none;
+}
+:root[data-theme="white"] .sf-sliver-fill {
+  background: var(--rank-ink, var(--rank-color));
+  box-shadow: none;
+}
+/* Black's primary IS silver at low alpha, which all but disappears against
+   near-black — the same reason that theme overrides --face and --edge. The
+   hull needs more fill and a brighter rim to read at all. */
+:root[data-theme="black"] .sf-hull { fill: rgba(var(--primary-rgb), 0.4); }
+:root[data-theme="black"] .sf-glow { opacity: 0.35; }
+
+/* The head row is the tightest thing here: crest + rank + tonnage + chevron on
+   one line at 360px. */
+@media (max-width: 400px) {
+  .sf-crest { width: 40px; height: 40px; font-size: 1.3rem; }
+  .sf-rank { font-size: 1.08rem; }
+  .sf-ton { font-size: 0.85rem; }
+  .sf-bottom { gap: 0.45rem; }
+}
+@media (pointer: coarse) {
+  /* The frame IS the tap target and it is card-sized, so this only buys back
+     breathing room. .hoard-tile is already covered where the case is styled. */
+  .sf-top { gap: 0.55rem; }
+  .sf-build { font-size: 0.78rem; }
+  .sf-next { font-size: 0.62rem; }
+}

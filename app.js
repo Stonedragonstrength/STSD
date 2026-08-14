@@ -33926,35 +33926,294 @@
   // on the one tab that exists to show them, and the head row already carries
   // the rank and the lifetime figure. Session-only, same as the PR folds —
   // an athlete who opens the case keeps it open across re-renders.
-  let _hoardOpen = false;
-  function renderHoardCard(host, client, progress) {
+// ---------------- The stat field ----------------
+  // DRAW order, clockwise from twelve. It is not the storage order and it is
+  // not alphabetical: the right half is output (AGI 30d, END 18d half-life),
+  // the left half is structure and control (CON 60d, DEX 35d). A fortnight off
+  // therefore collapses the right side while the left holds, and the field
+  // TILTS instead of shrinking evenly — which is both what actually happens to
+  // a body and far more interesting to look at than a shrinking blob.
+  const STAT_AXES = ["STR", "AGI", "END", "CON", "DEX"];
+  const STAT_MEANS = {
+    STR: "Maximal force",
+    AGI: "Speed and elasticity",
+    END: "The aerobic engine",
+    CON: "Work capacity and structure",
+    DEX: "Control and precision",
+  };
+
+  // What "full" means on each axis, in stimulus points, on an ABSOLUTE scale
+  // shared by every athlete. A beginner's field is genuinely small, because
+  // size is progression: a normalised field would draw a novice and a
+  // national-level lifter identically, which throws away the only thing the
+  // picture is for.
+  //
+  // Derived rather than guessed, so it can be redone instead of rediscovered:
+  // a stat held at a steady weekly earn E settles at about
+  //     E * (grace + halflife / ln2) / 7
+  // points, that being the area under its own decay curve. The retention
+  // windows work out at STR 79d, AGI 50d, DEX 58d, END 31d, CON 108d, and the
+  // weekly earns below are an athlete training that quality hard and
+  // consistently: STR 20, AGI 10, DEX 10, END 15, CON 30 points a week. CON is
+  // the largest because every set feeds it and nothing else does that.
+  //
+  // These are READ-side, so retuning them reshapes the whole roster at once
+  // (spec 5.4). Calibrate against real athletes BEFORE this goes near one,
+  // then leave them alone.
+  const STAT_FULL = { STR: 290, AGI: 130, DEX: 160, END: 145, CON: 760 };
+
+  // Raw decayed points -> 0..1 of a full axis. Clamped at the top: an outlier
+  // pegs the axis rather than blowing through the grid, and the constants are
+  // chosen with headroom so that is rare.
+  function statAxisFrac(key, v) {
+    const full = STAT_FULL[key] || 1;
+    const f = (Number(v) || 0) / full;
+    return f <= 0 ? 0 : f >= 1 ? 1 : f;
+  }
+
+  // Shape is identity, so the build is read off the two strongest axes and
+  // never off the size — a novice powerlifter still reads as a powerlifter,
+  // just smaller. Keys are the pair sorted alphabetically so there is one
+  // entry per combination instead of two.
+  const STAT_BUILDS = {
+    "CON+STR": "Powerlifter",
+    "AGI+STR": "Power Athlete",
+    "DEX+STR": "Strongman",
+    "END+STR": "Hybrid Lifter",
+    "AGI+CON": "Field Athlete",
+    "AGI+DEX": "Sprinter",
+    "AGI+END": "Games Athlete",
+    "CON+DEX": "Gymnast",
+    "CON+END": "Engine",
+    "DEX+END": "Endurance Athlete",
+  };
+  function statBuildName(cur) {
+    const ranked = STAT_AXES
+      .map((k) => ({ k, f: statAxisFrac(k, cur && cur[k]) }))
+      .sort((a, b) => b.f - a.f);
+    if (ranked[0].f <= 0.02) return "Unproven";
+    // A flat field has no silhouette to name. The gate compares the top axis
+    // against the MIDDLE one, not the bottom one: AGI reads empty on the whole
+    // current roster, and measuring against it would hand every athlete in the
+    // gym a specialist title they did not earn.
+    if (ranked[0].f - ranked[2].f < ranked[0].f * 0.28) return "All-Rounder";
+    return STAT_BUILDS[[ranked[0].k, ranked[1].k].sort().join("+")] || "All-Rounder";
+  }
+
+// Built in a fixed 100-unit box and scaled by CSS (or by `size`), the same
+  // way bwChartCard fixes its own viewBox — nothing here measures the DOM, so
+  // it works before layout and inside a hidden tab panel.
+  const SF_VB = 100;
+  const SF_C = SF_VB / 2;
+  // The minimum drawn radius. A zero axis is a visible CORNER, never a
+  // collapse into the hub: with AGI empty across the entire roster today, a
+  // true zero would draw a four-sided shape with a notch and read as a
+  // rendering fault rather than as an honest gap. The grid keeps telling the
+  // truth — it starts at the hub — so nothing here claims points that are not
+  // there, it only refuses to draw a pentagon that is not a pentagon.
+  const SF_MIN = 0.11;
+  // Unit vectors, computed once. -90deg is twelve o'clock, and because SVG's
+  // +y runs DOWN, increasing the angle runs clockwise on screen.
+  const SF_UNIT = STAT_AXES.map((k, i) => {
+    const a = (-90 + i * 72) * Math.PI / 180;
+    return { x: Math.cos(a), y: Math.sin(a) };
+  });
+
+  function sfHullPoints(fracs, R) {
+    return SF_UNIT.map((u, i) => {
+      const r = R * (SF_MIN + (1 - SF_MIN) * fracs[i]);
+      return `${(SF_C + u.x * r).toFixed(2)},${(SF_C + u.y * r).toFixed(2)}`;
+    }).join(" ");
+  }
+  function sfRingPoints(f, R) {
+    return SF_UNIT
+      .map((u) => `${(SF_C + u.x * R * f).toFixed(2)},${(SF_C + u.y * R * f).toFixed(2)}`)
+      .join(" ");
+  }
+
+  // The one renderer. The athlete's full field and the coach's roster mini are
+  // the SAME call at two sizes — the mini must never become a second
+  // implementation that drifts from what the athlete is looking at.
+  //
+  //   cur    { STR:n, ... }  decayed points, raw (readStatField().cur)
+  //   peak   { STR:n, ... }  high-water marks, raw (readStatField().peak)
+  //   size   px; omit for a responsive svg sized by CSS
+  //   labels false drops the axis text — the mini is hull, grid and ghost only
+  //
+  // Layers back to front: grid + spokes, dashed peak, glow, filled hull,
+  // vertex nodes, labels. The grid is NEVER glowed; it is the ruler, and a
+  // ruler that lights up stops being one.
+  function statFieldSvg(opts) {
+    const o = opts || {};
+    const labels = o.labels !== false;
+    const R = labels ? 30 : 42;            // labels eat the outer 12 units
+    const cur = STAT_AXES.map((k) => statAxisFrac(k, o.cur && o.cur[k]));
+    // Peak can never sit inside current. Decay only ever pushes current down
+    // from the peak, so an inversion means the constants were retuned under a
+    // stored value — and a ghost drawn inside the hull reads as a bug.
+    const peak = STAT_AXES.map((k, i) => Math.max(cur[i], statAxisFrac(k, o.peak && o.peak[k])));
+    const gid = "sf-" + Math.random().toString(36).slice(2, 7);
+
+    const rings = [0.25, 0.5, 0.75, 1]
+      .map((f) => `<polygon points="${sfRingPoints(f, R)}"/>`).join("");
+    const spokes = SF_UNIT.map((u) =>
+      `<line x1="${SF_C}" y1="${SF_C}" x2="${(SF_C + u.x * R).toFixed(2)}" y2="${(SF_C + u.y * R).toFixed(2)}"/>`
+    ).join("");
+    const nodes = SF_UNIT.map((u, i) => {
+      const r = R * (SF_MIN + (1 - SF_MIN) * cur[i]);
+      return `<circle class="sf-node" r="${labels ? 1.9 : 1.4}"`
+        + ` cx="${(SF_C + u.x * r).toFixed(2)}" cy="${(SF_C + u.y * r).toFixed(2)}"/>`;
+    }).join("");
+
+    const text = !labels ? "" : SF_UNIT.map((u, i) => {
+      const k = STAT_AXES[i];
+      const lx = SF_C + u.x * (R + 6);
+      const ly = SF_C + u.y * (R + 6);
+      // Anchor and baseline follow the direction the label leaves the hub, so
+      // nothing on the ring overhangs the 100-unit box at any vertex.
+      const anchor = u.x > 0.25 ? "start" : u.x < -0.25 ? "end" : "middle";
+      const y = ly + (u.y < -0.6 ? -1 : u.y > 0.4 ? 5.5 : 1.5);
+      return `<text class="sf-axis" x="${lx.toFixed(2)}" y="${y.toFixed(2)}" text-anchor="${anchor}">${k}</text>`
+        + `<text class="sf-axis-val" x="${lx.toFixed(2)}" y="${(y + 5.6).toFixed(2)}" text-anchor="${anchor}">${Math.round(cur[i] * 100)}</text>`;
+    }).join("");
+
+    const dim = Number(o.size) > 0
+      ? ` width="${Math.round(o.size)}" height="${Math.round(o.size)}"` : "";
+    const read = STAT_AXES.map((k, i) => `${STAT_MEANS[k]} ${Math.round(cur[i] * 100)}`).join(", ");
+    // data-sf-r / data-sf-f make the svg self-describing, which is what lets
+    // tweenStatField animate it without being handed the geometry again.
+    return `<svg class="sf-svg"${dim} viewBox="0 0 ${SF_VB} ${SF_VB}" role="img"
+        aria-label="${escapeHtml(read)}"
+        data-sf-r="${R}" data-sf-f="${cur.map((f) => f.toFixed(4)).join(",")}">
+      <defs><filter id="${gid}" x="-35%" y="-35%" width="170%" height="170%">
+        <feGaussianBlur stdDeviation="2.6" result="b"/>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="b"/></feMerge>
+      </filter></defs>
+      <g class="sf-grid">${rings}${spokes}</g>
+      <polygon class="sf-peak" points="${sfHullPoints(peak, R)}"/>
+      <polygon class="sf-glow" points="${sfHullPoints(cur, R)}" filter="url(#${gid})"/>
+      <polygon class="sf-hull" points="${sfHullPoints(cur, R)}"/>
+      ${nodes}${text}
+    </svg>`;
+  }
+
+// The field slides to its new shape instead of jumping, and the frame
+  // reforges on a rank-up. Both are driven from requestAnimationFrame and
+  // written as attributes / inline styles, because the global reduced-motion
+  // rule in styles.css crushes every CSS animation AND transition to 0.01ms —
+  // his phone runs Reduce Motion, so a keyframe here would land as one flat
+  // frame and he would report it as broken. Attribute writes are neither an
+  // animation nor a transition, so the rule cannot touch them.
+  //
+  // statFieldSvg always emits the FINAL shape, and this pulls it back to the
+  // old one on the first frame. That ordering is deliberate: if no frame ever
+  // arrives (hidden tab — rAF does not tick), the field is simply correct and
+  // still, which is the right failure. The reverse would leave it stuck at
+  // last week's shape.
+  function tweenStatField(svg, from, ms) {
+    if (!svg || !Array.isArray(from) || from.length !== STAT_AXES.length) return;
+    const R = parseFloat(svg.getAttribute("data-sf-r")) || 30;
+    const to = String(svg.getAttribute("data-sf-f") || "").split(",").map(Number);
+    if (to.length !== STAT_AXES.length || to.some((n) => !isFinite(n))) return;
+    if (to.every((n, i) => Math.abs(n - from[i]) < 0.005)) return;  // nothing moved
+    const hull = svg.querySelector(".sf-hull");
+    const glow = svg.querySelector(".sf-glow");
+    const nodes = $(".sf-node", svg);
+    let t0 = null;
+    const step = (now) => {
+      if (!svg.isConnected) return;
+      if (t0 === null) t0 = now;                  // clock from the FIRST frame
+      const p = Math.min(1, (now - t0) / ms);
+      const e = 1 - Math.pow(1 - p, 3);           // settles, never overshoots —
+      const at = to.map((n, i) => from[i] + (n - from[i]) * e); // this is status,
+      const pts = sfHullPoints(at, R);            // not a celebration
+      if (hull) hull.setAttribute("points", pts);
+      if (glow) glow.setAttribute("points", pts);
+      nodes.forEach((c, i) => {
+        const r = R * (SF_MIN + (1 - SF_MIN) * at[i]);
+        c.setAttribute("cx", (SF_C + SF_UNIT[i].x * r).toFixed(2));
+        c.setAttribute("cy", (SF_C + SF_UNIT[i].y * r).toFixed(2));
+      });
+      if (p < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+
+  // Ranking up REFORGES the chassis: two pulses of the new metal, fading out,
+  // like something coming off the quench. The crest reuses popInReduced() —
+  // the helper written for exactly this problem — so there is one pop easing
+  // in the app rather than two.
+  function reforgeFlash(card, color) {
+    if (!card || !color) return;
+    popInReduced(card.querySelector(".sf-crest"), { ms: 520, from: 0.72 });
+    let t0 = null;
+    const step = (now) => {
+      if (!card.isConnected) return;
+      if (t0 === null) t0 = now;
+      const p = Math.min(1, (now - t0) / 1200);
+      // Full heat at once, two dips, gone. abs(cos) gives the beat; (1-p) is
+      // the envelope that guarantees it lands back at rest.
+      const heat = (1 - p) * Math.abs(Math.cos(p * Math.PI * 2));
+      // Same shadow stack as the resting rule, with the forge layer on top, so
+      // clearing it back to "" returns the card to the stylesheet unchanged.
+      card.style.boxShadow = `var(--lift), var(--halo), 0 0 ${(heat * 52).toFixed(1)}px `
+        + `color-mix(in srgb, ${color} ${Math.round(heat * 75)}%, transparent)`;
+      if (p < 1) requestAnimationFrame(step);
+      else card.style.boxShadow = "";
+    };
+    requestAnimationFrame(step);
+  }
+
+// The Hoard as CHASSIS. It stopped being a card of its own: crest and rank
+  // on the top edge, tonnage right, the field in the middle, a progress sliver
+  // with the build name and the next rank along the bottom, and the frame's
+  // metal IS the rank. Tapping the frame opens the full ladder, which is where
+  // the screenful of Progress tab comes back from.
+  //
+  // Two colours doing two jobs, and they never fight because they never mean
+  // the same thing: the frame is career metal (--rank-color, per rank), the
+  // field is the theme accent.
+  let _sfLadderOpen = false;
+  // Last drawn shape and last drawn rank, PER ATHLETE. Keyed by client id
+  // because the coach opens one athlete after another into the same DOM — a
+  // single module-level number would tween Kristyn's field out of Nathan's and
+  // reforge the frame on every switch.
+  const _sfDrawn = {};
+  const _sfForged = {};
+
+  function renderStatFieldCard(host, client, progress) {
     if (!host) return;
+    const key = (client && client.id) || "self";
     const lb = Number(progress?.hoard?.lb) || 0;
-    // Nothing lifted yet: no empty ladder. The tab still has the PR cards, and
-    // a locked twelve-row list is a worse first impression than no card.
-    if (!lb) { host.innerHTML = ""; return; }
+    const field = readStatField(client, progress, todayISO());
+    const cur = STAT_AXES.map((k) => statAxisFrac(k, field.cur && field.cur[k]));
+    // Nothing lifted AND nothing logged: no empty chassis. Both halves are
+    // checked rather than just tonnage, because setLb() scores zero for
+    // mobility, every speed drill and every bodyweight lift — an athlete can
+    // have a real DEX axis and a Hoard of exactly nothing.
+    if (!lb && !cur.some((f) => f > 0)) {
+      host.innerHTML = "";
+      delete _sfDrawn[key];
+      return;
+    }
+
     const lvl = hoardLevelFromLb(lb);
     const rank = hoardRankForLevel(lvl.level);
     const next = hoardRankForLevel(lvl.level + 1);
     const look = hoardLook(lvl.level);
     const pct = lvl.need > 0 ? Math.max(0, Math.min(100, (lvl.into / lvl.need) * 100)) : 0;
     const left = Math.max(0, Math.round(lvl.need - lvl.into));
+    const build = statBuildName(field.cur);
 
-    // Which slice of the ladder to show. Base climb → all twelve ranks. Past
-    // HOARD → the lap the athlete is on, which is one bare numeral plus its ten
-    // metals.
+    // Which slice of the ladder the fold shows. Base climb -> all twelve
+    // ranks. Past HOARD -> the lap they are on: one bare numeral plus its ten
+    // metals. Unchanged from the card this replaces.
     const inPrestige = lvl.level >= HOARD_RANKS.length;
     const past = lvl.level - HOARD_RANKS.length;
     const first = inPrestige ? HOARD_RANKS.length + Math.floor(past / HOARD_CYCLE) * HOARD_CYCLE : 1;
     const count = inPrestige ? HOARD_CYCLE : HOARD_RANKS.length;
-    // Cumulative pounds to REACH each level, accumulated from the bottom.
     let floor = 0;
     for (let L = 1; L < first; L++) floor += hoardLbForLevel(L);
-
-    // A twelve-row ladder was the tallest thing on the Progress tab, and eleven
-    // of those rows said the same thing: "not yet". It's a shelf of tiles now —
-    // the case you can see at a glance — and tapping one says what that rank
-    // costs. Same numbers, a fifth of the height.
     const tiles = [];
     let at = floor;
     for (let i = 0; i < count; i++) {
@@ -33966,17 +34225,25 @@
       at += hoardLbForLevel(L);
     }
 
-    host.innerHTML = `<details class="card hoard-card hoard-fold"${_hoardOpen ? " open" : ""} style="--rank-color:${look.color};--rank-glow:${look.glow}">
-      <summary class="hoard-head">
-        <span class="hoard-crest" aria-hidden="true">${rank.icon}</span>
-        <span class="hoard-headtext">
-          <span class="hoard-kicker">The Hoard</span>
-          <span class="hoard-rank">${escapeHtml(rank.name)}</span>
-        </span>
-        <span class="hoard-ton">${escapeHtml(hoardLbLabel(lb))}<small>moved, all time</small></span>
-        <span class="pref-fold-chev" aria-hidden="true">▸</span>
+    host.innerHTML = `<details class="card sf-card"${_sfLadderOpen ? " open" : ""}
+        style="--rank-color:${look.color};--rank-glow:${look.glow}">
+      <summary class="sf-frame">
+        <div class="sf-top">
+          <span class="sf-crest" aria-hidden="true">${rank.icon}</span>
+          <span class="sf-head">
+            <span class="sf-kicker">The Hoard</span>
+            <span class="sf-rank">${escapeHtml(rank.name)}</span>
+          </span>
+          <span class="sf-ton">${escapeHtml(hoardLbLabel(lb))}<small>moved, all time</small></span>
+          <span class="pref-fold-chev" aria-hidden="true">&#9656;</span>
+        </div>
+        <div class="sf-field">${statFieldSvg({ cur: field.cur, peak: field.peak })}</div>
+        <div class="sf-bottom">
+          <span class="sf-build">${escapeHtml(build)}</span>
+          <span class="sf-sliver"><span class="sf-sliver-fill" style="width:${pct.toFixed(1)}%"></span></span>
+          <span class="sf-next">next &middot; ${escapeHtml(next.name)}</span>
+        </div>
       </summary>
-      <div class="hoard-track"><span class="hoard-fill" style="width:${pct.toFixed(1)}%"></span></div>
       <div class="hoard-case" role="group" aria-label="Ranks">
         ${tiles.map((t, i) => `
           <button type="button" class="hoard-tile ${t.state}" data-i="${i}"
@@ -33985,49 +34252,63 @@
             <span class="hoard-tile-ico">${t.rank.icon}</span>
           </button>`).join("")}
       </div>
-      <p class="hoard-detail" id="hoard-detail"></p>
+      <p class="hoard-detail sf-ladder-detail"></p>
     </details>`;
-    // Tapping a tile answers the only question the ladder's extra rows were
-    // answering: what does that one cost? Opens on the rank they're climbing.
-    const detail = host.querySelector("#hoard-detail");
+
+    // ---- The ladder, unchanged in behaviour from the card it replaces ----
+    const detail = host.querySelector(".sf-ladder-detail");
     const showTile = (i) => {
       const t = tiles[i]; if (!t || !detail) return;
-      host.querySelectorAll(".hoard-tile").forEach((b, n) => b.classList.toggle("sel", n === i));
+      $(".hoard-tile", host).forEach((b, n) => b.classList.toggle("sel", n === i));
       detail.style.setProperty("--step-color", t.look.color);
       let body;
       if (t.state === "on") {
-        body = `${Math.round(tonNum(lvl.into)).toLocaleString()} of ${Math.round(tonNum(lvl.need)).toLocaleString()} ${unitLbl()} in. ` +
-          `<b>${Math.round(tonNum(left)).toLocaleString()} ${unitLbl()}</b> to ${escapeHtml(next.name)}.`;
+        body = `${Math.round(tonNum(lvl.into)).toLocaleString()} of ${Math.round(tonNum(lvl.need)).toLocaleString()} ${unitLbl()} in. `
+          + `<b>${Math.round(tonNum(left)).toLocaleString()} ${unitLbl()}</b> to ${escapeHtml(next.name)}.`;
       } else if (t.state === "done") {
-        // t.at is where the rank STARTS, so clearing it is that plus its cost.
         body = `Earned. You cleared it at ${escapeHtml(hoardLbLabel(t.at + hoardLbForLevel(t.L)))} lifetime.`;
       } else {
-        // hoardLbLabel on both halves: one sentence should not say "276 tons"
-        // and "65,000 lb" about the same ladder.
-        body = `Starts at ${escapeHtml(hoardLbLabel(t.at))} lifetime. ` +
-          `<b>${escapeHtml(hoardLbLabel(Math.max(0, t.at - lb)))}</b> from here.`;
+        body = `Starts at ${escapeHtml(hoardLbLabel(t.at))} lifetime. `
+          + `<b>${escapeHtml(hoardLbLabel(Math.max(0, t.at - lb)))}</b> from here.`;
       }
       detail.innerHTML = `<span class="hoard-detail-name">${escapeHtml(t.rank.name)}</span>${body}`;
     };
-    // The case is wired the first time the fold opens, not on every render —
-    // collapsed (the default), the card was still paying to hook twelve
-    // buttons and format a cost line nobody could see.
-    const fold = host.querySelector(".hoard-fold");
+    const fold = host.querySelector(".sf-card");
     let wired = false;
     const wireCase = () => {
       if (wired) return;
       wired = true;
-      host.querySelectorAll(".hoard-tile").forEach((b) =>
-        b.addEventListener("click", () => showTile(Number(b.dataset.i))));
+      $(".hoard-tile", host).forEach((b) => b.addEventListener("click", (e) => {
+        // The frame is a <summary>, so a tile click would toggle the fold shut
+        // under the athlete's finger on its way up.
+        e.preventDefault();
+        showTile(Number(b.dataset.i));
+      }));
       showTile(tiles.findIndex((t) => t.state === "on"));
     };
     if (fold.open) wireCase();
     fold.addEventListener("toggle", () => {
-      _hoardOpen = fold.open;
+      _sfLadderOpen = fold.open;
       if (fold.open) wireCase();
     });
+
+    // ---- Motion. Both are no-ops on a first paint, by design: an athlete
+    // opening the tab sees their field, not an animation of it arriving. ----
+    const was = _sfDrawn[key];
+    if (Array.isArray(was)) tweenStatField(host.querySelector(".sf-svg"), was, 620);
+    _sfDrawn[key] = cur;
+
+    // Reforge off the level this frame was last DRAWN at, not off syncHoard's
+    // `promoted` flag: the rank usually turns over on the Log tab mid-session,
+    // and by the time the athlete reaches Progress that flag is long spent.
+    const forged = _sfForged[key];
+    if (typeof forged === "number" && lvl.level > forged) reforgeFlash(fold, look.color);
+    _sfForged[key] = lvl.level;
   }
 
+  // renderHoardCard was removed 2026-08-13: the Hoard is the chassis around
+  // the stat field now (renderStatFieldCard), not a card of its own. The
+  // rank, the tonnage and the full ladder all live inside that one card.
   // -------- Athlete: the Progress tab --------
   // The record of the WORK: the Hoard ladder, weekly volume, the strength
   // charts and the PRs. The Hoard is new and the volume chart came off the
@@ -34038,14 +34319,16 @@
     const c = state.clientData.program?.client;
     const progress = state.clientData.progress;
     if (!c || !progress) return;
-    // Same choke point the Overview uses, so the tonnage here and the header
-    // crest can never disagree.
+    // Same choke point the Overview uses, so the tonnage in the chassis and
+    // the header crest can never disagree.
     syncHoard(c, progress);
-    // Same choke point, so the field and the tonnage can never disagree about
-    // what has been logged. syncHoard saves itself; this one returns a flag so
-    // one pass over a year of buckets costs at most one write.
+    // This tab is rebuilt on every arrival, which is exactly the recompute a
+    // decaying field needs. syncStatField returns a flag rather than saving
+    // itself, so the caller has to persist: without this the ledger is
+    // re-derived on every paint and never reaches localStorage or Supabase,
+    // which also means the coach's roster would never see it.
     if (syncStatField(c, progress)) saveClient();
-    renderHoardCard($("#prog-hoard"), c, progress);
+    renderStatFieldCard($("#prog-pentagon"), c, progress);
     renderVolumeChart(progress, $("#prog-volume"));
     renderStrengthProgress($("#athlete-strength-charts"), c, progress);
   }
