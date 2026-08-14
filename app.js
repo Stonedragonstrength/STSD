@@ -824,6 +824,10 @@
       // above, counting every set — so a new athlete behaves exactly as one
       // did before phases existed. See TRAINING_PHASES.
       trainingPhase: "",
+      // What they have to train with, as GEAR ids. Empty means everything is
+      // available, so an athlete nobody filled in is unrestricted rather than
+      // unable to be programmed for. See GEAR and EXERCISE_EQUIPMENT.
+      equipment: [],
       // Self-booking is granted per athlete on the coach's Scheduling card, so
       // a new athlete starts unable to take slots out of the availability.
       canBook: false,
@@ -3926,6 +3930,7 @@
         // silence.
         trainingLevel: athlete.trainingLevel || "",
         trainingPhase: athlete.trainingPhase || "",
+        equipment: athlete.equipment || [],
         weeks: athlete.weeks || [],
         oneOffDays: athlete.oneOffDays || [],
         trials: athlete.trials || [],
