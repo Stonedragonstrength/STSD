@@ -149,50 +149,50 @@ window.EXERCISE_STATS = {
     // Loaded carries. Timed, and the most literal expression of CON there is:
     // hold a structure together while walking. STR for the load, DEX for grip
     // and posture under it.
-    "carry": { w: 1, timed: true, plyo: 0,
+    "carry": { w: 1, timed: true, plyo: 0, ref: 45,
       v: { STR: 2, AGI: 0, DEX: 1, END: 1, CON: 6 } },
 
     // Static holds: planks, hollow holds, dead hangs, supermans. Prescribed in
     // reps by the editor, but the number is always seconds, which is why these
     // are timed even though they are not carries or stretches.
-    "iso-hold": { w: 1, timed: true, plyo: 0,
+    "iso-hold": { w: 1, timed: true, plyo: 0, ref: 45,
       v: { STR: 1, AGI: 0, DEX: 2, END: 0, CON: 7 } },
 
     // Holds whose difficulty is stability rather than tension — Copenhagen
     // planks, bird dogs. Same clock as iso-hold, different quality.
-    "balance": { w: 1, timed: true, plyo: 0,
+    "balance": { w: 1, timed: true, plyo: 0, ref: 45,
       v: { STR: 0, AGI: 1, DEX: 6, END: 0, CON: 3 } },
 
     // Stretching and mobility. 0.4 of a set: it counts, because Nathan said it
     // counts, and it does not count like a working set, because it is not one.
-    "mobility": { w: 0.4, timed: true, plyo: 0,
+    "mobility": { w: 0.4, timed: true, plyo: 0, ref: 60,
       v: { STR: 0, AGI: 0, DEX: 8, END: 0, CON: 2 } },
 
     // Footwork: ladders, cones, shuttles, backpedals. The DEX half of the
     // Speed/Agility category — precision of foot placement at speed.
-    "speed-agility": { w: 1, timed: true, plyo: 0,
+    "speed-agility": { w: 1, timed: true, plyo: 0, ref: 30,
       v: { STR: 0, AGI: 2, DEX: 6, END: 2, CON: 0 } },
 
     // The two ladder drills that are genuinely jumps rather than steps.
     // Split out so the plyo flag can be honest about them.
-    "speed-hop": { w: 1, timed: true, plyo: 1,
+    "speed-hop": { w: 1, timed: true, plyo: 1, ref: 20,
       v: { STR: 0, AGI: 5, DEX: 3, END: 2, CON: 0 } },
 
     // Sprints and sprint-technique drills: accelerations, flying runs, skips,
     // wall drives. The AGI half of Speed/Agility. plyo 0.5 — sprinting is a
     // stiff-ankle SSC, but a partial one.
-    "speed-sprint": { w: 1, timed: true, plyo: 0.5,
+    "speed-sprint": { w: 1, timed: true, plyo: 0.5, ref: 20,
       v: { STR: 1, AGI: 5, DEX: 2, END: 2, CON: 0 } },
 
     // Steady-state machines and running. Scored by duration, so the same
     // treadmill run is worth the same whether it was logged in the cardio block
     // or prescribed inside a program day.
-    "cardio-steady": { w: 1, timed: true, plyo: 0,
+    "cardio-steady": { w: 1, timed: true, plyo: 0, ref: 300,
       v: { STR: 0, AGI: 0, DEX: 0, END: 8, CON: 2 } },
 
     // Loaded conditioning: sleds, battle ropes. Timed, and structural enough
     // that it is not just an engine — pushing a sled is work capacity.
-    "conditioning": { w: 1, timed: true, plyo: 0,
+    "conditioning": { w: 1, timed: true, plyo: 0, ref: 180,
       v: { STR: 1, AGI: 0, DEX: 0, END: 5, CON: 4 } },
 
     // The last resort, for a name nothing recognises. An unknown exercise

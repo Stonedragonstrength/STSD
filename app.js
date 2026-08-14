@@ -33244,6 +33244,336 @@
     return entry.sets.reduce((n, s) => n + setLb(ex, s), 0);
   }
 
+
+  // ============================================================
+  // The stat field — STR / AGI / DEX / END / CON
+  // ============================================================
+  // A five-axis proximity field fed by the work the athlete actually logged.
+  // The unit is a STIMULUS POINT and the reference is one hard working set,
+  // deliberately NOT tonnage: setLb() scores zero for timed work, mobility and
+  // bodyweight lifts, which is exactly the half of the pentagon AGI and DEX
+  // exist to reward. Pounds belong to the Hoard; this is a different question,
+  // and the app must never quote two different pound totals for one session.
+  //
+  // Three pure layers, in order. None of them writes state or touches the DOM:
+  //   statProfileFor      — which shared vector an exercise reads as
+  //   statVectorForEntry  — what ONE locked log entry is worth, raw
+  //   statBucketForDate   — a whole day, deduped and capped
+  //
+  // See docs/superpowers/specs/2026-08-13-stat-pentagon-design.md.
+  const STAT_KEYS = ["STR", "AGI", "DEX", "END", "CON"];
+  function statZero() { return { STR: 0, AGI: 0, DEX: 0, END: 0, CON: 0 }; }
+
+  // The vendored table (exercise-stats.js), read the same way as
+  // EXERCISE_EQUIPMENT: an installed PWA can be running app.js against a cached
+  // bundle that predates the file, so a missing table has to degrade to "score
+  // nothing" rather than throw on every render.
+  function statTable() {
+    const t = window.EXERCISE_STATS;
+    return t && typeof t === "object" ? t : {};
+  }
+  function statProfileByKey(key) {
+    const profiles = statTable().profiles;
+    const p = key && profiles ? profiles[key] : null;
+    return p && typeof p === "object" ? p : null;
+  }
+  // The profile keys the ENGINE names by hand — these two plus "mobility" and
+  // the table's own fallback[""]. Everything else in the table is data it is
+  // free to rename; these are a contract with it, and tests/stat-scoring.test.js
+  // fails if the shipped table drops one.
+  const STAT_IMPULSE_PROFILE = { Plyometric: "plyo-jump", Ballistic: "ballistic" };
+  const STAT_MOBILITY_PROFILE = "mobility";
+
+  // Rep bands (spec 3.2). The pot of points per set is identical in every
+  // band — only the SPLIT moves — so nothing ever pays more for chasing a rep
+  // count. 26+ is Nathan's "over 25 reps counts as endurance" call.
+  function statRepBand(reps) {
+    if (!(reps > 0)) return "mid";   // no reading = the neutral middle
+    if (reps <= 5) return "lo";
+    if (reps <= 12) return "mid";
+    if (reps <= 25) return "hi";
+    return "vhi";
+  }
+  // How much of a profile's STR share is actually earned (spec 4.2). STR reads
+  // the flames, because 315 lb is a max for one athlete and a warm-up for
+  // another — a load number means nothing without a person attached to it, and
+  // the 🔥 picker is already the coach's athlete-relative judgement.
+  //
+  // Whatever is NOT earned is redirected to CON, never discarded, so a coach
+  // who never touches the picker loses no points: the work lands in Condition
+  // instead, and STR becomes an axis earned by programming heavy work.
+  const STAT_STR_HARD = 0.7;         // 🔥×3 is partial; 🔥×4 is the whole share
+  function statStrGate(ex, reps) {
+    const eff = ex && ex.effort;
+    let g = eff === "max" ? 1 : eff === "hard" ? STAT_STR_HARD : 0;
+    // Rep-count fallback, so STR never dies on an untagged day. Reps and flames
+    // are NOT the same measurement — flames are exertion, reps are proximity to
+    // maximal LOAD — and STR is the load reading, so a set of 1-5 counts as
+    // near-max whatever the coach tagged. Nobody performs triples for
+    // endurance. Callers pass 0 for timed work, which has no reps to read.
+    if (reps >= 1 && reps <= 5) g = 1;
+    return g;
+  }
+  // Every stat except STR. Reported reality (RIR) beats prescription (flames),
+  // and UNSET IS 1.00 — the multiplicative identity. Treating an absent opinion
+  // as "light" would quietly shrink the pentagon of nearly every program in the
+  // app, since most prescribed exercises carry no effort tag at all.
+  const STAT_EFFORT_MULT = { light: 0.85, moderate: 1, hard: 1.1, max: 1.15 };
+  const STAT_CARDIO_MULT = { low: 0.85, moderate: 1, high: 1.15 };
+  function statIntensityMult(ex, entry) {
+    const r = parseInt(entry && entry.rir, 10);   // RIR_OPTS: 0 / 2 / 4+
+    if (Number.isFinite(r)) return r <= 0 ? 1.15 : r <= 2 ? 1 : 0.85;
+    return STAT_EFFORT_MULT[ex && ex.effort] || 1;
+  }
+
+  // Seconds out of a prescription or a logged rep field. Holds and carries
+  // store a bare number of seconds; the builder also writes "45s" and "3 min",
+  // and — for cardio and carries — distances and calories that are not
+  // durations at all. Bare "m" is deliberately NOT minutes: _repsFor writes
+  // "30 m" for a carry, meaning metres. Anything unreadable returns null so the
+  // caller can fall back to "one ordinary set".
+  function statSeconds(v) {
+    const s = String(v == null ? "" : v).trim().toLowerCase();
+    if (!s) return null;
+    let m = s.match(/^(\d+):([0-5]\d)$/);
+    if (m) return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+    m = s.match(/^([\d.]+)\s*(h|hr|hrs|hour|hours)$/);
+    if (m) return Math.round(parseFloat(m[1]) * 3600);
+    m = s.match(/^([\d.]+)\s*(min|mins|minute|minutes)$/);
+    if (m) return Math.round(parseFloat(m[1]) * 60);
+    m = s.match(/^([\d.]+)\s*(s|sec|secs|second|seconds)$/);
+    if (m) return Math.round(parseFloat(m[1]));
+    m = s.match(/^([\d.]+)$/);
+    if (m) return Math.round(parseFloat(m[1]));
+    return null;                                  // "400m", "15 cal", "40 ft"
+  }
+  // Reps out of a logged set, falling back to what was prescribed. A locked
+  // entry always has reps, but a legacy one or a coach-side edit may not.
+  function statReps(v, ex) {
+    const n = parseInt(v, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+    const rx = parseInt(ex && ex.currentReps, 10);
+    return Number.isFinite(rx) && rx > 0 ? rx : 0;
+  }
+  // Seconds of timed work that equal one working set. Holds and carries sit at
+  // 45s; sprint and cardio profiles carry their own `ref`, because at the hold
+  // scale a 30-minute run would slam into the daily cap and every run in the
+  // app would then read exactly the same.
+  const STAT_TIMED_REF_SEC = 45;
+  const STAT_TIMED_MIN = 0.25;       // a 5-second stretch is not a working set
+  function statTimedRef(profile) {
+    const r = Number(profile && profile.ref);
+    return isFinite(r) && r > 0 ? r : STAT_TIMED_REF_SEC;
+  }
+  // The vector for one set, normalised to shares that sum to 1. Normalising by
+  // the row's OWN total means the table can be written in whole points or in
+  // fractions and the engine is right either way — and a row that sums wrong
+  // still scores the right shape at the right size instead of silently scaling
+  // one athlete. The fixed-total invariant is pinned by the table's own test.
+  function statProfileVector(profile, timed, reps) {
+    if (!profile) return null;
+    if (timed || !profile.lo) return profile.v || null;
+    return profile[statRepBand(reps)] || profile.v || null;
+  }
+  function statShare(vec) {
+    const out = statZero();
+    let total = 0;
+    STAT_KEYS.forEach((k) => {
+      const n = Number(vec && vec[k]) || 0;
+      if (n > 0) { out[k] = n; total += n; }
+    });
+    if (!total) return null;
+    STAT_KEYS.forEach((k) => { out[k] = out[k] / total; });
+    return out;
+  }
+
+  // Which vector an exercise reads as (spec 3.3). First hit wins, and every
+  // step exists because no single source knows the answer:
+  //   1. ex.sp        — a preset stamped on a coach CUSTOM exercise, which
+  //                     resolves to no library category at all on the athlete's
+  //                     device, so nothing below it can classify one.
+  //   2. Impulse tag  — coach intent beats the default. A speed-day deadlift is
+  //                     Ballistic however the table files a deadlift.
+  //   3. the table    — every library name, on both devices.
+  //   4. the category — one row per library shelf.
+  //   5. kind         — a coach-made hold with no category left is a stretch.
+  //   6. the default  — an unknown name logged with weight and reps is
+  //                     resistance work by overwhelming prior.
+  //
+  // Classified off exResolvedName, NEVER ex.name: an athlete swap keeps the
+  // exercise id and changes the name, so scoring a swapped-in Box Jump as the
+  // Back Squat it replaced is wrong at exactly the moment it matters.
+  function statProfileFor(ex, progress) {
+    if (!ex) return null;
+    let p = statProfileByKey(ex.sp);
+    if (p) return p;
+    const impulse = (ex.modifiers || []).find((t) => STAT_IMPULSE_PROFILE[t]);
+    if (impulse) {
+      p = statProfileByKey(STAT_IMPULSE_PROFILE[impulse]);
+      if (p) return p;
+    }
+    const t = statTable();
+    const name = exResolvedName(ex, progress) || ex.name || "";
+    p = statProfileByKey(t.byName ? t.byName[exKey(name)] : null);
+    if (p) return p;
+    const cat = libCatFor(name);
+    if (cat) {
+      p = statProfileByKey(t.fallback ? t.fallback[cat] : null);
+      if (p) return p;
+    }
+    if (ex.kind === "mobility") {
+      p = statProfileByKey(STAT_MOBILITY_PROFILE);
+      if (p) return p;
+    }
+    return statProfileByKey(t.fallback ? t.fallback[""] : null);
+  }
+
+  // What ONE locked log entry is worth, raw and uncapped. The daily cap belongs
+  // to statBucketForDate — baking it in here would leave a capped number that
+  // deleting or editing one exercise could never unwind.
+  function statVectorForEntry(ex, entry, progress) {
+    const out = statZero();
+    // Drafts score nothing. The 800 ms autosave writes locked:false entries
+    // whose sets survive a truthiness filter on reps alone, so without this an
+    // abandoned half-typed day moves the field while the Hoard reads zero.
+    if (!ex || !entry || entry.locked !== true || entry.skipped === true) return out;
+    const profile = statProfileFor(ex, progress);
+    if (!profile) return out;
+    // A carry or a hold has no reps to read: 3×45s would otherwise land in the
+    // 26+ endurance band while the same carry at 10s read as strength. The
+    // exercise's own shape overrides the table here, so a mislabelled row can
+    // never resurrect that bug.
+    const timed = profile.timed === true || exIsTimed(ex) || ex.kind === "mobility";
+    const mult = statIntensityMult(ex, entry);
+    const w = Number(profile.w);
+    const setW = isFinite(w) && w > 0 ? w : 1;
+    const ref = statTimedRef(profile);
+    const rxSec = statSeconds(ex.currentReps);
+
+    const add = (reps, sec) => {
+      const share = statShare(statProfileVector(profile, timed, reps));
+      if (!share) return;
+      // Duration replaces the rep bands for timed work. An unknown duration is
+      // one ordinary set rather than nothing — the athlete did the round. There
+      // is no upper clamp on purpose: the daily cap is the ceiling, and a clamp
+      // here would make a 10-minute treadmill piece and a 40-minute one equal.
+      const dur = timed ? (sec > 0 ? Math.max(STAT_TIMED_MIN, sec / ref) : 1) : 1;
+      const base = setW * dur;
+      const gate = statStrGate(ex, timed ? 0 : reps);
+      const held = share.STR * (1 - gate);   // redirected to CON, never lost
+      out.STR += base * share.STR * gate;
+      STAT_KEYS.forEach((k) => {
+        if (k === "STR") return;
+        out[k] += base * mult * (share[k] + (k === "CON" ? held : 0));
+      });
+    };
+
+    // BOTH log shapes, permanently. isHoldName() covers all 30 Speed/Agility
+    // drills and all 20 Mobility stretches, and that card wrote
+    // `rounds:[true,false]` with no `sets` key at all for years of history.
+    // Reading only entry.sets scores zero for every ladder drill, bound,
+    // sprint, cone drill and stretch in the library — it kills AGI and DEX
+    // outright. Each true round is one completed set at the prescribed seconds.
+    if (Array.isArray(entry.rounds)) {
+      entry.rounds.forEach((done) => { if (done) add(0, rxSec); });
+    }
+    (entry.sets || []).forEach((s) => {
+      if (!s || s.skipped) return;
+      if (!s.reps && !s.weight) return;          // an empty row is not a set
+      add(statReps(s.reps, ex), timed ? (statSeconds(s.reps) || rxSec) : 0);
+    });
+    // entry.warmups is DELIBERATELY not read: warm-ups are preparation, and
+    // counting them pays an athlete for padding the ramp (same rule as
+    // logEntryLb). Do not "fix" this by adding them.
+    if (entry.burnout) add(statReps(entry.burnout.reps, ex), rxSec);
+    // A dropset is ONE set with drops in it, not three sets.
+    if (Array.isArray(entry.dropset) && entry.dropset.length) {
+      add(statReps(entry.dropset[0] && entry.dropset[0].reps, ex), rxSec);
+    }
+    return out;
+  }
+
+  // A cardio log is already self-describing — {type, minutes, intensity, date}
+  // — so it needs no definition lookup, and it reads the same Cardio row of the
+  // fallback table that a treadmill piece prescribed inside a program day
+  // reads. Where the athlete taps must not decide the number.
+  function statVectorForCardio(log) {
+    const out = statZero();
+    const min = Number(log && log.minutes) || 0;
+    if (min <= 0) return out;
+    const t = statTable();
+    const profile = statProfileByKey(t.fallback ? t.fallback.Cardio : null);
+    const share = statShare(profile && profile.v);
+    if (!share) return out;
+    const w = Number(profile.w);
+    const base = (isFinite(w) && w > 0 ? w : 1) * ((min * 60) / statTimedRef(profile));
+    const mult = STAT_CARDIO_MULT[String(log.intensity || "").toLowerCase()] || 1;
+    // A cardio log carries no flames, so any STR share the row holds is
+    // redirected to CON — the same rule as everywhere else, applied honestly.
+    STAT_KEYS.forEach((k) => {
+      if (k === "STR") return;
+      out[k] = base * mult * (share[k] + (k === "CON" ? share.STR : 0));
+    });
+    return out;
+  }
+
+  // Per stat, per day: the first 10 points at full credit, the next 6 at half,
+  // nothing beyond — 13 is the hard ceiling. A hard normal session lands around
+  // 6-9 in its dominant stat and never touches it; 40 sets of curls resolves to
+  // 13. This matches the volume literature, where per-session productive volume
+  // flattens around ten hard sets and past that an athlete accumulates fatigue
+  // rather than adaptation.
+  const STAT_DAY_FULL = 10;
+  const STAT_DAY_HALF = 6;
+  function statCapDay(n) {
+    if (!(n > 0)) return 0;
+    if (n <= STAT_DAY_FULL) return n;
+    return STAT_DAY_FULL + Math.min(STAT_DAY_HALF, n - STAT_DAY_FULL) / 2;
+  }
+
+  // One training date, summed and capped — the bucket that gets stored on
+  // progress.statField.
+  //
+  // Duplicate entries are collapsed FIRST, and that is not a nicety: nothing
+  // enforces one entry per (exId, date). merge_progress dedupes on entry ID,
+  // and lockIn searches only the LOCAL array for a matching date, so a device
+  // that has not yet seen another device's entry mints a fresh uid() and both
+  // ids then survive the union forever. syncHoard is immune because its awards
+  // are keyed exId:date and the second write overwrites the first; a plain sum
+  // is not, and it would double that session permanently. This is Nathan's
+  // live-session workflow — coach and athlete both logging — not a
+  // hypothetical. Highest `m` wins, the same tiebreak mergeExerciseLogs uses.
+  function statBucketForDate(client, progress, dateISO) {
+    if (!dateISO) return {};
+    const out = statZero();
+    const byId = hoardExerciseIndex(client, progress);
+    Object.entries((progress && progress.exerciseLogs) || {}).forEach(([exId, entries]) => {
+      const ex = byId.get(exId);
+      if (!ex || !Array.isArray(entries)) return;
+      let best = null;
+      entries.forEach((e) => {
+        if (!e || e.date !== dateISO) return;
+        if (!best || (Number(e.m) || 0) > (Number(best.m) || 0)) best = e;
+      });
+      if (!best) return;
+      const v = statVectorForEntry(ex, best, progress);
+      STAT_KEYS.forEach((k) => { out[k] += v[k]; });
+    });
+    cardioLogsAll(progress).forEach((l) => {
+      if (!l || l.date !== dateISO) return;
+      const v = statVectorForCardio(l);
+      STAT_KEYS.forEach((k) => { out[k] += v[k]; });
+    });
+    // Absent keys are zero. Dropping them is what keeps statField near 8 KB
+    // instead of growing five numbers per training day for a whole career.
+    const bucket = {};
+    STAT_KEYS.forEach((k) => {
+      const n = Math.round(statCapDay(out[k]) * 10) / 10;
+      if (n > 0) bucket[k] = n;
+    });
+    return bucket;
+  }
+
   function ensureHoard(progress) {
     if (!progress) return null;
     if (!progress.hoard || typeof progress.hoard !== "object") progress.hoard = {};
