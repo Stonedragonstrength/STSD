@@ -10434,6 +10434,33 @@
     return phase ? (EFFORT_LEVELS[phase.minEffort] || {}).rank || 0 : 0;
   }
 
+  // ── Gear ──
+  // What a GYM has, as opposed to how a single exercise is performed (that is
+  // an EXERCISE_MODIFIERS "Equipment" tag). Two different questions, and the
+  // two vocabularies are bridged by EXERCISE_EQUIPMENT: a realization names the
+  // gear it needs and the tag to stamp once that gear is present.
+  // Ids match the eq: icon tokens, so the picker needs no new artwork.
+  const GEAR = [
+    { id: "barbell",    label: "Barbell",       icon: "eq:barbell" },
+    { id: "plate",      label: "Plates",        icon: "eq:plate" },
+    { id: "dumbbell",   label: "Dumbbells",     icon: "eq:dumbbell" },
+    { id: "kettlebell", label: "Kettlebells",   icon: "eq:kettlebell" },
+    { id: "trapbar",    label: "Trap bar",      icon: "eq:trapbar" },
+    { id: "rack",       label: "Rack",          icon: "eq:rack" },
+    { id: "bench",      label: "Bench",         icon: "eq:bench" },
+    { id: "cable",      label: "Cable machine", icon: "eq:cable" },
+    { id: "pullup",     label: "Pull-up bar",   icon: "eq:pullup" },
+    { id: "dipbars",    label: "Dip bars",      icon: "eq:dipbars" },
+    { id: "band",       label: "Bands",         icon: "eq:band" },
+    { id: "medball",    label: "Med ball",      icon: "eq:medball" },
+    { id: "box",        label: "Box",           icon: "eq:box" },
+    { id: "sled",       label: "Sled",          icon: "eq:sled" },
+    { id: "rower",      label: "Rower",         icon: "eq:rower" },
+    { id: "treadmill",  label: "Treadmill",     icon: "eq:treadmill" },
+    { id: "jumprope",   label: "Jump rope",     icon: "eq:jumprope" },
+  ];
+  const GEAR_BY_ID = Object.fromEntries(GEAR.map((g) => [g.id, g]));
+
   // Unset and unrecognised both resolve to the default. Unrecognised matters
   // because a cloud pull can hand back a value written by a newer build.
   function levelBands(client) {
