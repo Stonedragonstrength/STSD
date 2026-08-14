@@ -1296,6 +1296,24 @@
     { group: "Grip",        tags: ["Supinated", "Neutral", "Pronated"] },
     { group: "Style",       tags: ["Pause", "Tempo", "Explosive", "Isometric"] },
     { group: "Hold",        tags: ["1S", "2S", "3S", "4S", "5S"] },
+    // What KIND of contraction this is, for the stat field's AGI axis.
+    //
+    // Deliberately not folded into Style, and deliberately not named
+    // "Plyometric": Style says how fast to move the bar, this says what the
+    // movement IS, and Ballistic is the necessary sibling class (a med ball
+    // throw, a kettlebell swing, a jump squat) so a group named after one of
+    // its own tags would read badly next to Style and Grip.
+    //
+    // Explosive and Plyometric are different statements and both can be set at
+    // once: a barbell squat can be Explosive and is never plyometric, while
+    // saying "Explosive" about a depth jump is redundant. Nothing reads the
+    // Explosive tag for scoring, because _genTags stamps a random Style tag on
+    // 60% of generated primaries — it is noise, not intent.
+    //
+    // The table already classifies every jump and bound in the library, so this
+    // only ever has to handle exceptions: a coach-typed name, a custom
+    // exercise, or an ordinary barbell lift programmed as a jump.
+    { group: "Impulse",     tags: ["Plyometric", "Ballistic"] },
   ];
   // Hold (seconds) tags only apply alongside the Isometric tag.
   const HOLD_TAGS = ["1S", "2S", "3S", "4S", "5S"];
@@ -3083,9 +3101,13 @@
       if (openPicker) chip.addEventListener("click", (e) => { e.stopPropagation(); openPicker(); });
       container.appendChild(chip);
     }
+    // Impulse rides with Style and Hold: all three describe HOW the set is
+    // performed rather than what implement it uses, so they read as trailing
+    // chips and must not prepend to the name (see exerciseDisplayLabel).
+    const TRAILING_GROUPS = ["Style", "Hold", "Impulse"];
     const groups = position === "before"
-      ? EXERCISE_MODIFIERS.filter((g) => g.group !== "Style" && g.group !== "Hold")
-      : EXERCISE_MODIFIERS.filter((g) => g.group === "Style" || g.group === "Hold");
+      ? EXERCISE_MODIFIERS.filter((g) => !TRAILING_GROUPS.includes(g.group))
+      : EXERCISE_MODIFIERS.filter((g) => TRAILING_GROUPS.includes(g.group));
     orderedModifiers(ex).forEach((tag) => {
       const g = groupForTag(tag);
       if (!g || !groups.includes(g)) return;
@@ -30308,7 +30330,10 @@
     orderedModifiers(ex).forEach((tag) => {
       const g = groupForTag(tag);
       if (!g) return;
-      (g.group === "Style" || g.group === "Hold" ? after : before).push(tag);
+      // Impulse joins Style and Hold as a TRAILING chip. Left in the `before`
+      // bucket it would prepend to the name and the athlete's card would read
+      // "Plyometric Box Jump", which is not English and not what the tag means.
+      (g.group === "Style" || g.group === "Hold" || g.group === "Impulse" ? after : before).push(tag);
     });
     const nm = exResolvedName(ex, progress) || "(unnamed)";
     return [...nameOrderedTags(before).map(tagLong), nm, ...after.map(tagLong)].join(" ");

@@ -193,6 +193,29 @@ check("an Impulse tag overrides the table", () => {
   assert.strictEqual(statProfileFor(jump, {}), FIXTURE.profiles["plyo-jump"]);
 });
 
+check("the Impulse tags are real modifier tags, in their own group", () => {
+  // statProfileFor only looks the tag up in STAT_IMPULSE_PROFILE, so scoring
+  // would pass even if the group did not exist — and then the coach would have
+  // no way to SET the tag, and exerciseDisplayLabel would prepend it to the
+  // name. Pin the group itself.
+  const MODS = extractLiteral(appSrc, "const EXERCISE_MODIFIERS = [");
+  const impulse = MODS.find((g) => g.group === "Impulse");
+  assert.ok(impulse, "no Impulse group in EXERCISE_MODIFIERS — the tag is unsettable");
+  assert.ok(!impulse.multi, "Impulse is single-select: a movement is one class or the other");
+  const IMPULSE = extractLiteral(appSrc, "const STAT_IMPULSE_PROFILE = {");
+  Object.keys(IMPULSE).forEach((t) =>
+    assert.ok(impulse.tags.includes(t), `"${t}" is scored but is not an Impulse tag`));
+  // Explosive must stay in Style. It is a tempo instruction, and _genTags
+  // stamps it at random, so it must never become a movement class.
+  const style = MODS.find((g) => g.group === "Style");
+  assert.ok(style.tags.includes("Explosive"), "Explosive belongs to Style");
+  assert.ok(!impulse.tags.includes("Explosive"), "Explosive must NOT be an Impulse tag");
+  // liftKey must not fragment PR history on a new group.
+  const LIFT_ID_GROUPS = extractLiteral(appSrc, "const LIFT_ID_GROUPS = [");
+  assert.ok(!LIFT_ID_GROUPS.includes("Impulse"),
+    "Impulse in LIFT_ID_GROUPS would split every tagged lift's PR history");
+});
+
 check("ex.sp beats everything, so a custom exercise is classifiable at all", () => {
   const custom = { id: "x", name: "Whatever", sp: "plyo-jump", modifiers: ["Ballistic"] };
   assert.strictEqual(statProfileFor(custom, {}), FIXTURE.profiles["plyo-jump"]);
