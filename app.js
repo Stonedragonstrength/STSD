@@ -10583,6 +10583,365 @@
     };
   }
 
+  // ══ Program builder ══
+  // The coverage map run backwards. Instead of grading a week you wrote, it
+  // writes one: seat the compounds that cover the most body per movement, then
+  // fill what they miss, all against this athlete's own bands and their gear.
+
+  // The gear an athlete can reach. Empty means everything, so an athlete nobody
+  // filled in is unrestricted rather than unable to train.
+  function gearSet(client) {
+    const list = (client && client.equipment) || [];
+    return new Set(list.length ? list : GEAR.map((g) => g.id));
+  }
+  // How this athlete would perform this movement, or null if they cannot.
+  // Realizations are in preference order, so the first satisfiable one is the
+  // one to program. Returns the tag to stamp as well as the gear it used.
+  function resolveRealization(name, gear) {
+    const rs = (window.EXERCISE_EQUIPMENT || {})[exKey(name)];
+    if (!rs) return null;
+    return rs.find((r) => r.gear.every((g) => gear.has(g))) || null;
+  }
+  // How much body a movement covers, as one number. This is what makes a
+  // deadlift outrank a leg extension on merit rather than by a keyword list,
+  // and it is the whole basis of anchor choice.
+  function coverageScore(name) {
+    return musclesForExercise(name).reduce((t, h) => t + h.weight, 0);
+  }
+  // Everything the builder may pick from: the curated anchors and accessories
+  // first, so ties resolve toward the ones already vouched for, then the wider
+  // library. Built once.
+  let _builderPool = null;
+  function builderPool() {
+    if (_builderPool) return _builderPool;
+    const out = new Map();
+    ANATOMY_GROUPS.forEach((g) => [...(g.anchors || []), ...(g.accessories || [])]
+      .forEach((nm) => { const k = exKey(nm); if (k && !out.has(k)) out.set(k, nm); }));
+    EXERCISE_LIBRARY.forEach((c) => (c.ex || [])
+      .forEach((nm) => { const k = exKey(nm); if (k && !out.has(k)) out.set(k, nm); }));
+    _builderPool = [...out.values()];
+    return _builderPool;
+  }
+  const MUSCLE_PATTERN = Object.fromEntries(ANATOMY_GROUPS.map((g) => [g.id, g.pattern]));
+
+  // Which patterns each day owns, per day count. Stated in the same vocabulary
+  // the muscles are (ANATOMY_GROUPS[].pattern), so a day's job is legible from
+  // its own definition.
+  const SPLITS = {
+    1: [["Squat", "Push", "Pull", "Hinge", "Core"]],
+    2: [["Squat", "Push"], ["Hinge", "Pull"]],
+    3: [["Push"], ["Pull"], ["Squat", "Hinge"]],
+    4: [["Push"], ["Squat"], ["Pull"], ["Hinge"]],
+    5: [["Push"], ["Pull"], ["Squat", "Hinge"], ["Push", "Pull"], ["Squat", "Hinge"]],
+    6: [["Push"], ["Pull"], ["Squat", "Hinge"], ["Push"], ["Pull"], ["Squat", "Hinge"]],
+  };
+  // A pattern is reachable when at least one movement serving one of its
+  // muscles can actually be performed with the gear on hand.
+  function patternReachable(pattern, gear) {
+    return builderPool().some((nm) => {
+      if (!resolveRealization(nm, gear)) return false;
+      return musclesForExercise(nm).some((h) => MUSCLE_PATTERN[h.id] === pattern);
+    });
+  }
+  // The split for a day count, with unreachable patterns removed. A day left
+  // with nothing takes the best reachable pattern instead, so a gym that cannot
+  // pull still yields the full number of useful days rather than empty ones.
+  // Dropped patterns are reported, never silently swallowed.
+  function skeletonFor(dayCount, gear) {
+    const base = SPLITS[dayCount] || SPLITS[3];
+    const all = [...new Set(Object.values(MUSCLE_PATTERN))];
+    const reachable = all.filter((p) => patternReachable(p, gear));
+    const dropped = all.filter((p) => !reachable.includes(p));
+    // Rank by the best movement each pattern can still offer, so a re-picked
+    // day gets the most productive work available rather than whatever is first.
+    const rank = (p) => Math.max(0, ...builderPool()
+      .filter((nm) => resolveRealization(nm, gear)
+        && musclesForExercise(nm).some((h) => MUSCLE_PATTERN[h.id] === p))
+      .map(coverageScore));
+    const byRank = [...reachable].sort((a, b) => rank(b) - rank(a));
+    const days = base.map((day) => {
+      const kept = day.filter((p) => reachable.includes(p));
+      return kept.length ? kept : (byRank.length ? [byRank[0]] : []);
+    });
+    return { days, dropped };
+  }
+
+  // Nathan's own sketch ran seven exercises a day. The athlete-added cap is 8,
+  // so seven leaves them room to add one of their own.
+  const DAY_CAP = 7;
+  // The best movement for a pattern that this gear allows and this week has not
+  // already used. Curated names win a score tie because builderPool() puts them
+  // first and the scan keeps the first strict maximum.
+  function bestForPattern(pattern, gear, used) {
+    let best = null, bestScore = -1;
+    builderPool().forEach((nm) => {
+      if (used.has(exKey(nm))) return;
+      if (!resolveRealization(nm, gear)) return;
+      if (!musclesForExercise(nm).some((h) => MUSCLE_PATTERN[h.id] === pattern)) return;
+      const s = coverageScore(nm);
+      if (s > bestScore) { bestScore = s; best = nm; }
+    });
+    return best;
+  }
+  // One anchor per pattern the day owns, in pattern order so the biggest
+  // movement opens the day.
+  function seatAnchors(skeletonDays, gear, used) {
+    return skeletonDays.map((patterns) => {
+      const day = [];
+      patterns.forEach((p) => {
+        if (day.length >= DAY_CAP) return;
+        const nm = bestForPattern(p, gear, used);
+        if (!nm) return;
+        used.add(exKey(nm));
+        day.push(nm);
+      });
+      return day;
+    });
+  }
+  // Sets per muscle for a week that is still just lists of names.
+  // Deliberately NOT anatomyCoverage(): that reads a real client through
+  // coverageWeek(), and the proposal has no burn levels yet, so a phased
+  // athlete would have every one of them filtered out as untagged and the
+  // filler would chase a deficit it could never close.
+  function proposalSets(dayNames, setsPerEx) {
+    const sets = {};
+    ANATOMY_GROUPS.forEach((g) => { sets[g.id] = 0; });
+    dayNames.forEach((names) => names.forEach((nm) => {
+      musclesForExercise(nm).forEach((h) => {
+        if (sets[h.id] != null) sets[h.id] += setsPerEx * h.weight;
+      });
+    }));
+    Object.keys(sets).forEach((k) => { sets[k] = Math.round(sets[k] * 10) / 10; });
+    return sets;
+  }
+  // How dearly a set past plenty is priced against a set of real shortfall
+  // closed. Below about 0.4 the filler still overloads the big compound
+  // muscles; above about 0.8 it stops so early that ordinary weeks come back
+  // full of gaps. 0.5 keeps a beginner's glutes near their band while still
+  // filling the small groups.
+  const OVERSHOOT_COST = 0.5;
+  // Add whichever reachable movement closes the most shortfall, until every
+  // muscle reaches solid or every day is full. Mutates `days`.
+  function fillDeficit(days, client, gear, used, setsPerEx) {
+    const bands = levelBands(client);
+    const room = () => days.some((d) => d.length < DAY_CAP);
+    for (let guard = 0; guard < 200 && room(); guard++) {
+      const sets = proposalSets(days, setsPerEx);
+      const deficit = {};
+      let total = 0;
+      ANATOMY_GROUPS.forEach((g) => {
+        const d = Math.max(0, bands.solid - (sets[g.id] || 0));
+        deficit[g.id] = d; total += d;
+      });
+      if (!total) break;
+      let best = null, bestGain = 0;
+      builderPool().forEach((nm) => {
+        if (used.has(exKey(nm))) return;
+        if (!resolveRealization(nm, gear)) return;
+        // Deficit closed, MINUS what the same movement dumps on muscles that
+        // are already full. Counting only the gain is what let a beginner's
+        // week reach 13 glute sets against a plenty of 6: almost every
+        // lower-body movement pays the glutes, so chasing a needy muscle kept
+        // buying glute volume nobody asked for. Overshoot is a cost, so a
+        // movement that closes a little and overloads a lot loses, and once
+        // nothing scores positive the filler stops rather than adding junk.
+        const gain = musclesForExercise(nm).reduce((t, h) => {
+          const add = setsPerEx * h.weight;
+          const closed = Math.min(deficit[h.id] || 0, add);
+          const over = Math.max(0, ((sets[h.id] || 0) + add) - bands.plenty);
+          return t + closed - over * OVERSHOOT_COST;
+        }, 0);
+        if (gain > bestGain) { bestGain = gain; best = nm; }
+      });
+      if (!best) break;
+      // Into the emptiest day, so the week stays even in length.
+      const target = days.reduce((a, b) => (b.length < a.length ? b : a));
+      if (target.length >= DAY_CAP) break;
+      target.push(best);
+      used.add(exKey(best));
+    }
+    const finalSets = proposalSets(days, setsPerEx);
+    return {
+      short: ANATOMY_GROUPS.filter((g) => (finalSets[g.id] || 0) < bands.solid).map((g) => g.name),
+    };
+  }
+
+  // Which burn level a slot earns. By slot rather than by style, so it is one
+  // rule instead of nine. A phase then floors the lot: coverage in Fat loss
+  // counts only Hard and up, so a generated week written below that minimum
+  // would grade as completely empty the moment its map was opened. The builder
+  // must never produce a program its own grader rejects.
+  const BUILDER_SLOT_EFFORT = { anchor: "hard", fill: "moderate", iso: "light" };
+  function builderEffort(slot, phase) {
+    const want = BUILDER_SLOT_EFFORT[slot] || "moderate";
+    if (!phase) return want;
+    const min = phaseMinRank(phase);
+    if ((EFFORT_LEVELS[want] || {}).rank >= min) return want;
+    return phase.minEffort;
+  }
+
+  // Bring a finished week back inside the plenty band by shaving sets, never by
+  // dropping exercises.
+  //
+  // The filler's overshoot price is not enough on its own, because most of the
+  // damage is done before the filler runs: a 5-day split owns the Squat and
+  // Hinge patterns twice each, so four heavy leg movements are seated as
+  // anchors and an advanced athlete's quads passed 22 sets against a plenty of
+  // 12 before a single gap was filled. Pricing overshoot cannot fix that; the
+  // sets are already on the page.
+  //
+  // So the promise is kept at the end instead. Repeatedly take the muscle
+  // furthest past its band and shave one set off its biggest contributor, down
+  // to a floor of 2 so a movement never dwindles into a token single. Shaving
+  // rather than cutting keeps the shape of the week the coach is about to read.
+  const TRIM_FLOOR_SETS = 2;
+  // Sets per muscle for a week that already has real set counts on it.
+  function builtWeekSets(week) {
+    const sets = {};
+    ANATOMY_GROUPS.forEach((g) => { sets[g.id] = 0; });
+    week.days.forEach((d) => d.exercises.forEach((ex) => {
+      const n = Number(ex.sets) || 0;
+      musclesForExercise(ex.name).forEach((h) => {
+        if (sets[h.id] != null) sets[h.id] += n * h.weight;
+      });
+    }));
+    Object.keys(sets).forEach((k) => { sets[k] = Math.round(sets[k] * 10) / 10; });
+    return sets;
+  }
+  function trimToBands(week, bands) {
+    const all = week.days.flatMap((d) => d.exercises);
+    if (!all.length) return;
+    for (let guard = 0; guard < 400; guard++) {
+      const sets = builtWeekSets(week);
+      let worstId = null, worstOver = 0;
+      ANATOMY_GROUPS.forEach((g) => {
+        const over = (sets[g.id] || 0) - bands.plenty;
+        if (over > worstOver) { worstOver = over; worstId = g.id; }
+      });
+      if (!worstId) return;
+      // The biggest contributor that can still afford to lose a set.
+      let cand = null;
+      all.forEach((ex) => {
+        if (!musclesForExercise(ex.name).some((h) => h.id === worstId)) return;
+        if ((Number(ex.sets) || 0) <= TRIM_FLOOR_SETS) return;
+        if (!cand || Number(ex.sets) > Number(cand.sets)) cand = ex;
+      });
+      if (!cand) return; // everything is already at the floor; this is as close as it gets
+      cand.sets = String(Number(cand.sets) - 1);
+    }
+  }
+
+  // The library category a name belongs to, so _repsFor() can hand a carry a
+  // distance and a cardio piece a duration instead of a rep count.
+  let _libCatByKey = null;
+  function libCatFor(name) {
+    if (!_libCatByKey) {
+      _libCatByKey = new Map();
+      EXERCISE_LIBRARY.forEach((c) => (c.ex || []).forEach((nm) => _libCatByKey.set(exKey(nm), c.cat)));
+    }
+    return _libCatByKey.get(exKey(name)) || "";
+  }
+
+  // The whole builder. Pure: it returns a week and a report and writes nothing,
+  // so rolling again costs nothing and the preview can show the real thing.
+  function buildWeek(client, { days = 4, styleName = "Powerbuilding" } = {}) {
+    const gear = gearSet(client);
+    const phase = phaseOf(client);
+    const bands = levelBands(client);
+    const style = GEN_STYLES.find((s) => s.name === styleName) || GEN_STYLES[0];
+    const setsPerEx = Math.round((style.acc.sets[0] + style.acc.sets[1]) / 2);
+
+    const sk = skeletonFor(days, gear);
+    const used = new Set();
+    const dayNames = seatAnchors(sk.days, gear, used);
+    // Captured BEFORE filling: seatAnchors can seat fewer anchors than the day
+    // has patterns when the gear cannot reach one, so the pattern count is not
+    // the anchor count and using it would mislabel a fill as an anchor.
+    const anchorCounts = dayNames.map((d) => d.length);
+    const { short } = fillDeficit(dayNames, client, gear, used, setsPerEx);
+
+    // Depth: leftover headroom adds SETS to the anchors, never new exercises,
+    // and stops at plenty. Without that ceiling an unreachable pattern would
+    // pour its freed capacity into extra sets that cannot fix the muscle
+    // actually missing, and cost recovery for nothing.
+    const extra = {};
+    if (!short.length) {
+      const sets = proposalSets(dayNames, setsPerEx);
+      dayNames.forEach((names, i) => names.slice(0, anchorCounts[i]).forEach((nm) => {
+        const hits = musclesForExercise(nm);
+        if (!hits.length) return;
+        const headroom = Math.min(...hits.map((h) =>
+          Math.floor((bands.plenty - (sets[h.id] || 0)) / Math.max(h.weight, 0.5))));
+        if (headroom > 0) extra[exKey(nm)] = Math.min(headroom, 2);
+      }));
+    }
+
+    const week = makeWeek((client.weeks || []).length);
+    week.focus = `${style.name} · built from coverage`;
+    week.days = dayNames.map((names, i) => {
+      const dayName = sk.days[i].join(" + ") || "Full Body";
+      return {
+        id: uid(),
+        name: dayName,
+        icon: workoutIconFor(dayName),
+        exercises: names.map((nm, j) => {
+          const isAnchor = j < anchorCounts[i];
+          const primaryId = (musclesForExercise(nm)[0] || {}).id;
+          const slot = isAnchor ? "anchor"
+            : (MUSCLE_PATTERN[primaryId] === "Isolation" || MUSCLE_PATTERN[primaryId] === "Core"
+              ? "iso" : "fill");
+          const scheme = isAnchor ? style.primary : (slot === "iso" ? style.core : style.acc);
+          const real = resolveRealization(nm, gear);
+          return {
+            id: uid(),
+            name: nm,
+            sets: String(Number(_pickRange(scheme.sets)) + (extra[exKey(nm)] || 0)),
+            reps: _repsFor(nm, libCatFor(nm), scheme),
+            modifiers: real && real.tag ? [real.tag] : [],
+            effort: builderEffort(slot, phase),
+            currentWeight: "", currentReps: "", goalWeight: "", goalReps: "",
+            notes: "", videoUrl: "",
+          };
+        }),
+      };
+    });
+
+    // Shave anything that ran past the band. Has to happen here, after the
+    // schemes have turned names into set counts.
+    trimToBands(week, bands);
+
+    // What is short is read off the FINISHED week, not off the proposal.
+    // fillDeficit's answer was true of a week where every exercise carried the
+    // same nominal set count and nothing had been trimmed yet; reporting that
+    // would describe a week the coach is not looking at.
+    const finalSets = builtWeekSets(week);
+    const shortFinal = ANATOMY_GROUPS
+      .filter((g) => (finalSets[g.id] || 0) < bands.solid).map((g) => g.name);
+
+    // Which single missing piece of gear would unlock the most, so the report
+    // says what to buy rather than only what is absent.
+    let gearHint = null;
+    if (sk.dropped.length) {
+      let bestId = null, bestN = 0;
+      GEAR.forEach((g) => {
+        if (gear.has(g.id)) return;
+        const widened = new Set([...gear, g.id]);
+        const n = sk.dropped.filter((p) => patternReachable(p, widened)).length;
+        if (n > bestN) { bestN = n; bestId = g.id; }
+      });
+      if (bestId) gearHint = GEAR_BY_ID[bestId].label;
+    }
+    return {
+      week,
+      report: {
+        short: shortFinal,
+        dropped: sk.dropped,
+        unreachable: ANATOMY_GROUPS.filter((g) => sk.dropped.includes(g.pattern)).map((g) => g.name),
+        gearHint,
+      },
+    };
+  }
+
   // The muscle an exercise most belongs to: heaviest weight wins, ties broken
   // by the order the groups are written above, so the answer is stable.
   function primaryMuscleFor(ex) {
