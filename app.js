@@ -31605,6 +31605,10 @@
       if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
       if (dl && !dl.date) dl.date = logDate;
       detectAndCelebratePR(ex, entry, wrapper);
+      // Price the day now, while the definitions behind these logs still
+      // exist: assigning a program regenerates every exercise id, and these
+      // logs stay keyed by the old ones.
+      syncStatField(state.clientData.program?.client, state.clientData.progress);
       saveClient();
       renderStrengthProgress($("#athlete-strength-charts"), state.clientData.program?.client, state.clientData.progress);
       if (typeof renderAthletePRs === "function") renderAthletePRs();
@@ -33574,6 +33578,255 @@
     return bucket;
   }
 
+
+  // -------- The stat field: the ledger and the decay read --------
+  // Calendar days between two local YYYY-MM-DD strings. Noon-anchored so DST
+  // can't skew it, and midnight-to-midnight so it does NOT flip at local noon
+  // the way daysSince() does — daysSince compares Date.now() against noon of
+  // the given day, so a 7-day-old session reads 6 before lunch and 7 after,
+  // and every axis would visibly step down at lunchtime. Use this, not
+  // daysSince(), for anything the stat field reads.
+  function daysBetweenISO(from, to) {
+    return Math.round((new Date(to + "T12:00:00") - new Date(from + "T12:00:00")) / 86400000);
+  }
+
+  // The five clocks. Each stat holds at full value through its grace window,
+  // then halves every `half` days. The order is the detraining literature's,
+  // not a guess: the aerobic engine goes first (plasma volume falls within
+  // days), maximal strength survives a month off, and structure goes last
+  // (atrophy needs ~3 weeks to be detectable). The 7 days Nathan had in mind
+  // for strength is real but belongs to AGI — what an athlete feels at a week
+  // off is loss of snap, not loss of a max.
+  //
+  // Because the clocks are read-side, retuning them reshapes every athlete's
+  // field on their next open. The profile weights baked into a bucket do not.
+  const STAT_DECAY = {
+    STR: { grace: 14, half: 45 },
+    AGI: { grace: 7,  half: 30 },
+    DEX: { grace: 7,  half: 35 },
+    END: { grace: 5,  half: 18 },
+    CON: { grace: 21, half: 60 },
+  };
+  // Five half-lives past CON's grace is 321 days, by which point a bucket is
+  // worth under 3% of what it was. A year is that rounded up, and it keeps the
+  // peak covering a full training year. Dropping everything older is what stops
+  // statField growing with career length.
+  const STAT_HORIZON_DAYS = 365;
+  // A day re-prices freely for three days — long enough for "the athlete logged
+  // it, then the coach fixed the effort tag". After that only a change to the
+  // LOGS themselves reopens it, so nobody can reshape an athlete's past
+  // pentagon from the editor. Same reasoning as the Hoard's frozen award.
+  const STAT_RESTAMP_DAYS = 3;
+  // Nothing falls to zero. The floor is a fraction of the athlete's own peak
+  // and it rises with training age, because a trained athlete keeps more of
+  // what they built. It is deliberately substantial rather than a token: six
+  // weeks into a torn ACL the field has to still read as a recognisable version
+  // of their build, not a dot. A tuning knob — expect to move it once it has
+  // been seen against the real roster.
+  const STAT_FLOOR_BY_LEVEL = { beginner: 0.35, intermediate: 0.45, advanced: 0.55 };
+
+  // Unset and unrecognised both resolve to the default, same rule as
+  // levelBands() — unrecognised matters because a cloud pull can hand back a
+  // value written by a newer build.
+  function statFloorFrac(client) {
+    return STAT_FLOOR_BY_LEVEL[client?.trainingLevel] ?? STAT_FLOOR_BY_LEVEL[DEFAULT_TRAINING_LEVEL];
+  }
+  function statDecayFactor(stat, age) {
+    const d = STAT_DECAY[stat];
+    if (!d || age <= d.grace) return 1;
+    return Math.pow(0.5, (age - d.grace) / d.half);
+  }
+
+  // djb2, the same hash athleteColorIdx uses, base36 so a day's fingerprint is
+  // ~7 characters and cheap enough to store on every bucket. A collision costs
+  // one day a refresh it didn't get; nothing about correctness runs through it.
+  function statHash(s) {
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+    return Math.abs(h).toString(36);
+  }
+
+  // What the athlete logged on each date, fingerprinted, so a rebuild only
+  // touches the days that actually moved. Every log writer stamps
+  // m = Date.now() (autoSave, lockIn, doSkipExercise and the hold card all do),
+  // so m alone catches any edit to a set. Cardio rows are the exception — they
+  // are edited in place with the same id, so those have to be read by value.
+  //
+  // Drafts are fingerprinted too even though they score nothing: a superset is
+  // always safe here, and it means the day re-prices the moment it locks.
+  // Parts are sorted because a cloud merge can reorder both maps, and a
+  // reordered day is not a changed day.
+  function statDaySignatures(progress) {
+    const parts = new Map();
+    const add = (date, s) => {
+      if (!date) return;
+      const list = parts.get(date) || [];
+      list.push(s);
+      parts.set(date, list);
+    };
+    const logs = progress?.exerciseLogs || {};
+    Object.keys(logs).forEach((exId) => {
+      const entries = logs[exId];
+      if (!Array.isArray(entries)) return;
+      entries.forEach((e) => {
+        if (!e || !e.date) return;
+        add(e.date, `${exId}:${e.id || ""}:${Number(e.m) || 0}:${e.locked === true ? 1 : 0}`);
+      });
+    });
+    (progress?.cardioLogs || []).forEach((l) => {
+      if (!l || !l.date) return;
+      add(l.date, `c:${l.id || ""}:${l.type || ""}:${Number(l.minutes) || 0}:${l.intensity || ""}`);
+    });
+    const out = new Map();
+    parts.forEach((list, date) => out.set(date, statHash(list.sort().join("|"))));
+    return out;
+  }
+
+  // Stat values only. The fingerprint rides along on the bucket, but a changed
+  // fingerprint with identical numbers is not worth a localStorage write and a
+  // cloud push. Values are stored to 1dp, so the epsilon is float noise only.
+  function statBucketSame(a, b) {
+    if (!a || !b) return false;
+    return STAT_KEYS.every((k) => Math.abs((Number(a[k]) || 0) - (Number(b[k]) || 0)) < 0.05);
+  }
+  // A bucket as stored: one decimal, zeroes left out (absent keys read as zero),
+  // plus the fingerprint of the logs it was priced from.
+  function statBucketToStore(v, sig) {
+    const out = {};
+    STAT_KEYS.forEach((k) => {
+      const n = Math.round((Number(v && v[k]) || 0) * 10) / 10;
+      if (n) out[k] = n;
+    });
+    out.h = sig;
+    return out;
+  }
+
+  // Banks one bucket per training date, holding that day's capped charge per
+  // stat. Same shape as syncHoard: recompute only what is dirty, and hand the
+  // caller a boolean so ONE saveClient covers the whole pass — this runs from
+  // render paths and must not write on every draw.
+  //
+  // The first call on an athlete with history IS the backfill (spec §8): every
+  // date is unknown, so every in-horizon date gets priced once.
+  function syncStatField(client, progress) {
+    if (!progress) return false;
+    if (!progress.statField || typeof progress.statField !== "object") progress.statField = {};
+    const field = progress.statField;
+    const today = todayISO();
+    const sigs = statDaySignatures(progress);
+    let changed = false;
+
+    sigs.forEach((sig, date) => {
+      // A second device in another timezone — or a mistyped date chip, which
+      // has no max — can stamp a log ahead of this device's today. The bucket
+      // keeps its own key and is aged from today, never discarded.
+      const at = date > today ? today : date;
+      const age = daysBetweenISO(at, today);
+      if (age > STAT_HORIZON_DAYS) return;
+      const have = field[date];
+      // Settled: the logs are unchanged and the day is past the re-stamp
+      // window, so a coach retag today does not rewrite it.
+      if (have && have.h === sig && age > STAT_RESTAMP_DAYS) return;
+
+      const next = statBucketToStore(statBucketForDate(client, progress, date), sig);
+      const scored = STAT_KEYS.some((k) => next[k]);
+      // Scores nothing NOW but the logs did not change: that is the exercise
+      // definitions going away, not the work. Assigning a program regenerates
+      // every exercise id and orphans the logs pointing at the old ones, which
+      // would otherwise wipe the day the athlete just trained. Keep what was
+      // banked while the definitions were still there.
+      if (!scored && have && have.h === sig) return;
+      // Scores nothing and the logs DID change: the day was genuinely cleared.
+      if (!scored) {
+        if (have) { delete field[date]; changed = true; }
+        return;
+      }
+      if (!statBucketSame(have, next)) changed = true;
+      field[date] = next;   // always — a refreshed fingerprint costs no write
+    });
+
+    Object.keys(field).forEach((date) => {
+      const at = date > today ? today : date;
+      // Nothing logged on that date any more, past the horizon, or a key that
+      // isn't a date at all (a stale build, a hand-edited row).
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !sigs.has(date)
+          || daysBetweenISO(at, today) > STAT_HORIZON_DAYS) {
+        delete field[date];
+        changed = true;
+      }
+    });
+
+    return changed;
+  }
+
+  // The decay read. Pure on purpose: the coach's roster draws a mini field for
+  // every athlete, and those buckets are not this device's to rebuild.
+  //
+  // Returns { cur, peak } — cur is what the athlete holds today, peak is the
+  // per-stat high-water mark drawn as the dashed outline. Both are raw stimulus
+  // points; scaling against the absolute reference constants is the renderer's.
+  //
+  // NOTE the parameter shadows the global todayISO(). It is the pinned
+  // signature; dateISO(new Date()) is what todayISO() does anyway.
+  function readStatField(client, progress, todayISO) {
+    const today = todayISO || dateISO(new Date());
+    const field = (progress && progress.statField) || {};
+    const cur = {}, peak = {};
+    STAT_KEYS.forEach((k) => { cur[k] = 0; peak[k] = 0; });
+
+    // Buckets oldest first, each aged from the day it was banked. A future date
+    // reads as today rather than being discarded: hiding the newest session and
+    // captioning it "3 days since you trained" on a day they trained is the
+    // worse failure by far.
+    const banked = [];
+    Object.keys(field).forEach((date) => {
+      const b = field[date];
+      if (!b || typeof b !== "object" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+      const day = date > today ? today : date;
+      if (daysBetweenISO(day, today) > STAT_HORIZON_DAYS) return;
+      banked.push({ day, b });
+    });
+    if (!banked.length) return { cur, peak };
+    banked.sort((a, b) => a.day.localeCompare(b.day));
+
+    // One walk. The running total only ever RISES on a training day and falls
+    // between them, so sampling every banked day plus today catches every high
+    // point — that is where peak comes from, and why it needs no storage of its
+    // own and self-heals if history changes. `from` only moves forward because
+    // the samples ascend, which keeps the inner loop inside the horizon.
+    const samples = [];
+    banked.forEach((x) => { if (samples[samples.length - 1] !== x.day) samples.push(x.day); });
+    if (samples[samples.length - 1] !== today) samples.push(today);
+
+    let from = 0;
+    samples.forEach((at) => {
+      const sum = {};
+      STAT_KEYS.forEach((k) => { sum[k] = 0; });
+      while (from < banked.length && daysBetweenISO(banked[from].day, at) > STAT_HORIZON_DAYS) from++;
+      for (let i = from; i < banked.length; i++) {
+        if (banked[i].day > at) break;   // sorted — nothing later has happened yet
+        const age = daysBetweenISO(banked[i].day, at);
+        const b = banked[i].b;
+        STAT_KEYS.forEach((k) => {
+          const v = Number(b[k]) || 0;
+          if (v) sum[k] += v * statDecayFactor(k, age);
+        });
+      }
+      STAT_KEYS.forEach((k) => { if (sum[k] > peak[k]) peak[k] = sum[k]; });
+      if (at === today) STAT_KEYS.forEach((k) => { cur[k] = sum[k]; });
+    });
+
+    // The floor applies to the TOTAL, not to each impulse. A floored impulse
+    // would never expire, so the sum would climb forever and pruning it would
+    // show up as a sudden drop. Against the peak it does the job it exists for:
+    // collapse has a hard bottom, and the dashed outline stays up there as the
+    // thing to reclaim rather than something taken away.
+    const floor = statFloorFrac(client);
+    STAT_KEYS.forEach((k) => { if (peak[k] * floor > cur[k]) cur[k] = peak[k] * floor; });
+    return { cur, peak };
+  }
+
+
   function ensureHoard(progress) {
     if (!progress) return null;
     if (!progress.hoard || typeof progress.hoard !== "object") progress.hoard = {};
@@ -33788,6 +34041,10 @@
     // Same choke point the Overview uses, so the tonnage here and the header
     // crest can never disagree.
     syncHoard(c, progress);
+    // Same choke point, so the field and the tonnage can never disagree about
+    // what has been logged. syncHoard saves itself; this one returns a flag so
+    // one pass over a year of buckets costs at most one write.
+    if (syncStatField(c, progress)) saveClient();
     renderHoardCard($("#prog-hoard"), c, progress);
     renderVolumeChart(progress, $("#prog-volume"));
     renderStrengthProgress($("#athlete-strength-charts"), c, progress);
