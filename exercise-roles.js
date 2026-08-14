@@ -161,7 +161,11 @@ window.EXERCISE_ROLES = {
 
   // ---- Triceps ----
   "close-grip bench press": "compound",
-  "tricep dips": "accessory",
+  // Isolation, not accessory, and deliberately: "tricep dips" is the same
+  // movement as "dips", which is the Push compound. As an accessory the builder
+  // could seat both on one push day — a day opening on Dips and then supported
+  // by Dips. As an isolation it can only ever arrive as a gap-filler.
+  "tricep dips": "isolation",
   "diamond push-up": "accessory",
   "jm press": "accessory",
   "tricep pushdown": "isolation",
@@ -304,9 +308,12 @@ window.EXERCISE_PATTERN = {
   "seated dumbbell press": "Push",
   "z press": "Push",
   "landmine press": "Push",
-  "tricep dips": "Push",
   "diamond push-up": "Push",
   "jm press": "Push",
+  // "tricep dips" deliberately has NO pattern. It is the same movement as
+  // "dips", which is the Push compound, and with a pattern the builder could
+  // seat both on one push day — the day's main lift and its own accessory. With
+  // none it can still arrive as a gap-filler, which is all it should ever be.
 
   // ---- Pull ----
   "pull-up": "Pull",

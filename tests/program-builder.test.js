@@ -91,12 +91,16 @@ function musclesForExercise(ex) {
   const curatedDelt = curated.some((id) => id.startsWith("delts-"));
   const entry = demoEntryForName(name);
   if (entry) {
-    const fan = (m, weight) => {
+    const fan = (m, weight, split) => {
       if (m === "shoulders" && curatedDelt) return;
-      (DEMO_MUSCLE_GROUPS[m] || []).forEach((id) => add(id, weight));
+      const ids = DEMO_MUSCLE_GROUPS[m] || [];
+      // A SECONDARY region tag is split across the muscles it names; primaries
+      // keep full weight. Mirrors app.js.
+      const share = split && ids.length > 1 ? weight / ids.length : weight;
+      ids.forEach((id) => add(id, share));
     };
-    (entry.p || []).forEach((m) => fan(m, 1));
-    (entry.s || []).forEach((m) => fan(m, 0.5));
+    (entry.p || []).forEach((m) => fan(m, 1, false));
+    (entry.s || []).forEach((m) => fan(m, 0.5, true));
   }
   if (!best.size) {
     const cat = libCat.get(k);
@@ -129,14 +133,14 @@ function coverageScore(name) {
 }
 // Mirrors BUILDER_SKIP_CATS in app.js. Kept in sync by hand — if the builder
 // starts or stops skipping a category, this line moves with it.
-const BUILDER_SKIP_CATS = new Set(["Speed/Agility", "Mobility & Stretching", "Cardio", "Plyometrics"]);
+const BUILDER_SKIP_CATS = new Set(extractLiteral(appSrc, "const BUILDER_SKIP_CATS = new Set(["));
 // Roles are DATA, so they are read out of the source rather than copied.
 const rolesSrc = fs.readFileSync(path.join(ROOT, "exercise-roles.js"), "utf8");
 const EXERCISE_ROLES = extractLiteral(rolesSrc, "window.EXERCISE_ROLES = {");
 function exRole(name) { return EXERCISE_ROLES[exKey(name)] || "isolation"; }
 const EXERCISE_PATTERN = extractLiteral(rolesSrc, "window.EXERCISE_PATTERN = {");
 function exPattern(name) { return EXERCISE_PATTERN[exKey(name)] || ""; }
-const ROLE_RANK = { compound: 0, accessory: 1, isolation: 2, carry: 3 };
+const ROLE_RANK = extractLiteral(appSrc, "const ROLE_RANK = {");
 // The slot a movement occupies ON A GIVEN DAY, which is what the builder writes
 // and therefore what the ordering has to be judged against. An accessory only
 // counts as one where it supports that day's own main lift; parked on another
@@ -193,7 +197,7 @@ function skeletonFor(dayCount, gear) {
   return { days, dropped };
 }
 
-const DAY_CAP = 7;
+const DAY_CAP = Number((appSrc.match(/const DAY_CAP = (\d+)/) || [])[1]);
 // Read rather than copied: this number is a tuning decision, and a copy would
 // drift silently while every assertion below kept passing against the copy.
 const OVERSHOOT_COST = Number((appSrc.match(/const OVERSHOOT_COST = ([\d.]+)/) || [])[1]);
@@ -201,7 +205,10 @@ const OVERSHOOT_COST = Number((appSrc.match(/const OVERSHOOT_COST = ([\d.]+)/) |
 // made here too — that is exactly how the deterministic-roll bug survived a
 // green suite: app.js was fixed and this copy was not, and the assertion
 // below was signed on name+sets+reps so re-rolled numbers alone passed it.
-const PICK_REACH = 0.9;
+// READ, not copied. This drifted the moment app.js moved it 0.9 -> 0.5, and a
+// drifted reach means every measurement taken through this file describes a
+// builder that is not the one shipping.
+const PICK_REACH = Number((appSrc.match(/const PICK_REACH = ([\d.]+)/) || [])[1]);
 function pickNearBest(scored) {
   if (!scored.length) return null;
   let top = -Infinity;
@@ -290,14 +297,28 @@ function fillDeficit(days, dayPatterns, client, gear, used, setsPerEx = 3, slots
     const total = ANATOMY_GROUPS.reduce((t, g) =>
       t + Math.max(0, bands.solid - (sets[g.id] || 0)), 0);
     if (!total) break;
+    const wanted = ANATOMY_GROUPS
+      .map((g) => ({ id: g.id, short: bands.solid - (sets[g.id] || 0) }))
+      .filter((x) => x.short > 0)
+      .sort((a, b) => b.short - a.short)
+      .map((x) => x.id);
+    let scored = [];
+    for (const wantId of [...wanted, null]) {
+      scored = candidateFills(wantId);
+      if (scored.length) break;
+    }
+    function candidateFills(wantId) {
     const scored = [];
     builderPool().forEach((nm) => {
       if (used.has(exKey(nm))) return;
       if (exRole(nm) === "compound") return;
       if (!resolveRealization(nm, gear)) return;
+      if (wantId && !musclesForExercise(nm).some((h) => h.id === wantId && h.weight >= 1)) return;
       const gain = coverageGain(nm, sets, bands, setsPerEx);
       if (gain > 0) scored.push({ nm, s: gain });
     });
+    return scored;
+    }
     const best = pickNearBest(scored);
     if (!best) break;
     const role = exRole(best);
@@ -309,8 +330,11 @@ function fillDeficit(days, dayPatterns, client, gear, used, setsPerEx = 3, slots
         || d.every((nm) => !(exRole(nm) === "accessory" && exPattern(nm) === pat))));
     used.add(exKey(best));
     if (!open.length) continue;
-    const fits = open.filter((d) =>
-      (dayPatterns[days.indexOf(d)] || []).some((p) => servesPattern(best, p)));
+    const fits = open.filter((d) => {
+      const ps = dayPatterns[days.indexOf(d)] || [];
+      return pat ? ps.includes(pat) : ps.some((p) => servesPattern(best, p));
+    });
+    if (pat && !fits.length) continue;
     const target = (fits.length ? fits : open).reduce((a, b) => (b.length < a.length ? b : a));
     target.push(best);
     const onPattern = (dayPatterns[days.indexOf(target)] || []).includes(pat);
@@ -394,6 +418,32 @@ check("a carry never opens a day", () => {
         `${nm} is a carry and was seated as the ${p} opener`);
     }
   });
+});
+
+check("every constant read out of app.js actually parsed", () => {
+  // A regex that stops matching yields NaN, and NaN does not fail loudly — it
+  // silently disables whatever it guards. This exact thing just happened: a
+  // mangled `\d` made DAY_CAP NaN, so `days.some(d => d.length < NaN)` was
+  // false, the gap filler never ran at all, and a single unrelated assertion
+  // was the only thing that noticed.
+  // Declared before this point in the file; the rest are checked where they are.
+  Object.entries({ DAY_CAP, OVERSHOOT_COST, PICK_REACH })
+    .forEach(([name, v]) => assert.ok(Number.isFinite(v) && v > 0,
+      `${name} read out of app.js as ${v} — the regex stopped matching`));
+});
+
+check("every compound and accessory has a declared pattern", () => {
+  // exercise-roles.js promises this test exists. It did not; the audit caught
+  // the lie. Without a pattern a compound can never be seated as one, so a new
+  // library entry would go quietly missing from the tier it belongs to.
+  const noPattern = builderPool()
+    .filter((nm) => ["compound", "accessory"].includes(exRole(nm)) && !exPattern(nm));
+  assert.deepStrictEqual(noPattern, [],
+    `compound/accessory with no EXERCISE_PATTERN entry: ${noPattern.join(", ")}`);
+  const dead = Object.keys(EXERCISE_PATTERN)
+    .filter((k) => !["compound", "accessory"].includes(EXERCISE_ROLES[k]));
+  assert.deepStrictEqual(dead, [],
+    `EXERCISE_PATTERN entries whose role is not compound/accessory: ${dead.join(", ")}`);
 });
 
 check("every builder-eligible movement has a declared role", () => {
@@ -703,10 +753,11 @@ const deps = {
 };
 const TRIM_FLOOR_SETS = Number((appSrc.match(/const TRIM_FLOOR_SETS = (\d+)/) || [])[1]);
 const DEEPEN_MAX_SETS = Number((appSrc.match(/const DEEPEN_MAX_SETS = (\d+)/) || [])[1]);
+const TRIM_FLOOR_ANCHOR = Number((appSrc.match(/const TRIM_FLOOR_ANCHOR = (\d+)/) || [])[1]);
 const buildWeek = Function(...Object.keys(deps), `
   let _libCatByKey = null;
   const TRIM_FLOOR_SETS = ${TRIM_FLOOR_SETS};
-  const TRIM_FLOOR_ANCHOR = 3;
+  const TRIM_FLOOR_ANCHOR = ${TRIM_FLOOR_ANCHOR};
   const DEEPEN_MAX_SETS = ${DEEPEN_MAX_SETS};
   const OVERSHOOT_COST = ${OVERSHOOT_COST};
   ${fnSrc(appSrc, "function coverageGain(")}
@@ -903,7 +954,7 @@ check("app.js itself still varies its picks rather than taking a strict maximum"
   // source for the properties the copies cannot vouch for.
   assert.ok(/function pickNearBest\(/.test(appSrc),
     "app.js has no pickNearBest — the gap filler cannot vary");
-  const fill = appSrc.slice(appSrc.indexOf("function fillDeficit("), appSrc.indexOf("function fillDeficit(") + 2600);
+  const fill = fnSrc(appSrc, "function fillDeficit(");   // brace-matched, not a magic length
   assert.ok(/pickNearBest\(/.test(fill), "fillDeficit no longer calls pickNearBest");
   assert.ok(!/bestScore|bestGain/.test(fill),
     "fillDeficit is back to a first-strict-maximum pick, so every roll is identical");
@@ -1040,6 +1091,38 @@ check("the squat day holds a lunge or a split squat, and no crawl", () => {
     `only ${weeksWithUni}/${ROLLS} weeks contained any unilateral leg work`);
   console.log(`      ${withSplit}/${squatDays} squat days held a lunge or split squat; ` +
     `${weeksWithUni}/${ROLLS} weeks held unilateral leg work`);
+});
+
+check("the trim and deepen constants read out of app.js too", () => {
+  Object.entries({ TRIM_FLOOR_SETS, TRIM_FLOOR_ANCHOR, DEEPEN_MAX_SETS })
+    .forEach(([name, v]) => assert.ok(Number.isFinite(v) && v > 0,
+      `${name} read out of app.js as ${v} — the regex stopped matching`));
+  assert.ok(TRIM_FLOOR_ANCHOR > TRIM_FLOOR_SETS,
+    "a day's opening lift must have a higher floor than a fill");
+});
+
+check("a day's opening lift is never trimmed to a fill's floor", () => {
+  // TRIM_FLOOR_ANCHOR was hardcoded in the wrapper and asserted nowhere, so the
+  // rule that a main lift may not be shaved to two sets was unprotected.
+  for (const [lvl, days, style] of [["advanced", 5, "Volume"], ["beginner", 4, "Hypertrophy"], ["intermediate", 3, "Strength"]]) {
+    const { week } = buildWeek({ trainingLevel: lvl }, { days, styleName: style });
+    week.days.forEach((d) => assert.ok(Number(d.exercises[0].sets) >= TRIM_FLOOR_ANCHOR,
+      `${lvl}/${style}: "${d.name}" opens on ${d.exercises[0].sets} sets of ` +
+      `${d.exercises[0].name}, under the anchor floor of ${TRIM_FLOOR_ANCHOR}`));
+  }
+});
+
+check("no exercise is ever written for more sets than the deepen ceiling", () => {
+  // The `extra` depth bonus was added with no clamp at all: measured before the
+  // fix, an intermediate Volume week wrote 8x12 Hip Thrust.
+  for (const style of ["Volume", "Powerbuilding", "Hypertrophy"]) {
+    for (let roll = 0; roll < 15; roll++) {
+      const { week } = buildWeek({ trainingLevel: "intermediate" }, { days: 4, styleName: style });
+      week.days.flatMap((d) => d.exercises).forEach((ex) =>
+        assert.ok(Number(ex.sets) <= DEEPEN_MAX_SETS,
+          `${style} wrote ${ex.sets}x${ex.reps} ${ex.name}, over the ceiling of ${DEEPEN_MAX_SETS}`));
+    }
+  }
 });
 
 check("a one-day week still covers something and stays inside the cap", () => {

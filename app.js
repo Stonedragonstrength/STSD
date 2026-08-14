@@ -10718,12 +10718,29 @@
     const curatedDelt = curated.some((id) => id.startsWith("delts-"));
     const entry = typeof ex === "string" ? demoEntryForName(name) : demoForExercise(ex);
     if (entry) {
-      const fan = (m, weight) => {
+      // A SECONDARY tag naming a region is split across the muscles it names.
+      //
+      // "shoulders" is the only tag covering more than one muscle, and as a
+      // secondary it was paying 0.5 to each of the three delt heads — 1.5 sets
+      // of delt credit for a movement that merely involves the shoulders, which
+      // is more than a Lateral Raise earns for the muscle it exists to train.
+      // That is what froze the builder's isolation tier: Pallof Press scored 4.5
+      // and took the slot on 79 of 100 push days, while a lateral raise appeared
+      // zero times in 320 days. Nathan, reading the same numbers: "lower the
+      // svend press credits if needed."
+      //
+      // PRIMARY tags are left whole on purpose. A movement whose primary muscle
+      // is "shoulders" really does train all three heads, and splitting those
+      // too re-baselines every athlete's coverage map — measured, it left 14
+      // muscles under solid on a four-day week that had none.
+      const fan = (m, weight, split) => {
         if (m === "shoulders" && curatedDelt) return;
-        (DEMO_MUSCLE_GROUPS[m] || []).forEach((id) => add(id, weight));
+        const ids = DEMO_MUSCLE_GROUPS[m] || [];
+        const share = split && ids.length > 1 ? weight / ids.length : weight;
+        ids.forEach((id) => add(id, share));
       };
-      (entry.p || []).forEach((m) => fan(m, 1));
-      (entry.s || []).forEach((m) => fan(m, 0.5));
+      (entry.p || []).forEach((m) => fan(m, 1, false));
+      (entry.s || []).forEach((m) => fan(m, 0.5, true));
     }
     if (!best.size) {
       const cat = libCatIndex().get(k)
@@ -11072,11 +11089,24 @@
   // test could not see it: its signature was name+sets+reps, so re-rolled
   // numbers alone made it pass.)
   //
-  // Instead, gather everything within a short reach of the best and choose
-  // among those. Coverage stays near-optimal because the reach is narrow, and
-  // the week stops being the same week every time. Ranked candidates rather
-  // than a flat shuffle, so a genuinely better movement is still preferred.
-  const PICK_REACH = 0.9;
+  // Instead, gather everything within reach of the best and choose among those.
+  // Ranked candidates rather than a flat shuffle, so a genuinely better movement
+  // is still preferred.
+  //
+  // The reach was 0.9 and that was far too narrow, because gain is summed over
+  // demo-database muscle tags: a movement paying three delt heads scores triple
+  // one paying the side delt properly, and at 0.9 nothing else was ever within
+  // reach. Measured over 320 days at 0.9 — Pallof Press took the isolation slot
+  // on 79 of 100 push days and **Lateral Raise appeared zero times**, along with
+  // one Leg Extension and two Leg Curls. The isolation tier owns three to five
+  // of every day's seven slots, so that is most of what an athlete sees.
+  //
+  // 0.5 is measured, not guessed, and it is a strict improvement on BOTH axes:
+  // distinct movements used rose 140 → 161 of 166 and Pallof's share of push
+  // days fell 82 → 48, while average shortfall improved on three of five
+  // level/day-count combinations. Widening further to 0.3 buys more variety but
+  // starts costing real coverage (a three-day week went 2.0 → 3.6 short).
+  const PICK_REACH = 0.5;
   function pickNearBest(scored) {
     if (!scored.length) return null;
     let top = -Infinity;
@@ -11236,6 +11266,39 @@
       const total = ANATOMY_GROUPS.reduce((t, g) =>
         t + Math.max(0, bands.solid - (sets[g.id] || 0)), 0);
       if (!total) break;
+      // Chase the NEEDIEST muscle, then choose evenly among the movements that
+      // genuinely serve it — rather than globally maximising gain.
+      //
+      // Global maximisation is a degenerate pick for the same reason ranking the
+      // openers was: gain is summed over demo-database muscle tags, so a
+      // movement that pays two needy muscles always beats one that pays a single
+      // muscle well, and PICK_REACH 0.9 is far too narrow to let the second one
+      // through. Measured over 320 built days: Pallof Press took the isolation
+      // slot on 79 of 100 push days, Svend Press on 48, and **Lateral Raise
+      // appeared zero times**. Leg Extension once, Leg Curl twice. Those are
+      // staples; a coach reading a week with no lateral raise in it does not
+      // trust the tool. The isolation tier owns three to five of the seven slots
+      // in every day, so this is most of what the athlete actually sees.
+      //
+      // Needing a weight-1 hit on the target muscle is what keeps it honest: a
+      // movement that merely grazes the muscle cannot be picked to close it.
+      // Neediest first, but every short muscle in turn: a muscle nothing in the
+      // gym can reach must not halt the filler. Taking only the single neediest
+      // and stopping when it had no candidate left fourteen muscles under solid
+      // on a week that should finish with none.
+      const wanted = ANATOMY_GROUPS
+        .map((g) => ({ id: g.id, short: bands.solid - (sets[g.id] || 0) }))
+        .filter((x) => x.short > 0)
+        .sort((a, b) => b.short - a.short)
+        .map((x) => x.id);
+      // A final null pass keeps the old global behaviour as a backstop, so the
+      // filler can still close overshoot-priced gaps nothing serves outright.
+      let scored = [];
+      for (const wantId of [...wanted, null]) {
+        scored = candidateFills(wantId);
+        if (scored.length) break;
+      }
+      function candidateFills(wantId) {
       const scored = [];
       builderPool().forEach((nm) => {
         if (used.has(exKey(nm))) return;
@@ -11260,9 +11323,15 @@
         // buying glute volume nobody asked for. Overshoot is a cost, so a
         // movement that closes a little and overloads a lot loses, and once
         // nothing scores positive the filler stops rather than adding junk.
+        // Serves the muscle we are actually chasing, at full weight. Requiring
+        // a full-weight hit is what keeps it honest: a movement that merely
+        // grazes the muscle cannot be bought to close it.
+        if (wantId && !musclesForExercise(nm).some((h) => h.id === wantId && h.weight >= 1)) return;
         const gain = coverageGain(nm, sets, bands, setsPerEx);
         if (gain > 0) scored.push({ nm, s: gain });
       });
+      return scored;
+      }
       // Same near-best pick as the anchors: the filler still refuses anything
       // that scores nothing, so "closes a little and overloads a lot" still
       // loses and the week still stops rather than adding junk.
@@ -11297,8 +11366,28 @@
       // forever once every day already has one.
       used.add(exKey(best));
       if (!open.length) continue;
-      const fits = open.filter((d) =>
-        (dayPatterns[days.indexOf(d)] || []).some((p) => servesPattern(best, p)));
+      // Routed by the DECLARED pattern where there is one, and only by the
+      // muscle map where there is not.
+      //
+      // servesPattern alone put an overhead press on a pull day 180 times in
+      // 2268 days — the demo tag "shoulders" reaches delts-rear, which is a Pull
+      // group — which is the same leak EXERCISE_PATTERN was written to close,
+      // one tier lower. Isolations and carries have no declared pattern and the
+      // loose test is the right one for them: a curl belongs wherever there is
+      // room for it.
+      const fits = open.filter((d) => {
+        const ps = dayPatterns[days.indexOf(d)] || [];
+        return pat ? ps.includes(pat) : ps.some((p) => servesPattern(best, p));
+      });
+      // A movement with a DECLARED pattern goes on a day that owns that pattern
+      // or it does not go at all. The old rule — "better placed oddly than
+      // dropped, the coach can move it" — is right for a curl and wrong for a
+      // press: a Floor Press on the hinge day and an Incline Press on the squat
+      // day both read as bugs, and a coach who has to move things is being asked
+      // to clean up after the tool. `report.short` is the honest way to say a
+      // muscle went unserved; a bench press on leg day is a dishonest one.
+      // The loop simply picks something else, so little coverage is lost.
+      if (pat && !fits.length) continue;
       const target = (fits.length ? fits : open).reduce((a, b) => (b.length < a.length ? b : a));
       target.push(best);
       // A slot describes the movement's job ON THIS DAY, not its intrinsic role.
@@ -11536,7 +11625,14 @@
           return {
             id,
             name: nm,
-            sets: String(Number(_pickRange(scheme.sets)) + (extra[exKey(nm)] || 0)),
+            // Clamped. The depth bonus was meant to be the conservative path —
+            // spend leftover headroom on the lifts already there rather than on
+            // new exercises — but it was the only number in the builder with no
+            // ceiling at all, and Volume's primary band of 5-6 plus a +2 bonus
+            // wrote 8x12 Hip Thrust. deepenShort is bounded; so is this now.
+            sets: String(Math.min(
+              Number(_pickRange(scheme.sets)) + (extra[exKey(nm)] || 0),
+              DEEPEN_MAX_SETS)),
             reps: _repsFor(nm, libCatFor(nm), scheme),
             modifiers: real && real.tag ? [real.tag] : [],
             effort: builderEffort(slot, phase),

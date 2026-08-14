@@ -106,12 +106,16 @@ function musclesForExercise(ex) {
   const curatedDelt = curated.some((id) => id.startsWith("delts-"));
   const entry = demoEntryForName(name);
   if (entry) {
-    const fan = (m, weight) => {
+    const fan = (m, weight, split) => {
       if (m === "shoulders" && curatedDelt) return;
-      (DEMO_MUSCLE_GROUPS[m] || []).forEach((id) => add(id, weight));
+      const ids = DEMO_MUSCLE_GROUPS[m] || [];
+      // A SECONDARY region tag is split across the muscles it names; primaries
+      // keep full weight. Mirrors app.js.
+      const share = split && ids.length > 1 ? weight / ids.length : weight;
+      ids.forEach((id) => add(id, share));
     };
-    (entry.p || []).forEach((m) => fan(m, 1));
-    (entry.s || []).forEach((m) => fan(m, 0.5));
+    (entry.p || []).forEach((m) => fan(m, 1, false));
+    (entry.s || []).forEach((m) => fan(m, 0.5, true));
   }
   if (!best.size) {
     const cat = libCat.get(k);
