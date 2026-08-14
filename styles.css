@@ -16087,3 +16087,16 @@ input.credit-cap:disabled { opacity: 0.4; }
   .sf-build { font-size: 0.78rem; }
   .sf-next { font-size: 0.62rem; }
 }
+
+/* Builder: choosing whose settings a template week is calibrated to. */
+.build-athletes { display: flex; flex-direction: column; gap: 0.4rem; width: 100%; }
+.build-athlete {
+  display: flex; flex-direction: column; gap: 0.15em; text-align: left;
+  padding: 0.6em 0.8em; border-radius: var(--radius);
+  background: var(--surface-2); border: 1px solid var(--border);
+  color: var(--text); font: inherit; cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.build-athlete:hover { border-color: var(--primary); background: var(--surface-3); }
+.build-athlete-name { font-weight: 700; font-size: 0.95rem; }
+.build-athlete-sub { font-size: 0.78rem; color: var(--text-soft); }

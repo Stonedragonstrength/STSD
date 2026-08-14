@@ -9455,20 +9455,44 @@
   //
   // Rides the shared #modal rather than its own overlay, so it inherits the
   // scroll lock and the close behaviour every other sheet has.
-  function openBuildWeekSheet(client) {
-    if (!client) return;
-    if ((client.weeks || []).length >= 12) { toast("12-week maximum reached"); return; }
+  //
+  // `client` is who the week is CALIBRATED to — their gear, training age and
+  // phase. `target` is what receives it. For an athlete those are the same
+  // object, but a program template has no gear or phase of its own, so the
+  // coach picks an athlete to calibrate against and the week still lands in
+  // the template. Pass client = null to open on that picker.
+  function openBuildWeekSheet(client, target) {
+    const dest = target || client;
+    if (!dest) return;
+    if ((dest.weeks || []).length >= 12) { toast("12-week maximum reached"); return; }
+    let subject = client;              // null until an athlete is chosen
     let days = 4;
     let styleName = "Powerbuilding";
-    let gearPick = [...(client.equipment || [])];
+    let gearPick = [...((subject && subject.equipment) || [])];
     let built = null;
 
     const bandsLine = () => {
-      const ph = phaseOf(client);
-      const b = levelBands(client);
+      const ph = phaseOf(subject);
+      const b = levelBands(subject);
       return ph
         ? `Grading against ${ph.name}. Solid at ${b.solid}, plenty at ${b.plenty}.`
         : `Grading against their training age. Solid at ${b.solid}, plenty at ${b.plenty}.`;
+    };
+    // Step one when building into a template: whose settings is this week for?
+    // Searchable because the roster is long enough to scroll past.
+    const pickerHtml = () => {
+      const roster = (state.trainerData.clients || []).slice()
+        .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      if (!roster.length) return `<p class="muted">Add an athlete first. The builder reads their gear, training age and phase, and a program has none of its own.</p>`;
+      return `<p class="build-bands">Pick who this program is for. Their gear, training age and phase fill in, and you can still change any of it before building.</p>
+        <div class="build-pick build-athletes">${roster.map((c) => {
+          const gear = (c.equipment || []).length;
+          const lvl = TRAINING_LEVEL_BY_ID[c.trainingLevel] || TRAINING_LEVEL_BY_ID[DEFAULT_TRAINING_LEVEL];
+          return `<button type="button" class="build-athlete" data-athlete="${escapeHtml(c.id)}">
+            <span class="build-athlete-name">${escapeHtml(c.name || "Athlete")}</span>
+            <span class="build-athlete-sub">${escapeHtml(lvl ? lvl.name : "")}${gear ? ` · ${gear} item${gear === 1 ? "" : "s"} of gear` : " · all gear"}</span>
+          </button>`;
+        }).join("")}</div>`;
     };
     const setupHtml = () => `
       <div class="build-row"><span class="build-lbl">Days</span>
@@ -9486,7 +9510,7 @@
 
     const previewHtml = () => {
       const { week, report } = built;
-      const bands = levelBands(client);
+      const bands = levelBands(subject);
       const sets = builtWeekSets(week);
       const chips = ANATOMY_GROUPS.map((g) => {
         const v = sets[g.id] || 0;
@@ -9518,7 +9542,7 @@
       const body = $("#modal-body");
       const foot = $("#modal-foot");
       if (!body || !foot) return;
-      body.innerHTML = built ? previewHtml() : setupHtml();
+      body.innerHTML = built ? previewHtml() : (subject ? setupHtml() : pickerHtml());
       foot.innerHTML = "";
       const btn = (label, cls, fn) => {
         const b = document.createElement("button");
@@ -9528,8 +9552,21 @@
         foot.appendChild(b);
         return b;
       };
-      const roll = () => { built = buildWeek({ ...client, equipment: gearPick }, { days, styleName }); render(); };
-      if (!built) {
+      const roll = () => { built = buildWeek({ ...subject, equipment: gearPick }, { days, styleName }); render(); };
+      if (!built && !subject) {
+        // Choosing the athlete IS the whole step; no footer buttons but Cancel.
+        body.querySelectorAll("[data-athlete]").forEach((el) =>
+          el.addEventListener("click", () => {
+            const c = (state.trainerData.clients || []).find((x) => x.id === el.dataset.athlete);
+            if (!c) return;
+            subject = c;
+            gearPick = [...(c.equipment || [])];
+            const t = $("#modal-title");
+            if (t) t.textContent = "Build the week · " + (c.name || "Athlete");
+            render();
+          }));
+        btn("Cancel", "btn btn-ghost", closeModal);
+      } else if (!built) {
         body.querySelectorAll("[data-days]").forEach((b) =>
           b.addEventListener("click", () => { days = Number(b.dataset.days); render(); }));
         body.querySelectorAll("[data-style]").forEach((b) =>
@@ -9546,8 +9583,8 @@
         btn("Cancel", "btn btn-ghost", closeModal);
       } else {
         btn("Use this week", "btn btn-primary", () => {
-          client.weeks.push(built.week);
-          _coachActiveWeekIdx = client.weeks.length - 1;
+          dest.weeks.push(built.week);
+          _coachActiveWeekIdx = dest.weeks.length - 1;
           _coachOneOffTab = false;
           saveTrainer();
           closeModal();
@@ -9559,7 +9596,7 @@
       }
     }
 
-    openModal({ title: `Build the week · ${client.name || "Athlete"}`, body: "", actions: [] });
+    openModal({ title: subject ? `Build the week · ${subject.name || "Athlete"}` : "Build the week", body: "", actions: [] });
     render();
   }
 
@@ -13971,14 +14008,21 @@
         addWeek();
       });
       strip.appendChild(addBtn);
-      // Athlete mode only: the builder reads bands, phase and gear off a real
-      // athlete, and a program template has none of those.
-      if (!_programEditorId && currentClient()) {
+      // The builder reads bands, phase and gear off a real athlete. In an
+      // athlete's own program that is simply them; in a program template there
+      // is nobody, so the sheet opens on an athlete picker and the built week
+      // still lands in the template.
+      const buildTarget = _programEditorId ? currentProgramTemplate() : currentClient();
+      if (buildTarget) {
         const buildBtn = document.createElement("button");
         buildBtn.className = "coach-week-tab coach-week-tab-add coach-week-tab-build";
         buildBtn.textContent = "⚡";
-        buildBtn.title = "Build the week from their coverage";
-        buildBtn.addEventListener("click", () => openBuildWeekSheet(currentClient()));
+        buildBtn.title = _programEditorId
+          ? "Build a week calibrated to one of your athletes"
+          : "Build the week from their coverage";
+        buildBtn.addEventListener("click", () => _programEditorId
+          ? openBuildWeekSheet(null, buildTarget)
+          : openBuildWeekSheet(buildTarget));
         strip.appendChild(buildBtn);
       }
     }
