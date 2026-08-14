@@ -10062,9 +10062,21 @@
     { cat: "Core",       ex: ["Plank","Side Plank","Crunch","Cable Crunch","Bicycle Crunch","Russian Twist","Leg Raise","Hanging Leg Raise","Ab Wheel Rollout","Dead Bug","Pallof Press","Dragon Flag","Hollow Hold","V-Up","Toes-to-Bar","Reverse Crunch","Sit-Up","Windshield Wiper","Bear Crawl","Crab Crawl","Leopard Crawl","Lizard Crawl","Spiderman Crawl","Inchworm"] },
     { cat: "Calves",     ex: ["Calf Raise","Donkey Calf Raise","Leg Press Calf Raise","Seated Calf Raise","Standing Calf Raise","Single-Leg Calf Raise","Tibialis Raise"] },
     { cat: "Carries",    ex: ["Farmer's Carry","Suitcase Carry","Overhead Carry","Rack Carry","Zercher Carry","Trap Bar Carry","Bear Hug Carry","Bottoms-Up Carry","Waiter Walk","Sandbag Carry","Yoke Walk","Front Rack Carry"] },
-    { cat: "Cardio",     ex: ["Treadmill Run","Stationary Bike","Rowing","Jump Rope","Sled Push","Battle Ropes","Farmer's Walk","Assault Bike","Stair Climber","Sprint Intervals","Incline Walk","Ski Erg","Box Jump","Burpee","High Knees"] },
+    { cat: "Cardio",     ex: ["Treadmill Run","Stationary Bike","Rowing","Jump Rope","Sled Push","Battle Ropes","Farmer's Walk","Assault Bike","Stair Climber","Sprint Intervals","Incline Walk","Ski Erg","Burpee","High Knees"] },
     { cat: "Bodyweight", ex: ["Superman"] },
-    { cat: "Speed/Agility", ex: ["Ladder Two-Feet Run","Ladder Icky Shuffle","Ladder In-In-Out-Out","Ladder Lateral Shuffle","Ladder Ali Shuffle","Ladder Crossover","Ladder Hopscotch","Ladder Single-Leg Hop","Ladder Snake","A-Skip","B-Skip","Carioca","5-10-5 Pro Agility","T-Drill","Box Drill","L-Drill","Cone Weave","Shuttle Run","Lateral Bound","Skater Bound","Broad Jump Series","Dot Drill","Mini-Hurdle Hops","Wall Drive","Falling Start","Acceleration Sprint","Flying Sprint","Backpedal Drill","Resisted Sprint Drill","Reaction Sprint"] },
+    // Plyometrics is its OWN category, deliberately not folded into
+    // Speed/Agility: SPEED_CATS makes everything in that category a
+    // hold-for-time card (sets × seconds, no weight), and plyo work is
+    // prescribed in REPS and is sometimes loaded. A separate category also
+    // means "is this a stretch-shortening movement" is answerable from the
+    // library instead of needing a per-exercise tag.
+    //
+    // Box Jump moved here from Cardio, and Broad Jump Series / Lateral Bound /
+    // Skater Bound / Mini-Hurdle Hops moved here from Speed/Agility, where a
+    // category lookup could never find them together. The Ladder* family stays
+    // in Speed/Agility — those are footwork, not jumps.
+    { cat: "Plyometrics", ex: ["Box Jump","Box Jump Over","Single-Leg Box Jump","Lateral Box Jump","Seated Box Jump","Depth Jump","Squat Jump","Countermovement Jump","Tuck Jump","Split Squat Jump","Jump Lunge","Kneeling Jump","Pogo Hop","Ankle Bounce","Broad Jump Series","Lateral Bound","Skater Bound","Mini-Hurdle Hops","Plyo Push-Up","Clap Push-Up","Depth Push-Up","Plyo Pull-Up","Med Ball Slam","Med Ball Chest Pass","Med Ball Rotational Throw","Med Ball Overhead Throw","Med Ball Scoop Toss"] },
+    { cat: "Speed/Agility", ex: ["Ladder Two-Feet Run","Ladder Icky Shuffle","Ladder In-In-Out-Out","Ladder Lateral Shuffle","Ladder Ali Shuffle","Ladder Crossover","Ladder Hopscotch","Ladder Single-Leg Hop","Ladder Snake","A-Skip","B-Skip","Carioca","5-10-5 Pro Agility","T-Drill","Box Drill","L-Drill","Cone Weave","Shuttle Run","Dot Drill","Wall Drive","Falling Start","Acceleration Sprint","Flying Sprint","Backpedal Drill","Resisted Sprint Drill","Reaction Sprint"] },
     { cat: "Mobility & Stretching", ex: ["Couch Stretch","90/90 Hip Stretch","World's Greatest Stretch","Cat-Cow","Hip Flexor Stretch","Hamstring Stretch","Pigeon Stretch","Thoracic Rotation","Child's Pose","Downward Dog","Ankle Dorsiflexion","Shoulder Dislocates","Doorway Pec Stretch","Deep Squat Hold","Cossack Stretch","Seated Forward Fold","Butterfly Stretch","Standing Quad Stretch","Wrist Flexor Stretch","Neck Stretch"] },
   ];
   // Categories whose exercises are prescribed as holds-for-time (sets × seconds),
@@ -10730,7 +10742,11 @@
   // coverage, and a ladder drill or a cat-cow answers a different question.
   // Left in and they surface as gap-fillers: a push day came back holding
   // Spiderman Crawl and Cat-Cow.
-  const BUILDER_SKIP_CATS = new Set(["Speed/Agility", "Mobility & Stretching", "Cardio"]);
+  // Plyometrics joins the skip list for the same reason as the other three: the
+  // ⚡ builder seats resistance work against a muscle-coverage map, and jumps
+  // are a coach's deliberate choice about an athlete's readiness for them, not
+  // a gap to be auto-filled. Remove it here to let the builder program plyo.
+  const BUILDER_SKIP_CATS = new Set(["Speed/Agility", "Mobility & Stretching", "Cardio", "Plyometrics"]);
   // Carries train real things and stay available as fills, but a carry is a
   // finisher, not the opener of a training day. Left eligible to anchor and a
   // full gym opened its pull day on a Farmer's Carry.

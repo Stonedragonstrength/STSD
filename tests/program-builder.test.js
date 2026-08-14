@@ -127,7 +127,9 @@ function resolveRealization(name, gear) {
 function coverageScore(name) {
   return musclesForExercise(name).reduce((t, h) => t + h.weight, 0);
 }
-const BUILDER_SKIP_CATS = new Set(["Speed/Agility", "Mobility & Stretching", "Cardio"]);
+// Mirrors BUILDER_SKIP_CATS in app.js. Kept in sync by hand — if the builder
+// starts or stops skipping a category, this line moves with it.
+const BUILDER_SKIP_CATS = new Set(["Speed/Agility", "Mobility & Stretching", "Cardio", "Plyometrics"]);
 const ANCHOR_SKIP_CATS = new Set(["Carries"]);
 let _libCatByKey = null;
 function libCatFor(name) {

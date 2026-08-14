@@ -265,4 +265,33 @@ window.EXERCISE_EQUIPMENT = {
   "standing quad stretch": [ { gear: [], tag: null } ],
   "wrist flexor stretch": [ { gear: [], tag: null } ],
   "neck stretch": [ { gear: [], tag: null } ],
+
+  // Plyometrics. Most of it needs nothing but a floor, which is the point —
+  // a stretch-shortening movement is the cheapest way to train the quality
+  // and the easiest thing to give an athlete who trains at home. Only the
+  // box, med ball and pull-up bar variants ask for gear, and each of those
+  // has a floor-only sibling in the same category so a bare room still has
+  // a full plyo session available.
+  "box jump over": [ { gear: ["box"], tag: null } ],
+  "single-leg box jump": [ { gear: ["box"], tag: null } ],
+  "lateral box jump": [ { gear: ["box"], tag: null } ],
+  "seated box jump": [ { gear: ["box"], tag: null } ],
+  "depth jump": [ { gear: ["box"], tag: null } ],
+  "squat jump": [ { gear: [], tag: null } ],
+  "countermovement jump": [ { gear: [], tag: null } ],
+  "tuck jump": [ { gear: [], tag: null } ],
+  "split squat jump": [ { gear: [], tag: null } ],
+  "jump lunge": [ { gear: [], tag: null } ],
+  "kneeling jump": [ { gear: [], tag: null } ],
+  "pogo hop": [ { gear: [], tag: null } ],
+  "ankle bounce": [ { gear: [], tag: null } ],
+  "plyo push-up": [ { gear: [], tag: null } ],
+  "clap push-up": [ { gear: [], tag: null } ],
+  "depth push-up": [ { gear: [], tag: null } ],
+  "plyo pull-up": [ { gear: ["pullup"], tag: null } ],
+  "med ball slam": [ { gear: ["medball"], tag: null } ],
+  "med ball chest pass": [ { gear: ["medball"], tag: null } ],
+  "med ball rotational throw": [ { gear: ["medball"], tag: null } ],
+  "med ball overhead throw": [ { gear: ["medball"], tag: null } ],
+  "med ball scoop toss": [ { gear: ["medball"], tag: null } ],
 };
