@@ -10731,7 +10731,11 @@
     // undoes the only source that knew the difference, and every delt reads the
     // same number. So the coarse bucket only speaks when nothing finer has.
     const curatedDelt = curated.some((id) => id.startsWith("delts-"));
-    const entry = typeof ex === "string" ? demoEntryForName(name) : demoForExercise(ex);
+    // The demo database first, and exercise-muscles.js where it has nothing.
+    // Same shape, same vocabulary, same scoring — see that file's header for why
+    // 47 of the movements a week is built around had no entry at all.
+    const entry = (typeof ex === "string" ? demoEntryForName(name) : demoForExercise(ex))
+      || (window.EXERCISE_MUSCLES || {})[k];
     if (entry) {
       // A SECONDARY tag naming a region is split across the muscles it names.
       //
@@ -11222,13 +11226,32 @@
   // it differs, and on a four-day split (where every day owns one pattern) the
   // two rules are identical. The pattern that gets the accessory is drawn at
   // random, so across a week both halves of a two-pattern day get served.
-  function seatAccessories(days, dayPatterns, gear, used, slots) {
+  // And only where the day's pattern still has ROOM.
+  //
+  // A compound and an accessory on the same pattern pay the same muscles, and
+  // both sit on their trim floors afterwards, so nothing can be shaved back.
+  // Against real muscle data that took a beginner's worst muscle to 1.92x its
+  // plenty band where the old anchor-only builder reached 1.17x — the bands were
+  // calibrated for a week with one big lift per pattern, not two. A beginner's
+  // plenty is 6 sets; a squat and a lunge at their floors are already 5.
+  //
+  // So the tier asks first. Refusing costs almost nothing measurable (a squat
+  // day still holds a lunge 67% of the time against 70%, and coverage is
+  // unchanged or slightly better) and brings the worst case back to 1.60x.
+  function seatAccessories(days, dayPatterns, client, gear, used, setsPerEx, slots) {
+    const bands = levelBands(client);
     days.forEach((day, i) => {
       const patterns = dayPatterns[i] || [];
       if (!patterns.length || day.length >= DAY_CAP) return;
+      const sets = proposalSets(days, setsPerEx);
       for (const p of _shuffle(patterns)) {
         const nm = bestForPattern(p, gear, used, "accessory");
         if (!nm) continue;   // this pattern has none left; try the day's other
+        // Would it carry anything it pays past plenty? Then the day does not
+        // need it, and the slot is better left to the gap filler.
+        const over = musclesForExercise(nm).some((h) =>
+          (sets[h.id] || 0) + setsPerEx * h.weight > bands.plenty);
+        if (over) return;
         used.add(exKey(nm));
         slots.set(exKey(nm), "accessory");
         day.push(nm);
@@ -11586,7 +11609,7 @@
     // three passes now, so position no longer tells you what a slot is.
     const slots = new Map();
     const dayNames = seatCompounds(sk.days, gear, used, slots);
-    seatAccessories(dayNames, sk.days, gear, used, slots);
+    seatAccessories(dayNames, sk.days, client, gear, used, setsPerEx, slots);
     const { short } = fillDeficit(dayNames, sk.days, client, gear, used, setsPerEx, slots);
     const slotOf = (nm) => slots.get(exKey(nm)) || "isolation";
 
@@ -34624,34 +34647,17 @@
     return f <= 0 ? 0 : f >= 1 ? 1 : f;
   }
 
-  // Shape is identity, so the build is read off the two strongest axes and
-  // never off the size — a novice powerlifter still reads as a powerlifter,
-  // just smaller. Keys are the pair sorted alphabetically so there is one
-  // entry per combination instead of two.
-  const STAT_BUILDS = {
-    "CON+STR": "Powerlifter",
-    "AGI+STR": "Power Athlete",
-    "DEX+STR": "Strongman",
-    "END+STR": "Hybrid Lifter",
-    "AGI+CON": "Field Athlete",
-    "AGI+DEX": "Sprinter",
-    "AGI+END": "Games Athlete",
-    "CON+DEX": "Gymnast",
-    "CON+END": "Engine",
-    "DEX+END": "Endurance Athlete",
-  };
-  function statBuildName(cur) {
-    const ranked = STAT_AXES
-      .map((k) => ({ k, f: statAxisFrac(k, cur && cur[k]) }))
-      .sort((a, b) => b.f - a.f);
-    if (ranked[0].f <= 0.02) return "Unproven";
-    // A flat field has no silhouette to name. The gate compares the top axis
-    // against the MIDDLE one, not the bottom one: AGI reads empty on the whole
-    // current roster, and measuring against it would hand every athlete in the
-    // gym a specialist title they did not earn.
-    if (ranked[0].f - ranked[2].f < ranked[0].f * 0.28) return "All-Rounder";
-    return STAT_BUILDS[[ranked[0].k, ranked[1].k].sort().join("+")] || "All-Rounder";
-  }
+  // There is deliberately NO build name on the card.
+  //
+  // A previous version read the two strongest axes and titled the athlete from
+  // them — "Powerlifter", "Sprinter", "Power Athlete". The shape logic was
+  // sound, but the vocabulary was invented here rather than by the coach whose
+  // gym it is, and handing an athlete an identity is not a thing to guess at.
+  // Nathan's call, 2026-08-14: drop the label. The pentagon already shows the
+  // shape, which is the part that was actually measured.
+  //
+  // If it ever comes back it needs his words, not a naming scheme derived from
+  // the axes.
 
 // Built in a fixed 100-unit box and scaled by CSS (or by `size`), the same
   // way bwChartCard fixes its own viewBox — nothing here measures the DOM, so
@@ -34856,7 +34862,6 @@
     const look = hoardLook(lvl.level);
     const pct = lvl.need > 0 ? Math.max(0, Math.min(100, (lvl.into / lvl.need) * 100)) : 0;
     const left = Math.max(0, Math.round(lvl.need - lvl.into));
-    const build = statBuildName(field.cur);
 
     // Which slice of the ladder the fold shows. Base climb -> all twelve
     // ranks. Past HOARD -> the lap they are on: one bare numeral plus its ten
@@ -34892,7 +34897,6 @@
         </div>
         <div class="sf-field">${statFieldSvg({ cur: field.cur, peak: field.peak })}</div>
         <div class="sf-bottom">
-          <span class="sf-build">${escapeHtml(build)}</span>
           <span class="sf-sliver"><span class="sf-sliver-fill" style="width:${pct.toFixed(1)}%"></span></span>
           <span class="sf-next">next &middot; ${escapeHtml(next.name)}</span>
         </div>

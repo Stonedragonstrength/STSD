@@ -16010,11 +16010,8 @@ input.credit-cap:disabled { opacity: 0.4; }
 
 /* ---- Bottom edge: build, sliver, next rank ---- */
 .sf-bottom { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.35rem; }
-.sf-build {
-  flex: none;
-  font-size: 0.82rem; font-weight: 800; letter-spacing: 0.04em;
-  text-transform: uppercase; color: var(--text);
-}
+/* .sf-build is gone: the card no longer titles the athlete from their two
+   strongest axes. See the note above statAxisFrac in app.js. */
 .sf-sliver {
   flex: 1 1 auto; min-width: 0;
   height: 5px; border-radius: 999px;
@@ -16084,7 +16081,6 @@ input.credit-cap:disabled { opacity: 0.4; }
   /* The frame IS the tap target and it is card-sized, so this only buys back
      breathing room. .hoard-tile is already covered where the case is styled. */
   .sf-top { gap: 0.55rem; }
-  .sf-build { font-size: 0.78rem; }
   .sf-next { font-size: 0.62rem; }
 }
 

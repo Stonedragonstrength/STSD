@@ -43,6 +43,8 @@ const ANATOMY_GROUPS = extractLiteral(appSrc, "const ANATOMY_GROUPS = [");
 const EXERCISE_LIBRARY = extractLiteral(appSrc, "const EXERCISE_LIBRARY = [");
 
 const demoSrc = fs.readFileSync(path.join(ROOT, "exercise-demos.js"), "utf8");
+const musclesSrc = fs.readFileSync(path.join(ROOT, "exercise-muscles.js"), "utf8");
+const EXERCISE_MUSCLES = extractLiteral(musclesSrc, "window.EXERCISE_MUSCLES = {");
 const EXERCISE_DEMOS = extractLiteral(demoSrc, "window.EXERCISE_DEMOS =[");
 
 // ---- copies of the app.js logic ------------------------------------------
@@ -83,17 +85,62 @@ EXERCISE_LIBRARY.forEach((c) => (c.ex || []).forEach((n) => libCat.set(exKey(n),
 // asserted below, and keeps the fuzzy matcher out of the test's way.
 const demoByKey = new Map();
 EXERCISE_DEMOS.forEach((e) => { if (!demoByKey.has(exKey(e.n))) demoByKey.set(exKey(e.n), e); });
-const DEMO_ALIAS_FOR_TEST = { "bench press": "barbell bench press - medium grip", deadlift: "barbell deadlift" };
-function demoEntryForName(name) {
-  const k = exKey(name);
-  return demoByKey.get(k) || demoByKey.get(DEMO_ALIAS_FOR_TEST[k] || "") || null;
+// The demo lookup is PULLED from app.js, not copied.
+//
+// It used to be a naive exact match plus two hand-written aliases, and the app's
+// is nothing of the sort: LIBRARY_DEMO_MAP, then DEMO_ALIAS, then exact and
+// sorted token keys, then a fuzzy scorer. The divergence was not cosmetic — it
+// reported 128 of 166 movements as having no muscle data when the real figure
+// is 39, and a whole data file was written against that false number before the
+// app disagreed. Every muscle assertion in this folder rides on this function,
+// so it has to be the real one.
+function fnSrcDemo(src, decl) {
+  const at = src.indexOf(decl);
+  if (at < 0) throw new Error("not found: " + decl);
+  let i = src.indexOf("(", at), paren = 0;
+  for (; i < src.length; i++) {
+    if (src[i] === "(") paren++;
+    else if (src[i] === ")") { paren--; if (!paren) { i++; break; } }
+  }
+  const open = src.indexOf("{", i);
+  let depth = 0;
+  for (let j = open; j < src.length; j++) {
+    if (src[j] === "{") depth++;
+    else if (src[j] === "}") { depth--; if (!depth) return src.slice(at, j + 1); }
+  }
+  throw new Error("unbalanced: " + decl);
 }
+const DEMO_ABBREV = extractLiteral(appSrc, "const DEMO_ABBREV = {");
+const DEMO_STOP = new Set(extractLiteral(appSrc, "const DEMO_STOP = new Set(["));
+const DEMO_ALIAS = extractLiteral(appSrc, "const DEMO_ALIAS = {");
+const LIBRARY_DEMO_MAP = extractLiteral(appSrc, "const LIBRARY_DEMO_MAP = {");
+const _demoWin = { EXERCISE_DEMOS: EXERCISE_DEMOS };
+const demoEntryForName = Function(
+  "window", "DEMO_ABBREV", "DEMO_STOP", "DEMO_ALIAS", "LIBRARY_DEMO_MAP", `
+  let _demoIndex = null;
+  ${fnSrcDemo(appSrc, "function demoTokens(")}
+  ${fnSrcDemo(appSrc, "function demoIndex(")}
+  ${fnSrcDemo(appSrc, "function findDemoByName(")}
+  ${fnSrcDemo(appSrc, "function demoEntryForName(")}
+  return demoEntryForName;
+`)(_demoWin, DEMO_ABBREV, DEMO_STOP, DEMO_ALIAS, LIBRARY_DEMO_MAP);
 
 // app.js checks coach per-exercise overrides (anatomyEdits.exCredits) first;
 // the tests run against the BUILT-IN derivation, so the stub always passes.
 function exCreditOverride() { return null; }
 
+// Memoised. Pulling the app's real demo resolver made this 8x slower — the
+// fuzzy matcher scans the whole index on a miss — and it is a pure function of
+// the name here, so the cache is free correctness-wise.
+const _mfeCache = new Map();
 function musclesForExercise(ex) {
+  const _k = typeof ex === "string" ? ex : (ex && ex.name);
+  if (_mfeCache.has(_k)) return _mfeCache.get(_k);
+  const _out = _musclesForExercise(ex);
+  _mfeCache.set(_k, _out);
+  return _out;
+}
+function _musclesForExercise(ex) {
   const name = typeof ex === "string" ? ex : ex && ex.name;
   const k = exKey(name);
   if (!k) return [];
@@ -104,7 +151,7 @@ function musclesForExercise(ex) {
   const curated = curatedEx.get(k) || [];
   curated.forEach((id) => add(id, 1));
   const curatedDelt = curated.some((id) => id.startsWith("delts-"));
-  const entry = demoEntryForName(name);
+  const entry = demoEntryForName(name) || EXERCISE_MUSCLES[k];
   if (entry) {
     const fan = (m, weight, split) => {
       if (m === "shoulders" && curatedDelt) return;
