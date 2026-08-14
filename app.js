@@ -5087,10 +5087,7 @@
       </div>
       <div class="hub-row">
         <span class="hub-lbl">Gear</span>
-        <span class="hub-pick gear-grid">${GEAR.map((g) =>
-          `<button type="button" class="gear-opt${(c.equipment || []).includes(g.id) ? " on" : ""}" data-hub-gear="${g.id}">
-             <span class="gear-opt-ico">${dayIconHtml(g.icon)}</span>
-             <span class="gear-opt-lbl">${escapeHtml(g.label)}</span></button>`).join("")}</span>
+        <span class="hub-pick gear-grid">${gearGridHtml(c.equipment, "data-hub-gear")}</span>
       </div>
       <p class="hub-summary">${escapeHtml(
         `${goal.name}${days ? `, ${days} day${days === 1 ? "" : "s"} a week` : ""}. ` +
@@ -5113,12 +5110,7 @@
       // is the only way to undo an accidental tap without a second control.
       else if ("hubLevel" in d) c.trainingLevel = c.trainingLevel === d.hubLevel ? "" : d.hubLevel;
       else if ("hubPain" in d) c.painRelief = !c.painRelief;
-      else if ("hubGear" in d) {
-        const have = new Set(c.equipment || []);
-        if (have.has(d.hubGear)) have.delete(d.hubGear); else have.add(d.hubGear);
-        // Stored in GEAR order, not tap order, so a cloud diff stays readable.
-        c.equipment = GEAR.filter((g) => have.has(g.id)).map((g) => g.id);
-      }
+      else if ("hubGear" in d) c.equipment = gearToggle(c.equipment, d.hubGear);
       saveTrainer();
       repaint();
     });
@@ -6743,12 +6735,8 @@
     host.innerHTML = gearFoldHtml(c.equipment || []);
     if (wasOpen) host.querySelector("details").open = true;
     wireGearFold(host, (id) => {
-      if (!GEAR_BY_ID[id]) return;
-      const have = new Set(c.equipment || []);
-      if (have.has(id)) have.delete(id); else have.add(id);
-      // Stored in GEAR order rather than tap order, so the value is stable and
-      // a cloud diff stays readable.
-      c.equipment = GEAR.filter((g) => have.has(g.id)).map((g) => g.id);
+      if (id !== "__all__" && !GEAR_BY_ID[id]) return;
+      c.equipment = gearToggle(c.equipment, id);
       saveTrainer(); // debounce-pushes the athlete row; equipment rides along
       renderCoachGearFold(c);
     });
@@ -9610,10 +9598,7 @@
         <span class="build-pick">${GEN_STYLES.map((s) =>
           `<button type="button" class="build-opt${s.name === styleName ? " on" : ""}" data-style="${escapeHtml(s.name)}">${escapeHtml(s.name)}</button>`).join("")}</span></div>
       <div class="build-row"><span class="build-lbl">Gear</span>
-        <span class="build-pick gear-grid">${GEAR.map((g) =>
-          `<button type="button" class="gear-opt${gearPick.includes(g.id) ? " on" : ""}" data-gear="${g.id}">
-             <span class="gear-opt-ico">${dayIconHtml(g.icon)}</span>
-             <span class="gear-opt-lbl">${escapeHtml(g.label)}</span></button>`).join("")}</span></div>
+        <span class="build-pick gear-grid">${gearGridHtml(gearPick)}</span></div>
       <p class="build-bands">${escapeHtml(bandsLine())}${gearPick.length ? "" : " Nothing selected, so everything counts as available."}</p>`;
 
     const previewHtml = () => {
@@ -9682,10 +9667,7 @@
           b.addEventListener("click", () => { styleName = b.dataset.style; render(); }));
         body.querySelectorAll("[data-gear]").forEach((b) =>
           b.addEventListener("click", () => {
-            const id = b.dataset.gear;
-            gearPick = gearPick.includes(id)
-              ? gearPick.filter((x) => x !== id)
-              : GEAR.filter((g) => g.id === id || gearPick.includes(g.id)).map((g) => g.id);
+            gearPick = gearToggle(gearPick, b.dataset.gear);
             render();
           }));
         btn("Build", "btn btn-primary", roll);
@@ -11057,20 +11039,42 @@
     _anchorTiers = [[...t1.values()], [...t2.values()]];
     return _anchorTiers;
   }
+  // "Roll again" has to change the WEEK, not just the numbers on it.
+  //
+  // Both pickers below used to take the first strict maximum, which is fully
+  // deterministic given a fixed pool order — so every roll produced the same
+  // movements with fresh sets and reps, and the button looked broken. (The old
+  // test could not see it: its signature was name+sets+reps, so re-rolled
+  // numbers alone made it pass.)
+  //
+  // Instead, gather everything within a short reach of the best and choose
+  // among those. Coverage stays near-optimal because the reach is narrow, and
+  // the week stops being the same week every time. Ranked candidates rather
+  // than a flat shuffle, so a genuinely better movement is still preferred.
+  const PICK_REACH = 0.9;
+  function pickNearBest(scored) {
+    if (!scored.length) return null;
+    let top = -Infinity;
+    for (const x of scored) if (x.s > top) top = x.s;
+    if (top <= 0) return null;
+    const near = scored.filter((x) => x.s >= top * PICK_REACH);
+    return near[Math.floor(Math.random() * near.length)].nm;
+  }
+
   function bestForPattern(pattern, gear, used) {
     const tiers = [...anchorTiers(), builderPool()];
     for (const tier of tiers) {
-      let best = null, bestScore = -1;
+      const scored = [];
       tier.forEach((nm) => {
         if (used.has(exKey(nm))) return;
         const cat = libCatFor(nm);
         if (BUILDER_SKIP_CATS.has(cat) || ANCHOR_SKIP_CATS.has(cat)) return;
         if (!resolveRealization(nm, gear)) return;
         if (!servesPattern(nm, pattern)) return;
-        const s = coverageScore(nm);
-        if (s > bestScore) { bestScore = s; best = nm; }
+        scored.push({ nm, s: coverageScore(nm) });
       });
-      if (best) return best;
+      const pick = pickNearBest(scored);
+      if (pick) return pick;
     }
     return null;
   }
@@ -11125,7 +11129,7 @@
         deficit[g.id] = d; total += d;
       });
       if (!total) break;
-      let best = null, bestGain = 0;
+      const scored = [];
       builderPool().forEach((nm) => {
         if (used.has(exKey(nm))) return;
         if (!resolveRealization(nm, gear)) return;
@@ -11142,8 +11146,12 @@
           const over = Math.max(0, ((sets[h.id] || 0) + add) - bands.plenty);
           return t + closed - over * OVERSHOOT_COST;
         }, 0);
-        if (gain > bestGain) { bestGain = gain; best = nm; }
+        if (gain > 0) scored.push({ nm, s: gain });
       });
+      // Same near-best pick as the anchors: the filler still refuses anything
+      // that scores nothing, so "closes a little and overloads a lot" still
+      // loses and the week still stops rather than adding junk.
+      const best = pickNearBest(scored);
       if (!best) break;
       // Into a day this movement actually belongs to, emptiest first, so the
       // week stays even without a deadlift landing on the push day. If no day's
@@ -26987,6 +26995,40 @@
     const n = (cur || []).length;
     return n ? `${n} of ${GEAR.length} selected` : "Everything available";
   }
+  // The gear tap-grid, with an All toggle in front of it. Every surface that
+  // asks "what do they train with" renders through this so the three grids
+  // (athlete profile, roster hub, build sheet) cannot drift apart.
+  //
+  // All LIGHTS every item rather than clearing to empty. Both mean the same
+  // thing to the builder — an empty list is unrestricted — but a cleared grid
+  // reads as "nothing selected", which is the opposite of what it does. Tapping
+  // All when everything is already on clears it, so there is still a way back.
+  // `attr` is the data attribute the surface's own click handler listens for.
+  function gearGridHtml(cur, attr = "data-gear") {
+    const on = new Set(cur || []);
+    const all = on.size >= GEAR.length;
+    return `
+      <button type="button" class="gear-opt gear-opt-all${all ? " on" : ""}" ${attr}="__all__"
+        title="${all ? "Clear it and let everything count as available" : "They have all of it"}">
+        <span class="gear-opt-lbl">${all ? "Clear" : "All"}</span>
+      </button>
+      ${GEAR.map((g) => `
+        <button type="button" class="gear-opt${on.has(g.id) ? " on" : ""}" ${attr}="${g.id}">
+          <span class="gear-opt-ico">${dayIconHtml(g.icon)}</span>
+          <span class="gear-opt-lbl">${escapeHtml(g.label)}</span>
+        </button>`).join("")}`;
+  }
+  // The list a tap produces. Kept beside the markup so the two rules — All
+  // lights everything, All-when-full clears — live in one place.
+  function gearToggle(cur, id) {
+    const have = new Set(cur || []);
+    if (id === "__all__") return have.size >= GEAR.length ? [] : GEAR.map((g) => g.id);
+    if (have.has(id)) have.delete(id); else have.add(id);
+    // Stored in GEAR order, not tap order, so the value is stable and a cloud
+    // diff stays readable.
+    return GEAR.filter((g) => have.has(g.id)).map((g) => g.id);
+  }
+
   function gearFoldHtml(cur, { id = "cprof-fold-gear" } = {}) {
     const on = new Set(cur || []);
     return `
@@ -27000,13 +27042,7 @@
           <span class="pref-fold-chev">▸</span>
         </summary>
         <p class="pref-foot">What they can actually train with. Build the week only picks movements this gear can perform, so a missing barbell gets them a dumbbell bench press instead of nothing. Leave it empty and everything counts as available.</p>
-        <div class="gear-grid">
-          ${GEAR.map((g) => `
-            <button type="button" class="gear-opt${on.has(g.id) ? " on" : ""}" data-gear="${g.id}">
-              <span class="gear-opt-ico">${dayIconHtml(g.icon)}</span>
-              <span class="gear-opt-lbl">${escapeHtml(g.label)}</span>
-            </button>`).join("")}
-        </div>
+        <div class="gear-grid">${gearGridHtml(cur)}</div>
       </details>`;
   }
   function wireGearFold(host, onToggle) {

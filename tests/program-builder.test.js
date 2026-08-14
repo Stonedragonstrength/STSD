@@ -191,20 +191,33 @@ function anchorTiers() {
   _anchorTiers = [[...t1.values()], [...t2.values()]];
   return _anchorTiers;
 }
+// MIRRORS app.js. These are hand-written copies, so a change there has to be
+// made here too — that is exactly how the deterministic-roll bug survived a
+// green suite: app.js was fixed and this copy was not, and the assertion
+// below was signed on name+sets+reps so re-rolled numbers alone passed it.
+const PICK_REACH = 0.9;
+function pickNearBest(scored) {
+  if (!scored.length) return null;
+  let top = -Infinity;
+  for (const x of scored) if (x.s > top) top = x.s;
+  if (top <= 0) return null;
+  const near = scored.filter((x) => x.s >= top * PICK_REACH);
+  return near[Math.floor(Math.random() * near.length)].nm;
+}
 function bestForPattern(pattern, gear, used) {
   const tiers = [...anchorTiers(), builderPool()];
   for (const tier of tiers) {
-    let best = null, bestScore = -1;
+    const scored = [];
     tier.forEach((nm) => {
       if (used.has(exKey(nm))) return;
       const cat = libCatFor(nm);
       if (BUILDER_SKIP_CATS.has(cat) || ANCHOR_SKIP_CATS.has(cat)) return;
       if (!resolveRealization(nm, gear)) return;
       if (!servesPattern(nm, pattern)) return;
-      const s = coverageScore(nm);
-      if (s > bestScore) { bestScore = s; best = nm; }
+      scored.push({ nm, s: coverageScore(nm) });
     });
-    if (best) return best;
+    const pick = pickNearBest(scored);
+    if (pick) return pick;
   }
   return null;
 }
@@ -242,7 +255,7 @@ function fillDeficit(days, dayPatterns, client, gear, used, setsPerEx = 3) {
       deficit[g.id] = d; total += d;
     });
     if (!total) break;
-    let best = null, bestGain = 0;
+    const scored = [];
     builderPool().forEach((nm) => {
       if (used.has(exKey(nm))) return;
       if (!resolveRealization(nm, gear)) return;
@@ -252,8 +265,9 @@ function fillDeficit(days, dayPatterns, client, gear, used, setsPerEx = 3) {
         const over = Math.max(0, ((sets[h.id] || 0) + add) - bands.plenty);
         return t + closed - over * OVERSHOOT_COST;
       }, 0);
-      if (gain > bestGain) { bestGain = gain; best = nm; }
+      if (gain > 0) scored.push({ nm, s: gain });
     });
+    const best = pickNearBest(scored);
     if (!best) break;
     const open = days.filter((d) => d.length < DAY_CAP);
     if (!open.length) break;
@@ -683,11 +697,38 @@ check("the report names what fell short and what the gear cannot reach", () => {
   }
 });
 
-check("two rolls of the same request differ", () => {
-  const sig = () => JSON.stringify(buildWeek({}, { days: 4, styleName: "Volume" })
-    .week.days.map((d) => d.exercises.map((e) => e.name + e.sets + e.reps)));
-  const rolls = new Set([sig(), sig(), sig(), sig(), sig(), sig()]);
-  assert.ok(rolls.size > 1, "six rolls produced the identical week");
+check("two rolls of the same request differ, in the EXERCISES", () => {
+  // Signed on names ONLY, deliberately. This assertion used to include
+  // e.sets + e.reps, which come off a random scheme — so it passed while every
+  // roll returned the identical movements with new numbers on them, which is
+  // exactly what a coach means when they say Roll again does nothing.
+  const names = (days) => JSON.stringify(buildWeek({}, { days, styleName: "Volume" })
+    .week.days.map((d) => d.exercises.map((e) => e.name)));
+  [3, 4, 5].forEach((days) => {
+    const rolls = new Set(Array.from({ length: 8 }, () => names(days)));
+    assert.ok(rolls.size > 1,
+      `eight rolls of a ${days}-day split produced the identical line-up. ` +
+      `The pickers must choose among near-best candidates, not take the first strict maximum.`);
+  });
+});
+
+check("app.js itself still picks among near-best, not the first strict maximum", () => {
+  // Everything else in this file exercises COPIES of the builder, which is the
+  // folder convention — but it means an app.js-only regression cannot be seen.
+  // That is precisely how the deterministic-roll bug shipped: the picker took
+  // the first strict maximum, every roll returned the same movements with new
+  // sets and reps, and a green suite said nothing. So assert against the real
+  // source for the one property the copies cannot vouch for.
+  assert.ok(/function pickNearBest\(/.test(appSrc),
+    "app.js has no pickNearBest — rolling again cannot vary the exercises");
+  ["function bestForPattern(", "function fillDeficit("].forEach((decl) => {
+    const at = appSrc.indexOf(decl);
+    assert.ok(at > 0, `app.js is missing ${decl}`);
+    const body = appSrc.slice(at, at + 2200);
+    assert.ok(/pickNearBest\(/.test(body), `${decl} no longer calls pickNearBest`);
+    assert.ok(!/bestScore|bestGain/.test(body),
+      `${decl} is back to a first-strict-maximum pick, so every roll is identical`);
+  });
 });
 
 check("a one-day week still covers something and stays inside the cap", () => {
