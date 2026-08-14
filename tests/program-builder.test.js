@@ -130,7 +130,23 @@ function coverageScore(name) {
 // Mirrors BUILDER_SKIP_CATS in app.js. Kept in sync by hand — if the builder
 // starts or stops skipping a category, this line moves with it.
 const BUILDER_SKIP_CATS = new Set(["Speed/Agility", "Mobility & Stretching", "Cardio", "Plyometrics"]);
-const ANCHOR_SKIP_CATS = new Set(["Carries"]);
+// Roles are DATA, so they are read out of the source rather than copied.
+const rolesSrc = fs.readFileSync(path.join(ROOT, "exercise-roles.js"), "utf8");
+const EXERCISE_ROLES = extractLiteral(rolesSrc, "window.EXERCISE_ROLES = {");
+function exRole(name) { return EXERCISE_ROLES[exKey(name)] || "isolation"; }
+const EXERCISE_PATTERN = extractLiteral(rolesSrc, "window.EXERCISE_PATTERN = {");
+function exPattern(name) { return EXERCISE_PATTERN[exKey(name)] || ""; }
+const ROLE_RANK = { compound: 0, accessory: 1, isolation: 2, carry: 3 };
+// The slot a movement occupies ON A GIVEN DAY, which is what the builder writes
+// and therefore what the ordering has to be judged against. An accessory only
+// counts as one where it supports that day's own main lift; parked on another
+// day with room, it is a fill. The day's name IS its pattern list joined with
+// " + ", so it can be read straight back off the built week.
+function daySlot(name, dayName) {
+  const role = exRole(name);
+  if (role !== "accessory") return role;
+  return dayName.split(" + ").includes(exPattern(name)) ? "accessory" : "isolation";
+}
 let _libCatByKey = null;
 function libCatFor(name) {
   if (!_libCatByKey) {
@@ -149,7 +165,8 @@ function builderPool() {
     if (BUILDER_SKIP_CATS.has(c.cat)) return;
     (c.ex || []).forEach((nm) => { const k = exKey(nm); if (k && !out.has(k)) out.set(k, nm); });
   });
-  _builderPool = [...out.values()].filter((nm) => !BUILDER_SKIP_CATS.has(libCatFor(nm)));
+  _builderPool = [...out.values()].filter((nm) =>
+    !BUILDER_SKIP_CATS.has(libCatFor(nm)) && exRole(nm) !== "skip");
   return _builderPool;
 }
 const MUSCLE_PATTERN = Object.fromEntries(ANATOMY_GROUPS.map((g) => [g.id, g.pattern]));
@@ -180,17 +197,6 @@ const DAY_CAP = 7;
 // Read rather than copied: this number is a tuning decision, and a copy would
 // drift silently while every assertion below kept passing against the copy.
 const OVERSHOOT_COST = Number((appSrc.match(/const OVERSHOOT_COST = ([\d.]+)/) || [])[1]);
-let _anchorTiers = null;
-function anchorTiers() {
-  if (_anchorTiers) return _anchorTiers;
-  const t1 = new Map(), t2 = new Map();
-  ANATOMY_GROUPS.forEach((g) => {
-    (g.anchors || []).forEach((nm) => { const k = exKey(nm); if (k && !t1.has(k)) t1.set(k, nm); });
-    (g.accessories || []).forEach((nm) => { const k = exKey(nm); if (k && !t2.has(k)) t2.set(k, nm); });
-  });
-  _anchorTiers = [[...t1.values()], [...t2.values()]];
-  return _anchorTiers;
-}
 // MIRRORS app.js. These are hand-written copies, so a change there has to be
 // made here too — that is exactly how the deterministic-roll bug survived a
 // green suite: app.js was fixed and this copy was not, and the assertion
@@ -204,34 +210,67 @@ function pickNearBest(scored) {
   const near = scored.filter((x) => x.s >= top * PICK_REACH);
   return near[Math.floor(Math.random() * near.length)].nm;
 }
-function bestForPattern(pattern, gear, used) {
-  const tiers = [...anchorTiers(), builderPool()];
-  for (const tier of tiers) {
-    const scored = [];
-    tier.forEach((nm) => {
-      if (used.has(exKey(nm))) return;
-      const cat = libCatFor(nm);
-      if (BUILDER_SKIP_CATS.has(cat) || ANCHOR_SKIP_CATS.has(cat)) return;
-      if (!resolveRealization(nm, gear)) return;
-      if (!servesPattern(nm, pattern)) return;
-      scored.push({ nm, s: coverageScore(nm) });
-    });
-    const pick = pickNearBest(scored);
-    if (pick) return pick;
-  }
-  return null;
+function candidatesFor(pattern, gear, used, role) {
+  return builderPool().filter((nm) =>
+    !used.has(exKey(nm))
+    && exRole(nm) === role
+    && exPattern(nm) === pattern
+    && resolveRealization(nm, gear));
 }
-function seatAnchors(skeletonDays, gear, used) {
+function bestForPattern(pattern, gear, used, role = "compound") {
+  const tiers = role === "compound" ? ["compound", "accessory"] : [role];
+  for (const r of tiers) {
+    const c = candidatesFor(pattern, gear, used, r);
+    if (c.length) return c[Math.floor(Math.random() * c.length)];
+  }
+  if (role !== "compound") return null;
+  const loose = builderPool().filter((nm) =>
+    !used.has(exKey(nm))
+    && exRole(nm) !== "carry"
+    && resolveRealization(nm, gear)
+    && servesPattern(nm, pattern));
+  return loose.length ? loose[Math.floor(Math.random() * loose.length)] : null;
+}
+function seatCompounds(skeletonDays, gear, used, slots = new Map()) {
   return skeletonDays.map((patterns) => {
     const day = [];
     patterns.forEach((p) => {
       if (day.length >= DAY_CAP) return;
-      const nm = bestForPattern(p, gear, used);
+      const nm = bestForPattern(p, gear, used, "compound");
       if (!nm) return;
       used.add(exKey(nm));
+      slots.set(exKey(nm), "compound");
       day.push(nm);
     });
     return day;
+  });
+}
+function coverageGain(nm, sets, bands, setsPerEx) {
+  return musclesForExercise(nm).reduce((t, h) => {
+    const have = sets[h.id] || 0;
+    const add = setsPerEx * h.weight;
+    const closed = Math.min(Math.max(0, bands.solid - have), add);
+    const over = Math.max(0, (have + add) - bands.plenty);
+    return t + closed - over * OVERSHOOT_COST;
+  }, 0);
+}
+function _shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+function seatAccessories(days, dayPatterns, gear, used, slots = new Map()) {
+  days.forEach((day, i) => {
+    const patterns = dayPatterns[i] || [];
+    if (!patterns.length || day.length >= DAY_CAP) return;
+    for (const p of _shuffle(patterns)) {
+      const nm = bestForPattern(p, gear, used, "accessory");
+      if (!nm) continue;
+      used.add(exKey(nm));
+      slots.set(exKey(nm), "accessory");
+      day.push(nm);
+      return;
+    }
   });
 }
 function proposalSets(dayNames, setsPerEx = 3) {
@@ -243,39 +282,39 @@ function proposalSets(dayNames, setsPerEx = 3) {
   Object.keys(sets).forEach((k) => { sets[k] = Math.round(sets[k] * 10) / 10; });
   return sets;
 }
-function fillDeficit(days, dayPatterns, client, gear, used, setsPerEx = 3) {
+function fillDeficit(days, dayPatterns, client, gear, used, setsPerEx = 3, slots = new Map()) {
   const bands = levelBands(client);
   const room = () => days.some((d) => d.length < DAY_CAP);
   for (let guard = 0; guard < 200 && room(); guard++) {
     const sets = proposalSets(days, setsPerEx);
-    const deficit = {};
-    let total = 0;
-    ANATOMY_GROUPS.forEach((g) => {
-      const d = Math.max(0, bands.solid - (sets[g.id] || 0));
-      deficit[g.id] = d; total += d;
-    });
+    const total = ANATOMY_GROUPS.reduce((t, g) =>
+      t + Math.max(0, bands.solid - (sets[g.id] || 0)), 0);
     if (!total) break;
     const scored = [];
     builderPool().forEach((nm) => {
       if (used.has(exKey(nm))) return;
+      if (exRole(nm) === "compound") return;
       if (!resolveRealization(nm, gear)) return;
-      const gain = musclesForExercise(nm).reduce((t, h) => {
-        const add = setsPerEx * h.weight;
-        const closed = Math.min(deficit[h.id] || 0, add);
-        const over = Math.max(0, ((sets[h.id] || 0) + add) - bands.plenty);
-        return t + closed - over * OVERSHOOT_COST;
-      }, 0);
+      const gain = coverageGain(nm, sets, bands, setsPerEx);
       if (gain > 0) scored.push({ nm, s: gain });
     });
     const best = pickNearBest(scored);
     if (!best) break;
-    const open = days.filter((d) => d.length < DAY_CAP);
-    if (!open.length) break;
+    const role = exRole(best);
+    const isCarry = role === "carry";
+    const pat = exPattern(best);
+    const open = days.filter((d) => d.length < DAY_CAP
+      && (!isCarry || d.every((nm) => exRole(nm) !== "carry"))
+      && (role !== "accessory"
+        || d.every((nm) => !(exRole(nm) === "accessory" && exPattern(nm) === pat))));
+    used.add(exKey(best));
+    if (!open.length) continue;
     const fits = open.filter((d) =>
       (dayPatterns[days.indexOf(d)] || []).some((p) => servesPattern(best, p)));
     const target = (fits.length ? fits : open).reduce((a, b) => (b.length < a.length ? b : a));
     target.push(best);
-    used.add(exKey(best));
+    const onPattern = (dayPatterns[days.indexOf(target)] || []).includes(pat);
+    slots.set(exKey(best), role === "accessory" && !onPattern ? "isolation" : role);
   }
   const finalSets = proposalSets(days, setsPerEx);
   return {
@@ -326,11 +365,13 @@ check("an unmapped movement scores zero", () => {
 });
 
 check("the pool is the resistance training, deduped, minus what the builder skips", () => {
-  // 237 exercises carry equipment data; the builder draws on the 172 that are
+  // 237 exercises carry equipment data; the builder draws on the 166 that are
   // resistance training. Speed/Agility, Mobility & Stretching and Cardio are
   // held back: real work, but they answer a different question than muscle
-  // coverage, and left in they turned up as gap-fillers on a push day.
-  assert.strictEqual(builderPool().length, 172,
+  // coverage, and left in they turned up as gap-fillers on a push day. The six
+  // crawls are held back by their role for the same reason — they are filed
+  // under Core but they are locomotion.
+  assert.strictEqual(builderPool().length, 166,
     `pool was ${builderPool().length}. If the anatomy or library lists changed, ` +
     `exercise-equipment.js needs the new names and this number needs updating`);
   const keys = builderPool().map(exKey);
@@ -342,13 +383,48 @@ check("the pool is the resistance training, deduped, minus what the builder skip
 check("a carry never opens a day", () => {
   // A carry trains real things and stays available as a fill, but it is a
   // finisher. Left eligible to anchor, a full gym opened its pull day on a
-  // Farmer's Carry, which outscored every row on raw breadth.
+  // Farmer's Carry, which outscored every row on raw breadth. Roles now say so
+  // outright, so the opener can never be one however it scores.
   const gear = gearSet({});
   ["Push", "Pull", "Squat", "Hinge", "Core"].forEach((p) => {
-    const nm = bestForPattern(p, gear, new Set());
-    if (!nm) return;
-    assert.ok(!ANCHOR_SKIP_CATS.has(libCatFor(nm)),
-      `${nm} is a ${libCatFor(nm)} entry and was seated as the ${p} anchor`);
+    for (let i = 0; i < 20; i++) {
+      const nm = bestForPattern(p, gear, new Set(), "compound");
+      if (!nm) continue;
+      assert.notStrictEqual(exRole(nm), "carry",
+        `${nm} is a carry and was seated as the ${p} opener`);
+    }
+  });
+});
+
+check("every builder-eligible movement has a declared role", () => {
+  // The role map is the builder's spine now. A library addition with no role
+  // silently defaults to isolation, which is safe but means a new compound would
+  // never open a day and nobody would be told why.
+  const undeclared = builderPool().filter((nm) => !EXERCISE_ROLES[exKey(nm)]);
+  assert.deepStrictEqual(undeclared, [],
+    `no role in exercise-roles.js: ${undeclared.slice(0, 8).join(", ")}`);
+  const legal = new Set(["compound", "accessory", "isolation", "carry", "skip"]);
+  Object.entries(EXERCISE_ROLES).forEach(([k, v]) =>
+    assert.ok(legal.has(v), `${k} has role "${v}", which is not a role`));
+});
+
+check("crawls are out of the builder pool", () => {
+  // Locomotion filed under Core. The gap-filler kept seating them on leg days
+  // because they pay several small muscles at once, and Nathan asked why his
+  // squat day held a Bear Crawl instead of a lunge.
+  builderPool().forEach((nm) =>
+    assert.ok(!/crawl|inchworm/i.test(nm), `${nm} is still programmable`));
+});
+
+check("every pattern a split names can be opened by a real compound", () => {
+  // With everything available, no pattern should have to fall down the tiers to
+  // find an opener — except Core, which has no compound by design and is only
+  // ever its own day in the 1-day split.
+  const full = gearSet({});
+  new Set(Object.values(SPLITS).flat(2)).forEach((p) => {
+    if (p === "Core") return;
+    const c = candidatesFor(p, full, new Set(), "compound");
+    assert.ok(c.length, `${p} has no compound to open on`);
   });
 });
 
@@ -398,19 +474,22 @@ check("gear that reaches almost nothing still returns the right number of days",
 });
 
 // ---- seating and filling --------------------------------------------------
-check("anchors are the best movement the gear allows, one per pattern", () => {
+check("a compound opens each pattern the day owns", () => {
   const gear = gearSet({});
   const used = new Set();
-  const days = seatAnchors([["Squat", "Push"], ["Hinge", "Pull"]], gear, used);
+  const days = seatCompounds([["Squat", "Push"], ["Hinge", "Pull"]], gear, used);
   assert.strictEqual(days.length, 2);
-  days.forEach((d) => assert.strictEqual(d.length, 2, "one anchor per pattern"));
+  days.forEach((d) => assert.strictEqual(d.length, 2, "one compound per pattern"));
   const flat = days.flat();
   assert.strictEqual(new Set(flat.map(exKey)).size, flat.length, "no repeats across days");
-  flat.forEach((nm) => assert.ok(coverageScore(nm) >= 2,
-    `${nm} scored ${coverageScore(nm)}, too small to anchor a day`));
+  // Deliberately NOT a coverageScore floor. That was the old rule and it is what
+  // put a Leg Press at the head of every squat day: coverageScore counts how
+  // many muscles the demo database tagged, and Back Squat is tagged with one.
+  flat.forEach((nm) => assert.strictEqual(exRole(nm), "compound",
+    `${nm} opened a day but its role is ${exRole(nm)}`));
 });
 
-check("an anchor genuinely serves the pattern it was seated for", () => {
+check("the opener genuinely serves the pattern it was seated for", () => {
   // Found in the preview: a Push day opened with a Single-Arm Row. A row
   // grazes the front delts at half weight through the coarse shoulders bucket,
   // and that was enough to make it eligible, whereupon its high total score won
@@ -420,10 +499,42 @@ check("an anchor genuinely serves the pattern it was seated for", () => {
   assert.ok(servesPattern("Bench Press", "Push"), "and a bench press is a push");
   const gear = gearSet({});
   const patterns = [["Push"], ["Pull"], ["Squat"], ["Hinge"]];
-  const days = seatAnchors(patterns, gear, new Set());
+  const days = seatCompounds(patterns, gear, new Set());
   days.forEach((d, i) => d.forEach((nm) =>
-    assert.ok(servesPattern(nm, patterns[i][0]),
-      `${nm} was seated as the ${patterns[i][0]} anchor but does not serve it`)));
+    assert.strictEqual(exPattern(nm), patterns[i][0],
+      `${nm} was seated as the ${patterns[i][0]} opener but is a ${exPattern(nm) || "?"} movement`)));
+});
+
+check("a gym with no compound for a pattern still opens the day", () => {
+  // Bands alone reach no squat compound, so the tier is empty and the opener has
+  // to fall through to an accessory rather than leave the day headless.
+  const gear = new Set(["band"]);
+  assert.strictEqual(candidatesFor("Squat", gear, new Set(), "compound").length, 0,
+    "this case is only meaningful while bands reach no Squat compound");
+  const nm = bestForPattern("Squat", gear, new Set(), "compound");
+  assert.ok(nm, "a band-only squat day was left with no opener at all");
+  // Asserted on the DECLARED pattern, not on servesPattern: a Cossack Squat is a
+  // squat-pattern movement a coach would program on a squat day, but the muscle
+  // engine only sees adductors, so the loose test does not recognise it.
+  assert.strictEqual(exPattern(nm), "Squat", `${nm} is not a Squat-pattern movement`);
+  assert.strictEqual(exRole(nm), "accessory", `fell all the way to ${exRole(nm)}`);
+});
+
+check("the accessory tier puts a second pattern movement on the day", () => {
+  // The bug Nathan reported: a squat day with no lunge or split squat in it.
+  // Filling ran straight from compound to gap-closing, and by then quads and
+  // glutes were past their band, so every lunge priced as pure overshoot.
+  const gear = gearSet({});
+  const used = new Set();
+  const patterns = [["Squat"], ["Push"]];
+  const days = seatCompounds(patterns, gear, used);
+  seatAccessories(days, patterns, gear, used);
+  days.forEach((d, i) => {
+    assert.strictEqual(d.length, 2, `the ${patterns[i][0]} day got no accessory`);
+    assert.strictEqual(exRole(d[1]), "accessory", `${d[1]} is not an accessory`);
+    assert.strictEqual(exPattern(d[1]), patterns[i][0],
+      `${d[1]} was seated on the ${patterns[i][0]} day but is a ${exPattern(d[1]) || "?"} movement`);
+  });
 });
 
 check("the filler drives every muscle toward solid", () => {
@@ -431,7 +542,8 @@ check("the filler drives every muscle toward solid", () => {
   const gear = gearSet({});
   const used = new Set();
   const sk = skeletonFor(4, gear);
-  const days = seatAnchors(sk.days, gear, used);
+  const days = seatCompounds(sk.days, gear, used);
+  seatAccessories(days, sk.days, gear, used);
   const { short } = fillDeficit(days, sk.days, client, gear, used, 3);
   assert.ok(short.length <= 2,
     `4 days with a full gym left ${short.length} muscles under solid: ${short.join(", ")}`);
@@ -441,7 +553,8 @@ check("days never exceed the cap", () => {
   const gear = gearSet({});
   const used = new Set();
   const sk = skeletonFor(2, gear);
-  const days = seatAnchors(sk.days, gear, used);
+  const days = seatCompounds(sk.days, gear, used);
+  seatAccessories(days, sk.days, gear, used);
   fillDeficit(days, sk.days, { trainingLevel: "advanced" }, gear, used, 3);
   days.forEach((d) => assert.ok(d.length <= DAY_CAP, `a day held ${d.length} exercises`));
 });
@@ -450,17 +563,59 @@ check("the filler only ever picks movements the gear can perform", () => {
   const gear = new Set(["dumbbell", "bench"]);
   const used = new Set();
   const sk = skeletonFor(3, gear);
-  const days = seatAnchors(sk.days, gear, used);
+  const days = seatCompounds(sk.days, gear, used);
+  seatAccessories(days, sk.days, gear, used);
   fillDeficit(days, sk.days, {}, gear, used, 3);
   days.flat().forEach((nm) => assert.ok(resolveRealization(nm, gear),
     `${nm} cannot be performed with dumbbells and a bench`));
+});
+
+check("the filler never reaches for a compound", () => {
+  // Compounds are seated by structure and by structure alone. Left eligible to
+  // the gap-closer, a hinge day that read short on hamstrings took a second
+  // deadlift. Accessories stay eligible on purpose: barring them cost the filler
+  // 41 of its 166 movements and took a four-day intermediate week from zero
+  // muscles short to nearly two.
+  const gear = gearSet({});
+  const used = new Set();
+  const sk = skeletonFor(4, gear);
+  const days = seatCompounds(sk.days, gear, used);
+  seatAccessories(days, sk.days, gear, used);
+  const before = new Set(days.flat().map(exKey));
+  fillDeficit(days, sk.days, { trainingLevel: "advanced" }, gear, used, 3);
+  days.flat().filter((nm) => !before.has(exKey(nm))).forEach((nm) =>
+    assert.notStrictEqual(exRole(nm), "compound",
+      `the filler seated ${nm}, a second main lift rather than a gap-filler`));
+});
+
+check("no day gets more than one carry", () => {
+  const gear = gearSet({});
+  const used = new Set();
+  const sk = skeletonFor(4, gear);
+  const days = seatCompounds(sk.days, gear, used);
+  seatAccessories(days, sk.days, gear, used);
+  fillDeficit(days, sk.days, { trainingLevel: "advanced" }, gear, used, 3);
+  days.forEach((d) => {
+    const carries = d.filter((nm) => exRole(nm) === "carry");
+    assert.ok(carries.length <= 1,
+      `a day holds ${carries.length} carries: ${carries.join(", ")}`);
+    // And never two accessories for the same pattern: that produced a squat day
+    // reading Trap Bar Deadlift, Split Squat, Goblet Squat.
+    const byPat = {};
+    d.filter((nm) => exRole(nm) === "accessory").forEach((nm) => {
+      byPat[exPattern(nm)] = (byPat[exPattern(nm)] || 0) + 1;
+    });
+    Object.entries(byPat).forEach(([pt, k]) => assert.ok(k <= 1,
+      `a day holds ${k} ${pt} accessories: ${d.join(", ")}`));
+  });
 });
 
 check("no exercise is written twice in a week", () => {
   const gear = gearSet({});
   const used = new Set();
   const sk = skeletonFor(5, gear);
-  const days = seatAnchors(sk.days, gear, used);
+  const days = seatCompounds(sk.days, gear, used);
+  seatAccessories(days, sk.days, gear, used);
   fillDeficit(days, sk.days, {}, gear, used, 3);
   const flat = days.flat().map(exKey);
   assert.strictEqual(new Set(flat).size, flat.length, "a repeat slipped through");
@@ -524,23 +679,40 @@ const stubs = {
   makeWeek: (i) => ({ id: `w${i}`, label: `Week ${i + 1}`, focus: "", phaseLabel: "", days: [], diet: {} }),
   workoutIconFor: () => "sd:claw",
   _pickRange: (r) => String(r[0] + Math.floor(Math.random() * (r[1] - r[0] + 1))),
-  _repsFor: (name, cat, scheme) => String(scheme.reps[0] + Math.floor(Math.random() * (scheme.reps[1] - scheme.reps[0] + 1))),
 };
+// The rep ladder is the behaviour under test, so _pickReps and _repsFor are
+// PULLED from app.js rather than stubbed. Stubbing them is what would let the
+// ladder rot: buildWeek would keep passing while shipping 3x7 and 4x11.
+const REP_LADDER = extractLiteral(appSrc, "const REP_LADDER = [");
+const repFns = Function("REP_LADDER", "_rand", "GEN_HOLD_KW", "GEN_CRAWL_KW", `
+  ${fnSrc(appSrc, "function _pickReps(")}
+  ${fnSrc(appSrc, "function _repsFor(")}
+  return { _pickReps, _repsFor };
+`)(REP_LADDER,
+  (arr) => arr[Math.floor(Math.random() * arr.length)],
+  /plank|hollow hold|dead bug|l-sit|wall sit|\bhold\b/i,
+  /crawl|inchworm/i);
+Object.assign(stubs, repFns);
 const GEAR_BY_ID = Object.fromEntries(GEAR.map((g) => [g.id, g]));
 const deps = {
   GEAR, GEAR_BY_ID, GEN_STYLES, ANATOMY_GROUPS, EXERCISE_LIBRARY, MUSCLE_PATTERN,
-  EFFORT_LEVELS, BUILDER_SLOT_EFFORT,
+  EFFORT_LEVELS, BUILDER_SLOT_EFFORT, ROLE_RANK,
   exKey, musclesForExercise, gearSet, phaseOf, levelBands, phaseMinRank,
-  skeletonFor, seatAnchors, fillDeficit, proposalSets, resolveRealization,
-  patternReachable, coverageScore, ...stubs,
+  skeletonFor, seatCompounds, seatAccessories, fillDeficit, proposalSets,
+  resolveRealization, patternReachable, coverageScore, exRole, ...stubs,
 };
 const TRIM_FLOOR_SETS = Number((appSrc.match(/const TRIM_FLOOR_SETS = (\d+)/) || [])[1]);
+const DEEPEN_MAX_SETS = Number((appSrc.match(/const DEEPEN_MAX_SETS = (\d+)/) || [])[1]);
 const buildWeek = Function(...Object.keys(deps), `
   let _libCatByKey = null;
   const TRIM_FLOOR_SETS = ${TRIM_FLOOR_SETS};
   const TRIM_FLOOR_ANCHOR = 3;
+  const DEEPEN_MAX_SETS = ${DEEPEN_MAX_SETS};
+  const OVERSHOOT_COST = ${OVERSHOOT_COST};
+  ${fnSrc(appSrc, "function coverageGain(")}
   ${fnSrc(appSrc, "function builtWeekSets(")}
   ${fnSrc(appSrc, "function trimToBands(")}
+  ${fnSrc(appSrc, "function deepenShort(")}
   ${fnSrc(appSrc, "function libCatFor(")}
   ${fnSrc(appSrc, "function builderEffort(")}
   ${fnSrc(appSrc, "function buildWeek(")}
@@ -593,13 +765,22 @@ check("volume stays near the band instead of piling onto the big compounds", () 
       });
     }
   });
-  // 1.55x is the measured ceiling across every level and day count, and the
-  // remainder is a deliberate second-place finish: trimming all the way to
+  // The remainder is a deliberate second-place finish: trimming all the way to
   // plenty is only possible by shaving compounds that also hold other muscles
   // at solid, and breadth-to-solid outranks depth-to-plenty. So the trim stops
-  // when the next shave would open a gap. The worst case is a beginner's
-  // one-day full-body week, where a squat and a lunge alone clear the band.
-  assert.ok(worst <= 1.55,
+  // when the next shave would open a gap.
+  //
+  // The ceiling was 1.55x before the day gained its structural tiers, and it is
+  // 1.75x now. Measured over 900 weeks in exactly this configuration the worst
+  // case is 1.67x — a beginner's quads at 10 sets against a plenty of 6 — and
+  // the cause is structural rather than a trim failure: the squat day now seats
+  // a compound AND an accessory that both load quads at full weight, the hinge
+  // and push compounds graze quads at half weight, and every one of those
+  // exercises is already sitting on its trim floor. Nothing can be shaved.
+  // Raising this number is only honest because the shortfall side is measured
+  // too and did not move: beginner four-day weeks still finish with nothing
+  // under solid.
+  assert.ok(worst <= 1.75,
     `a muscle ran to ${worst.toFixed(2)}x its plenty band (${worstAt}). ` +
     `Untrimmed this reached 1.9x, and a trim that ignored gaps reached 1.0x ` +
     `while opening twelve of them.`);
@@ -616,7 +797,8 @@ check("trimming never opens a gap it did not find", () => {
     const gear = gearSet(client);
     const used = new Set();
     const sk = skeletonFor(4, gear);
-    const days = seatAnchors(sk.days, gear, used);
+    const days = seatCompounds(sk.days, gear, used);
+    seatAccessories(days, sk.days, gear, used);
     const beforeShort = fillDeficit(days, sk.days, client, gear, used, 4).short.length;
     const { report } = buildWeek(client, { days: 4, styleName: "Powerbuilding" });
     assert.ok(report.short.length <= beforeShort + 3,
@@ -712,23 +894,152 @@ check("two rolls of the same request differ, in the EXERCISES", () => {
   });
 });
 
-check("app.js itself still picks among near-best, not the first strict maximum", () => {
+check("app.js itself still varies its picks rather than taking a strict maximum", () => {
   // Everything else in this file exercises COPIES of the builder, which is the
   // folder convention — but it means an app.js-only regression cannot be seen.
   // That is precisely how the deterministic-roll bug shipped: the picker took
   // the first strict maximum, every roll returned the same movements with new
   // sets and reps, and a green suite said nothing. So assert against the real
-  // source for the one property the copies cannot vouch for.
+  // source for the properties the copies cannot vouch for.
   assert.ok(/function pickNearBest\(/.test(appSrc),
-    "app.js has no pickNearBest — rolling again cannot vary the exercises");
-  ["function bestForPattern(", "function fillDeficit("].forEach((decl) => {
-    const at = appSrc.indexOf(decl);
-    assert.ok(at > 0, `app.js is missing ${decl}`);
-    const body = appSrc.slice(at, at + 2200);
-    assert.ok(/pickNearBest\(/.test(body), `${decl} no longer calls pickNearBest`);
-    assert.ok(!/bestScore|bestGain/.test(body),
-      `${decl} is back to a first-strict-maximum pick, so every roll is identical`);
+    "app.js has no pickNearBest — the gap filler cannot vary");
+  const fill = appSrc.slice(appSrc.indexOf("function fillDeficit("), appSrc.indexOf("function fillDeficit(") + 2600);
+  assert.ok(/pickNearBest\(/.test(fill), "fillDeficit no longer calls pickNearBest");
+  assert.ok(!/bestScore|bestGain/.test(fill),
+    "fillDeficit is back to a first-strict-maximum pick, so every roll is identical");
+  // Openers are chosen EVENLY among role-eligible movements — no ranking at all,
+  // because ranking by coverageScore is what put a Leg Press at the head of
+  // every squat day.
+  const bfp = appSrc.slice(appSrc.indexOf("function bestForPattern("), appSrc.indexOf("function seatCompounds("));
+  assert.ok(/Math\.random\(\)/.test(bfp), "bestForPattern no longer picks at random");
+  assert.ok(!/coverageScore/.test(bfp),
+    "bestForPattern is ranking by coverageScore again, which measures demo-DB tagging");
+});
+
+check("app.js seats accessories before it fills gaps", () => {
+  // The order is the fix. Filling first means quads are already past their band
+  // when the accessory tier runs, and every lunge scores as overshoot.
+  const body = appSrc.slice(appSrc.indexOf("const sk = skeletonFor(days, gear);"));
+  const acc = body.indexOf("seatAccessories(");
+  const fill = body.indexOf("fillDeficit(");
+  assert.ok(acc > 0, "buildWeek never seats accessories");
+  assert.ok(fill > 0, "buildWeek never fills the deficit");
+  assert.ok(acc < fill, "buildWeek fills gaps BEFORE seating accessories, so lunges price as overshoot");
+});
+
+// ---- the rep ladder -------------------------------------------------------
+check("the ladder is exactly the one Nathan asked for", () => {
+  assert.deepStrictEqual(REP_LADDER, [3, 5, 6, 8, 10, 12, 14, 15, 18, 20]);
+});
+
+check("every scheme range in every style contains a rung", () => {
+  // If one did not, _pickReps would fall back to the nearest rung and silently
+  // write reps outside the style's own band.
+  GEN_STYLES.forEach((s) => ["primary", "acc", "core"].forEach((k) => {
+    const [lo, hi] = s[k].reps;
+    assert.ok(REP_LADDER.some((r) => r >= lo && r <= hi),
+      `${s.name}.${k} spans ${lo}-${hi}, which holds no ladder value`);
+  }));
+});
+
+check("a built week never writes a rep count off the ladder", () => {
+  // Measured before the fix: 32% of rep values were 7, 9, 11 or 13.
+  const ladder = new Set(REP_LADDER.map(String));
+  GEN_STYLES.forEach((style) => {
+    for (let roll = 0; roll < 4; roll++) {
+      const { week } = buildWeek({ trainingLevel: "intermediate" }, { days: 4, styleName: style.name });
+      week.days.flatMap((d) => d.exercises).forEach((ex) => {
+        const r = String(ex.reps);
+        if (!/^\d+$/.test(r)) return;   // carries and holds read as distance or time
+        assert.ok(ladder.has(r),
+          `${style.name} wrote ${ex.name} at ${ex.sets}x${r}, which is off the ladder`);
+      });
+    }
   });
+});
+
+// ---- the energy formula ---------------------------------------------------
+check("every day reads compound, accessory, isolation, carry — in that order", () => {
+  // Nathan's formula: heavy compound lifts, accessories to them at moderate
+  // weight, heavier and lighter isolation at the end, then any carry work.
+  [3, 4, 5].forEach((days) => GEN_STYLES.slice(0, 3).forEach((style) => {
+    const { week } = buildWeek({ trainingLevel: "intermediate" }, { days, styleName: style.name });
+    week.days.forEach((d) => {
+      const ranks = d.exercises.map((ex) => ROLE_RANK[daySlot(ex.name, d.name)] ?? 2);
+      for (let i = 1; i < ranks.length; i++) {
+        if (ranks[i - 1] <= ranks[i]) continue;
+        assert.fail(
+          `${style.name} ${days}d, day "${d.name}": ${d.exercises[i].name} ` +
+          `(${exRole(d.exercises[i].name)}) came after ${d.exercises[i - 1].name} ` +
+          `(${exRole(d.exercises[i - 1].name)})\n        ` +
+          d.exercises.map((e) => `${e.name} [${exRole(e.name)}]`).join(" -> "));
+      }
+    });
+  }));
+});
+
+check("a carry is always the last thing in its day", () => {
+  for (let roll = 0; roll < 10; roll++) {
+    const { week } = buildWeek({ trainingLevel: "advanced" }, { days: 4, styleName: "Powerbuilding" });
+    week.days.forEach((d) => d.exercises.forEach((ex, i) => {
+      if (exRole(ex.name) !== "carry") return;
+      assert.strictEqual(i, d.exercises.length - 1,
+        `${ex.name} sits at slot ${i + 1} of ${d.exercises.length} in "${d.name}"`);
+    }));
+  }
+});
+
+check("the day opens hard and the isolation work runs heavier then lighter", () => {
+  const { week } = buildWeek({ trainingLevel: "intermediate" }, { days: 4, styleName: "Powerbuilding" });
+  week.days.forEach((d) => {
+    assert.strictEqual(d.exercises[0].effort, "hard",
+      `"${d.name}" opens on ${d.exercises[0].name} at ${d.exercises[0].effort}`);
+    const iso = d.exercises.filter((ex) => daySlot(ex.name, d.name) === "isolation");
+    if (iso.length >= 2) {
+      assert.strictEqual(iso[0].effort, "moderate",
+        `the first isolation (${iso[0].name}) should be the heavier one`);
+      iso.slice(1).forEach((ex) => assert.strictEqual(ex.effort, "light",
+        `${ex.name} follows the heavy isolation and should be light`));
+    }
+  });
+});
+
+check("the squat day holds a lunge or a split squat, and no crawl", () => {
+  // The bug as Nathan reported it: "it seems like we aren't getting any lunges
+  // or split squats in the squat day. It keeps adding crawls in." Measured
+  // before the fix over 40 rolls: Bulgarian Split Squat and Walking Lunge each
+  // appeared zero times, crawls appeared on 19% of squat days.
+  // Rate rather than certainty, and the rate is MEASURED, not wished for. The
+  // squat day gets one accessory, drawn evenly from the ten squat accessories
+  // the gear can reach, six of which are lunge-family — so about six days in ten
+  // is the designed behaviour, not a shortfall. Measured over 480 squat days:
+  // 58%. Measured over 420 whole weeks, 78% contain unilateral leg work
+  // somewhere. Both floors sit below the measurement with room for the roll.
+  //
+  // Forcing this to 100% would mean ranking the accessory pick, and ranking is
+  // exactly what put a Leg Press at the head of every squat day to begin with.
+  const SPLIT_FAMILY = /lunge|split squat|step-up|cossack|single-leg/i;
+  let withSplit = 0, squatDays = 0, weeksWithUni = 0;
+  const ROLLS = 60;
+  for (let roll = 0; roll < ROLLS; roll++) {
+    const { week } = buildWeek({ trainingLevel: "intermediate" }, { days: 4, styleName: "Powerbuilding" });
+    if (week.days.flatMap((d) => d.exercises).some((e) => SPLIT_FAMILY.test(e.name))) weeksWithUni++;
+    week.days.filter((d) => /Squat/.test(d.name)).forEach((d) => {
+      squatDays++;
+      const names = d.exercises.map((e) => e.name);
+      if (names.some((nm) => SPLIT_FAMILY.test(nm))) withSplit++;
+      names.forEach((nm) => assert.ok(!/crawl|inchworm/i.test(nm),
+        `a crawl is back on the squat day: ${names.join(", ")}`));
+    });
+  }
+  assert.ok(squatDays, "no squat day was built at all");
+  assert.ok(withSplit / squatDays >= 0.45,
+    `only ${withSplit}/${squatDays} squat days held a lunge or split squat. ` +
+    `Before the accessory tier existed this was 2 in 25.`);
+  assert.ok(weeksWithUni / ROLLS >= 0.65,
+    `only ${weeksWithUni}/${ROLLS} weeks contained any unilateral leg work`);
+  console.log(`      ${withSplit}/${squatDays} squat days held a lunge or split squat; ` +
+    `${weeksWithUni}/${ROLLS} weeks held unilateral leg work`);
 });
 
 check("a one-day week still covers something and stays inside the cap", () => {

@@ -9439,6 +9439,23 @@
 
   function _rand(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
   function _pickRange(r) { return String(r[0] + Math.floor(Math.random() * (r[1] - r[0] + 1))); }
+  // Starting rep counts a coach would actually write. A scheme range is a band,
+  // not a menu, and picking any integer inside it produced 3x7, 4x9, 3x11, 5x13 —
+  // numbers nobody programs on purpose, which made a generated week read as
+  // machine output. Reps land on this ladder instead.
+  //
+  // Every one of the nine styles' twenty-seven ranges contains at least one
+  // ladder value, so no scheme needed re-tuning; the fallback is only there so a
+  // future range cannot silently produce nothing.
+  const REP_LADDER = [3, 5, 6, 8, 10, 12, 14, 15, 18, 20];
+  function _pickReps(r) {
+    const inside = REP_LADDER.filter((n) => n >= r[0] && n <= r[1]);
+    if (inside.length) return String(_rand(inside));
+    // No rung inside the band: take the nearest rung to its middle.
+    const mid = (r[0] + r[1]) / 2;
+    return String(REP_LADDER.reduce((a, b) =>
+      Math.abs(b - mid) < Math.abs(a - mid) ? b : a));
+  }
   function _shuffle(arr) { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
   function _exercisesForCats(cats) {
     const out = [];
@@ -9476,7 +9493,7 @@
     if (cat === "Cardio")            return _rand(["30s","45s","60s","3 min","5 min","200m","400m","500m","15 cal","20 cal","10","12","15"]);
     if (GEN_HOLD_KW.test(name))      return _rand(["20s","30s","40s","45s","60s"]);
     if (GEN_CRAWL_KW.test(name))     return _rand(["30s","40 ft","50 ft","20 yd"]);
-    return _pickRange(scheme.reps);  // numeric rep count
+    return _pickReps(scheme.reps);   // numeric rep count, on the ladder
   }
   function _maybeFinisher(ex, name) {
     if (!GEN_ISO_KW.test(name) || Math.random() >= 0.22) return;
@@ -10951,10 +10968,27 @@
   // are a coach's deliberate choice about an athlete's readiness for them, not
   // a gap to be auto-filled. Remove it here to let the builder program plyo.
   const BUILDER_SKIP_CATS = new Set(["Speed/Agility", "Mobility & Stretching", "Cardio", "Plyometrics"]);
-  // Carries train real things and stay available as fills, but a carry is a
-  // finisher, not the opener of a training day. Left eligible to anchor and a
-  // full gym opened its pull day on a Farmer's Carry.
-  const ANCHOR_SKIP_CATS = new Set(["Carries"]);
+
+  // What job a movement does in a day: compound / accessory / isolation / carry,
+  // or "skip" for work the builder should not program. Stated in
+  // exercise-roles.js — see that file's header for why this cannot be derived
+  // from either the muscle map or the library category.
+  //
+  // Anything unlisted is treated as an isolation, which is the safe default: it
+  // can still be picked to close a gap, but it can never open a day.
+  function exRole(name) {
+    return (window.EXERCISE_ROLES || {})[exKey(name)] || "isolation";
+  }
+  // The pattern a compound or accessory PRIMARILY belongs to — see the second
+  // map in exercise-roles.js for why this is stated rather than derived.
+  function exPattern(name) {
+    return (window.EXERCISE_PATTERN || {})[exKey(name)] || "";
+  }
+  // The order a day is written in, and the whole point of the tiers: heavy
+  // compounds, then the accessories that support them at moderate load, then
+  // isolation work heavier-first, then any carry. Nathan's formula, made
+  // structural rather than left to whatever closed the biggest gap.
+  const ROLE_RANK = { compound: 0, accessory: 1, isolation: 2, carry: 3 };
   let _builderPool = null;
   function builderPool() {
     if (_builderPool) return _builderPool;
@@ -10966,8 +11000,12 @@
       (c.ex || []).forEach((nm) => { const k = exKey(nm); if (k && !out.has(k)) out.set(k, nm); });
     });
     // A curated anchor can still belong to a skipped category, so filter the
-    // assembled list rather than trusting the source it came from.
-    _builderPool = [...out.values()].filter((nm) => !BUILDER_SKIP_CATS.has(libCatFor(nm)));
+    // assembled list rather than trusting the source it came from. Roles can
+    // also veto a movement the categories let through: the crawls are filed
+    // under Core, and the gap-filler kept seating them on leg days because they
+    // pay several small muscles at once.
+    _builderPool = [...out.values()].filter((nm) =>
+      !BUILDER_SKIP_CATS.has(libCatFor(nm)) && exRole(nm) !== "skip");
     return _builderPool;
   }
   const MUSCLE_PATTERN = Object.fromEntries(ANATOMY_GROUPS.map((g) => [g.id, g.pattern]));
@@ -11020,25 +11058,12 @@
   // Nathan's own sketch ran seven exercises a day. The athlete-added cap is 8,
   // so seven leaves them room to add one of their own.
   const DAY_CAP = 7;
-  // The best movement for a pattern that this gear allows and this week has not
-  // already used. Curated names win a score tie because builderPool() puts them
-  // first and the scan keeps the first strict maximum.
-  // Curated anchors, then curated accessories, then everything else. Score
-  // alone is not enough to choose an opener: coverageScore rewards breadth, and
-  // the broadest tag lists belong to carries and odd movements, so a full gym
-  // opened its squat day on a Yoke Walk and its push day on a Pullover. The
-  // tiers are what "preferring the curated anchors" actually means.
-  let _anchorTiers = null;
-  function anchorTiers() {
-    if (_anchorTiers) return _anchorTiers;
-    const t1 = new Map(), t2 = new Map();
-    ANATOMY_GROUPS.forEach((g) => {
-      (g.anchors || []).forEach((nm) => { const k = exKey(nm); if (k && !t1.has(k)) t1.set(k, nm); });
-      (g.accessories || []).forEach((nm) => { const k = exKey(nm); if (k && !t2.has(k)) t2.set(k, nm); });
-    });
-    _anchorTiers = [[...t1.values()], [...t2.values()]];
-    return _anchorTiers;
-  }
+  // Opener choice used to run through tiers assembled from ANATOMY_GROUPS
+  // anchors and accessories. Those lists say "the best movements for THIS
+  // MUSCLE" — Lateral Raise, Plank and Tricep Pushdown are all anchors — so they
+  // were never a statement about which lift opens a day. exercise-roles.js says
+  // that directly now, and the tiers are gone with the score ranking they served.
+  //
   // "Roll again" has to change the WEEK, not just the numbers on it.
   //
   // Both pickers below used to take the first strict maximum, which is fully
@@ -11061,36 +11086,109 @@
     return near[Math.floor(Math.random() * near.length)].nm;
   }
 
-  function bestForPattern(pattern, gear, used) {
-    const tiers = [...anchorTiers(), builderPool()];
-    for (const tier of tiers) {
-      const scored = [];
-      tier.forEach((nm) => {
-        if (used.has(exKey(nm))) return;
-        const cat = libCatFor(nm);
-        if (BUILDER_SKIP_CATS.has(cat) || ANCHOR_SKIP_CATS.has(cat)) return;
-        if (!resolveRealization(nm, gear)) return;
-        if (!servesPattern(nm, pattern)) return;
-        scored.push({ nm, s: coverageScore(nm) });
-      });
-      const pick = pickNearBest(scored);
-      if (pick) return pick;
-    }
-    return null;
+  // The movement that opens a pattern, or supports it, chosen by ROLE.
+  //
+  // This used to rank by coverageScore and take the near-best. That sounds right
+  // and is not: coverageScore sums a movement's muscle-tag weights out of the
+  // vendored demo database, so what it really measures is how thoroughly that
+  // database tagged a lift. Back Squat is tagged with one muscle and scores 1.0;
+  // Goblet Squat is tagged with four and scores 4.0. Measured over forty rolls,
+  // every single squat day opened on a Leg Press and a Back Squat never appeared.
+  //
+  // Role fixes it at the source. Everything surviving the filter is a legitimate
+  // opener for this pattern on this gear, so there is nothing left to rank and
+  // the pick is even — which is also what makes rolling again produce a
+  // different day rather than the same day with new numbers.
+  // Matched on the movement's DECLARED pattern, not on whether it happens to
+  // touch a muscle the pattern owns. servesPattern is still the right question
+  // for the gap filler deciding which day a curl belongs on; it is the wrong one
+  // for deciding what a day is built around.
+  function candidatesFor(pattern, gear, used, role) {
+    return builderPool().filter((nm) =>
+      !used.has(exKey(nm))
+      && exRole(nm) === role
+      && exPattern(nm) === pattern
+      && resolveRealization(nm, gear));
   }
-  // One anchor per pattern the day owns, in pattern order so the biggest
-  // movement opens the day.
-  function seatAnchors(skeletonDays, gear, used) {
+  function bestForPattern(pattern, gear, used, role = "compound") {
+    // A gym without a barbell has no compound at all for some patterns, so an
+    // opener falls through to an accessory rather than leaving the day headless:
+    // a dumbbell-only squat day opens on a Goblet Squat, not on nothing.
+    const tiers = role === "compound" ? ["compound", "accessory"] : [role];
+    for (const r of tiers) {
+      const c = candidatesFor(pattern, gear, used, r);
+      if (c.length) return c[Math.floor(Math.random() * c.length)];
+    }
+    // An ACCESSORY that cannot be found is simply not seated — the slot goes
+    // back to the gap filler, which is a better use of it than forcing a curl
+    // into a tier that means "supports the day's main lift".
+    if (role !== "compound") return null;
+    // An OPENER that cannot be found is a hole in the week, so the last resort
+    // drops to the loose test: anything that trains this pattern at all. Core
+    // reaches here by design — it has no compounds — as does a bands-only gym.
+    const loose = builderPool().filter((nm) =>
+      !used.has(exKey(nm))
+      && exRole(nm) !== "carry"
+      && resolveRealization(nm, gear)
+      && servesPattern(nm, pattern));
+    return loose.length ? loose[Math.floor(Math.random() * loose.length)] : null;
+  }
+  // Tier one: the heavy compound the day is built around, one per pattern the
+  // day owns, in pattern order.
+  function seatCompounds(skeletonDays, gear, used, slots) {
     return skeletonDays.map((patterns) => {
       const day = [];
       patterns.forEach((p) => {
         if (day.length >= DAY_CAP) return;
-        const nm = bestForPattern(p, gear, used);
+        const nm = bestForPattern(p, gear, used, "compound");
         if (!nm) return;
         used.add(exKey(nm));
+        slots.set(exKey(nm), "compound");
         day.push(nm);
       });
       return day;
+    });
+  }
+  // Tier two: accessories to the day's own compound, at moderate load.
+  //
+  // This is the tier that did not exist, and its absence is why a squat day
+  // never held a lunge. Building ran straight from the compound to gap-closing,
+  // and by then the compound had already carried quads and glutes past their
+  // band — so every lunge and split squat priced as pure overshoot and scored
+  // negative. The only movements still scoring were the small and the odd: calf
+  // raises, clamshells, Copenhagen planks, crawls.
+  //
+  // Accessories are therefore seated BEFORE the deficit is consulted. "Supports
+  // the day's main lift" is a structural claim about the day, not a shortfall to
+  // be closed, and a filler that only knows about shortfall can never make it.
+  // Chosen evenly, for the same reason the opener is: every accessory that
+  // serves the day's pattern is a legitimate answer, so there is nothing to
+  // rank. Ranking them by coverage was tried and it quietly reinstated the very
+  // bias the roles were written to remove — coverage is computed off the demo
+  // database's muscle tags, Goblet Squat carries four of them and a Lunge
+  // carries one, so the lunge lost again. Measured: two squat days in
+  // twenty-five held a lunge or a split squat. Even odds puts it at six in ten,
+  // and the gap filler adds more on top.
+  //
+  // ONE per day, not one per pattern. A day that owns Squat and Hinge wants a
+  // squat, an RDL and one leg accessory — not two accessories on top of two main
+  // lifts, which is four structural slots out of seven and reads as a leg
+  // marathon. Measured, per-day also covers better than per-pattern everywhere
+  // it differs, and on a four-day split (where every day owns one pattern) the
+  // two rules are identical. The pattern that gets the accessory is drawn at
+  // random, so across a week both halves of a two-pattern day get served.
+  function seatAccessories(days, dayPatterns, gear, used, slots) {
+    days.forEach((day, i) => {
+      const patterns = dayPatterns[i] || [];
+      if (!patterns.length || day.length >= DAY_CAP) return;
+      for (const p of _shuffle(patterns)) {
+        const nm = bestForPattern(p, gear, used, "accessory");
+        if (!nm) continue;   // this pattern has none left; try the day's other
+        used.add(exKey(nm));
+        slots.set(exKey(nm), "accessory");
+        day.push(nm);
+        return;
+      }
     });
   }
   // Sets per muscle for a week that is still just lists of names.
@@ -11115,23 +11213,45 @@
   // full of gaps. 0.5 keeps a beginner's glutes near their band while still
   // filling the small groups.
   const OVERSHOOT_COST = 0.5;
+  // What a movement is worth to coverage right now: the shortfall it closes,
+  // minus what it dumps on muscles already at plenty. Shared by the accessory
+  // tier and the gap filler so the two price a movement identically.
+  function coverageGain(nm, sets, bands, setsPerEx) {
+    return musclesForExercise(nm).reduce((t, h) => {
+      const have = sets[h.id] || 0;
+      const add = setsPerEx * h.weight;
+      const closed = Math.min(Math.max(0, bands.solid - have), add);
+      const over = Math.max(0, (have + add) - bands.plenty);
+      return t + closed - over * OVERSHOOT_COST;
+    }, 0);
+  }
   // Add whichever reachable movement closes the most shortfall, until every
   // muscle reaches solid or every day is full. Mutates `days`.
-  function fillDeficit(days, dayPatterns, client, gear, used, setsPerEx) {
+  function fillDeficit(days, dayPatterns, client, gear, used, setsPerEx, slots) {
     const bands = levelBands(client);
+    if (!slots) slots = new Map();
     const room = () => days.some((d) => d.length < DAY_CAP);
     for (let guard = 0; guard < 200 && room(); guard++) {
       const sets = proposalSets(days, setsPerEx);
-      const deficit = {};
-      let total = 0;
-      ANATOMY_GROUPS.forEach((g) => {
-        const d = Math.max(0, bands.solid - (sets[g.id] || 0));
-        deficit[g.id] = d; total += d;
-      });
+      const total = ANATOMY_GROUPS.reduce((t, g) =>
+        t + Math.max(0, bands.solid - (sets[g.id] || 0)), 0);
       if (!total) break;
       const scored = [];
       builderPool().forEach((nm) => {
         if (used.has(exKey(nm))) return;
+        // Compounds are seated by structure and by structure alone: left
+        // eligible here, a hinge day reading short on hamstrings takes a second
+        // deadlift, which is not a gap-filler, it is a second main lift.
+        //
+        // Accessories stay eligible, and that distinction is load-bearing.
+        // Barring them too cost the filler 41 of its 166 movements — a Leg Press
+        // closing a quad gap or a Curtsy Lunge closing a glute gap is exactly
+        // the right answer — and measured over twenty rolls it took a
+        // four-day intermediate week from zero muscles short to 1.9, and a
+        // three-day week from 0.5 to 6.8. The ordering pass puts whatever the
+        // filler adds into its proper band anyway, so admitting an accessory
+        // here cannot disturb the shape of the day.
+        if (exRole(nm) === "compound") return;
         if (!resolveRealization(nm, gear)) return;
         // Deficit closed, MINUS what the same movement dumps on muscles that
         // are already full. Counting only the gain is what let a beginner's
@@ -11140,12 +11260,7 @@
         // buying glute volume nobody asked for. Overshoot is a cost, so a
         // movement that closes a little and overloads a lot loses, and once
         // nothing scores positive the filler stops rather than adding junk.
-        const gain = musclesForExercise(nm).reduce((t, h) => {
-          const add = setsPerEx * h.weight;
-          const closed = Math.min(deficit[h.id] || 0, add);
-          const over = Math.max(0, ((sets[h.id] || 0) + add) - bands.plenty);
-          return t + closed - over * OVERSHOOT_COST;
-        }, 0);
+        const gain = coverageGain(nm, sets, bands, setsPerEx);
         if (gain > 0) scored.push({ nm, s: gain });
       });
       // Same near-best pick as the anchors: the filler still refuses anything
@@ -11157,13 +11272,46 @@
       // week stays even without a deadlift landing on the push day. If no day's
       // patterns fit, the emptiest day takes it: better placed oddly than
       // dropped, and the coach can move it.
-      const open = days.filter((d) => d.length < DAY_CAP);
-      if (!open.length) break;
+      // Two limits on what a day may hold twice.
+      //
+      // Carries: one. They close real forearm, trap and core shortfall, so
+      // banning them costs coverage, but the filler used to seat several.
+      //
+      // Accessories of the SAME pattern: also one. The structural tier already
+      // seated the day's accessory, and the filler would add another because the
+      // demo database tags a Goblet Squat with four muscles and so it always
+      // looks like a bargain. That produced a squat day reading Trap Bar
+      // Deadlift, Split Squat, Goblet Squat — three squats, redundant to any
+      // coach, and enough on its own to put a beginner's quads at 9.5 sets
+      // against a plenty of 6 with everything already at its trim floor. An
+      // accessory for a DIFFERENT pattern is still allowed: that is the filler
+      // legitimately borrowing a day with room.
+      const role = exRole(best);
+      const isCarry = role === "carry";
+      const pat = exPattern(best);
+      const open = days.filter((d) => d.length < DAY_CAP
+        && (!isCarry || d.every((nm) => exRole(nm) !== "carry"))
+        && (role !== "accessory"
+          || d.every((nm) => !(exRole(nm) === "accessory" && exPattern(nm) === pat))));
+      // Spent either way, so a carry that fits nowhere cannot be re-picked
+      // forever once every day already has one.
+      used.add(exKey(best));
+      if (!open.length) continue;
       const fits = open.filter((d) =>
         (dayPatterns[days.indexOf(d)] || []).some((p) => servesPattern(best, p)));
       const target = (fits.length ? fits : open).reduce((a, b) => (b.length < a.length ? b : a));
       target.push(best);
-      used.add(exKey(best));
+      // A slot describes the movement's job ON THIS DAY, not its intrinsic role.
+      //
+      // An accessory only counts as one where it actually supports the day's main
+      // lift — same pattern. The filler is also allowed to park a movement on any
+      // day with room, and when it does, that movement is a fill however it is
+      // classified elsewhere. Ranking those by their intrinsic role sorted them
+      // to the third slot and made them read as part of the day's structure: a
+      // real week came back with an Arnold Press directly under a Romanian
+      // Deadlift on the hinge day, and a Lateral Lunge third on the push day.
+      const onPattern = (dayPatterns[days.indexOf(target)] || []).includes(pat);
+      slots.set(exKey(best), role === "accessory" && !onPattern ? "isolation" : role);
     }
     const finalSets = proposalSets(days, setsPerEx);
     return {
@@ -11176,7 +11324,16 @@
   // counts only Hard and up, so a generated week written below that minimum
   // would grade as completely empty the moment its map was opened. The builder
   // must never produce a program its own grader rejects.
-  const BUILDER_SLOT_EFFORT = { anchor: "hard", fill: "moderate", iso: "light" };
+  // Isolation splits in two because Nathan's formula asks for "both heavier and
+  // lighter isolation work at the end": the first isolation of a day is the
+  // heavier one, everything after it is lighter.
+  const BUILDER_SLOT_EFFORT = {
+    compound: "hard",
+    accessory: "moderate",
+    "isolation-heavy": "moderate",
+    "isolation-light": "light",
+    carry: "moderate",
+  };
   function builderEffort(slot, phase) {
     const want = BUILDER_SLOT_EFFORT[slot] || "moderate";
     if (!phase) return want;
@@ -11247,6 +11404,50 @@
     }
   }
 
+  // Breadth ran out; buy depth instead.
+  //
+  // The structural tiers cost the week eight slots that used to belong to the
+  // gap filler — one compound and one accessory for every pattern every day
+  // owns — and they are spent on muscles the day is already built around. So a
+  // finished week now runs to the seven-exercise cap with small groups still
+  // under solid: measured over twenty rolls, a four-day intermediate week went
+  // from nothing short to 2.3 muscles short, mostly abductors, adductors,
+  // obliques and calves.
+  //
+  // Slots are the scarce thing, not sets. A fourth set of hip abduction closes
+  // an abductor gap that no eighth exercise could be squeezed in for, and
+  // "three sets became four" is what a coach would do here anyway.
+  //
+  // Priced on exactly the economics the gap filler uses — shortfall closed
+  // against surplus spilled, at OVERSHOOT_COST — rather than on a flat refusal
+  // to pass plenty. The flat rule was tried first and it barely moved: leg days
+  // are glute-saturated, so every abductor and adductor movement in the week was
+  // blocked by a muscle it only grazes, which is precisely the shortfall that
+  // needed closing.
+  //
+  // A strict maximum is right here where it would be wrong in the pickers. This
+  // is a deterministic repair pass over a week whose exercises are already
+  // chosen; there is no variety to preserve, only the best next set to buy.
+  const DEEPEN_MAX_SETS = 6;
+  function deepenShort(week, bands) {
+    const all = week.days.flatMap((d) => d.exercises);
+    if (!all.length) return;
+    for (let guard = 0; guard < 300; guard++) {
+      const sets = builtWeekSets(week);
+      // One more set is one more `h.weight` per muscle the movement pays, so
+      // the gain is coverageGain at a setsPerEx of exactly 1. The most targeted
+      // movement wins on its own merits: it spills the least.
+      let best = null, bestGain = 0;
+      all.forEach((ex) => {
+        if ((Number(ex.sets) || 0) >= DEEPEN_MAX_SETS) return;
+        const gain = coverageGain(ex.name, sets, bands, 1);
+        if (gain > bestGain) { bestGain = gain; best = ex; }
+      });
+      if (!best) return;   // no set left that pays for itself
+      best.sets = String(Number(best.sets) + 1);
+    }
+  }
+
   // The library category a name belongs to, so _repsFor() can hand a carry a
   // distance and a cardio piece a duration instead of a rep count.
   let _libCatByKey = null;
@@ -11275,12 +11476,15 @@
 
     const sk = skeletonFor(days, gear);
     const used = new Set();
-    const dayNames = seatAnchors(sk.days, gear, used);
-    // Captured BEFORE filling: seatAnchors can seat fewer anchors than the day
-    // has patterns when the gear cannot reach one, so the pattern count is not
-    // the anchor count and using it would mislabel a fill as an anchor.
-    const anchorCounts = dayNames.map((d) => d.length);
-    const { short } = fillDeficit(dayNames, sk.days, client, gear, used, setsPerEx);
+    // Which job each movement was seated to do. Keyed by exKey, which is safe
+    // because `used` already guarantees a name appears at most once in a week.
+    // A map rather than the old positional anchor count: the day is assembled in
+    // three passes now, so position no longer tells you what a slot is.
+    const slots = new Map();
+    const dayNames = seatCompounds(sk.days, gear, used, slots);
+    seatAccessories(dayNames, sk.days, gear, used, slots);
+    const { short } = fillDeficit(dayNames, sk.days, client, gear, used, setsPerEx, slots);
+    const slotOf = (nm) => slots.get(exKey(nm)) || "isolation";
 
     // Depth: leftover headroom adds SETS to the anchors, never new exercises,
     // and stops at plenty. Without that ceiling an unreachable pattern would
@@ -11289,7 +11493,7 @@
     const extra = {};
     if (!short.length) {
       const sets = proposalSets(dayNames, setsPerEx);
-      dayNames.forEach((names, i) => names.slice(0, anchorCounts[i]).forEach((nm) => {
+      dayNames.forEach((names) => names.filter((nm) => slotOf(nm) === "compound").forEach((nm) => {
         const hits = musclesForExercise(nm);
         if (!hits.length) return;
         const headroom = Math.min(...hits.map((h) =>
@@ -11303,20 +11507,32 @@
     const anchorIds = new Set();
     week.days = dayNames.map((names, i) => {
       const dayName = sk.days[i].join(" + ") || "Full Body";
+      // The written order IS the formula: heavy compounds, then the accessories
+      // that support them, then isolation, then any carry. Sorted rather than
+      // relied upon, because the deficit filler appends in whatever order closed
+      // the biggest gap and a carry could otherwise land in the second slot.
+      // A stable sort, so movements inside a tier keep the order they were
+      // seated in and a day's two compounds stay in pattern order.
+      const ordered = [...names].sort((a, b) =>
+        (ROLE_RANK[slotOf(a)] ?? 2) - (ROLE_RANK[slotOf(b)] ?? 2));
+      let isoSeen = 0;
       return {
         id: uid(),
         name: dayName,
         icon: workoutIconFor(dayName),
-        exercises: names.map((nm, j) => {
-          const isAnchor = j < anchorCounts[i];
-          const primaryId = (musclesForExercise(nm)[0] || {}).id;
-          const slot = isAnchor ? "anchor"
-            : (MUSCLE_PATTERN[primaryId] === "Isolation" || MUSCLE_PATTERN[primaryId] === "Core"
-              ? "iso" : "fill");
-          const scheme = isAnchor ? style.primary : (slot === "iso" ? style.core : style.acc);
+        exercises: ordered.map((nm) => {
+          const role = slotOf(nm);
+          // The first isolation of the day is the heavier one, the rest are
+          // lighter — "both heavier and lighter isolation work at the end".
+          const slot = role === "isolation"
+            ? (isoSeen++ === 0 ? "isolation-heavy" : "isolation-light")
+            : role;
+          const scheme = role === "compound" ? style.primary
+            : (slot === "isolation-light" || role === "carry") ? style.core
+            : style.acc;
           const real = resolveRealization(nm, gear);
           const id = uid();
-          if (isAnchor) anchorIds.add(id);
+          if (role === "compound") anchorIds.add(id);
           return {
             id,
             name: nm,
@@ -11331,9 +11547,11 @@
       };
     });
 
-    // Shave anything that ran past the band. Has to happen here, after the
-    // schemes have turned names into set counts.
+    // Shave anything that ran past the band, then buy back what the structural
+    // tiers cost in slots by deepening what is still short. Both have to happen
+    // here, after the schemes have turned names into set counts.
     trimToBands(week, bands, anchorIds);
+    deepenShort(week, bands);
 
     // What is short is read off the FINISHED week, not off the proposal.
     // fillDeficit's answer was true of a week where every exercise carried the
