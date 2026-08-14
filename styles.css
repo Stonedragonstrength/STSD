@@ -16100,3 +16100,53 @@ input.credit-cap:disabled { opacity: 0.4; }
 .build-athlete:hover { border-color: var(--primary); background: var(--surface-3); }
 .build-athlete-name { font-weight: 700; font-size: 0.95rem; }
 .build-athlete-sub { font-size: 0.78rem; color: var(--text-soft); }
+
+/* ============ The roster training hub ============
+   Everything that decides how someone is programmed, on the card itself, so
+   setting up a roster is not twenty-eight profile visits. Replaces the
+   progress readout rather than sitting beside it. */
+.roster-modes { display: flex; gap: 0.3rem; margin-bottom: 0.6rem; }
+.roster-mode-tab {
+  font: inherit; font-size: 0.8rem; font-weight: 700; cursor: pointer;
+  padding: 0.4em 0.85em; border-radius: 999px;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text-soft);
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.roster-mode-tab:hover { color: var(--text); border-color: var(--border-strong); }
+.roster-mode-tab.active {
+  color: var(--primary-bright);
+  border-color: rgba(var(--primary-bright-rgb), 0.55);
+  background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.2), rgba(var(--primary-rgb), 0.06));
+}
+/* The card grows a column when it carries the hub: these are controls to hit,
+   not a readout to glance at. */
+.client-card-hub { flex-direction: column; align-items: stretch; gap: 0.5rem; }
+.roster-hub { display: flex; flex-direction: column; gap: 0.45rem; width: 100%; }
+.hub-row { display: flex; align-items: flex-start; gap: 0.6rem; flex-wrap: wrap; }
+.hub-lbl {
+  flex: 0 0 6.5em; font-size: 0.7rem; font-weight: 800;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+  padding-top: 0.35em;
+}
+.hub-pick { display: flex; flex-wrap: wrap; gap: 0.25rem; flex: 1; min-width: 0; }
+.hub-opt {
+  font: inherit; font-size: 0.76rem; font-weight: 700; cursor: pointer;
+  padding: 0.3em 0.6em; border-radius: 8px;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text-soft);
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.hub-opt:hover { color: var(--text); border-color: var(--border-strong); }
+.hub-opt.on {
+  color: var(--primary-bright);
+  border-color: rgba(var(--primary-bright-rgb), 0.55);
+  background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.2), rgba(var(--primary-rgb), 0.06));
+}
+.hub-opt-num { min-width: 2.1em; text-align: center; }
+.hub-opt-flag { min-width: 3.2em; text-align: center; }
+.hub-summary {
+  margin: 0.15rem 0 0; font-size: 0.78rem; line-height: 1.45; color: var(--text-soft);
+  border-left: 3px solid rgba(var(--primary-bright-rgb), 0.4); padding-left: 0.7em;
+}
+@media (max-width: 640px) {
+  .hub-lbl { flex-basis: 100%; padding-top: 0; }
+}

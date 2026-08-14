@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=bld1" />
+  <link rel="stylesheet" href="styles.css?v=hub1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -278,6 +278,13 @@
           <span class="roster-search-ico" aria-hidden="true">🔍</span>
           <input type="search" id="roster-search-input" placeholder="Search athletes" aria-label="Search athletes" autocomplete="off" />
           <button type="button" class="roster-search-clear hidden" id="roster-search-clear" aria-label="Clear search">✕</button>
+        </div>
+        <!-- What the roster cards SHOW. Progress is the day-to-day view; Training
+             flips every card to the settings that drive programming, so a whole
+             roster can be set up without opening anyone. -->
+        <div class="roster-modes hidden" id="roster-modes">
+          <button type="button" class="roster-mode-tab" data-roster-mode="progress">Progress</button>
+          <button type="button" class="roster-mode-tab" data-roster-mode="training">Training setup</button>
         </div>
         <div class="roster-controls hidden" id="roster-controls">
           <span class="roster-controls-lbl">Group by</span>
@@ -1627,7 +1634,7 @@
   <script src="exercise-demos.js?v=demos1"></script>
   <script src="exercise-equipment.js?v=plyo1"></script>
   <script src="exercise-stats.js?v=st2"></script>
-  <script src="app.js?v=bld1"></script>
+  <script src="app.js?v=hub3"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

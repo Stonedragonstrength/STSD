@@ -828,6 +828,15 @@
       // available, so an athlete nobody filled in is unrestricted rather than
       // unable to be programmed for. See GEAR and EXERCISE_EQUIPMENT.
       equipment: [],
+      // How many days a week they train. Seeds the builder so the coach is not
+      // re-picking it every time. 0 means never set, and the builder falls back
+      // to its own default rather than assuming.
+      daysPerWeek: 0,
+      // A constraint rather than a volume target, which is why it is a flag and
+      // not one of the TRAINING_PHASES rows: it changes WHAT gets programmed
+      // (favour mobility, ease off loaded spinal work), not how many sets grade
+      // as enough.
+      painRelief: false,
       // Self-booking is granted per athlete on the coach's Scheduling card, so
       // a new athlete starts unable to take slots out of the availability.
       canBook: false,
@@ -5038,6 +5047,82 @@
   // Roster grouping: partition the athlete list under section headers.
   // The chosen mode persists per device.
   const KEY_ROSTER_GROUP = "trainerpro_roster_group_v1";
+  const KEY_ROSTER_MODE = "trainerpro_roster_mode_v1";
+
+  // ── The training hub ──
+  // Everything that decides HOW someone is programmed, on the roster card
+  // itself. Setting up a new athlete, or re-checking the roster before writing
+  // a block, should not mean opening twenty-eight profiles one at a time.
+  //
+  // Each control writes straight to the client and saves; there is no Save
+  // button, because a settings screen that can be left half-applied is worse
+  // than one that cannot.
+  function rosterTrainingHubHtml(c) {
+    const gear = (c.equipment || []).length;
+    const lvl = TRAINING_LEVEL_BY_ID[c.trainingLevel] || TRAINING_LEVEL_BY_ID[DEFAULT_TRAINING_LEVEL];
+    const goal = phaseOf(c) || NO_PHASE_GOAL;
+    const days = Number(c.daysPerWeek) || 0;
+    return `
+      <div class="hub-row">
+        <span class="hub-lbl">Goal</span>
+        <span class="hub-pick">${[NO_PHASE_GOAL, ...TRAINING_PHASES].map((p) =>
+          `<button type="button" class="hub-opt${p.id === (c.trainingPhase || "") ? " on" : ""}" data-hub-goal="${escapeHtml(p.id)}" title="${escapeHtml(p.blurb || "")}">${p.emoji} ${escapeHtml(p.name)}</button>`).join("")}</span>
+      </div>
+      <div class="hub-row">
+        <span class="hub-lbl">Days a week</span>
+        <span class="hub-pick">${[0, 1, 2, 3, 4, 5, 6, 7].map((d) =>
+          `<button type="button" class="hub-opt hub-opt-num${d === days ? " on" : ""}" data-hub-days="${d}">${d || "—"}</button>`).join("")}</span>
+      </div>
+      <div class="hub-row">
+        <span class="hub-lbl">Training age</span>
+        <span class="hub-pick">${TRAINING_LEVELS.map((l) =>
+          `<button type="button" class="hub-opt${l.id === (c.trainingLevel || "") ? " on" : ""}" data-hub-level="${l.id}" title="${escapeHtml(l.years)}">${l.emoji} ${escapeHtml(l.name)}</button>`).join("")}</span>
+      </div>
+      <div class="hub-row">
+        <span class="hub-lbl">Pain relief</span>
+        <span class="hub-pick">
+          <button type="button" class="hub-opt hub-opt-flag${c.painRelief ? " on" : ""}" data-hub-pain="1"
+            title="Favours mobility and eases loaded spinal work. A constraint on what gets programmed, not a volume target.">${c.painRelief ? "On" : "Off"}</button>
+        </span>
+      </div>
+      <div class="hub-row">
+        <span class="hub-lbl">Gear</span>
+        <span class="hub-pick gear-grid">${GEAR.map((g) =>
+          `<button type="button" class="gear-opt${(c.equipment || []).includes(g.id) ? " on" : ""}" data-hub-gear="${g.id}">
+             <span class="gear-opt-ico">${dayIconHtml(g.icon)}</span>
+             <span class="gear-opt-lbl">${escapeHtml(g.label)}</span></button>`).join("")}</span>
+      </div>
+      <p class="hub-summary">${escapeHtml(
+        `${goal.name}${days ? `, ${days} day${days === 1 ? "" : "s"} a week` : ""}. ` +
+        `Graded at ${levelBands(c).solid} solid, ${levelBands(c).plenty} plenty. ` +
+        (gear ? `${gear} item${gear === 1 ? "" : "s"} of gear.` : "All gear available.") +
+        (c.painRelief ? " Pain relief on." : ""))}</p>`;
+  }
+
+  // One delegated listener per card. Every control mutates the client and
+  // repaints just that card, so the fold cannot drift from the data.
+  function wireRosterTrainingHub(host, c, repaint) {
+    host.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-hub-goal],[data-hub-days],[data-hub-level],[data-hub-pain],[data-hub-gear]");
+      if (!b) return;
+      e.stopPropagation();               // the card itself opens the athlete
+      const d = b.dataset;
+      if ("hubGoal" in d) c.trainingPhase = d.hubGoal;
+      else if ("hubDays" in d) c.daysPerWeek = Number(d.hubDays) || 0;
+      // Tapping the level you already have clears it back to "not set", which
+      // is the only way to undo an accidental tap without a second control.
+      else if ("hubLevel" in d) c.trainingLevel = c.trainingLevel === d.hubLevel ? "" : d.hubLevel;
+      else if ("hubPain" in d) c.painRelief = !c.painRelief;
+      else if ("hubGear" in d) {
+        const have = new Set(c.equipment || []);
+        if (have.has(d.hubGear)) have.delete(d.hubGear); else have.add(d.hubGear);
+        // Stored in GEAR order, not tap order, so a cloud diff stays readable.
+        c.equipment = GEAR.filter((g) => have.has(g.id)).map((g) => g.id);
+      }
+      saveTrainer();
+      repaint();
+    });
+  }
   function groupRoster(clients, mode) {
     if (mode === "membership") {
       const buckets = new Map();
@@ -5102,6 +5187,13 @@
     hide(empty);
 
     const groupMode = localStorage.getItem(KEY_ROSTER_GROUP) || "none";
+    const rosterMode = localStorage.getItem(KEY_ROSTER_MODE) || "progress";
+    const modes = $("#roster-modes");
+    if (modes) {
+      show(modes);
+      $$("#roster-modes [data-roster-mode]").forEach((b) =>
+        b.classList.toggle("active", b.dataset.rosterMode === rosterMode));
+    }
     if (controls) {
       show(controls);
       $$("#roster-controls [data-roster-group]").forEach((b) =>
@@ -5284,7 +5376,21 @@
         mini.innerHTML = statFieldSvg({ cur: sfRead.cur, peak: sfRead.peak, size: 46, labels: false });
         card.appendChild(mini);
       }
-      card.appendChild(prog);
+      // Training setup replaces the progress readout on the card rather than
+      // sitting beside it: two dense blocks side by side is how the roster
+      // stopped being scannable last time. Everything BELOW still runs, so the
+      // card keeps its request badge and live-session button and still gets
+      // appended to the grid.
+      if (rosterMode === "training") {
+        const hub = document.createElement("div");
+        hub.className = "roster-hub";
+        hub.innerHTML = rosterTrainingHubHtml(c);
+        wireRosterTrainingHub(hub, c, () => { hub.innerHTML = rosterTrainingHubHtml(c); });
+        card.appendChild(hub);
+        card.classList.add("client-card-hub");
+      } else {
+        card.appendChild(prog);
+      }
 
       // Pending-request badge only. The two session tickets (bank balance,
       // booked-next-month) lived here until 2026-08-08 and moved to the Raise
@@ -9466,7 +9572,9 @@
     if (!dest) return;
     if ((dest.weeks || []).length >= 12) { toast("12-week maximum reached"); return; }
     let subject = client;              // null until an athlete is chosen
-    let days = 4;
+    // Seed from what the coach already set on their card, so the builder is not
+    // asking a question it has been told the answer to. 0 means never set.
+    let days = Number(subject && subject.daysPerWeek) || 4;
     let styleName = "Powerbuilding";
     let gearPick = [...((subject && subject.equipment) || [])];
     let built = null;
@@ -9561,6 +9669,7 @@
             if (!c) return;
             subject = c;
             gearPick = [...(c.equipment || [])];
+            days = Number(c.daysPerWeek) || days;
             const t = $("#modal-title");
             if (t) t.textContent = "Build the week · " + (c.name || "Athlete");
             render();
@@ -10670,7 +10779,22 @@
     { id: "maintenance", name: "Maintenance", short: "Mnt", emoji: "⚖️",
       solid: 2, plenty: 4, minEffort: "moderate",
       blurb: "Holding what they have. The least work that still keeps it." },
+    // Endurance is the one phase where LIGHT sets count. Everywhere else a
+    // light set is a warm-up pretending to be work; here the high-rep,
+    // sub-maximal work IS the training, so grading it out would report a
+    // conditioning block as a week of gaps. Set counts stay low because the
+    // priority is elsewhere: the resistance work is support, not the point.
+    { id: "endurance", name: "Endurance", short: "End", emoji: "🫁",
+      solid: 2, plenty: 4, minEffort: "light",
+      blurb: "Conditioning leads. Light, high-rep work counts here, unlike every other goal." },
   ];
+  // Hypertrophy is deliberately NOT in that list. It is the no-phase default,
+  // and the default grades against training age (4/6 a beginner, 10/12 an
+  // advanced lifter). A fixed hypertrophy band would flatten that and hand a
+  // beginner an advanced lifter's volume target, so the goal picker names the
+  // absence rather than adding a row that overwrites it.
+  const NO_PHASE_GOAL = { id: "", name: "Hypertrophy", emoji: "🏗️",
+    blurb: "Building. Graded against their training age." };
   const TRAINING_PHASE_BY_ID = Object.fromEntries(TRAINING_PHASES.map((p) => [p.id, p]));
   function phaseOf(client) { return TRAINING_PHASE_BY_ID[client?.trainingPhase] || null; }
   // 0 means the coach never picked one. Mobility rows can never carry a level
@@ -39675,6 +39799,14 @@
     $$("#roster-controls [data-roster-group]").forEach((b) =>
       b.addEventListener("click", () => {
         localStorage.setItem(KEY_ROSTER_GROUP, b.dataset.rosterGroup);
+        renderClientGrid();
+      }));
+    // What the cards show: day-to-day progress, or the training setup that
+    // drives programming. Remembered, because a coach setting up the roster
+    // stays in that mode for a while.
+    $$("#roster-modes [data-roster-mode]").forEach((b) =>
+      b.addEventListener("click", () => {
+        localStorage.setItem(KEY_ROSTER_MODE, b.dataset.rosterMode);
         renderClientGrid();
       }));
     // Roster search. The ✕ clears and hands focus back to the field, so
