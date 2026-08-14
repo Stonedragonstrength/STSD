@@ -1951,6 +1951,23 @@
     max:      { label: "Max",      rgb: "185,28,28",  flames: "🔥🔥🔥🔥", rank: 4 },
   };
   function effortLevel(ex) { return ex && ex.effort ? EFFORT_LEVELS[ex.effort] : null; }
+  // A suggested flame level from the prescribed reps, for a coach who has not
+  // picked one. Reps indicate proximity to maximal LOAD — nobody grinds a
+  // triple at 50% — which is a different measurement from exertion: a 20-rep
+  // set taken to failure is maximal exertion at light load. So this is only
+  // ever a SUGGESTION into a blank, never a correction of a coach's judgement.
+  //
+  // It writes ex.effort, which also feeds training-phase coverage grading, so
+  // more exercises carrying an effort shifts what grades as solid and plenty.
+  // That is a known and accepted consequence, not a side effect to discover.
+  function suggestedEffortForReps(reps) {
+    const n = parseInt(reps, 10);
+    if (!isFinite(n) || n <= 0) return null;
+    if (n <= 3) return "max";
+    if (n <= 6) return "hard";
+    if (n <= 12) return "moderate";
+    return "light";
+  }
   // Layer the warm gradient onto a card wrapper (coach row or athlete card).
   function applyEffortWrapper(wrapper, ex) {
     // Intensity doesn't apply to mobility/stretching — never tint those cards.
@@ -14860,7 +14877,15 @@
       isTimed ? "Time (sec)" : "Reps",
       isTimed ? CARRY_SEC_VALUES : REPS_VALUES,
       ex.currentReps || (isTimed ? "30" : "8"), (val) => {
-      ex.currentReps = val; saveEditor(); crBtn.textContent = crLabel(val); crBtn.classList.toggle("empty", !val);
+      ex.currentReps = val; crBtn.textContent = crLabel(val); crBtn.classList.toggle("empty", !val);
+      // Suggest a flame level, but only into a blank and only for rep work.
+      // Timed and mobility prescriptions store SECONDS here, so a 45s hold
+      // would otherwise be read as 45 reps and stamped "Light".
+      if (!ex.effort && !isTimed && ex.kind !== "mobility") {
+        const sug = suggestedEffortForReps(val);
+        if (sug) { ex.effort = sug; refreshEffortBtn(); }  // refresh re-tints the row itself
+      }
+      saveEditor();
       refreshProgBtn(); // reps are the ladder's floor
     }, crBtn, isTimed ? 4 : 6); });
 
