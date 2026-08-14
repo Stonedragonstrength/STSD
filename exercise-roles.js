@@ -331,3 +331,56 @@ window.EXERCISE_PATTERN = {
   "inverted row": "Pull",
   "upright row": "Pull",
 };
+
+// The rep range a movement can actually be performed for, as [min, max].
+//
+// The generator applies the training STYLE's rep band to everything it writes,
+// and a style band knows nothing about the movement underneath it. That is how
+// the builder came to prescribe 3x18 Nordic Curl, 2x20 Dragon Flag, 5x12
+// Pull-Up for a beginner and 2x20 Pendlay Row as a main lift. A nordic curl is
+// three to five reps at any training age; a dragon flag is a lever skill; a
+// pendlay row is reset on the floor every single rep. An athlete who cannot
+// finish rep four of set one has been told by the app that they are failing.
+//
+// Only movements with a REAL ceiling or floor are listed. Everything absent
+// takes the style band unchanged, which is the right default — most exercises
+// genuinely do work across 3 to 20 reps.
+//
+// Read by `_pickReps`, which intersects this with the style's band and falls
+// back to the nearest rung of the ladder when the two do not overlap. Holds,
+// carries and cardio never reach it: they are answered as time or distance
+// before the rep ladder is consulted.
+window.EXERCISE_REP_WINDOW = {
+  // Skill and leverage movements. The ceiling is what the position allows.
+  "nordic curl": [3, 8],
+  "dragon flag": [3, 8],
+  "glute-ham raise": [5, 12],
+  "sissy squat": [8, 15],
+  "windshield wiper": [5, 15],
+  "ab wheel rollout": [5, 15],
+
+  // Bodyweight pulling. Twelve strict pull-ups is already an achievement; the
+  // style band would happily ask a beginner for eighteen.
+  "pull-up": [3, 12],
+  "chin-up": [3, 12],
+  "toes-to-bar": [5, 15],
+  "hanging leg raise": [5, 15],
+  "dips": [3, 15],
+  "tricep dips": [5, 15],
+
+  // Reset-every-rep and explosive lifts, where high reps stop being the lift.
+  "pendlay row": [3, 8],
+  "push press": [3, 8],
+  "rack pull": [3, 8],
+  "deadlift": [3, 10],
+  "sumo deadlift": [3, 10],
+  "zercher squat": [3, 10],
+  "stiff-leg deadlift": [5, 12],
+
+  // Ballistic. A swing is a conditioning movement; a heavy triple is not one.
+  "kettlebell swing": [10, 20],
+
+  // Loaded-spine work that gets ugly long before the style band runs out.
+  "good morning": [5, 15],
+  "single-leg rdl": [6, 15],
+};

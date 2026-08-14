@@ -9448,13 +9448,28 @@
   // ladder value, so no scheme needed re-tuning; the fallback is only there so a
   // future range cannot silently produce nothing.
   const REP_LADDER = [3, 5, 6, 8, 10, 12, 14, 15, 18, 20];
-  function _pickReps(r) {
-    const inside = REP_LADDER.filter((n) => n >= r[0] && n <= r[1]);
+  // What the MOVEMENT can be done for, where that is narrower than the style's
+  // band. See exercise-roles.js for why this is stated rather than derived.
+  function exRepWindow(name) {
+    return (window.EXERCISE_REP_WINDOW || {})[exKey(name)] || null;
+  }
+  function _pickReps(r, name) {
+    // The style says what the block is for; the movement says what is possible.
+    // Where they disagree the movement wins, because no amount of programming
+    // intent makes an eighteen-rep nordic curl a thing an athlete can do.
+    const w = name ? exRepWindow(name) : null;
+    const lo = w ? Math.max(r[0], w[0]) : r[0];
+    const hi = w ? Math.min(r[1], w[1]) : w ? w[1] : r[1];
+    const inside = REP_LADDER.filter((n) => n >= lo && n <= hi);
     if (inside.length) return String(_rand(inside));
-    // No rung inside the band: take the nearest rung to its middle.
-    const mid = (r[0] + r[1]) / 2;
-    return String(REP_LADDER.reduce((a, b) =>
-      Math.abs(b - mid) < Math.abs(a - mid) ? b : a));
+    // The two bands do not overlap — a Strength block meeting a kettlebell
+    // swing, say. The movement's window is the hard constraint, so land on the
+    // rung of it nearest to what the style wanted.
+    const target = w ? (r[1] < w[0] ? w[0] : w[1]) : (r[0] + r[1]) / 2;
+    const pool = w ? REP_LADDER.filter((n) => n >= w[0] && n <= w[1]) : REP_LADDER;
+    const from = pool.length ? pool : REP_LADDER;
+    return String(from.reduce((a, b) =>
+      Math.abs(b - target) < Math.abs(a - target) ? b : a));
   }
   function _shuffle(arr) { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
   function _exercisesForCats(cats) {
@@ -9493,7 +9508,7 @@
     if (cat === "Cardio")            return _rand(["30s","45s","60s","3 min","5 min","200m","400m","500m","15 cal","20 cal","10","12","15"]);
     if (GEN_HOLD_KW.test(name))      return _rand(["20s","30s","40s","45s","60s"]);
     if (GEN_CRAWL_KW.test(name))     return _rand(["30s","40 ft","50 ft","20 yd"]);
-    return _pickReps(scheme.reps);   // numeric rep count, on the ladder
+    return _pickReps(scheme.reps, name);  // on the ladder, inside what the lift allows
   }
   function _maybeFinisher(ex, name) {
     if (!GEN_ISO_KW.test(name) || Math.random() >= 0.22) return;
@@ -11616,8 +11631,27 @@
           const slot = role === "isolation"
             ? (isoSeen++ === 0 ? "isolation-heavy" : "isolation-light")
             : role;
-          const scheme = role === "compound" ? style.primary
-            : (slot === "isolation-light" || role === "carry") ? style.core
+          // The scheme follows the EFFORT, not the tier.
+          //
+          // These agree exactly for an athlete with no phase — compound/hard
+          // takes the primary band, accessory and the heavy isolation take the
+          // accessory band, the light tail takes the core band — so nothing
+          // changes for most athletes. It matters when a PHASE floors a slot.
+          //
+          // Fat loss counts only hard sets, so builderEffort lifts every slot to
+          // hard, and the week was coming out as "3x15 Pallof Press 🔥🔥🔥" —
+          // fifteen reps and hard effort are a contradiction, and measured over
+          // 25 builds a Fat loss athlete got 397 hard sets and not one moderate
+          // or light. Letting the reps move with the flame makes the whole
+          // prescription true instead: on a cut the same week becomes 3x8 at
+          // hard, which is what fewer-and-harder actually looks like.
+          //
+          // Flooring the flame is load-bearing and stays — see builderEffort.
+          // Dropping it instead leaves ten of nineteen muscles ungraded, which
+          // is the builder writing a week its own grader rejects.
+          const eff = builderEffort(slot, phase);
+          const scheme = eff === "hard" || eff === "max" ? style.primary
+            : eff === "light" ? style.core
             : style.acc;
           const real = resolveRealization(nm, gear);
           const id = uid();
@@ -11635,7 +11669,7 @@
               DEEPEN_MAX_SETS)),
             reps: _repsFor(nm, libCatFor(nm), scheme),
             modifiers: real && real.tag ? [real.tag] : [],
-            effort: builderEffort(slot, phase),
+            effort: eff,
             currentWeight: "", currentReps: "", goalWeight: "", goalReps: "",
             notes: "", videoUrl: "",
           };

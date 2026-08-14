@@ -139,6 +139,7 @@ const rolesSrc = fs.readFileSync(path.join(ROOT, "exercise-roles.js"), "utf8");
 const EXERCISE_ROLES = extractLiteral(rolesSrc, "window.EXERCISE_ROLES = {");
 function exRole(name) { return EXERCISE_ROLES[exKey(name)] || "isolation"; }
 const EXERCISE_PATTERN = extractLiteral(rolesSrc, "window.EXERCISE_PATTERN = {");
+const EXERCISE_REP_WINDOW = extractLiteral(rolesSrc, "window.EXERCISE_REP_WINDOW = {");
 function exPattern(name) { return EXERCISE_PATTERN[exKey(name)] || ""; }
 const ROLE_RANK = extractLiteral(appSrc, "const ROLE_RANK = {");
 // The slot a movement occupies ON A GIVEN DAY, which is what the builder writes
@@ -734,14 +735,15 @@ const stubs = {
 // PULLED from app.js rather than stubbed. Stubbing them is what would let the
 // ladder rot: buildWeek would keep passing while shipping 3x7 and 4x11.
 const REP_LADDER = extractLiteral(appSrc, "const REP_LADDER = [");
-const repFns = Function("REP_LADDER", "_rand", "GEN_HOLD_KW", "GEN_CRAWL_KW", `
+const repFns = Function("REP_LADDER", "_rand", "GEN_HOLD_KW", "GEN_CRAWL_KW", "exRepWindow", `
   ${fnSrc(appSrc, "function _pickReps(")}
   ${fnSrc(appSrc, "function _repsFor(")}
   return { _pickReps, _repsFor };
 `)(REP_LADDER,
   (arr) => arr[Math.floor(Math.random() * arr.length)],
   /plank|hollow hold|dead bug|l-sit|wall sit|\bhold\b/i,
-  /crawl|inchworm/i);
+  /crawl|inchworm/i,
+  (name) => EXERCISE_REP_WINDOW[exKey(name)] || null);
 Object.assign(stubs, repFns);
 const GEAR_BY_ID = Object.fromEntries(GEAR.map((g) => [g.id, g]));
 const deps = {
@@ -1009,6 +1011,38 @@ check("a built week never writes a rep count off the ladder", () => {
   });
 });
 
+check("no movement is ever prescribed outside the reps it can be done for", () => {
+  // Measured before the window map existed: 3x18 Nordic Curl, 2x20 Dragon Flag,
+  // 5x12 Pull-Up for a beginner, 2x20 Pendlay Row as a main lift. A style band
+  // knows nothing about the movement underneath it.
+  const bad = [];
+  GEN_STYLES.forEach((style) => {
+    for (const [lvl, days] of [["beginner", 4], ["intermediate", 3], ["advanced", 5]]) {
+      const { week } = buildWeek({ trainingLevel: lvl }, { days, styleName: style.name });
+      week.days.flatMap((d) => d.exercises).forEach((ex) => {
+        const w = EXERCISE_REP_WINDOW[exKey(ex.name)];
+        const n = Number(ex.reps);
+        if (!w || !/^\d+$/.test(String(ex.reps))) return;
+        if (n < w[0] || n > w[1]) bad.push(`${style.name}/${lvl}: ${ex.sets}x${ex.reps} ${ex.name} (window ${w[0]}-${w[1]})`);
+      });
+    }
+  });
+  assert.deepStrictEqual(bad, [], `outside the movement's rep window:\n        ${bad.join("\n        ")}`);
+});
+
+check("every rep window is sane and lands on the ladder", () => {
+  Object.entries(EXERCISE_REP_WINDOW).forEach(([k, w]) => {
+    assert.ok(Array.isArray(w) && w.length === 2, `${k} window is not a [min, max]`);
+    assert.ok(w[0] < w[1], `${k} window ${w[0]}-${w[1]} is inverted or empty`);
+    assert.ok(REP_LADDER.some((n) => n >= w[0] && n <= w[1]),
+      `${k} window ${w[0]}-${w[1]} contains no rung of the ladder, so it can only ever fall back`);
+  });
+  // Every windowed name must be a real library movement, or the map is dead.
+  const pool = new Set(builderPool().map(exKey));
+  const orphan = Object.keys(EXERCISE_REP_WINDOW).filter((k) => !pool.has(k));
+  assert.deepStrictEqual(orphan, [], `rep windows matching no pooled movement: ${orphan.join(", ")}`);
+});
+
 // ---- the energy formula ---------------------------------------------------
 check("every day reads compound, accessory, isolation, carry — in that order", () => {
   // Nathan's formula: heavy compound lifts, accessories to them at moderate
@@ -1052,6 +1086,54 @@ check("the day opens hard and the isolation work runs heavier then lighter", () 
       iso.slice(1).forEach((ex) => assert.strictEqual(ex.effort, "light",
         `${ex.name} follows the heavy isolation and should be light`));
     }
+  });
+});
+
+check("the reps a movement is given agree with the flame it is given", () => {
+  // "3x15 Pallof Press 🔥🔥🔥" is a contradiction, and it is what a phase used to
+  // produce: Fat loss counts only hard sets, so every slot was lifted to hard
+  // while keeping the high-rep band that went with being a light isolation.
+  // The scheme follows the effort now, so a floored slot gets floored reps too.
+  const bandFor = (style, effort) => (
+    effort === "hard" || effort === "max" ? style.primary
+      : effort === "light" ? style.core : style.acc).reps;
+  GEN_STYLES.forEach((style) => {
+    [null, ...TRAINING_PHASES].forEach((phase) => {
+      const client = phase ? { trainingPhase: phase.id } : { trainingLevel: "intermediate" };
+      const { week } = buildWeek(client, { days: 4, styleName: style.name });
+      week.days.flatMap((d) => d.exercises).forEach((ex) => {
+        if (!/^\d+$/.test(String(ex.reps))) return;      // carries, holds
+        const n = Number(ex.reps);
+        const band = bandFor(style, ex.effort);
+        const w = EXERCISE_REP_WINDOW[exKey(ex.name)];
+        // Inside the band the flame implies, unless the movement's own window
+        // pulled it out — that constraint outranks the style.
+        const ok = (n >= band[0] && n <= band[1]) || (w && n >= w[0] && n <= w[1]);
+        assert.ok(ok, `${style.name}/${phase ? phase.id : "no phase"}: ` +
+          `${ex.sets}x${ex.reps} ${ex.name} is [${ex.effort}] but ${band[0]}-${band[1]} is the ${ex.effort} band`);
+      });
+    });
+  });
+});
+
+check("a phase never leaves the built week half-ungraded", () => {
+  // The floor exists so the builder cannot write a week its own grader rejects.
+  // Removing it to restore the effort curve was measured and left TEN of
+  // nineteen muscles under solid on a Fat loss week — so the floor stays, and
+  // the reps move with it instead.
+  TRAINING_PHASES.forEach((ph) => {
+    const min = EFFORT_LEVELS[ph.minEffort].rank;
+    const { week } = buildWeek({ trainingPhase: ph.id }, { days: 4, styleName: "Hypertrophy" });
+    const sets = {};
+    ANATOMY_GROUPS.forEach((g) => { sets[g.id] = 0; });
+    week.days.forEach((d) => d.exercises.forEach((ex) => {
+      if ((EFFORT_LEVELS[ex.effort] || {}).rank < min) return;
+      const n = Number(ex.sets) || 0;
+      musclesForExercise(ex.name).forEach((h) => { if (sets[h.id] != null) sets[h.id] += n * h.weight; });
+    }));
+    const ungraded = ANATOMY_GROUPS.filter((g) => (sets[g.id] || 0) < ph.solid).map((g) => g.name);
+    assert.ok(ungraded.length <= 2,
+      `${ph.id}: ${ungraded.length} muscles fall under solid once the phase grades the week — ${ungraded.join(", ")}`);
   });
 });
 
