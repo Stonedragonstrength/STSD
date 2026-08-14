@@ -9388,6 +9388,120 @@
     };
   }
 
+  // Build the week: pick a day count, a style and the gear, see exactly what
+  // would be written, then take it or roll again. Nothing touches the program
+  // until "Use this week", so rolling costs nothing.
+  //
+  // Rides the shared #modal rather than its own overlay, so it inherits the
+  // scroll lock and the close behaviour every other sheet has.
+  function openBuildWeekSheet(client) {
+    if (!client) return;
+    if ((client.weeks || []).length >= 12) { toast("12-week maximum reached"); return; }
+    let days = 4;
+    let styleName = "Powerbuilding";
+    let gearPick = [...(client.equipment || [])];
+    let built = null;
+
+    const bandsLine = () => {
+      const ph = phaseOf(client);
+      const b = levelBands(client);
+      return ph
+        ? `Grading against ${ph.name}. Solid at ${b.solid}, plenty at ${b.plenty}.`
+        : `Grading against their training age. Solid at ${b.solid}, plenty at ${b.plenty}.`;
+    };
+    const setupHtml = () => `
+      <div class="build-row"><span class="build-lbl">Days</span>
+        <span class="build-pick">${[1, 2, 3, 4, 5, 6].map((d) =>
+          `<button type="button" class="build-opt${d === days ? " on" : ""}" data-days="${d}">${d}</button>`).join("")}</span></div>
+      <div class="build-row"><span class="build-lbl">Style</span>
+        <span class="build-pick">${GEN_STYLES.map((s) =>
+          `<button type="button" class="build-opt${s.name === styleName ? " on" : ""}" data-style="${escapeHtml(s.name)}">${escapeHtml(s.name)}</button>`).join("")}</span></div>
+      <div class="build-row"><span class="build-lbl">Gear</span>
+        <span class="build-pick gear-grid">${GEAR.map((g) =>
+          `<button type="button" class="gear-opt${gearPick.includes(g.id) ? " on" : ""}" data-gear="${g.id}">
+             <span class="gear-opt-ico">${dayIconHtml(g.icon)}</span>
+             <span class="gear-opt-lbl">${escapeHtml(g.label)}</span></button>`).join("")}</span></div>
+      <p class="build-bands">${escapeHtml(bandsLine())}${gearPick.length ? "" : " Nothing selected, so everything counts as available."}</p>`;
+
+    const previewHtml = () => {
+      const { week, report } = built;
+      const bands = levelBands(client);
+      const sets = builtWeekSets(week);
+      const chips = ANATOMY_GROUPS.map((g) => {
+        const v = sets[g.id] || 0;
+        return `<span class="build-chip" data-cov="${coverageBand(v, bands)}">${escapeHtml(g.name)} <b>${covSetsLabel(v)}</b></span>`;
+      }).join("");
+      const notes = [];
+      if (report.short.length) {
+        notes.push(`${escapeHtml(report.short.join(", "))} ${report.short.length === 1 ? "falls" : "fall"} short at ${days} day${days === 1 ? "" : "s"}.`);
+      }
+      if (report.unreachable.length) {
+        notes.push(`Their gear cannot train ${escapeHtml(report.unreachable.join(", "))}.` +
+          (report.gearHint ? ` A ${escapeHtml(report.gearHint.toLowerCase())} would open the most.` : ""));
+      }
+      return `
+        <div class="build-days">${week.days.map((d) => `
+          <div class="build-day">
+            <div class="build-day-name">${escapeHtml(d.name)}</div>
+            ${d.exercises.map((ex) => `<div class="build-ex">
+              <span>${escapeHtml(ex.name)}${(ex.modifiers || []).length
+                ? `<span class="build-ex-mod">${escapeHtml(ex.modifiers.join(" "))}</span>` : ""}</span>
+              <span class="build-ex-scheme">${escapeHtml(String(ex.sets))}×${escapeHtml(String(ex.reps))}</span>
+            </div>`).join("")}
+          </div>`).join("")}</div>
+        <div class="build-cov">${chips}</div>
+        ${notes.length ? `<p class="build-note">${notes.join(" ")}</p>` : ""}`;
+    };
+
+    function render() {
+      const body = $("#modal-body");
+      const foot = $("#modal-foot");
+      if (!body || !foot) return;
+      body.innerHTML = built ? previewHtml() : setupHtml();
+      foot.innerHTML = "";
+      const btn = (label, cls, fn) => {
+        const b = document.createElement("button");
+        b.className = cls;
+        b.textContent = label;
+        b.addEventListener("click", fn);
+        foot.appendChild(b);
+        return b;
+      };
+      const roll = () => { built = buildWeek({ ...client, equipment: gearPick }, { days, styleName }); render(); };
+      if (!built) {
+        body.querySelectorAll("[data-days]").forEach((b) =>
+          b.addEventListener("click", () => { days = Number(b.dataset.days); render(); }));
+        body.querySelectorAll("[data-style]").forEach((b) =>
+          b.addEventListener("click", () => { styleName = b.dataset.style; render(); }));
+        body.querySelectorAll("[data-gear]").forEach((b) =>
+          b.addEventListener("click", () => {
+            const id = b.dataset.gear;
+            gearPick = gearPick.includes(id)
+              ? gearPick.filter((x) => x !== id)
+              : GEAR.filter((g) => g.id === id || gearPick.includes(g.id)).map((g) => g.id);
+            render();
+          }));
+        btn("Build", "btn btn-primary", roll);
+        btn("Cancel", "btn btn-ghost", closeModal);
+      } else {
+        btn("Use this week", "btn btn-primary", () => {
+          client.weeks.push(built.week);
+          _coachActiveWeekIdx = client.weeks.length - 1;
+          _coachOneOffTab = false;
+          saveTrainer();
+          closeModal();
+          renderWeeks(); renderDiet(); renderCoachCalendar();
+          toast(`Week built · ${built.week.days.length} days ⚡`);
+        });
+        btn("Roll again", "btn btn-ghost", roll);
+        btn("Back", "btn btn-ghost", () => { built = null; render(); });
+      }
+    }
+
+    openModal({ title: `Build the week · ${client.name || "Athlete"}`, body: "", actions: [] });
+    render();
+  }
+
   function openRecommendedTemplatesModal() {
     const categories = Object.keys(RECOMMENDED_TEMPLATES);
     const SURPRISE = "__surprise__";
@@ -10611,15 +10725,29 @@
   // Everything the builder may pick from: the curated anchors and accessories
   // first, so ties resolve toward the ones already vouched for, then the wider
   // library. Built once.
+  // Categories the builder never programs. They are real training and they stay
+  // in the editor's sidebar, but this builds RESISTANCE weeks against muscle
+  // coverage, and a ladder drill or a cat-cow answers a different question.
+  // Left in and they surface as gap-fillers: a push day came back holding
+  // Spiderman Crawl and Cat-Cow.
+  const BUILDER_SKIP_CATS = new Set(["Speed/Agility", "Mobility & Stretching", "Cardio"]);
+  // Carries train real things and stay available as fills, but a carry is a
+  // finisher, not the opener of a training day. Left eligible to anchor and a
+  // full gym opened its pull day on a Farmer's Carry.
+  const ANCHOR_SKIP_CATS = new Set(["Carries"]);
   let _builderPool = null;
   function builderPool() {
     if (_builderPool) return _builderPool;
     const out = new Map();
     ANATOMY_GROUPS.forEach((g) => [...(g.anchors || []), ...(g.accessories || [])]
       .forEach((nm) => { const k = exKey(nm); if (k && !out.has(k)) out.set(k, nm); }));
-    EXERCISE_LIBRARY.forEach((c) => (c.ex || [])
-      .forEach((nm) => { const k = exKey(nm); if (k && !out.has(k)) out.set(k, nm); }));
-    _builderPool = [...out.values()];
+    EXERCISE_LIBRARY.forEach((c) => {
+      if (BUILDER_SKIP_CATS.has(c.cat)) return;
+      (c.ex || []).forEach((nm) => { const k = exKey(nm); if (k && !out.has(k)) out.set(k, nm); });
+    });
+    // A curated anchor can still belong to a skipped category, so filter the
+    // assembled list rather than trusting the source it came from.
+    _builderPool = [...out.values()].filter((nm) => !BUILDER_SKIP_CATS.has(libCatFor(nm)));
     return _builderPool;
   }
   const MUSCLE_PATTERN = Object.fromEntries(ANATOMY_GROUPS.map((g) => [g.id, g.pattern]));
@@ -10635,13 +10763,17 @@
     5: [["Push"], ["Pull"], ["Squat", "Hinge"], ["Push", "Pull"], ["Squat", "Hinge"]],
     6: [["Push"], ["Pull"], ["Squat", "Hinge"], ["Push"], ["Pull"], ["Squat", "Hinge"]],
   };
-  // A pattern is reachable when at least one movement serving one of its
-  // muscles can actually be performed with the gear on hand.
+  // Whether a movement genuinely SERVES a pattern, as opposed to brushing it.
+  // Half-weight hits do not count: a single-arm row grazes the front delts at
+  // 0.5 through the shoulders bucket, which was enough to win it the Push
+  // anchor slot and open a push day with a row.
+  function servesPattern(name, pattern) {
+    return musclesForExercise(name).some((h) => h.weight >= 1 && MUSCLE_PATTERN[h.id] === pattern);
+  }
+  // A pattern is reachable when at least one movement that really serves it
+  // can be performed with the gear on hand.
   function patternReachable(pattern, gear) {
-    return builderPool().some((nm) => {
-      if (!resolveRealization(nm, gear)) return false;
-      return musclesForExercise(nm).some((h) => MUSCLE_PATTERN[h.id] === pattern);
-    });
+    return builderPool().some((nm) => resolveRealization(nm, gear) && servesPattern(nm, pattern));
   }
   // The split for a day count, with unreachable patterns removed. A day left
   // with nothing takes the best reachable pattern instead, so a gym that cannot
@@ -10655,8 +10787,7 @@
     // Rank by the best movement each pattern can still offer, so a re-picked
     // day gets the most productive work available rather than whatever is first.
     const rank = (p) => Math.max(0, ...builderPool()
-      .filter((nm) => resolveRealization(nm, gear)
-        && musclesForExercise(nm).some((h) => MUSCLE_PATTERN[h.id] === p))
+      .filter((nm) => resolveRealization(nm, gear) && servesPattern(nm, p))
       .map(coverageScore));
     const byRank = [...reachable].sort((a, b) => rank(b) - rank(a));
     const days = base.map((day) => {
@@ -10672,16 +10803,38 @@
   // The best movement for a pattern that this gear allows and this week has not
   // already used. Curated names win a score tie because builderPool() puts them
   // first and the scan keeps the first strict maximum.
-  function bestForPattern(pattern, gear, used) {
-    let best = null, bestScore = -1;
-    builderPool().forEach((nm) => {
-      if (used.has(exKey(nm))) return;
-      if (!resolveRealization(nm, gear)) return;
-      if (!musclesForExercise(nm).some((h) => MUSCLE_PATTERN[h.id] === pattern)) return;
-      const s = coverageScore(nm);
-      if (s > bestScore) { bestScore = s; best = nm; }
+  // Curated anchors, then curated accessories, then everything else. Score
+  // alone is not enough to choose an opener: coverageScore rewards breadth, and
+  // the broadest tag lists belong to carries and odd movements, so a full gym
+  // opened its squat day on a Yoke Walk and its push day on a Pullover. The
+  // tiers are what "preferring the curated anchors" actually means.
+  let _anchorTiers = null;
+  function anchorTiers() {
+    if (_anchorTiers) return _anchorTiers;
+    const t1 = new Map(), t2 = new Map();
+    ANATOMY_GROUPS.forEach((g) => {
+      (g.anchors || []).forEach((nm) => { const k = exKey(nm); if (k && !t1.has(k)) t1.set(k, nm); });
+      (g.accessories || []).forEach((nm) => { const k = exKey(nm); if (k && !t2.has(k)) t2.set(k, nm); });
     });
-    return best;
+    _anchorTiers = [[...t1.values()], [...t2.values()]];
+    return _anchorTiers;
+  }
+  function bestForPattern(pattern, gear, used) {
+    const tiers = [...anchorTiers(), builderPool()];
+    for (const tier of tiers) {
+      let best = null, bestScore = -1;
+      tier.forEach((nm) => {
+        if (used.has(exKey(nm))) return;
+        const cat = libCatFor(nm);
+        if (BUILDER_SKIP_CATS.has(cat) || ANCHOR_SKIP_CATS.has(cat)) return;
+        if (!resolveRealization(nm, gear)) return;
+        if (!servesPattern(nm, pattern)) return;
+        const s = coverageScore(nm);
+        if (s > bestScore) { bestScore = s; best = nm; }
+      });
+      if (best) return best;
+    }
+    return null;
   }
   // One anchor per pattern the day owns, in pattern order so the biggest
   // movement opens the day.
@@ -10722,7 +10875,7 @@
   const OVERSHOOT_COST = 0.5;
   // Add whichever reachable movement closes the most shortfall, until every
   // muscle reaches solid or every day is full. Mutates `days`.
-  function fillDeficit(days, client, gear, used, setsPerEx) {
+  function fillDeficit(days, dayPatterns, client, gear, used, setsPerEx) {
     const bands = levelBands(client);
     const room = () => days.some((d) => d.length < DAY_CAP);
     for (let guard = 0; guard < 200 && room(); guard++) {
@@ -10754,9 +10907,15 @@
         if (gain > bestGain) { bestGain = gain; best = nm; }
       });
       if (!best) break;
-      // Into the emptiest day, so the week stays even in length.
-      const target = days.reduce((a, b) => (b.length < a.length ? b : a));
-      if (target.length >= DAY_CAP) break;
+      // Into a day this movement actually belongs to, emptiest first, so the
+      // week stays even without a deadlift landing on the push day. If no day's
+      // patterns fit, the emptiest day takes it: better placed oddly than
+      // dropped, and the coach can move it.
+      const open = days.filter((d) => d.length < DAY_CAP);
+      if (!open.length) break;
+      const fits = open.filter((d) =>
+        (dayPatterns[days.indexOf(d)] || []).some((p) => servesPattern(best, p)));
+      const target = (fits.length ? fits : open).reduce((a, b) => (b.length < a.length ? b : a));
       target.push(best);
       used.add(exKey(best));
     }
@@ -10794,7 +10953,11 @@
   // furthest past its band and shave one set off its biggest contributor, down
   // to a floor of 2 so a movement never dwindles into a token single. Shaving
   // rather than cutting keeps the shape of the week the coach is about to read.
+  // A fill may be shaved to two sets; the movement that opens the day may not.
+  // Trim took a bench press down to 2x6 as a day's anchor, which reads as an
+  // afterthought rather than the lift the day is built around.
   const TRIM_FLOOR_SETS = 2;
+  const TRIM_FLOOR_ANCHOR = 3;
   // Sets per muscle for a week that already has real set counts on it.
   function builtWeekSets(week) {
     const sets = {};
@@ -10808,9 +10971,10 @@
     Object.keys(sets).forEach((k) => { sets[k] = Math.round(sets[k] * 10) / 10; });
     return sets;
   }
-  function trimToBands(week, bands) {
+  function trimToBands(week, bands, anchorIds) {
     const all = week.days.flatMap((d) => d.exercises);
     if (!all.length) return;
+    const floorFor = (ex) => (anchorIds && anchorIds.has(ex.id) ? TRIM_FLOOR_ANCHOR : TRIM_FLOOR_SETS);
     for (let guard = 0; guard < 400; guard++) {
       const sets = builtWeekSets(week);
       let worstId = null, worstOver = 0;
@@ -10819,14 +10983,20 @@
         if (over > worstOver) { worstOver = over; worstId = g.id; }
       });
       if (!worstId) return;
-      // The biggest contributor that can still afford to lose a set.
-      let cand = null;
-      all.forEach((ex) => {
-        if (!musclesForExercise(ex.name).some((h) => h.id === worstId)) return;
-        if ((Number(ex.sets) || 0) <= TRIM_FLOOR_SETS) return;
-        if (!cand || Number(ex.sets) > Number(cand.sets)) cand = ex;
-      });
-      if (!cand) return; // everything is already at the floor; this is as close as it gets
+      // The biggest contributor that can afford a set AND whose loss opens no
+      // gap elsewhere. A compound feeds many muscles, so shaving it blindly
+      // dragged a dozen of them under solid at once: the first version of this
+      // took a week with nothing short and reported twelve gaps.
+      const cand = all
+        .filter((ex) => (Number(ex.sets) || 0) > floorFor(ex)
+          && musclesForExercise(ex.name).some((h) => h.id === worstId))
+        .sort((a, b) => Number(b.sets) - Number(a.sets))
+        .find((ex) => musclesForExercise(ex.name).every((h) => {
+          const cur = sets[h.id] || 0;
+          // Never take a muscle below solid, and never touch one already there.
+          return cur - h.weight >= Math.min(bands.solid, cur);
+        }));
+      if (!cand) return; // no surplus left that can be shaved without opening a gap
       cand.sets = String(Number(cand.sets) - 1);
     }
   }
@@ -10849,7 +11019,13 @@
     const phase = phaseOf(client);
     const bands = levelBands(client);
     const style = GEN_STYLES.find((s) => s.name === styleName) || GEN_STYLES[0];
-    const setsPerEx = Math.round((style.acc.sets[0] + style.acc.sets[1]) / 2);
+    // The FLOOR of the style's three schemes, not their average. The filler
+    // plans with one number and buildWeek then assigns each slot its own from
+    // the scheme; if planning assumed more than a slot actually gets, muscles
+    // the filler had brought to solid land under it and the finished week
+    // reports gaps the filler never saw. Planning low means reality can only
+    // come in at or above plan, and the trim pass mops up any surplus.
+    const setsPerEx = Math.min(style.primary.sets[0], style.acc.sets[0], style.core.sets[0]);
 
     const sk = skeletonFor(days, gear);
     const used = new Set();
@@ -10858,7 +11034,7 @@
     // has patterns when the gear cannot reach one, so the pattern count is not
     // the anchor count and using it would mislabel a fill as an anchor.
     const anchorCounts = dayNames.map((d) => d.length);
-    const { short } = fillDeficit(dayNames, client, gear, used, setsPerEx);
+    const { short } = fillDeficit(dayNames, sk.days, client, gear, used, setsPerEx);
 
     // Depth: leftover headroom adds SETS to the anchors, never new exercises,
     // and stops at plenty. Without that ceiling an unreachable pattern would
@@ -10878,6 +11054,7 @@
 
     const week = makeWeek((client.weeks || []).length);
     week.focus = `${style.name} · built from coverage`;
+    const anchorIds = new Set();
     week.days = dayNames.map((names, i) => {
       const dayName = sk.days[i].join(" + ") || "Full Body";
       return {
@@ -10892,8 +11069,10 @@
               ? "iso" : "fill");
           const scheme = isAnchor ? style.primary : (slot === "iso" ? style.core : style.acc);
           const real = resolveRealization(nm, gear);
+          const id = uid();
+          if (isAnchor) anchorIds.add(id);
           return {
-            id: uid(),
+            id,
             name: nm,
             sets: String(Number(_pickRange(scheme.sets)) + (extra[exKey(nm)] || 0)),
             reps: _repsFor(nm, libCatFor(nm), scheme),
@@ -10908,7 +11087,7 @@
 
     // Shave anything that ran past the band. Has to happen here, after the
     // schemes have turned names into set counts.
-    trimToBands(week, bands);
+    trimToBands(week, bands, anchorIds);
 
     // What is short is read off the FINISHED week, not off the proposal.
     // fillDeficit's answer was true of a week where every exercise carried the
@@ -13715,6 +13894,16 @@
         addWeek();
       });
       strip.appendChild(addBtn);
+      // Athlete mode only: the builder reads bands, phase and gear off a real
+      // athlete, and a program template has none of those.
+      if (!_programEditorId && currentClient()) {
+        const buildBtn = document.createElement("button");
+        buildBtn.className = "coach-week-tab coach-week-tab-add coach-week-tab-build";
+        buildBtn.textContent = "⚡";
+        buildBtn.title = "Build the week from their coverage";
+        buildBtn.addEventListener("click", () => openBuildWeekSheet(currentClient()));
+        strip.appendChild(buildBtn);
+      }
     }
 
     // ── Pinned Coaching tab ──
