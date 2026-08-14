@@ -6438,6 +6438,7 @@
     renderCoachReferralFold(c);
     renderCoachTrainingAgeFold(c);
     renderCoachTrainingPhaseFold(c);
+    renderCoachGearFold(c);
     renderCoachUnitsFold(c);
     syncUnitLabels();
     setProfileLocked(true);
@@ -6563,6 +6564,26 @@
       saveTrainer(); // debounce-pushes the athlete row; training_phase rides along
       renderCoachTrainingPhaseFold(c);
       renderClientGrid(); // the roster chip shows the phase ahead of the level
+    });
+  }
+
+  // What they train with. Coach-only, and repaints in place so the fold stays
+  // open under the finger that tapped it.
+  function renderCoachGearFold(c) {
+    const host = $("#cprof-gear-host");
+    if (!host || !c) return;
+    const wasOpen = host.querySelector("details")?.open;
+    host.innerHTML = gearFoldHtml(c.equipment || []);
+    if (wasOpen) host.querySelector("details").open = true;
+    wireGearFold(host, (id) => {
+      if (!GEAR_BY_ID[id]) return;
+      const have = new Set(c.equipment || []);
+      if (have.has(id)) have.delete(id); else have.add(id);
+      // Stored in GEAR order rather than tap order, so the value is stable and
+      // a cloud diff stays readable.
+      c.equipment = GEAR.filter((g) => have.has(g.id)).map((g) => g.id);
+      saveTrainer(); // debounce-pushes the athlete row; equipment rides along
+      renderCoachGearFold(c);
     });
   }
 
@@ -26155,6 +26176,40 @@
         </div>
       </details>`;
   }
+  // What they have to train with. A tap grid rather than a list of checkboxes:
+  // seventeen checkboxes is a form, seventeen icons is a glance. Empty means
+  // everything, so the summary says so rather than reading as "not set up".
+  function gearSub(cur) {
+    const n = (cur || []).length;
+    return n ? `${n} of ${GEAR.length} selected` : "Everything available";
+  }
+  function gearFoldHtml(cur, { id = "cprof-fold-gear" } = {}) {
+    const on = new Set(cur || []);
+    return `
+      <details class="pref-fold" id="${id}">
+        <summary>
+          <span class="pref-fold-ico">🏋️</span>
+          <span class="pref-fold-text">
+            <span class="pref-fold-title">Their equipment</span>
+            <span class="pref-fold-sub">${escapeHtml(gearSub(cur))}</span>
+          </span>
+          <span class="pref-fold-chev">▸</span>
+        </summary>
+        <p class="pref-foot">What they can actually train with. Build the week only picks movements this gear can perform, so a missing barbell gets them a dumbbell bench press instead of nothing. Leave it empty and everything counts as available.</p>
+        <div class="gear-grid">
+          ${GEAR.map((g) => `
+            <button type="button" class="gear-opt${on.has(g.id) ? " on" : ""}" data-gear="${g.id}">
+              <span class="gear-opt-ico">${dayIconHtml(g.icon)}</span>
+              <span class="gear-opt-lbl">${escapeHtml(g.label)}</span>
+            </button>`).join("")}
+        </div>
+      </details>`;
+  }
+  function wireGearFold(host, onToggle) {
+    host.querySelectorAll("[data-gear]").forEach((b) =>
+      b.addEventListener("click", () => onToggle(b.dataset.gear)));
+  }
+
   function wireTrainingPhaseFold(host, onPick) {
     host.querySelectorAll('input[name$="phase-pick"]').forEach((r) => r.addEventListener("change", () => {
       onPick(r.value);
