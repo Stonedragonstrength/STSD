@@ -51,8 +51,15 @@ const body = [
   constSrc(appSrc, "STAT_FLOOR_BY_LEVEL"),
   fnSrc(appSrc, "function dateISO("),
   fnSrc(appSrc, "function daysBetweenISO("),
+  // The whole-number clock and the memoised decay column. The peak walk
+  // compares every banked day against every sample, so at a year of history
+  // parsing two Dates per comparison measured 55ms per athlete — fine for the
+  // athlete's own card, 1.2s of blocked main thread across a 22-athlete roster.
+  fnSrc(appSrc, "function statDayIndex("),
+  "let _statDecayTable = null;",
   fnSrc(appSrc, "function statFloorFrac("),
   fnSrc(appSrc, "function statDecayFactor("),
+  fnSrc(appSrc, "function statDecayTable("),
   fnSrc(appSrc, "function readStatField("),
   "return { daysBetweenISO, statDecayFactor, statFloorFrac, readStatField, STAT_KEYS, STAT_DECAY, STAT_HORIZON_DAYS, STAT_FLOOR_BY_LEVEL };",
 ].join("\n\n");
