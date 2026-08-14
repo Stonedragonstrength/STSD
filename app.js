@@ -25640,7 +25640,7 @@
       err.classList.remove("hidden");
     }
   }
-  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {}, totalWorkoutMs: 0, workoutMoods: {}, addedExercises: {}, athleteDays: [], formChecks: {}, swaps: {}, nutritionTargets: {}, foodLog: {}, customFoods: [], savedMeals: [], waterLog: {}, nutritionGame: {}, avatarId: "" }; }
+  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {}, totalWorkoutMs: 0, workoutMoods: {}, addedExercises: {}, athleteDays: [], formChecks: {}, swaps: {}, nutritionTargets: {}, foodLog: {}, customFoods: [], savedMeals: [], waterLog: {}, nutritionGame: {}, statField: {}, avatarId: "" }; }
   function ensureProgressShape(p) {
     if (typeof p.avatarId !== "string") p.avatarId = "";
     if (!p.exerciseLogs) p.exerciseLogs = {};
@@ -25656,6 +25656,9 @@
     if (typeof p.totalWorkoutMs !== "number" || !isFinite(p.totalWorkoutMs)) p.totalWorkoutMs = 0;
     if (!p.workoutMoods || typeof p.workoutMoods !== "object") p.workoutMoods = {};
     if (!p.pendingDeloads || typeof p.pendingDeloads !== "object") p.pendingDeloads = {};
+    // The stat field's per-date buckets, keyed YYYY-MM-DD. Backfilled empty on
+    // old shapes; syncStatField rebuilds it from the logs on first read.
+    if (!p.statField || typeof p.statField !== "object") p.statField = {};
     if (!p.readiness || typeof p.readiness !== "object") p.readiness = {};
     if (!Array.isArray(p.athleteDays)) p.athleteDays = [];
     if (!p.formChecks || typeof p.formChecks !== "object") p.formChecks = {};

@@ -179,6 +179,11 @@
       avatar_id: p.avatarId || null,
       day_notes: p.dayNotes || {},
       pending_deloads: p.pendingDeloads || {},
+      // The stat field's per-date buckets. Column added 20260814120000; that
+      // migration is applied to the live project BEFORE this line ships,
+      // because an upsert naming a column that does not exist fails and takes
+      // every progress save with it, not just this feature.
+      stat_field: p.statField || {},
       synced_at: new Date().toISOString(),
     };
   }
@@ -211,6 +216,7 @@
       avatarId: r.avatar_id || "",
       dayNotes: r.day_notes || {},
       pendingDeloads: r.pending_deloads || {},
+      statField: r.stat_field || {},
       syncedAt: r.synced_at,
       _rev: Number(r.rev) || 0,
     };
