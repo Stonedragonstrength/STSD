@@ -175,8 +175,38 @@ bodyweight lifts — exactly the movements AGI and DEX exist to reward. Reusing 
 make pull-ups, planks, box jumps and every ladder drill worth nothing. It also keeps the
 app from quoting two different pound totals for one session; pounds belong to the Hoard.
 
-**A log entry has two possible shapes, and both must be read.** This is the single
-easiest way to build this feature broken:
+### Decision: speed and mobility move to `sets`
+
+Nathan's call, 2026-08-13. The hold-for-time card (all 30 Speed/Agility drills and all 20
+Mobility stretches) stops writing `rounds: [true,false,…]` and writes ordinary `sets`
+instead, one entry per round, carrying the prescribed seconds.
+
+Why it is worth doing rather than just reading around it:
+
+- **One shape in the data.** `rounds` has only **five** usages in `app.js`, so the
+  conversion is genuinely small.
+- **It records seconds, not a checkbox.** `rounds` throws away how long the hold actually
+  was. `sets: [{reps:"45"}, {reps:"45"}]` keeps it, which is exactly what the pentagon
+  needs to scale timed work by duration (§4.1) instead of paying a 10-second stretch and a
+  90-second one identically.
+- Everything downstream of a log entry stops needing to special-case these 50 exercises.
+
+**The history stays readable, and nothing is migrated.** Every log already on an athlete's
+phone and in `exercise_logs` carries `rounds`. Rewriting that data is unnecessary risk for
+zero gain, so:
+
+- the **writer** changes (`persist()` at app.js:30422 emits `sets`)
+- the **readers** keep a `rounds` fallback permanently, treating each `true` as one
+  completed set with the exercise's prescribed seconds
+- no migration, no backfill, no possibility of corrupting existing history
+
+The five call sites at app.js:4923, 27065, 27689, 30368 and 30422 are the complete list to
+touch. Note 30368 rebuilds the card's state from `todayLog?.rounds?.[i]`, so it needs to
+read either shape or a part-finished old session loses its ticks.
+
+### Both shapes must still be read
+
+This is the single easiest way to build this feature broken:
 
 > `isHoldName(name) = isMobilityName(name) || isSpeedName(name)` (app.js:10095), so **all
 > 30 Speed/Agility drills and all 20 Mobility stretches** are created with
@@ -217,21 +247,64 @@ inside a program day is scored by duration on the same scale**, not per-set — 
 35-minute treadmill run scores several times higher entered in the cardio block than
 prescribed in a workout, and where the athlete taps decides the number.
 
-### 4.2 Intensity multiplier
+### 4.2 Intensity, and how STR is earned
 
-One multiplier. First source that exists wins:
+Nathan's decision, 2026-08-13: **STR reads the flames.** Maximal force is built by
+near-maximal work, so only work the coach marked as such feeds it.
 
-1. `entry.rir` — athlete-reported reality beats prescription
-2. `ex.effort` — coach-set 🔥 (light / moderate / hard / max)
-3. **neither → 1.00**
+Raw load is deliberately not used. 315 lb is a max for one athlete and a warm-up for
+another, so a load number means nothing without a person attached to it. The 🔥 picker is
+already the coach's athlete-relative judgement of how hard the work is, which is a
+better signal than pounds and one the app already collects.
 
-> **Unset effort is 1.00, and this is the single most important number in the model.**
-> `effortRank` returns 0 for unset, and only two writers exist in the entire app (the 🔥
-> picker and the ⚡ builder). Every hand-written day, generated day, template day and
-> athlete-added exercise has no effort at all. Treating unset as "light" would quietly
-> shrink the pentagon of nearly every program in the app. 1.00 is the multiplicative
-> identity: the absence of an opinion changes nothing, and tagging effort can only ever
-> move a number the athlete already had.
+| Signal | STR credit |
+|---|---|
+| `ex.effort === "max"` (🔥×4) | full |
+| `ex.effort === "hard"` (🔥×3) | partial |
+| anything else | **none — that work feeds CON instead** |
+
+**Nothing is discarded, only redirected.** Untagged and lighter work still scores; it
+lands in Condition rather than Strength. So a coach who never touches the picker loses no
+points, and STR becomes an axis earned by actually programming heavy work — which is both
+true to life and true to the field's job as an identity.
+
+**Rep-count fallback, so STR never dies on an untagged day.** Sets of **1–5 reps count as
+near-max regardless of flames**. Nobody performs triples for endurance, so rep count is a
+sound proxy for proximity to maximal *load* — which is exactly what STR wants.
+
+This matters less than it sounds, because the ⚡ builder already assigns effort:
+`BUILDER_SLOT_EFFORT = { anchor: "hard", fill: "moderate", iso: "light" }`. Every
+builder-made week already carries 🔥×3 on its anchor compounds, so STR lights up on
+existing programs with no coach action at all. Manual tagging is only needed to mark a
+genuine **Max** day, which the builder never assigns on its own — and that is precisely
+what makes 🔥×4 meaningful.
+
+**Reps and flames are not the same measurement, and the design must not conflate them.**
+Reps indicate proximity to maximal *load*. Flames indicate *exertion*. A 20-rep set taken
+to failure is maximal exertion at light load. STR uses the load reading; the flames remain
+the coach's exertion judgement everywhere else in the app.
+
+For all other stats the multiplier is: `entry.rir` if present (reported reality beats
+prescription), else `ex.effort`, else **1.00**. Unset is the multiplicative identity — the
+absence of an opinion changes nothing. Treating unset as "light" would quietly shrink the
+pentagon of nearly every program in the app.
+
+### 4.2a Rep-driven flame suggestion (editor)
+
+Nathan's decision, 2026-08-13: typing reps in the exercise editor **pre-fills** a flame
+level that the coach can tap to change.
+
+Three rules make this safe, and all three are required:
+
+1. **Suggest only into a blank.** If `ex.effort` is already set, it is never touched. The
+   coach's judgement always wins.
+2. **No backfill, ever.** The suggestion fires when reps are edited going forward. It does
+   not sweep the ~1,400 exercises already prescribed across the roster.
+3. **Coverage must be re-checked.** `ex.effort` drives training-phase coverage grading
+   (`phaseMinRank`, the retuned 4/6, 8/10, 10/12 bands) as well as the card tint. More
+   exercises carrying an effort will change what grades as solid and plenty. Re-pin
+   `tests/training-phase-plumbing.test.js` and eyeball a real week before shipping.
+   **This is a known, accepted side effect, not a surprise.**
 
 ### 4.3 The daily cap (anti-farming)
 
@@ -261,36 +334,50 @@ instead of leaving a capped number that cannot be unwound.
 
 ### 5.1 What is stored
 
-Two keys stamped onto each `exerciseLogs` entry at lock-in:
+> **Corrected 2026-08-13.** The first draft stamped the stat split onto each log entry.
+> **That cannot work in this codebase**, and it was verified rather than assumed: every
+> writer builds a *fresh* entry object and assigns it over the old one —
+> `autoSave` (app.js:31341), `lockIn` (app.js:31586), `doSkipExercise` (app.js:31645) and
+> the hold-card `persist` (app.js:30422) all read
+> `const entry = { id, date, m, sets, locked, ...collectWarmups(), ... }`.
+> **No writer spreads the previous entry**, so any key the `collect*()` helpers do not
+> produce is deleted on the next keystroke. A stamp would be wiped by the 800 ms autosave.
 
-- `sv` — the stat split of that entry's work, **raw and uncapped**, one decimal.
-- `svs` — a 32-bit hash of the entry's scoring inputs, used as a change detector.
+**A rolled-up, per-date bucket in a new `progress.statField`.**
 
 ```json
 {
-  "id": "ms2daac2rlaplr",
-  "date": "2026-07-26",
-  "locked": true,
-  "sets": [{ "reps": "5", "weight": "195" }, { "reps": "5", "weight": "205" }],
-  "warmups": [{ "reps": "15", "weight": "95" }],
-  "burnout": { "pct": "50", "reps": "15" },
-  "sv": { "STR": 1.8, "CON": 1.5 },
-  "svs": 812734501
+  "2026-07-26": { "STR": 6.2, "CON": 8.1, "END": 1.0 },
+  "2026-07-28": { "DEX": 4.5, "AGI": 3.0 }
 }
 ```
 
-The pentagon is then a **sum over stamps, with decay and the daily cap applied at read.**
+One bucket per training date, holding that day's **capped** charge per stat (§4.3). A
+date's bucket is always **replaced, never added to**, which is what makes it idempotent.
 
-### 5.2 Why stamp instead of deriving
+It is written whenever a day's logs change, while the exercise definitions are still
+resolvable, and pruned beyond the decay horizon — so it stays around 8 KB and does not
+grow with career length.
+
+### 5.2 Why a written bucket rather than deriving at read
 
 **Because exercise ids are regenerated when a program is assigned.** Verified:
 `assignProgramPrompt` does `JSON.parse(JSON.stringify(tpl.weeks)).map(w => ({...w, id: uid()}))`,
 and `progress.exerciseLogs` is keyed by `ex.id`.
 
-A pentagon that resolved each logged exercise by lookup at read time would **read zero on
-the exact morning an athlete starts a new block** — the day it should look its best.
-Stamping consumes the definition once, at write, when it is guaranteed to be present.
-After that the read joins nothing and cannot be orphaned.
+A pentagon that resolved each logged exercise by lookup at read time would **read near-zero
+on the exact morning an athlete starts a new block** — the day it should look its best.
+Roughly 10% of production log entries already resolve to no definition on the athlete's
+device, and `archivedPrograms` is absent from `athleteToRow`/`rowToAthlete`, so the athlete
+can never recover them.
+
+Writing the bucket consumes the definitions once, while they are guaranteed present. After
+that the read joins nothing and cannot be orphaned. It also gives a number a human can
+point at when Nathan asks why Tuesday scored what it did.
+
+The cost is the migration this design had hoped to avoid (§5.5). That is a known,
+mechanical checklist, and it is the right price for immunity to both the wipe and the
+orphaning.
 
 ### 5.3 Double-counting: what is safe, and the one case that is not
 
@@ -344,18 +431,26 @@ open. The profile weights, rep bands and intensity multipliers do **not** — th
 baked into the stamp at write, so tuning them affects future work only. That split is
 deliberate and is the opposite trade-off to a fully-derived design.
 
-### 5.5 Zero migration
+### 5.5 The migration (no longer avoidable)
 
-- **`progress` fields:** none. Reads existing `exerciseLogs`, `cardioLogs`, and
-  `client.trainingLevel`.
-- **`cloud.js`:** no change. `exerciseLogs ↔ exercise_logs` is already mapped, and
-  `exercise_logs` is `jsonb` — unknown keys inside a jsonb value pass through untouched.
-- **DB column:** none. **`merge_progress`:** untouched.
+One new field, `progress.statField`, which means walking the documented four-step trap
+deliberately and in the right order. **The live DB is migrated FIRST.** An upsert naming a
+column that does not exist yet fails and breaks *all* progress saves for every athlete, so
+the order below is not negotiable:
 
-This deliberately avoids the documented four-step trap (`progressToRow`, `rowToProgress`,
-a column, and both lists inside `merge_progress`) and its live-DB hazard, where an upsert
-naming a column that does not exist yet fails and breaks **all** progress saves for
-everyone. It is the same escape Trials took by stamping into `progress.hoard`.
+1. **Migration applied to the live project first.**
+   `alter table public.progress add column if not exists stat_field jsonb not null default '{}'::jsonb;`
+2. **`merge_progress` updated in the same migration** — `stat_field` added to the INSERT
+   column list, to the INSERT values as
+   `coalesce(p_payload->'stat_field', '{}'::jsonb)`, and to the UPDATE set list beside
+   `hoard`. **This is the step that gets missed**, and missing it means the field syncs on
+   insert and silently never updates.
+3. **`cloud.js`** — `statField ↔ stat_field` in both `progressToRow` (cloud.js:153) and
+   `rowToProgress` (cloud.js:185).
+4. **`emptyProgress()`** plus the boot migration that backfills the field on old shapes.
+
+Only after all four does anything write to it. Verify with a real round-trip on one
+athlete — write, reload, confirm the row actually changed — before it goes near the roster.
 
 ### 5.6 Two details that are load-bearing
 
@@ -377,6 +472,20 @@ There is no server and no cron; nothing can run while the app is closed. Decay i
 function of `(stamps, today)`. An athlete offline for a month gets the correct answer the
 moment they open the app. Grace applies **per impulse**, not to a global "days since last
 trained" counter.
+
+**Do not use `daysSince()` for any of this.** `daysSince(iso)` (app.js:697) compares
+`Date.now()` against **noon** of the given day, so a 7-day-old entry reads 6 before local
+noon and 7 after. Every axis would visibly step down at lunchtime. Add a sibling helper
+that is midnight-to-midnight and noon-anchored so DST cannot skew it:
+
+```js
+// Calendar days between two local YYYY-MM-DD strings. Noon-anchored so DST can't
+// skew it, and midnight-to-midnight so it does NOT flip at local noon the way
+// daysSince() does. Use this, not daysSince(), for anything the stat field reads.
+function daysBetweenISO(from, to) {
+  return Math.round((new Date(to + "T12:00:00") - new Date(from + "T12:00:00")) / 86400000);
+}
+```
 
 **Future-dated entries are clamped, never discarded.** The log-date chip is a plain
 `<input type="date">` with no `max`, so a typo can produce a 2027 date. More importantly,
@@ -561,17 +670,26 @@ Steps 1–4 are the vertical slice that is worth shipping on its own.
 3. **Post-session payoff.** The strongest engagement idea on the table: the field swells
    with "+6 STR, +2 CON" after a workout. Not in the slice above; worth its own pass.
 4. **DEX constants** (§6.3) will need tuning against real athletes.
-5. **AGI will read empty for most of the general-population roster.** Plyometric and speed
-   work is the only thing that feeds it, and most of Nathan's clients do none. A pentagon
-   with one permanently dead vertex reads as a rendering bug rather than a coaching prompt.
-   Options: broaden what feeds AGI (fast/ballistic resistance work at partial credit), give
-   every axis a small floor so the shape is always closed, or accept it and let the empty
-   axis be the honest prompt. *Needs Nathan's call.*
-6. **STR does not read load.** Set-counting means 5×5 at 315 and 5×5 with an empty bar
-   score the same STR, while the Hoard six inches below shows wildly different tonnage.
-   The intensity multiplier (effort / RIR) is the partial answer, but it is coach-set on a
-   minority of exercises. Worth deciding whether STR should take a load-relative factor
-   against the athlete's own recent best.
+5. **AGI reads empty on the current roster — measured, not guessed.** A production query
+   found **28 athletes, 1,443 prescribed exercises, and zero plyometric exercises
+   anywhere**; one athlete has any speed work, and there are 14 cardio logs in total across
+   two athletes. Nathan is importing plyometric work into the library to address this
+   (tracked separately). Until that lands, AGI has nothing to feed it. Mitigations for the
+   empty vertex regardless:
+   - a **minimum drawn radius**, so a zero axis is a visible corner rather than a collapse
+     into the hub, and the shape always reads as a pentagon rather than a rendering bug
+   - the **"your lightest axis is X" prompt is coach-side only** — the athlete is never
+     told they are incomplete for something their coach chose not to program
+6. **Should AGI be broadened beyond plyo and speed?** Even after the library import, an
+   athlete who never jumps has an empty axis. Options: give ballistic resistance work
+   (KB swings, throws, jump squats) partial AGI credit via the Impulse tag, or leave AGI
+   narrow and let the gap be the honest signal. *Recommend broadening via Impulse — it
+   reuses a tag already being built and needs no new library entries.*
+
+**Resolved since the first draft:** "STR does not read load" — answered by the flame rule
+plus the 1–5 rep fallback (§4.2). Recorded here so the reasoning is not rediscovered:
+set-counting alone cannot distinguish 5×5 at 315 from 5×5 with an empty bar, and raw
+tonnage cannot either, because it is not athlete-relative.
 
 ---
 
