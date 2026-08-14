@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=hdr1" />
+  <link rel="stylesheet" href="styles.css?v=phase1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -823,6 +823,8 @@
           </details>
           <!-- Weight units, rendered by renderCoachUnitsFold() -->
           <div id="cprof-trainage-host"></div>
+          <!-- Training phase, rendered by renderCoachTrainingPhaseFold() -->
+          <div id="cprof-phase-host"></div>
           <div id="cprof-units-host"></div>
           <details class="pref-fold">
             <summary>
@@ -1616,9 +1618,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="bugreport.js?v=bug2"></script>
   <script src="config.js?v=horm2"></script>
-  <script src="cloud.js?v=roster1"></script>
+  <script src="cloud.js?v=phase1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
-  <script src="app.js?v=cov4"></script>
+  <script src="app.js?v=phase2"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

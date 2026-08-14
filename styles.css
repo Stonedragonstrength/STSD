@@ -10180,6 +10180,12 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   color: var(--muted);
   border-color: rgba(var(--primary-rgb), 0.35);
 }
+/* Same chip, warm, when a training phase is what's grading their map — matches
+   the .a-age-pill.phased treatment on the Anatomy figure. */
+.level-chip.phase-chip {
+  color: #fdba74;
+  border-color: rgba(249, 115, 22, 0.45);
+}
 
 /* -------- Coach "View as athlete" preview -------- */
 .preview-banner {
@@ -11008,6 +11014,15 @@ body.live-log-mode #screen-client .header-right #sync-chip-athlete { display: in
 .a-age-pill.unset { color: var(--muted); border-color: var(--border); background: var(--surface-2); }
 .a-age-pill.readonly { cursor: default; }
 .a-age-pill:not(.readonly):hover { border-color: var(--primary-bright); }
+/* A phase is grading instead of the ladder, and it grades on intensity, so the
+   pill runs warm to match the 🔥 burn levels it is filtering on. Amber rather
+   than the effort red: this names a block, it is not itself a warning. */
+.a-age-pill.phased {
+  border-color: rgba(249, 115, 22, 0.5);
+  background: rgba(249, 115, 22, 0.12);
+  color: #fdba74;
+}
+.a-age-pill.phased:not(.readonly):hover { border-color: rgba(249, 115, 22, 0.9); }
 .age-pill-pop {
   position: fixed; z-index: 9999;
   background: var(--surface-2); border: 1px solid var(--border-strong);
@@ -11023,6 +11038,15 @@ body.live-log-mode #screen-client .header-right #sync-chip-athlete { display: in
 }
 .age-pill-pop button:hover { background: var(--surface-3); }
 .age-pill-pop button.on { color: var(--primary-bright); font-weight: 700; }
+/* The popover holds two lists now (phase, then training age), so each needs a
+   name. A div, not a heading: it must not be tabbable or land in the tab order
+   between the options. */
+.age-pop-head {
+  font-size: 0.62rem; font-weight: 800; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--muted);
+  padding: 0.5em 0.75em 0.2em;
+}
+.age-pill-pop .age-pop-head:first-child { padding-top: 0.2em; }
 
 .a-cov-note.hidden { display: none; }
 /* The banner verdict is gone (the chips carry it); what remains is a quiet

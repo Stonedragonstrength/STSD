@@ -820,6 +820,10 @@
       // set and reads as intermediate — today's exact numbers — so assigning
       // levels is opt-in and nobody's map moves on its own. See TRAINING_LEVELS.
       trainingLevel: "",
+      // Which block they're in. "" means building and grades on the ladder
+      // above, counting every set — so a new athlete behaves exactly as one
+      // did before phases existed. See TRAINING_PHASES.
+      trainingPhase: "",
       // Self-booking is granted per athlete on the coach's Scheduling card, so
       // a new athlete starts unable to take slots out of the availability.
       canBook: false,
@@ -1916,11 +1920,13 @@
   // A small "heat ramp" cue: how hard the coach wants this exercise pushed.
   // Light→yellow, Moderate→orange, Hard→red. Stored as ex.effort. Shown as a
   // left-anchored warm gradient on the card + a flame/label tag.
+  // `rank` is what a training phase compares against when deciding whether a
+  // set was intense enough to earn coverage credit — see TRAINING_PHASES.
   const EFFORT_LEVELS = {
-    light:    { label: "Light",    rgb: "234,179,8",  flames: "🔥" },
-    moderate: { label: "Moderate", rgb: "249,115,22", flames: "🔥🔥" },
-    hard:     { label: "Hard",     rgb: "239,68,68",  flames: "🔥🔥🔥" },
-    max:      { label: "Max",      rgb: "185,28,28",  flames: "🔥🔥🔥🔥" },
+    light:    { label: "Light",    rgb: "234,179,8",  flames: "🔥",       rank: 1 },
+    moderate: { label: "Moderate", rgb: "249,115,22", flames: "🔥🔥",     rank: 2 },
+    hard:     { label: "Hard",     rgb: "239,68,68",  flames: "🔥🔥🔥",   rank: 3 },
+    max:      { label: "Max",      rgb: "185,28,28",  flames: "🔥🔥🔥🔥", rank: 4 },
   };
   function effortLevel(ex) { return ex && ex.effort ? EFFORT_LEVELS[ex.effort] : null; }
   // Layer the warm gradient onto a card wrapper (coach row or athlete card).
@@ -3919,6 +3925,7 @@
         // simply absent on the athlete side, and the two maps disagree in
         // silence.
         trainingLevel: athlete.trainingLevel || "",
+        trainingPhase: athlete.trainingPhase || "",
         weeks: athlete.weeks || [],
         oneOffDays: athlete.oneOffDays || [],
         trials: athlete.trials || [],
@@ -5146,10 +5153,16 @@
       // made, where a default-looking "Intermediate" badge would claim one that
       // was never taken.
       const lvl = TRAINING_LEVEL_BY_ID[c.trainingLevel];
-      if (lvl) {
+      // A phase takes the chip when one is set, because it is what grades the
+      // map. "Cut" and "Mnt" are three characters like the abbreviated level,
+      // so the width budget described below is unchanged either way.
+      const ph = phaseOf(c);
+      if (ph || lvl) {
         const el = document.createElement("span");
-        el.className = "quiet-chip level-chip";
-        el.title = `Training age ${lvl.name} — coverage grades ${lvl.solid}+ sets as solid, ${lvl.plenty}+ as plenty`;
+        el.className = "quiet-chip level-chip" + (ph ? " phase-chip" : "");
+        el.title = ph
+          ? `${ph.name} phase — coverage grades ${ph.solid}+ sets as solid, ${ph.plenty}+ as plenty, counting ${EFFORT_LEVELS[ph.minEffort].label} sets and up`
+          : `Training age ${lvl.name} — coverage grades ${lvl.solid}+ sets as solid, ${lvl.plenty}+ as plenty`;
         // Abbreviated on the badge; the full word lives in the title above.
         // Measured at 390px with the birthday + partner + mood chips also
         // live: that row was already at fitClientRowNames()'s 9px floor with
@@ -5159,7 +5172,7 @@
         // logged yet) and gets the worst case down to a 12px clip instead of
         // losing the whole badge. Never the name — the shrink loop protects
         // that first and the ellipsis only ever eats trailing chips.
-        el.textContent = lvl.name.slice(0, 3);
+        el.textContent = ph ? ph.short : lvl.name.slice(0, 3);
         nameEl.appendChild(el);
       }
       const cPartner = partnerOf(c);
@@ -6419,6 +6432,7 @@
     setInviteCodeVisible(false); // code stays tucked away until "Show code"
     renderCoachReferralFold(c);
     renderCoachTrainingAgeFold(c);
+    renderCoachTrainingPhaseFold(c);
     renderCoachUnitsFold(c);
     syncUnitLabels();
     setProfileLocked(true);
@@ -6528,6 +6542,22 @@
       saveTrainer(); // debounce-pushes the athlete row; training_level rides along
       renderCoachTrainingAgeFold(c);
       renderClientGrid(); // the roster's level chip reads this
+    });
+  }
+
+  // Which block they're in. Coach-only: there is no athlete-side mount for this
+  // one, so it lives here rather than beside the shared fold builders.
+  function renderCoachTrainingPhaseFold(c) {
+    const host = $("#cprof-phase-host");
+    if (!host || !c) return;
+    const wasOpen = host.querySelector("details")?.open;
+    host.innerHTML = trainingPhaseFoldHtml(c.trainingPhase || "");
+    if (wasOpen) host.querySelector("details").open = true;
+    wireTrainingPhaseFold(host, (v) => {
+      c.trainingPhase = TRAINING_PHASE_BY_ID[v] ? v : "";
+      saveTrainer(); // debounce-pushes the athlete row; training_phase rides along
+      renderCoachTrainingPhaseFold(c);
+      renderClientGrid(); // the roster chip shows the phase ahead of the level
     });
   }
 
@@ -10369,9 +10399,48 @@
   ];
   const TRAINING_LEVEL_BY_ID = Object.fromEntries(TRAINING_LEVELS.map((l) => [l.id, l]));
   const DEFAULT_TRAINING_LEVEL = "intermediate";
+  // ── Training phase (coach-set) ──
+  // A cut doesn't need a growth block's volume, but the sets it does get have
+  // to be taken hard enough to defend the muscle through a deficit. So a phase
+  // does two things at once: it lowers the bands, and it stops counting sets
+  // the coach didn't mark intense (ex.effort, the 🔥 picker in the editor).
+  //
+  // A phase REPLACES the training-age ladder rather than shifting it, so only
+  // ever one thing is grading the map. Unset is the third state and means
+  // building: today's exact behaviour, every set counted whatever its burn.
+  //
+  // Deliberately coach-only. Training age is a fact about the athlete and is
+  // settable on both sides; which block they are in is programming.
+  const TRAINING_PHASES = [
+    // Emoji picked for how they RENDER on Windows: the bare ⏸ and 🔻 both come
+    // through as flat text glyphs next to the colour ones around them.
+    { id: "fatloss", name: "Fat loss", short: "Cut", emoji: "📉",
+      solid: 3, plenty: 5, minEffort: "hard",
+      blurb: "Eating in a deficit. Fewer sets, and only the hard ones defend muscle." },
+    { id: "maintenance", name: "Maintenance", short: "Mnt", emoji: "⚖️",
+      solid: 2, plenty: 4, minEffort: "moderate",
+      blurb: "Holding what they have. The least work that still keeps it." },
+  ];
+  const TRAINING_PHASE_BY_ID = Object.fromEntries(TRAINING_PHASES.map((p) => [p.id, p]));
+  function phaseOf(client) { return TRAINING_PHASE_BY_ID[client?.trainingPhase] || null; }
+  // 0 means the coach never picked one. Mobility rows can never carry a level
+  // at all — the picker is withheld on them (the isMob guard on effortBtn) —
+  // so they're skipped before this is ever asked.
+  function effortRank(ex) {
+    const m = effortLevel(ex);
+    return m ? m.rank : 0;
+  }
+  function phaseMinRank(phase) {
+    return phase ? (EFFORT_LEVELS[phase.minEffort] || {}).rank || 0 : 0;
+  }
+
   // Unset and unrecognised both resolve to the default. Unrecognised matters
   // because a cloud pull can hand back a value written by a newer build.
   function levelBands(client) {
+    // A phase outranks the ladder. Phase rows carry the same { solid, plenty }
+    // shape, so every caller of coverageBand() keeps working untouched.
+    const ph = phaseOf(client);
+    if (ph) return ph;
     return TRAINING_LEVEL_BY_ID[client?.trainingLevel]
       || TRAINING_LEVEL_BY_ID[DEFAULT_TRAINING_LEVEL];
   }
@@ -10428,12 +10497,25 @@
     // Resolved once and returned, so the figure, the chips and the verdict all
     // grade against the same two numbers instead of re-deriving them three times.
     const bands = levelBands(client);
+    // In a phase, a set has to be marked intense enough to earn its credit.
+    // Two tallies, not one, because they mean different things to the coach:
+    // belowBurn is the feature working, noBurn is something to go and fix.
+    const phase = phaseOf(client);
+    const minRank = phaseMinRank(phase);
     const sets = {};
     ANATOMY_GROUPS.forEach((g) => { sets[g.id] = 0; });
-    let counted = 0, unmapped = 0;
+    let counted = 0, unmapped = 0, noBurn = 0, belowBurn = 0;
     (week.days || []).forEach((d) => (d.exercises || []).forEach((ex) => {
       const n = Number(ex.sets) || 0;
       if (!n) return;
+      if (phase) {
+        // Mobility has no burn picker, so it can neither pass this nor be
+        // fairly complained about. Silent on both counts.
+        if (ex.kind === "mobility") return;
+        const rank = effortRank(ex);
+        if (!rank) { noBurn++; return; }
+        if (rank < minRank) { belowBurn++; return; }
+      }
       const hits = musclesForExercise(ex);
       if (!hits.length) { unmapped++; return; }
       counted++;
@@ -10441,7 +10523,7 @@
     }));
     Object.keys(sets).forEach((k) => { sets[k] = Math.round(sets[k] * 10) / 10; });
     return {
-      week, sets, counted, unmapped, bands,
+      week, sets, counted, unmapped, bands, phase, noBurn, belowBurn,
       level: TRAINING_LEVEL_BY_ID[client?.trainingLevel] || null,
       gaps: ANATOMY_GROUPS.filter((g) => !sets[g.id]).map((g) => g.name),
       light: ANATOMY_GROUPS.filter((g) => sets[g.id] > 0 && sets[g.id] < bands.solid).map((g) => g.name),
@@ -10499,7 +10581,16 @@
       ? "No program to read yet — add a week with some days and this fills in."
       : "No program to read yet. This fills in once your coach builds your week."}</p>`;
     const bits = [];
-    if (!cov.level) bits.push(`Graded as Intermediate — set a training age in ${isCoach ? "their" : "your"} Profile to tune this.`);
+    // Silent about training age while a phase is grading: the ladder isn't
+    // being read, so asking for it would be asking for a number that changes
+    // nothing on screen.
+    if (!cov.level && !cov.phase) bits.push(`Graded as Intermediate — set a training age in ${isCoach ? "their" : "your"} Profile to tune this.`);
+    // Sets held back for being Light or Moderate get no line: that is the
+    // phase working. A missing burn level is the one the coach can act on.
+    if (cov.phase && cov.noBurn) bits.push(
+      `${cov.noBurn} exercise${cov.noBurn === 1 ? " has" : "s have"} no burn level set, ` +
+      `so ${cov.noBurn === 1 ? "it counts" : "they count"} for nothing in ${escapeHtml(cov.phase.name)}` +
+      `${isCoach ? ". The 🔥 button on the exercise sets one" : ""}.`);
     if (cov.unmapped) bits.push(`${cov.unmapped} exercise${cov.unmapped === 1 ? "" : "s"} couldn't be matched to a muscle and count${cov.unmapped === 1 ? "s" : ""} for nothing${isCoach ? " — 🧮 Exercise credits can fix that" : ""}.`);
     return bits.length ? `<p class="a-cov-quiet">${bits.join(" ")}</p>` : "";
   }
@@ -11480,13 +11571,24 @@
           subjEl.innerHTML = "";
         } else {
           const lvl = TRAINING_LEVEL_BY_ID[client.trainingLevel];
+          // Whichever thing is actually grading wears the pill. A phase
+          // replaces the ladder, so showing the training age beside it would
+          // put a number on screen that nothing is reading.
+          const ph = phaseOf(client);
+          const minEff = ph ? EFFORT_LEVELS[ph.minEffort] : null;
+          const face = ph
+            ? `${ph.emoji} ${escapeHtml(ph.name)}`
+            : (lvl ? `${lvl.emoji} ${escapeHtml(lvl.name)}` : "");
+          const tip = ph
+            ? `${ph.name}. Solid at ${ph.solid}+ sets, plenty at ${ph.plenty}+, counting ${minEff.label} sets and up. Overrides training age.`
+            : "Training age — grades the coverage bands. Also on their Profile.";
           subjEl.innerHTML =
             `<span class="a-cov-subject-name">${escapeHtml(client.name)}</span>` +
             (canEditAge
-              ? `<button type="button" class="a-age-pill${lvl ? "" : " unset"}" data-age-pill` +
-                ` title="Training age — grades the coverage bands. Also on their Profile.">` +
-                `${lvl ? `${lvl.emoji} ${escapeHtml(lvl.name)}` : "Training age?"}</button>`
-              : (lvl ? `<span class="a-age-pill readonly">${lvl.emoji} ${escapeHtml(lvl.name)}</span>` : ""));
+              ? `<button type="button" class="a-age-pill${face ? "" : " unset"}${ph ? " phased" : ""}" data-age-pill` +
+                ` title="${escapeHtml(tip)}">` +
+                `${face || "Training age?"}</button>`
+              : (face ? `<span class="a-age-pill readonly${ph ? " phased" : ""}">${face}</span>` : ""));
         }
       }
       noteEl.innerHTML = client
@@ -11693,7 +11795,16 @@
       pop.className = "age-pill-pop";
       const opt = (id, label, emoji) =>
         `<button type="button" data-age="${id}" class="${(target.trainingLevel || "") === id ? "on" : ""}">${emoji ? emoji + " " : ""}${escapeHtml(label)}</button>`;
-      pop.innerHTML = TRAINING_LEVELS.map((l) => opt(l.id, l.name, l.emoji)).join("") + opt("", "Not set", "");
+      const optPhase = (id, label, emoji) =>
+        `<button type="button" data-phase="${id}" class="${(target.trainingPhase || "") === id ? "on" : ""}">${emoji ? emoji + " " : ""}${escapeHtml(label)}</button>`;
+      // Phase leads because it wins when both are set; training age still
+      // shows, since it is what grading falls back to under Building.
+      pop.innerHTML =
+        `<div class="age-pop-head">Phase</div>` +
+        TRAINING_PHASES.map((p) => optPhase(p.id, p.name, p.emoji)).join("") +
+        optPhase("", "Building", "🏗️") +
+        `<div class="age-pop-head">Training age</div>` +
+        TRAINING_LEVELS.map((l) => opt(l.id, l.name, l.emoji)).join("") + opt("", "Not set", "");
       document.body.appendChild(pop);
       const r = anchor.getBoundingClientRect();
       pop.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8))}px`;
@@ -11702,14 +11813,24 @@
       const close = () => { pop.remove(); document.removeEventListener("click", away, true); };
       const away = (e) => { if (!pop.contains(e.target)) close(); };
       setTimeout(() => document.addEventListener("click", away, true), 0);
-      pop.querySelectorAll("[data-age]").forEach((b) => b.addEventListener("click", () => {
-        target.trainingLevel = b.dataset.age;
+      // Both lists repaint the same three things; only the field written
+      // differs. Picking a phase also changes WHICH sets count, not just the
+      // thresholds, so renderCoverage() has to re-walk the week either way.
+      const applyPick = () => {
         saveTrainer();
         close();
         if (!isCoach && state.previewMode) refreshLiveProgram();
         renderCoverage();
         renderList();
         renderDetail(); // the open card's grading strip reads the new bands
+      };
+      pop.querySelectorAll("[data-age]").forEach((b) => b.addEventListener("click", () => {
+        target.trainingLevel = b.dataset.age;
+        applyPick();
+      }));
+      pop.querySelectorAll("[data-phase]").forEach((b) => b.addEventListener("click", () => {
+        target.trainingPhase = b.dataset.phase;
+        applyPick();
       }));
     }
     root.querySelector("[data-cov-credits]")?.addEventListener("click", () => {
@@ -25956,6 +26077,57 @@
       onPick(r.value);
       const lvl = TRAINING_LEVEL_BY_ID[r.value];
       toast(lvl ? `Training age: ${lvl.name} ⏳` : "Training age cleared");
+    }));
+  }
+
+  // The phase fold. Coach-only, so unlike the training-age fold it has no
+  // athlete-side mount — see the note on TRAINING_PHASES.
+  function trainingPhaseSub(cur) {
+    const ph = TRAINING_PHASE_BY_ID[cur];
+    return ph
+      ? `${ph.name}. Solid at ${ph.solid}+ sets, plenty at ${ph.plenty}+.`
+      : "Building. Every set counts, graded on training age.";
+  }
+  function trainingPhaseFoldHtml(cur, { id = "cprof-fold-phase", name = "cprof-phase-pick" } = {}) {
+    // Each hint is built from the row so the numbers on screen cannot drift
+    // from the numbers doing the grading.
+    const opts = [
+      { id: "", emoji: "🏗️", label: "Building",
+        hint: "Every set counts, whatever its burn level. Graded on their training age." },
+      ...TRAINING_PHASES.map((p) => {
+        const m = EFFORT_LEVELS[p.minEffort] || {};
+        return {
+          id: p.id, emoji: p.emoji, label: p.name,
+          hint: `${p.blurb} ${m.flames} ${m.label} and up count. Solid at ${p.solid}+ sets a muscle, plenty at ${p.plenty}+.`,
+        };
+      }),
+    ];
+    return `
+      <details class="pref-fold" id="${id}">
+        <summary>
+          <span class="pref-fold-ico">🔥</span>
+          <span class="pref-fold-text">
+            <span class="pref-fold-title">Training phase</span>
+            <span class="pref-fold-sub">${escapeHtml(trainingPhaseSub(cur))}</span>
+          </span>
+          <span class="pref-fold-chev">▸</span>
+        </summary>
+        <p class="pref-foot">A cut or a maintenance block needs less volume, but the sets it does get have to be taken hard. Picking one lowers the Coverage bands on the Anatomy page and counts only the exercises you marked intense enough with the 🔥 button. It replaces training age as the grader while it is set.</p>
+        <div class="cyc-share-pick">
+          ${opts.map((o) => `
+            <label class="cyc-share-opt${(cur || "") === o.id ? " on" : ""}">
+              <input type="radio" name="${name}" value="${o.id}"${(cur || "") === o.id ? " checked" : ""} />
+              <span class="cyc-share-emo">${o.emoji}</span>
+              <span class="cyc-share-text"><span class="pref-label">${escapeHtml(o.label)}</span><span class="pref-hint">${escapeHtml(o.hint)}</span></span>
+            </label>`).join("")}
+        </div>
+      </details>`;
+  }
+  function wireTrainingPhaseFold(host, onPick) {
+    host.querySelectorAll('input[name$="phase-pick"]').forEach((r) => r.addEventListener("change", () => {
+      onPick(r.value);
+      const ph = TRAINING_PHASE_BY_ID[r.value];
+      toast(ph ? `Training phase: ${ph.name} ${ph.emoji}` : "Back to building 🏗️");
     }));
   }
   // The athlete's own pick. Rides the same vitals push as name and units.

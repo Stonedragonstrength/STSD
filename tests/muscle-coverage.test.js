@@ -128,8 +128,24 @@ const TRAINING_LEVELS = extractLiteral(appSrc, "const TRAINING_LEVELS = [");
 const TRAINING_LEVEL_BY_ID = Object.fromEntries(TRAINING_LEVELS.map((l) => [l.id, l]));
 const DEFAULT_TRAINING_LEVEL = "intermediate";
 
+// Same reasoning for the phase table and the burn ladder it points at: read,
+// never copied, so the assertions below pin the numbers Nathan actually chose.
+const TRAINING_PHASES = extractLiteral(appSrc, "const TRAINING_PHASES = [");
+const TRAINING_PHASE_BY_ID = Object.fromEntries(TRAINING_PHASES.map((p) => [p.id, p]));
+const EFFORT_LEVELS = extractLiteral(appSrc, "const EFFORT_LEVELS = {");
+
 // The LOGIC is copied, per the convention at the top of this file.
+function phaseOf(client) { return TRAINING_PHASE_BY_ID[client?.trainingPhase] || null; }
+function effortRank(ex) {
+  const m = ex && ex.effort ? EFFORT_LEVELS[ex.effort] : null;
+  return m ? m.rank : 0;
+}
+function phaseMinRank(phase) {
+  return phase ? (EFFORT_LEVELS[phase.minEffort] || {}).rank || 0 : 0;
+}
 function levelBands(client) {
+  const ph = phaseOf(client);
+  if (ph) return ph;
   return TRAINING_LEVEL_BY_ID[client?.trainingLevel]
     || TRAINING_LEVEL_BY_ID[DEFAULT_TRAINING_LEVEL];
 }
@@ -143,19 +159,27 @@ function coverageBand(n, bands) {
 
 function coverageForWeek(week, client) {
   const bands = levelBands(client);
+  const phase = phaseOf(client);
+  const minRank = phaseMinRank(phase);
   const sets = {};
   ANATOMY_GROUPS.forEach((g) => { sets[g.id] = 0; });
-  let unmapped = 0;
+  let unmapped = 0, noBurn = 0, belowBurn = 0;
   (week.days || []).forEach((d) => (d.exercises || []).forEach((ex) => {
     const n = Number(ex.sets) || 0;
     if (!n) return;
+    if (phase) {
+      if (ex.kind === "mobility") return;
+      const rank = effortRank(ex);
+      if (!rank) { noBurn++; return; }
+      if (rank < minRank) { belowBurn++; return; }
+    }
     const hits = musclesForExercise(ex);
     if (!hits.length) { unmapped++; return; }
     hits.forEach((h) => { if (sets[h.id] != null) sets[h.id] += n * h.weight; });
   }));
   Object.keys(sets).forEach((k) => { sets[k] = Math.round(sets[k] * 10) / 10; });
   return {
-    sets, unmapped, bands,
+    sets, unmapped, noBurn, belowBurn, bands, phase,
     gaps: ANATOMY_GROUPS.filter((g) => !sets[g.id]).map((g) => g.id),
     light: ANATOMY_GROUPS.filter((g) => sets[g.id] > 0 && sets[g.id] < bands.solid).map((g) => g.id),
   };
@@ -336,6 +360,143 @@ check("gaps and light are disjoint, and cover every group", () => {
   cov.gaps.forEach((id) => assert.ok(!cov.light.includes(id), `${id} in both lists`));
   assert.ok(cov.gaps.includes("adductors"), "nothing trains adductors here");
   assert.ok(cov.light.includes("chest") || cov.sets.chest >= 6, "chest got 5 sets");
+});
+
+// ---- training phase: fewer sets, but they have to be hard -----------------
+// A cut and a maintenance block don't need a growth block's volume, but the
+// sets they do get have to be taken hard enough to defend the muscle. So a
+// phase lowers the bands AND stops counting sets the coach didn't mark intense.
+
+check("the burn ladder climbs, one rank per level", () => {
+  const ranks = Object.values(EFFORT_LEVELS).map((e) => e.rank);
+  assert.deepStrictEqual(ranks, [1, 2, 3, 4],
+    "phases compare against these ranks — a gap or a repeat silently changes which sets count");
+});
+
+check("every phase points at a burn level that exists", () => {
+  TRAINING_PHASES.forEach((p) => {
+    assert.ok(EFFORT_LEVELS[p.minEffort],
+      `${p.id}: minEffort "${p.minEffort}" is not in EFFORT_LEVELS, so nothing would ever count`);
+  });
+});
+
+check("Fat loss is 3 and 5, taken Hard or above", () => {
+  // Nathan's numbers, 2026-08-13. Half of his programmed exercises are Hard or
+  // Max, so a hard+ filter roughly halves the counted sets — which is why the
+  // bands are roughly half Intermediate's 8/10. If this fails, someone moved
+  // one of the two halves without moving the other.
+  const p = TRAINING_PHASE_BY_ID.fatloss;
+  assert.strictEqual(p.solid, 3);
+  assert.strictEqual(p.plenty, 5);
+  assert.strictEqual(p.minEffort, "hard");
+});
+
+check("Maintenance is 2 and 4, taken Moderate or above", () => {
+  const p = TRAINING_PHASE_BY_ID.maintenance;
+  assert.strictEqual(p.solid, 2);
+  assert.strictEqual(p.plenty, 4);
+  assert.strictEqual(p.minEffort, "moderate");
+});
+
+check("no phase asks more than the lightest training age", () => {
+  // A phase is a REDUCTION. If one ever graded harder than a beginner's ladder
+  // it would be scolding a cutting athlete for volume they were told to drop.
+  const easiest = TRAINING_LEVELS[0];
+  TRAINING_PHASES.forEach((p) => {
+    assert.ok(p.solid <= easiest.solid, `${p.id} solid ${p.solid} exceeds ${easiest.id}'s ${easiest.solid}`);
+    assert.ok(p.plenty <= easiest.plenty, `${p.id} plenty ${p.plenty} exceeds ${easiest.id}'s ${easiest.plenty}`);
+  });
+});
+
+check("a phase replaces the training-age ladder, it does not shift it", () => {
+  // Both set: the phase answers, so only one thing is ever grading the map.
+  const b = levelBands({ trainingLevel: "advanced", trainingPhase: "fatloss" });
+  assert.strictEqual(b.solid, 3, "an advanced athlete in a cut is still graded 3/5");
+  assert.strictEqual(b.plenty, 5);
+  const none = levelBands({ trainingLevel: "advanced", trainingPhase: "" });
+  assert.strictEqual(none.solid, TRAINING_LEVEL_BY_ID.advanced.solid, "unset falls back to the ladder");
+  const junk = levelBands({ trainingLevel: "advanced", trainingPhase: "bulking" });
+  assert.strictEqual(junk.solid, TRAINING_LEVEL_BY_ID.advanced.solid,
+    "a value we never wrote — a cloud pull from a newer build must not blank the bands");
+});
+
+check("with no phase set, burn levels are ignored entirely", () => {
+  // The regression that matters most: every existing athlete is unset, and
+  // none of their maps may move because this feature shipped.
+  const days = (effort) => ({ days: [{ exercises: [
+    { name: "Bench Press", sets: 5, effort }, { name: "Back Squat", sets: 5, effort },
+  ] }] });
+  const asLight = coverageForWeek(days("light"), {});
+  const asHard = coverageForWeek(days("hard"), {});
+  const untagged = coverageForWeek(days(undefined), {});
+  assert.deepStrictEqual(asLight.sets, asHard.sets, "light and hard weigh the same with no phase");
+  assert.deepStrictEqual(asLight.sets, untagged.sets, "and so does an untagged one");
+  assert.strictEqual(untagged.noBurn, 0, "nothing to warn about when nothing is being filtered");
+});
+
+check("in Fat loss only Hard and Max sets count", () => {
+  const week = { days: [{ exercises: [
+    { name: "Bench Press", sets: 4, effort: "hard" },
+    { name: "Push Up", sets: 4, effort: "moderate" },
+    { name: "Cable Crossover", sets: 4, effort: "light" },
+  ] }] };
+  const cut = coverageForWeek(week, { trainingPhase: "fatloss" });
+  const build = coverageForWeek(week, {});
+  assert.ok(cut.sets.chest > 0, "the hard sets still count");
+  assert.ok(cut.sets.chest < build.sets.chest,
+    `fat loss counted ${cut.sets.chest} of the ${build.sets.chest} chest sets — the filter did nothing`);
+  assert.strictEqual(cut.belowBurn, 2, "the moderate and the light one were set aside");
+  assert.strictEqual(cut.noBurn, 0, "all three carried a level, so there is nothing to fix");
+});
+
+check("Maintenance counts Moderate, and still refuses Light", () => {
+  const week = { days: [{ exercises: [
+    { name: "Bench Press", sets: 4, effort: "moderate" },
+    { name: "Push Up", sets: 4, effort: "light" },
+  ] }] };
+  const maint = coverageForWeek(week, { trainingPhase: "maintenance" });
+  const cut = coverageForWeek(week, { trainingPhase: "fatloss" });
+  assert.ok(maint.sets.chest > 0, "moderate work counts in maintenance");
+  assert.strictEqual(maint.belowBurn, 1, "only the light one was set aside");
+  assert.strictEqual(cut.sets.chest, 0, "the same week in a cut counts for nothing");
+  assert.strictEqual(cut.belowBurn, 2);
+});
+
+check("an untagged exercise counts for nothing and is tallied so the coach is told", () => {
+  const cov = coverageForWeek({ days: [{ exercises: [
+    { name: "Bench Press", sets: 5 },
+    { name: "Back Squat", sets: 5, effort: "max" },
+  ] }] }, { trainingPhase: "fatloss" });
+  assert.strictEqual(cov.sets.chest, 0, "no burn level, no credit");
+  assert.ok(cov.sets.quads > 0, "the tagged one is unaffected");
+  assert.strictEqual(cov.noBurn, 1, "counted separately from belowBurn — this one is fixable");
+  assert.strictEqual(cov.belowBurn, 0, "an untagged set is not a light set");
+});
+
+check("mobility is neither counted nor complained about", () => {
+  // The effort picker is withheld on mobility rows (the isMob guard on
+  // effortBtn), so a mobility exercise CANNOT carry a burn level. Tallying it
+  // as untagged would send the coach hunting for a control that isn't there.
+  const cov = coverageForWeek({ days: [{ exercises: [
+    { name: "Hamstring Stretch", sets: 3, kind: "mobility" },
+    { name: "Back Squat", sets: 5, effort: "hard" },
+  ] }] }, { trainingPhase: "fatloss" });
+  assert.strictEqual(cov.noBurn, 0, "mobility must not be reported as missing a burn level");
+  assert.strictEqual(cov.belowBurn, 0);
+  assert.ok(cov.sets.quads > 0, "the real work still counts");
+});
+
+check("a cut's lower bands stop the emptier map reading as all gaps", () => {
+  // The point of the lower bands. Four hard sets a muscle is a fine cutting
+  // week; graded against Intermediate's 8/10 it would read as a warning.
+  const week = { days: [{ exercises: [
+    { name: "Bench Press", sets: 4, effort: "hard" },
+    { name: "Back Squat", sets: 4, effort: "hard" },
+  ] }] };
+  const cut = coverageForWeek(week, { trainingPhase: "fatloss" });
+  const asMid = coverageForWeek(week, { trainingLevel: "intermediate" });
+  assert.ok(!cut.light.includes("chest"), "4 hard sets is solid in a cut");
+  assert.ok(asMid.light.includes("chest"), "precondition: the same 4 sets are light when building");
 });
 
 console.log(`\nmuscle-coverage: ${n} checks passed.`);
