@@ -594,6 +594,44 @@ the whole identity sits in instead of being a number competing with it.
 **Two colours, two jobs:** frame = career metal, field = theme accent. They never fight
 because they never mean the same thing. Verified across all ten themes.
 
+### 7.1a The scale is ABSOLUTE
+
+Nathan's decision, 2026-08-13. **Every athlete is on the same scale.** A beginner's field
+is genuinely small and a well-trained athlete's is large, because *size is progression*
+(§1) and a normalised field would make a novice and a national-level lifter look identical.
+
+Each stat has a fixed reference constant for "full" — the sustained decayed load of an
+athlete training that quality hard and consistently. Those constants are a **calibration
+exercise against the real roster**, not a guess: pick them so a typical Stone Dragon
+athlete reads mid-field, with clear headroom above.
+
+Consequences to accept deliberately:
+
+- A new athlete's first pentagon is small. That is the point, and the frame (§7.1) is what
+  keeps it from reading as failure — a small field inside a copper chassis reads as
+  *early*, not *bad*.
+- Because the constants are read-side, retuning them reshapes everyone at once (§5.4).
+  Calibrate before the roster sees it, then leave them alone.
+
+### 7.1b Coach roster mini-fields
+
+Nathan's decision, 2026-08-13 — **in scope, not deferred.** A small pentagon on each
+athlete card on the coach's roster, so a whole roster can be scanned for a cold axis at a
+glance and programmed against.
+
+- **Same renderer, small size, no labels.** One SVG builder takes a size and a
+  `labels: false` flag; the mini is the hull, the grid and the peak ghost only. It must not
+  become a second implementation that drifts from the athlete's.
+- **Reads the same synced numbers.** Because the field is a stored bucket on
+  `progress.statField` rather than a device-local derivation, the coach and the athlete see
+  the *same* pentagon. A derived design would have given the two devices different answers
+  from different caches — one of the failures `syncHoard` was unified to eliminate.
+- **Source the progress through `mergedRosterProgress`**, never by assigning
+  `importedProgress` directly: an absent cloud row means keep-local, never wipe.
+- The **"your lightest axis is X" prompt is coach-side only** (§10) — this is where it
+  belongs. The athlete is never told they are incomplete for something the coach chose not
+  to program.
+
 ### 7.2 Geometry
 
 Inline SVG built as an HTML string and assigned via `innerHTML` — the only pattern in
@@ -653,23 +691,21 @@ window contribute almost nothing, so there is no need to walk years of history.
 5. **The frame.** Absorb the Hoard card into the chassis; ladder behind a tap.
 6. **The Impulse group.** Modifier group, `exerciseDisplayLabel` exception, custom-exercise
    preset grid.
+7. **Coach roster mini-fields** (§7.1b). Same renderer at small size, sourced through
+   `mergedRosterProgress`, plus the coach-only lightest-axis prompt.
+8. **The rep-driven flame suggestion** (§4.2a), and re-pin the training-phase coverage
+   tests after it.
 
-Steps 1–4 are the vertical slice that is worth shipping on its own.
+Steps 1–4 are the vertical slice that is worth shipping on its own. Calibrate the absolute
+constants (§7.1a) against the real roster before step 4 goes anywhere near an athlete.
 
 ---
 
 ## 10. Open questions
 
-1. **Absolute or normalised axes?** Does everyone share one scale, so a beginner's field
-   is genuinely small (honest, lots of room to grow), or is the field scaled to the
-   athlete (feels good immediately, but a beginner and a national-level lifter look
-   alike)? *Recommendation: absolute, with a generous early curve, consistent with
-   "size is progression".*
-2. **Can the coach see it?** Mini fields on the roster cards would make it something to
-   program against. Deferred — the chosen job is athlete identity.
-3. **Post-session payoff.** The strongest engagement idea on the table: the field swells
-   with "+6 STR, +2 CON" after a workout. Not in the slice above; worth its own pass.
-4. **DEX constants** (§6.3) will need tuning against real athletes.
+1. **Post-session payoff.** The strongest engagement idea on the table: the field swells
+   with "+6 STR, +2 CON" after a workout. Not in the first slice; worth its own pass.
+2. **DEX constants** (§6.3) will need tuning against real athletes.
 5. **AGI reads empty on the current roster — measured, not guessed.** A production query
    found **28 athletes, 1,443 prescribed exercises, and zero plyometric exercises
    anywhere**; one athlete has any speed work, and there are 14 cardio logs in total across
