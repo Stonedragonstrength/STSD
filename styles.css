@@ -1015,29 +1015,31 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
    six destinations is more than a band can hold and stay readable. */
 .cd-door { flex: 1 1 calc(50% - 0.35rem); }
 
-/* Training age in the drawer: ONE pill showing where they are, which opens a
-   popup to change it. Not a row of open options — this is read at a glance and
-   set about once, so standing choices would spend drawer height under the
-   doors on a decision already made. flex:none so it hugs its text instead of
-   stretching across the band. */
+/* Training age on the Training setup card: ONE pill showing where they are,
+   which opens a picker. The other hub rows lay their options out inline, but
+   three named levels each carrying a years blurb do not fit that shape the way
+   1..7 days does — so this row is a control that opens rather than a row of
+   choices. Sized to sit level with .hub-opt beside it. */
 .cd-age {
-  flex: 0 0 auto; align-self: center;
-  display: inline-flex; align-items: baseline; gap: 0.45em;
+  display: inline-flex; align-items: center;
   padding: 0.3em 0.8em;
-  border: 1px solid var(--border);
+  border: 1px solid rgba(var(--primary-bright-rgb), 0.55);
   border-radius: 999px;
-  background: var(--surface);
-  color: var(--text);
-  font: inherit; cursor: pointer; white-space: nowrap;
-  transition: border-color 0.15s, background 0.15s;
+  background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.2), rgba(var(--primary-rgb), 0.06));
+  color: var(--primary-bright);
+  font: inherit; font-size: 0.76rem; font-weight: 700;
+  cursor: pointer; white-space: nowrap;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
-.cd-age:hover { border-color: rgba(var(--primary-rgb), 0.65); background: var(--surface-3); }
-.cd-age-l {
-  font-size: 0.56rem; font-weight: 800; letter-spacing: 0.09em;
-  text-transform: uppercase; color: var(--muted);
+.cd-age:hover { border-color: var(--primary); }
+/* Unset is a dashed outline, the same language the summary's unset chips use,
+   so "nothing chosen here" reads the same wherever it appears on this card. */
+.cd-age.unset {
+  color: var(--muted); font-weight: 600;
+  border-style: dashed; border-color: var(--border);
+  background: transparent;
 }
-.cd-age-v { font-size: 0.8rem; font-weight: 700; color: var(--primary-bright); }
-.cd-age.unset .cd-age-v { color: var(--muted); font-weight: 600; }
+.cd-age.unset:hover { color: var(--text); border-color: var(--border-strong); }
 
 /* The picker itself — the shared .grid-picker-pop shell with list rows instead
    of a grid of values, because each row is an emoji, a name and a blurb. */

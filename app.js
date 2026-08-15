@@ -5233,11 +5233,12 @@
   // unconfigured athlete look identical to a configured one, which is how a
   // roster of blanks went unnoticed. Unset renders dimmed rather than absent.
   //
-  // No training age here: it is deliberately off the card face, and putting it
-  // back in a summary would undo that. The BANDS chip is its consequence, not
-  // its control, which is the same line the card already draws.
+  // Training age IS here (2026-08-15): it moved onto this card with the other
+  // dials, so the summary covers it like everything else. It is still absent
+  // from the PROGRESS-mode row, which is the surface Nathan wanted it off.
   function hubSummaryHtml(c) {
     const b = levelBands(c);
+    const lvl = TRAINING_LEVEL_BY_ID[c.trainingLevel];
     const goal = phaseOf(c);
     const days = Number(c.daysPerWeek) || 0;
     const gear = (c.equipment || []).length;
@@ -5245,6 +5246,9 @@
       `<span class="hsum${unset ? " is-unset" : ""}" title="${escapeHtml(title)}">` +
       `<span class="hsum-i" aria-hidden="true">${ico}</span>${escapeHtml(txt)}</span>`;
     return [
+      lvl
+        ? chip(lvl.emoji, lvl.name, `Training age — ${lvl.years}`)
+        : chip("—", "No age", "Training age not set — the coverage map grades against the default", true),
       goal
         ? chip(goal.emoji, goal.name, goal.blurb || `${goal.name} phase`)
         : chip("—", "No goal", "No training phase set — the coverage map grades against training age", true),
@@ -5282,7 +5286,16 @@
     // gear count / level / goal objects existed for the prose summary that
     // hubSummaryHtml replaced.
     const days = Number(c.daysPerWeek) || 0;
+    const lvl = TRAINING_LEVEL_BY_ID[c.trainingLevel];
     return `
+      <div class="hub-row">
+        <span class="hub-lbl">Training age</span>
+        <span class="hub-pick">
+          <button type="button" class="cd-age${lvl ? "" : " unset"}" data-hub-age
+            title="${escapeHtml(lvl ? `Training age — ${lvl.years}` : "Training age not set — tap to choose")}"
+          >${lvl ? `${lvl.emoji} ${escapeHtml(lvl.name)}` : "Not set"}</button>
+        </span>
+      </div>
       <div class="hub-row">
         <span class="hub-lbl">Goal</span>
         <span class="hub-pick">${[NO_PHASE_GOAL, ...TRAINING_PHASES].map((p) =>
@@ -5315,10 +5328,15 @@
   // repaints just that card, so the fold cannot drift from the data.
   function wireRosterTrainingHub(host, c, repaint) {
     host.addEventListener("click", (e) => {
-      const b = e.target.closest("[data-hub-goal],[data-hub-days],[data-hub-pain],[data-hub-gear]");
+      const b = e.target.closest("[data-hub-goal],[data-hub-days],[data-hub-pain],[data-hub-gear],[data-hub-age]");
       if (!b) return;
       e.stopPropagation();               // the card itself opens the athlete
       const d = b.dataset;
+      // Training age is the one control here that opens a picker rather than
+      // setting a value outright — three named levels with a years blurb each
+      // do not fit a row of inline options the way 1..7 days does. The picker
+      // saves and pushes on its own, so this returns before the shared tail.
+      if ("hubAge" in d) { openTrainingAgePicker(c, b, repaint); return; }
       if ("hubGoal" in d) c.trainingPhase = d.hubGoal;
       else if ("hubDays" in d) c.daysPerWeek = Number(d.hubDays) || 0;
       // No hubLevel branch: training age moved to the row drawer (see above),
@@ -5749,27 +5767,10 @@
     // information, and one place per destination is the point of the strip.
     wrap.appendChild(doors);
 
-    // The training-age INDICATOR, moved off the card face (2026-08-15). One
-    // chip showing where they are, that opens a popup to change it — not three
-    // options sitting open. This is a value read at a glance and set roughly
-    // once, so a permanent row of choices spends drawer height on a decision
-    // that is already made, right under the doors that get tapped every day.
-    const age = document.createElement("button");
-    age.type = "button";
-    age.className = "cd-age";
-    const setAgeFace = () => {
-      const l = TRAINING_LEVEL_BY_ID[c.trainingLevel];
-      age.classList.toggle("unset", !l);
-      age.title = l ? `Training age — ${l.years}` : "Training age not set — tap to choose";
-      age.innerHTML = `<span class="cd-age-l">Training age</span>`
-        + `<span class="cd-age-v">${l ? `${l.emoji} ${escapeHtml(l.name)}` : "Not set"}</span>`;
-    };
-    setAgeFace();
-    age.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openTrainingAgePicker(c, age, () => { setAgeFace(); });
-    });
-    wrap.appendChild(age);
+    // No training age here. It briefly lived in this drawer and moved on to the
+    // Training setup card (2026-08-15), where the rest of the dials that decide
+    // how someone is programmed already are. The drawer is destinations; the
+    // setup card is settings.
     return wrap;
   }
 
@@ -7131,7 +7132,10 @@
       c.trainingLevel = TRAINING_LEVEL_BY_ID[v] ? v : "";
       saveTrainer(); // debounce-pushes the athlete row; training_level rides along
       renderCoachTrainingAgeFold(c);
-      renderClientGrid(); // the roster's level chip reads this
+      // The roster's level CHIP is gone, but Training setup mode still shows
+      // this value twice — the pill and the summary strip — so the grid has to
+      // repaint or it disagrees with the Profile the coach just edited.
+      renderClientGrid();
     });
   }
 
