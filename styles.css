@@ -1015,18 +1015,46 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
    six destinations is more than a band can hold and stay readable. */
 .cd-door { flex: 1 1 calc(50% - 0.35rem); }
 
-/* Training age in the drawer. .client-drawer is a wrapping flex row, so this
-   needs a full basis or it tries to sit beside the doors and squashes both. */
-.cd-age { flex: 1 1 100%; align-items: center; margin-top: 0.1rem; }
-.cd-age .hub-lbl { padding-top: 0; }
-/* Pills, not the hub's 8px tiles. In the drawer these sit under a row of
-   square-cornered doors, and a pill reads as "pick one of these" where a
-   rounded rectangle reads as another button to press. */
-.cd-age .hub-opt { border-radius: 999px; padding: 0.3em 0.75em; }
+/* Training age in the drawer: ONE pill showing where they are, which opens a
+   popup to change it. Not a row of open options — this is read at a glance and
+   set about once, so standing choices would spend drawer height under the
+   doors on a decision already made. flex:none so it hugs its text instead of
+   stretching across the band. */
+.cd-age {
+  flex: 0 0 auto; align-self: center;
+  display: inline-flex; align-items: baseline; gap: 0.45em;
+  padding: 0.3em 0.8em;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit; cursor: pointer; white-space: nowrap;
+  transition: border-color 0.15s, background 0.15s;
+}
+.cd-age:hover { border-color: rgba(var(--primary-rgb), 0.65); background: var(--surface-3); }
+.cd-age-l {
+  font-size: 0.56rem; font-weight: 800; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--muted);
+}
+.cd-age-v { font-size: 0.8rem; font-weight: 700; color: var(--primary-bright); }
+.cd-age.unset .cd-age-v { color: var(--muted); font-weight: 600; }
 
-/* The stat field, in the drawer rather than on the card face. flex:none so it
-   keeps its square against the tiles' flexible basis. */
-.client-drawer > .sf-mini { flex: none; margin-left: 0; align-self: center; }
+/* The picker itself — the shared .grid-picker-pop shell with list rows instead
+   of a grid of values, because each row is an emoji, a name and a blurb. */
+.age-pop { min-width: 232px; }
+.age-pop-cell {
+  display: flex; align-items: center; gap: 0.55em; width: 100%;
+  padding: 0.42em 0.5em; border-radius: 8px;
+  border: 1px solid transparent; background: transparent; color: var(--text);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.age-pop-cell:hover { background: var(--surface-3); }
+.age-pop-cell.active { border-color: var(--primary); background: var(--primary-soft); }
+.age-pop-ico { font-size: 1rem; line-height: 1; flex: none; width: 1.3em; text-align: center; }
+.age-pop-txt { display: flex; flex-direction: column; min-width: 0; }
+.age-pop-txt b { font-size: 0.82rem; font-weight: 700; }
+.age-pop-txt small { font-size: 0.68rem; color: var(--text-soft); }
+.age-pop-cell.active .age-pop-txt b { color: var(--primary-bright); }
 
 /* ---- The Money door's sheet ----
    Read-only by design; Sessions owns the controls. Grouped by the question

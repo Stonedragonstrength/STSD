@@ -5138,7 +5138,53 @@
   const KEY_ROSTER_MODE = "trainerpro_roster_mode_v1";
 
   // ── The training hub ──
-  // The athlete's stat field, small, for the row DRAWER. Same renderer as the
+  // Training-age picker, anchored to whatever chip opened it. Built on the same
+  // _positionPop / _attachOutsideClose pair every other popup in here uses, so
+  // it flips above the anchor near the viewport foot and dismisses on an
+  // outside tap without a second implementation of either.
+  //
+  // openGridPicker is deliberately NOT reused: it renders String(v) as its own
+  // label, and these rows are an id with an emoji, a name and a years blurb.
+  // Bending the value shape to fit would have been the fork, not this.
+  function openTrainingAgePicker(c, anchorEl, onPick) {
+    document.querySelector(".grid-picker-pop")?.remove();
+    const pop = document.createElement("div");
+    pop.className = "grid-picker-pop age-pop";
+    pop.style.cssText = "position:fixed;z-index:9999;visibility:hidden";
+    const head = document.createElement("div");
+    head.className = "grid-picker-head";
+    head.textContent = "Training age";
+    pop.appendChild(head);
+
+    // "Not set" is a real, listed choice rather than a tap-the-same-one-again
+    // trick. In a popup that closes on pick, an invisible toggle is unusable —
+    // and unset is meaningful here: it means the decision has not been made,
+    // which grades against the default rather than claiming a level.
+    const rows = [...TRAINING_LEVELS, { id: "", name: "Not set", emoji: "—", years: "Graded against the default" }];
+    rows.forEach((l) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "age-pop-cell" + (l.id === (c.trainingLevel || "") ? " active" : "");
+      b.innerHTML = `<span class="age-pop-ico">${l.emoji}</span>`
+        + `<span class="age-pop-txt"><b>${escapeHtml(l.name)}</b><small>${escapeHtml(l.years)}</small></span>`;
+      b.addEventListener("click", () => {
+        pop.remove();
+        c.trainingLevel = l.id;
+        saveTrainer();
+        // Repaint the chip in place rather than re-rendering the grid: a full
+        // renderClientGrid() rebuilds the cell this popup was anchored to, and
+        // the coach loses their place in the drawer they are working in.
+        onPick?.();
+      });
+      pop.appendChild(b);
+    });
+
+    document.body.appendChild(pop);
+    requestAnimationFrame(() => _positionPop(pop, anchorEl));
+    _attachOutsideClose(pop, anchorEl);
+  }
+
+  // The athlete's stat field, small, for the roster CARD. Same renderer as the
   // athlete's own — it must never become a second implementation that drifts.
   // Returns null when there is nothing to draw, so the caller can leave the
   // space out entirely rather than mount an empty box.
@@ -5170,10 +5216,7 @@
         : `${k} —`).join("  ")
       + (cold ? `\nLightest trained: ${cold.k} — ${STAT_MEANS[cold.k].toLowerCase()}` : "")
       + (never.length ? `\nNever programmed: ${never.join(", ")}` : "");
-    // Bigger than the 46px it was on the card: the drawer is opened
-    // deliberately, one athlete at a time, so the shape can be worth reading
-    // rather than merely present.
-    mini.innerHTML = statFieldSvg({ cur: sfRead.cur, peak: sfRead.peak, size: 72, labels: false });
+    mini.innerHTML = statFieldSvg({ cur: sfRead.cur, peak: sfRead.peak, size: 46, labels: false });
     return mini;
   }
 
@@ -5467,11 +5510,12 @@
 
       card.appendChild(avatar);
       card.appendChild(main);
-      // The stat field is NOT on the card face any more (2026-08-15). Nathan:
-      // "I dont want it to be seen on the card that hasnt been clicked on to
-      // open up their further menu." A closed row is a list entry, and a
-      // five-axis chart on twenty-eight of them at once is a wall rather than
-      // a scan. It is built by rosterStatMini() and mounted in the drawer.
+      // A cold axis, spotted while scanning a roster instead of by opening
+      // twenty-eight athletes — which is why it stays on the CARD FACE and not
+      // in the drawer. Briefly moved into the drawer on 2026-08-15 by
+      // misreading "the infographic"; Nathan meant the training-age chip.
+      const mini = rosterStatMini(c);
+      if (mini) card.appendChild(mini);
       // Training setup replaces the progress readout on the card rather than
       // sitting beside it: two dense blocks side by side is how the roster
       // stopped being scannable last time. Everything BELOW still runs, so the
@@ -5585,13 +5629,6 @@
         })
       : tile({ label: "Cardio · 7d", value: "—", sub: "nothing logged", dim: true, stale: true });
 
-    // The stat field leads the glance: it is the shape of the athlete, and the
-    // three tiles beside it are this week's detail. Omitted entirely when there
-    // is nothing banked, rather than mounted empty — an empty box on a new
-    // athlete reads as broken, and the tiles already say absence out loud.
-    const mini = rosterStatMini(c);
-    if (mini) wrap.appendChild(mini);
-
     const tiles = document.createElement("div");
     tiles.className = "cd-tiles";
     tiles.innerHTML = lastTile + eatTile + cardioTile;
@@ -5643,30 +5680,25 @@
     // information, and one place per destination is the point of the strip.
     wrap.appendChild(doors);
 
-    // Training age, moved off the card face (2026-08-15). It sits BELOW the
-    // doors on purpose: the doors are why the drawer opens, and a control
-    // above them would put a thing you set once a year in front of the thing
-    // you tap every session.
-    //
-    // Same .hub-* markup as the training hub it came from, so it is one
-    // pattern rather than a second way to pick the same value. Writes straight
-    // through, like the hub — no Save button, because a settings control that
-    // can be left half-applied is worse than one that cannot.
-    const age = document.createElement("div");
-    age.className = "hub-row cd-age";
-    age.innerHTML = `<span class="hub-lbl">Training age</span>
-      <span class="hub-pick">${TRAINING_LEVELS.map((l) =>
-        `<button type="button" class="hub-opt${l.id === (c.trainingLevel || "") ? " on" : ""}" data-age-level="${l.id}" title="${escapeHtml(l.years)}">${l.emoji} ${escapeHtml(l.name)}</button>`).join("")}</span>`;
+    // The training-age INDICATOR, moved off the card face (2026-08-15). One
+    // chip showing where they are, that opens a popup to change it — not three
+    // options sitting open. This is a value read at a glance and set roughly
+    // once, so a permanent row of choices spends drawer height on a decision
+    // that is already made, right under the doors that get tapped every day.
+    const age = document.createElement("button");
+    age.type = "button";
+    age.className = "cd-age";
+    const setAgeFace = () => {
+      const l = TRAINING_LEVEL_BY_ID[c.trainingLevel];
+      age.classList.toggle("unset", !l);
+      age.title = l ? `Training age — ${l.years}` : "Training age not set — tap to choose";
+      age.innerHTML = `<span class="cd-age-l">Training age</span>`
+        + `<span class="cd-age-v">${l ? `${l.emoji} ${escapeHtml(l.name)}` : "Not set"}</span>`;
+    };
+    setAgeFace();
     age.addEventListener("click", (e) => {
-      const b = e.target.closest("[data-age-level]");
-      if (!b) return;
       e.stopPropagation();
-      // Tapping the level already set clears it back to "not set" — the only
-      // way to undo a mis-tap without a second control. Same rule as the hub's.
-      const v = b.dataset.ageLevel;
-      c.trainingLevel = c.trainingLevel === v ? "" : v;
-      saveTrainer();
-      renderClientGrid();
+      openTrainingAgePicker(c, age, () => { setAgeFace(); });
     });
     wrap.appendChild(age);
     return wrap;
