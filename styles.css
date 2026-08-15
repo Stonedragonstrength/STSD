@@ -16365,9 +16365,46 @@ input.credit-cap:disabled { opacity: 0.4; }
 }
 .hub-opt-num { min-width: 2.1em; text-align: center; }
 .hub-opt-flag { min-width: 3.2em; text-align: center; }
-.hub-summary {
-  margin: 0.15rem 0 0; font-size: 0.78rem; line-height: 1.45; color: var(--text-soft);
-  border-left: 3px solid rgba(var(--primary-bright-rgb), 0.4); padding-left: 0.7em;
+/* ---- The setup summary, beside the name ----
+   The hub card stacks, so its top band is its own flex row: avatar, name, the
+   summary, then the stat field. The summary takes the slack so it sits hard
+   against the right of the name rather than floating in the middle. */
+.hub-head { display: flex; align-items: center; gap: 0.5rem 0.7rem; width: 100%; min-width: 0; flex-wrap: wrap; }
+/* The name wins. .client-row-main is flex:1;min-width:0 for the progress-mode
+   row, which lets it collapse to NOTHING once a wide sibling wants the space —
+   at three columns the summary ate it entirely and a card showed an avatar and
+   some chips with no athlete on it. A floor here plus a basis on the summary
+   makes the row wrap instead: chips drop under the name rather than replacing
+   it. fitClientRowNames() only shrinks type; it cannot defend a zero-width box. */
+.hub-head > .client-row-main { flex: 1 1 8rem; min-width: 6.5rem; }
+.hub-sum {
+  display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center;
+  gap: 0.3rem; flex: 1 1 15rem; min-width: 0;
+}
+.hsum {
+  display: inline-flex; align-items: center; gap: 0.35em;
+  padding: 0.2em 0.55em;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 0.68rem; font-weight: 700; color: var(--text);
+  white-space: nowrap;
+}
+.hsum-i { font-size: 0.78rem; line-height: 1; }
+/* Unset says so rather than disappearing. A chip that vanishes when empty
+   makes an unconfigured athlete look exactly like a configured one, which is
+   how a whole roster of blanks goes unnoticed. */
+.hsum.is-unset {
+  color: var(--muted);
+  font-weight: 600;
+  border-style: dashed;
+  background: transparent;
+}
+@media (max-width: 640px) {
+  /* Under the name rather than beside it — there is no room for both, and the
+     name is what identifies the card. */
+  .hub-head { flex-wrap: wrap; }
+  .hub-sum { justify-content: flex-start; flex-basis: 100%; }
 }
 @media (max-width: 640px) {
   .hub-lbl { flex-basis: 100%; padding-top: 0; }

@@ -5226,6 +5226,43 @@
     return mini;
   }
 
+  // What this athlete is actually set up as, at a glance, beside their name.
+  //
+  // Every field says something in BOTH states, because the useful read right
+  // now is what has NOT been set — a chip that vanishes when empty makes an
+  // unconfigured athlete look identical to a configured one, which is how a
+  // roster of blanks went unnoticed. Unset renders dimmed rather than absent.
+  //
+  // No training age here: it is deliberately off the card face, and putting it
+  // back in a summary would undo that. The BANDS chip is its consequence, not
+  // its control, which is the same line the card already draws.
+  function hubSummaryHtml(c) {
+    const b = levelBands(c);
+    const goal = phaseOf(c);
+    const days = Number(c.daysPerWeek) || 0;
+    const gear = (c.equipment || []).length;
+    const chip = (ico, txt, title, unset) =>
+      `<span class="hsum${unset ? " is-unset" : ""}" title="${escapeHtml(title)}">` +
+      `<span class="hsum-i" aria-hidden="true">${ico}</span>${escapeHtml(txt)}</span>`;
+    return [
+      goal
+        ? chip(goal.emoji, goal.name, goal.blurb || `${goal.name} phase`)
+        : chip("—", "No goal", "No training phase set — the coverage map grades against training age", true),
+      days
+        ? chip("📅", `${days} / wk`, `${days} training day${days === 1 ? "" : "s"} a week`)
+        : chip("📅", "— / wk", "Days a week not set", true),
+      // An empty gear list means UNRESTRICTED, not unconfigured, so it is not
+      // dimmed — the builder reads it as "everything is available".
+      gear
+        ? chip("🎒", `${gear} item${gear === 1 ? "" : "s"}`, "Only this gear is programmed against")
+        : chip("🎒", "All gear", "No gear restriction — the builder may use anything"),
+      c.painRelief
+        ? chip("⚕️", "Pain relief", "Favours mobility and eases loaded spinal work")
+        : "",
+      chip("📊", `${b.solid} · ${b.plenty}`, `Coverage grades ${b.solid}+ sets as solid, ${b.plenty}+ as plenty`),
+    ].join("");
+  }
+
   // Everything that decides HOW someone is programmed, on the roster card
   // itself. Setting up a new athlete, or re-checking the roster before writing
   // a block, should not mean opening twenty-eight profiles one at a time.
@@ -5241,9 +5278,9 @@
   // button, because a settings screen that can be left half-applied is worse
   // than one that cannot.
   function rosterTrainingHubHtml(c) {
-    const gear = (c.equipment || []).length;
-    const lvl = TRAINING_LEVEL_BY_ID[c.trainingLevel] || TRAINING_LEVEL_BY_ID[DEFAULT_TRAINING_LEVEL];
-    const goal = phaseOf(c) || NO_PHASE_GOAL;
+    // Only `days` survives: the controls below read straight off `c`, and the
+    // gear count / level / goal objects existed for the prose summary that
+    // hubSummaryHtml replaced.
     const days = Number(c.daysPerWeek) || 0;
     return `
       <div class="hub-row">
@@ -5267,11 +5304,11 @@
         <span class="hub-lbl">Gear</span>
         <span class="hub-pick gear-grid">${gearGridHtml(c.equipment, "data-hub-gear")}</span>
       </div>
-      <p class="hub-summary">${escapeHtml(
-        `${goal.name}${days ? `, ${days} day${days === 1 ? "" : "s"} a week` : ""}. ` +
-        `Graded at ${levelBands(c).solid} solid, ${levelBands(c).plenty} plenty. ` +
-        (gear ? `${gear} item${gear === 1 ? "" : "s"} of gear.` : "All gear available.") +
-        (c.painRelief ? " Pain relief on." : ""))}</p>`;
+      `;
+    // The prose summary that used to sit here is gone: the same facts now read
+    // as chips beside the name (hubSummaryHtml), where they can be seen without
+    // scrolling past the controls that set them. Two summaries of one thing is
+    // one that goes stale.
   }
 
   // One delegated listener per card. Every control mutates the client and
@@ -5534,10 +5571,30 @@
       // card keeps its request badge and live-session button and still gets
       // appended to the grid.
       if (rosterMode === "training") {
+        // The hub card stacks (avatar / name / controls), so "beside the name"
+        // needs a header row of its own. appendChild MOVES the avatar, name and
+        // stat field out of the card and into it, leaving the card with exactly
+        // two children: this band, then the controls.
+        const head = document.createElement("div");
+        head.className = "hub-head";
+        head.appendChild(avatar);
+        head.appendChild(main);
+        const sum = document.createElement("div");
+        sum.className = "hub-sum";
+        sum.innerHTML = hubSummaryHtml(c);
+        head.appendChild(sum);
+        if (mini) head.appendChild(mini);
+        card.appendChild(head);
+
         const hub = document.createElement("div");
         hub.className = "roster-hub";
         hub.innerHTML = rosterTrainingHubHtml(c);
-        wireRosterTrainingHub(hub, c, () => { hub.innerHTML = rosterTrainingHubHtml(c); });
+        wireRosterTrainingHub(hub, c, () => {
+          hub.innerHTML = rosterTrainingHubHtml(c);
+          // The summary is the point of the card, so it cannot go stale the
+          // moment a control under it is touched.
+          sum.innerHTML = hubSummaryHtml(c);
+        });
         card.appendChild(hub);
         card.classList.add("client-card-hub");
       } else {
