@@ -235,15 +235,20 @@ check("malformed buckets are skipped rather than poisoning the sum", () => {
 // "typical" is the mean banked per session; "committed" is the best single
 // session value we have actually seen. Both are per-session values.
 //
-// END IS DELIBERATELY EXCLUDED FROM THIS TABLE. The 08-14 sample contained no
-// athlete who had ever logged cardio, so its END numbers measured 26+ rep gym
-// work and nothing else — the best day among people who do not train the axis.
-// It is re-measured separately below, and the two cannot share a model: this
-// one assumes a single per-SESSION frequency, and cardio is not a session.
+// END AND CON ARE DELIBERATELY EXCLUDED FROM THIS TABLE, for the same reason:
+// this model assumes ONE per-SESSION frequency, and neither axis is banked per
+// session. END's primary input is cardio, which the 08-14 sample contained none
+// of and which has no recovery ceiling on frequency. CON is banked on every
+// training day INCLUDING cardio-only ones, so the roster banks it 2.0-5.5 days
+// a week rather than 1.9. Both are re-measured below against their own rates.
+//
+// STR and DEX stay here because they ARE per-session, they were measured on
+// athletes doing the thing that feeds them, and nobody is near their ceiling
+// (roster max 23% and 35% respectively).
 const MEASURED_2026_08_14 = {
   perWeek: 1.9,
-  typical:   { STR: 2.73, AGI: 0, CON: 7.60, DEX: 0.51 },
-  committed: { STR: 5.90, AGI: 0, CON: 12.70, DEX: 1.60 },
+  typical:   { STR: 2.73, AGI: 0, DEX: 0.51 },
+  committed: { STR: 5.90, AGI: 0, DEX: 1.60 },
 };
 
 // END, re-measured 2026-08-15 against production after Cheryl Ray pegged the
@@ -257,6 +262,22 @@ const MEASURED_END_2026_08_15 = {
   daysPerWeek: 5,
   committed: 7.2,   // 45 min moderate
   typical: 1.1,     // roster mean END/day, cardio athlete included
+};
+
+// CON, raised 2026-08-15 for the opposite reason to END's: not because anyone
+// had pegged it, but because PROJECTING each athlete's current habit to its
+// plateau put four of them through the ceiling — Cheryl 541, Jeff 401, Alyssa
+// 384, Kristyn 380 against a full of 330. The roster reads 12-35% today only
+// because it is three weeks old, which hid it.
+//
+// CON is the one axis where athletes already hit the 13/day cap, so "committed"
+// is that cap. 2.7 days a week is the roster's real CON-banking frequency for a
+// consistent athlete — higher than the 1.9 SESSIONS/week the 08-14 model
+// assumes, because CON banks on cardio-only days too.
+const MEASURED_CON_2026_08_15 = {
+  perWeek: 2.7,
+  committed: 13.0,  // the daily cap, which CON days genuinely reach
+  typical: 8.5,     // roster mean CON on a day it is banked at all
 };
 const STAT_FULL = (() => {
   const m = appSrc.match(/const STAT_FULL = \{[^}]*\}/);
@@ -292,24 +313,44 @@ check("the field settles at a plateau rather than creeping forever", () => {
   });
 });
 
-// END's own plateau. A whole-day gap cannot express 5 days a week (7/5 rounds
-// to 1, which is 7 a week and overshoots by a third), so this banks on a real
-// weekly pattern instead of a fixed stride. Kept separate from plateau() above
-// so the gym axes keep the exact model they were calibrated under.
-function plateauWeekly(stat, perDay, daysPerWeek, days = 500) {
+// A plateau at a FRACTIONAL weekly rate, for the two axes that are not banked
+// per session. plateau() above rounds 7/perWeek to whole days, which cannot
+// express 5 a week (7/5 rounds to 1 — that is 7 a week, a third too much) or
+// 2.7 (rounds to 3, i.e. 2.3). Stepping a float cursor and rounding to a date
+// keeps the average rate honest. Kept separate so STR and DEX keep the exact
+// model they were calibrated under.
+function plateauAtRate(stat, perDay, perWeek, days = 700) {
   const field = {};
   const start = new Date("2026-01-01").getTime();
-  for (let d = 0; d < days; d++) {
-    if (d % 7 >= daysPerWeek) continue;          // e.g. 5 on, 2 off, repeating
-    field[new Date(start + d * 86400000).toISOString().slice(0, 10)] = { [stat]: perDay };
+  const gap = 7 / perWeek;
+  for (let t = 0; t < days; t += gap) {
+    field[new Date(start + Math.round(t) * 86400000).toISOString().slice(0, 10)] = { [stat]: perDay };
   }
   const end = new Date(start + days * 86400000).toISOString().slice(0, 10);
   return readStatField(NOVICE, { statField: field }, end).cur[stat];
 }
 
+check("CON: the most consistent athlete on the roster fits under the ceiling", () => {
+  const m = MEASURED_CON_2026_08_15;
+  const committedPct = (plateauAtRate("CON", m.committed, m.perWeek) / STAT_FULL.CON) * 100;
+  assert.ok(committedPct >= 85 && committedPct <= 115,
+    `a capped CON day at ${m.perWeek}/wk reads ${committedPct.toFixed(0)}% of CON`);
+
+  // The regression this guards, and the reason it is not the same shape as the
+  // others: CON's failure was invisible in the CURRENT reading and only showed
+  // in the PROJECTION. These are the four real habits that went through 330.
+  // A three-week-old roster reading 12-35% is not evidence the ceiling is safe.
+  [["Cheryl Ray", 6.4, 5.5], ["Jeff Beltran", 11.0, 2.3],
+   ["Alyssa Murphy", 10.0, 2.5], ["Kristyn Judkins", 11.9, 2.0]].forEach(([who, perDay, perWeek]) => {
+    const pct = (plateauAtRate("CON", perDay, perWeek) / STAT_FULL.CON) * 100;
+    assert.ok(pct <= 100,
+      `${who}'s current habit projects to ${pct.toFixed(0)}% of CON — it pegs, and a pegged axis stops measuring the athletes who earned it`);
+  });
+});
+
 check("END: a committed cardio habit reaches full, and it is not reachable without cardio", () => {
   const m = MEASURED_END_2026_08_15;
-  const committedPct = (plateauWeekly("END", m.committed, m.daysPerWeek) / STAT_FULL.END) * 100;
+  const committedPct = (plateauAtRate("END", m.committed, m.daysPerWeek) / STAT_FULL.END) * 100;
   assert.ok(committedPct >= 85 && committedPct <= 115,
     `45 min of moderate cardio 5 d/wk reads ${committedPct.toFixed(0)}% of END — full is the plateau of that habit, no easier and no harder`);
 
@@ -318,7 +359,7 @@ check("END: a committed cardio habit reaches full, and it is not reachable witho
   // banks END only that way, and the best day any of them has ever posted is
   // 1.6. If that plateaus anywhere near full, the axis has been calibrated on
   // people who do not train it — which is exactly how it shipped at 35.
-  const gymOnly = (plateauWeekly("END", 1.6, 2) / STAT_FULL.END) * 100;
+  const gymOnly = (plateauAtRate("END", 1.6, 2) / STAT_FULL.END) * 100;
   assert.ok(gymOnly < 25,
     `26+ rep gym work alone plateaus at ${gymOnly.toFixed(0)}% of END — END is the aerobic engine, and it cannot be filled without conditioning`);
 

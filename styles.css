@@ -16110,6 +16110,21 @@ input.credit-cap:disabled { opacity: 0.4; }
   vector-effect: non-scaling-stroke;
 }
 .sf-node { fill: var(--primary-bright); }
+
+/* ---- An axis nothing has ever fed ----
+   Not a score of zero — nothing to score. The spoke stays (the ruler is always
+   five-sided, or the shape stops being comparable across the roster) but it
+   drops to the faintest grid weight, loses its vertex dot, and its label reads
+   an em dash. The hull still passes through the vertex at SF_MIN, so the shape
+   collapses toward the middle there on its own.
+
+   .sf-node is display:none rather than removed in JS: tweenStatField indexes
+   .sf-node against STAT_AXES, and a missing element would shift every node
+   after it onto the wrong axis. Hidden keeps it in the NodeList. */
+.sf-grid line.sf-dead { stroke: var(--border); opacity: 0.35; }
+.sf-node.sf-dead { display: none; }
+.sf-axis.sf-dead { fill: var(--muted); opacity: 0.55; }
+.sf-axis-val.sf-dead { fill: var(--muted); opacity: 0.55; }
 /* SVG text inherits Barlow from body — nothing to declare but weight and size,
    which are user units inside the 100-unit box. */
 .sf-axis {

@@ -5432,11 +5432,21 @@
         // The lightest-axis prompt is coach-side ONLY. The athlete is never
         // told they are incomplete for something the coach chose not to
         // programme, so it lives in this title and nowhere on their device.
-        const cold = STAT_AXES
+        // Split the two questions the coach is actually asking, because since
+        // axes started dimming they have different answers. "Lightest" now
+        // means lightest of the ones they TRAIN — otherwise it names a
+        // never-programmed axis for every athlete on the roster forever (AGI
+        // today, for all of them) and stops being information.
+        const trained = STAT_AXES.filter((k) => Number(sfRead.peak[k]) > 0);
+        const never = STAT_AXES.filter((k) => !(Number(sfRead.peak[k]) > 0));
+        const cold = trained
           .map((k) => ({ k, f: statAxisFrac(k, sfRead.cur[k]) }))
           .sort((a, b) => a.f - b.f)[0];
-        mini.title = STAT_AXES.map((k) => `${k} ${Math.round(statAxisFrac(k, sfRead.cur[k]) * 100)}`).join("  ")
-          + `\nLightest axis: ${cold.k} — ${STAT_MEANS[cold.k].toLowerCase()}`;
+        mini.title = STAT_AXES.map((k) => Number(sfRead.peak[k]) > 0
+            ? `${k} ${Math.round(statAxisFrac(k, sfRead.cur[k]) * 100)}`
+            : `${k} —`).join("  ")
+          + (cold ? `\nLightest trained: ${cold.k} — ${STAT_MEANS[cold.k].toLowerCase()}` : "")
+          + (never.length ? `\nNever programmed: ${never.join(", ")}` : "");
         mini.innerHTML = statFieldSvg({ cur: sfRead.cur, peak: sfRead.peak, size: 46, labels: false });
         card.appendChild(mini);
       }
@@ -34895,10 +34905,28 @@
   // current habit; nobody else on the roster clears 2%, which is honest — they
   // do no conditioning at all, and that is a thing for the coach to see.
   //
+  // CON RAISED 2026-08-15: 330 -> 550, found by the same projection that
+  // confirmed END. The roster reads CON 12-35% today ONLY because it is three
+  // weeks old; project each athlete's current habit to its plateau and four of
+  // them go through the ceiling — Cheryl 541, Jeff 401, Alyssa 384, Kristyn
+  // 380. CON is also the only axis where athletes already hit the 13/day cap,
+  // which is the same "this axis is bigger than its container" signal END gave.
+  //
+  // 550 is the plateau of a capped day at ~2.7 a week, and it is the number
+  // rather than 500 because 500 still pegs Cheryl at 108% — the point of the
+  // exercise is headroom, and a constant that pegs the most consistent athlete
+  // on the roster has none. At 550 she reads 98% and everyone else 57-73%.
+  //
+  // CON sits higher on sessions-to-full (50 days) than STR/DEX/END (19/15/17)
+  // and that is correct, not drift: CON banks on EVERY training day including
+  // cardio-only ones, and its 60-day half-life is the longest of the five, so
+  // it accrues on more days and sheds them more slowly. The family check is
+  // only meaningful between axes banked at similar frequency.
+  //
   // AGI IS NOT CALIBRATED, still — and it is the same failure mode as END's,
   // caught one step earlier: nothing programmed banks it, so there is nothing
   // to measure yet. Re-measure it the moment any athlete has AGI at all.
-  const STAT_FULL = { STR: 115, AGI: 20, DEX: 22, END: 160, CON: 330 };
+  const STAT_FULL = { STR: 115, AGI: 20, DEX: 22, END: 160, CON: 550 };
 
   // Raw decayed points -> 0..1 of a full axis. Clamped at the top: an outlier
   // pegs the axis rather than blowing through the grid, and the constants are
@@ -34973,16 +35001,36 @@
     // from the peak, so an inversion means the constants were retuned under a
     // stored value — and a ghost drawn inside the hull reads as a bug.
     const peak = STAT_AXES.map((k, i) => Math.max(cur[i], statAxisFrac(k, o.peak && o.peak[k])));
+    // An axis nothing has EVER fed. Keyed off peak rather than current, and
+    // that is the whole distinction: current sinks toward a floor of the
+    // athlete's own peak and can never reach zero once they have trained the
+    // quality, so a zero peak means no surviving bucket has ever touched this
+    // axis. Three states fall out of one test, with no program to read:
+    //   never trained            -> peak 0        -> dim
+    //   trained, since neglected -> floored value -> lit, sunk, ghost above it
+    //   neglected over a year    -> buckets pruned at the 365-day horizon,
+    //                               peak goes with them -> dim again, by itself
+    // The middle one is why this is not "current is 0": dimming a faded axis
+    // would erase the evidence they did the work, and the dashed ghost saying
+    // "you had this" is the more useful thing to show.
+    //
+    // It also stops the field reporting the APP's gap as the ATHLETE's. Nothing
+    // the builder writes banks AGI, so every athlete carries a hard zero on an
+    // axis they have never once been offered.
+    const dead = STAT_AXES.map((k) => !(o.peak && Number(o.peak[k]) > 0));
     const gid = "sf-" + Math.random().toString(36).slice(2, 7);
 
     const rings = [0.25, 0.5, 0.75, 1]
       .map((f) => `<polygon points="${sfRingPoints(f, R)}"/>`).join("");
-    const spokes = SF_UNIT.map((u) =>
-      `<line x1="${SF_C}" y1="${SF_C}" x2="${(SF_C + u.x * R).toFixed(2)}" y2="${(SF_C + u.y * R).toFixed(2)}"/>`
+    const spokes = SF_UNIT.map((u, i) =>
+      `<line class="${dead[i] ? "sf-dead" : ""}" x1="${SF_C}" y1="${SF_C}" x2="${(SF_C + u.x * R).toFixed(2)}" y2="${(SF_C + u.y * R).toFixed(2)}"/>`
     ).join("");
+    // A dead axis keeps its circle and hides it in CSS rather than not emitting
+    // it. tweenStatField walks .sf-node BY INDEX against STAT_AXES, so dropping
+    // one here would shift every node after it and animate the wrong vertices.
     const nodes = SF_UNIT.map((u, i) => {
       const r = R * (SF_MIN + (1 - SF_MIN) * cur[i]);
-      return `<circle class="sf-node" r="${labels ? 1.9 : 1.4}"`
+      return `<circle class="sf-node${dead[i] ? " sf-dead" : ""}" r="${labels ? 1.9 : 1.4}"`
         + ` cx="${(SF_C + u.x * r).toFixed(2)}" cy="${(SF_C + u.y * r).toFixed(2)}"/>`;
     }).join("");
 
@@ -34994,13 +35042,18 @@
       // nothing on the ring overhangs the 100-unit box at any vertex.
       const anchor = u.x > 0.25 ? "start" : u.x < -0.25 ? "end" : "middle";
       const y = ly + (u.y < -0.6 ? -1 : u.y > 0.4 ? 5.5 : 1.5);
-      return `<text class="sf-axis" x="${lx.toFixed(2)}" y="${y.toFixed(2)}" text-anchor="${anchor}">${k}</text>`
-        + `<text class="sf-axis-val" x="${lx.toFixed(2)}" y="${(y + 5.6).toFixed(2)}" text-anchor="${anchor}">${Math.round(cur[i] * 100)}</text>`;
+      // An em dash, not "0". A number is a score and invites comparison; the
+      // dash says there is nothing to score yet, which is the true statement.
+      const val = dead[i] ? "—" : String(Math.round(cur[i] * 100));
+      const d = dead[i] ? " sf-dead" : "";
+      return `<text class="sf-axis${d}" x="${lx.toFixed(2)}" y="${y.toFixed(2)}" text-anchor="${anchor}">${k}</text>`
+        + `<text class="sf-axis-val${d}" x="${lx.toFixed(2)}" y="${(y + 5.6).toFixed(2)}" text-anchor="${anchor}">${val}</text>`;
     }).join("");
 
     const dim = Number(o.size) > 0
       ? ` width="${Math.round(o.size)}" height="${Math.round(o.size)}"` : "";
-    const read = STAT_AXES.map((k, i) => `${STAT_MEANS[k]} ${Math.round(cur[i] * 100)}`).join(", ");
+    const read = STAT_AXES.map((k, i) =>
+      `${STAT_MEANS[k]} ${dead[i] ? "not trained yet" : Math.round(cur[i] * 100)}`).join(", ");
     // data-sf-r / data-sf-f make the svg self-describing, which is what lets
     // tweenStatField animate it without being handed the geometry again.
     return `<svg class="sf-svg"${dim} viewBox="0 0 ${SF_VB} ${SF_VB}" role="img"
