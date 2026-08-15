@@ -234,10 +234,29 @@ check("malformed buckets are skipped rather than poisoning the sum", () => {
 // tab on 2026-08-14: 21 sessions over 77 athlete-days, 1.9 sessions a week.
 // "typical" is the mean banked per session; "committed" is the best single
 // session value we have actually seen. Both are per-session values.
+//
+// END IS DELIBERATELY EXCLUDED FROM THIS TABLE. The 08-14 sample contained no
+// athlete who had ever logged cardio, so its END numbers measured 26+ rep gym
+// work and nothing else — the best day among people who do not train the axis.
+// It is re-measured separately below, and the two cannot share a model: this
+// one assumes a single per-SESSION frequency, and cardio is not a session.
 const MEASURED_2026_08_14 = {
   perWeek: 1.9,
-  typical:   { STR: 2.73, AGI: 0, END: 0.51, CON: 7.60, DEX: 0.51 },
-  committed: { STR: 5.90, AGI: 0, END: 4.80, CON: 12.70, DEX: 1.60 },
+  typical:   { STR: 2.73, AGI: 0, CON: 7.60, DEX: 0.51 },
+  committed: { STR: 5.90, AGI: 0, CON: 12.70, DEX: 1.60 },
+};
+
+// END, re-measured 2026-08-15 against production after Cheryl Ray pegged the
+// axis at 112% of full. See the STAT_FULL comment in app.js for the full story.
+//
+// The anchor is a HABIT rather than a best-ever day, because END is the one axis
+// with no recovery ceiling on how often it can be banked: "best day, every day"
+// is a fair definition of full for a squat and an absurd one for a walk. 45 min
+// of moderate cardio, 5 days a week, sustained — 7.2 points a day at 0.16/min.
+const MEASURED_END_2026_08_15 = {
+  daysPerWeek: 5,
+  committed: 7.2,   // 45 min moderate
+  typical: 1.1,     // roster mean END/day, cardio athlete included
 };
 const STAT_FULL = (() => {
   const m = appSrc.match(/const STAT_FULL = \{[^}]*\}/);
@@ -271,6 +290,44 @@ check("the field settles at a plateau rather than creeping forever", () => {
     assert.ok(Math.abs(at800[k] - at400[k]) < at400[k] * 0.02,
       `${k} still climbing between 400 and 800 days: ${at400[k].toFixed(1)} -> ${at800[k].toFixed(1)}`);
   });
+});
+
+// END's own plateau. A whole-day gap cannot express 5 days a week (7/5 rounds
+// to 1, which is 7 a week and overshoots by a third), so this banks on a real
+// weekly pattern instead of a fixed stride. Kept separate from plateau() above
+// so the gym axes keep the exact model they were calibrated under.
+function plateauWeekly(stat, perDay, daysPerWeek, days = 500) {
+  const field = {};
+  const start = new Date("2026-01-01").getTime();
+  for (let d = 0; d < days; d++) {
+    if (d % 7 >= daysPerWeek) continue;          // e.g. 5 on, 2 off, repeating
+    field[new Date(start + d * 86400000).toISOString().slice(0, 10)] = { [stat]: perDay };
+  }
+  const end = new Date(start + days * 86400000).toISOString().slice(0, 10);
+  return readStatField(NOVICE, { statField: field }, end).cur[stat];
+}
+
+check("END: a committed cardio habit reaches full, and it is not reachable without cardio", () => {
+  const m = MEASURED_END_2026_08_15;
+  const committedPct = (plateauWeekly("END", m.committed, m.daysPerWeek) / STAT_FULL.END) * 100;
+  assert.ok(committedPct >= 85 && committedPct <= 115,
+    `45 min of moderate cardio 5 d/wk reads ${committedPct.toFixed(0)}% of END — full is the plateau of that habit, no easier and no harder`);
+
+  // The regression that caused this recalibration: END full must NOT be
+  // reachable by gym rep-band work alone. The whole roster except one athlete
+  // banks END only that way, and the best day any of them has ever posted is
+  // 1.6. If that plateaus anywhere near full, the axis has been calibrated on
+  // people who do not train it — which is exactly how it shipped at 35.
+  const gymOnly = (plateauWeekly("END", 1.6, 2) / STAT_FULL.END) * 100;
+  assert.ok(gymOnly < 25,
+    `26+ rep gym work alone plateaus at ${gymOnly.toFixed(0)}% of END — END is the aerobic engine, and it cannot be filled without conditioning`);
+
+  // And one session must not be worth a big slice of a sustained plateau. At
+  // the old constant a single hour of moderate cardio was 27% of full, which is
+  // the shape of the error rather than its size.
+  const oneHour = (9.6 / STAT_FULL.END) * 100;
+  assert.ok(oneHour < 10,
+    `one 60-min moderate session is ${oneHour.toFixed(0)}% of full END in a single day — full is a sustained plateau, not a few sessions`);
 });
 
 check("a committed athlete reaches full, and a typical one lands mid-field", () => {

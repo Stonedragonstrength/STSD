@@ -34873,7 +34873,32 @@
   // not write Speed/Agility or plyometrics. Its value here only keeps the
   // designed ratio to DEX so that the first agility work Nathan programs moves
   // the axis visibly. Re-measure it the moment any athlete has AGI at all.
-  const STAT_FULL = { STR: 115, AGI: 20, DEX: 22, END: 35, CON: 330 };
+  // END RE-MEASURED 2026-08-15: 35 -> 160. The 08-14 sample was four athletes
+  // and NOT ONE OF THEM HAD EVER LOGGED CARDIO — production confirms Cheryl Ray
+  // is the only athlete on the roster with a single cardio entry. So END's
+  // "best observed" of 4.8/day was the best day among people who do not train
+  // endurance: 26+ rep gym work only, roster max 1.6/day. Every other axis was
+  // measured on athletes doing the thing that feeds it; END was not.
+  //
+  // What that missed: cardio is END's primary input and scores 0.16/min
+  // (cardio-steady, 8/10 share, 300 s ref), so ONE 20-minute walk banks 3.2 —
+  // double the best gym day the constant was built from. It also breaks the
+  // per-SESSION frequency the model assumes: gym work is capped at ~1.9 days a
+  // week by recovery, cardio is not, and Cheryl banks END on 5.5 days a week.
+  // Inside END's 5-day grace those buckets barely decay before the next lands,
+  // so the two errors compound. She reached 112% of full and pegged the axis.
+  //
+  // 160 is the plateau of 45 min of moderate cardio 5 days a week (163,
+  // rounded). It also puts END back in family on sessions-to-full, which is the
+  // tell that 35 was wrong: STR 19, DEX 15, END 3.6 at the old number and 17 at
+  // this one. Against it Cheryl reads 24% today and 45% if she sustains her
+  // current habit; nobody else on the roster clears 2%, which is honest — they
+  // do no conditioning at all, and that is a thing for the coach to see.
+  //
+  // AGI IS NOT CALIBRATED, still — and it is the same failure mode as END's,
+  // caught one step earlier: nothing programmed banks it, so there is nothing
+  // to measure yet. Re-measure it the moment any athlete has AGI at all.
+  const STAT_FULL = { STR: 115, AGI: 20, DEX: 22, END: 160, CON: 330 };
 
   // Raw decayed points -> 0..1 of a full axis. Clamped at the top: an outlier
   // pegs the axis rather than blowing through the grid, and the constants are
