@@ -225,6 +225,83 @@ check("malformed buckets are skipped rather than poisoning the sum", () => {
   STAT_KEYS.forEach((k) => assert.ok(Number.isFinite(cur[k]), `${k} stayed finite`));
 });
 
+// ---- the calibration -------------------------------------------------------
+// STAT_FULL decides what the pentagon SHOWS, and it is the one number here that
+// cannot be derived — it was simulated at first and was 3-6x too high on every
+// axis, so the whole roster read 1-8% of full and the field was a dot.
+//
+// These rates are MEASURED, from the four athletes who had opened their Progress
+// tab on 2026-08-14: 21 sessions over 77 athlete-days, 1.9 sessions a week.
+// "typical" is the mean banked per session; "committed" is the best single
+// session value we have actually seen. Both are per-session values.
+const MEASURED_2026_08_14 = {
+  perWeek: 1.9,
+  typical:   { STR: 2.73, AGI: 0, END: 0.51, CON: 7.60, DEX: 0.51 },
+  committed: { STR: 5.90, AGI: 0, END: 4.80, CON: 12.70, DEX: 1.60 },
+};
+const STAT_FULL = (() => {
+  const m = appSrc.match(/const STAT_FULL = \{[^}]*\}/);
+  if (!m) throw new Error("STAT_FULL not found in app.js");
+  return eval("(" + m[0].replace("const STAT_FULL = ", "") + ")");
+})();
+
+// Train at a fixed per-session rate forever and read where it settles.
+function plateau(rate, days = 400) {
+  const gap = Math.max(1, Math.round(7 / MEASURED_2026_08_14.perWeek));
+  const field = {};
+  const start = new Date("2026-01-01").getTime();
+  for (let d = 0; d < days; d += gap) {
+    const b = {};
+    Object.keys(rate).forEach((k) => { if (rate[k] > 0) b[k] = rate[k]; });
+    field[new Date(start + d * 86400000).toISOString().slice(0, 10)] = b;
+  }
+  const end = new Date(start + days * 86400000).toISOString().slice(0, 10);
+  return readStatField(NOVICE, { statField: field }, end).cur;
+}
+
+check("the field settles at a plateau rather than creeping forever", () => {
+  // The property the whole calibration rests on: decay eventually balances
+  // accrual, so an axis measures how hard and how often someone trains, not how
+  // long they have been on the books. Without it, everyone reaches full by
+  // simply continuing to exist and the instrument stops saying anything.
+  const at400 = plateau(MEASURED_2026_08_14.committed, 400);
+  const at800 = plateau(MEASURED_2026_08_14.committed, 800);
+  Object.keys(MEASURED_2026_08_14.committed).forEach((k) => {
+    if (!(MEASURED_2026_08_14.committed[k] > 0)) return;
+    assert.ok(Math.abs(at800[k] - at400[k]) < at400[k] * 0.02,
+      `${k} still climbing between 400 and 800 days: ${at400[k].toFixed(1)} -> ${at800[k].toFixed(1)}`);
+  });
+});
+
+check("a committed athlete reaches full, and a typical one lands mid-field", () => {
+  // Both directions matter. Too high and the pentagon is a dot nobody can move
+  // (which is what shipped first). Too low and everyone pegs at 100% and it
+  // stops distinguishing anyone.
+  const pc = plateau(MEASURED_2026_08_14.committed);
+  const pt = plateau(MEASURED_2026_08_14.typical);
+  Object.keys(MEASURED_2026_08_14.committed).forEach((k) => {
+    if (!(MEASURED_2026_08_14.committed[k] > 0)) return;   // AGI: no data, see app.js
+    const committedPct = (pc[k] / STAT_FULL[k]) * 100;
+    const typicalPct = (pt[k] / STAT_FULL[k]) * 100;
+    assert.ok(committedPct >= 85 && committedPct <= 115,
+      `a committed athlete reads ${committedPct.toFixed(0)}% on ${k} — full should be reachable by sustaining the best session we have seen, and no easier`);
+    assert.ok(typicalPct <= committedPct,
+      `${k}: a typical athlete (${typicalPct.toFixed(0)}%) cannot outread a committed one (${committedPct.toFixed(0)}%)`);
+  });
+});
+
+check("AGI is the one axis with no data, and app.js says so", () => {
+  // Every athlete on the roster has AGI zero and always has: nothing currently
+  // programmed banks it, because the builder writes no Speed/Agility or plyo.
+  // If that stops being true the axis needs re-measuring, so the comment that
+  // says so must not quietly disappear.
+  assert.strictEqual(MEASURED_2026_08_14.committed.AGI, 0);
+  const at = appSrc.indexOf("const STAT_FULL = {");
+  const note = appSrc.slice(Math.max(0, at - 1600), at);
+  assert.ok(/AGI IS NOT CALIBRATED/.test(note),
+    "app.js no longer records that AGI is uncalibrated — re-measure it or keep the warning");
+});
+
 console.log("");
 if (failures) { console.log(`${failures} failing`); process.exit(1); }
 console.log("all passing");

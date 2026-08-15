@@ -34665,7 +34665,29 @@
   // These are READ-side, so retuning them reshapes the whole roster at once
   // (spec 5.4). Calibrate against real athletes BEFORE this goes near one,
   // then leave them alone.
-  const STAT_FULL = { STR: 290, AGI: 130, DEX: 160, END: 145, CON: 760 };
+  // CALIBRATED 2026-08-14 against real production data — the first numbers here
+  // were simulated, and they were 3-6x too high on every axis. Measured across
+  // the four athletes who had opened their Progress tab (21 sessions, 77
+  // athlete-days), the whole roster read 1-8% of full. The pentagon was a dot.
+  //
+  // Full is defined as the PLATEAU of a committed athlete: someone banking the
+  // best value we have actually observed for that axis, every session, at the
+  // roster's real frequency of 1.9 sessions a week, sustained. That plateau is a
+  // true asymptote — identical at 400 and 800 simulated days — because decay
+  // eventually balances accrual. Which is the property worth having: the field
+  // measures how hard and how often someone trains, not how long they have been
+  // on the books, so nobody creeps to full by merely existing.
+  //
+  // Against these numbers a typical athlete at the same frequency settles around
+  // STR 46% / CON 60% / DEX 32% / END 11%, and today's roster (three weeks in,
+  // still climbing toward their own plateau) reads 3-19%.
+  //
+  // AGI IS NOT CALIBRATED. It is zero for every athlete on the roster and always
+  // has been — nothing currently programmed banks it, since the ⚡ builder does
+  // not write Speed/Agility or plyometrics. Its value here only keeps the
+  // designed ratio to DEX so that the first agility work Nathan programs moves
+  // the axis visibly. Re-measure it the moment any athlete has AGI at all.
+  const STAT_FULL = { STR: 115, AGI: 20, DEX: 22, END: 35, CON: 330 };
 
   // Raw decayed points -> 0..1 of a full axis. Clamped at the top: an outlier
   // pegs the axis rather than blowing through the grid, and the constants are
