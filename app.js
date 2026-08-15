@@ -760,18 +760,42 @@
   // load on completely different scales and Nathan programs both. That only
   // works because bestLoggedByReps yields a lift to the card that names it
   // exactly, so the bare Bench Press card doesn't swallow the dumbbell sets.
-  const DEFAULT_PR_LIFTS = ["Back Squat", "Deadlift", "Bench Press", "Dumbbell Bench Press", "Overhead Press", "Curl"];
-  // The names we used to seed, and the lift each one meant. Two jobs: rename
-  // the pristine seeded cards already sitting on every existing athlete, and
-  // let a card someone has TYPED INTO still find its logs without being
-  // renamed under them (see prLiftAlias). Keyed by exKey.
-  const PR_LIFT_RENAMES = {
+  const DEFAULT_PR_LIFTS = ["Barbell Squat", "Deadlift", "Bench Press", "Dumbbell Bench Press", "Overhead Press", "Curl"];
+  // What a card NAME MEANS, for finding its sets. Purely a matcher: it never
+  // renames anything.
+  //
+  // "Barbell Squat" is the seeded card name (Nathan, 2026-08-14) but the
+  // exercise LIBRARY calls the lift "Back Squat", and PRs are matched by name —
+  // so without this bridge the seeded card would sit dead beside the very sets
+  // it exists to track. The other three are old seed names people typed into
+  // years ago and still expect to work.
+  const PR_LIFT_ALIASES = {
     "barbell squat": "Back Squat",
     "db bench press": "Dumbbell Bench Press",
     "overhead bb press": "Overhead Press",
     "strict curl": "Curl",
   };
-  function prLiftAlias(name) { return PR_LIFT_RENAMES[exKey(name)] || ""; }
+  function prLiftAlias(name) { return PR_LIFT_ALIASES[exKey(name)] || ""; }
+  // Untouched seeded cards to RENAME: old seed name -> the name we seed today.
+  // Deliberately not the same list as the aliases above — "barbell squat" is
+  // the name we now seed, so renaming it would undo the migration below on the
+  // next open.
+  const PR_LIFT_RENAMES = {
+    "db bench press": "Dumbbell Bench Press",
+    "overhead bb press": "Overhead Press",
+    "strict curl": "Curl",
+  };
+  // Cards to rename EVEN IF the athlete has filled them in, merging rather than
+  // colliding. Nathan, 2026-08-14: "the original 5 PRs ... it doesn't seem like
+  // BACK SQUAT is correct. can we get BARBELL SQUAT there and everyones
+  // corresponding information? If someone already has BARBELL SQUAT in there
+  // PRS just get rid of their BACK SQUAT card."
+  //
+  // Stronger than PR_LIFT_RENAMES on purpose. That one skips a card with a
+  // value on it, because "Strict Curl" -> "Curl" would flatten a distinction
+  // the coach chose. This is the same lift under a clearer label, so the rename
+  // is safe on a filled card, and where both names exist the old card goes.
+  const PR_LIFT_MERGES = { "back squat": "Barbell Squat" };
   // Every lift the athlete's cards name, including the lift an old seeded name
   // still means. bestLoggedByReps uses this to stop a generically-named card
   // taking sets that a more specific card beside it is there to hold.
@@ -800,6 +824,33 @@
       if (list.some((o) => o !== p && exKey(o.name) === exKey(to))) return;
       p.name = to;
       changed = true;
+    });
+    return changed;
+  }
+  // Back Squat -> Barbell Squat, on every athlete, filled-in cards included.
+  //
+  // "Just get rid of their BACK SQUAT card" where both exist — but never bin a
+  // recorded PR to do it. Any slot the surviving card has not got is filled
+  // from the old one first, so the only thing actually lost is the duplicate.
+  function migratePRLiftMerges(list) {
+    if (!Array.isArray(list)) return false;
+    let changed = false;
+    Object.entries(PR_LIFT_MERGES).forEach(([fromKey, toName]) => {
+      const stale = list.filter((p) => p && exKey(p.name) === fromKey);
+      if (!stale.length) return;
+      stale.forEach((old) => {
+        const keep = list.find((p) => p && p !== old && exKey(p.name) === exKey(toName));
+        if (!keep) { old.name = toName; changed = true; return; }
+        [1, 2, 3].forEach((n) => {
+          if (keep[`pr${n}`] || !old[`pr${n}`]) return;
+          keep[`pr${n}`] = old[`pr${n}`];
+          if (old[`pr${n}Date`]) keep[`pr${n}Date`] = old[`pr${n}Date`];
+          if (old[`pr${n}Locked`]) keep[`pr${n}Locked`] = old[`pr${n}Locked`];
+        });
+        const at = list.indexOf(old);
+        if (at >= 0) list.splice(at, 1);
+        changed = true;
+      });
     });
     return changed;
   }
@@ -19382,7 +19433,7 @@
     // Both sides run this: whoever opens the page first fixes the names, and
     // it is a no-op for the other. Untouched cards only, so the two sides can
     // never disagree about what a card is called.
-    if (migratePRLiftNames(c.coachPRs)) saveTrainer();
+    if ([migratePRLiftNames(c.coachPRs), migratePRLiftMerges(c.coachPRs)].some(Boolean)) saveTrainer();
 
     // One coach entry per lift name (first match wins)
     const nameMap = new Map();
@@ -19728,7 +19779,8 @@
     container.innerHTML = "";
     const prog = state.clientData.program; if (!prog) return;
     const athleteOwn = (state.clientData.progress.personalRecords || []).map((p) => ({ ...p, _author: "athlete" }));
-    let renamed = migratePRLiftNames(prog.client.coachPRs);
+    let renamed = [migratePRLiftNames(prog.client.coachPRs),
+      migratePRLiftMerges(prog.client.coachPRs)].some(Boolean);
     const coachPRs = (prog.client.coachPRs || []).filter(p => p.name);
     renderPRArchive($("#athlete-pr-archive"), state.clientData.progress.personalRecords || []);
     if (!athleteOwn.length && !coachPRs.length) show(empty); else hide(empty);
