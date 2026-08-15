@@ -8666,6 +8666,47 @@ input.pyr-weight-input { -moz-appearance: textfield; appearance: textfield; }
   gap: 0.55rem;
 }
 
+/* ---- Programs page: three chips, one list ----
+   A program is being built, waiting to go out, or already out on an athlete.
+   Deliberately the same shape as .roster-group-tab rather than a second chip
+   idiom — the coach already reads that strip as "pick which slice of the list
+   I am looking at", which is exactly the job here. Colour comes from
+   --primary-* so it follows every theme instead of pinning one hue. */
+.program-filter-bar { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.program-chip {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-soft);
+  border-radius: 999px;
+  padding: 0.34em 0.8em;
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+}
+.program-chip:hover { border-color: var(--primary); color: var(--primary-bright); }
+/* 0,2,0 beats the obsidian sweep's 0,1,0 further down the file, which is why
+   the selected state survives being listed there. */
+.program-chip[aria-selected="true"] {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  color: var(--primary-bright);
+}
+.program-chip-n { font-size: 0.7rem; font-weight: 700; color: var(--muted); }
+.program-chip[aria-selected="true"] .program-chip-n { color: var(--primary-bright); }
+
+/* The two states a handed-out program can be in. While the link holds, editing
+   this program rewrites that athlete's weeks — so it is lit, and the spent one
+   is not. This pair is the only thing on the row that says which. */
+.prog-live { color: var(--primary-bright); font-weight: 700; }
+.prog-spent { color: var(--muted); }
+/* Icon-only undo — the row already carries Assign and delete, and on a phone a
+   third worded button pushes the athlete's name out of the sub-line. */
+.prog-unshelve { padding: 0.32em 0.5em; }
+
 /* In progress / Ready-to-assign split */
 .program-section { margin-bottom: 2.1rem; }
 .program-section-head {
@@ -15806,7 +15847,7 @@ input.credit-cap:disabled { opacity: 0.4; }
 .myfoods-btn, .myfoods-count, .nut-split-fields,
 .past-programs-fold, .plate-bar-opt, .plate-pop, .plate-size,
 .portion-preview, .pr-chip, .pr-exercise-group, .prog-opt,
-.program-section-count, .pull-src, .pull-src-n, .rb-total,
+.program-chip, .program-section-count, .pull-src, .pull-src-n, .rb-total,
 .rdy-block.asking, .rec-cat-chip, .rest-opt-btn,
 .rest-sound-btn, .rest-timer-btn, .rest-timer-pop button,
 .roster-group-tab, .roster-search-clear, .scan-zoom-btn, .sched-google-row,

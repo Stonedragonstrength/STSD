@@ -3422,6 +3422,27 @@
   state.trainerData.programTemplates = purgeTemplateTombstones(state.trainerData.programTemplates);
   state.trainerData.workoutTemplates = purgeTemplateTombstones(state.trainerData.workoutTemplates);
   state.trainerData.athleteTemplates = purgeTemplateTombstones(state.trainerData.athleteTemplates);
+  // The Programs page's third bucket: a program that has been handed out at
+  // least once. Everything already out on an athlete when this shipped has to
+  // land there on the first load, or the shelf opens empty on a library that
+  // is mostly spent.
+  //
+  // The test is `"assignedAt" in p`, not a truthiness check, and that is the
+  // whole trick: the row's "↩ Ready" button writes assignedAt = null rather
+  // than deleting the key, so a program the coach deliberately put back stays
+  // put. A truthy test would re-stamp it on the very next boot — on this
+  // device and, worse, on a phone that had never run the migration.
+  //
+  // Dated from the program's own last edit rather than now, so a library of
+  // old assignments doesn't read as if it was all handed out today.
+  (state.trainerData.programTemplates || []).forEach((p) => {
+    if (p.deleted || "assignedAt" in p) return;
+    const linked = (state.trainerData.clients || []).filter((c) => c.assignedProgramId === p.id);
+    if (!linked.length) return;
+    p.assignedAt = p.updatedAt || p.createdAt || Date.now();
+    p.assignedTo = linked[0].name || "";
+    _trainerDataDirty = true;
+  });
   // Coach-side list of exercise names hidden from the library sidebar.
   if (!Array.isArray(state.trainerData.hiddenExercises)) {
     state.trainerData.hiddenExercises = [];
@@ -5800,6 +5821,26 @@
     });
   }
 
+  // A program's life has three states, and only the first two live in
+  // `status`. "In use" is a separate assignedAt stamp on purpose: a build
+  // older than this one runs the backfill above and resets any status value it
+  // doesn't recognise to "draft", so a third status would let a stale phone
+  // bounce every handed-out program back into the build list on its next sync.
+  // An unknown FIELD, by contrast, rides through untouched.
+  function programBucket(tpl) {
+    if (!tpl || tpl.status !== "ready") return "progress";
+    return tpl.assignedAt ? "inuse" : "ready";
+  }
+
+  // Copy lives here so the chip, its empty state and the card all read from one
+  // place. Order is the order they appear.
+  const PROGRAM_CHIPS = [
+    { key: "progress", label: "🟡 In progress", empty: "Nothing being built. New programs land here." },
+    { key: "ready", label: "🟢 Ready", empty: "Nothing waiting. Mark a program complete and it lands here." },
+    { key: "inuse", label: "📤 In use", empty: "Nothing handed out yet. Assign a program and it moves here." },
+  ];
+  let _programFilter = "ready";
+
   function setProgramStatus(tpl, status) {
     tpl.status = status;
     tpl.updatedAt = Date.now();
@@ -5808,11 +5849,34 @@
     else toast(`"${tpl.name || "Program"}" moved back to in progress`);
   }
 
+  // What an in-use program is doing right now, as a leading fragment on the
+  // row's sub-line. The distinction is load-bearing, not decoration: while the
+  // link holds, editing this program rewrites that athlete's weeks tonight
+  // (see scheduleTemplateSync). Shelving a live program without saying so on
+  // the row is how it gets used as a scratchpad.
+  function programUseLabel(tpl) {
+    const linked = linkedClientsFor(tpl.id);
+    if (linked.length) {
+      const names = linked.slice(0, 2).map((c) => c.name).join(", ");
+      const more = linked.length > 2 ? ` +${linked.length - 2}` : "";
+      return `<span class="prog-live">🔗 ${escapeHtml(names)}${more}</span>`;
+    }
+    // Link's gone: the athlete moved on, or the coach edited them directly and
+    // scheduleTemplateSync handed the program over. Nothing is listening.
+    const who = tpl.assignedTo ? escapeHtml(tpl.assignedTo) : "";
+    const when = tpl.assignedAt
+      ? new Date(tpl.assignedAt).toLocaleDateString("en-US", { month: "short", year: "numeric" })
+      : "";
+    const txt = [who, when && `finished ${when}`].filter(Boolean).join(" · ");
+    return `<span class="prog-spent">${txt || "no longer linked"}</span>`;
+  }
+
   function makeProgramCard(tpl) {
     const weekCount = tpl.weeks.length;
     const daysPerWeek = tpl.weeks.reduce((max, w) => Math.max(max, w.days.length), 0);
     const exCount = tpl.weeks.reduce((n, w) => n + w.days.reduce((m, d) => m + d.exercises.length, 0), 0);
     const ready = tpl.status === "ready";
+    const inUse = programBucket(tpl) === "inuse";
 
     // Compact 2-column row (matches the Athletes list). Whole row opens the
     // editor; status toggling also lives in the editor's status button.
@@ -5841,7 +5905,11 @@
     nameEl.textContent = tpl.name || "Untitled Program";
     const sub = document.createElement("div");
     sub.className = "coach-row-sub";
-    sub.textContent = `${weekCount} wk${weekCount !== 1 ? "s" : ""} · ${daysPerWeek} day${daysPerWeek !== 1 ? "s" : ""}/wk · ${exCount} ex`;
+    const shape = `${weekCount} wk${weekCount !== 1 ? "s" : ""} · ${daysPerWeek} day${daysPerWeek !== 1 ? "s" : ""}/wk · ${exCount} ex`;
+    // On the In use chip the athlete leads: it is the thing you came to that
+    // chip to find out, and it is what survives the ellipsis on a phone.
+    if (inUse) sub.innerHTML = `${programUseLabel(tpl)} · ${escapeHtml(shape)}`;
+    else sub.textContent = shape;
     main.appendChild(nameEl);
     main.appendChild(sub);
 
@@ -5854,6 +5922,27 @@
       assignBtn.textContent = "Assign";
       assignBtn.addEventListener("click", (e) => { e.stopPropagation(); assignProgramPrompt(tpl.id); });
       actions.appendChild(assignBtn);
+      // Handing the same program to a second athlete is the normal case, so
+      // Assign stays on the row after it moves — the shelf is a filing
+      // cabinet, not a bin. This is the way back out of it.
+      if (inUse) {
+        const unshelve = document.createElement("button");
+        unshelve.className = "btn btn-ghost btn-sm prog-unshelve";
+        unshelve.textContent = "↩";
+        unshelve.title = "Move back to Ready";
+        unshelve.addEventListener("click", (e) => {
+          e.stopPropagation();
+          // null, not delete: the boot backfill treats a missing key as "never
+          // handed out" and would re-stamp this on the next load.
+          tpl.assignedAt = null;
+          tpl.updatedAt = Date.now();
+          saveTrainer();
+          _programFilter = "ready";
+          renderProgramsList();
+          toast(`"${tpl.name || "Program"}" moved back to Ready`);
+        });
+        actions.appendChild(unshelve);
+      }
     } else {
       const readyBtn = document.createElement("button");
       readyBtn.className = "btn btn-ghost btn-sm";
@@ -5884,44 +5973,55 @@
     return row;
   }
 
-  function renderProgramsList() {
+  function renderProgramsList(keepFilter) {
     ensureProgramTemplates();
     _programEditorId = null;
     switchCoachView("programs");
     updateHeaderBreadcrumb(null);
+    const bar = $("#program-filter-bar");
     const grid = $("#program-template-grid");
     const empty = $("#program-template-empty");
     grid.innerHTML = "";
+    bar.innerHTML = "";
     const templates = liveTemplates(state.trainerData.programTemplates);
-    if (!templates.length) { show(empty); hide(grid); return; }
-    hide(empty); show(grid);
+    if (!templates.length) { show(empty); hide(grid); hide(bar); return; }
+    hide(empty); show(grid); show(bar);
 
-    const inProgress = templates.filter((t) => t.status !== "ready");
-    const ready = templates.filter((t) => t.status === "ready");
+    const buckets = {};
+    PROGRAM_CHIPS.forEach((c) => { buckets[c.key] = []; });
+    templates.forEach((t) => buckets[programBucket(t)].push(t));
 
-    const section = (title, hint, list) => {
-      const sec = document.createElement("div");
-      sec.className = "program-section";
-      const head = document.createElement("div");
-      head.className = "program-section-head";
-      head.innerHTML = `<span class="program-section-title">${escapeHtml(title)}</span><span class="program-section-count">${list.length}</span>`;
-      sec.appendChild(head);
-      if (list.length) {
-        const inner = document.createElement("div");
-        inner.className = "coach-row-grid";
-        list.forEach((tpl) => inner.appendChild(makeProgramCard(tpl)));
-        sec.appendChild(inner);
-      } else {
-        const none = document.createElement("p");
-        none.className = "program-section-empty muted";
-        none.textContent = hint;
-        sec.appendChild(none);
-      }
-      return sec;
-    };
+    // Land somewhere with something in it when ARRIVING at the page — an
+    // empty list on open reads as a broken page rather than an empty bucket.
+    // A chip the coach actually tapped is left alone even when it's empty:
+    // bouncing off it would select a chip they didn't press, and the chip's
+    // own empty line is the answer they were after.
+    if (!keepFilter && !buckets[_programFilter]?.length) {
+      _programFilter = (PROGRAM_CHIPS.find((c) => buckets[c.key].length) || PROGRAM_CHIPS[0]).key;
+    }
 
-    grid.appendChild(section("🟡 In progress", "Nothing in progress. New programs land here.", inProgress));
-    grid.appendChild(section("🟢 Ready to assign", "No finished programs yet. Mark one complete when it's ready.", ready));
+    PROGRAM_CHIPS.forEach((c) => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "program-chip";
+      chip.setAttribute("aria-selected", String(c.key === _programFilter));
+      chip.innerHTML = `${escapeHtml(c.label)} <span class="program-chip-n">${buckets[c.key].length}</span>`;
+      chip.addEventListener("click", () => { _programFilter = c.key; renderProgramsList(true); });
+      bar.appendChild(chip);
+    });
+
+    const list = buckets[_programFilter];
+    if (list.length) {
+      const inner = document.createElement("div");
+      inner.className = "coach-row-grid";
+      list.forEach((tpl) => inner.appendChild(makeProgramCard(tpl)));
+      grid.appendChild(inner);
+    } else {
+      const none = document.createElement("p");
+      none.className = "program-section-empty muted";
+      none.textContent = PROGRAM_CHIPS.find((c) => c.key === _programFilter).empty;
+      grid.appendChild(none);
+    }
   }
 
   // ── Template → assigned-athlete live sync ──
@@ -6163,6 +6263,17 @@
             // Without it the first template edit would read as "coach edited
             // this athlete" and immediately unlink them.
             client.tplShape = programShape(client.weeks);
+            // The program has now been handed out, so it stops sitting in
+            // Ready pretending it is untouched. assignedTo is a snapshot on
+            // purpose: once the link breaks there is nothing left to look the
+            // name up from, and "no longer linked" alone doesn't tell the
+            // coach whose program it was.
+            tpl.assignedAt = Date.now();
+            tpl.assignedTo = client.name || "";
+            tpl.updatedAt = Date.now();
+            // Follow it across, so the answer to "where did that go" is on
+            // screen rather than something to be discovered later.
+            _programFilter = "inuse";
             // Target this athlete for the cloud push. saveTrainer() only syncs
             // state.currentClientId, which may be a different athlete (or none)
             // when assigning from the Programs tab — so point it here first and
@@ -6281,6 +6392,14 @@
           // "Assign to athlete" when a live link is actually wanted.
           delete c.assignedProgramId;
           delete c.tplShape;
+          // Load is a one-time copy rather than a live link, but the program
+          // has still been handed to somebody — so it shelves like an assign.
+          // It goes straight to the spent state, because there is no link here
+          // that could ever be live.
+          p.assignedAt = Date.now();
+          p.assignedTo = c.name || "";
+          p.updatedAt = Date.now();
+          _programFilter = "inuse";
           saveTrainer();
           pushAthlete(c); // tracked: stays dirty until the cloud confirms
           closeModal();
@@ -39198,7 +39317,7 @@
       { sel: "#client-grid .client-row-view",
         title: "Live fill-out", text: "This button drops you into their workout to log sets together, rest timer included. Everything saves to their account." },
       { sel: "#view-programs", go: () => { state.currentClientId = null; renderProgramsList(); },
-        title: "Programs", text: "Build programs and day templates once, reuse them across athletes. Built one straight into an athlete instead? Save to Library on their Program tab brings a copy back here." },
+        title: "Programs", text: "Build programs and day templates once, reuse them across athletes. The three chips are a program's life: being built, waiting, and out on somebody — assigning one moves it to In use so Ready keeps meaning ready. Built one straight into an athlete instead? Save to Library on their Program tab brings a copy back here." },
       { sel: "#view-messages", go: () => { switchCoachView("messages"); renderMessagesView(); },
         title: "Messages", text: "One thread per athlete, and they can write back now. Anyone waiting on an answer sits at the top with a count. Tell everyone, at the bottom, says one thing to all of them at once: either a message in their threads or a notice pinned to their home screens." },
       { sel: "#btn-export-data", go: () => openCoachProfile(),

@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=roll2" />
+  <link rel="stylesheet" href="styles.css?v=shelf1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -643,6 +643,9 @@
             <button class="btn btn-ghost btn-sm slim-btn" id="btn-programs-day-library">📚 Day Library</button>
           </div>
         </div>
+        <!-- Three chips, one list: a program is being built, waiting, or out
+             on an athlete. Rendered from PROGRAM_CHIPS so the counts stay live. -->
+        <div id="program-filter-bar" class="program-filter-bar"></div>
         <div id="program-template-grid" class="program-template-grid"></div>
         <div id="program-template-empty" class="empty-state hidden">
           <div class="empty-emoji">📋</div>
@@ -1636,7 +1639,7 @@
   <script src="exercise-equipment.js?v=plyo1"></script>
   <script src="exercise-roles.js?v=beg1"></script>
   <script src="exercise-stats.js?v=st2"></script>
-  <script src="app.js?v=roll1"></script>
+  <script src="app.js?v=shelf3"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
