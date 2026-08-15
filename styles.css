@@ -3663,6 +3663,79 @@ input.trial-input {
 }
 
 /* ============ Personal Records ============ */
+/* ---- Recent PRs roller ----
+   Every logged lift eventually sets a record, so a card per exercise turned
+   this page into a list of the athlete's whole programme. One line each,
+   scrolled sideways instead. Horizontal ONLY — a nested vertical scroller is
+   what caused the mobile shake — and the scrollbar is hidden the same way the
+   tab strip hides its own. */
+/* min-width:0 is load-bearing, not tidiness. The PR list is a GRID, and a grid
+   item defaults to min-width:auto — it refuses to shrink below its content — so
+   without this the roller blows out to its full 1480px inside a 360px column
+   and nothing scrolls at all. Measured: strip clientWidth 1480 in a 387px
+   viewport. Same trap as the coach grids. */
+.pr-recent { margin-bottom: 1rem; min-width: 0; }
+.pr-recent.hidden { display: none; }
+.pr-recent-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.7em;
+  margin-bottom: 0.55em;
+}
+.pr-recent-head h4 { margin: 0; }
+.pr-recent-sub { color: var(--muted); font-size: 0.78rem; }
+.pr-recent-strip {
+  display: flex;
+  gap: 0.55rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+.pr-recent-strip::-webkit-scrollbar { display: none; }
+.pr-recent-tile {
+  position: relative;
+  flex: 0 0 auto;
+  min-width: 8.5rem;
+  max-width: 12rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 0.6rem 1.5rem 0.55rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.pr-recent-name {
+  font-size: 0.74rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pr-recent-val { font-size: 1.02rem; font-weight: 800; color: var(--text); }
+.pr-recent-val small { font-weight: 600; font-size: 0.8rem; color: var(--muted); margin-left: 0.2em; }
+.pr-recent-date { font-size: 0.72rem; color: var(--muted); }
+.pr-recent-x {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.3rem;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1;
+  padding: 0.2rem;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.pr-recent-tile:hover .pr-recent-x,
+.pr-recent-x:focus-visible { opacity: 1; }
+
 .pr-exercise-group {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -16145,4 +16218,12 @@ input.credit-cap:disabled { opacity: 0.4; }
 }
 @media (max-width: 640px) {
   .hub-lbl { flex-basis: 100%; padding-top: 0; }
+}
+
+@media (pointer: coarse) {
+  /* No hover on a phone, so the roller's remove control would be invisible and
+     unreachable. Show it, and give it a real tap target instead of an 0.8rem
+     glyph in a corner. */
+  .pr-recent-x { opacity: 1; padding: 0.5rem; top: 0; right: 0; }
+  .pr-recent-tile { padding-right: 2rem; }
 }

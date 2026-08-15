@@ -1439,7 +1439,7 @@
   // The matching key. Built from the RAW tags, never the long form, because
   // DB and DBs both read "Dumbbell" but one dumbbell and two are not the same
   // lift. Bare part and tag part stay separable so a legacy PR filed under the
-  // bare name can still be matched back (see prLiftKey / groupPRs).
+  // bare name can still be matched back (see prLiftKey).
   function liftKey(ex, progress) {
     const bare = exKey(exResolvedName(ex, progress) || ex?.name || "");
     if (!bare) return "";
@@ -19225,31 +19225,6 @@
   }
 
   // -------- Personal Records --------
-  function groupPRs(prs) {
-    // Group by lift identity, keeping the original-case name from the first
-    // entry as the card's title.
-    const groups = new Map();
-    prs.forEach((p) => {
-      if (!p.name) return;
-      const k = prLiftKey(p);
-      if (!groups.has(k)) groups.set(k, { key: k, displayName: p.name.trim(), entries: [] });
-      groups.get(k).entries.push(p);
-    });
-    // Merge pass: a legacy record has a bare key ("squats") where a tagged one
-    // has "squats|bb". If exactly ONE tagged lift shares that bare name, the
-    // legacy records can only have belonged to it, so fold them in rather than
-    // showing "Squats" and "Barbell Squats" as two ladders for the same lift.
-    // Two or more candidates is genuinely ambiguous — leave those alone.
-    [...groups.keys()].forEach((k) => {
-      if (k.includes("|")) return;
-      const tagged = [...groups.keys()].filter((o) => o !== k && liftKeyBare(o) === k);
-      if (tagged.length !== 1) return;
-      const into = groups.get(tagged[0]);
-      into.entries.push(...groups.get(k).entries);
-      groups.delete(k);
-    });
-    return Array.from(groups.values()).sort((a, b) => a.displayName.localeCompare(b.displayName));
-  }
   // Rank sets/PRs by estimated 1RM (weighted) or reps (bodyweight), so a rep PR
   // at the same weight, or a lighter high-rep set, is scored correctly.
   function prSortKey(p) {
@@ -19272,40 +19247,6 @@
     return prIsRepOnly(p)
       ? `${escapeHtml(p.reps || "?")} reps`
       : `${prWeightLabel(p.name, p.weight, p.pair)} × ${escapeHtml(p.reps || "?")}`;
-  }
-  function renderPRGroup(group) {
-    const sorted = [...group.entries].sort((a, b) => prSortKey(b) - prSortKey(a));
-    const best = sorted[0];
-    const card = document.createElement("div");
-    card.className = "pr-exercise-group";
-    const head = document.createElement("div");
-    head.className = "pr-exercise-header";
-    head.innerHTML = `
-      <h4 class="pr-exercise-name">${escapeHtml(group.displayName)}</h4>
-      ${best && (best.weight || best.reps) ? `<span class="pr-best"><span class="pr-best-label">PR</span>${prValueLabel(best)}</span>` : ""}
-    `;
-    card.appendChild(head);
-    const realEntries = sorted.filter((p) => p.weight || p.reps);
-    if (!realEntries.length) {
-      const hint = document.createElement("div");
-      hint.className = "pr-row pr-placeholder-hint";
-      hint.textContent = "No PR logged yet";
-      card.appendChild(hint);
-    } else {
-      realEntries.forEach((p, idx) => {
-        const row = document.createElement("div");
-        row.className = "pr-row" + (idx === 0 ? " is-best" : "");
-        row.innerHTML = `
-          <div><span class="pr-weight">${prIsRepOnly(p) ? (p.weight === "BW" ? "BW" : "—") : prWeightLabel(p.name, p.weight, p.pair)}</span> <span class="pr-reps">× ${escapeHtml(p.reps || "—")} reps</span>${p.auto ? `<span class="pr-auto" title="Auto-detected from your logged sets">auto</span>` : ""}</div>
-          <div class="pr-date">${escapeHtml(p.date || "")}</div>
-          <span class="pr-author ${p._author || "coach"}">${(p._author || "coach")}</span>
-          <button class="pr-delete" data-id="${p.id}" data-author="${p._author || ""}" title="Delete">×</button>
-          ${p.notes ? `<div class="pr-notes">${escapeHtml(p.notes)}</div>` : ""}
-        `;
-        card.appendChild(row);
-      });
-    }
-    return card;
   }
 
   // "07/14/26" from "2026-07-14" — PR date fields use the short form.
@@ -19837,19 +19778,78 @@
     trackBtn.addEventListener("click", openTrackLiftModal);
     container.appendChild(trackBtn);
 
-    // Athlete's own PRs (weight × reps format)
-    if (athleteOwn.length) {
-      groupPRs(athleteOwn).forEach((group) => container.appendChild(renderPRGroup(group)));
-      container.querySelectorAll(".pr-delete").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          if (!window.confirm("Delete this PR entry?")) return;
-          state.clientData.progress.personalRecords =
-            state.clientData.progress.personalRecords.filter((p) => p.id !== btn.dataset.id);
-          saveClient();
-          renderAthletePRs();
-        });
-      });
+    // Auto-detected PRs, as a roller rather than a wall.
+    //
+    // Every exercise the athlete logs eventually sets a record, so rendering a
+    // full card per lift turned the page into a list of their whole programme —
+    // Nathan: "it seems almost every exercise is being imported into the PR
+    // PAGE. I think we need to have a little roller of your RECENT PRS and then
+    // they can add their own in if they want to see specific exercises."
+    //
+    // So: newest first, one line each, scrolled sideways. The cards above stay
+    // the curated list — that is what ＋ Track a lift is for — and the archive
+    // below still reaches every lift's full history through its picker. Nothing
+    // is hidden, it just stops being the first thing you wade through.
+    container.appendChild(renderRecentPRs(athleteOwn));
+  }
+
+  // How many fit on the roller before it stops being a summary. Ten is about
+  // three screens of sideways scroll on a phone, and more than that is the wall
+  // this replaced.
+  const RECENT_PR_LIMIT = 10;
+  // Two date shapes live in PR data: auto-detected records carry ISO
+  // (YYYY-MM-DD) and the hand-filled card slots carry mm/dd/yy. Sorting either
+  // as a plain string puts "12/01/25" above "07/26/26", so both are read into a
+  // number. Undated sorts last rather than first.
+  function prDateKey(p) {
+    const s = String((p && p.date) || "").trim();
+    let m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) return Number(m[1] + m[2] + m[3]);
+    m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+    if (m) {
+      const yr = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
+      return yr * 10000 + Number(m[1]) * 100 + Number(m[2]);
     }
+    return 0;
+  }
+  function renderRecentPRs(prs) {
+    const wrap = document.createElement("div");
+    const real = (prs || []).filter((p) => p && p.name && (p.weight || p.reps));
+    if (!real.length) { wrap.className = "pr-recent hidden"; return wrap; }
+    // Newest first. prSortKey already ranks a PR the way the archive does, so a
+    // record with no date sorts by value rather than falling to the bottom.
+    const recent = [...real]
+      .sort((a, b) => (prDateKey(b) - prDateKey(a)) || (prSortKey(b) - prSortKey(a)))
+      .slice(0, RECENT_PR_LIMIT);
+    wrap.className = "pr-recent";
+    wrap.innerHTML =
+      `<div class="pr-recent-head">` +
+        `<h4>🥇 Recent PRs</h4>` +
+        `<span class="pr-recent-sub">${real.length > recent.length
+          ? `newest ${recent.length} of ${real.length}` : `${real.length} logged`}</span>` +
+      `</div><div class="pr-recent-strip"></div>`;
+    const strip = wrap.querySelector(".pr-recent-strip");
+    recent.forEach((p) => {
+      const tile = document.createElement("div");
+      tile.className = "pr-recent-tile";
+      tile.innerHTML =
+        `<span class="pr-recent-name">${escapeHtml(p.name)}</span>` +
+        `<span class="pr-recent-val">${prIsRepOnly(p)
+          ? (p.weight === "BW" ? "BW" : "") : prWeightLabel(p.name, p.weight, p.pair)}` +
+          `<small>× ${escapeHtml(String(p.reps || "—"))}</small></span>` +
+        `<span class="pr-recent-date">${escapeHtml(p.date || "")}</span>` +
+        `<button type="button" class="pr-recent-x" data-id="${escapeHtml(p.id || "")}"` +
+          ` title="Remove this PR" aria-label="Remove ${escapeHtml(p.name)} PR">✕</button>`;
+      tile.querySelector(".pr-recent-x").addEventListener("click", () => {
+        if (!window.confirm(`Remove this ${p.name} PR? Your logged workouts are not affected.`)) return;
+        state.clientData.progress.personalRecords =
+          (state.clientData.progress.personalRecords || []).filter((r) => r.id !== p.id);
+        saveClient();
+        renderAthletePRs();
+      });
+      strip.appendChild(tile);
+    });
+    return wrap;
   }
 
   function suggestExerciseNames(side) {
