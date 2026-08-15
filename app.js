@@ -30346,10 +30346,12 @@
   // Days the athlete waved off this session. In memory only: dismissing is a
   // "not right now", not an answer, and it should come back next visit.
   const _readinessSkipped = new Set();
-  // The ask lives behind the header side-card now (2026-08-12): the card
-  // carries "How are you?" / the answered chip, and the in-list block only
-  // renders for days the athlete opened it on. In memory, same stance as
-  // skipping — the card re-offers next visit.
+  // Days the athlete explicitly asked to open the check-in on, via the day
+  // menu. From 2026-08-12 this was the ONLY way the block rendered, and that was
+  // the bug: a pre-workout check-in nobody is offered is a pre-workout check-in
+  // nobody fills in. It now only forces the block open where it would otherwise
+  // be hidden — a finished day, or one already waved off. In memory, same
+  // stance as skipping.
   const _rdyAskOpen = new Set();
   let _rdyEditRequest = null;
 
@@ -30398,11 +30400,24 @@
         }
         return;
       }
-      // Nothing to show a coach previewing a day the athlete never answered,
-      // no point asking about a finished workout, and — since the header card
-      // is the door — nothing at all until this day's card was tapped.
-      if (!canAnswer || _readinessSkipped.has(day.id) || (!editing && isDayChecked(day.id))
-        || (!editing && !_rdyAskOpen.has(day.id))) {
+      // Two ways in, answering two different questions.
+      //
+      // ASKED FOR IT — they tapped "How are you today?" in the day menu, or
+      // asked to change an answer. That wins over everything, a finished day
+      // included. Nathan: "you can't reopen the HOW ARE YOU after you've
+      // completed a day, even if you didn't answer it." The old gate hid it on
+      // any checked day whether or not there was an answer to see, so an
+      // unanswered finished session had no way back in at all.
+      //
+      // OFFERED — an unfinished day, unanswered, not waved off this session.
+      // This is a PRE-workout check-in and from 2026-08-12 it only rendered for
+      // days the athlete had already opened it on, which meant in practice it
+      // was never seen: the door is a menu behind the header card, and on a
+      // phone that is an extra tap nobody makes. Offering it is the whole point
+      // of the feature. ✕ still means "not now" and still lasts the session.
+      const askedForIt = editing || _rdyAskOpen.has(day.id);
+      const offer = !isDayChecked(day.id) && !_readinessSkipped.has(day.id);
+      if (!canAnswer || (!askedForIt && !offer)) {
         wrap.className = "rdy-block hidden";
         return;
       }
