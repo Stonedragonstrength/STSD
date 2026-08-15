@@ -5171,6 +5171,12 @@
         pop.remove();
         c.trainingLevel = l.id;
         saveTrainer();
+        // saveTrainer() pushes ONLY state.currentClientId, and renderDashboard()
+        // sets that to null on arrival — so on the roster it writes localStorage
+        // and reaches the cloud never. The value looked saved and then came back
+        // wrong on the next pull, because a cloud-authoritative sync answers with
+        // the row it still holds. Push the athlete we actually edited.
+        pushAthlete(c);
         // Repaint the chip in place rather than re-rendering the grid: a full
         // renderClientGrid() rebuilds the cell this popup was anchored to, and
         // the coach loses their place in the drawer they are working in.
@@ -5283,6 +5289,12 @@
       else if ("hubPain" in d) c.painRelief = !c.painRelief;
       else if ("hubGear" in d) c.equipment = gearToggle(c.equipment, d.hubGear);
       saveTrainer();
+      // Same reason as the training-age picker: this hub only ever renders on
+      // the roster, where renderDashboard() has just nulled currentClientId, so
+      // saveTrainer()'s own push is a no-op and every goal / days / pain / gear
+      // change made here has been local-only. Longstanding; found 2026-08-15
+      // when the training age it used to host stopped surviving a sync.
+      pushAthlete(c);
       repaint();
     });
   }
