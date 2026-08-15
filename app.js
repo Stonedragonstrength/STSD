@@ -5485,22 +5485,10 @@
         card.appendChild(sess);
       }
 
-      // Quick "live session" — opens the athlete's current day in their own
-      // logging UI, with every entry saving to the athlete's account. (The old
-      // read-only 👁️ preview was retired 2026-07-17 — this is the one door in.)
-      const logBtn = document.createElement("button");
-      logBtn.className = "client-row-view";
-      logBtn.type = "button";
-      logBtn.title = `Fill out ${c.name || "athlete"}'s workout`;
-      logBtn.setAttribute("aria-label", `Log ${c.name || "athlete"}'s workout in a live session`);
-      logBtn.textContent = "🏋️";
-      logBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        state.currentClientId = c.id;
-        Nav.push(exitPreview); // Back leaves the live session
-        previewAsAthlete();
-      });
-      card.appendChild(logBtn);
+      // The row's 🏋️ live-session button moved into the drawer's doors on
+      // 2026-08-15 and is deliberately NOT duplicated here. The row is getting
+      // dense — avatar, name, position, progress, the request badge — and the
+      // doors are where destinations live now. It is the first door, marked.
 
       // The row and its drawer are one cell. Tapping the row opens the drawer
       // in place instead of navigating: the trip through an athlete used to
@@ -5582,13 +5570,19 @@
 
     const doors = document.createElement("div");
     doors.className = "cd-doors";
-    // Program first and marked: it is the reason the athlete page exists.
+    // Six doors, ordered in PAIRS and laid out two-up at every width, so the
+    // pairing is the layout: training, then money, then the rest. Fill out is
+    // first and marked — it is the thing he opens an athlete to do.
     [
-      { tab: "program", ico: "📋", label: "Program", main: true },
-      { tab: "diet", ico: "🥗", label: "Nutrition" },
+      { fill: true, ico: "🏋️", label: "Fill out", main: true },
+      { tab: "program", ico: "📋", label: "Program" },
       // Not a tab any more — their money lives on Money → Raise, and this
-      // opens their row there.
+      // opens their row there. Sessions is the WORKSPACE.
       { money: true, ico: "🎟️", label: "Sessions" },
+      // ...and Money is the ANSWER: a read-only sheet, no controls, because a
+      // second route to the Raise panel would just be two doors to one place.
+      { sheet: true, ico: "💵", label: "Money" },
+      { tab: "diet", ico: "🥗", label: "Nutrition" },
       { tab: "profile", ico: "👤", label: "Profile" },
     ].forEach((d) => {
       const b = document.createElement("button");
@@ -5597,6 +5591,17 @@
       b.innerHTML = `<span class="cd-door-ico" aria-hidden="true">${d.ico}</span>${escapeHtml(d.label)}`;
       b.addEventListener("click", (e) => {
         e.stopPropagation();
+        // The live session pushes its OWN back target: Back has to leave the
+        // session, not drop the coach onto the roster still in live-log mode.
+        if (d.fill) {
+          state.currentClientId = c.id;
+          Nav.push(exitPreview);
+          previewAsAthlete();
+          return;
+        }
+        // The sheet is a modal over the roster, so it pushes no nav at all —
+        // closing it must leave the drawer open underneath, not navigate.
+        if (d.sheet) { openAthleteMoneySheet(c); return; }
         Nav.push(renderDashboard);
         if (d.money) { openAthleteSessions(c.id); return; }
         openClient(c.id);
@@ -5604,8 +5609,9 @@
       });
       doors.appendChild(b);
     });
-    // The live session already had its own button on the row; it stays there
-    // rather than being offered twice.
+    // The live session's old 🏋️ button on the row is GONE (2026-08-15): it is
+    // the first door now. The row needs its width back for the athlete's own
+    // information, and one place per destination is the point of the strip.
     wrap.appendChild(doors);
     return wrap;
   }
@@ -6656,6 +6662,88 @@
   // The one way to an athlete's sessions now that they aren't a tab: the Money
   // screen, Raise open, that athlete's row expanded. Every old
   // `setTab("sessions")` caller comes here instead.
+  // The Money door. Deliberately READ-ONLY: Sessions already opens this
+  // athlete's Raise row, which is the workspace — membership, rate, calendar,
+  // bank controls, Square. A second route to the same controls would just be
+  // two doors to one place, so this one answers instead, and hands off.
+  //
+  // Every money figure here is the BANK's, not the athlete's. Couples share one
+  // bank and their sessions are booked under whichever half holds the slot, so
+  // a per-athlete money number is simply wrong for them — and both halves
+  // showing the same figure unmarked reads as double
+  // (see bankMembership/chargeFor/savedCardFor, which already pair this way).
+  function moneySheetHtml(c) {
+    const sum = sessionBankSummary(c);
+    const owed = athleteOwed(c);
+    const monthKey = todayISO().slice(0, 7);
+    const proj = raiseProjection(c, monthKey);
+    const charge = chargeFor(c, monthKey);
+    const plan = monthChargePlan(c, monthKey);
+    const status = chargeStatusLabel(charge, plan, monthKey);
+    const card = savedCardFor(c);
+    const last = lastPaymentFor(c);
+    const credit = creditBalance(c);
+    const m = bankMembership(c);
+    const partner = c.partnerId ? state.trainerData.clients.find((x) => x.id === c.partnerId) : null;
+    const bank = partner ? " · the bank's" : "";
+
+    const row = (k, v, cls) =>
+      `<div class="ms-row"><span class="ms-k">${escapeHtml(k)}</span><span class="ms-v${cls ? " " + cls : ""}">${v}</span></div>`;
+    const grp = (label, rows) =>
+      `<div class="ms-grp"><span class="ms-grp-l">${escapeHtml(label)}</span>${rows.join("")}</div>`;
+
+    // One line that says the thing needing doing. Seven rows that always look
+    // the same means reading seven rows; this is the same read the sessions
+    // chip's .low/.blank states give at a glance.
+    const head = owed.total > 0
+      ? `<div class="ms-status bad">${money(owed.total)} unpaid${owed.oldestDays ? ` · oldest ${owed.oldestDays} days` : ""}</div>`
+      : `<div class="ms-status ok">✓ Nothing outstanding</div>`;
+
+    const sessRows = [
+      row("Left", String(sum.remaining), sum.remaining <= 0 ? "big low" : "big"),
+      row("Breakdown", escapeHtml(bankBreakdown(sum)), "sm"),
+    ];
+    if (partner) sessRows.push(row("Booked by them", String(sessionsInMonth(c, monthKey)), "sm"));
+
+    const outRows = [row("This month", escapeHtml(status.text), status.tone === "warn" ? "warn" : "sm")];
+    if (owed.months.length) {
+      outRows.push(row("Overdue", `${owed.months.length} month${owed.months.length === 1 ? "" : "s"} · ${escapeHtml(owed.months.map(monthKeyLabel).map((s) => s.replace(/ \d{4}$/, "")).join(", "))}`, "warn"));
+    }
+    outRows.push(row("Last paid", last
+      ? `${money(last.amount)} · ${escapeHtml(last.at)} · ${last.method}`
+      : "<em>no payment recorded</em>", "sm"));
+    outRows.push(row("Card", card ? escapeHtml(cardLabel(card)) : "<em>no card saved</em>", card ? "sm" : "warn"));
+    if (credit > 0) outRows.push(row("Credit held", money(credit), "sm"));
+
+    const nextRows = [row("Projects", money(proj.projected))];
+    if (proj.hitsAll > proj.projected) nextRows.push(row("If they hit everything", money(proj.hitsAll), "sm"));
+
+    return `<div class="ms">
+      <div class="ms-head">
+        <div class="ms-title">${escapeHtml(c.name || "Athlete")}</div>
+        <div class="ms-sub">${partner
+          ? `<span class="ms-share">💞 one bank with ${escapeHtml(partner.name || "partner")}</span>`
+          : escapeHtml([m ? membershipTitle(m) : "No membership", athleteSessionRate(c) ? `${money(athleteSessionRate(c))} a session` : ""].filter(Boolean).join(" · "))}</div>
+      </div>
+      ${head}
+      ${grp("Sessions" + bank, sessRows)}
+      ${grp("Money out" + bank, outRows)}
+      ${grp("Next month", nextRows)}
+    </div>`;
+  }
+
+  function openAthleteMoneySheet(c) {
+    if (!c) return;
+    openModal({
+      title: "Money",
+      body: moneySheetHtml(c),
+      actions: [
+        { label: "Close", className: "btn btn-ghost", onClick: closeModal },
+        { label: "Open Raise row", className: "btn btn-primary", onClick: () => { closeModal(); openAthleteSessions(c.id); } },
+      ],
+    });
+  }
+
   function openAthleteSessions(id) {
     _openRaiseId = id;
     parkRaiseSessions();
@@ -17407,6 +17495,92 @@
   // a gate: this app's own rule is that sessions are live the day they're
   // granted and the money is chased separately, and quietly withholding
   // somebody's training over a card is a different product.
+  // ---- What one athlete owes, as ONE number ----
+  //
+  // A debt can be recorded in two places and nothing added them up before this.
+  // Packages carry `unpaid` on the bank (the cash side, what
+  // sessionBankSummary().owedAmount sums); card charges live in
+  // `billing_payments` and unpaidChargeMonths returns MONTHS, not dollars. A
+  // coach reading either one alone is reading half of what he is owed.
+  //
+  // The catch, and the reason this is not a sum of the two: for one month they
+  // are usually the SAME debt. settleBilledPackages() only clears `unpaid` once
+  // a month is PAID, so a month that was invoiced and ignored has the charge
+  // sitting at "sent" AND its package still flagged — adding both bills the
+  // athlete twice on screen. So this resolves per month and takes the charge's
+  // amount when there is one, since that is the figure actually sent to them.
+  //
+  // Packages with no month key (a one-off pack, not a membership grant) have no
+  // charge to collide with and simply add.
+  function athleteOwed(c) {
+    const out = { total: 0, months: [], oldestDays: 0, fromCard: 0, fromPackages: 0 };
+    if (!c) return out;
+    ensureSessionBank(c);
+    const pid = c.partnerId || null;
+    const mine = (p) => p.athlete_id === c.id || (pid && p.athlete_id === pid);
+    const today = todayISO().slice(0, 7);
+
+    // Every month with a charge that went out and was never paid.
+    const charged = new Map();
+    (_billing.payments || []).forEach((p) => {
+      if (!mine(p) || p.status !== "sent" || !p.month_key) return;
+      const prev = charged.get(p.month_key);
+      // Two rows for one month means it was re-sent; the newest is the ask.
+      if (!prev || String(p.created_at || "") > String(prev.created_at || "")) charged.set(p.month_key, p);
+    });
+
+    const seen = new Set();
+    charged.forEach((p, key) => {
+      const amt = (Number(p.amount_cents) || 0) / 100;
+      out.total += amt;
+      out.fromCard += amt;
+      seen.add(key);
+      // Only a PAST month is overdue; this month's invoice is not late yet.
+      if (key < today) out.months.push(key);
+      const days = p.created_at ? daysBetweenISO(String(p.created_at).slice(0, 10), todayISO()) : 0;
+      if (days > out.oldestDays) out.oldestDays = days;
+    });
+
+    (c.sessionBank.packages || []).forEach((p) => {
+      if (!pkgOwed(p)) return;
+      const key = pkgMonth(p);
+      if (key && seen.has(key)) return;          // same debt, already counted
+      const amt = Number(p.price) || 0;
+      out.total += amt;
+      out.fromPackages += amt;
+      if (key && key < today) out.months.push(key);
+      const from = p.addedAt ? new Date(p.addedAt) : null;
+      const days = from ? daysBetweenISO(dateISO(from), todayISO()) : 0;
+      if (days > out.oldestDays) out.oldestDays = days;
+    });
+
+    out.months.sort();
+    out.total = Math.round(out.total * 100) / 100;
+    return out;
+  }
+
+  // When money last actually arrived. bankPayBy already sorts these rows by
+  // date to read the payment METHOD off the newest one and then throws the date
+  // away; this keeps it, because "when did they last pay me" is a question the
+  // coach asks and nothing could answer.
+  function lastPaymentFor(c) {
+    if (!c) return null;
+    const pid = c.partnerId || null;
+    let best = null;
+    (_billing.payments || []).forEach((p) => {
+      if (p.status !== "paid") return;
+      if (!(p.athlete_id === c.id || (pid && p.athlete_id === pid))) return;
+      const at = p.paid_at || p.created_at || "";
+      if (!best || String(at) > String(best.at)) best = { at: String(at), row: p };
+    });
+    if (!best) return null;
+    return {
+      at: best.at.slice(0, 10),
+      amount: (Number(best.row.amount_cents) || 0) / 100,
+      method: best.row.method === "manual" ? "cash" : "card",
+    };
+  }
+
   function unpaidChargeMonths(c) {
     if (!c) return [];
     const pid = c.partnerId || null;

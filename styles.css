@@ -996,10 +996,58 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
   color: var(--primary-bright);
 }
 .cd-door-ico { font-size: 0.9rem; line-height: 1; }
-@media (max-width: 380px) {
-  /* Four doors won't hold their labels at this width; two rows of two do. */
-  .cd-door { flex: 1 1 40%; }
+/* TWO-UP AT EVERY WIDTH. With six doors the order carries meaning — they are
+   ordered in pairs (training / money / the rest) — and a row that reflows to
+   three or six across at some widths destroys the pairing at exactly the
+   widths it isn't looked at on. Two columns everywhere means one map for the
+   hand, and the phone already looked like this. Replaces the old 380px rule,
+   which existed to stop four doors squeezing their labels; two columns solves
+   that at every size instead of one.
+   The drawer grows from one band to three rows on a laptop. Taken knowingly:
+   six destinations is more than a band can hold and stay readable. */
+.cd-door { flex: 1 1 calc(50% - 0.35rem); }
+
+/* ---- The Money door's sheet ----
+   Read-only by design; Sessions owns the controls. Grouped by the question
+   being asked rather than by where the data lives, because the coach opens
+   this with a question, not a table in mind. --accent-rgb/--warn-rgb rather
+   than a theme colour: "settled" and "chase this" have to mean the same thing
+   in all ten themes. */
+.ms-head { padding-bottom: 0.5rem; margin-bottom: 0.6rem; border-bottom: 1px solid var(--border); }
+.ms-title { font-size: 1.02rem; font-weight: 800; color: var(--text); }
+.ms-sub { font-size: 0.74rem; color: var(--text-soft); margin-top: 0.1em; }
+.ms-share {
+  display: inline-flex; align-items: center; gap: 0.3em;
+  font-size: 0.7rem; font-weight: 700;
+  color: var(--primary-bright); background: rgba(var(--primary-rgb), 0.14);
+  border-radius: 999px; padding: 0.05em 0.55em;
 }
+/* The one line that says what needs doing. */
+.ms-status {
+  padding: 0.45em 0.65em; border-radius: 8px;
+  font-size: 0.82rem; font-weight: 800; margin-bottom: 0.2rem;
+}
+.ms-status.ok { color: var(--accent); background: rgba(var(--accent-rgb), 0.12); border: 1px solid rgba(var(--accent-rgb), 0.3); }
+.ms-status.bad { color: var(--warn); background: rgba(var(--warn-rgb), 0.12); border: 1px solid rgba(var(--warn-rgb), 0.35); }
+.ms-grp { margin-top: 0.75rem; }
+.ms-grp-l {
+  display: block;
+  font-size: 0.56rem; font-weight: 800; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--muted);
+  padding-bottom: 0.25rem; margin-bottom: 0.15rem; border-bottom: 1px solid var(--border);
+}
+.ms-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 0.7rem;
+  padding: 0.4rem 0; font-size: 0.86rem;
+}
+.ms-row + .ms-row { border-top: 1px solid rgba(var(--primary-rgb), 0.07); }
+.ms-k { color: var(--text-soft); flex: 0 1 auto; }
+.ms-v { font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; min-width: 0; }
+.ms-v.sm { font-size: 0.79rem; font-weight: 700; }
+.ms-v.big { font-size: 1.08rem; color: var(--primary-bright); }
+.ms-v.big.low { color: var(--warn); }
+.ms-v.warn { color: var(--warn); }
+.ms-v em { color: var(--muted); font-style: normal; font-weight: 600; }
 /* Now a bare wrapper — .av-tile inside owns the look, so a roster row shows
    either a pixel avatar or the initials tile at identical dimensions. */
 .client-avatar { display: flex; flex-shrink: 0; }
