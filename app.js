@@ -181,14 +181,29 @@
 
   // -------- Sync truth (see 2026-08-11-cloud-authoritative-sync-design.md) --------
   // The chip in both headers. One rule: the app may never present stale or
-  // unsaved state as settled truth. Priority-ordered states; the chip shows
-  // the worst applicable one, hides when everything is settled (after a brief
-  // "Saved ✓"), and stays visible for syncing / issue / offline. Colors come
-  // from theme-stable channel tokens; no animation — pulses strobe on mobile.
+  // unsaved state as settled truth. Colors come from theme-stable channel
+  // tokens; no animation — pulses strobe on mobile.
+  //
+  // NARROWED 2026-08-15 to the two states that carry information the coach can
+  // act on. "Syncing…" and the "Saved ✓" flash are gone: they announced the
+  // expected outcome of a system that, since the cloud-authoritative overhaul,
+  // does its job — Nathan ran two devices against each other all day and it
+  // "was working flawlessly". A progress indicator for a thing that always
+  // works is furniture, and it appears constantly, which is what made a chip
+  // this small feel big.
+  //
+  // What CANNOT go, and why the chip survives at all: `lastPushFailureAt()` is
+  // read in exactly two places — here, and an internal guard that stops the app
+  // adopting cloud data after a failed push. This chip is the ONLY thing that
+  // ever tells the coach his work has not reached the cloud. Silent sync
+  // failure is the shape of every incident this feature was built after.
+  //
+  // compute() still reports the true state, including "syncing", because the
+  // live-session pill reads it off the dataset; only what is SHOWN narrowed.
   const SyncStatus = (() => {
     let pulls = 0;
-    let okFlashTimer = null;
-    let lastShown = "ok";
+    // Shown only for a state the coach can do something about.
+    const LOUD = new Set(["issue", "offline"]);
     function compute() {
       if (!window.Cloud?.enabled) return "local";
       if (!navigator.onLine) return "offline";
@@ -196,36 +211,37 @@
       if (pulls > 0 || (window.Cloud.pendingPushes?.() || 0) > 0) return "syncing";
       return "ok";
     }
+    // Only the two loud states carry text now; the rest never render.
     const LABEL = {
-      syncing: "Syncing…",
       issue: "Sync issue — tap to retry",
-      offline: "Offline — saving here",
-      ok: "Saved ✓",
+      offline: "Offline",
+      syncing: "",
+      ok: "",
       local: "",
+    };
+    const TITLE = {
+      issue: "Your last change did not reach the cloud. Tap to retry.",
+      offline: "Offline — changes are saved on this device and will sync when you are back.",
     };
     function paint() {
       const s = compute();
-      const busyBefore = lastShown === "syncing";
-      lastShown = s;
       for (const id of ["sync-chip", "sync-chip-athlete"]) {
         const el = document.getElementById(id);
         if (!el) continue;
         el.dataset.sync = s;
         const txt = el.querySelector(".sync-chip-txt");
         if (txt) txt.textContent = LABEL[s] || "";
-        if (s === "ok") {
-          // Settled: flash "Saved ✓" only when we were just visibly busy,
-          // then get out of the way. A permanent green chip is furniture.
-          if (busyBefore) {
-            el.classList.remove("hidden");
-            clearTimeout(okFlashTimer);
-            okFlashTimer = setTimeout(() => { if (compute() === "ok") el.classList.add("hidden"); }, 2500);
-          } else {
-            el.classList.add("hidden");
-          }
-        } else {
-          el.classList.toggle("hidden", s === "local");
+        // Offline renders dot-only, so its words have to survive somewhere a
+        // hover and a screen reader can still reach them.
+        if (LOUD.has(s)) {
+          el.title = TITLE[s];
+          el.setAttribute("aria-label", TITLE[s]);
         }
+        // Settled, busy, or cloudless: say nothing. There is no timer here any
+        // more — a chip that shows up to confirm the expected is the thing
+        // being removed, and a 2.5s flash is still a thing that moves in the
+        // corner of the eye while he is programming.
+        el.classList.toggle("hidden", !LOUD.has(s));
       }
       // The live-session pill carries the state too — the athlete header-right
       // (and the chip in it) is hidden during a live session.
@@ -5126,6 +5142,13 @@
   // itself. Setting up a new athlete, or re-checking the roster before writing
   // a block, should not mean opening twenty-eight profiles one at a time.
   //
+  // TRAINING AGE IS NOT HERE (moved 2026-08-15, Nathan: "i don't want it on
+  // their main card face"). It lives in the row drawer instead. The rest of
+  // this hub is programming — goal, days, pain, gear are decisions the coach
+  // makes about a block — while training age is a FACT about the person, and
+  // it belongs with them rather than with the dials. The card still shows its
+  // effect in the summary line's grading bands; only the control moved.
+  //
   // Each control writes straight to the client and saves; there is no Save
   // button, because a settings screen that can be left half-applied is worse
   // than one that cannot.
@@ -5144,11 +5167,6 @@
         <span class="hub-lbl">Days a week</span>
         <span class="hub-pick">${[0, 1, 2, 3, 4, 5, 6, 7].map((d) =>
           `<button type="button" class="hub-opt hub-opt-num${d === days ? " on" : ""}" data-hub-days="${d}">${d || "—"}</button>`).join("")}</span>
-      </div>
-      <div class="hub-row">
-        <span class="hub-lbl">Training age</span>
-        <span class="hub-pick">${TRAINING_LEVELS.map((l) =>
-          `<button type="button" class="hub-opt${l.id === (c.trainingLevel || "") ? " on" : ""}" data-hub-level="${l.id}" title="${escapeHtml(l.years)}">${l.emoji} ${escapeHtml(l.name)}</button>`).join("")}</span>
       </div>
       <div class="hub-row">
         <span class="hub-lbl">Pain relief</span>
@@ -5172,15 +5190,14 @@
   // repaints just that card, so the fold cannot drift from the data.
   function wireRosterTrainingHub(host, c, repaint) {
     host.addEventListener("click", (e) => {
-      const b = e.target.closest("[data-hub-goal],[data-hub-days],[data-hub-level],[data-hub-pain],[data-hub-gear]");
+      const b = e.target.closest("[data-hub-goal],[data-hub-days],[data-hub-pain],[data-hub-gear]");
       if (!b) return;
       e.stopPropagation();               // the card itself opens the athlete
       const d = b.dataset;
       if ("hubGoal" in d) c.trainingPhase = d.hubGoal;
       else if ("hubDays" in d) c.daysPerWeek = Number(d.hubDays) || 0;
-      // Tapping the level you already have clears it back to "not set", which
-      // is the only way to undo an accidental tap without a second control.
-      else if ("hubLevel" in d) c.trainingLevel = c.trainingLevel === d.hubLevel ? "" : d.hubLevel;
+      // No hubLevel branch: training age moved to the row drawer (see above),
+      // and nothing here emits data-hub-level any more.
       else if ("hubPain" in d) c.painRelief = !c.painRelief;
       else if ("hubGear" in d) c.equipment = gearToggle(c.equipment, d.hubGear);
       saveTrainer();
@@ -5613,6 +5630,33 @@
     // the first door now. The row needs its width back for the athlete's own
     // information, and one place per destination is the point of the strip.
     wrap.appendChild(doors);
+
+    // Training age, moved off the card face (2026-08-15). It sits BELOW the
+    // doors on purpose: the doors are why the drawer opens, and a control
+    // above them would put a thing you set once a year in front of the thing
+    // you tap every session.
+    //
+    // Same .hub-* markup as the training hub it came from, so it is one
+    // pattern rather than a second way to pick the same value. Writes straight
+    // through, like the hub — no Save button, because a settings control that
+    // can be left half-applied is worse than one that cannot.
+    const age = document.createElement("div");
+    age.className = "hub-row cd-age";
+    age.innerHTML = `<span class="hub-lbl">Training age</span>
+      <span class="hub-pick">${TRAINING_LEVELS.map((l) =>
+        `<button type="button" class="hub-opt${l.id === (c.trainingLevel || "") ? " on" : ""}" data-age-level="${l.id}" title="${escapeHtml(l.years)}">${l.emoji} ${escapeHtml(l.name)}</button>`).join("")}</span>`;
+    age.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-age-level]");
+      if (!b) return;
+      e.stopPropagation();
+      // Tapping the level already set clears it back to "not set" — the only
+      // way to undo a mis-tap without a second control. Same rule as the hub's.
+      const v = b.dataset.ageLevel;
+      c.trainingLevel = c.trainingLevel === v ? "" : v;
+      saveTrainer();
+      renderClientGrid();
+    });
+    wrap.appendChild(age);
     return wrap;
   }
 
