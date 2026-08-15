@@ -849,12 +849,18 @@ const deps = {
 };
 const TRIM_FLOOR_SETS = Number((appSrc.match(/const TRIM_FLOOR_SETS = (\d+)/) || [])[1]);
 const DEEPEN_MAX_SETS = Number((appSrc.match(/const DEEPEN_MAX_SETS = (\d+)/) || [])[1]);
+const BEGINNER_MIN_REPS = Number((appSrc.match(/const BEGINNER_MIN_REPS = (\d+)/) || [])[1]);
+const BEGINNER_MAX_SETS = Number((appSrc.match(/const BEGINNER_MAX_SETS = (\d+)/) || [])[1]);
 const TRIM_FLOOR_ANCHOR = Number((appSrc.match(/const TRIM_FLOOR_ANCHOR = (\d+)/) || [])[1]);
 const buildWeek = Function(...Object.keys(deps), `
   let _libCatByKey = null;
   const TRIM_FLOOR_SETS = ${TRIM_FLOOR_SETS};
   const TRIM_FLOOR_ANCHOR = ${TRIM_FLOOR_ANCHOR};
   const DEEPEN_MAX_SETS = ${DEEPEN_MAX_SETS};
+  const BEGINNER_MIN_REPS = ${BEGINNER_MIN_REPS};
+  const BEGINNER_MAX_SETS = ${BEGINNER_MAX_SETS};
+  ${fnSrc(appSrc, "function isBeginner(")}
+  ${fnSrc(appSrc, "function schemeForLevel(")}
   const OVERSHOOT_COST = ${OVERSHOOT_COST};
   ${fnSrc(appSrc, "function coverageGain(")}
   ${fnSrc(appSrc, "function builtWeekSets(")}
@@ -1288,7 +1294,7 @@ check("the squat day holds a lunge or a split squat, and no crawl", () => {
 });
 
 check("the trim and deepen constants read out of app.js too", () => {
-  Object.entries({ TRIM_FLOOR_SETS, TRIM_FLOOR_ANCHOR, DEEPEN_MAX_SETS })
+  Object.entries({ TRIM_FLOOR_SETS, TRIM_FLOOR_ANCHOR, DEEPEN_MAX_SETS, BEGINNER_MIN_REPS, BEGINNER_MAX_SETS })
     .forEach(([name, v]) => assert.ok(Number.isFinite(v) && v > 0,
       `${name} read out of app.js as ${v} — the regex stopped matching`));
   assert.ok(TRIM_FLOOR_ANCHOR > TRIM_FLOOR_SETS,
@@ -1316,6 +1322,55 @@ check("no exercise is ever written for more sets than the deepen ceiling", () =>
         assert.ok(Number(ex.sets) <= DEEPEN_MAX_SETS,
           `${style} wrote ${ex.sets}x${ex.reps} ${ex.name}, over the ceiling of ${DEEPEN_MAX_SETS}`));
     }
+  }
+});
+
+check("a beginner is never written a triple or a six-set lift", () => {
+  // Measured before the clamp: 4x3 Bench Press, 4x3 Box Squat, 5x3 Decline
+  // Bench Press, 6x5 Sumo Deadlift, 6x6 Romanian Deadlift — all for a
+  // sub-one-year lifter. A triple has to be loaded against a known 1RM and the
+  // app has none, and six sets of one lift spends a beginner's entire weekly
+  // allowance for that muscle (plenty is 6) on a single exercise.
+  GEN_STYLES.forEach((style) => {
+    for (const days of [3, 4, 5]) {
+      const { week } = buildWeek({ trainingLevel: "beginner" }, { days, styleName: style.name });
+      week.days.flatMap((d) => d.exercises).forEach((ex) => {
+        assert.ok(Number(ex.sets) <= BEGINNER_MAX_SETS,
+          `${style.name}: beginner given ${ex.sets}x${ex.reps} ${ex.name}, over ${BEGINNER_MAX_SETS} sets`);
+        if (!/^\d+$/.test(String(ex.reps))) return;   // carries, holds
+        const w = EXERCISE_REP_WINDOW[exKey(ex.name)];
+        // The movement's own ceiling still wins — a nordic curl stays low.
+        if (w && w[1] < BEGINNER_MIN_REPS) return;
+        assert.ok(Number(ex.reps) >= BEGINNER_MIN_REPS,
+          `${style.name}: beginner given ${ex.sets}x${ex.reps} ${ex.name}, under ${BEGINNER_MIN_REPS} reps`);
+      });
+    }
+  });
+});
+
+check("the clamp is for beginners only", () => {
+  // An intermediate or advanced athlete keeps the style the coach picked. If
+  // this stops being true the clamp has leaked and Strength stops being Strength.
+  let sawTriple = false, sawSix = false;
+  for (let roll = 0; roll < 20; roll++) {
+    const { week } = buildWeek({ trainingLevel: "advanced" }, { days: 4, styleName: "Strength" });
+    week.days.flatMap((d) => d.exercises).forEach((ex) => {
+      if (Number(ex.reps) <= 3) sawTriple = true;
+      if (Number(ex.sets) >= 6) sawSix = true;
+    });
+  }
+  assert.ok(sawTriple, "an advanced Strength block produced no low-rep work at all in 20 rolls");
+  assert.ok(sawSix, "an advanced Strength block never reached six sets in 20 rolls");
+});
+
+check("a rack pull is filed as a hinge, not a pull", () => {
+  // It is a partial deadlift. As a Pull compound it could open a back day with
+  // no lat or scapular work as the anchor. Nathan's call, 2026-08-14.
+  assert.strictEqual(exPattern("Rack Pull"), "Hinge");
+  const gear = gearSet({});
+  for (let i = 0; i < 30; i++) {
+    const nm = bestForPattern("Pull", gear, new Set(), "compound");
+    assert.notStrictEqual(exKey(nm || ""), "rack pull", "a rack pull opened a pull day");
   }
 });
 

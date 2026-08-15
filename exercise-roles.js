@@ -290,6 +290,11 @@ window.EXERCISE_PATTERN = {
   "kettlebell swing": "Hinge",
   "glute bridge": "Hinge",
   "b-stance hip thrust": "Hinge",
+  // A rack pull is a partial deadlift. It lived under Pull because that is
+  // where a coach schedules it, but pattern here means what the day is BUILT
+  // around, and as a Pull compound it could open a back day with no lat or
+  // scapular work as the anchor. Filed by the movement, scheduled by the coach.
+  "rack pull": "Hinge",
 
   // ---- Push ----
   "bench press": "Push",
@@ -321,7 +326,6 @@ window.EXERCISE_PATTERN = {
   "row": "Pull",
   "pendlay row": "Pull",
   "t-bar row": "Pull",
-  "rack pull": "Pull",
   "lat pulldown": "Pull",
   "wide-grip pulldown": "Pull",
   "chest-supported row": "Pull",

@@ -1,0 +1,70 @@
+{
+  "$comment": [
+    "Project permissions, checked in. settings.local.json had grown to hundreds of",
+    "one-off rules ('Bash(kill 1080 1073)', 'Bash(head -5 __preview-setup.html)'),",
+    "so every new variant of the same command prompted again. These are broad",
+    "prefix rules for the tools this repo actually uses: node is the test runner,",
+    "git is the deploy, and curl/netstat only ever point at the local sandbox.",
+    "",
+    "Deliberately NOT allowed, so they still ask: rm, anything writing outside the",
+    "repo, and any network call that is not localhost."
+  ],
+  "permissions": {
+    "allow": [
+      "Bash(node *)",
+      "Bash(time node *)",
+      "Bash(npm test*)",
+      "Bash(npx supabase *)",
+
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git push*)",
+      "Bash(git pull*)",
+      "Bash(git branch*)",
+      "Bash(git checkout*)",
+      "Bash(git stash*)",
+      "Bash(git restore*)",
+      "Bash(git ls-files*)",
+      "Bash(git check-ignore*)",
+      "Bash(git rev-parse*)",
+
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(file *)",
+      "Bash(grep *)",
+      "Bash(sed *)",
+      "Bash(awk *)",
+      "Bash(sort *)",
+      "Bash(uniq *)",
+      "Bash(diff *)",
+      "Bash(find *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(printf *)",
+      "Bash(echo *)",
+      "Bash(for *)",
+      "Bash(while *)",
+      "Bash(if *)",
+      "Bash(cd *)",
+      "Bash(pwd)",
+      "Bash(true)",
+
+      "Bash(curl -s http://localhost:*)",
+      "Bash(curl -s -o /dev/null *http://localhost:*)",
+      "Bash(curl http://localhost:*)",
+      "Bash(netstat *)",
+      "Bash(taskkill *)",
+      "Bash(pkill *)",
+
+      "Skill(*)"
+    ]
+  }
+}

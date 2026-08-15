@@ -11556,7 +11556,30 @@
   // is a deterministic repair pass over a week whose exercises are already
   // chosen; there is no variety to preserve, only the best next set to buy.
   const DEEPEN_MAX_SETS = 6;
-  function deepenShort(week, bands) {
+  // What a beginner is written, whatever the style says.
+  //
+  // A triple is a near-maximal effort that has to be loaded against a known 1RM,
+  // and the app has none — so "4x3 Bench Press" asks a sub-one-year lifter to
+  // guess a weight for a rep range with no margin for guessing wrong. Six sets
+  // of one lift is the other half: a beginner's plenty band is 6 sets for the
+  // whole WEEK, so a single exercise was spending all of it.
+  //
+  // Clamped here rather than in GEN_STYLES, because Strength and Power are
+  // correct for the athletes they suit; it is only this athlete who cannot use
+  // them yet.
+  const BEGINNER_MIN_REPS = 5;
+  const BEGINNER_MAX_SETS = 5;
+  function isBeginner(client) {
+    return (client && client.trainingLevel) === "beginner";
+  }
+  function schemeForLevel(scheme, client) {
+    if (!isBeginner(client)) return scheme;
+    return {
+      sets: scheme.sets.map((n) => Math.min(n, BEGINNER_MAX_SETS)),
+      reps: scheme.reps.map((n) => Math.max(n, BEGINNER_MIN_REPS)),
+    };
+  }
+  function deepenShort(week, bands, cap = DEEPEN_MAX_SETS) {
     const all = week.days.flatMap((d) => d.exercises);
     if (!all.length) return;
     for (let guard = 0; guard < 300; guard++) {
@@ -11566,7 +11589,7 @@
       // movement wins on its own merits: it spills the least.
       let best = null, bestGain = 0;
       all.forEach((ex) => {
-        if ((Number(ex.sets) || 0) >= DEEPEN_MAX_SETS) return;
+        if ((Number(ex.sets) || 0) >= cap) return;
         const gain = coverageGain(ex.name, sets, bands, 1);
         if (gain > bestGain) { bestGain = gain; best = ex; }
       });
@@ -11600,6 +11623,10 @@
     // reports gaps the filler never saw. Planning low means reality can only
     // come in at or above plan, and the trim pass mops up any surplus.
     const setsPerEx = Math.min(style.primary.sets[0], style.acc.sets[0], style.core.sets[0]);
+
+    // The most sets any one exercise may be written for. A beginner is held
+    // lower than the deepen ceiling — see schemeForLevel.
+    const setCap = isBeginner(client) ? BEGINNER_MAX_SETS : DEEPEN_MAX_SETS;
 
     const sk = skeletonFor(days, gear);
     const used = new Set();
@@ -11673,9 +11700,11 @@
           // Dropping it instead leaves ten of nineteen muscles ungraded, which
           // is the builder writing a week its own grader rejects.
           const eff = builderEffort(slot, phase);
-          const scheme = eff === "hard" || eff === "max" ? style.primary
-            : eff === "light" ? style.core
-            : style.acc;
+          const scheme = schemeForLevel(
+            eff === "hard" || eff === "max" ? style.primary
+              : eff === "light" ? style.core
+              : style.acc,
+            client);
           const real = resolveRealization(nm, gear);
           const id = uid();
           if (role === "compound") anchorIds.add(id);
@@ -11689,7 +11718,7 @@
             // wrote 8x12 Hip Thrust. deepenShort is bounded; so is this now.
             sets: String(Math.min(
               Number(_pickRange(scheme.sets)) + (extra[exKey(nm)] || 0),
-              DEEPEN_MAX_SETS)),
+              setCap)),
             reps: _repsFor(nm, libCatFor(nm), scheme),
             modifiers: real && real.tag ? [real.tag] : [],
             effort: eff,
@@ -11704,7 +11733,7 @@
     // tiers cost in slots by deepening what is still short. Both have to happen
     // here, after the schemes have turned names into set counts.
     trimToBands(week, bands, anchorIds);
-    deepenShort(week, bands);
+    deepenShort(week, bands, setCap);
 
     // What is short is read off the FINISHED week, not off the proposal.
     // fillDeficit's answer was true of a week where every exercise carried the
