@@ -5138,6 +5138,45 @@
   const KEY_ROSTER_MODE = "trainerpro_roster_mode_v1";
 
   // ── The training hub ──
+  // The athlete's stat field, small, for the row DRAWER. Same renderer as the
+  // athlete's own — it must never become a second implementation that drifts.
+  // Returns null when there is nothing to draw, so the caller can leave the
+  // space out entirely rather than mount an empty box.
+  //
+  // c.importedProgress is set through mergedRosterProgress() on the paths that
+  // matter, so an absent cloud row means keep-local: this reads whatever the
+  // device already had rather than an empty field.
+  function rosterStatMini(c) {
+    const sfProg = c.importedProgress;
+    const sfRead = sfProg ? readStatField(c, sfProg, todayISO()) : null;
+    if (!sfRead || !STAT_AXES.some((k) => statAxisFrac(k, sfRead.cur[k]) > 0)) return null;
+    const mini = document.createElement("div");
+    mini.className = "sf-mini";
+    // The lightest-axis prompt is coach-side ONLY. The athlete is never told
+    // they are incomplete for something the coach chose not to programme, so it
+    // lives in this title and nowhere on their device.
+    //
+    // Two questions, two answers, since axes started dimming: "lightest" means
+    // lightest of the ones they TRAIN, or it names a never-programmed axis for
+    // every athlete on the roster forever (AGI, for all of them) and stops
+    // being information.
+    const trained = STAT_AXES.filter((k) => Number(sfRead.peak[k]) > 0);
+    const never = STAT_AXES.filter((k) => !(Number(sfRead.peak[k]) > 0));
+    const cold = trained
+      .map((k) => ({ k, f: statAxisFrac(k, sfRead.cur[k]) }))
+      .sort((a, b) => a.f - b.f)[0];
+    mini.title = STAT_AXES.map((k) => Number(sfRead.peak[k]) > 0
+        ? `${k} ${Math.round(statAxisFrac(k, sfRead.cur[k]) * 100)}`
+        : `${k} —`).join("  ")
+      + (cold ? `\nLightest trained: ${cold.k} — ${STAT_MEANS[cold.k].toLowerCase()}` : "")
+      + (never.length ? `\nNever programmed: ${never.join(", ")}` : "");
+    // Bigger than the 46px it was on the card: the drawer is opened
+    // deliberately, one athlete at a time, so the shape can be worth reading
+    // rather than merely present.
+    mini.innerHTML = statFieldSvg({ cur: sfRead.cur, peak: sfRead.peak, size: 72, labels: false });
+    return mini;
+  }
+
   // Everything that decides HOW someone is programmed, on the roster card
   // itself. Setting up a new athlete, or re-checking the roster before writing
   // a block, should not mean opening twenty-eight profiles one at a time.
@@ -5365,31 +5404,24 @@
         b.textContent = bDays === 0 ? "🎁 today" : bDays === 1 ? "🎁 tomorrow" : `🎁 ${bDays}d`;
         nameEl.appendChild(b);
       }
-      // Which volume ladder their coverage map is graded against. Unset renders
-      // NOTHING on purpose: an empty slot is honest about a decision not yet
-      // made, where a default-looking "Intermediate" badge would claim one that
-      // was never taken.
-      const lvl = TRAINING_LEVEL_BY_ID[c.trainingLevel];
-      // A phase takes the chip when one is set, because it is what grades the
-      // map. "Cut" and "Mnt" are three characters like the abbreviated level,
-      // so the width budget described below is unchanged either way.
+      // The PHASE gets a chip; training age no longer does (2026-08-15). Both
+      // grade the coverage map, but a phase is programming — a decision about
+      // the block in front of them — while training age is a fact about the
+      // person, and Nathan does not want that read off an unopened row. It is
+      // in the drawer, on pills, with the rest of what belongs to the athlete.
+      // An athlete with no phase simply gets no chip, which is what an unset
+      // level already did.
       const ph = phaseOf(c);
-      if (ph || lvl) {
+      if (ph) {
         const el = document.createElement("span");
-        el.className = "quiet-chip level-chip" + (ph ? " phase-chip" : "");
-        el.title = ph
-          ? `${ph.name} phase — coverage grades ${ph.solid}+ sets as solid, ${ph.plenty}+ as plenty, counting ${EFFORT_LEVELS[ph.minEffort].label} sets and up`
-          : `Training age ${lvl.name} — coverage grades ${lvl.solid}+ sets as solid, ${lvl.plenty}+ as plenty`;
+        el.className = "quiet-chip level-chip phase-chip";
+        el.title = `${ph.name} phase — coverage grades ${ph.solid}+ sets as solid, ${ph.plenty}+ as plenty, counting ${EFFORT_LEVELS[ph.minEffort].label} sets and up`;
         // Abbreviated on the badge; the full word lives in the title above.
-        // Measured at 390px with the birthday + partner + mood chips also
-        // live: that row was already at fitClientRowNames()'s 9px floor with
-        // zero width to spare before this chip existed at all. The full word
-        // ("Intermediate") overflowed it by 62px; three letters fully fits
-        // every less extreme combo (e.g. birthday + partner with no moods
-        // logged yet) and gets the worst case down to a 12px clip instead of
-        // losing the whole badge. Never the name — the shrink loop protects
-        // that first and the ellipsis only ever eats trailing chips.
-        el.textContent = ph ? ph.short : lvl.name.slice(0, 3);
+        // The width budget here is tight and measured: at 390px with the
+        // birthday + partner + mood chips also live, that row was already at
+        // fitClientRowNames()'s 9px floor with nothing to spare before any
+        // chip existed. ph.short is three characters, which is what fits.
+        el.textContent = ph.short;
         nameEl.appendChild(el);
       }
       const cPartner = partnerOf(c);
@@ -5435,38 +5467,11 @@
 
       card.appendChild(avatar);
       card.appendChild(main);
-// A cold axis, spotted while scanning a roster instead of by opening
-      // twenty-eight athletes. Same renderer, small, no labels — it must never
-      // become a second implementation that drifts from the athlete's own.
-      // c.importedProgress is only ever set through mergedRosterProgress(), so
-      // an absent cloud row means keep-local and this reads whatever the
-      // device already had rather than an empty field.
-      const sfProg = c.importedProgress;
-      const sfRead = sfProg ? readStatField(c, sfProg, todayISO()) : null;
-      if (sfRead && STAT_AXES.some((k) => statAxisFrac(k, sfRead.cur[k]) > 0)) {
-        const mini = document.createElement("div");
-        mini.className = "sf-mini";
-        // The lightest-axis prompt is coach-side ONLY. The athlete is never
-        // told they are incomplete for something the coach chose not to
-        // programme, so it lives in this title and nowhere on their device.
-        // Split the two questions the coach is actually asking, because since
-        // axes started dimming they have different answers. "Lightest" now
-        // means lightest of the ones they TRAIN — otherwise it names a
-        // never-programmed axis for every athlete on the roster forever (AGI
-        // today, for all of them) and stops being information.
-        const trained = STAT_AXES.filter((k) => Number(sfRead.peak[k]) > 0);
-        const never = STAT_AXES.filter((k) => !(Number(sfRead.peak[k]) > 0));
-        const cold = trained
-          .map((k) => ({ k, f: statAxisFrac(k, sfRead.cur[k]) }))
-          .sort((a, b) => a.f - b.f)[0];
-        mini.title = STAT_AXES.map((k) => Number(sfRead.peak[k]) > 0
-            ? `${k} ${Math.round(statAxisFrac(k, sfRead.cur[k]) * 100)}`
-            : `${k} —`).join("  ")
-          + (cold ? `\nLightest trained: ${cold.k} — ${STAT_MEANS[cold.k].toLowerCase()}` : "")
-          + (never.length ? `\nNever programmed: ${never.join(", ")}` : "");
-        mini.innerHTML = statFieldSvg({ cur: sfRead.cur, peak: sfRead.peak, size: 46, labels: false });
-        card.appendChild(mini);
-      }
+      // The stat field is NOT on the card face any more (2026-08-15). Nathan:
+      // "I dont want it to be seen on the card that hasnt been clicked on to
+      // open up their further menu." A closed row is a list entry, and a
+      // five-axis chart on twenty-eight of them at once is a wall rather than
+      // a scan. It is built by rosterStatMini() and mounted in the drawer.
       // Training setup replaces the progress readout on the card rather than
       // sitting beside it: two dense blocks side by side is how the roster
       // stopped being scannable last time. Everything BELOW still runs, so the
@@ -5579,6 +5584,13 @@
           dim: !cardio.week.n, stale: !cardio.week.n,
         })
       : tile({ label: "Cardio · 7d", value: "—", sub: "nothing logged", dim: true, stale: true });
+
+    // The stat field leads the glance: it is the shape of the athlete, and the
+    // three tiles beside it are this week's detail. Omitted entirely when there
+    // is nothing banked, rather than mounted empty — an empty box on a new
+    // athlete reads as broken, and the tiles already say absence out loud.
+    const mini = rosterStatMini(c);
+    if (mini) wrap.appendChild(mini);
 
     const tiles = document.createElement("div");
     tiles.className = "cd-tiles";
