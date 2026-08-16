@@ -15180,6 +15180,12 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
    its own row at the top of the body instead of riding the head that the
    summary replaced. */
 .cyc-sharerow { display: flex; justify-content: flex-end; }
+
+/* The Fuel / Body switcher. Reuses .a-shelves and .a-shelf-btn from the
+   Anatomy tab verbatim — same control, same job — so only the spacing and the
+   touch target are new here. No .a-shelf-n count pills: that span carries a
+   min-width and a border, and an empty one draws a stray dot. */
+#fb-jump { margin-bottom: 1rem; }
 /* The door to Anatomy → Hormones. Underlined-link shape, not a button: it goes
    somewhere to READ, and nothing on this card should look like it logs. */
 .cyc-explain { margin: 0.7em 0 0; }
@@ -16499,4 +16505,9 @@ input.credit-cap:disabled { opacity: 0.4; }
      glyph in a corner. */
   .pr-recent-x { opacity: 1; padding: 0.5rem; top: 0; right: 0; }
   .pr-recent-tile { padding-right: 2rem; }
+  /* .a-shelf-btn's 0.6em padding lands around 40px — fine under a finger on
+     the Anatomy page, but this pair is the first thing on a daily tab. NOTE:
+     a desktop viewport reports pointer:fine even at 375px, so this block is
+     inert in every harness here and can only be checked by reading it. */
+  #fb-jump .a-shelf-btn { min-height: 44px; }
 }

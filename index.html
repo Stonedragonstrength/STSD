@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=cyc5" />
+  <link rel="stylesheet" href="styles.css?v=cyc6" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -1334,7 +1334,19 @@
       <!-- Fuel & Body: the food log, then body weight. Cardio moved to
            Program, because a run is a training session. -->
       <div class="tab-panel" data-ctab-panel="diet">
+        <!-- Two jobs live on this tab and only one of them is daily: the food
+             log is 726px and gets opened every day, while weight, cycle and the
+             comp charts sit under it and get opened occasionally. This is the
+             same .a-shelves switcher the Anatomy tab uses, doing the same job.
+             Fuel is always the default — see setFuelBody(). -->
+        <div class="a-shelves" id="fb-jump" role="tablist">
+          <button type="button" class="a-shelf-btn active" data-fb="fuel" role="tab" aria-selected="true">Fuel</button>
+          <button type="button" class="a-shelf-btn" data-fb="body" role="tab" aria-selected="false">Body</button>
+        </div>
         <div id="client-diet-container" class="weeks-container"></div>
+        <!-- Plain wrapper, deliberately NOT .a-shelf: that class carries
+             gap:1.25rem, which would blow the two folds apart. -->
+        <div id="fb-body-pane" class="hidden">
         <details class="card ath-fold" id="athlete-bw-fold">
           <summary>
             <span class="ath-fold-ico">⚖️</span>
@@ -1373,6 +1385,7 @@
              that reach for it are not worth re-pointing for a rename.
              bw-secret: a private body weight stays blurred here too. -->
         <div id="prog-bw" class="bw-secret"></div>
+        </div><!-- /#fb-body-pane -->
       </div>
 
       <!-- Progress: the record of the WORK — the Hoard, weekly volume, the
@@ -1645,7 +1658,7 @@
   <script src="exercise-equipment.js?v=plyo1"></script>
   <script src="exercise-roles.js?v=beg1"></script>
   <script src="exercise-stats.js?v=st2"></script>
-  <script src="app.js?v=cyc5"></script>
+  <script src="app.js?v=cyc6"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

@@ -29899,6 +29899,24 @@
     draw();
   }
 
+  // Which half of Fuel & Body is showing. A real mode switch rather than a
+  // scroll: for an athlete with no weigh-ins the body half is barely 140px
+  // tall, so a scroll-to would clamp and leave the food log still filling the
+  // screen — the jump would visibly do nothing on exactly the athlete who most
+  // needs pointing at it.
+  function setFuelBody(which, { scroll = false } = {}) {
+    const body = which === "body";
+    $$("#fb-jump .a-shelf-btn").forEach((b) => {
+      const on = b.dataset.fb === which;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-selected", String(on));
+    });
+    $("#client-diet-container")?.classList.toggle("hidden", body);
+    $("#fb-body-pane")?.classList.toggle("hidden", !body);
+    // Only on a real tap. Resetting scroll on every arrival at the tab would
+    // throw away the athlete's place in the food log.
+    if (scroll) window.scrollTo({ top: 0 });
+  }
   function setClientTab(name) {
     // Leaving the tab underneath it: the library drawer goes too, rather than
     // floating over whatever the athlete switched to.
@@ -29913,7 +29931,22 @@
     if (name === "prs") renderAthleteProgressTab();
     // Same deal for the body-comp block: a weigh-in or a period logged since
     // the last visit moves both the trend and the phase bands on it.
-    if (name === "diet") renderAthleteBodyComp();
+    if (name === "diet") {
+      // Which half the tab opens on. Fuel every time, because food is the
+      // daily job — the mode would otherwise persist (panels are hidden, not
+      // rebuilt) and an athlete who last looked at her weight would open to a
+      // food-less food tab the next morning.
+      //
+      // The exception is a missed period. renderCycleCard spends a ONE-SHOT
+      // auto-open on that flag, and spending it behind a hidden pane would
+      // open the warning where nobody can see it — which is the opposite of
+      // what that code says it is for. So the flag picks the pane, and it must
+      // be set BEFORE the render that spends the shot.
+      const flag = cycleOn() && !_cycFoldPainted &&
+        !!cycleGapConcern(cycleState().periods, todayISO());
+      setFuelBody(flag ? "body" : "fuel");
+      renderAthleteBodyComp();
+    }
     // And for the body map: the mount is built once and survives live-session
     // athlete switches, so Coverage left on shows the PREVIOUS athlete's heat
     // until something recomputes. Every way in re-renders now — this tab,
@@ -39995,7 +40028,11 @@
         title: "Hit the zone", text: "The ring fills toward your calorie target and turns gold when you land inside it. Tap it any time to set or change your targets." },
       { sel: ".food-lvl", go: () => setClientTab("diet"),
         title: "Earn your rank", text: "Every logged day earns XP: more for landing close to your numbers, a bonus for a perfect day, and more again the longer your streak runs. Fill the bar and you take the next rank, from Pebble all the way up to Stone Dragon." },
-      { sel: "#athlete-bw-fold", go: () => setClientTab("diet"),
+      // Has to open the Body half too. showTourStep skips any step whose
+      // target fails `offsetParent !== null` — silently, no error — so with the
+      // tab defaulting to Fuel this step would simply vanish, and the athlete
+      // who most needs telling where body weight lives is the one being toured.
+      { sel: "#athlete-bw-fold", go: () => { setClientTab("diet"); setFuelBody("body"); },
         title: "Body weight", text: "Log your weight here and watch the trend. The latest number sits on this row, so you can check it without opening anything." },
       { sel: '[data-ctab-panel="sessions"]', go: () => setClientTab("sessions"),
         title: "Sessions", text: "Your session packages, bookings and open slots with your coach." },
@@ -41446,6 +41483,8 @@
       if (!state.previewMode) Nav.reset(); // switching top-level tabs is a new root (except mid-preview)
       setClientTab(t.dataset.ctab);
     }));
+    $$("#fb-jump .a-shelf-btn").forEach((b) =>
+      b.addEventListener("click", () => setFuelBody(b.dataset.fb, { scroll: true })));
 
     // Rest timer (athlete workout detail): the small button picks the length,
     // ▶ Go starts/stops the repeating countdown.
