@@ -149,7 +149,7 @@
   function moneySyncBannerHtml() {
     const risk = moneySyncRisk();
     if (!risk) return "";
-    return `<div class="money-sync-warn">⚠ <b>${escapeHtml(risk)}</b> — money
+    return `<div class="money-sync-warn">⚠ <b>${escapeHtml(risk)}</b>: money
       marked here saves on this device but will <b>not</b> reach the cloud or
       your other devices until it can sync. Safer to do this on a connected,
       signed-in device.</div>`;
@@ -161,7 +161,7 @@
     const targets = [...new Set(list.filter(Boolean))];
     if (!targets.length) return;
     if (!window.Cloud?.enabled) {
-      toast(`⚠ ${what} is on THIS DEVICE ONLY — Cloud is off`, 7000);
+      toast(`⚠ ${what} is on THIS DEVICE ONLY. Cloud is off.`, 7000);
       return;
     }
     const results = await Promise.all(targets.map(async (c) => {
@@ -173,7 +173,7 @@
     const failed = results.filter((ok) => !ok).length;
     if (failed) {
       const scope = failed === targets.length ? "NOT synced" : `${failed} of ${targets.length} NOT synced`;
-      toast(`⚠ ${what}: ${scope} — saved on this device and protected from being overwritten; reopen the app online to sync. Don't redo it elsewhere.`, 9000);
+      toast(`⚠ ${what}: ${scope}. Saved on this device and protected from being overwritten; reopen the app online to sync. Don't redo it elsewhere.`, 9000);
     } else {
       toast(`☁ ${what} synced ✓`, 2200);
     }
@@ -213,7 +213,7 @@
     }
     // Only the two loud states carry text now; the rest never render.
     const LABEL = {
-      issue: "Sync issue — tap to retry",
+      issue: "Sync issue. Tap to retry",
       offline: "Offline",
       syncing: "",
       ok: "",
@@ -221,7 +221,7 @@
     };
     const TITLE = {
       issue: "Your last change did not reach the cloud. Tap to retry.",
-      offline: "Offline — changes are saved on this device and will sync when you are back.",
+      offline: "Offline: changes are saved on this device and will sync when you are back.",
     };
     function paint() {
       const s = compute();
@@ -2527,8 +2527,8 @@
               : `Time climbs from ${floor}s by ${PROG_TIME_STEP}s. When every set holds the ceiling, next week adds weight and time resets to ${p.reset || floor}s. Misses hold steady.`)
           : isBW
             ? (p.inc && parseInt(p.ceil, 10) !== PROG_NO_CAP
-                ? `Reps climb from ${floor} to ${p.ceil || "the cap"}. When every set hits the cap, next block adds ${progIncShown(p.inc, u)} ${un} and reps reset to ${p.reset || floor} — bodyweight graduates to weighted, then keeps climbing.`
-                : `Reps climb from ${floor} each week they hit the target (worst set + 1), and hold at the cap. No weight is added — stays bodyweight.`)
+                ? `Reps climb from ${floor} to ${p.ceil || "the cap"}. When every set hits the cap, next block adds ${progIncShown(p.inc, u)} ${un} and reps reset to ${p.reset || floor}. Bodyweight graduates to weighted, then keeps climbing.`
+                : `Reps climb from ${floor} each week they hit the target (worst set + 1), and hold at the cap. No weight is added, so it stays bodyweight.`)
             : p.repsOnly
               ? `Reps climb from ${floor} each week they hit the target (worst set + 1), and hold at the ceiling. The weight stays as written.`
               : `Reps climb from ${floor}. When every set hits the ceiling, next week adds weight and reps reset to ${floor}. Misses hold steady.`;
@@ -4735,7 +4735,7 @@
     localStorage.setItem(KEY_LAST_BACKUP, String(Date.now()));
     renderBackupNote();
     const c = payload.counts;
-    toast(`Backup downloaded — ${c.athletes} athlete${c.athletes === 1 ? "" : "s"}, ${c.programs} program${c.programs === 1 ? "" : "s"} ✓`);
+    toast(`Backup downloaded: ${c.athletes} athlete${c.athletes === 1 ? "" : "s"}, ${c.programs} program${c.programs === 1 ? "" : "s"} ✓`);
   }
 
   // Restore is destructive and pushes to the cloud, so it always shows what's
@@ -4790,7 +4790,7 @@
             saveTrainer();
             (state.trainerData.clients || []).forEach((c) => pushAthlete(c));
             closeModal();
-            toast(`Restored ${from.athletes} athlete${from.athletes === 1 ? "" : "s"} — syncing to the cloud`);
+            toast(`Restored ${from.athletes} athlete${from.athletes === 1 ? "" : "s"}, syncing to the cloud`);
             renderDashboard();
           }},
         ],
@@ -5225,7 +5225,7 @@
     mini.title = STAT_AXES.map((k) => Number(sfRead.peak[k]) > 0
         ? `${k} ${Math.round(statAxisFrac(k, sfRead.cur[k]) * 100)}`
         : `${k} —`).join("  ")
-      + (cold ? `\nLightest trained: ${cold.k} — ${STAT_MEANS[cold.k].toLowerCase()}` : "")
+      + (cold ? `\nLightest trained: ${cold.k} (${STAT_MEANS[cold.k].toLowerCase()})` : "")
       + (never.length ? `\nNever programmed: ${never.join(", ")}` : "");
     mini.innerHTML = statFieldSvg({ cur: sfRead.cur, peak: sfRead.peak, size: 46, labels: false });
     return mini;
@@ -5252,11 +5252,11 @@
       `<span class="hsum-i" aria-hidden="true">${ico}</span>${escapeHtml(txt)}</span>`;
     return [
       lvl
-        ? chip(lvl.emoji, lvl.name, `Training age — ${lvl.years}`)
-        : chip("—", "No age", "Training age not set — the coverage map grades against the default", true),
+        ? chip(lvl.emoji, lvl.name, `Training age: ${lvl.years}`)
+        : chip("—", "No age", "Training age not set: the coverage map grades against the default", true),
       goal
         ? chip(goal.emoji, goal.name, goal.blurb || `${goal.name} phase`)
-        : chip("—", "No goal", "No training phase set — the coverage map grades against training age", true),
+        : chip("—", "No goal", "No training phase set: the coverage map grades against training age", true),
       days
         ? chip("📅", `${days} / wk`, `${days} training day${days === 1 ? "" : "s"} a week`)
         : chip("📅", "— / wk", "Days a week not set", true),
@@ -5264,7 +5264,7 @@
       // dimmed — the builder reads it as "everything is available".
       gear
         ? chip("🎒", `${gear} item${gear === 1 ? "" : "s"}`, "Only this gear is programmed against")
-        : chip("🎒", "All gear", "No gear restriction — the builder may use anything"),
+        : chip("🎒", "All gear", "No gear restriction: the builder may use anything"),
       c.painRelief
         ? chip("⚕️", "Pain relief", "Favours mobility and eases loaded spinal work")
         : "",
@@ -5297,7 +5297,7 @@
         <span class="hub-lbl">Training age</span>
         <span class="hub-pick">
           <button type="button" class="cd-age${lvl ? "" : " unset"}" data-hub-age
-            title="${escapeHtml(lvl ? `Training age — ${lvl.years}` : "Training age not set — tap to choose")}"
+            title="${escapeHtml(lvl ? `Training age: ${lvl.years}` : "Training age not set. Tap to choose")}"
           >${lvl ? `${lvl.emoji} ${escapeHtml(lvl.name)}` : "Not set"}</button>
         </span>
       </div>
@@ -5530,7 +5530,7 @@
       if (ph) {
         const el = document.createElement("span");
         el.className = "quiet-chip level-chip phase-chip";
-        el.title = `${ph.name} phase — coverage grades ${ph.solid}+ sets as solid, ${ph.plenty}+ as plenty, counting ${EFFORT_LEVELS[ph.minEffort].label} sets and up`;
+        el.title = `${ph.name} phase: coverage grades ${ph.solid}+ sets as solid, ${ph.plenty}+ as plenty, counting ${EFFORT_LEVELS[ph.minEffort].label} sets and up`;
         // Abbreviated on the badge; the full word lives in the title above.
         // The width budget here is tight and measured: at 390px with the
         // birthday + partner + mood chips also live, that row was already at
@@ -6251,7 +6251,7 @@
       });
       localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
       if (unlinked.length) {
-        toast(`${unlinked.join(", ")} ${unlinked.length === 1 ? "has" : "have"} custom edits — kept as-is, no longer following this program`);
+        toast(`${unlinked.join(", ")} ${unlinked.length === 1 ? "has" : "have"} custom edits: kept as-is, no longer following this program`);
         refreshProgramEditorLinked(tpl);
       }
     }, 800);
@@ -6382,7 +6382,7 @@
         <label>Description (optional)
           <input type="text" id="lib-save-desc" maxlength="120" placeholder="e.g. 8-week hypertrophy block" />
         </label>
-        <p class="muted" style="font-size:0.78rem">This is an independent copy — editing it later won't change ${escapeHtml(c.name || "this athlete")}'s current program.</p>`,
+        <p class="muted" style="font-size:0.78rem">This is an independent copy. Editing it later won't change ${escapeHtml(c.name || "this athlete")}'s current program.</p>`,
       actions: [
         { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
         { label: "Save to Templates", className: "btn btn-primary", onClick: save },
@@ -6619,7 +6619,7 @@
         ${roster.length ? `
         <label>Referred by <span class="muted">(optional)</span>
           <select id="new-client-ref">
-            <option value="">Nobody — found you another way</option>
+            <option value="">Nobody (found you another way)</option>
             ${roster.map((r) => `<option value="${escapeHtml(r.id)}">${escapeHtml(r.name || "Unnamed")}</option>`).join("")}
           </select>
         </label>
@@ -7068,13 +7068,13 @@
           <span class="ref-row-name">${escapeHtml(r.who.name || "Unnamed")}</span>
           <span class="ref-row-state ${r.paid ? "is-paid" : r.trained ? "is-due" : "is-waiting"}">${
             r.paid ? "✓ free session given"
-              : r.trained ? "session due — grants on next load"
+              : r.trained ? "session due, grants on next load"
               : "hasn't trained yet"}</span>
         </div>`).join("")}</div>`
         : `<p class="muted" style="margin:0.2em 0 0.6em">Nobody yet. Set this on the add-athlete form when someone new mentions them.</p>`}`;
     $("#btn-copy-referral")?.addEventListener("click", async () => {
       try { await navigator.clipboard.writeText(c.referralCode); toast("Referral code copied ✓"); }
-      catch (e) { toast("Couldn't copy — read it out instead"); }
+      catch (e) { toast("Couldn't copy. Read it out instead"); }
     });
   }
   // The athlete's own card. Deliberately states the offer in full: a code with
@@ -7095,10 +7095,10 @@
         </div>
         ${earned ? `<p class="ref-earned">🎁 ${earned} free ${earned === 1 ? "session" : "sessions"} earned from referrals so far.</p>` : ""}
       </div>`;
-    const msg = `Come train at Stone Dragon with me — use my code ${c.referralCode} and we both get a free session.`;
+    const msg = `Come train at Stone Dragon with me. Use my code ${c.referralCode} and we both get a free session.`;
     $("#btn-ath-copy-ref")?.addEventListener("click", async () => {
       try { await navigator.clipboard.writeText(c.referralCode); toast("Code copied ✓"); }
-      catch (e) { toast("Couldn't copy — read it out instead"); }
+      catch (e) { toast("Couldn't copy. Read it out instead"); }
     });
     $("#btn-ath-share-ref")?.addEventListener("click", async () => {
       // The OS share sheet where there is one; the clipboard is the fallback,
@@ -7106,7 +7106,7 @@
       if (navigator.share) {
         try { await navigator.share({ text: msg }); return; } catch (e) { if (e?.name === "AbortError") return; }
       }
-      try { await navigator.clipboard.writeText(msg); toast("Invite copied — paste it to them ✓"); }
+      try { await navigator.clipboard.writeText(msg); toast("Invite copied. Paste it to them ✓"); }
       catch (e) { toast("Couldn't share on this device"); }
     });
   }
@@ -7312,7 +7312,7 @@
         .map((e) => monthKeyLabel(e.monthKey).replace(/ \d{4}$/, ""));
       credHost.innerHTML = bal
         ? `💸 <strong>${escapeHtml(money(bal))}</strong> credit from unused sessions${
-            from.length ? ` (${escapeHtml(from.slice(-3).join(", "))})` : ""} — comes off the next invoice.`
+            from.length ? ` (${escapeHtml(from.slice(-3).join(", "))})` : ""}. Comes off the next invoice.`
         : "";
       credHost.classList.toggle("hidden", !bal);
     }
@@ -7369,7 +7369,7 @@
       const cardChip = card
         ? `<span class="billing-card" title="${escapeHtml(
             card.autopay
-              ? "Card on file, and auto-pay is on — raising a month charges it."
+              ? "Card on file, and auto-pay is on. Raising a month charges it."
               : "Card on file. They pay in the app in one tap; no link needed.",
           )}">💳 ${escapeHtml(card.card_last4 ? "···" + card.card_last4 : "on file")}${
             card.autopay ? " · auto" : ""}</span>`
@@ -7403,7 +7403,7 @@
         more.type = "button";
         more.className = "btn btn-ghost btn-sm";
         more.textContent = "＋ New charge";
-        more.title = "Raise another charge — extra sessions, a one-off, or the next month";
+        more.title = "Raise another charge: extra sessions, a one-off, or the next month";
         more.addEventListener("click", () => openChargeSheet(c, monthKey, plan, null));
         act.appendChild(more);
         // Giving it back, without leaving for Square's dashboard. Only for a
@@ -7428,7 +7428,7 @@
         drop.type = "button";
         drop.className = "btn btn-ghost btn-sm";
         drop.textContent = "Void";
-        drop.title = "Forget this link — it was sent by mistake";
+        drop.title = "Forget this link. It was sent by mistake";
         drop.addEventListener("click", () => voidChargeFor(c, monthKey));
         act.append(again, drop);
       } else {
@@ -8024,7 +8024,7 @@
             <strong>−${escapeHtml(money(plan.credit))}</strong></div>` : ""}
           <div class="chg-line"><span>Charge</span><input type="number" class="input chg-in" id="chg-amount" min="1" step="1" value="${plan.amount}" /></div>
         </div>
-        ${plan.over ? `<p class="muted chg-note">${plan.over} session${plan.over === 1 ? "" : "s"} over the ${plan.allowance} on their membership — already counted above.</p>` : ""}
+        ${plan.over ? `<p class="muted chg-note">${plan.over} session${plan.over === 1 ? "" : "s"} over the ${plan.allowance} on their membership (already counted above).</p>` : ""}
         <label class="chg-note-lbl">What this is for
           <input type="text" class="input" id="chg-note" maxlength="120" value="${escapeHtml(
             plan.flat
@@ -8071,7 +8071,7 @@
         foot.textContent = how === "inapp"
           ? (auto
             ? `They turned auto-pay on, so submitting this takes it from ${cardLabel(saved)} now. Nothing to send.`
-            : `No link needed — it appears on their Sessions tab and they pay it with ${cardLabel(saved)} in one tap.`)
+            : `No link needed. It appears on their Sessions tab and they pay it with ${cardLabel(saved)} in one tap.`)
           : how === "manual"
             ? "No payment link. They get the invoice, you get paid however you normally do, and you tick it off here."
             : "They pay on Square's own page. Their card never touches this app, and nothing here changes until Square confirms it.";
@@ -8164,7 +8164,7 @@
       // unavailable or refused, the sheet stays open with the link selected,
       // because that is then the only copy of it on screen.
       const showIt = () => {
-        out.innerHTML = `<p class="muted chg-ready">Link ready — send it to ${escapeHtml(c.name || "them")}.</p>
+        out.innerHTML = `<p class="muted chg-ready">Link ready. Send it to ${escapeHtml(c.name || "them")}.</p>
           <input class="input billing-link" id="billing-link" readonly value="${escapeHtml(res.url)}" />`;
         $("#billing-link")?.select();
       };
@@ -8172,7 +8172,7 @@
       if (copied) {
         copied.then(() => {
           closeModal();
-          toast(`Link copied — send it to ${c.name || "them"}`);
+          toast(`Link copied. Send it to ${c.name || "them"}`);
         }, showIt);
       } else {
         showIt();
@@ -8187,7 +8187,7 @@
         // A declined card must not read as a completed charge. The invoice IS
         // raised — it just wasn't paid, and the coach is the only one who can
         // do anything about that.
-        : res.autopayFailed ? "Invoice raised — card declined"
+        : res.autopayFailed ? "Invoice raised. Card declined"
         : "Invoice raised ✓",
       );
     }
@@ -8204,7 +8204,7 @@
   }
 
   async function voidChargeFor(c, monthKey) {
-    if (!window.confirm("Forget the link you sent for this month? If they've already paid it, don't — this only clears an unpaid one.")) return;
+    if (!window.confirm("Forget the link you sent for this month? If they've already paid it, don't. This only clears an unpaid one.")) return;
     const res = await window.Cloud.squareBilling("voidCharge", { athleteId: c.id, monthKey });
     if (!res?.ok) { toast(res?.error || "Nothing to void"); return; }
     toast("Link voided");
@@ -8308,7 +8308,7 @@
           ${paid
             ? `Paid${row.paid_at ? ` · ${escapeHtml(invoiceDateLabel(row.paid_at))}` : ""}${
                 row.method === "manual" ? " · in cash" : " · by card"}`
-            : row.method === "manual" ? "Due — payable directly" : "Due — payable by card"}
+            : row.method === "manual" ? "Due · payable directly" : "Due · payable by card"}
         </div>
 
         ${opts.showNote && row.note ? `<p class="invoice-note">${escapeHtml(row.note)}</p>` : ""}
@@ -8374,7 +8374,7 @@
         `<p class="rf-lead">${escapeHtml(amt)} goes back to ${escapeHtml(who)}, ` +
         `on the card it was taken from.</p>` +
         `<p class="rf-note">Card refunds can take a few days to appear on their statement. ` +
-        `This can't be undone from the app — re-charging means raising a new one.</p>` +
+        `This can't be undone from the app. Re-charging means raising a new one.</p>` +
         `<p class="sq-err" id="rf-err" hidden></p>`,
       actions: [
         { label: `↩ Refund ${amt}`, className: "btn btn-danger", onClick: (e) => go(e.currentTarget) },
@@ -8822,7 +8822,7 @@
                   </div>
                   <p class="books-proj-note">${escapeHtml(
                     r.key === billingMonthKey()
-                      ? `${plural(r.proj.sessions, "session")} projected from Raise — tiers, credit and bookings in. Not invoiced yet.`
+                      ? `${plural(r.proj.sessions, "session")} projected from Raise: tiers, credit and bookings in. Not invoiced yet.`
                       : `${plural(r.proj.sessions, "session")} booked, at your rates. Not invoiced yet.` +
                         (r.proj.unpriced ? ` ${r.proj.unpriced} with no rate set.` : ""),
                   )}</p>
@@ -8852,7 +8852,7 @@
                   </div>
                   <p class="books-proj-note">${escapeHtml(
                     proj.key === billingMonthKey()
-                      ? `${plural(proj.sessions, "session")} projected from Raise — tiers, credit and bookings in. Not invoiced yet.`
+                      ? `${plural(proj.sessions, "session")} projected from Raise: tiers, credit and bookings in. Not invoiced yet.`
                       : `${plural(proj.sessions, "session")} booked, at your rates. Not invoiced yet.` +
                         (proj.unpriced ? ` ${proj.unpriced} with no rate set.` : ""),
                   )}</p>
@@ -8861,7 +8861,7 @@
             ${booksBreakdownHtml(months)}
           </div>
         </div>
-        <p class="pref-foot">Collected counts card payments Square has confirmed and anything you've ticked off yourself. Outstanding is an invoice raised and not yet settled — sessions are never withheld over it.</p>
+        <p class="pref-foot">Collected counts card payments Square has confirmed and anything you've ticked off yourself. Outstanding is an invoice raised and not yet settled. Sessions are never withheld over it.</p>
         <!-- Two jobs, not four buttons. The first pair READS the year above —
              both answer a question about it, neither changes anything. The
              second pair sets what future invoices are built FROM, which has
@@ -9078,7 +9078,7 @@
     openModal({
       title: `Tax estimate · ${year}`,
       body: `
-        <p class="tax-warn">An <strong>estimate</strong>, not tax advice — check it with whoever does your return.
+        <p class="tax-warn">An <strong>estimate</strong>, not tax advice. Check it with whoever does your return.
         Seeded from the ${TAX_DEFAULTS.year} federal tables, so confirm the numbers below are current for ${year}.</p>
 
         <div class="tax-block">
@@ -9089,7 +9089,7 @@
                    value="${escapeHtml(String(r.expenses || ""))}" placeholder="0" /></div>
           ${row("Net profit", money(r.profit), "is-sum")}
         </div>
-        <p class="tax-note">This app tracks what comes in, not what goes out, so expenses are yours to enter — rent, insurance, equipment, Square's cut. Leave it empty and the estimate will be too high.</p>
+        <p class="tax-note">This app tracks what comes in, not what goes out, so expenses are yours to enter: rent, insurance, equipment, Square's cut. Leave it empty and the estimate will be too high.</p>
 
         <div class="tax-block">
           <div class="tax-ln">
@@ -9146,7 +9146,7 @@
           <label>Standard deduction
             <input type="number" class="input" id="tax-std" min="0" step="1" value="${escapeHtml(String(r.stdDeduction))}" />
           </label>
-          <p class="tax-cat">Bands — the income ceiling for each rate</p>
+          <p class="tax-cat">Bands: the income ceiling for each rate</p>
           ${bands.map(([ceil, rate], i) => `
             <div class="tax-edit-band">
               <input type="number" class="input" data-tax-rate="${i}" min="0" max="100" step="0.1" value="${escapeHtml(String(rate))}" aria-label="Rate %" />
@@ -9154,10 +9154,10 @@
               <input type="number" class="input" data-tax-ceil="${i}" min="0" step="1"
                      value="${ceil == null ? "" : escapeHtml(String(ceil))}" placeholder="no limit" aria-label="Ceiling" />
             </div>`).join("")}
-          <p class="tax-note">Leave the last ceiling empty — that band has no top.</p>
+          <p class="tax-note">Leave the last ceiling empty. That band has no top.</p>
         </details>
 
-        <p class="tax-note">Not included: the QBI deduction, credits, other household income, or anything withheld elsewhere. Filed on a cash basis, so it counts money that actually <em>landed</em> in ${year} — which is why it can differ from the books above, where money is filed under the month it was <em>for</em>.</p>`,
+        <p class="tax-note">Not included: the QBI deduction, credits, other household income, or anything withheld elsewhere. Filed on a cash basis, so it counts money that actually <em>landed</em> in ${year}, which is why it can differ from the books above, where money is filed under the month it was <em>for</em>.</p>`,
       actions: [
         { label: "Close", className: "btn btn-ghost", onClick: closeModal },
         { label: "Save", className: "btn btn-primary", onClick: saveTaxSheet },
@@ -9218,7 +9218,7 @@
         (b.amount - a.amount));
     if (!rows.length) { toast(`Nothing on the books for ${year}`); return; }
     const out = [
-      [`Stone Dragon Strength Training — ${year}`],
+      [`Stone Dragon Strength Training · ${year}`],
       ["Exported", todayISO()],
       [],
       ["Month billed", "Athlete", "Invoice", "Sessions", "Amount", "Status", "Settled", "Method", "Membership"],
@@ -9338,7 +9338,7 @@
             <div class="mem-acts">
               ${edited && !m.custom ? `<button type="button" class="mem-btn" data-mem-reset="${escapeHtml(m.id)}" title="Back to the built-in price">↺</button>` : ""}
               <button type="button" class="mem-btn mem-retire" data-mem-hide="${escapeHtml(m.id)}"
-                      title="${m.hidden ? "Put back in service" : "Retire — stays on anyone already assigned"}">${m.hidden ? "＋" : "🗑"}</button>
+                      title="${m.hidden ? "Put back in service" : "Retire: stays on anyone already assigned"}">${m.hidden ? "＋" : "🗑"}</button>
             </div>
           </div>
           <p class="mem-foot">${escapeHtml(
@@ -9527,8 +9527,8 @@
       ? `${lineIco("sd:ticket")}<span class="csc-n">${sum.remaining}</span>${pending ? `<span class="csc-req">${pending}</span>` : ""}`
       : `${lineIco("sd:ticket")}<span class="csc-n">Set up</span>`;
     el.title = live
-      ? `${sum.remaining} session${Math.abs(sum.remaining) === 1 ? "" : "s"} left${m ? ` · ${membershipTitle(m)}` : ""}${pending ? ` · ${pending} request waiting` : ""} — open Sessions`
-      : "No membership set — open Sessions";
+      ? `${sum.remaining} session${Math.abs(sum.remaining) === 1 ? "" : "s"} left${m ? ` · ${membershipTitle(m)}` : ""}${pending ? ` · ${pending} request waiting` : ""}. Open Sessions`
+      : "No membership set. Open Sessions";
   }
   // Adds one month's worth of sessions (per the selected membership tier) to the
   // athlete's pool as a paid package. Guards against granting the same month twice.
@@ -10558,7 +10558,7 @@
   function openPullFromDayModal(day, rerenderFn, opts) {
     opts = opts || {};
     const sources = opts.pullSources ? opts.pullSources(day) : pullSourceDays(day);
-    if (!sources.length) { toast("Nothing to pull from yet — build another day first"); return; }
+    if (!sources.length) { toast("Nothing to pull from yet. Build another day first"); return; }
     const u = unitOf(opts.athlete ? state.clientData.program?.client : (_programEditorId ? null : currentClient()));
     const picked = new Set(); // "sourceId::exerciseId"
 
@@ -10647,7 +10647,7 @@
             closeModal();
             rerenderFn();
             toast(skipped
-              ? `Added ${added} — the session holds ${opts.cap}, so ${skipped} didn't fit`
+              ? `Added ${added}. The session holds ${opts.cap}, so ${skipped} didn't fit`
               : `Added ${added} exercise${added === 1 ? "" : "s"}`);
           },
         },
@@ -11057,21 +11057,21 @@
     chest: ["Pectoralis major", "Pectoralis minor", "Serratus anterior"],
     "delts-front": ["Anterior deltoid (front head)"],
     "delts-side": ["Lateral deltoid (side head)"],
-    biceps: ["Biceps brachii — long head", "Biceps brachii — short head", "Brachialis", "Coracobrachialis"],
+    biceps: ["Biceps brachii (long head)", "Biceps brachii (short head)", "Brachialis", "Coracobrachialis"],
     forearms: ["Brachioradialis", "Flexor carpi radialis", "Flexor carpi ulnaris", "Extensor carpi radialis", "Extensor carpi ulnaris", "Flexor digitorum", "Extensor digitorum", "Pronator teres", "Supinator"],
     core: ["Rectus abdominis", "Transverse abdominis"],
     obliques: ["External oblique", "Internal oblique"],
     quads: ["Rectus femoris", "Vastus lateralis", "Vastus medialis", "Vastus intermedius"],
     adductors: ["Adductor magnus", "Adductor longus", "Adductor brevis", "Gracilis", "Pectineus"],
-    calves: ["Gastrocnemius — medial head", "Gastrocnemius — lateral head", "Soleus", "Tibialis anterior", "Tibialis posterior", "Fibularis (peroneus)"],
+    calves: ["Gastrocnemius (medial head)", "Gastrocnemius (lateral head)", "Soleus", "Tibialis anterior", "Tibialis posterior", "Fibularis (peroneus)"],
     "delts-rear": ["Posterior deltoid (rear head)"],
     lats: ["Latissimus dorsi", "Teres major"],
-    rhomboids: ["Rhomboid major", "Rhomboid minor", "Trapezius — middle fibers", "Trapezius — lower fibers"],
-    traps: ["Trapezius — upper fibers", "Levator scapulae"],
-    triceps: ["Triceps brachii — long head", "Triceps brachii — lateral head", "Triceps brachii — medial head", "Anconeus"],
-    lowerback: ["Erector spinae — iliocostalis", "Erector spinae — longissimus", "Erector spinae — spinalis", "Multifidus", "Quadratus lumborum"],
+    rhomboids: ["Rhomboid major", "Rhomboid minor", "Trapezius (middle fibers)", "Trapezius (lower fibers)"],
+    traps: ["Trapezius (upper fibers)", "Levator scapulae"],
+    triceps: ["Triceps brachii (long head)", "Triceps brachii (lateral head)", "Triceps brachii (medial head)", "Anconeus"],
+    lowerback: ["Erector spinae (iliocostalis)", "Erector spinae (longissimus)", "Erector spinae (spinalis)", "Multifidus", "Quadratus lumborum"],
     glutes: ["Gluteus maximus", "Gluteus medius", "Gluteus minimus", "Tensor fasciae latae"],
-    hamstrings: ["Biceps femoris — long head", "Biceps femoris — short head", "Semitendinosus", "Semimembranosus"],
+    hamstrings: ["Biceps femoris (long head)", "Biceps femoris (short head)", "Semitendinosus", "Semimembranosus"],
     abductors: ["Gluteus medius", "Gluteus minimus", "Tensor fasciae latae"],
   };
   // Which groups list in each view's legend (region "both" shows in both).
@@ -12258,20 +12258,20 @@
   // age nobody has set.
   function coverageVerdictHtml(cov, who, isCoach) {
     if (!cov) return `<p class="a-cov-none">${isCoach
-      ? "No program to read yet — add a week with some days and this fills in."
+      ? "No program to read yet. Add a week with some days and this fills in."
       : "No program to read yet. This fills in once your coach builds your week."}</p>`;
     const bits = [];
     // Silent about training age while a phase is grading: the ladder isn't
     // being read, so asking for it would be asking for a number that changes
     // nothing on screen.
-    if (!cov.level && !cov.phase) bits.push(`Graded as Intermediate — set a training age in ${isCoach ? "their" : "your"} Profile to tune this.`);
+    if (!cov.level && !cov.phase) bits.push(`Graded as Intermediate. Set a training age in ${isCoach ? "their" : "your"} Profile to tune this.`);
     // Sets held back for being Light or Moderate get no line: that is the
     // phase working. A missing burn level is the one the coach can act on.
     if (cov.phase && cov.noBurn) bits.push(
       `${cov.noBurn} exercise${cov.noBurn === 1 ? " has" : "s have"} no burn level set, ` +
       `so ${cov.noBurn === 1 ? "it counts" : "they count"} for nothing in ${escapeHtml(cov.phase.name)}` +
       `${isCoach ? ". The 🔥 button on the exercise sets one" : ""}.`);
-    if (cov.unmapped) bits.push(`${cov.unmapped} exercise${cov.unmapped === 1 ? "" : "s"} couldn't be matched to a muscle and count${cov.unmapped === 1 ? "s" : ""} for nothing${isCoach ? " — 🧮 Exercise credits can fix that" : ""}.`);
+    if (cov.unmapped) bits.push(`${cov.unmapped} exercise${cov.unmapped === 1 ? "" : "s"} couldn't be matched to a muscle and count${cov.unmapped === 1 ? "s" : ""} for nothing${isCoach ? ". 🧮 Exercise credits can fix that" : ""}.`);
     return bits.length ? `<p class="a-cov-quiet">${bits.join(" ")}</p>` : "";
   }
 
@@ -12341,7 +12341,7 @@
       }
       rowsEl.innerHTML = names.length
         ? names.map(rowHtml).join("")
-        : `<p class="muted">${q.length >= 2 ? "No exercise by that name." : (client ? "This week has no exercises yet — search any exercise instead." : "No athlete open — search any exercise.")}</p>`;
+        : `<p class="muted">${q.length >= 2 ? "No exercise by that name." : (client ? "This week has no exercises yet. Search any exercise instead." : "No athlete open. Search any exercise.")}</p>`;
     };
     const writeCredits = (k, hits) => {
       const t = state.trainerData;
@@ -13184,7 +13184,7 @@
           </div>
           <div class="anatomy-list" data-anatomy-list></div>
           <div class="anatomy-detail" data-anatomy-detail>
-            <div class="anatomy-detail-empty">Pick a muscle — on the body or in the list.</div>
+            <div class="anatomy-detail-empty">Pick a muscle on the body or in the list.</div>
           </div>
         </div>
       </div>
@@ -13261,7 +13261,7 @@
             : (lvl ? `${lvl.emoji} ${escapeHtml(lvl.name)}` : "");
           const tip = ph
             ? `${ph.name}. Solid at ${ph.solid}+ sets, plenty at ${ph.plenty}+, counting ${minEff.label} sets and up. Overrides training age.`
-            : "Training age — grades the coverage bands. Also on their Profile.";
+            : "Training age. Grades the coverage bands. Also on their Profile.";
           subjEl.innerHTML =
             `<span class="a-cov-subject-name">${escapeHtml(client.name)}</span>` +
             (canEditAge
@@ -13361,7 +13361,7 @@
       // Keep the selection if the group also lives in the new view, else clear.
       if (selected && !ANATOMY_VIEW_GROUPS[view].includes(selected)) {
         selected = null;
-        detailEl.innerHTML = '<div class="anatomy-detail-empty">Pick a muscle — on the body or in the list.</div>';
+        detailEl.innerHTML = '<div class="anatomy-detail-empty">Pick a muscle on the body or in the list.</div>';
       }
       renderList();
       highlight();
@@ -17555,7 +17555,7 @@
       // shows "Birthday session" twice with nothing to tell them apart.
       c.sessionBank.packages.push(freeSessionPkg(
         `🎂 Birthday session · ${c.name || "athlete"} · ${year}`, { birthdayGrant: year }));
-      tellAthlete(c, `🎂 Happy birthday! There's a free session in your balance from your coach — book it whenever you like, it doesn't expire.`);
+      tellAthlete(c, `🎂 Happy birthday! There's a free session in your balance from your coach. Book it whenever you like, it doesn't expire.`);
       granted.push(c);
       bankMutated(c);
     });
@@ -17580,7 +17580,7 @@
       if (!(c.sessionBank.redemptions || []).length) return; // not yet trained
       ref.sessionBank.packages.push(freeSessionPkg(
         `🤝 Referral · brought in ${c.name || "a new athlete"}`, { referralGrant: c.id }));
-      tellAthlete(ref, `🤝 ${c.name || "Someone you referred"} just trained their first session — there's a free session in your balance to say thanks.`);
+      tellAthlete(ref, `🤝 ${c.name || "Someone you referred"} just trained their first session. There's a free session in your balance to say thanks.`);
       granted.push({ ref, who: c });
       bankMutated(ref);
     });
@@ -18034,7 +18034,7 @@
     openModal({
       title: "Lock in the schedule",
       body:
-        `<p class="muted" style="margin-top:-0.4em">Your ${plan.events} upcoming Setmore bookings, rebuilt as ${plan.series.length} standing appointment${plan.series.length === 1 ? "" : "s"} and ${plan.singles.length} one-off${plan.singles.length === 1 ? "" : "s"} the app owns — ${plan.rows} sessions, ${plan.weeks} weeks ahead. Setmore is disconnected at the end, and nothing already on the calendar is deleted.</p>` +
+        `<p class="muted" style="margin-top:-0.4em">Your ${plan.events} upcoming Setmore bookings, rebuilt as ${plan.series.length} standing appointment${plan.series.length === 1 ? "" : "s"} and ${plan.singles.length} one-off${plan.singles.length === 1 ? "" : "s"} the app owns: ${plan.rows} sessions, ${plan.weeks} weeks ahead. Setmore is disconnected at the end, and nothing already on the calendar is deleted.</p>` +
         `<div class="lk-list">${plan.series.map((s) => rowHtml(s, false)).join("")}${plan.singles.map((s) => rowHtml(s, true)).join("")}</div>` +
         (plan.skipped.length
           ? `<p class="muted mg-skipped">No athlete matches these, so they are left behind: ${escapeHtml(plan.skipped.map(([n, k]) => `${n} (${k})`).join(", "))}</p>`
@@ -18858,8 +18858,8 @@
     if (mark) {
       body += `<div class="dvs-mark ${mark.type === "closecall" ? "closecall" : "charged"}">` +
         `${mark.type === "closecall"
-          ? lineIco("sd:waive") + " Close call — not charged"
-          : lineIco("sd:missed") + " Missed — charged"}</div>`;
+          ? lineIco("sd:waive") + " Close call: not charged"
+          : lineIco("sd:missed") + " Missed: charged"}</div>`;
     }
     if (e?.seriesId) body += `<div class="dvs-note">Part of a weekly series.</div>`;
     // A session the athlete has asked about must say so HERE, not only in the
@@ -18870,7 +18870,7 @@
     const pending = e?.bookingId ? _coachRequests.find((r) => r.booking_id === e.bookingId) : null;
     if (pending) {
       body += `<div class="dvs-mark waiting">${lineIco(pending.kind === "cancel" ? "sd:calx" : "sd:calmove")} ` +
-        `${escapeHtml(row.name.split(" ")[0])} ${escapeHtml(reqSummaryText(pending))} — answer it in your inbox</div>`;
+        `${escapeHtml(row.name.split(" ")[0])} ${escapeHtml(reqSummaryText(pending))}. Answer it in your inbox</div>`;
     }
     body += `<div class="dvs-acts">${acts.join("")}</div>`;
 
@@ -20501,7 +20501,7 @@
       body:
         `<div id="sq-card" class="sq-card-fields"></div>` +
         `<p class="sq-consent">Saving your card lets you pay each month with one tap. ` +
-        `Your card is stored by Square, not by Stone Dragon — we only ever see the last four digits. ` +
+        `Your card is stored by Square, not by Stone Dragon. We only ever see the last four digits. ` +
         `You can remove it any time.</p>` +
         `<p class="sq-err" id="sq-err" hidden></p>`,
       actions: [
@@ -21185,7 +21185,7 @@
     });
     (c.sessionBank.missedSessions || []).forEach((m) => {
       if (!m || m.type !== "closecall") return;
-      rows.push({ id: m.id, date: m.date || "", time: "", note: "Close call — waived", kind: "waived", undoable: false });
+      rows.push({ id: m.id, date: m.date || "", time: "", note: "Close call: waived", kind: "waived", undoable: false });
     });
     return rows.sort((a, b) => b.date.localeCompare(a.date));
   }
@@ -21486,7 +21486,7 @@
     // came to look like sessions the athlete couldn't use.
     const owedNote = sum.owedCount
       ? `<div class="balance-owed">${sum.owedCount} package${sum.owedCount === 1 ? "" : "s"} still to collect${
-          sum.owedAmount ? ` · ${escapeHtml(money(sum.owedAmount))}` : ""} — sessions are unaffected</div>`
+          sum.owedAmount ? ` · ${escapeHtml(money(sum.owedAmount))}` : ""}. Sessions are unaffected</div>`
       : "";
     balance.innerHTML = `
       <div class="session-balance">
@@ -21709,7 +21709,7 @@
     openModal({
       title: "Add training package",
       body: `
-        <p class="muted" style="margin-top:-0.4em">Sessions on top of their monthly membership — a bought pack, a make-up, a one-off. These never expire. The monthly allowance arrives on its own; you don't add it here.</p>
+        <p class="muted" style="margin-top:-0.4em">Sessions on top of their monthly membership: a bought pack, a make-up, a one-off. These never expire. The monthly allowance arrives on its own; you don't add it here.</p>
         <label>Number of sessions
           <input type="number" id="pkg-size-input" min="1" max="50" placeholder="e.g. 10" style="font-size:1.5rem;text-align:center;" autofocus />
         </label>
@@ -21757,12 +21757,12 @@
         (monthKey ? `<p class="muted" style="margin-top:-0.4em">${escapeHtml(monthKeyLabel(monthKey))} allowance${
           m ? ` · tier is ${m.sessions} session${m.sessions === 1 ? "" : "s"}${m.price ? ` · $${m.price.toLocaleString()}` : ""}` : ""
         }. ${gone
-          ? "That month has ended, so these sessions are already gone — editing the size here changes the record, not the balance."
+          ? "That month has ended, so these sessions are already gone. Editing the size here changes the record, not the balance."
           : "It expires when the month does."}</p>` : "") +
         `<label>Number of sessions
           <input type="number" id="pkg-ed-size" min="0" max="60" value="${escapeHtml(String(pkg.size ?? 0))}" style="font-size:1.4rem;text-align:center;" />
         </label>
-        <label>Price ($) — what you bill for the month
+        <label>Price ($): what you bill for the month
           <input type="number" id="pkg-ed-price" min="0" max="20000" step="1" value="${pkg.price == null ? "" : escapeHtml(String(pkg.price))}" placeholder="e.g. 725" />
         </label>
         <label class="autorenew-toggle" style="margin-top:0.6em">
@@ -22018,7 +22018,7 @@
           ? "Auto-renew already granted these athletes their membership for the month, and those sessions are live. Ticking one of those rows only marks the money collected; ticking an empty one grants their month."
           : "One month's sessions onto every ticked bank, marked collected. Anyone already settled this month is unticked."}</p>
         <div class="mg-list" id="mg-list">${eligible.map(rowHtml).join("")}</div>
-        ${programOnly.length ? `<p class="muted mg-skipped">Program only, so nothing to grant —
+        ${programOnly.length ? `<p class="muted mg-skipped">Program only, so nothing to grant. You can
           bill them from <b>Bill the month</b>: ${escapeHtml(programOnly
             .map((r) => `${r.client.name || "(unnamed)"} (${membershipTitle(r.membership)})`)
             .join(", "))}</p>` : ""}
@@ -22158,7 +22158,7 @@
     if (!lines.length) { toast("Nobody ticked"); return; }
 
     openModal({
-      title: `Settle ${label} — check first`,
+      title: `Settle ${label}: check first`,
       body: `
         ${moneySyncBannerHtml()}
         <p class="muted" style="margin-top:-0.4em">Nothing has moved yet. This is
@@ -22169,7 +22169,7 @@
           <span><b>${sessions}</b> sessions · <b>${money(cash)}</b></span>
         </div>
         <p class="muted mgc-note">Marking money collected records that it
-          arrived — it does not take payment.</p>`,
+          arrived. It does not take payment.</p>`,
       actions: [
         // Back, not Cancel: their typed counts and ticks come with them.
         { label: "← Back", className: "btn btn-ghost",
@@ -22483,7 +22483,7 @@
     };
 
     openModal({
-      title: onlyFlat ? `Bill ${monthLabel} — memberships` : `Bill ${monthLabel}`,
+      title: onlyFlat ? `Bill ${monthLabel}: memberships` : `Bill ${monthLabel}`,
       body: `
         <div class="bill-month">
           <button type="button" class="bill-step" id="bill-prev" ${off <= -BILL_MONTH_SPAN ? "disabled" : ""} aria-label="Previous month">◀</button>
@@ -22546,7 +22546,7 @@
       const hidingEl = $("#bill-hiding");
       if (hidingEl) {
         hidingEl.textContent = hidden
-          ? `Search is hiding ${hidden} other${hidden === 1 ? "" : "s"} — clear it to bill ${hidden === 1 ? "them" : "them all"}.`
+          ? `Search is hiding ${hidden} other${hidden === 1 ? "" : "s"}. Clear it to bill ${hidden === 1 ? "them" : "them all"}.`
           : "";
         hidingEl.classList.toggle("hidden", !hidden);
       }
@@ -22632,14 +22632,14 @@
       if (goBtn) goBtn.textContent = `Sending ${done + 1} of ${picked.length}…`;
       const sessions = Number(list?.querySelector(`input[data-bill-sessions="${CSS.escape(r.client.id)}"]`)?.value) || 0;
       const amount = Number(list?.querySelector(`input[data-bill-amount="${CSS.escape(r.client.id)}"]`)?.value) || 0;
-      if (amount < 1) { failed.push(`${r.client.name || "(unnamed)"} — no amount`); continue; }
+      if (amount < 1) { failed.push(`${r.client.name || "(unnamed)"}: no amount`); continue; }
       const note = `${sessions} session${sessions === 1 ? "" : "s"} · ${monthLabel}`;
       const res = await window.Cloud.squareBilling("chargeMonth", {
         athleteId: r.target.id, monthKey: key,
         amountCents: Math.round(amount * 100),
         sessions, rate: r.rate, note, noLink: r.payBy === "manual",
       });
-      if (!res?.ok) { failed.push(`${r.client.name || "(unnamed)"} — ${res?.error || "failed"}`); continue; }
+      if (!res?.ok) { failed.push(`${r.client.name || "(unnamed)"}: ${res?.error || "failed"}`); continue; }
       // The batch round spends credit on exactly the same rule as the single
       // sheet, and for the same reason — a round of nineteen must not treat
       // anybody differently from billing them one at a time.
@@ -23070,8 +23070,8 @@
           // one is waiting the only thing left to offer is taking it back.
           acts = `<button type="button" class="btn btn-ghost btn-xs" data-withdraw="${escapeHtml(req.id)}">Undo</button>`;
           note = req.kind === "cancel"
-            ? "Asked your coach to cancel this — waiting to hear back."
-            : `Asked to move this to ${fmtSlotDay(zonedDateISO(+new Date(req.new_start_at), a.tz))} at ${fmtSlotTime(+new Date(req.new_start_at), a.tz)} — waiting to hear back.`;
+            ? "Asked your coach to cancel this. Waiting to hear back."
+            : `Asked to move this to ${fmtSlotDay(zonedDateISO(+new Date(req.new_start_at), a.tz))} at ${fmtSlotTime(+new Date(req.new_start_at), a.tz)}. Waiting to hear back.`;
         } else if (cancelWindowClosed(s, a)) {
           acts = `<button type="button" class="btn btn-ghost btn-xs" data-ask-mine="${escapeHtml(b.id)}">Request a change</button>`;
         } else {
@@ -23170,7 +23170,7 @@
       // The trigger refuses a cancel inside the notice window, which is what
       // this usually is: the window shut between the card being drawn and the
       // tap landing. Re-rendering swaps the button for "Request a change".
-      toast("Couldn't cancel that — it may be too close now.", 4000);
+      toast("Couldn't cancel that. It may be too close now.", 4000);
       refreshAthleteBooking();
       return;
     }
@@ -23249,7 +23249,7 @@
   function bookingChangeFailMessage(reason) {
     switch (reason) {
       case "taken":       return "Someone just took that one. Pick another time.";
-      case "too_late":    return "That's too close to the session now — ask your coach instead.";
+      case "too_late":    return "That's too close to the session now. Ask your coach instead.";
       case "just_do_it":  return "You can still change this one yourself.";
       case "not_open":    return "That time isn't in your coach's hours any more.";
       case "too_soon":    return "That's too close to the start. Pick a later time.";
@@ -23555,7 +23555,7 @@
       window.Cloud?.sendPush?.([c.id],
         approve ? "✅ Your coach said yes" : "Your coach couldn't do that",
         approve
-          ? `Your ${what} is sorted — check your sessions.`
+          ? `Your ${what} is sorted. Check your sessions.`
           : `They've left ${reqWhenText(bk?.start_at)} as it is. Message them to sort something out.`,
         "./", "message");
     }
@@ -23663,7 +23663,7 @@
     const on = clients.filter((c) => c.canBook).length;
     const countLine = (n) => n
       ? `${n} of ${clients.length} can pick their own times`
-      : "Nobody yet — you book everyone";
+      : "Nobody yet, so you book everyone";
 
     host.innerHTML =
       `<details class="sched-access-fold"${on ? "" : " open"}>` +
@@ -23671,7 +23671,7 @@
           `<span class="sched-access-sum"><b>Who can book</b>` +
           `<span class="sched-access-count">${escapeHtml(countLine(on))}</span>` +
         `</span><span class="pref-fold-chev">▸</span></summary>` +
-        `<p class="sched-access-note">Switch someone on and they can take any free slot in your availability. Everyone else sees their sessions but no times to pick from — you book them in as usual.</p>` +
+        `<p class="sched-access-note">Switch someone on and they can take any free slot in your availability. Everyone else sees their sessions but no times to pick from. You book them in as usual.</p>` +
         (clients.length > 8
           ? `<input type="search" class="sched-access-find" id="sched-access-find" placeholder="Find an athlete…" autocomplete="off">` : "") +
         `<div class="sched-access-list">${clients.map((c) =>
@@ -23687,7 +23687,7 @@
       setClientCanBook(c, cb.checked);
       toast(cb.checked
         ? `${c.name || "They"} can book their own sessions now`
-        : `${c.name || "They"} can no longer book — you book them in`);
+        : `${c.name || "They"} can no longer book. You book them in`);
       // Patch the two summary lines rather than redraw: a redraw here would
       // close the fold and throw away whatever was typed in the filter.
       const count = host.querySelector(".sched-access-count");
@@ -23770,7 +23770,7 @@
       inner = `<p class="pref-foot">Notifications are blocked for this site. Allow them in your browser settings, then come back.</p>`;
     } else {
       inner = `<p class="pref-foot">${enabled
-        ? "This device gets a notification when an athlete asks to cancel or move a session too close to the start to do it themselves. Turn it on again on any other phone or computer you use — it's per device."
+        ? "This device gets a notification when an athlete asks to cancel or move a session too close to the start to do it themselves. Turn it on again on any other phone or computer you use. It's per device."
         : "Without this the only sign of a change request is the ⚡ count in the app, which is no use for a session tomorrow morning if you don't happen to open it."}</p>` +
         (/iphone|ipad|ipod/i.test(navigator.userAgent) && !isStandalone()
           ? `<p class="pref-foot">On iPhone: install the app first (Share → Add to Home Screen), then enable here.</p>` : "") +
@@ -25123,7 +25123,7 @@
       body: `
         <p class="muted" style="margin-top:-0.4em">Currently ${escapeHtml(fmtSetmoreTime(e.startAt))} on ${escapeHtml(
           new Date(startMs).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })
-        )} · ${mins} min.${e.seriesId ? " This one only — the rest of the weekly series stays where it is." : ""}</p>
+        )} · ${mins} min.${e.seriesId ? " This one only. The rest of the weekly series stays where it is." : ""}</p>
         <label>Date<input type="date" class="input" id="mv-date" value="${escapeHtml(zonedDateISO(startMs, tz))}" /></label>
         <label>Start time<input type="time" class="input" id="mv-time" value="${escapeHtml(zonedHM(startMs, tz))}" /></label>
         <p id="mv-err" class="error hidden"></p>`,
@@ -25379,7 +25379,7 @@
             `<option value="${n}"${n === draft.horizonDays ? " selected" : ""}>${n} days</option>`).join("")}</select></label>` +
         `</div>` +
         `<p class="muted av-policy-note">Inside the cancel window an athlete can't drop or move a ` +
-          `session themselves — they send you a request to approve or turn down.</p>` +
+          `session themselves. They send you a request to approve or turn down.</p>` +
         // Time off is one list now, whether it was closed from here or from the
         // ＋ Book sheet, and it holds part-days as well as whole ones.
         `<div class="av-block">` +
@@ -26148,7 +26148,7 @@
     const week = (c.weeks || []).find((w) => (w.days || []).some((d) => d.id === dayId));
     if (!week) {
       openClient(clientId);
-      toast("That workout was archived — opening their program instead", 3000);
+      toast("That workout was archived. Opening their program instead", 3000);
       return;
     }
     state.currentClientId = clientId;
@@ -26456,7 +26456,7 @@
     if (!rows.length) {
       host.innerHTML = `<p class="msg-empty">${coachSide
         ? "Nothing here yet. Say hello."
-        : "Nothing here yet. Ask about a lift, a weight, a sore shoulder — anything."}</p>`;
+        : "Nothing here yet. Ask about anything: a lift, a weight, a sore shoulder."}</p>`;
       return;
     }
     // "Mine" is whichever end is looking at it.
@@ -27691,7 +27691,7 @@
   }
   function cycleExplainHtml(info) {
     return `<p class="cyc-explain"><button type="button" class="cyc-explain-btn" id="btn-cyc-explain">${
-      info ? `${escapeHtml(info.label)} — what does that mean?` : "How the cycle works"
+      info ? `${escapeHtml(info.label)}: what does that mean?` : "How the cycle works"
     }</button></p>`;
   }
 
@@ -27762,7 +27762,7 @@
       shell(`
         <p class="cyc-empty">${ever
           ? "It's been long enough that there's no current cycle to place you in. Tap the days of the next one and it picks up from there."
-          : "Tap the days you bleed. That's the whole thing — from those taps it works out your cycle length, where you are in it, and roughly when the next one is due."}</p>
+          : "Tap the days you bleed. That's the whole thing: from those taps it works out your cycle length, where you are in it, and roughly when the next one is due."}</p>
         <div class="cyc-sharerow"><span class="cyc-share ${share.id}" title="${escapeHtml(share.hint)}">${share.emoji} ${escapeHtml(share.label)}</span></div>
         ${cycleExplainHtml(null)}
         ${cycleTodayRowHtml(c, today)}
@@ -27799,7 +27799,7 @@
         <span class="cyc-share ${share.id}" title="${escapeHtml(share.hint)}">${share.emoji} ${escapeHtml(share.label)}</span>
       </div>
       <div class="cyc-track">
-        <span class="sr-only">Day ${info.day} of about ${info.len} — ${escapeHtml(info.label.toLowerCase())}</span>
+        <span class="sr-only">Day ${info.day} of about ${info.len}, ${escapeHtml(info.label.toLowerCase())}</span>
         ${seg(1, info.bleed, "period")}
         ${seg(info.bleed + 1, ov - 2, "follicular")}
         ${seg(ov - 1, ov + 1, "ovulation")}
@@ -27838,7 +27838,7 @@
     return `
       <div class="cyc-today">
         <button type="button" class="cyc-drop${on ? " on" : ""}" id="btn-cyc-today"
-          aria-pressed="${on}" aria-label="${on ? "Bleeding today — tap to undo" : "Mark today as a bleed day"}">
+          aria-pressed="${on}" aria-label="${on ? "Bleeding today. Tap to undo" : "Mark today as a bleed day"}">
           <span>${on ? "✓" : "🩸"}</span>
         </button>
         <span class="cyc-today-text">
@@ -27847,7 +27847,7 @@
             ? `<span class="cyc-flows">${CYCLE_FLOWS.map((f) =>
                 `<button type="button" class="cyc-flow${rec?.flow === f.id ? " on" : ""}" data-flow="${f.id}"
                    aria-pressed="${rec?.flow === f.id}">${escapeHtml(f.label)}</button>`).join("")}</span>`
-            : `<span class="cyc-today-l2">Tap the drop — or any day below</span>`}
+            : `<span class="cyc-today-l2">Tap the drop, or any day below</span>`}
         </span>
       </div>`;
   }
@@ -27913,7 +27913,7 @@
         el.dataset.iso = iso;
         el.setAttribute("aria-pressed", String(isBleed));
         const when = d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
-        el.setAttribute("aria-label", `${when}${isBleed ? " — bleeding, tap to undo" : ""}`);
+        el.setAttribute("aria-label", `${when}${isBleed ? ". Bleeding, tap to undo" : ""}`);
       }
       grid.appendChild(el);
     });
@@ -28091,7 +28091,7 @@
               <span class="cyc-share-text"><span class="pref-label">${escapeHtml(o.label)}</span><span class="pref-hint">${escapeHtml(o.hint)}</span></span>
             </label>`).join("")}
         </div>
-        <p class="pref-foot">Switch any time. Nothing is rewritten — every weight already logged is just read back in the other unit, so history, PRs and the Hoard all stay exactly where they were.</p>
+        <p class="pref-foot">Switch any time. Nothing is rewritten: every weight already logged is just read back in the other unit, so history, PRs and the Hoard all stay exactly where they were.</p>
       </details>`;
   }
   // The athlete's copy of their own unit. Rides the same vitals push as their
@@ -28120,7 +28120,7 @@
   // pick riding the same vitals push as their name and units.
   function trainingAgeSub(cur) {
     const lvl = TRAINING_LEVEL_BY_ID[cur];
-    return lvl ? `${lvl.name} — ${lvl.years.toLowerCase()}` : "Not set — graded as Intermediate";
+    return lvl ? `${lvl.name}, ${lvl.years.toLowerCase()}` : "Not set, graded as Intermediate";
   }
   function trainingAgeFoldHtml(cur, { id = "pref-fold-trainage", name = "trainage-pick" } = {}) {
     const opts = [
@@ -28140,7 +28140,7 @@
           </span>
           <span class="pref-fold-chev">▸</span>
         </summary>
-        <p class="pref-foot">Years of real lifting, not years since the first gym visit. The Coverage map on the Anatomy page grades each muscle's weekly sets against this — a beginner's "solid" takes fewer sets than a veteran's.</p>
+        <p class="pref-foot">Years of real lifting, not years since the first gym visit. The Coverage map on the Anatomy page grades each muscle's weekly sets against this: a beginner's "solid" takes fewer sets than a veteran's.</p>
         <div class="cyc-share-pick">
           ${opts.map((o) => `
             <label class="cyc-share-opt${(cur || "") === o.id ? " on" : ""}">
@@ -30033,7 +30033,7 @@
       host.innerHTML = canBook
         ? `<button type="button" class="ccal-next-cta" id="ccal-next-cta">` +
             `<span class="ccal-next-ico">🗓️</span>` +
-            `<span>No sessions booked — pick a time</span>` +
+            `<span>No sessions booked. Pick a time</span>` +
             `<span class="ccal-next-go">›</span>` +
           `</button>`
         : "";
@@ -30537,7 +30537,7 @@
   function openSkipDaySheet(day, beforeSkip) {
     openModal({
       title: `Skip ${day.name}?`,
-      body: `<p>Every exercise gets marked skipped — a recorded miss, not a rest day. Your coach can see it, and your targets hold for next time.</p>`,
+      body: `<p>Every exercise gets marked skipped: a recorded miss, not a rest day. Your coach can see it, and your targets hold for next time.</p>`,
       actions: [
         { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
         { label: "Skip this day", className: "btn btn-primary", onClick: () => {
@@ -30571,7 +30571,7 @@
     if (consecutiveDaySkips(day, store) >= 2 && !(existing && !existing.date)) {
       openModal({
         title: "Two in a row",
-        body: `<p>That's two ${escapeHtml(day.name)}s in a row. Want the next one 15% lighter? One session only — your numbers come back after.</p>`,
+        body: `<p>That's two ${escapeHtml(day.name)}s in a row. Want the next one 15% lighter? One session only. Your numbers come back after.</p>`,
         actions: [
           { label: "Keep my numbers", className: "btn btn-ghost", onClick: closeModal },
           { label: "Make it lighter", className: "btn btn-primary", onClick: () => {
@@ -32231,7 +32231,7 @@
             : `Timed double progression ${prog.floor}→${prog.ceil}s: hold the target on every set to add ${prog.step}s next week; hold ${prog.ceil}s on all sets and the weight goes up ${progIncShown(prog.inc)} ${unitLbl()} (time resets to ${prog.reset}s).`)
         : prog.bw
         ? (prog.graduate
-            ? `Bodyweight rep ladder: hit every set at the target and next week asks for your worst set + 1, up to ${prog.ceil}. Hit ${prog.ceil} on all sets and it graduates — add ${progIncShown(prog.inc)} ${unitLbl()}, reps reset to ${prog.reset}.`
+            ? `Bodyweight rep ladder: hit every set at the target and next week asks for your worst set + 1, up to ${prog.ceil}. Hit ${prog.ceil} on all sets and it graduates: add ${progIncShown(prog.inc)} ${unitLbl()}, reps reset to ${prog.reset}.`
             : `Rep ladder: hit every set at the target and next week asks for your worst set + 1${prog.ceil === PROG_NO_CAP ? "" : `, up to ${prog.ceil}`}. No weight added.`)
         : prog.repsOnly
           ? `Rep ladder ${prog.floor}→${prog.ceil}: hit every set at the target and next week asks for your worst set + 1, up to ${prog.ceil}. The weight stays at ${wLabel(prog.weight)}.`
@@ -38347,7 +38347,7 @@
         ${row(weighIns, "weigh-in", "weigh-ins")}
       </ul>
       ${tooOld ? `<p class="muted">${tooOld} entries are older than ${FOOD_LOG_DAYS} days
-        and won't come across — the log keeps a rolling window.</p>` : ""}
+        and won't come across. The log keeps a rolling window.</p>` : ""}
       ${skipped ? `<p class="muted">${skipped} rows skipped: no name or calorie value.</p>` : ""}
       <button class="btn btn-primary" id="imp-go">Import</button>`;
 
@@ -41677,7 +41677,7 @@
     // A guarded write that found the cloud ahead rebased and won — make the
     // collision visible instead of silent, per the sync design.
     window.Cloud?.onConflict?.((id, name) => {
-      toast(`⚠ ${name || "An athlete"}'s record changed on another device — this device's version won. Give it a glance.`, 6000);
+      toast(`⚠ ${name || "An athlete"}'s record changed on another device. This device's version won. Give it a glance.`, 6000);
     });
     $("#sync-chip")?.addEventListener("click", () => resyncNow(true));
     $("#sync-chip-athlete")?.addEventListener("click", () => resyncNow(true));
