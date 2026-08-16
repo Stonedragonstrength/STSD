@@ -13538,6 +13538,11 @@
 
     // The way in from anywhere else in the app (a workout exercise, say).
     root._anatomyGoto = (id) => { clearSearch(); gotoMuscle(id); };
+    // Same door, for a concept card rather than a muscle. setShelf runs FIRST
+    // and unconditionally, so a card the coach has renamed or hidden still
+    // lands the reader on the right shelf instead of doing nothing at all —
+    // gotoCard's own guard just returns when it can't find the id.
+    root._anatomyGotoCard = (kind, cid) => { clearSearch(); setShelf(kind); if (cid) gotoCard(kind, cid); };
     // Let coach edits re-render this mount's concepts + open muscle in place.
     // Coverage recomputes here too: this node is built once and survives every
     // athlete switch, so without this the map keeps showing the last athlete.
@@ -27646,6 +27651,41 @@
       `<span class="cyc-chip-emo">${info.emoji}</span>` +
       `<span class="cyc-chip-txt">${escapeHtml(compact ? "Day " + info.day : txt)}</span></span>`;
   }
+  // -------- Cycle: the door to the explanation --------
+  // The card names a phase — "Late luteal" — and for most people that is just
+  // a word. The app already answers it: Anatomy → Hormones carries a whole
+  // shelf on how the cycle works, written and hedged carefully. Nothing has
+  // ever linked the two, so the one moment somebody wonders what late luteal
+  // is — looking at the word on their own card — was the one moment the
+  // answer was three taps and a guess away.
+  const CYCLE_EXPLAINER = {
+    period:     "Day 1: the period",
+    follicular: "The follicular phase",
+    ovulation:  "Ovulation",
+    luteal:     "The luteal phase",
+    // Late luteal IS the hormone drop this card describes, and that drop is
+    // what most of the symptoms people notice belong to.
+    late:       "The end of the cycle",
+    // For merely LATE, the honest card is the one about normal variation.
+    // "Missing periods" is a different conversation and reads as alarm.
+    overdue:    "What counts as normal",
+  };
+  function cycleExplainerId(info) {
+    const term = (info && CYCLE_EXPLAINER[info.id]) || "The cycle at a glance";
+    return conceptCardId(conceptSectionId("hrm", "How the cycle works"), term);
+  }
+  function openCycleExplainer(info) {
+    setClientTab("anatomy");
+    const root = document.querySelector('[data-ctab-panel="anatomy"] [data-anatomy-root]');
+    if (root?._anatomyRefresh) root._anatomyRefresh();
+    if (root?._anatomyGotoCard) root._anatomyGotoCard("hrm", cycleExplainerId(info));
+  }
+  function cycleExplainHtml(info) {
+    return `<p class="cyc-explain"><button type="button" class="cyc-explain-btn" id="btn-cyc-explain">${
+      info ? `${escapeHtml(info.label)} — what does that mean?` : "How the cycle works"
+    }</button></p>`;
+  }
+
   // The athlete's own phase for a date, or null when tracking is off.
   function myCyclePhase(iso) {
     if (!cycleOn()) return null;
@@ -27715,6 +27755,7 @@
           ? "It's been long enough that there's no current cycle to place you in. Tap the days of the next one and it picks up from there."
           : "Tap the days you bleed. That's the whole thing — from those taps it works out your cycle length, where you are in it, and roughly when the next one is due."}</p>
         <div class="cyc-sharerow"><span class="cyc-share ${share.id}" title="${escapeHtml(share.hint)}">${share.emoji} ${escapeHtml(share.label)}</span></div>
+        ${cycleExplainHtml(null)}
         ${cycleTodayRowHtml(c, today)}
         ${concern ? cycleConcernHtml(concern) : ""}
         ${cycleCalendarHtml(c, today)}`);
@@ -27757,6 +27798,7 @@
         ${seg(info.len - CYCLE_LATE_DAYS + 1, info.len, "late")}
         <span class="cyc-mark" style="left:${mark.toFixed(2)}%"></span>
       </div>
+      ${cycleExplainHtml(info)}
       <div class="cyc-facts">
         ${til !== null ? `<span class="cyc-fact"><b>${til <= 0 ? "Due now" : til + (til === 1 ? " day" : " days")}</b>${til > 0 ? `<span>until the next one${info.learning ? ", roughly" : ""}</span>` : "<span>by the last few cycles</span>"}</span>` : ""}
         <span class="cyc-fact"><b>${avg ? avg + " days" : "—"}</b><span>${avg ? "your average cycle" : "cycle length"}</span></span>
@@ -27881,6 +27923,11 @@
     };
 
     $("#btn-cyc-today")?.addEventListener("click", () => toggle(today));
+
+    // Read the phase at click time, not render time: the card is rebuilt on
+    // every tap, so a phase captured in a closure here would be one tap stale.
+    $("#btn-cyc-explain")?.addEventListener("click", () =>
+      openCycleExplainer(cyclePhaseOn(cycleState().periods, todayISO())));
 
     $$("#cyc-cal .cyc-cell[data-iso]").forEach((el) => {
       el.addEventListener("click", () => toggle(el.dataset.iso));
