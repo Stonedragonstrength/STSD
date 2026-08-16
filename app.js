@@ -10968,7 +10968,16 @@
       cues: ["Shrug straight up toward the ears, not forward.", "Hold the top squeeze for a beat."],
       mistakes: ["Rolling the shoulders in circles under load.", "Only training the upper traps, never the mid and lower."],
       anchors: ["Shrug", "Face Pull"],
-      accessories: ["Rack Pull", "Farmer's Carry", "Upright Row", "Rear Delt Fly"],
+      // Yoke Walk is here because the demo database says a yoke is a quad
+      // movement — p:["quadriceps"] with seven lower-body secondaries and
+      // nothing above the waist, for a bar that rests on your traps. That map
+      // reaches only Squat and Hinge patterns, so the builder could not seat a
+      // yoke anywhere but a leg day: 20 of 23 placements over 300 four-day
+      // weeks landed on the squat. The curated lists union ON TOP of the demo
+      // entry (which wins over exercise-muscles.js), so naming it here is the
+      // one layer that can correct it. The leg credit is kept — a yoke does
+      // load the legs; it just isn't only legs.
+      accessories: ["Rack Pull", "Farmer's Carry", "Upright Row", "Rear Delt Fly", "Yoke Walk"],
       stretches: ["Ear toward shoulder for a gentle neck side stretch.", "Chin to chest to lengthen the upper traps."],
       injuries: ["Neck and trap tension from shrugging or daily stress.", "Strain from jerking heavy shrugs or upright rows."],
       warmup: "Light shrugs and gentle neck rolls.",

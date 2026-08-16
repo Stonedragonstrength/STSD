@@ -51,28 +51,39 @@ const NEEDED = [
   "function cycleSortedPeriods(",
   "function cycleStarts(",
   "function cycleLengths(",
+  "function cycleAvgLength(",
+  "function cycleLenOrDefault(",
+  "function cycleLearning(",
   "function cycleBleedLength(",
   "function cycleBleedEnd(",
   "function cycleBleedDays(",
   "function cycleToggleDay(",
+  "function cycleNextStart(",
+  "function cycleNudgeFor(",
 ];
 
 // The CYCLE_* thresholds are lifted from the source rather than restated, so
 // retuning one in app.js retunes the test with it instead of quietly leaving
 // this file asserting last month's numbers.
-const consts = appSrc.match(/^\s*const CYCLE_(?:DEFAULT_LEN|DEFAULT_BLEED|MIN_LEN|MAX_LEN|LATE_DAYS|GAP_DAYS)\s*=\s*\d+;/gm) || [];
-if (consts.length < 6) throw new Error(`expected 6 CYCLE_* constants in app.js, found ${consts.length}`);
+const consts = appSrc.match(/^\s*const CYCLE_(?:DEFAULT_LEN|DEFAULT_BLEED|MIN_LEN|MAX_LEN|LATE_DAYS|GAP_DAYS|NUDGE_BEFORE|NUDGE_AFTER)\s*=\s*\d+;/gm) || [];
+if (consts.length < 8) throw new Error(`expected 8 CYCLE_* constants in app.js, found ${consts.length}`);
 
 // `uid()` is stubbed rather than extracted: the real one is Date.now-based and
 // these tests need to assert that a split mints a DISTINCT id, which a
 // same-millisecond pair would fail on by luck rather than by logic.
+// cycleNudgeSeen() reads localStorage in the app; here it is a settable stub so
+// the dismissal can be driven from a test without a DOM.
 const sandbox = new Function(`
   ${consts.join("\n")}
   let __uid = 0;
   function uid() { return "u" + (++__uid); }
+  let __nudgeSeen = "";
+  function cycleNudgeSeen() { return __nudgeSeen; }
   ${NEEDED.map((d) => fnSrc(appSrc, d)).join("\n")}
   return { cycleBleedDays, cycleToggleDay, cycleBleedEnd, cycleLengths, cycleStarts,
-           cycleSortedPeriods, cycleDaysBetween, addDaysISO };
+           cycleSortedPeriods, cycleDaysBetween, addDaysISO, cycleNextStart,
+           cycleNudgeFor, cycleLearning,
+           setNudgeSeen: (v) => { __nudgeSeen = v || ""; } };
 `)();
 
 const { cycleBleedDays, cycleToggleDay, cycleBleedEnd, cycleLengths, cycleSortedPeriods } = sandbox;
@@ -279,6 +290,89 @@ check("cycle lengths still come out of a calendar-edited list", () => {
   assert.deepStrictEqual(cycleLengths(list), [30, 28]);
   list = cycleToggleDay(list, "2026-08-03"); // "actually it started on the 4th"
   assert.deepStrictEqual(cycleLengths(list), [30, 29]);
+});
+
+console.log("\ncycleNudgeFor — the only place the app asks");
+
+// Three 28-day cycles, so two lengths are measured (not "learning") and the
+// next start predicts to 2026-08-16.
+const REGULAR = [P("2026-05-24", "2026-05-28"), P("2026-06-21", "2026-06-25"), P("2026-07-19", "2026-07-23")];
+const nudge = (list, today) => sandbox.cycleNudgeFor({ periods: list }, today);
+
+check("the prediction the window is built around is the one being asked about", () => {
+  assert.strictEqual(sandbox.cycleNextStart(REGULAR), "2026-08-16", "precondition: predicted next start");
+  assert.strictEqual(sandbox.cycleLearning(REGULAR), false, "precondition: two measured cycles is not learning");
+});
+
+check("it asks on the day the period is predicted", () => {
+  const n = nudge(REGULAR, "2026-08-16");
+  assert.ok(n, "expected a nudge on the predicted day");
+  assert.strictEqual(n.next, "2026-08-16");
+});
+
+check("it opens two days early and closes three days late", () => {
+  // The window is the whole point: too narrow and it misses the day she
+  // actually starts, too wide and it nags through the follicular phase.
+  assert.ok(nudge(REGULAR, "2026-08-14"), "two days before should ask");
+  assert.ok(nudge(REGULAR, "2026-08-19"), "three days after should still ask");
+});
+
+check("it is silent outside the window on both sides", () => {
+  assert.strictEqual(nudge(REGULAR, "2026-08-13"), null, "three days before is too early");
+  assert.strictEqual(nudge(REGULAR, "2026-08-20"), null, "four days after is too late");
+  assert.strictEqual(nudge(REGULAR, "2026-07-30"), null, "mid-cycle is silent");
+});
+
+check("it never asks about a guess", () => {
+  // One logged period measures no cycle length at all, so the prediction is
+  // the 28-day default wearing a confident face. Asking on that date would
+  // teach her the app is wrong about her body.
+  const one = [P("2026-07-19", "2026-07-23")];
+  assert.strictEqual(sandbox.cycleLearning(one), true, "precondition: one period is still learning");
+  assert.strictEqual(nudge(one, "2026-08-16"), null);
+  assert.strictEqual(nudge([], "2026-08-16"), null, "nothing logged at all asks nothing");
+});
+
+check("logging anything in the window answers the question and stops it", () => {
+  // Not just "today is a bleed day" — ANY day in the window. She logged it on
+  // the 15th, so asking her again on the 17th is the app not listening.
+  const logged = [...REGULAR, P("2026-08-15", "2026-08-15")];
+  assert.strictEqual(nudge(logged, "2026-08-17"), null, "already logged on the 15th");
+  assert.strictEqual(nudge(logged, "2026-08-15"), null, "and on the day itself");
+});
+
+check("an early period re-anchors the cycle rather than just muting the ask", () => {
+  // Worth pinning because the obvious reading is wrong. Logging a bleed day
+  // before the predicted date does not "answer the question early" — there is
+  // no spotting in this model, so that day IS a new cycle start. The average
+  // re-measures (28, 28, 22 -> 26), the prediction moves to 5 Sep, and the ask
+  // travels with it. Silence on the 16th is the window having MOVED, not the
+  // nudge having been suppressed, and a future refactor that muted it instead
+  // would look identical here without this check.
+  const early = [...REGULAR, P("2026-08-10", "2026-08-14")];
+  assert.strictEqual(sandbox.cycleNextStart(early), "2026-09-05",
+    "an early start re-measures the average and moves the prediction");
+  assert.strictEqual(nudge(early, "2026-08-16"), null, "silent because the window moved, not because it was muted");
+  const n = nudge(early, "2026-09-05");
+  assert.ok(n, "and it asks again on the new date");
+  assert.strictEqual(n.next, "2026-09-05");
+});
+
+check("dismissing it silences that cycle and only that cycle", () => {
+  sandbox.setNudgeSeen("2026-08-16");
+  assert.strictEqual(nudge(REGULAR, "2026-08-16"), null, "dismissed for this prediction");
+  sandbox.setNudgeSeen("2026-07-19");           // last cycle's dismissal
+  assert.ok(nudge(REGULAR, "2026-08-16"), "a stale dismissal must not silence the next one");
+  sandbox.setNudgeSeen("");
+});
+
+check("the window tracks the prediction, not the calendar", () => {
+  // A 35-day cycle moves the whole window with it. Hard-coding around day 28
+  // would ask everyone with a long cycle a week early, every month.
+  const long = [P("2026-05-08", "2026-05-12"), P("2026-06-12", "2026-06-16"), P("2026-07-17", "2026-07-21")];
+  assert.strictEqual(sandbox.cycleNextStart(long), "2026-08-21", "precondition: 35-day cycles predict later");
+  assert.strictEqual(nudge(long, "2026-08-16"), null, "silent on the 28-day date");
+  assert.ok(nudge(long, "2026-08-21"), "asks on its own date");
 });
 
 console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");

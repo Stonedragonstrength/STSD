@@ -550,4 +550,56 @@ check("a cut's lower bands stop the emptier map reading as all gaps", () => {
   assert.ok(asMid.light.includes("chest"), "precondition: the same 4 sets are light when building");
 });
 
+check("every carry credits something above the waist", () => {
+  // Nathan: "the yoke walk is constantly in a SQUAT day even with 4 days
+  // available." Measured over 300 four-day weeks before the fix: 20 of the 23
+  // Yoke Walk placements landed on a squat day and the other 3 on a hinge day.
+  // It never once reached a push or a pull day.
+  //
+  // The cause is here rather than in the builder. A carry has no declared
+  // pattern, so the filler routes it purely by its muscle map (servesPattern),
+  // and the demo database files Yoke Walk as p:["quadriceps"] with seven lower
+  // body secondaries and NOTHING above the waist — for a movement that sits on
+  // your traps. A leg-only map can only ever match a leg day, so the yoke was
+  // welded to the squat.
+  //
+  // exercise-muscles.js cannot fix it: the demo entry EXISTS, and it wins over
+  // that file. The curated anchors/accessories lists are the layer that unions
+  // ON TOP, which is why the fix is a curated entry.
+  //
+  // Swept across every carry rather than pinned to the yoke: the same bad shape
+  // in the next piece of third-party data would be just as invisible.
+  //
+  // The test is REACHABILITY, not anatomy. What decides the day is the muscle
+  // group's routing pattern, and only Push and Pull open an upper-body day —
+  // Core and Isolation are not day patterns, so crediting "core" buys a carry
+  // nothing. The yoke's whole map (quads=Squat, glutes/hamstrings/lowerback=
+  // Hinge, core=Core, the rest=Isolation) reached exactly two day types, which
+  // is the bug in one line.
+  const PATTERN = {};
+  ANATOMY_GROUPS.forEach((g) => { PATTERN[g.id] = g.pattern; });
+  const carries = (EXERCISE_LIBRARY.find((c) => c.cat === "Carries") || {}).ex || [];
+  assert.ok(carries.length > 5, "precondition: the Carries category is populated");
+  const legLocked = carries.filter((name) => {
+    const hits = musclesForExercise(name);
+    if (!hits.length) return false;   // untagged is a different complaint
+    return !hits.some((h) => PATTERN[h.id] === "Push" || PATTERN[h.id] === "Pull");
+  });
+  assert.deepStrictEqual(legLocked, [],
+    "these carries reach no Push or Pull muscle, so the builder can only ever seat them on a leg day");
+});
+
+check("a yoke is a trap movement, and can reach a pull day", () => {
+  // The specific claim behind the sweep above. traps carries pattern "Pull",
+  // and that is the thing that lets the filler consider a non-leg day at all.
+  const hits = musclesForExercise("Yoke Walk");
+  const ids = hits.map((h) => h.id);
+  assert.ok(ids.includes("traps"), `Yoke Walk credits no traps: ${ids.join(", ") || "(nothing)"}`);
+  const traps = hits.find((h) => h.id === "traps");
+  assert.ok(traps.weight >= 1, `traps should be primary on a yoke, got ${traps.weight}`);
+  // And the legs stay — a yoke really does load them; this is a union, not a
+  // replacement, and clobbering the demo data would swap one wrong map for another.
+  assert.ok(ids.includes("quads"), "the yoke must keep its leg credit");
+});
+
 console.log(`\nmuscle-coverage: ${n} checks passed.`);
