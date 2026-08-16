@@ -7422,7 +7422,10 @@
         const again = document.createElement("button");
         again.type = "button";
         again.className = "btn btn-ghost btn-sm";
-        again.textContent = charge.checkout_url ? "Show the link again" : "Charge again";
+        // Not "Show the link again": it opens the charge sheet, which raises a
+        // NEW invoice and voids this one. The place that actually shows the
+        // existing link is Copy link on the invoice sheet.
+        again.textContent = "Charge again";
         again.addEventListener("click", () => openChargeSheet(c, monthKey, plan, charge));
         const drop = document.createElement("button");
         drop.type = "button";
@@ -7565,11 +7568,16 @@
     if (!days.some((d) => d.sessions)) { host.innerHTML = ""; return; }
     const peak = Math.max(1, ...days.map((d) => d.amount));
     const today = todayISO();
+    // Under the same eye as everything else in Books. It shipped outside the
+    // blur, so Money opened with eleven dollar figures in the clear directly
+    // above two covered cards — the one thing the toggle exists to prevent.
+    // `.mw-figs` mirrors `.income-figs`; the title stays legible so the strip
+    // still says what it is while it is covered.
     host.innerHTML =
-      `<div class="mw-strip">` +
+      `<div class="mw-strip${incomeShown() ? "" : " is-hidden"}">` +
         `<div class="mw-head"><span class="mw-title">Day by day</span>` +
-          `<span class="mw-total"><span class="mw-total-lbl">next 7</span>${escapeHtml(money(total))}</span></div>` +
-        `<div class="mw-days">${days.map((d) => {
+          `<span class="mw-total mw-figs"><span class="mw-total-lbl">next 7</span>${escapeHtml(money(total))}</span></div>` +
+        `<div class="mw-days mw-figs">${days.map((d) => {
           const dd = new Date(d.iso + "T12:00:00");
           const dow = dd.toLocaleDateString(undefined, { weekday: "short" });
           return `<div class="mw-day${d.iso === today ? " is-today" : ""}${d.past ? " is-past" : ""}" title="${
@@ -7644,7 +7652,12 @@
       card.className = "card money-roster";
       const owed = rows.filter((r) => r.charge?.status === "sent")
         .reduce((n, r) => n + (Number(r.charge.amount_cents) || 0), 0) / 100;
-      const todo = rows.filter((r) => !r.charge).length;
+      // Only banks that can actually produce an invoice. Counting every
+      // athlete without a charge swept in the ones on no tier at all, who can
+      // never be billed, so the count could not reach zero however much of the
+      // round he did and it disagreed with the Bill pill beside it. A
+      // program-only member still counts: a flat tier is billable.
+      const todo = rows.filter((r) => !r.charge && (r.proj.flat || r.proj.sessions)).length;
       const unpaid = rows.filter((r) => r.charge?.status === "sent").length;
       card.innerHTML =
         `<div class="mr-head"><span class="mr-title">${escapeHtml(monthKeyLabel(monthKey))}</span>` +
@@ -7683,9 +7696,13 @@
           const go = document.createElement("button");
           go.type = "button";
           go.className = charge ? "btn btn-ghost btn-sm" : "btn btn-primary btn-sm";
+          // "Bill", not a bare figure. The line below carries a DIFFERENT
+          // number on purpose (the forecast nets out the bank; this is the
+          // invoice), and two unlabelled amounts two lines apart read as a
+          // contradiction. The verb says which one you are about to send.
           go.textContent = charge
             ? (charge.status === "paid" ? "＋ New" : "Chase")
-            : (proj.amount ? `💳 ${money(proj.amount)}` : "💳 Charge");
+            : (proj.amount ? `💳 Bill ${money(proj.amount)}` : "💳 Charge");
           go.addEventListener("click", () => openChargeSheet(c, monthKey, proj, charge));
           top.appendChild(go);
           // Giving it back belongs here too. Money is where billing lives now,
@@ -7711,7 +7728,13 @@
         const chips = document.createElement("div");
         chips.className = "mr-chips";
         chips.innerHTML =
-          `<span class="booked-balance-chip${left <= 1 ? " low" : ""}" title="${left} session${Math.abs(left) === 1 ? "" : "s"} left in the bank${partner ? ", shared" : ""}">${lineIco("sd:ticket")} ${left} left${shareMark}</span>` +
+          // A bank in debt reads "2 owed", not "−2 left". The line underneath
+          // has always said "+ 2 owed" for the same number, so the chip was
+          // contradicting it two lines up.
+          `<span class="booked-balance-chip${left <= 1 ? " low" : ""}" title="${
+            left < 0 ? `${Math.abs(left)} session${Math.abs(left) === 1 ? "" : "s"} already delivered and not yet paid for`
+                     : `${left} session${left === 1 ? "" : "s"} left in the bank`}${partner ? ", shared" : ""}">${lineIco("sd:ticket")} ${
+            left < 0 ? `${Math.abs(left)} owed` : `${left} left`}${shareMark}</span>` +
           (booked > 0 ? `<span class="next-month-chip" title="${booked} session${booked === 1 ? "" : "s"} booked for ${escapeHtml(monthShort)}${partner ? " across this bank, counted once" : ""}">${lineIco("sd:ticket")} ${booked} booked${shareMark}</span>` : "");
         row.appendChild(chips);
 
@@ -7726,6 +7749,13 @@
           calc.innerHTML = `<span>${escapeHtml(monthShort)}: program-only, flat</span><span class="mr-dots"></span><span class="mr-amt">${escapeHtml(money(proj.projected))}</span>`;
         } else if (!proj.sessions) {
           calc.innerHTML = `<span>${escapeHtml(monthShort)}: nothing to bill yet</span><span class="mr-dots"></span><span class="mr-amt">—</span>`;
+        } else if (proj.left >= proj.sessions) {
+          // The bank already holds everything next month buys. Printing the
+          // subtraction here stated something false — "4 − 5 left = 0 × $100"
+          // — because the equation comes from one expression and the answer
+          // from a Math.max(0) clamp in another. Say why it is nothing instead,
+          // and never name the surplus: "1 carried" reads like money owed back.
+          calc.innerHTML = `<span>${escapeHtml(monthShort)}: ${proj.left} left covers all ${proj.sessions}. Nothing to bill.</span><span class="mr-dots"></span><span class="mr-amt">—</span>`;
         } else {
           // Nathan's arithmetic, spelled out: buying minus holding. A bank in
           // debt reads "+ N owed" — sessions already delivered, money not.
@@ -8007,6 +8037,16 @@
     openModal({
       title: `Charge ${c.name || "athlete"} · ${monthLabel}`,
       body: `
+        ${existing && existing.status === "sent" ? `
+        <!-- The one thing the coach needs to know before pressing send again,
+             and until now the only sheet that knew it threw the fact away:
+             the existing charge was passed in from the row's Chase button and
+             never read. The replacement is real, not a warning: square-billing
+             voids any earlier unpaid link for this athlete and month before it
+             makes a new one. -->
+        <p class="chg-existing">An invoice for ${escapeHtml(monthLabel)} is already out${
+          existing.amount_cents ? ` for ${escapeHtml(money(existing.amount_cents / 100))}` : ""
+        }, unpaid. Sending again voids that one and replaces it.</p>` : ""}
         <div class="chg-working">
           ${plan.flat ? `
           <!-- A flat tier has no sessions × rate to show. Showing the working
@@ -8884,11 +8924,7 @@
 
       $("#books-prev")?.addEventListener("click", () => { _booksYear = year - 1; _booksOpenMonth = null; renderBooks(); });
       $("#books-next")?.addEventListener("click", () => { _booksYear = year + 1; _booksOpenMonth = null; renderBooks(); });
-      $("#books-eye")?.addEventListener("click", () => {
-        sessionStorage.setItem(KEY_INCOME_SHOWN, incomeShown() ? "0" : "1");
-        renderIncomeCard();
-        renderBooks();
-      });
+      $("#books-eye")?.addEventListener("click", toggleIncomeShown);
       host.querySelectorAll("[data-books-mo]").forEach((b) => b.addEventListener("click", () => {
         // Remembered rather than derived from what is in the row — a fold whose
         // open state is read back off its own content re-opens on every render.
@@ -22245,6 +22281,11 @@
     renderClientGrid();
     renderMonthGrantBtn();
     renderIncomeCard();
+    // The sheet is launched FROM the Raise fold, so the roster it opened over
+    // is the first thing back on screen when it closes. Without this every
+    // row's "N left" and working line still describes the month before the
+    // grant, and the fold's own summary keeps counting people already settled.
+    renderMoneyRoster();
     if (state.currentClientId) renderCoachSessions();
     const bits = [];
     if (granted) bits.push(`${granted} granted`);
@@ -22659,6 +22700,9 @@
     renderMonthBillBtn();
     renderMonthFlatBtn();
     renderBooks();
+    // Same reason as the grant: the round is launched from the Raise fold, and
+    // without this every row it just invoiced still shows a Charge button.
+    renderMoneyRoster();
     if (state.currentClientId) { renderCoachSessions(); renderBillingRow(currentClient()); }
     if (failed.length) {
       openModal({
@@ -24009,15 +24053,20 @@
     });
   }
 
-  // Today, this week (Sunday-start, to match the month grid's columns), and the
-  // next four weeks. Four weeks is as far as the calendar honestly reaches:
+  // Today, the next seven days, and the next four weeks — all counted FORWARD
+  // from today. It used to start on the Sunday, to match the month grid's
+  // columns, which meant a card headed "Booked ahead" was quietly counting
+  // sessions already delivered, directly under a strip that is deliberately
+  // forward-only. The two disagreed on screen; this card is a forecast, not a
+  // grid, so it follows its own heading.
+  // Four weeks is as far as the calendar honestly reaches:
   // summing what is literally booked for the next twelve months would read
   // absurdly low, since nobody books a year ahead. The run rate it implies is
   // what yearOutlook() extends over the months with nothing on the books yet.
   function incomeForecast() {
     const rates = new Map((state.trainerData.clients || []).map((c) => [c.id, athleteSessionRate(c)]));
     const today = todayISO();
-    const wkStart = sundayOfISO(today);
+    const wkStart = today;                     // forward-only, see above
     const wkEnd = addDaysISO(wkStart, 7);      // exclusive
     const fourEnd = addDaysISO(wkStart, 28);   // exclusive
     let day = 0, week = 0, four = 0, unpriced = 0, sessions = 0, fourSessions = 0;
@@ -24052,8 +24101,15 @@
     const by = new Map(); // "YYYY-MM" -> { collected, outstanding, sessions }
     moneyLedger().forEach((e) => {
       const r = by.get(e.monthKey) || { collected: 0, outstanding: 0, sessions: 0 };
-      if (e.paid) r.collected += e.amount; else r.outstanding += e.amount;
-      r.sessions += e.sessions;
+      // Refunded money is neither collected nor outstanding, and its sessions
+      // were not billed. booksRows() has said so since refunds shipped; this
+      // aggregator kept the old `!e.paid` test, so the income card counted
+      // every refund as money still to chase — the opposite of what happened,
+      // one fold above the Books table that had it right.
+      if (!e.refunded) {
+        if (e.paid) r.collected += e.amount; else r.outstanding += e.amount;
+        r.sessions += e.sessions;
+      }
       by.set(e.monthKey, r);
     });
     return by;
@@ -24223,7 +24279,7 @@
 
     const rows = [
       ["Today", money(f.day), f.day ? "" : "nothing booked"],
-      ["This week", money(f.week), f.sessions ? plural(f.sessions, "session") : "nothing booked"],
+      ["Next 7 days", money(f.week), f.sessions ? plural(f.sessions, "session") : "nothing booked"],
       ["Next 4 weeks", money(f.four), f.fourSessions ? plural(f.fourSessions, "session") : "nothing booked"],
       // Said as an estimate, not a total, because it is one: the months already
       // invoiced at face value plus the booked rate over the months that aren't.
@@ -24273,6 +24329,7 @@
     sessionStorage.setItem(KEY_INCOME_SHOWN, incomeShown() ? "0" : "1");
     renderIncomeCard();
     renderBooks();
+    renderMoneyWeekStrip(); // third figure host in the same fold, same eye
   }
 
   // ---- Coach: book an athlete straight off the month grid ----
@@ -41335,6 +41392,13 @@
           // Settle and Bill moved here from the Athletes page, so their labels
           // and badges are painted on arrival here too -- they used to ride on
           // renderClientGrid() and would otherwise never fill in.
+          //
+          // The stepper's month is dropped first. It exists so a missed month
+          // can be caught up inside the sheet, but both pills READ it, so one
+          // trip back to March left them labelled and aimed at March for the
+          // rest of the session -- and the Raise fold beside them still said
+          // September. Arriving at Money means the normal month again.
+          _billMonthKey = null;
           renderMonthGrantBtn();
           renderMonthBillBtn();
           renderMonthFlatBtn();

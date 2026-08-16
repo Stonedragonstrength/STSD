@@ -49,6 +49,13 @@
      so it never collides with a theme's primary. */
   --edited-val: #7dd3fc;
   --edited-val-rgb: 125, 211, 252;
+  /* Amber and green as INK. The channels above stay theme-stable because they
+     carry meaning, but a 400-weight amber that reads beautifully on near-black
+     is 1.5:1 on a white surface — the roster's two tickets were unreadable on
+     that theme. Tints and borders keep using --warn-rgb/--accent-rgb; only the
+     text colour swaps. Same trick as --edited-val above. */
+  --warn-ink: #fbbf24;
+  --accent-ink: #34d399;
   /* Earned-it gold: the food tab's in-the-zone ring, filled macro meters and
      level badge. Theme-stable and deliberately lighter than --warn so "you hit
      it" never reads as the same color as "you went over". */
@@ -183,6 +190,11 @@
   --primary: #1e293b; --primary-bright: #334155; --primary-hover: #0f172a;
   --edited-val: #0369a1; /* sky-300 washes out on white — darker blue ink */
   --edited-val-rgb: 3, 105, 161;
+  /* Same reason, same fix: amber-400 and emerald-400 are ~1.5:1 on these
+     surfaces. Amber-800 and emerald-800 clear 4.5:1 against --surface-2,
+     which matters because both are set in bold at 0.72rem. */
+  --warn-ink: #854d0e;
+  --accent-ink: #065f46;
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.12);
   --shadow: 0 6px 20px rgba(15, 23, 42, 0.15);
   --shadow-lg: 0 20px 50px rgba(15, 23, 42, 0.22);
@@ -1427,7 +1439,7 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   font-size: 0.72rem;
   font-weight: 700;
   font-family: inherit;
-  color: #fbbf24;
+  color: var(--warn-ink);
   border: 1px solid rgba(245, 158, 11, 0.45);
   background: rgba(245, 158, 11, 0.1);
   padding: 0.25em 0.6em;
@@ -3123,13 +3135,13 @@ input.trial-input {
 .cal-oneoff-pill {
   border-color: rgba(245, 158, 11, 0.55);
   background: rgba(245, 158, 11, 0.14);
-  color: #fbbf24;
+  color: var(--warn-ink);
 }
 /* Session-token pill — a paid session was redeemed that day */
 .cal-day-pill-token {
   border-color: rgba(245, 158, 11, 0.55);
   background: rgba(245, 158, 11, 0.14);
-  color: #fbbf24;
+  color: var(--warn-ink);
   margin-top: 2px;
 }
 /* The date row. Cardio rides here, to the RIGHT of the number, because that
@@ -3190,7 +3202,7 @@ input.trial-input {
   gap: 0.3em;
   font-size: 0.78rem;
   font-weight: 700;
-  color: #fbbf24;
+  color: var(--warn-ink);
   border: 1px solid rgba(245, 158, 11, 0.45);
   background: rgba(245, 158, 11, 0.1);
   padding: 0.3em 0.75em;
@@ -3328,7 +3340,7 @@ input.trial-input {
   margin-left: 0.5em;
   font-size: 0.72rem;
   font-weight: 700;
-  color: #fbbf24;
+  color: var(--warn-ink);
   border: 1px solid rgba(245, 158, 11, 0.45);
   background: rgba(245, 158, 11, 0.1);
   padding: 0.15em 0.55em;
@@ -3351,7 +3363,7 @@ input.trial-input {
   gap: 0.3em;
   font-size: 0.72rem;
   font-weight: 700;
-  color: #34d399;
+  color: var(--accent-ink);
   border: 1px solid rgba(16, 185, 129, 0.45);
   background: rgba(16, 185, 129, 0.1);
   padding: 0.15em 0.55em;
@@ -4235,7 +4247,7 @@ input.trial-input {
 /* Already granted this month: the button stays live (a second grant is a
    confirm away) but stops reading as something still owed. */
 #btn-grant-month.is-granted {
-  color: #34d399;
+  color: var(--accent-ink);
   border-color: rgba(16, 185, 129, 0.45);
   background: rgba(16, 185, 129, 0.1);
 }
@@ -4247,12 +4259,12 @@ input.trial-input {
 .month-grant-btn .ln-ico { width: 1.05em; height: 1.05em; vertical-align: 0; }
 .month-grant-n {
   font-size: 0.72rem; font-weight: 800; line-height: 1;
-  color: #fbbf24;
+  color: var(--warn-ink);
   border: 1px solid rgba(245, 158, 11, 0.45);
   background: rgba(245, 158, 11, 0.14);
   padding: 0.2em 0.5em; border-radius: 999px;
 }
-.month-grant-done { color: #34d399; font-weight: 800; }
+.month-grant-done { color: var(--accent-ink); font-weight: 800; }
 .month-grant-btn.is-due { border-color: rgba(245, 158, 11, 0.5); }
 
 /* One row per athlete on a session tier. It is a <label> so the whole row is
@@ -4285,8 +4297,8 @@ input.trial-input {
   border-color: rgba(245, 158, 11, 0.4);
   background: rgba(245, 158, 11, 0.06);
 }
-.mg-row.is-pending .mg-state { color: #fbbf24; }
-.mg-row.is-pending .mg-add { color: #fbbf24; }
+.mg-row.is-pending .mg-state { color: var(--warn-ink); }
+.mg-row.is-pending .mg-add { color: var(--warn-ink); }
 .pkg-pay-btn { white-space: nowrap; }
 .mg-row.is-granted { opacity: 0.55; cursor: default; }
 .mg-row.is-granted:hover { border-color: var(--border); }
@@ -4430,7 +4442,7 @@ input.mg-size { -moz-appearance: textfield; appearance: textfield; }
 .bill-nomatch, .bill-hiding { font-size: 0.78rem; margin: 0.6rem 0 0; }
 .bill-nomatch.hidden, .bill-hiding.hidden { display: none; }
 /* Amber, because it is the one line that changes what Send is about to do. */
-.bill-hiding { color: #fbbf24; }
+.bill-hiding { color: var(--warn-ink); }
 .bill-list {
   display: flex; flex-direction: column; gap: 0.4rem;
   max-height: 46vh; overflow-y: auto; padding-right: 2px;
@@ -4459,7 +4471,7 @@ input.mg-size { -moz-appearance: textfield; appearance: textfield; }
 .bill-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 .bill-name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bill-state { font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
-.bill-row.is-norate .bill-state { color: #fbbf24; }
+.bill-row.is-norate .bill-state { color: var(--warn-ink); }
 .bill-nums { display: flex; align-items: flex-end; gap: 0.4rem; flex: 0 0 auto; }
 .bill-in-lbl {
   display: flex; flex-direction: column; gap: 0.15rem; margin-bottom: 0;
@@ -4563,7 +4575,7 @@ input.bill-in {
 .books-tile.is-in { border-color: rgba(34, 197, 94, 0.35); }
 .books-tile.is-in .books-tile-num { color: #4ade80; }
 .books-tile.is-out { border-color: rgba(245, 158, 11, 0.35); }
-.books-tile.is-out .books-tile-num { color: #fbbf24; }
+.books-tile.is-out .books-tile-num { color: var(--warn-ink); }
 
 /* The shape of a normal month, under the year's totals. Deliberately flatter
    than the tiles above — these are things you look up, not things you glance
@@ -4634,7 +4646,7 @@ input.bill-in {
 .books-ln-what { font-size: 0.66rem; color: var(--muted); white-space: nowrap; }
 .books-ln-amt { font-weight: 800; font-variant-numeric: tabular-nums; }
 .books-ln-amt.is-paid { color: #4ade80; }
-.books-ln-amt.is-due { color: #fbbf24; }
+.books-ln-amt.is-due { color: var(--warn-ink); }
 /* The whole line is a grid of three plus the button, so an entry with no
    invoice behind it still lines its amount up with the ones that have. */
 .books-ln { grid-template-columns: minmax(0, 1fr) auto auto 1.9rem; }
@@ -7149,6 +7161,11 @@ input:focus, textarea:focus, select:focus {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius-lg); padding: 0.55rem 0.75rem 0.6rem;
 }
+/* The strip lives in Books, so it answers to the same eye. Mirrors
+   .income-card.is-hidden .income-figs exactly; only the "Day by day" title is
+   left legible, so a covered strip still says what it is. */
+.mw-strip.is-hidden .mw-figs { filter: blur(8px); user-select: none; }
+.mw-strip.is-hidden .mw-figs * { pointer-events: none; }
 /* On the HOST, not the card: the Money fold rhythm zeroes every fold-child's
    last-child margin (#view-money .pref-fold > * > :last-child), which
    silently ate a margin on .mw-strip — the strip sat flush on the roster.
@@ -7336,6 +7353,13 @@ input:focus, textarea:focus, select:focus {
   padding: 0.75rem; border-radius: var(--radius);
   border: 1px solid var(--border); background: var(--surface-2);
 }
+/* The invoice already out for this month, said before he presses send. */
+.chg-existing {
+  margin: 0 0 0.6rem; padding: 0.45rem 0.6rem;
+  border: 1px solid rgba(var(--warn-rgb), 0.4); border-radius: var(--radius);
+  background: rgba(var(--warn-rgb), 0.08);
+  color: var(--warn-ink); font-size: 0.78rem; font-weight: 600; line-height: 1.4;
+}
 .chg-line { display: flex; align-items: center; gap: 0.6rem; }
 .chg-line > span { flex: 1 1 auto; font-size: 0.78rem; color: var(--text-soft); }
 input.chg-in { flex: 0 0 6.5rem; width: 6.5rem; text-align: right; }
@@ -7522,7 +7546,7 @@ input.billing-link {
   font-size: 0.72rem; font-weight: 800; letter-spacing: 0.03em;
 }
 .invoice-status.is-paid { background: rgba(34, 197, 94, 0.16); color: #4ade80; }
-.invoice-status.is-due { background: rgba(251, 191, 36, 0.16); color: #fbbf24; }
+.invoice-status.is-due { background: rgba(251, 191, 36, 0.16); color: var(--warn-ink); }
 .invoice-note, .invoice-footer {
   margin: 0; font-size: 0.75rem; color: var(--text-soft); line-height: 1.5;
 }
@@ -7550,7 +7574,7 @@ input.billing-link {
   white-space: nowrap;
 }
 .inv-row-st.is-paid { background: rgba(34, 197, 94, 0.16); color: #4ade80; }
-.inv-row-st.is-due { background: rgba(251, 191, 36, 0.16); color: #fbbf24; }
+.inv-row-st.is-due { background: rgba(251, 191, 36, 0.16); color: var(--warn-ink); }
 /* The coach's own footage, for lifts the still library has nothing for. Sits at
    the top of the demo picker, because it is the answer when the search below it
    comes back empty. */
@@ -8508,9 +8532,9 @@ input.pyr-weight-input { -moz-appearance: textfield; appearance: textfield; }
   border-left: 1px solid var(--border);
   color: #d9a441;
 }
-.coach-week-tab-oneoff:hover { color: #fbbf24; }
+.coach-week-tab-oneoff:hover { color: var(--warn-ink); }
 .coach-week-tab-oneoff.active {
-  color: #fbbf24;
+  color: var(--warn-ink);
   border-bottom-color: #f59e0b;
 }
 .coach-week-tab-count {
@@ -8519,7 +8543,7 @@ input.pyr-weight-input { -moz-appearance: textfield; appearance: textfield; }
   padding: 0.05em 0.4em;
   border-radius: 999px;
   background: rgba(245, 158, 11, 0.16);
-  color: #fbbf24;
+  color: var(--warn-ink);
   font-size: 0.7rem;
   font-weight: 700;
   line-height: 1.5;
@@ -9237,7 +9261,7 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 .ex-expand-btn:hover { opacity: 1; color: var(--primary); }
 .ex-del-btn:hover { opacity: 1; color: var(--danger); }
 .ex-expand-btn.active { opacity: 1; color: var(--primary); }
-.ex-save-btn { flex-shrink: 0; opacity: 0.55; color: #34d399; transition: opacity 0.15s; }
+.ex-save-btn { flex-shrink: 0; opacity: 0.55; color: var(--accent-ink); transition: opacity 0.15s; }
 .ex-save-btn:hover { opacity: 1; }
 .ex-edit-btn { flex-shrink: 0; opacity: 0.45; color: var(--primary-bright); transition: opacity 0.15s; }
 .ex-edit-btn:hover { opacity: 1; }
@@ -9952,7 +9976,7 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 .sr-val { font-size: 1.15rem; font-weight: 900; color: var(--primary-bright); line-height: 1; font-variant-numeric: tabular-nums; text-shadow: 0 0 12px rgba(var(--primary-bright-rgb), 0.35); }
 .sr-unit { font-size: 0.62rem; font-weight: 700; color: var(--text-soft); margin-left: 0.15em; }
 .sr-trend { font-size: 0.72rem; font-weight: 800; margin-left: 0.35em; vertical-align: middle; }
-.sr-trend.up { color: #34d399; }
+.sr-trend.up { color: var(--accent-ink); }
 .sr-trend.down { color: var(--warn); }
 .sr-trend.neutral { color: var(--text-soft); }
 .ov-recap-actions { display: flex; align-items: center; gap: 0.3em; }
@@ -11604,7 +11628,7 @@ body.live-log-mode #screen-client .header-right #sync-chip-athlete { display: in
 .oneoff-summary::-webkit-details-marker { display: none; }
 .oneoff-summary:hover { background: rgba(245, 158, 11, 0.06); }
 .oneoff-date {
-  font-weight: 700; font-size: 0.85rem; color: #fbbf24;
+  font-weight: 700; font-size: 0.85rem; color: var(--warn-ink);
   letter-spacing: 0.02em; white-space: nowrap;
 }
 .oneoff-name { font-weight: 600; }
@@ -11625,7 +11649,7 @@ body.live-log-mode #screen-client .header-right #sync-chip-athlete { display: in
 .oneoff-athlete-section { margin-top: 1.5rem; }
 .oneoff-workout-card { border-color: rgba(245, 158, 11, 0.35); }
 .oneoff-workout-card:hover { border-color: rgba(245, 158, 11, 0.6); }
-.oneoff-workout-card .workout-card-icon { color: #fbbf24; }
+.oneoff-workout-card .workout-card-icon { color: var(--warn-ink); }
 
 /* ============ Bug reports ============ */
 #bug-desc { width: 100%; margin-top: 0.6rem; }
@@ -13107,7 +13131,7 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
    between blocks on the training page; at the top of a card that is a gap
    above the title, so it is zeroed here. */
 .food-week-card .wp-head { margin: 0 0 0.7rem; }
-.wp-head-coach .wp-head-title { color: #fbbf24; }
+.wp-head-coach .wp-head-title { color: var(--warn-ink); }
 .wp-head-own .wp-head-title { color: var(--primary-bright); }
 .wp-head-cardio .wp-head-title { color: var(--accent); }
 
@@ -13246,7 +13270,7 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
   background: rgba(255, 255, 255, 0.09);
   color: inherit;
 }
-.week-chip-special.is-coach { color: #fbbf24; }
+.week-chip-special.is-coach { color: var(--warn-ink); }
 .week-chip-special.is-own { color: var(--primary-bright); }
 .week-chip-special.is-coach:hover { color: #fcd34d; }
 .week-chip-special.is-own:hover { color: var(--text); }
@@ -14538,11 +14562,11 @@ body.scroll-locked {
 .income-tile.is-in { border-color: rgba(34, 197, 94, 0.35); }
 .income-tile.is-in .income-tile-num { color: #4ade80; }
 .income-tile.is-out { border-color: rgba(245, 158, 11, 0.35); }
-.income-tile.is-out .income-tile-num { color: #fbbf24; }
+.income-tile.is-out .income-tile-num { color: var(--warn-ink); }
 .income-trend {
   margin: 0.45em 0 0; font-size: 0.68rem; font-weight: 700; color: #4ade80;
 }
-.income-trend.is-down { color: #fbbf24; }
+.income-trend.is-down { color: var(--warn-ink); }
 /* The line that turns the card from one list into two. */
 .income-group-lbl {
   margin: 0.75em 0 0.1em; padding-top: 0.55em; border-top: 1px solid var(--border);
@@ -14895,7 +14919,7 @@ body.scroll-locked {
   display: inline-flex; align-items: center; gap: 0.25em;
   flex-shrink: 0;
   font-size: 0.7rem; font-weight: 700;
-  color: #fbbf24;
+  color: var(--warn-ink);
   border: 1px solid rgba(245, 158, 11, 0.45);
   background: rgba(245, 158, 11, 0.1);
   padding: 0.1em 0.5em;
@@ -15466,7 +15490,7 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
 }
 /* Same three steps the Anatomy chips use: a gap runs warm, solid and plenty
    run bright, and the middle band stays quiet. */
-.build-chip[data-cov="0"] { border-color: rgba(217, 119, 6, 0.5); color: #fbbf24; }
+.build-chip[data-cov="0"] { border-color: rgba(217, 119, 6, 0.5); color: var(--warn-ink); }
 .build-chip[data-cov="2"], .build-chip[data-cov="3"] {
   border-color: rgba(var(--primary-bright-rgb), 0.5); color: var(--primary-bright);
 }
@@ -15791,7 +15815,7 @@ input.mem-in { width: 100%; font-variant-numeric: tabular-nums; }
 .books-ln-amt.is-back { color: #f87171; }
 /* How long an invoice has sat there. Amber at a month, red at two — the point
    is that the number changes colour before he has to think about it. */
-.books-ln-what.is-due { color: #fbbf24; }
+.books-ln-what.is-due { color: var(--warn-ink); }
 .books-ln-what.is-old { color: #f87171; font-weight: 700; }
 
 /* ============ Tax estimate ============
@@ -15816,7 +15840,7 @@ input.mem-in { width: 100%; font-variant-numeric: tabular-nums; }
 .tax-ln.is-minus strong { color: var(--muted); }
 .tax-ln.is-sum { font-weight: 700; }
 .tax-ln.is-sum strong { color: #4ade80; font-size: 1.05rem; }
-.tax-ln.is-total strong { color: #fbbf24; font-size: 1.25rem; font-weight: 900; }
+.tax-ln.is-total strong { color: var(--warn-ink); font-size: 1.25rem; font-weight: 900; }
 input.tax-in { width: 7rem; text-align: right; font-variant-numeric: tabular-nums; }
 input.tax-in.is-rate { width: 4.2rem; margin: 0 0.2em 0 0.4em; }
 .tax-check { display: flex; align-items: center; gap: 0.5em; padding: 0.4em 0; font-size: 0.85rem; }
@@ -15854,7 +15878,7 @@ input.tax-in.is-rate { width: 4.2rem; margin: 0 0.2em 0 0.4em; }
   align-items: center; gap: 0.5rem; margin-bottom: 0.35rem;
 }
 .tax-edit-x { font-size: 0.7rem; color: var(--muted); white-space: nowrap; }
-.mem-warn { color: #fbbf24; }
+.mem-warn { color: var(--warn-ink); }
 
 /* The books' breakdown switch: one year, two cuts. */
 .books-cut { display: flex; gap: 0.3rem; margin-bottom: 0.5rem; }
@@ -15866,7 +15890,7 @@ input.tax-in.is-rate { width: 4.2rem; margin: 0 0.2em 0 0.4em; }
   text-transform: uppercase; letter-spacing: 0.06em;
 }
 .books-cut-btn.is-on { color: var(--primary-bright); border-color: var(--primary-bright); background: var(--primary-soft); }
-.books-tier-due { color: #fbbf24; font-weight: 700; font-size: 0.7rem; }
+.books-tier-due { color: var(--warn-ink); font-weight: 700; font-size: 0.7rem; }
 
 /* ============ Credit for unused sessions ============
    Sits with the other two session switches. Greyed rather than hidden when
@@ -16510,4 +16534,37 @@ input.credit-cap:disabled { opacity: 0.4; }
      a desktop viewport reports pointer:fine even at 375px, so this block is
      inert in every harness here and can only be checked by reading it. */
   #fb-jump .a-shelf-btn { min-height: 44px; }
+}
+
+/* ── Money on a phone ──────────────────────────────────────────────────────
+   This page shipped with no narrow rules at all: a 30px eye button and four
+   0.6rem label classes went to the phone exactly as drawn for a desktop, on
+   the one screen he most often reads one-handed. Deliberately max-width and
+   not (pointer: coarse) — a 390px desktop viewport reports pointer:fine, so a
+   coarse block is inert in every harness here and could only be checked by
+   reading it. At the END of the file on purpose: every rule below overrides a
+   base further up, and an override placed before its base silently loses. */
+@media (max-width: 720px) {
+  /* One head action should not become a full-width banner. The stretch rule
+     up in the roster block (.library-head-actions .btn { flex: 1 }) is right
+     when there are three buttons and wrong when there is one — here it made
+     "Session log" the widest element on the page, above the fold, on a page
+     whose actual job is two folds below it. */
+  #view-money .library-head-actions { width: auto; }
+  #view-money .library-head-actions .btn { flex: 0 0 auto; }
+
+  /* The privacy toggle is the most-tapped control on the page and was the
+     smallest: 30px against the app's own 34/42 floors. */
+  #view-money .income-eye { width: 40px; height: 40px; }
+  #view-money .income-eye svg { width: 18px; height: 18px; }
+
+  /* Tile captions carry the SCOPE of the figure above them ("Aug owed" vs
+     "2026 billed"), so they are not decoration — at 0.6rem uppercase they
+     were the first thing to become unreadable. */
+  #view-money .income-tile-lbl,
+  #view-money .books-tile-lbl,
+  #view-money .mw-dow { font-size: 0.68rem; }
+
+  /* Day columns get a real tap target; the strip scrolls, so width is cheap. */
+  #view-money .mw-day { min-height: 44px; }
 }
