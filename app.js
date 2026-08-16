@@ -35907,7 +35907,12 @@
     if (to.every((n, i) => Math.abs(n - from[i]) < 0.005)) return;  // nothing moved
     const hull = svg.querySelector(".sf-hull");
     const glow = svg.querySelector(".sf-glow");
-    const nodes = $(".sf-node", svg);
+    // Scoped query, not the `$` helper: it takes ONE argument, so passing the
+    // svg as a second did nothing — it searched the whole document and returned
+    // a single Element, whose .forEach threw on the first animation frame, and
+    // every frame after, leaving the hull moving and the five nodes pinned to
+    // last week's shape. See tests/dom-helper-arity.test.js.
+    const nodes = svg.querySelectorAll(".sf-node");
     let t0 = null;
     const step = (now) => {
       if (!svg.isConnected) return;
@@ -36046,7 +36051,7 @@
     const detail = host.querySelector(".sf-ladder-detail");
     const showTile = (i) => {
       const t = tiles[i]; if (!t || !detail) return;
-      $(".hoard-tile", host).forEach((b, n) => b.classList.toggle("sel", n === i));
+      host.querySelectorAll(".hoard-tile").forEach((b, n) => b.classList.toggle("sel", n === i));
       detail.style.setProperty("--step-color", t.look.color);
       let body;
       if (t.state === "on") {
@@ -36065,7 +36070,9 @@
     const wireCase = () => {
       if (wired) return;
       wired = true;
-      $(".hoard-tile", host).forEach((b) => b.addEventListener("click", (e) => {
+      // Same fix as showTile above: `$` takes one argument, so this threw the
+      // moment the ladder was opened and no tile was ever wired.
+      host.querySelectorAll(".hoard-tile").forEach((b) => b.addEventListener("click", (e) => {
         // The frame is a <summary>, so a tile click would toggle the fold shut
         // under the athlete's finger on its way up.
         e.preventDefault();
