@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=age3" />
+  <link rel="stylesheet" href="styles.css?v=cyc3" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -1210,6 +1210,11 @@
       <div class="tab-panel active" data-ctab-panel="overview">
         <div id="overview-greeting"></div>
         <div id="ov-bulletin" class="ov-messages"></div>
+        <!-- The one place the app ASKS about the cycle. Empty except in the few
+             days around a predicted start, empty once anything is logged for
+             that window, and dismissible. Athlete-only and computed on the
+             device — no server ever reads cycle_logs for this. -->
+        <div id="ov-cycle-nudge"></div>
         <div id="overview-hero"></div>
         <!-- The coach thread used to be a card here. It is the 💬 pill in the
              header now; this host only carries the read-only last line a coach
@@ -1639,7 +1644,7 @@
   <script src="exercise-equipment.js?v=plyo1"></script>
   <script src="exercise-roles.js?v=beg1"></script>
   <script src="exercise-stats.js?v=st2"></script>
-  <script src="app.js?v=age3"></script>
+  <script src="app.js?v=cyc3"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

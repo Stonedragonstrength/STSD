@@ -3407,6 +3407,11 @@
     currentTab: "profile",
     coachCal: { year: 0, month: 0 },   // 0-indexed month
     athleteCal: { year: 0, month: 0 },
+    // Which month the cycle calendar is showing. Set on first paint from
+    // today, then only by its own ‹ › — it deliberately does NOT follow the
+    // sessions calendar, because scrolling back through periods and scrolling
+    // back through bookings are different errands.
+    cycleCal: { year: 0, month: 0 },
   };
 
   // ensure existing clients have new fields
@@ -27378,8 +27383,11 @@
       hint: "Only you. Your coach sees nothing at all." },
     { id: "phase",   emoji: "🌙", label: "Phase only",
       hint: "Your coach sees the day and the phase. Never flow, symptoms or notes." },
+    // "and anything you write down" was a promise with nothing behind it: the
+    // notes column has never had a UI, so an athlete could pick this level and
+    // share strictly nothing extra. The copy now says what the level does.
     { id: "all",     emoji: "🤝", label: "Everything",
-      hint: "Your coach also sees flow and anything you write down." },
+      hint: "Your coach also sees how heavy it was." },
   ];
   const CYCLE_PHASES = {
     period:     { id: "period",     emoji: "🩸", label: "Period",      color: "#e0566b" },
@@ -27435,6 +27443,76 @@
       .slice(-3);
     if (!spans.length) return CYCLE_DEFAULT_BLEED;
     return Math.round(spans.reduce((a, b) => a + b, 0) / spans.length);
+  }
+  // The last day of a bleed. Anything the calendar wrote carries a real `end`;
+  // a record inherited from the old two-button card, or written by a cached
+  // PWA still running it, may not. An open record is read here exactly the way
+  // cyclePhaseOn and cycleBands already read one — the learned bleed length,
+  // never "until today" — so a period nobody closed in June cannot paint
+  // across the whole summer.
+  function cycleBleedEnd(rec, list) {
+    if (!rec) return null;
+    if (rec.end && rec.end >= rec.start) return rec.end;
+    return addDaysISO(rec.start, Math.max(1, cycleBleedLength(list)) - 1);
+  }
+  // Every day the athlete is bleeding, as a Set of ISO dates. This is what the
+  // month grid paints red, and it is the only thing that decides whether a tap
+  // adds a day or takes one away.
+  function cycleBleedDays(list) {
+    const out = new Set();
+    cycleSortedPeriods(list).forEach((p) => {
+      const end = cycleBleedEnd(p, list);
+      // A guard, not a rule: bad data should render short, never hang the tab.
+      for (let d = p.start, n = 0; d <= end && n < 400; d = addDaysISO(d, 1), n++) out.add(d);
+    });
+    return out;
+  }
+  // Add or remove one day, and hand back a NEW periods list.
+  //
+  // This is the calendar's entire write path. There is no "period started" and
+  // no "it's ended" any more — the days that got tapped ARE the period — so
+  // `end` is always a real date, and the states that used to degrade in
+  // silence stop being reachable: no record left open forever, no 5-day guess
+  // standing in for a length nobody recorded, no phantom band on the body-comp
+  // chart, and no 60-day bleed from tapping "it's ended" two months late.
+  //
+  // Shape is untouched: { id, start, end, flow }, exactly as before, so the
+  // chart bands, the header chip, the appetite signal and the coach's redacted
+  // view all keep reading what they already read. No migration, no new field.
+  function cycleToggleDay(list, iso) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || "")) return list;
+    // Close every open record up front. The arithmetic below only holds on
+    // closed spans, and extending an `end: null` would grow it from a date
+    // that was never written down.
+    const spans = cycleSortedPeriods(list).map((p) => ({ ...p, end: cycleBleedEnd(p, list) }));
+    const byStart = (a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0);
+    const hit = spans.find((p) => iso >= p.start && iso <= p.end);
+
+    if (hit) {
+      const rest = spans.filter((p) => p !== hit);
+      if (hit.start === hit.end) return rest;                    // that day WAS the period
+      if (iso === hit.start) return [...rest, { ...hit, start: addDaysISO(iso, 1) }].sort(byStart);
+      if (iso === hit.end) return [...rest, { ...hit, end: addDaysISO(iso, -1) }].sort(byStart);
+      // A day out of the middle leaves two runs, and the second has to be a
+      // genuinely new record: sharing an id would keep them one period to
+      // everything downstream, including the cycle-length series.
+      return [...rest,
+        { ...hit, end: addDaysISO(iso, -1) },
+        { ...hit, id: uid(), start: addDaysISO(iso, 1) },
+      ].sort(byStart);
+    }
+
+    // Not a bleed day yet. Grow whichever neighbour it touches — and when it
+    // touches both, the gap it just filled makes them one period.
+    const before = spans.find((p) => p.end === addDaysISO(iso, -1));
+    const after = spans.find((p) => p.start === addDaysISO(iso, 1));
+    if (before && after) {
+      return [...spans.filter((p) => p !== before && p !== after),
+        { ...before, end: after.end }].sort(byStart);
+    }
+    if (before) return [...spans.filter((p) => p !== before), { ...before, end: iso }].sort(byStart);
+    if (after) return [...spans.filter((p) => p !== after), { ...after, start: iso }].sort(byStart);
+    return [...spans, { id: uid(), start: iso, end: iso, flow: null }].sort(byStart);
   }
   // Where a date sits in the cycle: day number, phase, and how long the phase
   // model thinks the cycle is. null when there is nothing to measure from.
@@ -27544,30 +27622,17 @@
   // survive on a shared device into somebody else's session.
   function forgetCycleLocally() {
     _cycle = null;
-    try { localStorage.removeItem(KEY_CYCLE); } catch (e) {}
+    // The nudge's dismissal is a separate key, so "forget everything" has to
+    // name it too or a stale prediction date outlives the data it came from.
+    try { localStorage.removeItem(KEY_CYCLE); localStorage.removeItem(KEY_CYCLE_NUDGE); } catch (e) {}
   }
-  function cycleLogStart(dateISOv) {
-    const c = cycleState();
-    const d = dateISOv || todayISO();
-    if (c.periods.some((p) => p.start === d)) return false;
-    c.periods.push({ id: uid(), start: d, end: null, flow: null });
-    saveCycle();
-    return true;
-  }
-  function cycleCurrentPeriod() {
-    const c = cycleState();
-    const open = cycleSortedPeriods(c.periods).filter((p) => !p.end);
-    return open.length ? open[open.length - 1] : null;
-  }
-  function cycleLogEnd(dateISOv) {
-    const p = cycleCurrentPeriod();
-    if (!p) return false;
-    const d = dateISOv || todayISO();
-    if (d < p.start) return false;
-    p.end = d;
-    saveCycle();
-    return true;
-  }
+  // cycleLogStart / cycleCurrentPeriod / cycleLogEnd were the two-event model:
+  // "Period started" pushed a record with `end: null`, and a second tap days
+  // later was the only thing that ever closed it. Both are gone. The calendar
+  // writes spans through cycleToggleDay, so a record is never open, and the
+  // 60-day bleed cycleLogEnd would happily stamp (it only checked `d >= start`)
+  // is no longer expressible. Records inherited from that model, and any a
+  // cached PWA is still writing, are read through cycleBleedEnd().
 
   // -------- Cycle: the chip both sides read --------
   // Deliberately says only where they are. No advice, no verdict, no colour
@@ -27595,7 +27660,6 @@
     const c = cycleState();
     const today = todayISO();
     const info = cyclePhaseOn(c.periods, today);
-    const open = cycleCurrentPeriod();
     const share = CYCLE_SHARES.find((s) => s.id === c.share) || CYCLE_SHARES[0];
     // Computed before the branch on purpose: a gap long enough to fall off the
     // end of cyclePhaseOn (over ~4 months) is the case this note exists FOR,
@@ -27612,11 +27676,11 @@
             <span class="cyc-share ${share.id}" title="${escapeHtml(share.hint)}">${share.emoji} ${escapeHtml(share.label)}</span>
           </div>
           <p class="cyc-empty">${ever
-            ? "It's been long enough that there's no current cycle to place you in. Log the next start and it picks up from there."
-            : "Tap the day your period starts. That one tap is enough to work out your cycle length, where you are in it, and roughly when the next one is due."}</p>
-          ${cycleLogRowHtml(open, today)}
+            ? "It's been long enough that there's no current cycle to place you in. Tap the days of the next one and it picks up from there."
+            : "Tap the days you bleed. That's the whole thing — from those taps it works out your cycle length, where you are in it, and roughly when the next one is due."}</p>
+          ${cycleTodayRowHtml(c, today)}
           ${concern ? cycleConcernHtml(concern) : ""}
-          ${cycleHistoryHtml(c.periods)}
+          ${cycleCalendarHtml(c, today)}
         </div>`;
       wireCycleCard();
       return;
@@ -27626,6 +27690,11 @@
     const til = next ? cycleDaysBetween(today, next) : null;
     const avg = cycleAvgLength(c.periods);
     // The track is the whole cycle laid end to end, with today's marker on it.
+    // NOTE the +2 where cyclePhaseOn uses +1: the engine resolves the tie in
+    // favour of the period (`day <= bleed` is tested first), but the segments
+    // have no such ordering, so +1 drew the ovulation band starting ON the
+    // last bleed day. Classification is untouched — this is only where the
+    // paint stops.
     const seg = (from, to, kind) => {
       const a = Math.max(0, Math.min(1, (from - 1) / info.len));
       const b = Math.max(0, Math.min(1, to / info.len));
@@ -27633,7 +27702,7 @@
         ? `<span class="cyc-seg ${kind}" style="left:${(a * 100).toFixed(2)}%;width:${((b - a) * 100).toFixed(2)}%"></span>`
         : "";
     };
-    const ov = Math.max(info.bleed + 1, info.len - 14);
+    const ov = Math.max(info.bleed + 2, info.len - 14);
     const mark = Math.max(0, Math.min(1, (info.day - 0.5) / info.len)) * 100;
 
     host.innerHTML = `
@@ -27646,7 +27715,8 @@
           </span>
           <span class="cyc-share ${share.id}" title="${escapeHtml(share.hint)}">${share.emoji} ${escapeHtml(share.label)}</span>
         </div>
-        <div class="cyc-track" aria-hidden="true">
+        <div class="cyc-track">
+          <span class="sr-only">Day ${info.day} of about ${info.len} — ${escapeHtml(info.label.toLowerCase())}</span>
           ${seg(1, info.bleed, "period")}
           ${seg(info.bleed + 1, ov - 2, "follicular")}
           ${seg(ov - 1, ov + 1, "ovulation")}
@@ -27659,9 +27729,9 @@
           <span class="cyc-fact"><b>${avg ? avg + " days" : "—"}</b><span>${avg ? "your average cycle" : "cycle length"}</span></span>
         </div>
         ${info.learning ? `<p class="cyc-learning">Still learning. Predictions get real once a couple of cycles are logged. Irregular cycles are common in athletes, so a date here is never a promise.</p>` : ""}
-        ${cycleLogRowHtml(open, today)}
+        ${cycleTodayRowHtml(c, today)}
         ${concern ? cycleConcernHtml(concern) : ""}
-        ${cycleHistoryHtml(c.periods)}
+        ${cycleCalendarHtml(c, today)}
       </div>`;
     wireCycleCard();
   }
@@ -27676,81 +27746,222 @@
         <p class="cyc-concern-sub">This note is yours alone. Your coach is never told about it, whatever your sharing is set to.</p>
       </div>`;
   }
-  // One row: the date, and the two things there are to say about it.
-  function cycleLogRowHtml(open, today) {
+  // The one-tap row, for the day she is actually living through. Everything
+  // else on the card is a record; this is the ask. When it's on, the flow
+  // chips take its place — same row, same second, rather than three taps into
+  // a fold that used to snap shut under the finger.
+  function cycleTodayRowHtml(c, today) {
+    const on = cycleBleedDays(c.periods).has(today);
+    const rec = on ? cycleSortedPeriods(c.periods).find((p) => today >= p.start && today <= cycleBleedEnd(p, c.periods)) : null;
     return `
-      <div class="cyc-log">
-        <label class="cyc-date" title="Which day?">
-          <span class="cyc-date-txt">📅 <span id="cyc-date-label">Today</span></span>
-          <input type="date" id="cyc-date" value="${escapeHtml(today)}" max="${escapeHtml(today)}" aria-label="Date" />
-        </label>
-        <button type="button" class="btn btn-primary btn-sm slim-btn" id="btn-cyc-start">🩸 Period started</button>
-        ${open ? `<button type="button" class="btn btn-ghost btn-sm slim-btn" id="btn-cyc-end">✓ It's ended</button>` : ""}
+      <div class="cyc-today">
+        <button type="button" class="cyc-drop${on ? " on" : ""}" id="btn-cyc-today"
+          aria-pressed="${on}" aria-label="${on ? "Bleeding today — tap to undo" : "Mark today as a bleed day"}">
+          <span>${on ? "✓" : "🩸"}</span>
+        </button>
+        <span class="cyc-today-text">
+          <span class="cyc-today-l1">${on ? "Bleeding today" : "Bleeding today?"}</span>
+          ${on
+            ? `<span class="cyc-flows">${CYCLE_FLOWS.map((f) =>
+                `<button type="button" class="cyc-flow${rec?.flow === f.id ? " on" : ""}" data-flow="${f.id}"
+                   aria-pressed="${rec?.flow === f.id}">${escapeHtml(f.label)}</button>`).join("")}</span>`
+            : `<span class="cyc-today-l2">Tap the drop — or any day below</span>`}
+        </span>
       </div>`;
   }
-  function cycleHistoryHtml(list) {
-    const sorted = cycleSortedPeriods(list).slice(-6).reverse();
-    if (!sorted.length) return "";
-    const starts = cycleStarts(list);
-    const rows = sorted.map((p) => {
-      const i = starts.indexOf(p.start);
-      const nextStart = starts[i + 1];
-      const len = nextStart ? cycleDaysBetween(p.start, nextStart) : null;
-      const bleed = p.end && p.end >= p.start ? cycleDaysBetween(p.start, p.end) + 1 : null;
-      const when = new Date(p.start + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
-      return `<div class="cyc-row" data-pid="${escapeHtml(p.id)}">
-        <span class="cyc-row-date">${escapeHtml(when)}</span>
-        <span class="cyc-row-meta">${bleed ? escapeHtml(bleed + (bleed === 1 ? " day" : " days")) : "<i>open</i>"}${len ? ` · ${escapeHtml(String(len))}-day cycle` : ""}</span>
-        <span class="cyc-row-flow">${CYCLE_FLOWS.map((f) =>
-          `<button type="button" class="cyc-flow${p.flow === f.id ? " on" : ""}" data-flow="${f.id}" title="${escapeHtml(f.label)} flow">${escapeHtml(f.label[0])}</button>`).join("")}</span>
-        <button type="button" class="cyc-row-del" title="Delete this entry" aria-label="Delete">✕</button>
-      </div>`;
-    }).join("");
-    return `<details class="cyc-hist"><summary>Recent periods</summary><div class="cyc-rows">${rows}</div></details>`;
+  // The month, and the whole history with it. Tapping a square is the only way
+  // to write a period now, which is why there is no start button, no end
+  // button, no date input and no delete: a mistap is undone by tapping the
+  // same square again.
+  function cycleCalendarHtml(c, today) {
+    if (!state.cycleCal || !state.cycleCal.month && !state.cycleCal.year) {
+      const n = new Date(today + "T12:00:00");
+      state.cycleCal = { year: n.getFullYear(), month: n.getMonth() };
+    }
+    const { year, month } = state.cycleCal;
+    const nowY = new Date(today + "T12:00:00").getFullYear();
+    const nowM = new Date(today + "T12:00:00").getMonth();
+    const onThisMonth = year === nowY && month === nowM;
+    return `
+      <div class="cyc-cal-nav">
+        <button type="button" class="cyc-navbtn" id="btn-cyc-prev" aria-label="Previous month">‹</button>
+        <span class="cyc-cal-label" aria-live="polite">${MONTH_NAMES[month]} ${year}</span>
+        ${onThisMonth ? "" : `<button type="button" class="cyc-today-btn" id="btn-cyc-thismonth">Today</button>`}
+        <button type="button" class="cyc-navbtn" id="btn-cyc-next" aria-label="Next month">›</button>
+      </div>
+      <div class="cyc-cal" id="cyc-cal"></div>
+      <p class="cyc-cal-hint">Tap any day to mark it. Tap it again to undo.</p>`;
+  }
+  // Painted rather than templated, so the 42 cells go in as real buttons with
+  // their own listeners instead of a string that has to be re-parsed.
+  function paintCycleCalendar(c, today) {
+    const grid = $("#cyc-cal");
+    if (!grid) return;
+    const { year, month } = state.cycleCal;
+    const cells = startMonthGrid(grid, year, month);
+    const bleeding = cycleBleedDays(c.periods);
+    const next = cycleNextStart(c.periods);
+    const bleedLen = cycleBleedLength(c.periods);
+    // The predicted run is drawn dashed and never filled: it is arithmetic off
+    // the last few cycles, and irregular cycles are common in athletes.
+    const predicted = new Set();
+    if (next) for (let i = 0; i < bleedLen; i++) predicted.add(addDaysISO(next, i));
+
+    cells.forEach((d) => {
+      const iso = dateISO(d);
+      const inMonth = d.getMonth() === month;
+      const isBleed = bleeding.has(iso);
+      const el = document.createElement(inMonth ? "button" : "div");
+      const cls = ["cyc-cell"];
+      if (!inMonth) cls.push("outside");
+      if (isBleed) cls.push("bleed");
+      else if (predicted.has(iso)) cls.push("pred");
+      if (inMonth && !isBleed) {
+        // Phase is stated, never shouted — a thin bar under the number, in the
+        // phase's own hue. It says where she is. It does not say what to train.
+        const ph = cyclePhaseOn(c.periods, iso);
+        if (ph && ph.id !== "period") cls.push("ph-" + ph.id);
+      }
+      if (iso === today) cls.push("cyc-today-cell");
+      else if (iso > today) cls.push("future");
+      el.className = cls.join(" ");
+      el.textContent = d.getDate();
+      if (inMonth) {
+        el.type = "button";
+        el.dataset.iso = iso;
+        el.setAttribute("aria-pressed", String(isBleed));
+        const when = d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+        el.setAttribute("aria-label", `${when}${isBleed ? " — bleeding, tap to undo" : ""}`);
+      }
+      grid.appendChild(el);
+    });
   }
   function wireCycleCard() {
-    const dateEl = $("#cyc-date");
-    const label = $("#cyc-date-label");
-    const pickedDate = () => dateEl?.value || todayISO();
-    dateEl?.addEventListener("change", () => {
-      if (!label) return;
-      const v = pickedDate();
-      label.textContent = v === todayISO()
-        ? "Today"
-        : new Date(v + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
-    });
-    $("#btn-cyc-start")?.addEventListener("click", () => {
-      if (!cycleLogStart(pickedDate())) { toast("Already logged for that day"); return; }
+    const c = cycleState();
+    const today = todayISO();
+    paintCycleCalendar(c, today);
+
+    const toggle = (iso) => {
+      const wasOn = cycleBleedDays(cycleState().periods).has(iso);
+      cycleState().periods = cycleToggleDay(cycleState().periods, iso);
+      saveCycle();
       afterCycleChange();
-      toast("Logged 🩸");
+      if (iso === today) toast(wasOn ? "Cleared" : "Logged 🩸");
+    };
+
+    $("#btn-cyc-today")?.addEventListener("click", () => toggle(today));
+
+    $$("#cyc-cal .cyc-cell[data-iso]").forEach((el) => {
+      el.addEventListener("click", () => toggle(el.dataset.iso));
     });
-    $("#btn-cyc-end")?.addEventListener("click", () => {
-      if (!cycleLogEnd(pickedDate())) { toast("Pick a day on or after it started"); return; }
+
+    // Flow rides the period the day belongs to. Tapping the one already set
+    // clears it, the same as every other toggle on this card.
+    $$("#prog-cycle .cyc-flows .cyc-flow").forEach((b) => b.addEventListener("click", () => {
+      const st = cycleState();
+      const rec = cycleSortedPeriods(st.periods).find((p) => today >= p.start && today <= cycleBleedEnd(p, st.periods));
+      if (!rec) return;
+      const live = st.periods.find((p) => p.id === rec.id);
+      if (!live) return;
+      live.flow = live.flow === b.dataset.flow ? null : b.dataset.flow;
+      saveCycle();
       afterCycleChange();
-      toast("Noted ✓");
-    });
-    $$("#prog-cycle .cyc-row").forEach((row) => {
-      const p = cycleState().periods.find((x) => x.id === row.dataset.pid);
-      if (!p) return;
-      row.querySelectorAll(".cyc-flow").forEach((b) => b.addEventListener("click", () => {
-        p.flow = p.flow === b.dataset.flow ? null : b.dataset.flow;
-        saveCycle();
-        afterCycleChange();
-      }));
-      row.querySelector(".cyc-row-del")?.addEventListener("click", () => {
-        if (!window.confirm("Delete this entry?")) return;
-        const c = cycleState();
-        c.periods = c.periods.filter((x) => x.id !== p.id);
-        saveCycle();
-        afterCycleChange();
-      });
+    }));
+
+    const step = (delta) => {
+      let { year, month } = state.cycleCal;
+      month += delta;
+      if (month < 0) { month = 11; year--; }
+      if (month > 11) { month = 0; year++; }
+      state.cycleCal = { year, month };
+      renderCycleCard();
+    };
+    $("#btn-cyc-prev")?.addEventListener("click", () => step(-1));
+    $("#btn-cyc-next")?.addEventListener("click", () => step(1));
+    $("#btn-cyc-thismonth")?.addEventListener("click", () => {
+      const n = new Date();
+      state.cycleCal = { year: n.getFullYear(), month: n.getMonth() };
+      renderCycleCard();
     });
   }
   // Anything that moves a period date moves the phase bands on the body-comp
-  // charts and the chip on the workout header, so they redraw together.
+  // charts, the chip on the workout header and the Overview nudge, so they
+  // redraw together.
   function afterCycleChange() {
     renderAthleteBodyComp();
+    renderCycleNudge();
     if (state.workoutView?.mode === "detail") renderWorkoutDetailUI({ keepScroll: true });
+  }
+
+  // -------- Cycle: the one prompt --------
+  // The old card was purely pull: the athlete had to remember, navigate to
+  // Diet and Comp, scroll past the food log, and land on the right day. This
+  // is the push, and it is deliberately the smallest one that works — a single
+  // row, only in the days a period is actually expected, gone the moment
+  // anything is logged for that window, and dismissible for good.
+  //
+  // It never leaves the phone. No Edge Function reads cycle_logs, no push
+  // notification names it, and nothing about it reaches the coach at any
+  // sharing level — a notification on a locked screen in a gym is exactly the
+  // leak this feature's whole design exists to prevent.
+  const CYCLE_NUDGE_BEFORE = 2;   // days either side of the prediction
+  const CYCLE_NUDGE_AFTER = 3;
+  // Deliberately NOT a field on the cycle object. saveMyCycle maps four named
+  // columns, so a fifth would be dropped on write and wiped from memory by the
+  // next pullCycle() — the nudge would quietly return on every other device.
+  // Keeping it in its own local key also keeps one more fact about her cycle
+  // off the server, which is the direction this feature always errs in.
+  const KEY_CYCLE_NUDGE = "trainerpro_cycle_nudge_v1";
+  function cycleNudgeSeen() {
+    try { return localStorage.getItem(KEY_CYCLE_NUDGE) || ""; } catch (e) { return ""; }
+  }
+  function cycleNudgeFor(c, today) {
+    const next = cycleNextStart(c.periods);
+    if (!next) return null;
+    if (cycleLearning(c.periods)) return null;   // a guess isn't worth asking about
+    const from = addDaysISO(next, -CYCLE_NUDGE_BEFORE);
+    const to = addDaysISO(next, CYCLE_NUDGE_AFTER);
+    if (today < from || today > to) return null;
+    if (cycleNudgeSeen() === next) return null;
+    // Already answered by logging: any bleed day inside the window means the
+    // question has been asked and answered, so it stops asking.
+    const bleeding = cycleBleedDays(c.periods);
+    for (let d = from; d <= to; d = addDaysISO(d, 1)) if (bleeding.has(d)) return null;
+    return { next };
+  }
+  function renderCycleNudge() {
+    const host = $("#ov-cycle-nudge");
+    if (!host) return;
+    if (!cycleOn()) { host.innerHTML = ""; return; }
+    const c = cycleState();
+    const n = cycleNudgeFor(c, todayISO());
+    if (!n) { host.innerHTML = ""; return; }
+    const when = new Date(n.next + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+    host.innerHTML = `
+      <div class="cyc-nudge">
+        <button type="button" class="cyc-nudge-main" id="btn-cyc-nudge">
+          <span class="cyc-nudge-ico" aria-hidden="true">🌙</span>
+          <span class="cyc-nudge-text">
+            <span class="cyc-nudge-l1">Due around ${escapeHtml(when)}</span>
+            <span class="cyc-nudge-l2">Tap when it starts</span>
+          </span>
+          <span class="cyc-nudge-chev" aria-hidden="true">›</span>
+        </button>
+        <button type="button" class="cyc-nudge-x" id="btn-cyc-nudge-x" aria-label="Dismiss until the next cycle">✕</button>
+      </div>`;
+    // The whole point is that it costs one tap: log today from here, don't
+    // send her to another tab to do it.
+    $("#btn-cyc-nudge")?.addEventListener("click", () => {
+      const st = cycleState();
+      st.periods = cycleToggleDay(st.periods, todayISO());
+      saveCycle();
+      afterCycleChange();
+      toast("Logged 🩸");
+    });
+    $("#btn-cyc-nudge-x")?.addEventListener("click", () => {
+      try { localStorage.setItem(KEY_CYCLE_NUDGE, n.next); } catch (e) {}
+      renderCycleNudge();
+    });
   }
 
   // -------- Cycle: the Profile fold --------
@@ -28914,6 +29125,7 @@
     if (!c) { host.innerHTML = ""; if (heroHost) heroHost.innerHTML = ""; $("#overview-greeting") && ($("#overview-greeting").innerHTML = ""); if (trophyHost) trophyHost.innerHTML = ""; renderAthleteCoachMessages(null); return; }
     ensureSessionBank(c);
     renderAthleteCoachMessages(c);
+    renderCycleNudge();
     const progress = state.clientData.progress || {};
     const today = todayISO();
 

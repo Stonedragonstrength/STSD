@@ -15188,6 +15188,13 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
 .cyc-share.phase, .cyc-share.all { color: var(--primary-bright); border-color: rgba(var(--primary-rgb), 0.5); }
 
 /* The whole cycle laid end to end, with today's marker on it. */
+/* The phase track is a picture with no text in it, so it used to be
+   aria-hidden and simply absent for a screen reader. It now carries the same
+   sentence in words. */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
 .cyc-track {
   position: relative; height: 10px; margin: 0.9em 0 0.2em;
   border-radius: 999px; overflow: hidden; background: var(--surface-2);
@@ -15198,10 +15205,13 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
 .cyc-seg.ovulation  { background: rgba(232, 179, 60, 0.8); }
 .cyc-seg.luteal     { background: rgba(111, 134, 232, 0.55); }
 .cyc-seg.late       { background: rgba(155, 110, 232, 0.7); }
+/* The ring is what separates the marker from the band under it; the outer
+   glow used to be a hardcoded white, which on the light theme was a white
+   smear on a near-white track. It reads off --text now, like the bar itself. */
 .cyc-mark {
   position: absolute; top: -3px; bottom: -3px; width: 3px;
   background: var(--text); border-radius: 2px;
-  box-shadow: 0 0 0 2px var(--surface), 0 0 8px rgba(255, 255, 255, 0.5);
+  box-shadow: 0 0 0 2px var(--surface);
 }
 
 /* Two facts, read at a glance — the same big-number-over-caption rhythm the
@@ -15214,61 +15224,109 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
   font-size: 0.78rem; line-height: 1.5; color: var(--muted); margin: 0.8em 0 0;
 }
 
-/* Log row: which day, and the two things there are to say about it. */
-.cyc-log { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em; margin-top: 1em; }
-.cyc-date {
-  position: relative; display: inline-flex; align-items: center;
-  font-size: 0.78rem; font-weight: 600; color: var(--text-soft);
+/* Today's row — the only thing on the card that asks a question. Thumb-sized
+   target on the left, and when it's on the flow pills take the second line, so
+   "yes, and it's heavy" is two taps in one place instead of three through a
+   fold that rebuilt itself shut under the finger. */
+.cyc-today {
+  display: flex; align-items: center; gap: 0.65rem; min-height: 56px;
+  margin-top: 0.9rem; padding: 0.6rem;
   background: var(--surface-2); border: 1px solid var(--border);
-  border-radius: 999px; padding: 0.34em 0.75em; cursor: pointer; margin: 0;
-  text-transform: none; letter-spacing: normal;
+  border-radius: var(--radius);
 }
-.cyc-date input[type="date"] {
-  position: absolute; inset: 0; width: 100%; height: 100%;
-  opacity: 0; margin: 0; padding: 0; border: none; cursor: pointer;
+.cyc-drop {
+  flex: none; width: 44px; height: 44px; padding: 0; cursor: pointer;
+  display: grid; place-items: center; font: inherit; font-size: 1.15rem;
+  color: var(--text); background: transparent;
+  border: 1.5px dashed var(--border); border-radius: 12px;
 }
-/* Same desktop-Chromium fix as .detail-log-date: only the far-right picker
-   icon opens the calendar there, so stretch it across the whole chip. */
-.cyc-date input[type="date"]::-webkit-calendar-picker-indicator {
-  position: absolute; inset: 0; width: 100%; height: 100%;
-  margin: 0; padding: 0; opacity: 0; cursor: pointer;
+.cyc-drop > span { opacity: 0.55; line-height: 1; }
+.cyc-drop.on {
+  background: rgba(224, 86, 107, 0.9); border: 1.5px solid rgba(224, 86, 107, 0.9); color: #fff;
 }
-.cyc-date-txt { white-space: nowrap; }
-
-/* Recent periods: a date, what it came to, flow, and a way to undo a mistap. */
-.cyc-hist { margin-top: 1em; }
-.cyc-hist > summary {
-  list-style: none; cursor: pointer; user-select: none;
-  font-size: 0.78rem; font-weight: 700; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--text-soft);
-}
-.cyc-hist > summary::-webkit-details-marker { display: none; }
-.cyc-hist > summary::before { content: "▸ "; display: inline-block; transition: transform 0.15s ease; }
-.cyc-hist[open] > summary::before { transform: rotate(90deg); }
-.cyc-rows { margin-top: 0.6em; }
-.cyc-row {
-  display: flex; align-items: center; gap: 0.6em;
-  padding: 0.5em 0; border-bottom: 1px solid var(--border);
-}
-.cyc-row:last-child { border-bottom: none; }
-.cyc-row-date { font-size: 0.85rem; font-weight: 700; color: var(--text); flex: none; min-width: 4.2em; }
-.cyc-row-meta {
-  font-size: 0.75rem; color: var(--muted); flex: 1; min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.cyc-row-flow { display: inline-flex; gap: 2px; flex: none; }
+.cyc-drop.on > span { opacity: 1; font-weight: 800; }
+.cyc-today-text { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.cyc-today-l1 { font-size: 0.9rem; font-weight: 700; color: var(--text); }
+.cyc-today-l2 { font-size: 0.72rem; color: var(--text-soft); }
+.cyc-flows { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+/* Resting face and border are deliberately NOT set here: .cyc-flow is in the
+   obsidian --face-inset/--edge group further down the file, and a later rule
+   of equal specificity wins, so anything declared here would silently lose.
+   Only the shape, the size and the .on state (0,2,0, so it does win) belong
+   to this rule. */
 .cyc-flow {
-  width: 1.5rem; height: 1.5rem; padding: 0; cursor: pointer;
-  font: inherit; font-size: 0.68rem; font-weight: 700;
-  background: var(--surface-2); border: 1px solid var(--border);
-  color: var(--muted); border-radius: 50%;
+  min-height: 32px; padding: 0.3em 0.7em; cursor: pointer;
+  font: inherit; font-size: 0.72rem; font-weight: 700;
+  color: var(--text-soft); border-radius: 999px;
 }
-.cyc-flow.on { background: rgba(224, 86, 107, 0.9); border-color: rgba(224, 86, 107, 0.9); color: #fff; }
-.cyc-row-del {
-  flex: none; background: none; border: none; cursor: pointer;
-  color: var(--muted); font-size: 0.85rem; padding: 0.2em 0.3em; line-height: 1;
+.cyc-flow.on { background: rgba(224, 86, 107, 0.18); border-color: rgba(224, 86, 107, 0.9); color: #e0566b; }
+
+/* Month navigator — the Diet tab's own ‹ › Today idiom, not a date input. */
+.cyc-cal-nav { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.9rem; }
+.cyc-navbtn {
+  flex: none; width: 36px; height: 36px; cursor: pointer; padding: 0;
+  font: inherit; font-size: 1rem; color: var(--text-soft);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px;
 }
-.cyc-row-del:hover { color: var(--danger); }
+.cyc-navbtn:hover { border-color: rgba(var(--primary-rgb), 0.5); color: var(--text); }
+.cyc-cal-label { flex: 1; text-align: center; font-size: 0.85rem; font-weight: 700; color: var(--text); }
+.cyc-today-btn {
+  flex: none; cursor: pointer; font: inherit; font-size: 0.7rem; font-weight: 700;
+  color: var(--primary-bright); background: transparent; border: 0; padding: 0.3em 0.5em;
+}
+
+/* The grid. Deliberately NOT .cal-day: that cell is min-height 80px for
+   bookings and pills, and six rows of it comes to 500px on a phone. */
+.cyc-cal {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px;
+  margin-top: 0.5rem; padding: 0.5rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+}
+.cyc-cal .cal-dow { padding: 0 0 2px; font-size: 0.6rem; color: var(--text-soft); }
+.cyc-cell {
+  aspect-ratio: 1; display: grid; place-items: center; padding: 0;
+  font: inherit; font-size: 0.78rem; font-weight: 600; font-variant-numeric: tabular-nums;
+  color: var(--text); background: var(--surface-2);
+  border: 1px solid transparent; border-radius: 8px; cursor: pointer;
+}
+.cyc-cell.outside { opacity: 0.3; background: transparent; cursor: default; }
+.cyc-cell.bleed { background: rgba(224, 86, 107, 0.9); color: #fff; font-weight: 800; }
+/* The prediction is arithmetic off the last few cycles, and irregular cycles
+   are common in athletes — so it is drawn as an outline and never filled. */
+.cyc-cell.pred { background: transparent; border: 1.5px dashed rgba(224, 86, 107, 0.6); color: var(--text-soft); }
+/* Phase says where she is. It never says what to train, so it is a hairline
+   under the number rather than a fill, and no hue reads as good or bad. */
+.cyc-cell.ph-follicular { box-shadow: inset 0 -3px 0 rgba(63, 178, 127, 0.75); }
+.cyc-cell.ph-ovulation  { box-shadow: inset 0 -3px 0 rgba(232, 179, 60, 0.85); }
+.cyc-cell.ph-luteal     { box-shadow: inset 0 -3px 0 rgba(111, 134, 232, 0.7); }
+.cyc-cell.ph-late       { box-shadow: inset 0 -3px 0 rgba(155, 110, 232, 0.75); }
+.cyc-cell.ph-overdue    { box-shadow: inset 0 -3px 0 rgba(139, 144, 160, 0.7); }
+.cyc-cell.cyc-today-cell { border: 2px solid var(--primary); font-weight: 800; }
+.cyc-cell.future { opacity: 0.6; }
+.cyc-cal-hint { font-size: 0.7rem; color: var(--muted); margin: 0.5rem 0 0; }
+
+/* The Overview prompt. Shaped like .ccal-next-cta on purpose — it sits in the
+   same column and does the same job (one row, one tap, gets out of the way).
+   Deliberately NOT coloured as a warning: a period arriving is not an alert. */
+.cyc-nudge { display: flex; align-items: stretch; gap: 0.4rem; margin: 0.75rem 0; }
+.cyc-nudge-main {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.7rem; cursor: pointer; text-align: left; font: inherit;
+  color: var(--text); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
+.cyc-nudge-main:hover { border-color: rgba(var(--primary-rgb), 0.5); }
+.cyc-nudge-ico { flex: none; font-size: 1.1rem; line-height: 1; }
+.cyc-nudge-text { display: flex; flex-direction: column; gap: 0.1rem; flex: 1; min-width: 0; }
+.cyc-nudge-l1 { font-size: 0.85rem; font-weight: 700; }
+.cyc-nudge-l2 { font-size: 0.72rem; color: var(--text-soft); }
+.cyc-nudge-chev { flex: none; color: var(--muted); }
+.cyc-nudge-x {
+  flex: none; width: 40px; cursor: pointer; font: inherit; font-size: 0.8rem;
+  color: var(--muted); background: transparent;
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
+.cyc-nudge-x:hover { color: var(--text); border-color: var(--border-strong); }
 
 /* Missed periods. Deliberately soft — this is a nudge toward a doctor, not a
    diagnosis, and it is the athlete's alone. Never styled as an alarm. */
@@ -15931,7 +15989,7 @@ input.credit-cap:disabled { opacity: 0.4; }
 .cex-step, .cex-tools-menu, .cex-tools-step, .cex-wrapper, .chg-how-opt,
 .chg-working, .client-nudge-btn,
 .client-sessions-chip.blank, .coach-profile-card, .coach-row-icon,
-.coach-week-tab-strip, .cyc-date, .cyc-flow, .cyc-share, .cyc-share-opt,
+.coach-week-tab-strip, .cyc-flow, .cyc-share, .cyc-share-opt,
 .dash-cal-pill-rest, .day-log-icon-rest,
 .demo-clip-chip, .demo-stage, .dh-date, .dh-progress, .dow-pill, .dvs-bal,
 .effort-opt, .empty-state, .ex-extra-chip, .ex-notes-compact, .ex-row-wrapper,
