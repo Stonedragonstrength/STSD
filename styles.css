@@ -1559,7 +1559,7 @@ button.coach-row-icon-btn:hover { border-color: var(--primary); background: var(
   font-size: 0.6rem; white-space: nowrap; text-align: center;
   line-height: 1.25; padding-bottom: 1px;
 }
-/* flex-basis: auto lets a longer label (Diet and Comp) claim the width it
+/* flex-basis: auto lets the longest label (Fuel & Body) claim the width it
    needs; the shorter tabs still share what's left evenly. */
 #screen-client .tab { flex: 1 1 auto; }
 @media (max-width: 400px) {
@@ -15167,6 +15167,19 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
    Opt-in, athlete-owned, private by default. Everything here is descriptive:
    the phase hues name where someone is in their month and carry no verdict, so
    nothing in this block should ever read as "good week / bad week". */
+/* The cycle lives in the same <details class="card ath-fold"> shell as the
+   body-weight fold directly above it. Open, it is the card that always
+   shipped; closed, it is one line the same height as its neighbour. */
+.cyc-fold { --cyc-color: var(--primary); }
+/* The phase name in the summary takes the phase's own hue rather than
+   --primary-bright, so a glance at the closed row still says WHERE she is. */
+.cyc-fold > summary .ath-fold-meta { color: var(--text-soft); font-weight: 700; }
+.cyc-meta-phase { font-weight: 800; }
+.cyc-fold[open] > summary .ath-fold-chev { transform: rotate(90deg); }
+/* Sharing is the one thing on this card nobody should hunt for, so it keeps
+   its own row at the top of the body instead of riding the head that the
+   summary replaced. */
+.cyc-sharerow { display: flex; justify-content: flex-end; }
 .cyc-card { --cyc-color: var(--primary); margin-top: 1rem; }
 .cyc-head { display: flex; align-items: center; gap: 0.7em; }
 .cyc-head-ico {

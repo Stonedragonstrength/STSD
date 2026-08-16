@@ -27653,10 +27653,22 @@
   }
 
   // -------- Cycle: the card on the Progress tab --------
+  // Whether the fold has been painted yet this session. Only the FIRST paint
+  // is allowed to force itself open (see the concern case below) — after that
+  // the athlete's own open/closed choice is the only thing that moves it.
+  let _cycFoldPainted = false;
+  // The line the fold shows with nothing open. It has to answer the only
+  // question most days on its own, or folding the card just hides it.
+  function cycleFoldMeta(c, info) {
+    if (info) {
+      return `Day ${info.day} · <span class="cyc-meta-phase" style="color:${info.color}">${escapeHtml(info.label)}</span>`;
+    }
+    return cycleStarts(c.periods).length ? "Nothing recent" : "Nothing logged yet";
+  }
   function renderCycleCard() {
     const host = $("#prog-cycle");
     if (!host) return;
-    if (!cycleOn()) { host.innerHTML = ""; return; }
+    if (!cycleOn()) { host.innerHTML = ""; _cycFoldPainted = false; return; }
     const c = cycleState();
     const today = todayISO();
     const info = cyclePhaseOn(c.periods, today);
@@ -27666,23 +27678,46 @@
     // and it used to vanish there along with the rest of the live-cycle UI.
     const concern = cycleGapConcern(c.periods, today);
 
+    // One shell for both branches. It is the same <details class="card ath-fold">
+    // the body-weight fold above it uses, so the two rows finally speak at the
+    // same volume — this card was 596px of a 1664px tab, next to a 54px fold
+    // doing the same job.
+    //
+    // The open/closed state is READ BACK off the live node before the rebuild.
+    // afterCycleChange() re-renders this card on every tap, so a fold that
+    // reset here would slam shut under the finger — exactly the bug that made
+    // "Recent periods" unusable in the old card.
+    const shell = (inner) => {
+      const prev = $("#cyc-fold");
+      // Only the first paint of a session may force itself open, and only for
+      // a missed period — that note is the one thing here worth interrupting
+      // for, and burying a health flag behind a tap is not a trade worth making.
+      const open = prev ? prev.open : (!!concern && !_cycFoldPainted);
+      host.innerHTML = `
+        <details class="card ath-fold cyc-fold" id="cyc-fold"${open ? " open" : ""}
+          ${info ? `style="--cyc-color:${info.color}"` : ""}>
+          <summary>
+            <span class="ath-fold-ico">${info ? info.emoji : "🌙"}</span>
+            <span class="ath-fold-title">Cycle</span>
+            <span class="ath-fold-meta">${cycleFoldMeta(c, info)}</span>
+            <span class="ath-fold-chev">▸</span>
+          </summary>
+          <div class="ath-fold-body">${inner}</div>
+        </details>`;
+      _cycFoldPainted = true;
+      wireCycleCard();
+    };
+
     if (!info) {
       const ever = cycleStarts(c.periods).length > 0;
-      host.innerHTML = `
-        <div class="card cyc-card">
-          <div class="cyc-head">
-            <span class="cyc-head-ico">🌙</span>
-            <span class="cyc-headtext"><span class="cyc-kicker">Cycle</span><span class="cyc-phase">${ever ? "Nothing recent" : "Nothing logged yet"}</span></span>
-            <span class="cyc-share ${share.id}" title="${escapeHtml(share.hint)}">${share.emoji} ${escapeHtml(share.label)}</span>
-          </div>
-          <p class="cyc-empty">${ever
-            ? "It's been long enough that there's no current cycle to place you in. Tap the days of the next one and it picks up from there."
-            : "Tap the days you bleed. That's the whole thing — from those taps it works out your cycle length, where you are in it, and roughly when the next one is due."}</p>
-          ${cycleTodayRowHtml(c, today)}
-          ${concern ? cycleConcernHtml(concern) : ""}
-          ${cycleCalendarHtml(c, today)}
-        </div>`;
-      wireCycleCard();
+      shell(`
+        <p class="cyc-empty">${ever
+          ? "It's been long enough that there's no current cycle to place you in. Tap the days of the next one and it picks up from there."
+          : "Tap the days you bleed. That's the whole thing — from those taps it works out your cycle length, where you are in it, and roughly when the next one is due."}</p>
+        <div class="cyc-sharerow"><span class="cyc-share ${share.id}" title="${escapeHtml(share.hint)}">${share.emoji} ${escapeHtml(share.label)}</span></div>
+        ${cycleTodayRowHtml(c, today)}
+        ${concern ? cycleConcernHtml(concern) : ""}
+        ${cycleCalendarHtml(c, today)}`);
       return;
     }
 
@@ -27705,35 +27740,31 @@
     const ov = Math.max(info.bleed + 2, info.len - 14);
     const mark = Math.max(0, Math.min(1, (info.day - 0.5) / info.len)) * 100;
 
-    host.innerHTML = `
-      <div class="card cyc-card" style="--cyc-color:${info.color}">
-        <div class="cyc-head">
-          <span class="cyc-head-ico">${info.emoji}</span>
-          <span class="cyc-headtext">
-            <span class="cyc-kicker">Cycle · day ${info.day}</span>
-            <span class="cyc-phase">${escapeHtml(info.label)}</span>
-          </span>
-          <span class="cyc-share ${share.id}" title="${escapeHtml(share.hint)}">${share.emoji} ${escapeHtml(share.label)}</span>
-        </div>
-        <div class="cyc-track">
-          <span class="sr-only">Day ${info.day} of about ${info.len} — ${escapeHtml(info.label.toLowerCase())}</span>
-          ${seg(1, info.bleed, "period")}
-          ${seg(info.bleed + 1, ov - 2, "follicular")}
-          ${seg(ov - 1, ov + 1, "ovulation")}
-          ${seg(ov + 2, info.len - CYCLE_LATE_DAYS, "luteal")}
-          ${seg(info.len - CYCLE_LATE_DAYS + 1, info.len, "late")}
-          <span class="cyc-mark" style="left:${mark.toFixed(2)}%"></span>
-        </div>
-        <div class="cyc-facts">
-          ${til !== null ? `<span class="cyc-fact"><b>${til <= 0 ? "Due now" : til + (til === 1 ? " day" : " days")}</b>${til > 0 ? `<span>until the next one${info.learning ? ", roughly" : ""}</span>` : "<span>by the last few cycles</span>"}</span>` : ""}
-          <span class="cyc-fact"><b>${avg ? avg + " days" : "—"}</b><span>${avg ? "your average cycle" : "cycle length"}</span></span>
-        </div>
-        ${info.learning ? `<p class="cyc-learning">Still learning. Predictions get real once a couple of cycles are logged. Irregular cycles are common in athletes, so a date here is never a promise.</p>` : ""}
-        ${cycleTodayRowHtml(c, today)}
-        ${concern ? cycleConcernHtml(concern) : ""}
-        ${cycleCalendarHtml(c, today)}
-      </div>`;
-    wireCycleCard();
+    // The summary already carries "Day 14 · Ovulation", so the head inside is
+    // only here for what the summary can't hold: the phase track, and the
+    // sharing chip — the one thing on this card the athlete should never have
+    // to go looking for.
+    shell(`
+      <div class="cyc-sharerow">
+        <span class="cyc-share ${share.id}" title="${escapeHtml(share.hint)}">${share.emoji} ${escapeHtml(share.label)}</span>
+      </div>
+      <div class="cyc-track">
+        <span class="sr-only">Day ${info.day} of about ${info.len} — ${escapeHtml(info.label.toLowerCase())}</span>
+        ${seg(1, info.bleed, "period")}
+        ${seg(info.bleed + 1, ov - 2, "follicular")}
+        ${seg(ov - 1, ov + 1, "ovulation")}
+        ${seg(ov + 2, info.len - CYCLE_LATE_DAYS, "luteal")}
+        ${seg(info.len - CYCLE_LATE_DAYS + 1, info.len, "late")}
+        <span class="cyc-mark" style="left:${mark.toFixed(2)}%"></span>
+      </div>
+      <div class="cyc-facts">
+        ${til !== null ? `<span class="cyc-fact"><b>${til <= 0 ? "Due now" : til + (til === 1 ? " day" : " days")}</b>${til > 0 ? `<span>until the next one${info.learning ? ", roughly" : ""}</span>` : "<span>by the last few cycles</span>"}</span>` : ""}
+        <span class="cyc-fact"><b>${avg ? avg + " days" : "—"}</b><span>${avg ? "your average cycle" : "cycle length"}</span></span>
+      </div>
+      ${info.learning ? `<p class="cyc-learning">Still learning. Predictions get real once a couple of cycles are logged. Irregular cycles are common in athletes, so a date here is never a promise.</p>` : ""}
+      ${cycleTodayRowHtml(c, today)}
+      ${concern ? cycleConcernHtml(concern) : ""}
+      ${cycleCalendarHtml(c, today)}`);
   }
   // Missed periods are a real red flag in someone training hard (low energy
   // availability), and a strength coach's app is a place it will actually get
@@ -27895,7 +27926,7 @@
 
   // -------- Cycle: the one prompt --------
   // The old card was purely pull: the athlete had to remember, navigate to
-  // Diet and Comp, scroll past the food log, and land on the right day. This
+  // Fuel & Body, scroll past the food log, and land on the right day. This
   // is the push, and it is deliberately the smallest one that works — a single
   // row, only in the days a period is actually expected, gone the moment
   // anything is logged for that window, and dismissible for good.
@@ -35832,7 +35863,7 @@
   // The record of the WORK: the Hoard ladder, weekly volume, the strength
   // charts and the PRs. The Hoard is new and the volume chart came off the
   // Overview stats fold; the body-comp trend passed through here between
-  // 2026-07-29 and 2026-08-04 and now lives on Diet and Comp instead — see
+  // 2026-07-29 and 2026-08-04 and now lives on Fuel & Body instead — see
   // renderAthleteBodyComp().
   function renderAthleteProgressTab() {
     const c = state.clientData.program?.client;
@@ -35852,7 +35883,7 @@
     renderStrengthProgress($("#athlete-strength-charts"), c, progress);
   }
 
-  // -------- Athlete: the body-comp block on Diet and Comp --------
+  // -------- Athlete: the body-comp block on Fuel & Body --------
   // The tab is named for composition and already holds the weigh-in that feeds
   // this, so the trend reads next to the number that produced it. The cycle
   // card sits directly above the charts it explains: the phase bands on those
