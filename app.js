@@ -39808,7 +39808,7 @@
     box.innerHTML = `
       <div class="tour-offer-text">
         <strong>First time here?</strong>
-        <span>A quick lap of the app, about a minute.</span>
+        <span>A quick lap of the app, a couple of minutes.</span>
       </div>
       <div class="tour-offer-acts">
         <button type="button" class="tour-offer-no">No thanks</button>
@@ -40016,7 +40016,7 @@
     };
     return [
       { sel: "#screen-client .tabs", go: () => setClientTab("overview"),
-        title: "Welcome to Stone Dragon", text: "A quick lap around your training hub, about a minute. Skip any time. These tabs are everything." },
+        title: "Welcome to Stone Dragon", text: "A quick lap around your training hub, a couple of minutes. Skip any time, and replay it whenever you like from the ? up top. These tabs are everything." },
       { sel: '[data-ctab-panel="overview"]',
         title: "Overview", text: "The card up top is your next workout: the lifts in it, how long it runs, and one tap to start. Under it sit your calendar, your streak, your lifetime totals and your trophies. It fills in as you train. Tap ⋯ on the stats card to pick what shows, like cardio time, distance, or total push-ups and pull-ups." },
       // The card became a header pill, so the step follows it. No `go`: the
@@ -40041,7 +40041,7 @@
       // Whichever of 🔒 / ✎ does not apply is hidden, so spotlight the one
       // that is actually on screen — the copy already names both.
       { sel: ".workout-detail-list .cex-lock-btn:not(.hidden), .workout-detail-list .cex-edit-btn:not(.hidden)", go: goDetail,
-        title: "Locking in", text: "Fill every set and it locks itself — green check, done. Tap 🔒 to lock early (blank boxes fill with the plan); ✎ reopens it. Finish every exercise and the whole day celebrates." },
+        title: "Locking in", text: "Fill every set and it locks itself: green check, done. Tap 🔒 to lock early and the blank boxes fill with the plan; ✎ reopens it. Finish every exercise and the whole day celebrates." },
       { sel: ".workout-detail-list .added-ex-addbtn", go: goDetail,
         title: "Did extra work?", text: "Tap ＋ Add an exercise to pull anything from the library into today. It logs just like the rest and still counts toward your PRs." },
       // Was #detail-mood-btn, an id nothing has emitted since the session ⋯
@@ -40049,7 +40049,7 @@
       // every athlete. The mood sheet fires on finish now, and this ⋯ is its
       // only manual door (openSessionMenuSheet), along with the check-in.
       { sel: "#wd-menu-btn", go: goDetail,
-        title: "How did it feel?", text: "Tap ⋯ for the rest of the session: your check-in before you start, how it went after — up to two — and Didn't train? to skip the whole day. Your coach sees all of it, so they know when to push or back off." },
+        title: "How did it feel?", text: "Tap ⋯ for the rest of the session: your check-in before you start, how it went after (up to two), and Didn't train? to skip the whole day. Your coach sees all of it, so they know when to push or back off." },
       { sel: "#rest-timer-btn", go: goDetail,
         title: "Rest timer", text: "Checking off a set starts this on its own. You can also tap Go yourself. It dings when it's time to lift, then rolls straight into the next rest until you stop it. The small time button picks the length, the bell mutes the ding." },
       // Both of these live in the picker, so the tour has to close the day
@@ -40060,6 +40060,12 @@
         title: "Athlete Created", text: "Trained outside your program? This pill holds the days you built yourself. Tap it to open them, or to start a new one." },
       { sel: '[data-ctab-panel="prs"]', go: () => setClientTab("prs"),
         title: "Progress", text: "Your PRs live here, with the charts behind them. Locking a heavy set can raise them automatically." },
+      // Points at the drawn card, not its host: renderStatFieldCard empties the
+      // host for an athlete who has lifted nothing, and a step spotlighting an
+      // empty box teaches nobody anything. Skipping until there is a shape to
+      // show is the right degradation.
+      { sel: "#prog-pentagon .sf-card", go: () => setClientTab("prs"),
+        title: "Your stat field", text: "Five axes, one shape: strength, agility, endurance, conditioning and control. Every session you log feeds the ones it trained, so the shape is the athlete you are building rather than a score. Train a corner and it grows, ignore one and it fades back. Open it for the ladder your lifetime tonnage climbs." },
       // Pin the half, don't assume it: setClientTab("diet") opens the BODY pane
       // on the missed-period path, which hides every food target below.
       { sel: ".food-tiles", go: () => { setClientTab("diet"); setFuelBody("fuel"); },
@@ -40074,15 +40080,27 @@
       // go still opens Body: showTourStep skips any step whose target fails
       // `offsetParent !== null`, silently and with no error.
       { sel: "#fb-jump", go: () => { setClientTab("diet"); setFuelBody("body"); },
-        title: "Body weight", text: "This tab has two halves and always opens on Fuel. Body — this switch — is where your weight goes: log it and watch the trend. The latest number sits on the row below, so you can check it without opening anything." },
+        title: "Body weight", text: "This tab has two halves and always opens on Fuel. Body is the other half, and this switch is how you get to it: log your weight there and watch the trend. The latest number sits on the row below, so you can check it without opening anything." },
       { sel: '[data-ctab-panel="anatomy"] .a-mode', go: () => setClientTab("anatomy"),
-        title: "Anatomy", text: "Every muscle, what it does and how to train it — tap the body, tap the list, or search. Switch to Coverage and the same body reads your own week: which muscles your program hits plenty, and which are a gap." },
+        title: "Anatomy", text: "Every muscle, what it does and how to train it. Tap the body, tap the list, or search. The other shelves cover training, fuel and hormones, so it answers most of what you would otherwise text your coach at 9pm." },
+      // The key is display:none outside coverage mode, so the go has to switch
+      // modes for the step to exist at all. That gating is deliberate: it makes
+      // the step teach the switch rather than assume it.
+      { sel: '[data-ctab-panel="anatomy"] .a-cov-key',
+        go: () => { setClientTab("anatomy"); $('[data-ctab-panel="anatomy"] .a-mode-btn[data-mode="coverage"]')?.click(); },
+        title: "Coverage", text: "Tap Coverage and the same body reads your own week instead: bright where your program hits a muscle Plenty, dark where it is a Gap. It is the fastest way to see what your training is missing before you feel it, and your coach is looking at the same map." },
       { sel: '[data-ctab-panel="sessions"]', go: () => setClientTab("sessions"),
-        title: "Sessions", text: "Your session packages, bookings and open slots with your coach. It isn't a tab — the 🎟️ chip in the header opens it." },
+        title: "Sessions", text: "Your session packages, bookings and open slots with your coach. It isn't a tab: the 🎟️ chip in the header opens it." },
       // The profile page has no tab either, and the notification switch is off
       // until somebody taps it, so an athlete can go months without one.
       { sel: "#pref-fold-notify", go: () => { setClientTab("profile"); const f = $("#pref-fold-notify"); if (f) f.open = true; },
-        title: "Notifications", text: "Your name at the top of any screen opens your profile, and this is the switch worth finding: nothing reaches your phone until you turn it on — a message from your coach, a bulletin, a reminder before a booked session. Your avatar, app colors, training age and a private cycle tracker live on that page too." },
+        title: "Notifications", text: "Your name at the top of any screen opens your profile, and this is the switch worth finding. Nothing reaches your phone until you turn it on: a message from your coach, a bulletin, a reminder before a booked session. Your avatar, your app colors and your training age live on this page too." },
+      // The card on Fuel & Body only exists once tracking is switched on, so a
+      // step pointing there would be deleted for every athlete who has not
+      // found the feature yet, which is exactly who this step is for. The fold
+      // in the profile always renders, on or off.
+      { sel: "#pref-fold-cycle", go: () => { setClientTab("profile"); const f = $("#pref-fold-cycle"); if (f) f.open = true; },
+        title: "Cycle tracking", text: "Optional, private, and off until you switch it on here. One tap on the day it starts is the whole job: the app learns your cycle length, marks the phases on your weight chart so a few pounds of water read as water, and shows nothing to anyone unless you choose to share it. Once it is on, the card sits with your weight on Fuel & Body." },
       { sel: "#btn-tour-client", go: () => setClientTab("overview"),
         title: "That's the lap", text: "Replay this tour any time from this button. Now go lift something heavy." },
     ];
@@ -40090,7 +40108,7 @@
   function coachTourSteps() {
     return [
       { sel: "#coach-nav", go: () => showCoachOverview(),
-        title: "Welcome, coach", text: "A quick lap around the app, about a minute. Skip any time. This nav is home base." },
+        title: "Welcome, coach", text: "A quick lap around the app, a couple of minutes. Skip any time. This nav is home base." },
       // Needs its own `go`: the next step leaves for the profile view, so
       // walking Back from there would find this target hidden and skip it.
       { sel: "#dash-cal-modes", go: () => showCoachOverview(),
@@ -40106,7 +40124,7 @@
       { sel: "#btn-coach-inbox", go: () => showCoachOverview(),
         title: "What needs you", text: "Sessions athletes ask to cancel or move, purchase requests, form videos to watch, athletes out of sessions or gone quiet, and everything they've logged. The number is how many are waiting on you." },
       { sel: "#client-grid", go: () => renderDashboard(),
-        title: "Your athletes", text: "One card per athlete. Tap a card and its row opens in place — when they last trained, how they've been eating, and their cardio — without leaving the roster." },
+        title: "Your athletes", text: "One card per athlete. Tap a card and its row opens in place, without leaving the roster: when they last trained, how they've been eating, and their cardio." },
       // Was `.client-row-view`, the 🏋️ button on the row itself, which was
       // deleted when the drawer took over — so this step had been silently
       // skipping for every coach. The drawer only builds for the open row, and
@@ -40127,9 +40145,9 @@
       // the step would skip itself.
       { sel: "#weeks-container .coach-week-tab-build",
         go: () => { const cs = state.trainerData.clients || []; const c = cs.find((x) => x.weeks?.length) || cs[0]; if (c) openClient(c.id); },
-        title: "Build their week", text: "⚡ next to the week tabs writes a whole week for you. It reads the training age, goal, days a week and gear off their Training setup card, then fills days that cover the body without leaving a gap. Preview it, roll again as often as you like — nothing lands until Use this week." },
+        title: "Build their week", text: "⚡ next to the week tabs writes a whole week for you. It reads the training age, goal, days a week and gear off their Training setup card, then fills days that cover the body without leaving a gap. Preview it and roll again as often as you like. Nothing lands until you tap Use this week." },
       { sel: "#view-programs", go: () => { state.currentClientId = null; renderProgramsList(); },
-        title: "Programs", text: "Build programs and day templates once, reuse them across athletes. The three chips are a program's life: being built, waiting, and out on somebody — assigning one moves it to In use so Ready keeps meaning ready. Built one straight into an athlete instead? Save to Library on their Program tab files a copy under 🗂 Templates up top." },
+        title: "Programs", text: "Build programs and day templates once, reuse them across athletes. The three chips are a program's life: being built, waiting, and out on somebody. Assigning one moves it to In use, so Ready keeps meaning ready. Built one straight into an athlete instead? Save to Library on their Program tab files a copy under 🗂 Templates up top." },
       { sel: "#view-messages", go: () => { switchCoachView("messages"); renderMessagesView(); },
         title: "Messages", text: "One thread per athlete, and they can write back now. Anyone waiting on an answer sits at the top with a count. Tell everyone, at the bottom, says one thing to all of them at once: either a message in their threads or a notice pinned to their home screens." },
       // Uses the nav button's own handler rather than re-implementing its paint
@@ -40140,7 +40158,7 @@
       // Same closed-<details> trap as the scheduling hub: the fold's summary
       // stays visible, so the step looked fine while never firing once.
       { sel: "#btn-export-data", go: () => { openCoachProfile(); const f = $("#btn-export-data")?.closest("details"); if (f) f.open = true; },
-        title: "Back up your data", text: "Download everything — athletes, their programs and logged history, and your program library — as one file, and restore it here if you ever need to. Worth grabbing one now and then." },
+        title: "Back up your data", text: "Download everything as one file: athletes, their programs and logged history, and your program library. Restore it here if you ever need to. Worth grabbing one now and then." },
       { sel: "#btn-tour-coach", go: () => showCoachOverview(),
         title: "That's the lap", text: "Replay this tour any time from this button." },
     ];
