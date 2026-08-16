@@ -943,6 +943,11 @@
     // What this athlete pays per session. 0 means "use the membership tier's
     // per-session price" — see athleteSessionRate().
     if (typeof c.sessionBank.rate !== "number") c.sessionBank.rate = 0;
+    // What a PROGRAM-ONLY member pays a month. Its own field because `rate` is
+    // per-session everywhere else, and one field meaning two things switched by
+    // the athlete's tier is a trap: moving somebody off Digital turned their
+    // $250 a month into $250 a session, silently, for an $8,000 invoice.
+    if (typeof c.sessionBank.flatRate !== "number") c.sessionBank.flatRate = 0;
   }
 
   // -------- What a package IS --------
@@ -1215,6 +1220,7 @@
     // A couple pays one rate for the slot they share, and the slot is booked
     // under one of them, so mirroring the rate can't double-count it.
     p.sessionBank.rate = c.sessionBank.rate;
+    p.sessionBank.flatRate = c.sessionBank.flatRate;
     // Through the dirty guard, like every athlete push. The raw debounce this
     // used to be was one of the holes the tablet's lost settles went through.
     pushAthlete(p);
@@ -7201,8 +7207,24 @@
   function refreshRatePlaceholder(c) {
     const box = $("#prof-rate"); if (!box) return;
     const m = membershipById($("#prof-membership")?.value || c?.sessionBank?.membership || "");
-    const per = membershipPerSession(m);
-    box.placeholder = per ? `${Math.round(per)} (tier)` : "per session";
+    // The one box means two different things, so it has to SAY which. On a
+    // program-only tier there are no sessions to price and the number is what
+    // they pay a month; everywhere else it is per session. The label and the
+    // field it writes both follow the tier.
+    const flat = !!m && !m.sessions;
+    const lbl = $("#prof-rate-lbl");
+    if (lbl) lbl.textContent = flat ? "Monthly price ($)" : "Session rate ($)";
+    box.dataset.rateKind = flat ? "flat" : "session";
+    if (flat) {
+      box.placeholder = m.price ? `${Math.round(m.price)} (tier)` : "a month";
+      const own = Number(c?.sessionBank?.flatRate) || Number(c?.sessionBank?.rate) || 0;
+      box.value = own > 0 ? String(own) : "";
+    } else {
+      const per = membershipPerSession(m);
+      box.placeholder = per ? `${Math.round(per)} (tier)` : "per session";
+      const own = Number(c?.sessionBank?.rate) || 0;
+      box.value = own > 0 ? String(own) : "";
+    }
   }
   function populateMembershipSelect(c) {
     const sel = $("#prof-membership"); if (!sel) return;
@@ -7278,8 +7300,9 @@
     if (!c) return;
     ensureSessionBank(c);
     populateMembershipSelect(c); // also refreshes the grant button
-    const rateBox = $("#prof-rate");
-    if (rateBox) rateBox.value = c.sessionBank.rate ? String(c.sessionBank.rate) : "";
+    // refreshRatePlaceholder owns the box now: which field it shows depends on
+    // whether the tier is program-only, so filling it from `rate` here first
+    // would put a per-session number in a box labelled "Monthly price".
     refreshRatePlaceholder(c);
     const autoRenewBox = $("#prof-autorenew");
     if (autoRenewBox) autoRenewBox.checked = !!c.sessionBank.autoRenew;
@@ -7596,6 +7619,17 @@
     }
   }
 
+  // Anything edited INSIDE a Raise drawer changes the row wrapped around it —
+  // the tier decides the working line, the rate decides the figure. Only worth
+  // doing while that fold is the thing on screen; the sessions panel is MOVED
+  // rather than copied, so renderMoneyRoster re-mounts the same node back into
+  // the open row and the controls keep their values.
+  function refreshRaiseRow() {
+    if ($("#view-money")?.classList.contains("hidden")) return;
+    if (!$("#money-roster-host")) return;
+    renderMoneyRoster();
+  }
+
   let _moneyRosterSeq = 0;
   function renderMoneyRoster() {
     const host = $("#money-roster-host");
@@ -7873,8 +7907,14 @@
   // to today's rate.
   //
   // Returns 0 for every ordinary tier, so sessions × rate is untouched.
+  // It lives in its own field now (`flatRate`). `rate` is still read as the
+  // fallback, deliberately and permanently: every grandfathered member set
+  // before the split has their monthly price there, and a cached build still
+  // writes it — see the note in ensureSessionBank. New writes go to flatRate.
   function flatMonthlyFor(c, m) {
     if (!m || m.sessions) return 0;
+    const flat = Number(c?.sessionBank?.flatRate);
+    if (flat > 0) return flat;
     const own = Number(c?.sessionBank?.rate);
     if (own > 0) return own;
     return Number(m.price) || 0;
@@ -9685,7 +9725,36 @@
     $("#prof-membership")?.addEventListener("change", (e) => {
       const c = currentClient(); if (!c) return;
       ensureSessionBank(c);
+      // Which KIND of price the custom number on this bank is depends on the
+      // tier, so changing the tier can change what an untouched number means.
+      // Moving somebody off a program-only tier turned $250 a month into $250 a
+      // SESSION, which on an 8-session membership is an $8,000 invoice and
+      // nothing on screen said a thing. Reconcile here, out loud.
+      const wasFlat = (() => { const m = membershipById(c.sessionBank.membership); return !!m && !m.sessions; })();
+      const prevRate = Number(c.sessionBank.rate) || 0;
       c.sessionBank.membership = e.target.value || "";
+      const nowM = membershipById(c.sessionBank.membership);
+      const nowFlat = !!nowM && !nowM.sessions;
+      let repriced = "";
+      if (prevRate > 0 && wasFlat !== nowFlat) {
+        if (wasFlat) {
+          // Their monthly price is kept where it belongs in case they come
+          // back, and the per-session field is cleared so the new tier bills
+          // at its own list price rather than a month per session.
+          c.sessionBank.flatRate = prevRate;
+          c.sessionBank.rate = 0;
+          repriced = `Custom price cleared: ${money(prevRate)} was a MONTHLY price. This tier bills per session.`;
+        } else {
+          // The reverse, and it has to CLEAR rather than keep: flatMonthlyFor
+          // still falls back to `rate` for members grandfathered in before this
+          // split, so a per-session number left sitting there would be read as
+          // a monthly price and bill $90 a month instead of the tier's $250.
+          // Same trap as the one above, pointing the other way.
+          c.sessionBank.rate = 0;
+          c.sessionBank.flatRate = 0;
+          repriced = `Custom rate cleared: ${money(prevRate)} was PER SESSION. This tier bills a flat month.`;
+        }
+      }
       bankMutated(c);
       saveTrainer();
       refreshGrantBtn();
@@ -9705,16 +9774,31 @@
       // This handler updates each piece by hand rather than re-rendering the
       // card, so a new piece has to be added here as well.
       renderBillingRow(c);
-      toast(m ? `Membership: ${membershipTitle(m)}` : "Membership cleared");
+      refreshRaiseRow(); // the row wrapped around this drawer prices off the tier
+      // The reprice is the thing worth reading, so it gets the toast and the
+      // longer dwell; the tier name is on screen anyway.
+      if (repriced) toast("⚖ " + repriced, 6000);
+      else toast(m ? `Membership: ${membershipTitle(m)}` : "Membership cleared");
     });
     $("#prof-rate")?.addEventListener("change", () => {
       const c = currentClient(); if (!c) return;
       ensureSessionBank(c);
-      const rate = Number($("#prof-rate").value);
-      c.sessionBank.rate = rate > 0 ? rate : 0;
+      const box = $("#prof-rate");
+      const rate = Number(box.value);
+      // Writes whichever field this tier's box means. A flat tier ALSO keeps
+      // writing `rate`, because a cached build still reads the monthly price
+      // from there and would otherwise silently re-price the athlete to the
+      // tier's list price on their phone.
+      if (box.dataset.rateKind === "flat") {
+        c.sessionBank.flatRate = rate > 0 ? rate : 0;
+        c.sessionBank.rate = rate > 0 ? rate : 0;
+      } else {
+        c.sessionBank.rate = rate > 0 ? rate : 0;
+      }
       bankMutated(c);
       saveTrainer();
       renderIncomeCard();
+      refreshRaiseRow(); // the projection beside the name multiplies by this
     });
     $("#btn-grant-month")?.addEventListener("click", grantMembershipMonth);
     $("#client-sessions-chip")?.addEventListener("click", () => {
@@ -24010,9 +24094,16 @@
   }
   function athleteSessionRate(c) {
     if (!c) return 0;
+    const m = membershipById(c.sessionBank?.membership || "");
+    // A program-only tier has no sessions, so it has no per-session price, and
+    // the number on their bank is a MONTHLY one (see flatMonthlyFor). Returning
+    // it here priced a single booked session at a whole month's fee in the
+    // Booked-ahead rows, while the day strip beside them priced the same
+    // session at $0. bankPackagePrice already routes flat tiers away from here.
+    if (m && !m.sessions) return 0;
     const own = Number(c.sessionBank?.rate);
     if (own > 0) return own;
-    return membershipPerSession(membershipById(c.sessionBank?.membership || ""));
+    return membershipPerSession(m);
   }
   // What a month of this membership costs THIS athlete, which is not always the
   // tier's list price: a custom per-session rate on the bank overrides it, and

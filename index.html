@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=money1" />
+  <link rel="stylesheet" href="styles.css?v=money2" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -515,7 +515,10 @@
                   <!-- What this athlete actually pays per session. Blank falls back
                        to the tier's per-session price, so it only needs filling in
                        when the deal is off-menu. Feeds Expected income. -->
-                  <label class="profile-field-rate">Session rate ($)
+                  <!-- The label is rewritten by refreshRatePlaceholder: on a
+                       program-only tier this box is a MONTHLY price, not a
+                       per-session one, and it writes a different field. -->
+                  <label class="profile-field-rate"><span id="prof-rate-lbl">Session rate ($)</span>
                     <input type="number" id="prof-rate" min="0" step="1" inputmode="decimal" placeholder="tier price" />
                   </label>
                   <!-- The button and the two switches take their own line: bottom-
@@ -1658,7 +1661,7 @@
   <script src="exercise-equipment.js?v=plyo1"></script>
   <script src="exercise-roles.js?v=beg1"></script>
   <script src="exercise-stats.js?v=st2"></script>
-  <script src="app.js?v=money1"></script>
+  <script src="app.js?v=money3"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
