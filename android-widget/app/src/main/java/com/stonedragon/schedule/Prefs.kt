@@ -52,23 +52,33 @@ object Prefs {
 
     /**
      * Local midnight at the start of the window this widget renders — the
-     * Monday of a week, or today for the 3- and 14-day spans (see [Span]).
+     * Sunday of a week, or today for the 3- and 14-day spans (see [Span]).
      *
      * Defaults to the window containing now, and re-defaults whenever the
      * stored one is in the past: a widget left on next week over a weekend
      * should come back showing the window it is now, not keep rendering one
      * that has been and gone. That floor is also what makes CHANGING the span
-     * safe — a Monday stored under a week span is behind today's window under a
+     * safe — a Sunday stored under a week span is behind today's window under a
      * 3-day one, so it is pulled forward rather than rendering a stale offset.
+     *
+     * The stored value is re-anchored before any of that, because a window
+     * start only means anything under the anchor that produced it. Builds
+     * before Aug 2026 started the week on MONDAY, and an installed widget keeps
+     * its prefs across an update: without the snap, a saved Monday is later
+     * than the Sunday floor, survives it, and draws a Monday-to-Sunday week for
+     * the rest of the week the update landed in. The change would look like it
+     * had not shipped.
      *
      * The key is still week_ from when this was always a week. An older day_
      * value is ignored: it is a millis inside some day, and reading it as a
      * window start would begin the week on a Thursday.
      */
     fun windowStart(ctx: Context, widgetId: Int): Long {
+        val span = spanDays(ctx)
         val stored = p(ctx).getLong(weekKey(widgetId), 0L)
-        val here = Span.windowStart(System.currentTimeMillis(), spanDays(ctx))
-        return if (stored < here) here else stored
+        val anchored = if (stored > 0L) Span.windowStart(stored, span) else 0L
+        val here = Span.windowStart(System.currentTimeMillis(), span)
+        return if (anchored < here) here else anchored
     }
 
     fun setWindowStart(ctx: Context, widgetId: Int, start: Long) {
@@ -82,7 +92,7 @@ object Prefs {
      *
      * Global rather than per-widget, like the other look settings — but note it
      * changes what `windowStart` MEANS, so a stored window from another span
-     * can be a Monday when the span now anchors to today. That is safe because
+     * can be a Sunday when the span now anchors to today. That is safe because
      * windowStart floors against the current span's own window: switching span
      * pulls every widget back to "here", which is also the only sane place for
      * it to land.

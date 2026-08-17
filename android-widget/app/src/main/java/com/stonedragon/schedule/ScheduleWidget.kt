@@ -39,7 +39,7 @@ internal class Frame(val views: RemoteViews, val scrollTo: Jump?)
 /**
  * The coach's week, on the home screen.
  *
- * One scrolling list, Monday to Sunday, day headers interleaved with sessions,
+ * One scrolling list, Sunday to Saturday, day headers interleaved with sessions,
  * with ‹ and › to step whole weeks and NOW to come back to the next session.
  * A week GRID was the other option and it loses on a phone: at widget size a
  * week is seven unreadable columns, and RemoteViews has no horizontal scroller
@@ -116,7 +116,7 @@ class ScheduleWidget : AppWidgetProvider() {
          * Deliberately in memory and not in Prefs: it empties whenever Android
          * restarts the process, which is exactly the signal wanted. A widget
          * being drawn for the first time in a fresh process has a list sitting
-         * at the top of Monday, so putting the coach at the current session is
+         * at the top of Sunday, so putting the coach at the current session is
          * strictly better than leaving it there — there is no scroll position
          * of theirs to lose. The routine 30-minute update in a process that is
          * already running finds the id here and leaves the list alone, which is

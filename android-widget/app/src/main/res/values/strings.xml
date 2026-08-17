@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">Stone Dragon Schedule</string>
     <string name="widget_label">Stone Dragon · Week</string>
-    <string name="widget_description">Your coaching week, Monday to Sunday.</string>
+    <string name="widget_description">Your coaching week, Sunday to Saturday.</string>
     <string name="config_blurb">Sign in with your coach account. The widget shows the sessions booked with you, a week at a time.</string>
     <string name="config_footer">Your password is not stored — only the session token Supabase issues, in this app\'s private storage. Sign out to remove it.</string>
     <string name="email">Coach email</string>

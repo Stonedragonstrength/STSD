@@ -225,7 +225,7 @@ object Supabase {
      * whoever is signed in, so a filter here would only be a second place to
      * get it wrong.
      */
-    /** Monday to Sunday inclusive, in one pair of requests. */
+    /** Sunday to Saturday inclusive, in one pair of requests. */
     fun bookingsForWeek(ctx: Context, weekStart: Long): FetchResult =
         bookingsForRange(ctx, weekStart, 7)
 
@@ -512,19 +512,25 @@ object Supabase {
     }
 
     /**
-     * Local midnight on the MONDAY of the week [millis] falls in.
+     * Local midnight on the SUNDAY of the week [millis] falls in.
      *
-     * Deliberately not Calendar.getFirstDayOfWeek(): that is Sunday in a US
-     * locale, and the coach reads his week Monday to Sunday. Hard-coding Monday
-     * makes the widget agree with how he actually plans, rather than with the
-     * phone's region setting.
+     * Deliberately not Calendar.getFirstDayOfWeek(): that follows the phone's
+     * region setting, and the coach reads his week Sunday to Saturday wherever
+     * the phone thinks it is. Hard-coding it makes the widget agree with how he
+     * actually plans.
+     *
+     * This anchored to MONDAY until Aug 2026. Anything that persists a window
+     * start across that change has to re-anchor it rather than trust it — see
+     * Prefs.windowStart.
      */
     fun startOfWeek(millis: Long): Long {
         val c = Calendar.getInstance()
         c.timeInMillis = startOfDay(millis)
-        // Calendar.MONDAY is 2 and SUNDAY is 1, so Sunday has to fall to the
-        // END of the week it belongs to, six days back rather than one forward.
-        val back = (c.get(Calendar.DAY_OF_WEEK) - Calendar.MONDAY + 7) % 7
+        // Calendar.SUNDAY is 1, the lowest DAY_OF_WEEK, so this is simply the
+        // distance from it. The + 7 % 7 is kept rather than simplified away
+        // because it is what keeps the arithmetic right if the anchor ever
+        // moves off the first day of the week again.
+        val back = (c.get(Calendar.DAY_OF_WEEK) - Calendar.SUNDAY + 7) % 7
         c.add(Calendar.DAY_OF_YEAR, -back)
         return c.timeInMillis
     }

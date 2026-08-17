@@ -39,7 +39,7 @@ internal sealed class Row {
 }
 
 /**
- * Monday to Sunday, every day present whether or not it has sessions — a rest
+ * Sunday to Saturday, every day present whether or not it has sessions — a rest
  * day is a real answer, and a week that silently omits it reads as a week that
  * failed to load half of itself.
  *

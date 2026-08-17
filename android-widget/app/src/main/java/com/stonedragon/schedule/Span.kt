@@ -26,10 +26,13 @@ internal object Span {
     /**
      * The start of the window containing [now].
      *
-     * A week anchors to its MONDAY, because "this week" is a thing with edges
+     * A week anchors to its SUNDAY, because "this week" is a thing with edges
      * that everybody agrees on. Three and fourteen days anchor to TODAY: "the
-     * next 3 days" starting from last Monday would be a different and useless
+     * next 3 days" starting from last Sunday would be a different and useless
      * thing, and there is no calendar boundary that means "a fortnight".
+     *
+     * Also the re-anchor: pass a stored window start as [now] and it comes back
+     * snapped onto the grid the current anchor and span actually use.
      */
     fun windowStart(now: Long, days: Int): Long =
         if (normalise(days) == 7) Supabase.startOfWeek(now) else Supabase.startOfDay(now)
