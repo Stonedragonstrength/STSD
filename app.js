@@ -4388,6 +4388,80 @@
   // was that path's old wholesale behavior. opts.keepLocalOnly appends
   // local-only ids; a clean pull leaves it off so a template deleted on
   // another device stays deleted.
+  // How much filled-in prescription a template holds: exercises that carry a
+  // weight, a rep count or a progression rule. NOT a count of exercises —
+  // adding the lifts is a minute's work and typing their numbers is an hour's,
+  // and it is the hour that keeps getting lost.
+  function filledPrescriptions(tpl) {
+    let n = 0;
+    (tpl?.weeks || []).forEach((w) => (w.days || []).forEach((d) => (d.exercises || []).forEach((e) => {
+      if (String(e?.currentWeight ?? "") !== "" || String(e?.currentReps ?? "") !== "" || e?.progression) n++;
+    })));
+    return n;
+  }
+
+  // "This device is wrong — take the server's copy."
+  //
+  // Programs are merged between devices by id, and the merge can only ever
+  // pick a winner from what it is given. When a device holds a stale copy that
+  // keeps winning (and then re-pushing, which is what makes it stick), there
+  // was no way to break the loop: no button anywhere said "discard mine". The
+  // phone stayed a fortnight behind the desktop and the only cure was guessing.
+  //
+  // Deliberately wholesale and deliberately loud. This is the one place the
+  // app throws work away on purpose, so it says exactly how much is at stake
+  // before it does, and it does NOT push afterwards — adopting the cloud's
+  // copy is accepting it, not asserting anything back.
+  async function adoptCloudTemplates() {
+    if (!window.Cloud?.enabled) { toast("No cloud connection to pull from."); return; }
+    const btn = $("#btn-adopt-cloud-templates");
+    const mine = state.trainerData.programTemplates || [];
+    const localFilled = mine.reduce((n, t) => n + filledPrescriptions(t), 0);
+    try {
+      const session = await window.Cloud.getSession();
+      if (!session) { toast("Sign in again first."); return; }
+      const fresh = await window.Cloud.getCoachByAuthUserId(session.user.id);
+      if (!fresh?.coach) { toast("Couldn't read your programs from the cloud."); return; }
+      const theirs = fresh.coach.program_templates || [];
+      const cloudFilled = theirs.reduce((n, t) => n + filledPrescriptions(t), 0);
+      // Name the trade in the coach's terms — programs and filled-in numbers,
+      // not records and fields — and never let it be a blind yes.
+      const warn = localFilled > cloudFilled
+        ? `\n\nWARNING: this device has MORE filled in (${localFilled} exercises with weights or ` +
+          `progression) than the synced copy (${cloudFilled}). You would lose that difference.`
+        : "";
+      if (!window.confirm(
+        `Replace this device's ${mine.length} program${mine.length === 1 ? "" : "s"} with the ` +
+        `${theirs.length} synced from your other devices?${warn}\n\nThis cannot be undone.`)) return;
+      if (btn) { btn.disabled = true; btn.textContent = "Pulling…"; }
+      state.trainerData.programTemplates = theirs;
+      state.trainerData.workoutTemplates = fresh.coach.workout_templates || [];
+      // The dirty flag is what tells the next merge "local holds unsynced work".
+      // Leaving it set would hand the stale copy the argument all over again.
+      localStorage.removeItem(KEY_TEMPLATES_DIRTY);
+      localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+      _programEditorId = null;
+      renderProgramsList();
+      toast(`Took the synced copy · ${theirs.length} program${theirs.length === 1 ? "" : "s"} ✓`, 5000);
+    } catch (e) {
+      console.warn("[Sync] adoptCloudTemplates failed", e);
+      toast("Couldn't reach the cloud. Nothing was changed.", 6000);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = "⬇ Use the cloud's copy of my programs"; }
+    }
+  }
+
+  // A merge kept a fuller copy than the timestamps asked for. Say so: this is
+  // the moment two devices disagree about a program, and the whole reason it
+  // hurt before is that it happened in silence.
+  function reportRescuedTemplates(list) {
+    const names = list.map((r) => r.name).filter(Boolean);
+    const what = names.length === 1 ? `"${names[0]}"` : `${list.length} programs`;
+    console.warn("[Sync] kept the fuller copy of", list);
+    toast(`Kept this device's ${what} — it had more filled in than the synced copy. ` +
+      `If that's wrong, use "Use the cloud's copy" in Settings.`, 9000);
+  }
+
   function mergeById(cloudList, localList, opts) {
     const o = opts || {};
     const prefer = o.prefer || "local";
@@ -4395,14 +4469,41 @@
     const local = Array.isArray(localList) ? localList : [];
     const cloud = Array.isArray(cloudList) ? cloudList : [];
     const byId = new Map(local.map((t) => [t.id, t]));
+    const rescued = [];
     const out = cloud.map((t) => {
       const mine = byId.get(t.id);
       if (!mine) return t;
       const tu = Number(t.updatedAt) || 0, mu = Number(mine.updatedAt) || 0;
-      if (mu > tu) return mine;
-      if (tu > mu) return t;
-      return prefer === "local" ? mine : t;
+      let win = mu > tu ? mine : tu > mu ? t : (prefer === "local" ? mine : t);
+      const lose = win === mine ? t : mine;
+      // The timestamps are not trustworthy enough to throw work away on. They
+      // are stamped in exactly ONE place — saveTrainer, and only while the
+      // program editor is open — so a template can be edited without its stamp
+      // moving, and an older snapshot can then out-rank the newer copy.
+      // Content is not ambiguous in the same way. If the copy about to lose
+      // holds MORE filled-in prescription than the winner, the stamp is lying,
+      // and the fuller copy is kept.
+      //
+      // What this cost on 2026-08-17: a program built Day 2 first, then Day 1.
+      // A snapshot from between those two states — Day 1's lifts added but not
+      // yet numbered, Day 2 finished — won a merge and became the truth. Seven
+      // exercises' weights, reps and progression rules, gone silently.
+      //
+      // Tombstones are exempt: a deleted template legitimately holds nothing,
+      // and preferring the fuller side there would resurrect it on every pull,
+      // which is the whole reason tombstones exist (see tests/template-tombstones).
+      if (!t?.deleted && !mine?.deleted) {
+        const fw = filledPrescriptions(win), fl = filledPrescriptions(lose);
+        if (fl > fw) {
+          rescued.push({ id: t.id, name: lose.name || t.name || "a program", kept: fl, wouldHave: fw });
+          win = lose;
+        }
+      }
+      return win;
     });
+    if (rescued.length && typeof o.onRescue === "function") {
+      try { o.onRescue(rescued); } catch (e) { /* reporting must never break a merge */ }
+    }
     if (keepLocalOnly) {
       const seen = new Set(cloud.map((t) => t.id));
       local.forEach((t) => { if (!seen.has(t.id)) out.push(t); });
@@ -4474,7 +4575,7 @@
       // of adopting, and re-push so the cloud stops presenting stale truth.
       // Ties and local-only ids still go cloud's way — that part of the old
       // wholesale adoption was correct (deletions stay deleted).
-      const clean = { prefer: "cloud", keepLocalOnly: false };
+      const clean = { prefer: "cloud", keepLocalOnly: false, onRescue: reportRescuedTemplates };
       const mergedP = mergeById(coach.program_templates, state.trainerData.programTemplates, clean);
       const mergedW = mergeById(coach.workout_templates, state.trainerData.workoutTemplates, clean);
       const healed =
@@ -4484,10 +4585,11 @@
       state.trainerData.workoutTemplates = mergedW;
       if (healed) pushCoachTemplates();
     } else {
+      const dirty = { onRescue: reportRescuedTemplates };
       state.trainerData.programTemplates =
-        mergeById(coach.program_templates, state.trainerData.programTemplates);
+        mergeById(coach.program_templates, state.trainerData.programTemplates, dirty);
       state.trainerData.workoutTemplates =
-        mergeById(coach.workout_templates, state.trainerData.workoutTemplates);
+        mergeById(coach.workout_templates, state.trainerData.workoutTemplates, dirty);
     }
     // Exercise-library customizations, same dirty-flag protection as templates.
     // Missing keys (older rows, or the column not existing yet) keep local data.
@@ -41588,6 +41690,7 @@
     $("#btn-coach-profile")?.addEventListener("click", openCoachProfile);
     $("#btn-coach-bug-report")?.addEventListener("click", openBugReportModal);
     $("#btn-view-bug-reports")?.addEventListener("click", openBugReportsViewer);
+    $("#btn-adopt-cloud-templates")?.addEventListener("click", adoptCloudTemplates);
     $("#btn-athlete-bug-report")?.addEventListener("click", openBugReportModal);
     window.addEventListener("online", flushBugQueue);
     flushBugQueue();

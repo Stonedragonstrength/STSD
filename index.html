@@ -1026,6 +1026,16 @@
             <!-- Setmore, and the one-way door out of it. Filled by
                  renderSetmoreCard(); disappears once the feed is cut. -->
             <div id="sched-setmore" class="sched-setmore"></div>
+            <!-- The escape hatch. When two devices disagree about a program
+                 there was no way to say "this one is wrong, take the server's
+                 copy" — so a phone holding a stale version kept winning the
+                 merge and re-pushing it, and the only cure was guessing. -->
+            <p class="pref-foot">Programs are merged between your devices. If one of them is
+              showing an old version of a program and won't catch up, tell it to take the
+              synced copy instead.</p>
+            <div class="pref-actions">
+              <button class="btn btn-ghost btn-sm slim-btn" id="btn-adopt-cloud-templates" type="button">⬇ Use the cloud's copy of my programs</button>
+            </div>
           </details>
 
           <details class="pref-fold">
@@ -1661,7 +1671,7 @@
   <script src="exercise-equipment.js?v=plyo1"></script>
   <script src="exercise-roles.js?v=beg1"></script>
   <script src="exercise-stats.js?v=st2"></script>
-  <script src="app.js?v=calfix1"></script>
+  <script src="app.js?v=merge1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
