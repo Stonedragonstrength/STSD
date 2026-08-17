@@ -4,3 +4,7 @@ __*.html
 
 # Brainstorming mockups (scratch, regenerated per session)
 .superpowers/
+
+# Test runner — installed, never committed
+node_modules/
+coverage/

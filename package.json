@@ -1,0 +1,18 @@
+{
+  "name": "stone-dragon-strength-training",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Coach-athlete strength training manager. Static PWA, no build step — package.json exists for the test runner, not for shipping.",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "coverage": "vitest run --coverage",
+    "serve": "node scripts/dev-server.js"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^3.2.4",
+    "jsdom": "^26.1.0",
+    "vitest": "^3.2.4"
+  }
+}
