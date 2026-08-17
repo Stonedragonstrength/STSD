@@ -29803,7 +29803,19 @@
     if (!state.previewMode || !state.clientData) return;
     const c = currentClient();
     if (!c) return;
-    state.clientData.program = structuredClone(buildProgramFromAthlete(c));
+    const next = structuredClone(buildProgramFromAthlete(c));
+    // A rebuild that empties a program which HAD weeks is never right — the
+    // coach is standing in one. It means the source record lost its weeks
+    // (a partial realtime row, a half-applied pull), and adopting it strands
+    // the session: the open day stops resolving and every control in the picker
+    // goes dead against ids that no longer exist. Keep what is on screen and
+    // say so; the next good pull replaces it properly.
+    const had = state.clientData.program?.client?.weeks?.length || 0;
+    if (had && !(next.client.weeks || []).length) {
+      console.warn("[Live] refused a program rebuild that would have emptied", had, "weeks");
+      return;
+    }
+    state.clientData.program = next;
   }
 
   // Resolve the coach-side week + day objects behind whatever the portal is
@@ -30422,9 +30434,28 @@
 
   function renderWorkoutPickerUI() {
     const prog = state.clientData.program;
-    if (!prog?.client?.weeks?.length) return;
     const chips = $("#workout-week-chips");
     const grid = $("#workout-day-grid");
+    // No weeks: CLEAR, never return early. Returning left the previous render's
+    // chips and day cards on screen, wired to weeks that no longer exist — and
+    // that is a lockout, not a cosmetic issue. Tapping such a chip re-runs this
+    // function, which returned again, so nothing moved; tapping such a day card
+    // ran renderWorkoutDetailUI, which cannot resolve the week and bails to the
+    // picker. Both silent, no error, and the only way out is a reload. It is
+    // what "I can't even click on the weeks" and "it just kicks me out back to
+    // the picker" were, on 2026-08-17.
+    if (!prog?.client?.weeks?.length) {
+      if (chips) chips.innerHTML = "";
+      const wh = $("#workout-week-head");
+      if (wh) wh.innerHTML = "";
+      if (grid) {
+        grid.innerHTML = `<div class="empty-state"><div class="empty-emoji">📋</div>` +
+          `<h3>No weeks to show</h3><p>${state.previewMode
+            ? "This athlete's program did not load. Leave the session and open it again."
+            : "Your coach hasn't added any weeks to your program yet."}</p></div>`;
+      }
+      return;
+    }
 
     // Every week gets a chip — the row wraps (.week-chips is flex-wrap). A cap
     // used to hide weeks past the 4th behind a "See all weeks" panel that no
