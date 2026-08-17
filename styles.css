@@ -14000,6 +14000,14 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
 }
 .sched-google-row.on { border-color: rgba(16, 185, 129, 0.4); }
+/* Google expired the grant. Connected, but delivering nothing — and the green
+   "on" border said everything was fine while a fortnight of bookings never
+   reached the calendar. Ordered after `.on` deliberately: same specificity, so
+   this only wins by coming second. */
+.sched-google-row.needs-reconnect {
+  border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 8%, var(--surface-2));
+}
 .sched-google-ico { font-size: 1.2rem; line-height: 1; }
 .sched-google-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15em; }
 .sched-google-txt b { font-size: 0.88rem; }

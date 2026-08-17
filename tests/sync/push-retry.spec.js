@@ -215,6 +215,21 @@ describe("the push queue: recovery", () => {
     expect(q.pendingPushes()).toBe(0);
   });
 
+  it("retries a push that fails DURING a flush", async () => {
+    // A flush is what runs when the coach leaves a screen or the tab closes —
+    // the worst moment to drop one. It used to call the push without its key,
+    // so the re-queue had nothing to file the retry under and dropped it.
+    const q = makeQueue();
+    const fn = flaky(1);
+    q.debounce("coach-templates:c1", fn);
+    await q.flush();            // fires early, and fails
+    expect(fn.calls()).toBe(1);
+    expect(q.pendingPushes(), "the failed flush must leave a retry behind").toBe(1);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(fn.calls()).toBe(2);
+    expect(q.lastPushFailureAt()).toBe(0);
+  });
+
   it("flush() can target one record's retry by key prefix", async () => {
     const q = makeQueue();
     const a = flaky(1);

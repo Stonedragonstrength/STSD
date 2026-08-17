@@ -24042,30 +24042,63 @@
       : "Invoices, and what came in");
   }
 
+  // Google says `invalid_grant` when the refresh token is dead — revoked, or
+  // aged out. It is the one sync error a retry can never fix: a refresh token
+  // is the ONLY thing that can mint an access token without a person, so once
+  // Google rejects it there is nothing left to try with. Only the coach signing
+  // in again produces a new one. Everything else (a 5xx, a rate limit, no
+  // network) is worth another go on its own.
+  //
+  // Worth knowing why this happens on a schedule: while the Google Cloud
+  // consent screen is in "Testing", refresh tokens expire SEVEN DAYS after they
+  // are issued. Publishing the consent screen is what stops it recurring; no
+  // amount of client code can.
+  function googleNeedsReconnect(g) {
+    return !!g?.connected && /invalid_grant/i.test(String(g.lastError || ""));
+  }
+
   function renderGoogleCard() {
     const host = $("#sched-google"); if (!host) return;
     const g = _googleStatus;
     const connected = !!g?.connected;
+    const expired = googleNeedsReconnect(g);
+    // The old line claimed "times you're busy there stop showing as free".
+    // Nothing has ever called the freebusy action — the Edge Function
+    // implements it and no caller exists — so the card was promising a feature
+    // that does not run. Say only what is true.
+    const blurb = !connected
+      ? "Not connected. Connect it and every booking lands on your calendar."
+      : expired
+        ? escapeHtml(g.email || "Connected") + ". Google has expired this connection, so nothing has reached your calendar since it went. Reconnect and the missed bookings get pushed."
+        : escapeHtml(g.email || "Connected") + ". New bookings land on it as they're made.";
     host.innerHTML =
-      `<div class="sched-google-row ${connected ? "on" : ""}">` +
-        `<span class="sched-google-ico">📆</span>` +
+      `<div class="sched-google-row ${connected ? "on" : ""}${expired ? " needs-reconnect" : ""}">` +
+        `<span class="sched-google-ico">${expired ? "⚠️" : "📆"}</span>` +
         `<span class="sched-google-txt">` +
           `<b>Google Calendar</b>` +
-          `<span>${connected
-            ? escapeHtml(g.email || "Connected") + ". Bookings appear on it, and times you're busy there stop showing as free."
-            : "Not connected. Connect it and every booking lands on your calendar."}</span>` +
-          (connected && g.lastError ? `<span class="sched-google-err">Last sync error: ${escapeHtml(g.lastError)}</span>` : "") +
+          `<span>${blurb}</span>` +
+          // A raw "Error: invalid_grant" told the coach nothing actionable, and
+          // sat there looking like something they had to decode. Once it is
+          // named as an expiry with a button beside it, the code itself is
+          // noise — keep it only for errors we have no words for.
+          (connected && g.lastError && !expired
+            ? `<span class="sched-google-err">Last sync error: ${escapeHtml(g.lastError)}</span>` : "") +
         `</span>` +
         `<span class="sched-google-acts">` +
           // Only offered once connected, and only as a repair: every booking
           // made from here on pushes itself as it is created. This is for the
           // ones that already existed when Google was connected, which nothing
-          // else ever goes back for.
-          (connected ? `<button type="button" class="btn btn-ghost btn-sm slim-btn" id="sched-google-sync">Sync existing bookings</button>` : "") +
-          `<button type="button" class="btn slim-btn btn-sm" id="sched-google-btn">${connected ? "Disconnect" : "Connect"}</button>` +
+          // else ever goes back for. Hidden while expired — it cannot work
+          // until the connection is live, and offering it would just fail.
+          (connected && !expired ? `<button type="button" class="btn btn-ghost btn-sm slim-btn" id="sched-google-sync">Sync existing bookings</button>` : "") +
+          (expired ? `<button type="button" class="btn btn-ghost btn-sm slim-btn" id="sched-google-off">Disconnect</button>` : "") +
+          `<button type="button" class="btn slim-btn btn-sm" id="sched-google-btn">${
+            expired ? "Reconnect" : connected ? "Disconnect" : "Connect"}</button>` +
         `</span>` +
       `</div>`;
-    $("#sched-google-btn").addEventListener("click", () => connected ? disconnectGoogle() : connectGoogle());
+    $("#sched-google-btn").addEventListener("click", () =>
+      (connected && !expired) ? disconnectGoogle() : connectGoogle());
+    $("#sched-google-off")?.addEventListener("click", () => disconnectGoogle());
     $("#sched-google-sync")?.addEventListener("click", () => syncAllToGoogle());
   }
 
@@ -24164,8 +24197,17 @@
     url.searchParams.delete("prompt");
     window.history.replaceState({}, "", url.toString());
     const res = await window.Cloud?.googleCall?.("exchange", { code });
-    if (res?.ok) toast(`Google Calendar connected${res.email ? " · " + res.email : ""} ✓`, 4000);
-    else toast("Google wouldn't complete the connection. Try again.", 5000);
+    if (!res?.ok) { toast("Google wouldn't complete the connection. Try again.", 5000); return true; }
+    toast(`Google Calendar connected${res.email ? " · " + res.email : ""} ✓`, 4000);
+    // Catch up whatever was made while the connection was down. Bookings push
+    // themselves only at the moment they are created, so anything booked during
+    // an expired grant exists nowhere on the calendar and nothing goes back for
+    // it — the coach had to know that "Sync existing bookings" was the button
+    // for a problem they were never told they had. Reconnecting IS the moment
+    // to repair it, so it repairs itself. Deliberately not awaited: the backfill
+    // is batched and can take a while, and boot must not sit behind it. Its own
+    // toasts are the right report here ("N added"), so it runs as it always has.
+    setTimeout(() => { syncAllToGoogle(); }, 1200);
     return true;
   }
 
@@ -41715,6 +41757,14 @@
     $("#btn-day-editor-save")?.addEventListener("click", saveDayEditor);
     $("#btn-save-program")?.addEventListener("click", async () => {
       const btn = $("#btn-save-program");
+      // flush() resolves on SETTLED, not on SUCCEEDED — _runPush catches every
+      // failure and never rethrows, so awaiting it tells you the attempt is
+      // over and nothing about whether it worked. This button used to print
+      // "Saved ✓" off that alone, which meant it said saved when nothing had
+      // reached the cloud. On 2026-08-17 a program was built, saved on that
+      // promise, and lost on the next restart when the boot merge replaced the
+      // local copy with the cloud's empty one. Ask what actually happened.
+      const failedBefore = window.Cloud?.lastPushFailureAt?.() || 0;
       saveTrainer(); // localStorage is written synchronously here
       const orig = btn.textContent;
       btn.disabled = true; btn.textContent = "Saving…";
@@ -41722,11 +41772,28 @@
         // Push everything pending to the cloud now instead of waiting out the
         // debounce — so work is safe the moment you step away.
         await window.Cloud?.flush?.();
-        btn.textContent = "Saved ✓";
+        const failedAfter = window.Cloud?.lastPushFailureAt?.() || 0;
+        const stillQueued = window.Cloud?.pendingPushes?.() || 0;
+        if (!window.Cloud?.enabled) {
+          // No cloud configured at all: local is the whole story, and saying
+          // "Saved ✓" would imply a copy somewhere else.
+          btn.textContent = "Saved here ✓";
+        } else if (failedAfter > failedBefore || stillQueued) {
+          // A failed push is re-queued and keeps retrying, so this is "not yet"
+          // rather than "gone" — but it must not read as done, because the one
+          // thing that turns it into lost work is restarting now.
+          btn.textContent = "Not saved ✕";
+          toast("Saved on this device, but it hasn't reached the cloud yet. It'll keep retrying — " +
+            "don't close or restart until this says Saved ✓.", 10000);
+        } else {
+          btn.textContent = "Saved ✓";
+        }
       } catch {
-        btn.textContent = "Saved locally";
+        btn.textContent = "Not saved ✕";
+        toast("Couldn't reach the cloud. The program is on this device only — " +
+          "don't restart until it saves.", 10000);
       } finally {
-        setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 1800);
+        setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 2600);
       }
     });
     $("#btn-assign-program")?.addEventListener("click", () => { if (_programEditorId) assignProgramPrompt(_programEditorId); });

@@ -1483,7 +1483,11 @@
     await Promise.all(entries.map(async ([k, entry]) => {
       clearTimeout(entry.timer);
       _debounceTimers.delete(k);
-      await _runPush(entry.fn);
+      // Carry the key and seq through, or a push that fails DURING a flush is
+      // dropped exactly the way every failed push used to be — and a flush is
+      // what runs when the coach leaves a screen or closes the tab, which is
+      // the worst possible moment to lose one silently.
+      await _runPush(entry.fn, k, entry.seq);
     }));
   }
 
