@@ -25,6 +25,31 @@ describe("declSource", () => {
     const src = declSource("function rowToAthlete(", "cloud.js");
     expect(src).toContain("rowToAthlete");
   });
+
+  it("ends a statement declaration at its semicolon, not at some later brace", () => {
+    // The trap: `const x = new Map();` has no brace of its own, so brace-matching
+    // would run on to an unrelated block far below and swallow it whole —
+    // silently, since the result still compiles.
+    const map = declSource("const _debounceTimers = new Map()", "cloud.js");
+    expect(map).toBe("const _debounceTimers = new Map();");
+
+    const arr = declSource("const RETRY_MS = [", "cloud.js");
+    expect(arr).toBe("const RETRY_MS = [5000, 15000, 45000, 120000];");
+    expect(arr).not.toContain("function");
+
+    const num = declSource("let _inflightPushes = 0", "cloud.js");
+    expect(num).toBe("let _inflightPushes = 0;");
+  });
+
+  it("does not stop at a semicolon nested inside brackets or a string", () => {
+    // `for (let i = 0; ...)` inside a value, or a ";" in a string literal, must
+    // not terminate the statement early.
+    const src = declSource("const READINESS_FACES", "app.js");
+    expect(src.trimEnd().endsWith(";")).toBe(true);
+    const opens = (src.match(/\[/g) || []).length;
+    const closes = (src.match(/\]/g) || []).length;
+    expect(opens).toBe(closes);
+  });
 });
 
 describe("loadFn", () => {

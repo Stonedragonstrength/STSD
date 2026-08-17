@@ -50,18 +50,41 @@ export function declSource(decl, file = "app.js") {
       `ambiguous. Pass a longer, unique prefix.`
     );
   }
-  const open = src.indexOf("{", at);
-  if (open < 0) throw new Error(`load-fn: no body found for "${decl}" in ${file}`);
-  let depth = 0;
-  for (let i = open; i < src.length; i++) {
-    const ch = src[i];
-    if (ch === "{") depth++;
-    else if (ch === "}") {
-      depth--;
-      if (depth === 0) return src.slice(at, i + 1);
+  // Two kinds of declaration, and guessing wrong is silent: a `const x = new
+  // Map();` has no brace of its own, so brace-matching would run on to some
+  // unrelated block far below and swallow it.
+  const isBlock = /^\s*(?:async\s+)?(?:function|class)\b/.test(decl);
+  if (isBlock) {
+    const open = src.indexOf("{", at);
+    if (open < 0) throw new Error(`load-fn: no body found for "${decl}" in ${file}`);
+    let depth = 0;
+    for (let i = open; i < src.length; i++) {
+      const ch = src[i];
+      if (ch === "{") depth++;
+      else if (ch === "}") {
+        depth--;
+        if (depth === 0) return src.slice(at, i + 1);
+      }
     }
+    throw new Error(`load-fn: unbalanced braces after "${decl}" in ${file}`);
   }
-  throw new Error(`load-fn: unbalanced braces after "${decl}" in ${file}`);
+  // Statement form: run to the first `;` that is not nested inside brackets or
+  // a string. Covers `const q = new Map();`, `const MS = [1, 2];`, `let n = 0;`.
+  let depth = 0;
+  let quote = null;
+  for (let i = at; i < src.length; i++) {
+    const ch = src[i];
+    if (quote) {
+      if (ch === "\\") { i++; continue; }
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") { quote = ch; continue; }
+    if (ch === "{" || ch === "[" || ch === "(") depth++;
+    else if (ch === "}" || ch === "]" || ch === ")") depth--;
+    else if (ch === ";" && depth === 0) return src.slice(at, i + 1);
+  }
+  throw new Error(`load-fn: no statement terminator after "${decl}" in ${file}`);
 }
 
 /**
