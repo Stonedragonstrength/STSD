@@ -6401,33 +6401,59 @@ input:focus, textarea:focus, select:focus {
 .wc-status.skipped { color: var(--muted); font-weight: 700; text-decoration: line-through; text-decoration-thickness: 1px; }
 .workout-card.is-skipped { opacity: 0.75; }
 .workout-card.is-skipped .workout-card-icon { filter: grayscale(0.7); }
+/* The card's action column, between the body and the chevron. These controls
+   used to sit inline in .workout-card-meta, and on touch that was a trap: the
+   coarse-pointer padding below grows an inline element's HIT box without laying
+   anything out, so a 27px invisible target straddled the middle of a ~100px
+   card — the one place a thumb aims when it means "open this day". Tapping the
+   day opened the skip sheet or the day mover instead.
+   A column on the right fixes both halves: as flex items the padding takes real
+   space (target and ink are one rectangle), and the whole centre of the card
+   belongs to the day again. Not a row under the meta — on a two-line card that
+   row is still mid-card, which was measurably no fix at all. */
+.wc-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  flex: 0 0 auto;
+  gap: 0.1rem;
+  margin-left: 0.4rem;
+  text-align: right;
+}
 /* "Skipped it?" / "Undo skip" — a span acting as a button, because the card
    itself is a <button> and buttons don't nest. Underlined so it reads as an
    action, not another status word. */
 .wc-skip {
-  margin-left: 0.6em;
   color: var(--text-soft);
   font-weight: 700;
+  font-size: 0.74rem;
+  letter-spacing: 0.03em;
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
 }
 .wc-skip:hover { color: var(--text); }
 /* Coach-only, live session: move this day from the picker card. Same species
    of inline control as .wc-skip, tinted primary so it reads as coach chrome. */
 .wc-move {
-  margin-left: 0.6em;
   color: var(--primary-bright);
   font-weight: 700;
+  font-size: 0.74rem;
+  letter-spacing: 0.03em;
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
 }
 .wc-move:hover { color: var(--text); }
 @media (pointer: coarse) {
-  .wc-move { padding: 0.55em 0.35em; margin: -0.55em 0 -0.55em 0.25em; }
+  .wc-move { padding: 0.45em 0.35em; margin: 0; }
 }
 /* The same door inside the day detail, pinned at the top of the content. A
    quiet full-width row: visible while deciding, not shouting over the workout. */
@@ -6435,9 +6461,11 @@ input:focus, textarea:focus, select:focus {
 .detail-skip-btn { color: var(--text-soft); }
 .detail-skip-btn:hover { color: var(--text); }
 @media (pointer: coarse) {
-  /* An inline span can't grow taller without moving the row; padding grows the
-     tap target instead (negative margin keeps the visual line height). */
-  .wc-skip { padding: 0.55em 0.35em; margin: -0.55em 0 -0.55em 0.25em; }
+  /* Real padding on a flex item, so the row grows with the target. The old
+     rule paired this padding with a -0.55em margin to "keep the visual line
+     height" — but vertical margins do nothing on an inline element, so all it
+     did was hang an invisible 27px target over the card's centre. */
+  .wc-skip { padding: 0.45em 0.35em; margin: 0; }
 }
 .meta-pill {
   font-size: 0.65rem;

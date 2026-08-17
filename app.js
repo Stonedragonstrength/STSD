@@ -30544,6 +30544,17 @@
           : `<span class="wc-status todo">Tap to start</span>`;
       // "I didn't do this day", before entering it — and the way back out.
       // A span, not a button: the card itself is already a <button>.
+      //
+      // These two live in their OWN column (.wc-actions) beside the body, never
+      // inline in the meta line. Two things went wrong inline. Their
+      // touch-sized padding grew a hit box that did not lay out — vertical
+      // padding on an inline element paints and hit-tests outside the line box
+      // without moving anything — and the meta line sits near the middle of a
+      // ~100px card, which is exactly where a thumb lands when it means "open
+      // this day". So on a tablet, tapping the card opened "Skip this day?" or
+      // the day mover instead, with nothing on screen explaining why. A row
+      // under the meta is not far enough either: on a two-line card that row is
+      // still mid-card. The whole middle of the card has to be the day.
       const skipCtl = totalEx > 0 && !checked && (skippedNow || doneEx === 0)
         ? `<span class="wc-skip" role="button" tabindex="0">${skippedToday ? "Undo skip" : "Skipped it?"}</span>`
         : "";
@@ -30565,9 +30576,10 @@
         <div class="workout-card-body">
           <h4 class="workout-card-title">${escapeHtml(day.name)}</h4>
           <div class="workout-card-meta">${totalEx} exercise${totalEx === 1 ? "" : "s"} · ${status}${
-            firstLogged ? `<span class="wc-first">${escapeHtml(shortLogDate(firstLogged))}</span>` : ""}${skipCtl}${moveCtl}</div>
+            firstLogged ? `<span class="wc-first">${escapeHtml(shortLogDate(firstLogged))}</span>` : ""}</div>
           ${rdy || moods.length ? `<span class="wc-tags">${readinessChipHtml(rdy)}${moodChipsHtml(moods)}</span>` : ""}
         </div>
+        ${skipCtl || moveCtl ? `<div class="wc-actions">${skipCtl}${moveCtl}</div>` : ""}
         <div class="workout-card-chevron">›</div>
       `;
       const skipEl = card.querySelector(".wc-skip");
