@@ -4086,6 +4086,20 @@
         inviteCode: athlete.inviteCode,
         sessionBank: athlete.sessionBank || { packages: [], redemptions: [] },
         nutrition: athlete.nutrition || { current: null, history: [] },
+        // The athlete's own open-slot preference, set on their own device.
+        // Missing from this list until 2026-08-17, which left it undefined on
+        // every rebuild — and a rebuild runs on every sign-in, every resync and
+        // every realtime row event. So `if (!prog.client.hideOpenSlots)` was
+        // always true and the settings toggle always drew as ON: an athlete who
+        // muted open-slot alerts got them back on the next open, while their DB
+        // column said otherwise. Exactly the silent disagreement the note above
+        // warns about.
+        hideOpenSlots: !!athlete.hideOpenSlots,
+        // Same omission, same shape. partnerWarningHtml() is the only thing
+        // that tells one half of a couple that cancelling takes the session off
+        // their partner too, and it reads this. Undefined meant that warning
+        // had never rendered for anyone.
+        partnerId: athlete.partnerId || null,
         // Carried for the bookings insert. A trigger overrides it server-side,
         // so this is only ever a hint, never the authority.
         _coachId: athlete._coachId || null,
