@@ -24112,7 +24112,7 @@
     const btn = $("#sched-google-sync");
     _googleSyncing = true;
     if (btn) { btn.disabled = true; btn.textContent = "Syncing…"; }
-    let written = 0;
+    let written = 0, removed = 0;
     try {
       // Capped rather than while(true): a server that kept reporting work left
       // would otherwise loop forever against Google's rate limit.
@@ -24121,22 +24121,29 @@
         const res = await window.Cloud?.googleCall?.("push-all", { batch: 25 });
         if (res?.connected === false) { toast("Connect Google Calendar first."); break; }
         written += res?.written || 0;
+        removed += res?.removed || 0;
         if (btn && res?.remaining) btn.textContent = `Syncing… ${res.remaining} to go`;
         if (!res?.ok) {
           // Google meters writes to one calendar, so a long backfill gets
           // limited even when it is paced. The batch says what it managed
           // first; as long as something moved, waiting and carrying on is the
           // right answer, and only a batch that achieved nothing is a stop.
-          if (res?.soft && res.written) { await new Promise((r) => setTimeout(r, 3000)); continue; }
+          if (res?.soft && (res.written || res.removed)) { await new Promise((r) => setTimeout(r, 3000)); continue; }
           if (res?.soft && stalls++ < 3) { await new Promise((r) => setTimeout(r, 5000)); continue; }
           const msg = res?.error ? `Google sync stopped: ${res.error}` : "Couldn't reach Google. Try again.";
           toast(written ? `${written} added, then stopped · ${msg} · tap again to carry on` : msg, 9000);
           break;
         }
         stalls = 0;
-        if (res.done || !res.written) {
-          toast(written
-            ? `📆 ${written} booking${written === 1 ? "" : "s"} added to Google Calendar ✓`
+        // A batch that only DELETED still made progress. Stopping on
+        // `!res.written` alone would end the loop on the first cancel-only
+        // batch and leave the rest of the ghosts on the calendar.
+        if (res.done || (!res.written && !res.removed)) {
+          const parts = [];
+          if (written) parts.push(`${written} added`);
+          if (removed) parts.push(`${removed} cancelled session${removed === 1 ? "" : "s"} taken off`);
+          toast(parts.length
+            ? `📆 Google Calendar · ${parts.join(" · ")} ✓`
             : "Google Calendar is already up to date ✓", 5000);
           break;
         }

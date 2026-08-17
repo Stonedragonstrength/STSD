@@ -17,9 +17,11 @@
 //   remove      -> { bookingId }        delete the event a booking owns
 //   push-series -> { seriesId, from }   same, for a whole weekly series
 //   remove-series -> { seriesId, from } delete a whole weekly series' events
-//   push-all    -> { from, batch }      backfill every future booking with no
-//                                       event yet; returns what remains so the
-//                                       caller can loop until done
+//   push-all    -> { from, batch }      RECONCILE: delete the events of bookings
+//                                       that were cancelled while Google was
+//                                       unreachable, then backfill every future
+//                                       booking with no event yet. Returns what
+//                                       remains so the caller can loop until done
 //
 // The coach may call any of them. An athlete may call only `push` and `remove`,
 // and only for a booking of their own — that is what keeps the coach's calendar
@@ -410,6 +412,17 @@ Deno.serve(async (req) => {
           .select("id", { count: "exact", head: true })
           .eq("coach_id", coachId).eq("status", "booked")
           .is("google_event_id", null).gte("start_at", from);
+        // Cancelled, but the event is still on the calendar. This repair used to
+        // be push-only, so it could not fix a cancellation at all — and a
+        // cancellation is the half that goes wrong most, because `remove` fires
+        // once, at the moment of cancelling, and is never retried. Cancel while
+        // the grant is dead (or the network is out) and the session sits on the
+        // coach's calendar forever, looking like a real appointment.
+        // Found 2026-08-17: seven of them, one still upcoming.
+        const orphans = () => sb.from("bookings")
+          .select("id, google_event_id, status")
+          .eq("coach_id", coachId).neq("status", "booked")
+          .not("google_event_id", "is", null);
 
         const { data: rows, error: qErr } = await sb.from("bookings").select("*, athletes(display_name)")
           .eq("coach_id", coachId).eq("status", "booked")
@@ -421,13 +434,31 @@ Deno.serve(async (req) => {
           return json({ ok: false, error: qErr.message, soft: true });
         }
         const list = rows ?? [];
-        if (!list.length) return json({ ok: true, written: 0, remaining: 0, done: true });
+        const { data: ghostRows } = await orphans();
+        const ghosts = ghostRows ?? [];
+        if (!list.length && !ghosts.length) {
+          return json({ ok: true, written: 0, removed: 0, remaining: 0, done: true });
+        }
 
         try {
           const token = await accessToken(row.refresh_token, clientId, clientSecret);
           const cal = encodeURIComponent(row.calendar_id || "primary");
           const auth = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-          let written = 0;
+          let written = 0, removed = 0;
+          // Cancellations first: taking a session OFF the calendar matters more
+          // than adding one, because a ghost appointment is read as real and
+          // planned around, while a missing one is at worst noticed.
+          try {
+            for (const bk of ghosts.slice(0, size)) {
+              if (await dropEvent(bk, cal, auth)) removed++;
+              await sleep(120);
+            }
+          } catch (e) {
+            await noteError(String(e));
+            const { count } = await pending();
+            console.error("[google-calendar] push-all cancel sweep stopped", e);
+            return json({ ok: false, error: String(e), soft: true, written: 0, removed, remaining: count ?? 0 });
+          }
           try {
             for (const bk of list) {
               await writeEvent(bk, cal, auth);
@@ -444,16 +475,21 @@ Deno.serve(async (req) => {
             await noteError(String(e));
             const { count } = await pending();
             console.error("[google-calendar] push-all batch stopped", e);
-            return json({ ok: false, error: String(e), soft: true, written, remaining: count ?? 0 });
+            return json({ ok: false, error: String(e), soft: true, written, removed, remaining: count ?? 0 });
           }
           await sb.from("google_calendar").update({ last_error: null }).eq("coach_id", coachId);
           const { count } = await pending();
-          return json({ ok: true, written, remaining: count ?? 0, done: (count ?? 0) === 0 });
+          // Not done while ghosts remain: a caller that stopped on remaining===0
+          // would leave cancelled sessions on the calendar past the first batch.
+          const { data: left } = await orphans();
+          const ghostsLeft = (left ?? []).length;
+          return json({ ok: true, written, removed, remaining: (count ?? 0) + ghostsLeft,
+            done: (count ?? 0) === 0 && ghostsLeft === 0 });
         } catch (e) {
           await noteError(String(e));
           const { count } = await pending();
           console.error("[google-calendar] push-all failed", e);
-          return json({ ok: false, error: String(e), soft: true, written: 0, remaining: count ?? 0 });
+          return json({ ok: false, error: String(e), soft: true, written: 0, removed: 0, remaining: count ?? 0 });
         }
       }
 
