@@ -1361,7 +1361,7 @@
   const EXERCISE_MODIFIERS = [
     { group: "Unilateral",  tags: ["1A", "1L"] },
     { group: "Alternation", tags: ["Alternating", "Non-Alternating"] },
-    { group: "Equipment",   tags: ["BB", "DB", "DBs", "KB", "EZ Bar", "Cable", "Rope", "Wide Bar", "Band", "Machine", "Landmine", "Slider", "Bench", "Bench Assisted"], multi: true },
+    { group: "Equipment",   tags: ["BB", "DB", "DBs", "KB", "EZ Bar", "Cable", "Rope", "V-Bar", "Wide Bar", "Band", "Machine", "Landmine", "Slider", "Bench", "Bench Assisted"], multi: true },
     // Which resistance band, lightest to heaviest. THIS ORDER IS THE LADDER —
     // nothing else stores it, so reordering these re-prescribes every banded
     // lift on the roster.
@@ -1377,7 +1377,21 @@
     { group: "Position",    tags: ["Incline", "Decline", "Elevated", "Seated", "Standing", "Kneeling", "Raised", "Supported", "Wide", "Lying", "Staggered"] },
     { group: "Grip",        tags: ["Supinated", "Neutral", "Pronated"] },
     { group: "Style",       tags: ["Pause", "Tempo", "Explosive", "Isometric"] },
-    { group: "Hold",        tags: ["1S", "2S", "3S", "4S", "5S"] },
+    // WHERE in the range of motion the pause happens, bottom to top. Only
+    // offered alongside Pause (see showsWith), because on any other style it is
+    // a question with no meaning. Single-select: a rep pauses in one place.
+    //
+    // Deliberately NOT the group name "Position" — that one is in
+    // LIFT_ID_GROUPS, and a paused squat must stay the same lift as an
+    // unpaused one or the whole history splits in two.
+    { group: "Pause At",    tags: ["Bottom", "¼", "½", "¾", "Top"], showsWith: ["Pause"] },
+    // Seconds, shared by Isometric (how long the hold is) and Pause (how long
+    // the pause is). Those two live in the single-select Style group, so only
+    // one can ever be set — which is what makes one row of seconds unambiguous
+    // rather than two rows of nearly identical chips. tagLong() reads the
+    // sibling Style tag to say which it is in the athlete's name.
+    { group: "Hold",        tags: ["1S", "2S", "3S", "4S", "5S", "6S", "7S", "8S", "9S", "10S"],
+      showsWith: ["Isometric", "Pause"] },
     // What KIND of contraction this is, for the stat field's AGI axis.
     //
     // Deliberately not folded into Style, and deliberately not named
@@ -1397,8 +1411,26 @@
     // exercise, or an ordinary barbell lift programmed as a jump.
     { group: "Impulse",     tags: ["Plyometric", "Ballistic"] },
   ];
-  // Hold (seconds) tags only apply alongside the Isometric tag.
-  const HOLD_TAGS = ["1S", "2S", "3S", "4S", "5S"];
+  // Groups that only make sense alongside another tag, and the tags that open
+  // them. Derived from EXERCISE_MODIFIERS so a new conditional group is one
+  // `showsWith` and nothing else — the picker, the clearing and the athlete's
+  // name all follow from here.
+  // Groups that describe how a rep is PERFORMED rather than what is being
+  // lifted. They render as trailing chips and must not prepend to the name —
+  // "Plyometric Box Jump" is not English, and neither is "½ Back Squat".
+  // Shared by renderModChips and exerciseDisplayLabel, which have to agree:
+  // when they did not, a chip sat after the name in the editor and before it on
+  // the athlete's card.
+  const TRAILING_GROUPS = ["Style", "Pause At", "Hold", "Impulse"];
+  const CONDITIONAL_GROUPS = EXERCISE_MODIFIERS.filter((g) => g.showsWith);
+  const groupTags = (name) => EXERCISE_MODIFIERS.find((g) => g.group === name)?.tags || [];
+  // Seconds: Isometric holds and Pause pauses share this row.
+  const HOLD_TAGS = groupTags("Hold");
+  const PAUSE_AT_TAGS = groupTags("Pause At");
+  /** Should a conditional group be open, given the tags currently set? */
+  function conditionalGroupOpen(g, mods) {
+    return (g.showsWith || []).some((t) => (mods || []).includes(t));
+  }
 
   // The coach's tags are shorthand — they have to be, because they render as
   // chips in a crowded editor row. The athlete reads a sentence, not a chip,
@@ -1417,15 +1449,30 @@
     "DBs": "Dumbbell",
     "KB": "Kettlebell",
     "EZ Bar": "EZ-Bar",
-    "1S": "1s Hold", "2S": "2s Hold", "3S": "3s Hold",
-    "4S": "4s Hold", "5S": "5s Hold",
+    // Seconds read as a hold by default; tagLong() rewrites them as a pause
+    // when the exercise carries the Pause tag, because the same "3S" means two
+    // different instructions and the athlete gets a sentence, not a chip.
+    "1S": "1s Hold", "2S": "2s Hold", "3S": "3s Hold", "4S": "4s Hold", "5S": "5s Hold",
+    "6S": "6s Hold", "7S": "7s Hold", "8S": "8s Hold", "9S": "9s Hold", "10S": "10s Hold",
+    // Where the pause happens. Phrased to follow the name rather than lead it:
+    // "Back Squat Pause at ½", never "½ Back Squat".
+    "Bottom": "at Bottom", "¼": "at ¼", "½": "at ½", "¾": "at ¾", "Top": "at Top",
     // A chip that is literally green and reads "Green" needs no decoding, but
     // the athlete reads a sentence in several places, and "Green Bench Press"
     // is not one.
     "Yellow": "Yellow Band", "Red": "Red Band", "Purple": "Purple Band",
     "Green": "Green Band", "Grey": "Grey Band",
   };
-  function tagLong(tag) { return TAG_LONG[tag] || tag; }
+  // `mods` is optional and only changes the seconds tags: "3S" on a Pause is a
+  // three second pause, on an Isometric it is a three second hold. Callers with
+  // no exercise in hand get the hold reading, which is what the tag has always
+  // meant on its own.
+  function tagLong(tag, mods) {
+    if (HOLD_TAGS.includes(tag) && (mods || []).includes("Pause")) {
+      return tag.replace(/S$/, "s") + " Pause";
+    }
+    return TAG_LONG[tag] || tag;
+  }
 
   // Chips are ordered by EXERCISE_MODIFIERS so the coach's row reads the same
   // regardless of click order. A NAME is a sentence, and the sentence wants a
@@ -1764,7 +1811,7 @@
     if (m.includes("EZ Bar")) return 25;
     if (m.includes("BB")) return 45;
     if (m.includes("DB") || m.includes("DBs") || m.includes("KB") || m.includes("Cable") ||
-        m.includes("Rope") || m.includes("Band") || m.includes("Wide Bar") || m.includes("Machine")) return null;
+        m.includes("Rope") || m.includes("V-Bar") || m.includes("Band") || m.includes("Wide Bar") || m.includes("Machine")) return null;
     const n = String(name || "").trim().toLowerCase();
     if (Object.prototype.hasOwnProperty.call(BAR_BY_NAME, n)) return BAR_BY_NAME[n];
     if (/\bsmith\b/.test(n)) return 25;
@@ -1849,6 +1896,7 @@
     "EZ Bar":    { color: "#c084fc", bg: "rgba(192,132,252,0.18)" },
     "Cable":     { color: "#2dd4bf", bg: "rgba(45,212,191,0.18)"  },
     "Rope":      { color: "#38bdf8", bg: "rgba(56,189,248,0.18)"  },
+    "V-Bar":     { color: "#0ea5e9", bg: "rgba(14,165,233,0.18)"  },
     "Wide Bar":  { color: "#22d3ee", bg: "rgba(34,211,238,0.18)"  },
     "Band":      { color: "#4ade80", bg: "rgba(74,222,128,0.18)"  },
     "Machine":   { color: "#facc15", bg: "rgba(250,204,21,0.18)"  },
@@ -1876,6 +1924,18 @@
     "3S":        { color: "#38bdf8", bg: "rgba(56,189,248,0.18)"  },
     "4S":        { color: "#38bdf8", bg: "rgba(56,189,248,0.18)"  },
     "5S":        { color: "#38bdf8", bg: "rgba(56,189,248,0.18)"  },
+    "6S":        { color: "#38bdf8", bg: "rgba(56,189,248,0.18)"  },
+    "7S":        { color: "#38bdf8", bg: "rgba(56,189,248,0.18)"  },
+    "8S":        { color: "#38bdf8", bg: "rgba(56,189,248,0.18)"  },
+    "9S":        { color: "#38bdf8", bg: "rgba(56,189,248,0.18)"  },
+    "10S":       { color: "#38bdf8", bg: "rgba(56,189,248,0.18)"  },
+    // Where the pause lands. One family, one colour, so the row reads as a
+    // single control rather than five unrelated chips.
+    "Bottom":    { color: "#34d399", bg: "rgba(52,211,153,0.18)"  },
+    "¼":         { color: "#34d399", bg: "rgba(52,211,153,0.18)"  },
+    "½":         { color: "#34d399", bg: "rgba(52,211,153,0.18)"  },
+    "¾":         { color: "#34d399", bg: "rgba(52,211,153,0.18)"  },
+    "Top":       { color: "#34d399", bg: "rgba(52,211,153,0.18)"  },
     "Timed":     { color: "#f59e0b", bg: "rgba(245,158,11,0.18)"  },
     // The bands wear their own colors — this is the one place in this table
     // where the color IS the information, so no two may match. Mid-weight
@@ -3203,7 +3263,6 @@
     // Impulse rides with Style and Hold: all three describe HOW the set is
     // performed rather than what implement it uses, so they read as trailing
     // chips and must not prepend to the name (see exerciseDisplayLabel).
-    const TRAILING_GROUPS = ["Style", "Hold", "Impulse"];
     const groups = position === "before"
       ? EXERCISE_MODIFIERS.filter((g) => !TRAILING_GROUPS.includes(g.group))
       : EXERCISE_MODIFIERS.filter((g) => TRAILING_GROUPS.includes(g.group));
@@ -3290,16 +3349,37 @@
       pop.appendChild(grp);
     }
 
-    const clearHoldTag = () => {
-      ex.modifiers = (ex.modifiers || []).filter((m) => !HOLD_TAGS.includes(m));
-      pop.querySelectorAll('[data-group="Hold"] .mod-picker-btn.on').forEach((b) => {
+    // Conditional groups (Hold, Pause At) open only alongside the tag that
+    // gives them meaning, and their selections come off when it does. Driven by
+    // `showsWith` rather than by name, so adding another costs one line in
+    // EXERCISE_MODIFIERS.
+    const clearGroupTags = (g) => {
+      ex.modifiers = (ex.modifiers || []).filter((m) => !g.tags.includes(m));
+      pop.querySelectorAll(`[data-group="${g.group}"] .mod-picker-btn.on`).forEach((b) => {
         b.classList.remove("on");
         b.style.removeProperty("--mc"); b.style.removeProperty("--mb");
       });
     };
-    const setHoldRowOpen = (open) => {
-      const holdGrp = pop.querySelector('[data-group="Hold"]');
-      if (holdGrp) holdGrp.classList.toggle("hidden", !open);
+    // One pass over every conditional group: open the ones whose trigger is
+    // set, and strip the selections of the ones whose trigger is gone. Doing
+    // this after every tap is what stops a stale "3S" surviving a switch from
+    // Isometric to Explosive, where it would sit in the data unseen.
+    const syncConditionalGroups = () => {
+      CONDITIONAL_GROUPS.forEach((g) => {
+        const open = conditionalGroupOpen(g, ex.modifiers);
+        if (!open) clearGroupTags(g);
+        const el = pop.querySelector(`[data-group="${g.group}"]`);
+        if (!el) return;
+        el.classList.toggle("hidden", !open);
+        // The seconds row serves two styles, so its heading follows whichever
+        // one is set. The picker is built once on open, so without this it
+        // keeps whatever it said when it was created.
+        const lbl = el.querySelector(".mod-picker-lbl");
+        if (lbl && g.group === "Hold") {
+          lbl.textContent = (ex.modifiers || []).includes("Pause")
+            ? "Pause (seconds)" : "Hold (seconds)";
+        }
+      });
     };
 
     EXERCISE_MODIFIERS.forEach(({ group, tags, multi }) => {
@@ -3308,7 +3388,11 @@
       grp.dataset.group = group;
       const lbl = document.createElement("div");
       lbl.className = "mod-picker-lbl";
-      lbl.textContent = group === "Hold" ? "Hold (seconds) · Isometric only" : group;
+      // The seconds row serves both styles, so it says which one it is serving.
+      lbl.textContent = group === "Hold"
+        ? ((ex.modifiers || []).includes("Pause") ? "Pause (seconds)" : "Hold (seconds)")
+        : group === "Pause At" ? "Pause at"
+        : group;
       grp.appendChild(lbl);
       const row = document.createElement("div");
       row.className = "mod-picker-row";
@@ -3326,7 +3410,6 @@
             ex.modifiers = ex.modifiers.filter((m) => m !== tag);
             btn.classList.remove("on");
             btn.style.removeProperty("--mc"); btn.style.removeProperty("--mb");
-            if (tag === "Isometric") clearHoldTag();
           } else {
             // Contradictory tags come off first, multi group or not — picking
             // DBs clears DB and vice versa.
@@ -3354,14 +3437,7 @@
             btn.classList.add("on");
             btn.style.setProperty("--mc", color); btn.style.setProperty("--mb", bg);
           }
-          if (!ex.modifiers.includes("Isometric")) {
-            clearHoldTag();
-            setHoldRowOpen(false);
-          } else if (tag === "Isometric") {
-            setHoldRowOpen(true);
-          } else if (!HOLD_TAGS.includes(tag)) {
-            setHoldRowOpen(false);
-          }
+          syncConditionalGroups();
           saveEditor();
           const reopen = () => openModPicker(ex, anchorBtn, chipsBefore, chipsAfter, onTagsChange, onFormatChange);
           renderModChips(chipsBefore, ex, "before", reopen);
@@ -3375,7 +3451,10 @@
       pop.appendChild(grp);
     });
 
-    setHoldRowOpen(false);
+    // Not "closed by default" — OPEN the ones whose trigger is already set.
+    // The old call slammed the seconds row shut on every open, so reopening the
+    // picker on an exercise that was already Isometric hid its own hold length.
+    syncConditionalGroups();
     document.body.appendChild(pop);
     const rect = anchorBtn.getBoundingClientRect();
     const pw = 260;
@@ -32030,10 +32109,12 @@
       // Impulse joins Style and Hold as a TRAILING chip. Left in the `before`
       // bucket it would prepend to the name and the athlete's card would read
       // "Plyometric Box Jump", which is not English and not what the tag means.
-      (g.group === "Style" || g.group === "Hold" || g.group === "Impulse" ? after : before).push(tag);
+      (TRAILING_GROUPS.includes(g.group) ? after : before).push(tag);
     });
     const nm = exResolvedName(ex, progress) || "(unnamed)";
-    return [...nameOrderedTags(before).map(tagLong), nm, ...after.map(tagLong)].join(" ");
+    const mods = ex.modifiers || [];
+    return [...nameOrderedTags(before).map((t) => tagLong(t, mods)), nm,
+      ...after.map((t) => tagLong(t, mods))].join(" ");
   }
   // Bar + rack picker behind the plate readout. The bar is per exercise (the
   // app's guess is only a guess, and one gym's "Row" is another's Smith rack);
