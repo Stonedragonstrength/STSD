@@ -272,6 +272,7 @@
     filledPrescriptions, mergeById,
     deleteTemplateById, liveTemplates, purgeTemplateTombstones,
     emptyProgress, ensureProgressShape,
+    mergedRosterProgress,
   } = globalThis.STSD.sync;
 
   // Re-pull on returning to the app. Push-then-pull, always: a device's own
@@ -4437,26 +4438,11 @@
       `If that's wrong, use "Use the cloud's copy" in Settings.`, 9000);
   }
 
-  // What a coach-side athlete keeps as importedProgress after a cloud read.
-  // Cloud row present → adopt it, but union exerciseLogs through
-  // mergeExerciseLogs (a pull can never erase local work) — and never while
-  // an unconfirmed coach write owns the local copy (_coachProgressDirtyAt).
-  // Cloud row ABSENT → keep the local copy, identity-returned so callers can
-  // tell "unchanged". Shared by pullProgressFromCloud (one athlete, on open)
-  // and populateCoachFromCloud (whole roster): the latter used to adopt the
-  // athletes-table rows wholesale, whose importedProgress is always null, so
-  // every boot and resync wiped the roster back to "No sync" until each
-  // athlete was opened one at a time.
-  function mergedRosterProgress(localProgress, cloudProgress, progressDirty) {
-    if (cloudProgress && !progressDirty) {
-      return {
-        ...cloudProgress,
-        exerciseLogs: mergeExerciseLogs(localProgress?.exerciseLogs, cloudProgress.exerciseLogs),
-        syncedAt: Date.now(),
-      };
-    }
-    return localProgress || null;
-  }
+  // mergedRosterProgress moved to src/sync/roster-progress.js (Phase 1
+  // extraction); its namespace pull lives at the TOP of this IIFE with the
+  // other extractions — see the comment there for why position is
+  // load-bearing. Its identity return is contractual (design doc §4 rule 5):
+  // pullProgressFromCloud tests `next !== c.importedProgress` to repaint.
 
   function populateCoachFromCloud(coach, athletes, opts = {}) {
     state.trainerData.trainer = { name: coach.display_name || "", email: coach.email || "" };
