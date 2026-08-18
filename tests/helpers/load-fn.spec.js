@@ -46,7 +46,9 @@ describe("declSource", () => {
   it("does not stop at a semicolon nested inside brackets or a string", () => {
     // `for (let i = 0; ...)` inside a value, or a ";" in a string literal, must
     // not terminate the statement early.
-    const src = declSource("const READINESS_FACES", "app.js");
+    // The fixture followed READINESS_FACES to src/training/readiness.js
+    // (Phase 2 extraction) — which also exercises the other-file path.
+    const src = declSource("const READINESS_FACES", "src/training/readiness.js");
     expect(src.trimEnd().endsWith(";")).toBe(true);
     const opens = (src.match(/\[/g) || []).length;
     const closes = (src.match(/\]/g) || []).length;
