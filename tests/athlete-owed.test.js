@@ -25,15 +25,18 @@ const assert = require("assert");
 
 const ROOT = path.join(__dirname, "..");
 const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
+// daysBetweenISO moved to src/training/stat-field.js (Phase 2 extraction).
+const statSrc = fs.readFileSync(path.join(ROOT, "src", "training", "stat-field.js"), "utf8");
 
 function fnSrc(decl) {
-  const at = appSrc.indexOf(decl);
+  const src = decl === "function daysBetweenISO(" ? statSrc : appSrc;
+  const at = src.indexOf(decl);
   if (at < 0) throw new Error(`not found: ${decl}`);
-  const open = appSrc.indexOf("{", at);
+  const open = src.indexOf("{", at);
   let depth = 0;
-  for (let i = open; i < appSrc.length; i++) {
-    if (appSrc[i] === "{") depth++;
-    else if (appSrc[i] === "}") { depth--; if (!depth) return appSrc.slice(at, i + 1); }
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}") { depth--; if (!depth) return src.slice(at, i + 1); }
   }
   throw new Error(`unbalanced: ${decl}`);
 }

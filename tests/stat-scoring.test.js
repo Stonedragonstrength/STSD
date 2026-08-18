@@ -26,6 +26,8 @@ const assert = require("assert");
 
 const ROOT = path.join(__dirname, "..");
 const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
+// The stat engine moved to src/training/stat-field.js (Phase 2 extraction).
+const statSrc = fs.readFileSync(path.join(ROOT, "src", "training", "stat-field.js"), "utf8");
 // The exercise library moved to src/training/library.js (Phase 2 extraction).
 const librarySrc = fs.readFileSync(path.join(ROOT, "src", "training", "library.js"), "utf8");
 const statsPath = path.join(ROOT, "exercise-stats.js");
@@ -88,9 +90,12 @@ const BUILDER_FNS = ["function libCatFor("];
 const FNS = [
   // What the engine leans on from the rest of app.js.
   "function customExerciseList(",
+];
+// The engine itself moved to src/training/stat-field.js (Phase 2 extraction),
+// along with the session-day walkers it scores across.
+const STAT_FNS = [
   "function cardioLogsAll(", "function athleteOwnDays(",
   "function sessionDays(", "function hoardExerciseIndex(",
-  // The engine itself.
   "function statZero(", "function statTable(", "function statProfileByKey(",
   "function statRepBand(", "function statStrGate(", "function statIntensityMult(",
   "function statSeconds(", "function statReps(", "function statTimedRef(",
@@ -101,10 +106,11 @@ const FNS = [
 const body = [
   "let _libCatByKey = null;",
   constSrc(librarySrc, "CARRY_NAMES"),
-  ...CONSTS.map((c) => constSrc(appSrc, c)),
+  ...CONSTS.map((c) => constSrc(statSrc, c)),
   ...TAG_FNS.map((f) => fnSrc(tagsSrc, f)),
   ...LIB_FNS.map((f) => fnSrc(librarySrc, f)),
   ...BUILDER_FNS.map((f) => fnSrc(builderSrc, f)),
+  ...STAT_FNS.map((f) => fnSrc(statSrc, f)),
   ...FNS.map((f) => fnSrc(appSrc, f)),
   "return { statProfileFor, statVectorForEntry, statBucketForDate, statCapDay, statSeconds, STAT_KEYS, STAT_STR_HARD, STAT_EFFORT_MULT };",
 ].join("\n\n");
@@ -218,7 +224,7 @@ check("the Impulse tags are real modifier tags, in their own group", () => {
   const impulse = MODS.find((g) => g.group === "Impulse");
   assert.ok(impulse, "no Impulse group in EXERCISE_MODIFIERS — the tag is unsettable");
   assert.ok(!impulse.multi, "Impulse is single-select: a movement is one class or the other");
-  const IMPULSE = extractLiteral(appSrc, "const STAT_IMPULSE_PROFILE = {");
+  const IMPULSE = extractLiteral(statSrc, "const STAT_IMPULSE_PROFILE = {");
   Object.keys(IMPULSE).forEach((t) =>
     assert.ok(impulse.tags.includes(t), `"${t}" is scored but is not an Impulse tag`));
   // Explosive must stay in Style. It is a tempo instruction, and _genTags
@@ -548,8 +554,8 @@ if (!fs.existsSync(statsPath)) {
     // Read the names OUT of app.js rather than listing them here. A hardcoded
     // list drifts the moment the engine is repointed at a renamed profile, and
     // then this check fails for a naming reason while claiming a coverage one.
-    const impulse = extractLiteral(appSrc, "const STAT_IMPULSE_PROFILE = {");
-    const mobility = (appSrc.match(/const STAT_MOBILITY_PROFILE = "([^"]+)"/) || [])[1];
+    const impulse = extractLiteral(statSrc, "const STAT_IMPULSE_PROFILE = {");
+    const mobility = (statSrc.match(/const STAT_MOBILITY_PROFILE = "([^"]+)"/) || [])[1];
     assert.ok(mobility, "STAT_MOBILITY_PROFILE not found in app.js");
     [...new Set([...Object.values(impulse), mobility])].forEach((k) =>
       assert.ok(TABLE.profiles[k], `statProfileFor resolves to profile "${k}" — it must exist`));

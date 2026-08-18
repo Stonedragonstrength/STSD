@@ -19,6 +19,8 @@ const assert = require("assert");
 
 const ROOT = path.join(__dirname, "..");
 const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
+// The stat engine moved to src/training/stat-field.js (Phase 2 extraction).
+const statSrc = fs.readFileSync(path.join(ROOT, "src", "training", "stat-field.js"), "utf8");
 
 function fnSrc(src, decl) {
   const at = src.indexOf(decl);
@@ -45,21 +47,21 @@ function constSrc(src, name) {
 }
 
 const body = [
-  constSrc(appSrc, "STAT_KEYS"),
-  constSrc(appSrc, "STAT_DECAY"),
-  constSrc(appSrc, "STAT_HORIZON_DAYS"),
-  constSrc(appSrc, "STAT_FLOOR_BY_LEVEL"),
+  constSrc(statSrc, "STAT_KEYS"),
+  constSrc(statSrc, "STAT_DECAY"),
+  constSrc(statSrc, "STAT_HORIZON_DAYS"),
+  constSrc(statSrc, "STAT_FLOOR_BY_LEVEL"),
   fnSrc(appSrc, "function dateISO("),
-  fnSrc(appSrc, "function daysBetweenISO("),
+  fnSrc(statSrc, "function daysBetweenISO("),
   // The whole-number clock and the memoised decay column. The peak walk
   // compares every banked day against every sample, so at a year of history
   // parsing two Dates per comparison measured 55ms per athlete — fine for the
   // athlete's own card, 1.2s of blocked main thread across a 22-athlete roster.
-  fnSrc(appSrc, "function statDayIndex("),
+  fnSrc(statSrc, "function statDayIndex("),
   "let _statDecayTable = null;",
-  fnSrc(appSrc, "function statFloorFrac("),
-  fnSrc(appSrc, "function statDecayFactor("),
-  fnSrc(appSrc, "function statDecayTable("),
+  fnSrc(statSrc, "function statFloorFrac("),
+  fnSrc(statSrc, "function statDecayFactor("),
+  fnSrc(statSrc, "function statDecayTable("),
   fnSrc(appSrc, "function readStatField("),
   "return { daysBetweenISO, statDecayFactor, statFloorFrac, readStatField, STAT_KEYS, STAT_DECAY, STAT_HORIZON_DAYS, STAT_FLOOR_BY_LEVEL };",
 ].join("\n\n");
@@ -280,8 +282,8 @@ const MEASURED_CON_2026_08_15 = {
   typical: 8.5,     // roster mean CON on a day it is banked at all
 };
 const STAT_FULL = (() => {
-  const m = appSrc.match(/const STAT_FULL = \{[^}]*\}/);
-  if (!m) throw new Error("STAT_FULL not found in app.js");
+  const m = statSrc.match(/const STAT_FULL = \{[^}]*\}/);
+  if (!m) throw new Error("STAT_FULL not found in the stat module");
   return eval("(" + m[0].replace("const STAT_FULL = ", "") + ")");
 })();
 
@@ -388,16 +390,16 @@ check("a committed athlete reaches full, and a typical one lands mid-field", () 
   });
 });
 
-check("AGI is the one axis with no data, and app.js says so", () => {
+check("AGI is the one axis with no data, and the stat module says so", () => {
   // Every athlete on the roster has AGI zero and always has: nothing currently
   // programmed banks it, because the builder writes no Speed/Agility or plyo.
   // If that stops being true the axis needs re-measuring, so the comment that
   // says so must not quietly disappear.
   assert.strictEqual(MEASURED_2026_08_14.committed.AGI, 0);
-  const at = appSrc.indexOf("const STAT_FULL = {");
-  const note = appSrc.slice(Math.max(0, at - 1600), at);
+  const at = statSrc.indexOf("const STAT_FULL = {");
+  const note = statSrc.slice(Math.max(0, at - 1600), at);
   assert.ok(/AGI IS NOT CALIBRATED/.test(note),
-    "app.js no longer records that AGI is uncalibrated — re-measure it or keep the warning");
+    "the stat module no longer records that AGI is uncalibrated — re-measure it or keep the warning");
 });
 
 console.log("");
