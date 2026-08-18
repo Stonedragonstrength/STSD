@@ -273,6 +273,7 @@
     deleteTemplateById, liveTemplates, purgeTemplateTombstones,
     emptyProgress, ensureProgressShape,
     mergedRosterProgress,
+    buildProgramFromAthlete,
   } = globalThis.STSD.sync;
 
   // Re-pull on returning to the app. Push-then-pull, always: a device's own
@@ -4130,59 +4131,11 @@
     }
   }
 
-  function buildProgramFromAthlete(athlete) {
-    return {
-      kind: "tp-program", v: 2,
-      clientId: athlete.id,
-      trainerName: "",
-      sharedAt: Date.now(),
-      // The row rev this program was built from. Without it every boot left
-      // the realtime guard at 0, so the first own-row echo after any reload
-      // always applied — a wholesale program rebuild mid-whatever.
-      _rev: Number(athlete._rev) || 0,
-      client: {
-        id: athlete.id,
-        name: athlete.name,
-        age: athlete.age,
-        heightIn: athlete.heightIn,
-        weightLb: athlete.weightLb,
-        units: athlete.units === "kg" ? "kg" : "lb",
-        goals: athlete.goals,
-        // Their coverage map runs on their own device and needs their bands.
-        // This list is an allowlist, not a spread — a field omitted here is
-        // simply absent on the athlete side, and the two maps disagree in
-        // silence.
-        trainingLevel: athlete.trainingLevel || "",
-        trainingPhase: athlete.trainingPhase || "",
-        equipment: athlete.equipment || [],
-        weeks: athlete.weeks || [],
-        oneOffDays: athlete.oneOffDays || [],
-        trials: athlete.trials || [],
-        schedule: athlete.schedule || {},
-        coachPRs: athlete.coachPRs || [],
-        inviteCode: athlete.inviteCode,
-        sessionBank: athlete.sessionBank || { packages: [], redemptions: [] },
-        nutrition: athlete.nutrition || { current: null, history: [] },
-        // The athlete's own open-slot preference, set on their own device.
-        // Missing from this list until 2026-08-17, which left it undefined on
-        // every rebuild — and a rebuild runs on every sign-in, every resync and
-        // every realtime row event. So `if (!prog.client.hideOpenSlots)` was
-        // always true and the settings toggle always drew as ON: an athlete who
-        // muted open-slot alerts got them back on the next open, while their DB
-        // column said otherwise. Exactly the silent disagreement the note above
-        // warns about.
-        hideOpenSlots: !!athlete.hideOpenSlots,
-        // Same omission, same shape. partnerWarningHtml() is the only thing
-        // that tells one half of a couple that cancelling takes the session off
-        // their partner too, and it reads this. Undefined meant that warning
-        // had never rendered for anyone.
-        partnerId: athlete.partnerId || null,
-        // Carried for the bookings insert. A trigger overrides it server-side,
-        // so this is only ever a hint, never the authority.
-        _coachId: athlete._coachId || null,
-      },
-    };
-  }
+  // buildProgramFromAthlete moved to src/sync/program.js (Phase 1
+  // extraction); its namespace pull lives at the TOP of this IIFE with the
+  // other extractions — see the comment there for why position is
+  // load-bearing. Its client block is an allowlist, and the spec pins it
+  // from both sides against THIS file's athlete-side reads.
 
   function forgetAthleteProfile() {
     if (!window.confirm("Forget this account on this device? Sign in with email + password on any device to restore your program.")) return;

@@ -15,6 +15,8 @@ const assert = require("assert");
 const ROOT = path.join(__dirname, "..");
 const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
 const cloudSrc = fs.readFileSync(path.join(ROOT, "cloud.js"), "utf8");
+// buildProgramFromAthlete moved to src/sync/program.js (Phase 1 extraction).
+const programSrc = fs.readFileSync(path.join(ROOT, "src", "sync", "program.js"), "utf8");
 
 function fnBody(src, decl) {
   const at = src.indexOf(decl);
@@ -37,7 +39,7 @@ check("makeClient seeds equipment", () => {
 });
 
 check("buildProgramFromAthlete carries equipment to the athlete's device", () => {
-  assert.ok(/equipment\s*:/.test(fnBody(appSrc, "function buildProgramFromAthlete(")),
+  assert.ok(/equipment\s*:/.test(fnBody(programSrc, "function buildProgramFromAthlete(")),
     "an allowlist — without this line the athlete's device has no gear list");
 });
 
