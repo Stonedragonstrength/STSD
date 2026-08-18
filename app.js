@@ -349,6 +349,11 @@
     billingRefundedFor, athleteOwed, lastPaymentFor, unpaidChargeMonths,
     chargeFor,
   } = globalThis.STSD.money;
+  // Phase 4 (Scheduling) pulls, same contract and same load-bearing position.
+  const {
+    localTz, tzOffsetMs, zonedTimeToUtc, zonedDateISO, zonedHM, parseHM,
+    setmoreWall,
+  } = globalThis.STSD.scheduling;
   // The library module's classifiers resolve the coach's CUSTOM exercises,
   // and the anatomy module the coach-tuned muscle credits, through these
   // getters at call time — published here, beside the pulls, so they exist
@@ -16097,13 +16102,9 @@
   // already happened; `setmoreCutoff` is the instant after which the app stops
   // believing the mirror, so the two can never show the same session twice.
   const LOCKIN_WEEKS = 26;
-  // Wall clock in `tz`, which is what a standing appointment is actually made
-  // of — "Mondays at 9" has to stay 9am across a DST change, so the pattern is
-  // rebuilt from the clock face rather than from the instant.
-  function setmoreWall(utcMs, tz) {
-    const local = new Date(utcMs + tzOffsetMs(utcMs, tz));
-    return { dow: local.getUTCDay(), hh: local.getUTCHours(), mm: local.getUTCMinutes() };
-  }
+  // setmoreWall (the wall shape a standing appointment is rebuilt from)
+  // moved to src/scheduling/zone.js (Phase 4 extraction); the namespace
+  // pull lives at the TOP of this IIFE.
   // Rides `availability`, which round-trips through the coach row — on
   // trainerData alone it would be device-local, and the phone would go on
   // merging the old feed on top of the bookings that replaced it.
@@ -20592,45 +20593,10 @@
     blocks: [],
   };
 
-  function localTz() {
-    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (e) { return "UTC"; }
-  }
-  // How far `tz` sits from UTC at a given instant, in ms.
-  function tzOffsetMs(utcMs, tz) {
-    try {
-      const parts = new Intl.DateTimeFormat("en-US", {
-        timeZone: tz, hour12: false,
-        year: "numeric", month: "2-digit", day: "2-digit",
-        hour: "2-digit", minute: "2-digit", second: "2-digit",
-      }).formatToParts(new Date(utcMs));
-      const p = Object.fromEntries(parts.map((x) => [x.type, x.value]));
-      return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - utcMs;
-    } catch (e) { return 0; }
-  }
-  // The instant at which the wall clock in `tz` reads this date and time.
-  // Guess, then correct by the offset the guess actually lands in — the second
-  // pass is what gets the DST boundaries right.
-  function zonedTimeToUtc(y, m, d, hh, mm, tz) {
-    const guess = Date.UTC(y, m - 1, d, hh, mm);
-    const once = guess - tzOffsetMs(guess, tz);
-    return guess - tzOffsetMs(once, tz);
-  }
-  // The calendar date an instant falls on, as read in `tz`.
-  function zonedDateISO(utcMs, tz) {
-    try {
-      const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
-        timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
-      }).formatToParts(new Date(utcMs)).map((x) => [x.type, x.value]));
-      return `${p.year}-${p.month}-${p.day}`;
-    } catch (e) { return new Date(utcMs).toISOString().slice(0, 10); }
-  }
-  function parseHM(s) {
-    const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || "").trim());
-    if (!m) return null;
-    const hh = +m[1], mm = +m[2];
-    if (hh > 23 || mm > 59) return null;
-    return { hh, mm };
-  }
+  // The zone maths (localTz, tzOffsetMs, zonedTimeToUtc, zonedDateISO,
+  // parseHM) moved to src/scheduling/zone.js (Phase 4 extraction); the
+  // namespace pull lives at the TOP of this IIFE. fmtSlotTime/fmtSlotDay
+  // stay here: locale formatters, display side.
   function normalizeAvailability(av) {
     const a = { ...DEFAULT_AVAILABILITY, ...(av || {}) };
     a.tz = a.tz || localTz();
@@ -22235,15 +22201,8 @@
   const REPEAT_WEEKS = [4, 8, 12, 26, 52];
   const SESSION_LENGTHS = [30, 45, 60, 75, 90, 120];
 
-  // The wall-clock time an instant reads as in `tz`, as "HH:MM".
-  function zonedHM(ms, tz) {
-    try {
-      return new Intl.DateTimeFormat("en-GB", {
-        timeZone: tz, hour12: false, hour: "2-digit", minute: "2-digit",
-      }).format(new Date(ms));
-    } catch (e) { return "09:00"; }
-  }
-
+  // zonedHM (an instant as "HH:MM" in a zone) moved to
+  // src/scheduling/zone.js (Phase 4 extraction).
   // Weekly, in WALL CLOCK. Stepping by 7 × 86400000 would move a 6am session to
   // 5am the week the clocks change; every occurrence is recomputed from the
   // calendar date it lands on instead. Pure — the Node harness covers the

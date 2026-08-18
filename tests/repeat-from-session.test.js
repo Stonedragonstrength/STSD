@@ -12,38 +12,14 @@
 // test is what holds that.
 //
 // DUPLICATES repeatStarts + patternOccurrences + weeklyOccurrences + nextDowISO
-// + dowOfISO + zonedTimeToUtc + tzOffsetMs + dateISO from app.js. Change either
-// side and change this, or it guards nothing.
+// + dowOfISO + dateISO from app.js. Change either side and change this, or it
+// guards nothing. The zone maths are the REAL ones, required from the
+// extracted module (Phase 4) — no copies to keep in step anymore.
+
+require(require("path").join(__dirname, "..", "src", "scheduling", "zone.js"));
+const { tzOffsetMs, zonedTimeToUtc, zonedDateISO, zonedHM } = globalThis.STSD.scheduling;
 
 // ---- copies from app.js ----
-function tzOffsetMs(utcMs, tz) {
-  try {
-    const parts = new Intl.DateTimeFormat("en-US", {
-      timeZone: tz, hour12: false,
-      year: "numeric", month: "2-digit", day: "2-digit",
-      hour: "2-digit", minute: "2-digit", second: "2-digit",
-    }).formatToParts(new Date(utcMs));
-    const p = Object.fromEntries(parts.map((x) => [x.type, x.value]));
-    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - utcMs;
-  } catch (e) { return 0; }
-}
-function zonedTimeToUtc(y, m, d, hh, mm, tz) {
-  const guess = Date.UTC(y, m - 1, d, hh, mm);
-  const once = guess - tzOffsetMs(guess, tz);
-  return guess - tzOffsetMs(once, tz);
-}
-function zonedDateISO(utcMs, tz) {
-  const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
-    timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
-  }).formatToParts(new Date(utcMs)).map((x) => [x.type, x.value]));
-  return `${p.year}-${p.month}-${p.day}`;
-}
-function zonedHM(utcMs, tz) {
-  const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", {
-    timeZone: tz, hour12: false, hour: "2-digit", minute: "2-digit",
-  }).formatToParts(new Date(utcMs)).map((x) => [x.type, x.value]));
-  return `${p.hour}:${p.minute}`;
-}
 function dateISO(d) {
   const tz = d.getTimezoneOffset() * 60000;
   return new Date(d - tz).toISOString().slice(0, 10);

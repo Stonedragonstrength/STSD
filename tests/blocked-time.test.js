@@ -17,13 +17,9 @@
 // saveCoachAvailability() (app.js — one IIFE, no exports). Change the original
 // and change these, or this guards nothing.
 
-function parseHM(s) {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || "").trim());
-  if (!m) return null;
-  const hh = +m[1], mm = +m[2];
-  if (hh > 23 || mm > 59) return null;
-  return { hh, mm };
-}
+// parseHM is the REAL one, required from the extracted module (Phase 4).
+require(require("path").join(__dirname, "..", "src", "scheduling", "zone.js"));
+const { parseHM } = globalThis.STSD.scheduling;
 const p2 = (n) => String(n).padStart(2, "0");
 const dateISO = (d) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
 
