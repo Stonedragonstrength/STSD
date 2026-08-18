@@ -60,38 +60,12 @@ function runReferralGrants(clients) {
   return granted;
 }
 
-// A trimmed bankLedger, enough to prove what a free package is worth.
-function bankLedger(bank, todayMonth, rollover) {
-  const grantByMonth = new Map();
-  let packPool = 0;
-  (bank.packages || []).forEach((p) => {
-    const mk = p.membershipGrant || p.autoRenewGrant || "";
-    if (mk) grantByMonth.set(mk, (grantByMonth.get(mk) || 0) + (Number(p.size) || 0));
-    else packPool += Number(p.size) || 0;
-  });
-  const usedByMonth = new Map();
-  let undated = 0;
-  (bank.redemptions || []).forEach((r) => {
-    const mk = String(r?.date || "").slice(0, 7);
-    if (/^\d{4}-\d{2}$/.test(mk)) usedByMonth.set(mk, (usedByMonth.get(mk) || 0) + 1);
-    else undated++;
-  });
-  let carried = 0, expired = 0, packUsed = undated;
-  const months = new Set([...grantByMonth.keys(), ...usedByMonth.keys()]);
-  months.add(todayMonth);
-  months.forEach((mk) => {
-    const grant = grantByMonth.get(mk) || 0, used = usedByMonth.get(mk) || 0;
-    const left = Math.max(0, grant - used);
-    packUsed += Math.max(0, used - grant);
-    if (mk === todayMonth) return;
-    if (mk > todayMonth) { carried += left; return; }
-    if (rollover) carried += left; else expired += left;
-  });
-  const thisMonth = Math.max(0,
-    (grantByMonth.get(todayMonth) || 0) - (usedByMonth.get(todayMonth) || 0));
-  const banked = packPool + carried - packUsed;
-  return { thisMonth, banked, remaining: thisMonth + banked, expired };
-}
+// The REAL ledger and pkgOwed, from the extracted module (Phase 3): requiring
+// it executes the classic script, which assigns onto globalThis.STSD.money.
+// This used to be a trimmed hand copy, which is exactly the drift class the
+// extraction exists to kill.
+require(require("path").join(__dirname, "..", "src", "money", "ledger.js"));
+const { bankLedger, pkgOwed } = globalThis.STSD.money;
 
 let failures = 0;
 function check(label, actual, expected) {
@@ -228,7 +202,7 @@ console.log("\nFree sessions");
 }
 {
   // Money: a free package must never appear in what anyone owes.
-  const pkgOwed = (p) => !!p && (!!p.unpaid || p.status === "pending");
+  // pkgOwed is the shipped one, required above.
   const packages = [
     { size: 8, price: 725, unpaid: true, autoRenewGrant: "2026-08" },
     freeSessionPkg("Birthday", { birthdayGrant: "2026" }),

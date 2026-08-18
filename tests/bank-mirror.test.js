@@ -19,15 +19,21 @@ const assert = require("assert");
 
 const ROOT = path.join(__dirname, "..");
 const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
+// The ledger core (pkgMonth, bankLedger, the credit arithmetic) moved to
+// src/money/ledger.js (Phase 3 extraction); the mirror and the state writers
+// under test here stay in app.js.
+const ledgerSrc = fs.readFileSync(path.join(ROOT, "src", "money", "ledger.js"), "utf8");
+const LEDGER_DECLS = new Set(["function pkgMonth(", "function bankLedger(", "function creditBalance("]);
 
 function fnSrc(decl) {
-  const at = appSrc.indexOf(decl);
+  const src = LEDGER_DECLS.has(decl) ? ledgerSrc : appSrc;
+  const at = src.indexOf(decl);
   if (at < 0) throw new Error(`not found: ${decl}`);
-  const open = appSrc.indexOf("{", at);
+  const open = src.indexOf("{", at);
   let depth = 0;
-  for (let i = open; i < appSrc.length; i++) {
-    if (appSrc[i] === "{") depth++;
-    else if (appSrc[i] === "}") { depth--; if (!depth) return appSrc.slice(at, i + 1); }
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}") { depth--; if (!depth) return src.slice(at, i + 1); }
   }
   throw new Error(`unbalanced: ${decl}`);
 }
@@ -35,10 +41,10 @@ function fnSrc(decl) {
 // The credit helpers are const arrows, not declarations, so the block is
 // sliced by its landmarks rather than brace-matched.
 function creditConstBlock() {
-  const from = appSrc.indexOf("const CREDIT_CAP_DEFAULT");
-  const to = appSrc.indexOf("function creditBalance(");
+  const from = ledgerSrc.indexOf("const CREDIT_CAP_DEFAULT");
+  const to = ledgerSrc.indexOf("function creditBalance(");
   if (from < 0 || to < 0 || to <= from) throw new Error("credit const block not found");
-  return appSrc.slice(from, to);
+  return ledgerSrc.slice(from, to);
 }
 
 // The whole partner-mirror neighbourhood, with its collaborators supplied.

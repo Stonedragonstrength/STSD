@@ -27,9 +27,13 @@ const ROOT = path.join(__dirname, "..");
 const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
 // daysBetweenISO moved to src/training/stat-field.js (Phase 2 extraction).
 const statSrc = fs.readFileSync(path.join(ROOT, "src", "training", "stat-field.js"), "utf8");
+// pkgMonth/pkgOwed moved to src/money/ledger.js (Phase 3 extraction).
+const ledgerSrc = fs.readFileSync(path.join(ROOT, "src", "money", "ledger.js"), "utf8");
 
 function fnSrc(decl) {
-  const src = decl === "function daysBetweenISO(" ? statSrc : appSrc;
+  const src = decl === "function daysBetweenISO(" ? statSrc
+    : (decl === "function pkgMonth(" || decl === "function pkgOwed(") ? ledgerSrc
+    : appSrc;
   const at = src.indexOf(decl);
   if (at < 0) throw new Error(`not found: ${decl}`);
   const open = src.indexOf("{", at);
