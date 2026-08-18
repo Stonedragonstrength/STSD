@@ -7,8 +7,11 @@
 // changed, which on an 8-session membership is an $8,000 invoice. Nothing threw
 // and nothing on screen said a word.
 //
-// House style: the functions are copied from app.js rather than imported (one
-// IIFE, no exports), so if you change the originals, change these too.
+// The pricing functions are the REAL ones, from the extracted module
+// (Phase 3): requiring it executes the classic script, which assigns onto
+// globalThis.STSD.money. It resolves tiers through the STSD.app.membershipById
+// seam at call time, so this file publishes its fixture table there.
+// changeMembership below is still a copy — the drawer handler stays in app.js.
 const assert = require("assert");
 
 const MEMBERSHIPS = [
@@ -18,32 +21,11 @@ const MEMBERSHIPS = [
   { id: "no-session", sessions: 0 },
 ];
 const membershipById = (id) => MEMBERSHIPS.find((m) => m.id === id) || null;
-const membershipPerSession = (m) => (m && m.price && m.sessions ? m.price / m.sessions : 0);
 
-// ---- copies of the shipped functions ------------------------------------
-function flatMonthlyFor(c, m) {
-  if (!m || m.sessions) return 0;
-  const flat = Number(c?.sessionBank?.flatRate);
-  if (flat > 0) return flat;
-  const own = Number(c?.sessionBank?.rate);
-  if (own > 0) return own;
-  return Number(m.price) || 0;
-}
-function athleteSessionRate(c) {
-  if (!c) return 0;
-  const m = membershipById(c.sessionBank?.membership || "");
-  if (m && !m.sessions) return 0;
-  const own = Number(c.sessionBank?.rate);
-  if (own > 0) return own;
-  return membershipPerSession(m);
-}
-function bankPackagePrice(c, m, size) {
-  if (!m) return 0;
-  if (!m.sessions) return flatMonthlyFor(c, m);
-  const given = Number(size);
-  const n = Number.isFinite(given) && given >= 0 ? given : m.sessions;
-  return Math.round(athleteSessionRate(c) * n * 100) / 100;
-}
+require(require("path").join(__dirname, "..", "src", "money", "pricing.js"));
+globalThis.STSD.app = { ...globalThis.STSD.app, membershipById };
+const { athleteSessionRate, flatMonthlyFor, bankPackagePrice } = globalThis.STSD.money;
+
 // The reconciliation the membership <select> runs. Returns whether it repriced.
 function changeMembership(c, nextId) {
   const prevM = membershipById(c.sessionBank.membership);
