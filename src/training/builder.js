@@ -941,5 +941,6 @@
     GEN_STYLES, GEN_FLAVORS, GEN_SUFFIX, GEN_COMPOUND_KW,
     GEN_BW_GRADUATE_KW, GEN_BW_GRADUATE, GEN_HOLD_KW, GEN_CRAWL_KW,
     _rand, _pickRange, REP_LADDER, exRepWindow, _pickReps, _repsFor,
+    _shuffle, _exercisesForCats, _genTags, GEN_ISO_KW,
   });
 })();

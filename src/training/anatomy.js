@@ -895,6 +895,6 @@
     exCreditOverride, musclesForExercise,
     DEMO_CDN, DEMO_ABBREV, DEMO_STOP, DEMO_ALIAS, LIBRARY_DEMO_MAP,
     demoTokens, demoIndex, findDemoByName, demoEntryForName,
-    demoForExercise, demoSearch,
+    demoForExercise, demoSearch, demoImgUrl,
   });
 })();
