@@ -14,6 +14,7 @@ const ROOT = path.join(__dirname, "..");
 const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
 // The exercise library moved to src/training/library.js (Phase 2 extraction).
 const librarySrc = fs.readFileSync(path.join(ROOT, "src", "training", "library.js"), "utf8");
+const anatomySrc = fs.readFileSync(path.join(ROOT, "src", "training", "anatomy.js"), "utf8");
 const eqSrc = fs.readFileSync(path.join(ROOT, "exercise-equipment.js"), "utf8");
 const demoSrc = fs.readFileSync(path.join(ROOT, "exercise-demos.js"), "utf8");
 const musclesSrc = fs.readFileSync(path.join(ROOT, "exercise-muscles.js"), "utf8");
@@ -35,7 +36,7 @@ function exKey(name) {
   return String(name || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/[.,;:!]+$/, "");
 }
 
-const ANATOMY_GROUPS = extractLiteral(appSrc, "const ANATOMY_GROUPS = [");
+const ANATOMY_GROUPS = extractLiteral(anatomySrc, "const ANATOMY_GROUPS = [");
 const EXERCISE_LIBRARY = extractLiteral(librarySrc, "const EXERCISE_LIBRARY = [");
 const EXERCISE_DEMOS = extractLiteral(demoSrc, "window.EXERCISE_DEMOS =[");
 const GEAR = extractLiteral(appSrc, "const GEAR = [");
@@ -104,18 +105,18 @@ function fnSrcDemo(src, decl) {
   }
   throw new Error("unbalanced: " + decl);
 }
-const DEMO_ABBREV = extractLiteral(appSrc, "const DEMO_ABBREV = {");
-const DEMO_STOP = new Set(extractLiteral(appSrc, "const DEMO_STOP = new Set(["));
-const DEMO_ALIAS = extractLiteral(appSrc, "const DEMO_ALIAS = {");
-const LIBRARY_DEMO_MAP = extractLiteral(appSrc, "const LIBRARY_DEMO_MAP = {");
+const DEMO_ABBREV = extractLiteral(anatomySrc, "const DEMO_ABBREV = {");
+const DEMO_STOP = new Set(extractLiteral(anatomySrc, "const DEMO_STOP = new Set(["));
+const DEMO_ALIAS = extractLiteral(anatomySrc, "const DEMO_ALIAS = {");
+const LIBRARY_DEMO_MAP = extractLiteral(anatomySrc, "const LIBRARY_DEMO_MAP = {");
 const _demoWin = { EXERCISE_DEMOS: EXERCISE_DEMOS };
 const demoEntryForName = Function(
   "window", "DEMO_ABBREV", "DEMO_STOP", "DEMO_ALIAS", "LIBRARY_DEMO_MAP", `
   let _demoIndex = null;
-  ${fnSrcDemo(appSrc, "function demoTokens(")}
-  ${fnSrcDemo(appSrc, "function demoIndex(")}
-  ${fnSrcDemo(appSrc, "function findDemoByName(")}
-  ${fnSrcDemo(appSrc, "function demoEntryForName(")}
+  ${fnSrcDemo(anatomySrc, "function demoTokens(")}
+  ${fnSrcDemo(anatomySrc, "function demoIndex(")}
+  ${fnSrcDemo(anatomySrc, "function findDemoByName(")}
+  ${fnSrcDemo(anatomySrc, "function demoEntryForName(")}
   return demoEntryForName;
 `)(_demoWin, DEMO_ABBREV, DEMO_STOP, DEMO_ALIAS, LIBRARY_DEMO_MAP);
 // Memoised. Pulling the app's real demo resolver made this 8x slower — the

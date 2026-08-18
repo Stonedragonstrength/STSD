@@ -39,9 +39,12 @@ function extractLiteral(src, marker) {
 }
 
 const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
+// The anatomy tables, muscle map and demo matcher moved to
+// src/training/anatomy.js (Phase 2 extraction).
+const anatomySrc = fs.readFileSync(path.join(ROOT, "src", "training", "anatomy.js"), "utf8");
 // The exercise library moved to src/training/library.js (Phase 2 extraction).
 const librarySrc = fs.readFileSync(path.join(ROOT, "src", "training", "library.js"), "utf8");
-const ANATOMY_GROUPS = extractLiteral(appSrc, "const ANATOMY_GROUPS = [");
+const ANATOMY_GROUPS = extractLiteral(anatomySrc, "const ANATOMY_GROUPS = [");
 const EXERCISE_LIBRARY = extractLiteral(librarySrc, "const EXERCISE_LIBRARY = [");
 
 const demoSrc = fs.readFileSync(path.join(ROOT, "exercise-demos.js"), "utf8");
@@ -112,18 +115,18 @@ function fnSrcDemo(src, decl) {
   }
   throw new Error("unbalanced: " + decl);
 }
-const DEMO_ABBREV = extractLiteral(appSrc, "const DEMO_ABBREV = {");
-const DEMO_STOP = new Set(extractLiteral(appSrc, "const DEMO_STOP = new Set(["));
-const DEMO_ALIAS = extractLiteral(appSrc, "const DEMO_ALIAS = {");
-const LIBRARY_DEMO_MAP = extractLiteral(appSrc, "const LIBRARY_DEMO_MAP = {");
+const DEMO_ABBREV = extractLiteral(anatomySrc, "const DEMO_ABBREV = {");
+const DEMO_STOP = new Set(extractLiteral(anatomySrc, "const DEMO_STOP = new Set(["));
+const DEMO_ALIAS = extractLiteral(anatomySrc, "const DEMO_ALIAS = {");
+const LIBRARY_DEMO_MAP = extractLiteral(anatomySrc, "const LIBRARY_DEMO_MAP = {");
 const _demoWin = { EXERCISE_DEMOS: EXERCISE_DEMOS };
 const demoEntryForName = Function(
   "window", "DEMO_ABBREV", "DEMO_STOP", "DEMO_ALIAS", "LIBRARY_DEMO_MAP", `
   let _demoIndex = null;
-  ${fnSrcDemo(appSrc, "function demoTokens(")}
-  ${fnSrcDemo(appSrc, "function demoIndex(")}
-  ${fnSrcDemo(appSrc, "function findDemoByName(")}
-  ${fnSrcDemo(appSrc, "function demoEntryForName(")}
+  ${fnSrcDemo(anatomySrc, "function demoTokens(")}
+  ${fnSrcDemo(anatomySrc, "function demoIndex(")}
+  ${fnSrcDemo(anatomySrc, "function findDemoByName(")}
+  ${fnSrcDemo(anatomySrc, "function demoEntryForName(")}
   return demoEntryForName;
 `)(_demoWin, DEMO_ABBREV, DEMO_STOP, DEMO_ALIAS, LIBRARY_DEMO_MAP);
 

@@ -13,6 +13,7 @@ const ROOT = path.join(__dirname, "..");
 const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
 // The exercise library moved to src/training/library.js (Phase 2 extraction).
 const librarySrc = fs.readFileSync(path.join(ROOT, "src", "training", "library.js"), "utf8");
+const anatomySrc = fs.readFileSync(path.join(ROOT, "src", "training", "anatomy.js"), "utf8");
 const eqSrc = fs.readFileSync(path.join(ROOT, "exercise-equipment.js"), "utf8");
 
 function extractLiteral(src, marker) {
@@ -33,7 +34,7 @@ require(path.join(ROOT, "src", "training", "tags.js"));
 const { exKey, EXERCISE_MODIFIERS } = globalThis.STSD.training;
 
 const GEAR = extractLiteral(appSrc, "const GEAR = [");
-const ANATOMY_GROUPS = extractLiteral(appSrc, "const ANATOMY_GROUPS = [");
+const ANATOMY_GROUPS = extractLiteral(anatomySrc, "const ANATOMY_GROUPS = [");
 const EXERCISE_LIBRARY = extractLiteral(librarySrc, "const EXERCISE_LIBRARY = [");
 const MAP = extractLiteral(eqSrc, "window.EXERCISE_EQUIPMENT = {");
 
