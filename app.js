@@ -18498,10 +18498,11 @@
     // event, including the ones the lock-in had already turned into bookings.
     //
     // So the native booking now wins on any slot it covers, whatever the cutoff
-    // says. Keyed on athlete + start MINUTE: the lock-in built each booking
-    // from its Setmore slot, so the two agree to the minute, and a minute is
-    // coarse enough to survive a stored second's drift. Never on the formatted
-    // time — that string carries a narrow no-break space before AM/PM.
+    // says. Keyed on athlete + start MINUTE, and matched with slotsMatch's
+    // adjacent-bucket tolerance: a bucket EQUALITY put 08:59:59 and 09:00:01
+    // in different buckets, so a second's drift across a minute boundary
+    // undid the dedupe. Never on the formatted time — that string carries a
+    // narrow no-break space before AM/PM.
     //
     // NB the slot set is built from EVERY native booking, cancelled ones
     // included, while only the booked ones become calendar events. Once the app
@@ -18510,12 +18511,20 @@
     // charges for a session the coach just cancelled. That is exactly what
     // happened to two athletes on 4 August.
     const cutoff = setmoreCutoffMs();
-    const slotKey = (athleteId, startAt) => `${athleteId}|${Math.floor(new Date(startAt).getTime() / 60000)}`;
-    const nativeSlots = new Set((native || []).map((b) => slotKey(b.athlete_id, b.start_at)));
+    const minuteOf = (startAt) => Math.floor(new Date(startAt).getTime() / 60000);
+    const nativeSlots = new Set((native || []).map((b) => `${b.athlete_id}|${minuteOf(b.start_at)}`));
+    // The set holds exact buckets; the probe asks for the neighbours too,
+    // which is slotsMatch's tolerance spelled as three lookups.
+    const slotTaken = (athleteId, startAt) => {
+      const m = minuteOf(startAt);
+      return nativeSlots.has(`${athleteId}|${m - 1}`) ||
+        nativeSlots.has(`${athleteId}|${m}`) ||
+        nativeSlots.has(`${athleteId}|${m + 1}`);
+    };
     const mirrored = (events || []).filter((e) => {
       if (new Date(e.startAt).getTime() >= cutoff) return false;
       const who = matchAthleteForEvent(e);
-      return !who || !nativeSlots.has(slotKey(who.id, e.startAt));
+      return !who || !slotTaken(who.id, e.startAt);
     });
     _dashCalSetmoreEvents = [...mirrored, ...asEvents]
       .sort((a, b) => String(a.startAt).localeCompare(String(b.startAt)));
@@ -18625,6 +18634,17 @@
     return matchAthleteBySetmoreName(e.clientName);
   }
 
+  // A slot is a minute bucket (Math.floor(ms / 60000)), and bucket EQUALITY
+  // is a trap: 08:59:59 and 09:00:01 are the same session two seconds apart,
+  // in different buckets. Adjacent buckets match too — a drift under two
+  // minutes can only be one session, because real sessions sit at least
+  // fifteen minutes apart. This is the guard whose miss produced the Setmore
+  // double-charges, so every slot comparison uses this rather than ===.
+  function slotsMatch(a, b) {
+    if (a == null || b == null) return false;
+    return Math.abs(Number(a) - Number(b)) <= 1;
+  }
+
   // Auto-spend a session token for each matched booking that has finished.
   // Guards: never charges bookings that ended before the feature was enabled
   // (autoRedeemSince watermark), one redemption per booking (setmoreUid),
@@ -18653,7 +18673,7 @@
       // same real session already got charged under a different id, which is
       // exactly what happened when a Setmore mirror and a native booking both
       // described it. The slot is the session; the uid is only one name for it.
-      if (reds.some((r) => r.slot === slot)) return;
+      if (reds.some((r) => slotsMatch(r.slot, slot))) return;
       // Same guard for rows written before `slot` existed: a duplicate presents
       // as the identical date and note, because both come off the same instant.
       if (reds.some((r) => r.date === date && r.note === note)) return;
@@ -23930,7 +23950,7 @@
     const key = `stsd:${bk.id}`;
     const slot = Math.floor(startMs / 60000);
     const reds = c.sessionBank.redemptions;
-    if (!reds.some((r) => r.setmoreUid === key || r.slot === slot)) {
+    if (!reds.some((r) => r.setmoreUid === key || slotsMatch(r.slot, slot))) {
       reds.push({
         id: uid(), date: dateISO(new Date(startMs)), slot,
         note: `Late cancellation · ${fmtSetmoreTime(bk.start_at)}`,

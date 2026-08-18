@@ -326,7 +326,13 @@ object Supabase {
                 // Past the cut-over the app owns the calendar outright, so a
                 // mirrored event from then on is a leftover, not a session.
                 // Without this the widget shows a week the app does not.
-                b.startMillis < cutoff && slotKey(b.startMillis) !in ownedSlots
+                // Adjacent buckets count as owned, the same tolerance app.js
+                // uses: bucket EQUALITY put 08:59:59 and 09:00:01 in different
+                // buckets, so a second's drift across a minute boundary undid
+                // the dedupe and drew the session twice.
+                val k = slotKey(b.startMillis)
+                b.startMillis < cutoff &&
+                    (k - 1) !in ownedSlots && k !in ownedSlots && (k + 1) !in ownedSlots
             }
 
         return FetchResult.Ok(merged, partial = failed > 0)
@@ -356,13 +362,12 @@ object Supabase {
     private class NativeRows(val booked: List<Booking>, val slots: Set<Long>)
 
     /**
-     * A slot identity, to the MINUTE — the same coarseness app.js uses, and for
-     * the same reason: the lock-in built each booking from its Setmore slot, so
-     * the two agree to the minute, and a minute survives a stored second's
-     * drift that exact-millis equality would not. There is no such drift in the
-     * data today (checked, 2026-08-06: zero pairs agree on the minute and
-     * disagree on the second) — this is so that a single stray second can never
-     * quietly put a cancelled session back on the home screen.
+     * A slot identity, to the MINUTE — the same coarseness app.js uses. A
+     * minute bucket alone does NOT survive a second's drift when it crosses a
+     * minute boundary (08:59:59 and 09:00:01 land in different buckets), which
+     * is why every comparison of these keys also accepts the adjacent bucket —
+     * see the merge filter. Real sessions sit at least fifteen minutes apart,
+     * so the tolerance can never conflate two distinct ones.
      */
     private fun slotKey(startMillis: Long): Long = startMillis / 60_000L
 
