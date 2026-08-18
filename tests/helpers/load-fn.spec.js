@@ -6,8 +6,10 @@ import { loadFn, loadFns, declSource } from "./load-fn.js";
 
 describe("declSource", () => {
   it("brace-matches a whole function body out of app.js", () => {
-    const src = declSource("function deloadTargetWeight(");
-    expect(src.startsWith("function deloadTargetWeight(target, grain, pct)")).toBe(true);
+    // The fixture was deloadTargetWeight until the progression engine moved to
+    // src/training/progression.js; rerenderAfterSync stays in app.js.
+    const src = declSource("function rerenderAfterSync(");
+    expect(src.startsWith("function rerenderAfterSync()")).toBe(true);
     expect(src.trimEnd().endsWith("}")).toBe(true);
     // Balanced: as many opens as closes, or the matcher stopped in the wrong place.
     const opens = (src.match(/\{/g) || []).length;
@@ -58,7 +60,10 @@ describe("declSource", () => {
 
 describe("loadFn", () => {
   it("returns a working function, not a copy of one", () => {
-    const deloadTargetWeight = loadFn("function deloadTargetWeight(");
+    // The progression fixtures moved to src/training/progression.js (Phase 2
+    // extraction); opts.file keeps them exercising the same shipped bodies.
+    const deloadTargetWeight = loadFn("function deloadTargetWeight(", {},
+      { file: "src/training/progression.js" });
     // Intent (2026-08-11 skip-day design): a pullback drops the target by pct,
     // floored to the ladder's grain, and never goes below one grain.
     expect(deloadTargetWeight(200, 5, 15)).toBe(170);   // 170 exactly on a 5 grain
@@ -74,7 +79,7 @@ describe("loadFn", () => {
       readinessScore: () => 0,
       READINESS_QS: [],
       READY_LOW_MAX: 0,
-    });
+    }, { file: "src/training/progression.js" });
     expect(typeof progressionAttempt).toBe("function");
   });
 
@@ -86,7 +91,7 @@ describe("loadFn", () => {
     // no line.
     const progressionAttempt = loadFn("function progressionAttempt(", {
       readinessScore: () => 0, // READINESS_QS and READY_LOW_MAX deliberately absent
-    });
+    }, { file: "src/training/progression.js" });
     // The args have to get far enough in to touch the missing name: a locked
     // entry that meets the set count, plus a readiness record dated to that
     // same session, which is the only branch that reads READINESS_QS.
@@ -99,7 +104,8 @@ describe("loadFn", () => {
   });
 
   it("keeps the function's name and arity", () => {
-    const deloadTargetWeight = loadFn("function deloadTargetWeight(");
+    const deloadTargetWeight = loadFn("function deloadTargetWeight(", {},
+      { file: "src/training/progression.js" });
     expect(deloadTargetWeight.name).toBe("deloadTargetWeight");
     expect(deloadTargetWeight.length).toBe(3);
   });
@@ -110,7 +116,7 @@ describe("loadFns", () => {
     const { dayOccurrences, isSkipOccurrence } = loadFns([
       "function dayOccurrences(",
       "function isSkipOccurrence(",
-    ]);
+    ], {}, { file: "src/training/progression.js" });
     const day = { exercises: [{ id: "a" }, { id: "b" }] };
     const logs = {
       a: [{ date: "2026-08-01", locked: true, sets: [{ reps: "5" }] }],
@@ -126,7 +132,8 @@ describe("loadFns", () => {
   it("ignores unlocked entries when deciding a day was touched", () => {
     // The distinction that caused a real bug elsewhere in the app: a typed but
     // unaccepted set is not evidence the day happened.
-    const { dayOccurrences } = loadFns(["function dayOccurrences("]);
+    const { dayOccurrences } = loadFns(["function dayOccurrences("], {},
+      { file: "src/training/progression.js" });
     const day = { exercises: [{ id: "a" }] };
     const logs = { a: [{ date: "2026-08-01", locked: false, sets: [{ reps: "5" }] }] };
     expect(dayOccurrences(day, logs)).toEqual([]);

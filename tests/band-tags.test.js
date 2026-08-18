@@ -19,6 +19,9 @@ const assert = require("assert");
 
 const ROOT = path.join(__dirname, "..");
 const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
+// The progression engine moved to src/training/progression.js (Phase 2
+// extraction); its source is read from the module file.
+const progressionSrc = fs.readFileSync(path.join(ROOT, "src", "training", "progression.js"), "utf8");
 
 function extractLiteral(src, marker) {
   const at = src.indexOf(marker);
@@ -35,7 +38,7 @@ function extractLiteral(src, marker) {
 // Grab a function's body by brace-matching from its declaration. Same helper
 // as tests/training-level-plumbing.test.js and tests/anatomy-coverage-wiring.test.js
 // — reused rather than reinvented. Used below (Task 3) to execute the REAL
-// progressionRule()/progressionResult() out of live app.js, rather than trusting
+// progressionRule()/progressionResult() out of the live shipped module, rather than trusting
 // a hand-copied stand-in to stay honest about what the engine actually does.
 function fnBody(src, decl) {
   const at = src.indexOf(decl);
@@ -250,29 +253,29 @@ check("on grey there is nothing left to offer", () => {
 // shape; it cannot prove app.js was actually changed to match it — a typo in
 // progressionRule() could leave it returning null forever and every check
 // above would still pass. These pull the REAL progressionRule() and
-// progressionResult() out of the live source with fnBody() and execute them,
+// progressionResult() out of src/training/progression.js with fnBody() and execute them,
 // the same technique tests/anatomy-coverage-wiring.test.js uses for exactly
 // this reason (a reviewer proved that file's earlier text-only checks kept
 // passing after the real bug was reintroduced).
-const PROG_TIME_STEP = extractConst(appSrc, "PROG_TIME_STEP");
-const PROG_MAX_ADD_SETS = extractConst(appSrc, "PROG_MAX_ADD_SETS");
-const PROG_BACKOFF_PCTS = extractConst(appSrc, "PROG_BACKOFF_PCTS");
-const PROG_STALL_DEFAULT = extractConst(appSrc, "PROG_STALL_DEFAULT");
-const PROG_NO_CAP = extractConst(appSrc, "PROG_NO_CAP");
+const PROG_TIME_STEP = extractConst(progressionSrc, "PROG_TIME_STEP");
+const PROG_MAX_ADD_SETS = extractConst(progressionSrc, "PROG_MAX_ADD_SETS");
+const PROG_BACKOFF_PCTS = extractConst(progressionSrc, "PROG_BACKOFF_PCTS");
+const PROG_STALL_DEFAULT = extractConst(progressionSrc, "PROG_STALL_DEFAULT");
+const PROG_NO_CAP = extractConst(progressionSrc, "PROG_NO_CAP");
 // Stub: real exIsTimed() also name-sniffs carries (isCarryName), which no
 // fixture below relies on — only the explicit ex.timed flag matters here.
 const exIsTimedStub = (ex) => !!(ex && ex.timed === true);
 
 const realProgressionRuleFn = new Function(
   "ex", "exIsTimed", "bandOf", "PROG_TIME_STEP", "PROG_MAX_ADD_SETS", "PROG_BACKOFF_PCTS", "PROG_STALL_DEFAULT", "PROG_NO_CAP",
-  fnBody(appSrc, "function progressionRule(ex) {")
+  fnBody(progressionSrc, "function progressionRule(ex) {")
 );
 function realProgressionRule(ex) {
   return realProgressionRuleFn(ex, exIsTimedStub, bandOf, PROG_TIME_STEP, PROG_MAX_ADD_SETS, PROG_BACKOFF_PCTS, PROG_STALL_DEFAULT, PROG_NO_CAP);
 }
 const realProgressionResult = new Function(
   "st", "rule", "writtenSets", "base",
-  fnBody(appSrc, "function progressionResult(st, rule, writtenSets, base) {")
+  fnBody(progressionSrc, "function progressionResult(st, rule, writtenSets, base) {")
 );
 
 check("REAL progressionRule(): a band-only lift now gets a rep ladder", () => {

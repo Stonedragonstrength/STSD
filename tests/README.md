@@ -44,5 +44,6 @@ they move to `src/**/*.spec.js` in the same commit as the code, where they
 `sync/program-allowlist.spec.js` to `src/sync/merge-logs.spec.js`,
 `src/sync/merge-by-id.spec.js`, `src/sync/roster-progress.spec.js` and
 `src/sync/program.spec.js`; Phase 2 (training) moved
-`tags/pause-and-equipment.spec.js` to `src/training/tags.spec.js`. Header
-stories and assertions intact throughout.
+`tags/pause-and-equipment.spec.js` to `src/training/tags.spec.js` and
+`skip-day.test.js` to `src/training/progression.spec.js`. Header stories
+and assertions intact throughout.
