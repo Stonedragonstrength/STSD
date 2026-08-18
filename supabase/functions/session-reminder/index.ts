@@ -36,6 +36,7 @@ const json = (body: unknown, status = 200) =>
 type Booking = {
   id: string;
   athlete_id: string;
+  coach_id: string;
   start_at: string;
 };
 
@@ -60,7 +61,7 @@ Deno.serve(async (req) => {
     // longest lead anyone could have set.
     const { data: rows } = await sb
       .from("bookings")
-      .select("id, athlete_id, start_at")
+      .select("id, athlete_id, coach_id, start_at")
       .eq("status", "booked")
       .is("reminder_sent_at", null)
       .gte("start_at", now.toISOString())
@@ -87,6 +88,20 @@ Deno.serve(async (req) => {
     });
     if (!due.length) return json({ ok: true, sent: 0, due: 0 });
 
+    // The coach's schedule zone, for athletes with no tz preference. The push
+    // states a wall-clock time, and this function's runtime clock is UTC — so
+    // falling through to "no timeZone" told an athlete with no prefs row that
+    // their afternoon session was at 9:00 PM. Sessions are booked against the
+    // coach's clock (availability.tz, the same authority scheduleTz() uses in
+    // the app), so that clock is the right default reading.
+    const coachIds = [...new Set(due.map((b) => b.coach_id))];
+    const { data: coachRows } = await sb
+      .from("coaches").select("id, availability").in("id", coachIds);
+    const coachTz = new Map(
+      ((coachRows ?? []) as { id: string; availability: { tz?: string } | null }[])
+        .map((c) => [c.id, String(c.availability?.tz ?? "")]),
+    );
+
     const { data: subs } = await sb
       .from("push_subscriptions").select("id, athlete_id, subscription")
       .in("athlete_id", [...new Set(due.map((b) => b.athlete_id))]);
@@ -105,7 +120,10 @@ Deno.serve(async (req) => {
 
     for (const b of due) {
       const p = prefs.get(b.athlete_id);
-      const tz = p?.tz && p.tz !== "UTC" ? p.tz : undefined;
+      // The athlete's own zone when they chose one ("UTC" is an old client's
+      // default, not a choice), else the coach's schedule zone. Never the
+      // runtime's — that is UTC here.
+      const tz = (p?.tz && p.tz !== "UTC" ? p.tz : "") || coachTz.get(b.coach_id) || undefined;
       const when = fmtTime(b.start_at, tz);
       const mins = Math.round((Date.parse(b.start_at) - now.getTime()) / 60000);
       const payload = JSON.stringify({
