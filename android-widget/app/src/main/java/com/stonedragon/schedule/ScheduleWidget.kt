@@ -393,7 +393,17 @@ class ScheduleWidget : AppWidgetProvider() {
             // "Loading…" — and a sideloaded app that has never been launched sits
             // in Android's stopped state and receives no broadcasts, so nothing
             // ever arrives to correct it and the message is permanent.
-            val state = if (!Supabase.isSignedIn(ctx)) "signin" else Prefs.state(ctx, widgetId)
+            val stored = Prefs.state(ctx, widgetId)
+            val state = when {
+                !Supabase.isSignedIn(ctx) -> "signin"
+                // A stored "signin" under a live session is a frame from before
+                // signing in, or from a refresh that mistook a network failure
+                // for a rejected session. The prompt is the one state the coach
+                // can refute by opening the app — never paint it while a session
+                // exists; show the retry face and let the next refresh settle it.
+                stored == "signin" -> "error:Couldn't load"
+                else -> stored
+            }
             // Week-stamped, so this is empty unless the cache holds THIS week.
             val bookings = if (Prefs.isLoaded(state)) Prefs.bookings(ctx, widgetId, week) else emptyList()
             // A failed refresh over a cache that still has the week is stale, not

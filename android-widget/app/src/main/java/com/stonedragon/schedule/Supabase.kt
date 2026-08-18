@@ -238,7 +238,19 @@ object Supabase {
      * half-finished when the process is killed.
      */
     fun bookingsForRange(ctx: Context, dayStart: Long, days: Int): FetchResult {
-        val token = accessToken(ctx) ?: return FetchResult.NotSignedIn
+        // accessToken() clears the stored session only when the server itself
+        // rejected the refresh token. If a session is still stored after a null,
+        // the refresh simply could not happen — a launcher-scheduled wake with
+        // the radio asleep, mostly. That is "couldn't load", not "signed out":
+        // reporting it as sign-out painted "Tap to sign in" on the home screen
+        // while the app was signed in fine, and that frame sat there until the
+        // next successful refresh happened to repaint it.
+        val token = accessToken(ctx)
+            ?: return if (Prefs.refreshToken(ctx) != null) {
+                FetchResult.Failed("Couldn't refresh")
+            } else {
+                FetchResult.NotSignedIn
+            }
         // Whole calendar days, so the window is still right across a DST change
         // — dayStart + 24h lands an hour early or late on those two days a year
         // and would clip or double-count a session at the boundary.
