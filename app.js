@@ -10,7 +10,6 @@
   // to the cloud. Guards boot from overwriting unsynced local work with a stale
   // cloud copy (the cause of "my in-progress program disappeared").
   const KEY_TEMPLATES_DIRTY = "trainerpro_templates_dirty_v1";
-  const KEY_ATHLETES_DIRTY = "trainerpro_athletes_dirty_v1";
   // Same guard for the coach's exercise-library customizations (custom
   // exercises, hidden list, category order) — synced as one blob.
   const KEY_LIBPREFS_DIRTY = "trainerpro_libprefs_dirty_v1";
@@ -97,31 +96,11 @@
       return structuredClone(fallback);
     }
   }
-  // ── Unsynced-athlete protection ──
-  // Every coach boot refreshes athletes from the cloud and replaces the local
-  // list. Cloud writes fail silently by design (offline always works), so a
-  // push that never landed used to be reverted on the next open with no
-  // warning — a program assigned on flaky signal would simply vanish.
-  // Templates already had this guard via KEY_TEMPLATES_DIRTY; athletes didn't.
-  // An athlete stays marked dirty until the cloud confirms the write, and a
-  // dirty athlete's local copy survives the refresh. See populateCoachFromCloud.
-  function dirtyAthletes() {
-    try { return JSON.parse(localStorage.getItem(KEY_ATHLETES_DIRTY)) || {}; }
-    catch { return {}; }
-  }
-  function markAthleteDirty(id) {
-    if (!id) return;
-    const d = dirtyAthletes();
-    if (d[id]) return;
-    d[id] = true;
-    localStorage.setItem(KEY_ATHLETES_DIRTY, JSON.stringify(d));
-  }
-  function clearAthleteDirty(id) {
-    const d = dirtyAthletes();
-    if (!d[id]) return;
-    delete d[id];
-    localStorage.setItem(KEY_ATHLETES_DIRTY, JSON.stringify(d));
-  }
+  // The unsynced-athlete dirty flags (dirtyAthletes, markAthleteDirty,
+  // clearAthleteDirty) moved to src/sync/dirty.js — the deferred brick
+  // (design doc §5); safe because the store is localStorage, shared by every
+  // caller whichever copy runs. The namespace pull lives at the TOP of this
+  // IIFE. See populateCoachFromCloud for the guard they exist for.
   function pushAthlete(c) {
     if (!window.Cloud?.enabled || !c) return;
     markAthleteDirty(c.id);
@@ -275,6 +254,7 @@
     mergedRosterProgress,
     buildProgramFromAthlete,
     mayAdoptRow, adoptedAthleteProgress,
+    dirtyAthletes, markAthleteDirty, clearAthleteDirty,
   } = globalThis.STSD.sync;
   // Phase 2 (Training) pulls, same contract and same load-bearing position.
   const {
