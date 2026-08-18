@@ -492,14 +492,16 @@ Deno.serve(async (req) => {
           // session self-heals rather than disappearing.
           if (!list.length && !ghosts.length) {
             const { data: ownedRows } = await sb.from("bookings")
-              .select("google_event_id").eq("coach_id", coachId)
+              .select("*, athletes(display_name)").eq("coach_id", coachId)
               .not("google_event_id", "is", null);
-            const owned = new Set((ownedRows ?? []).map((r: any) => String(r.google_event_id)));
+            const owned = new Map(
+              ((ownedRows ?? []) as any[]).map((r) => [String(r.google_event_id), r]),
+            );
             const timeMin = new Date(Date.now() - 45 * 864e5).toISOString();
             const timeMax = new Date(Date.now() + 180 * 864e5).toISOString();
-            let stray = 0;
+            let stray = 0, repaired = 0;
             let pageToken = "";
-            for (let page = 0; page < 8 && stray < size; page++) {
+            for (let page = 0; page < 8 && stray + repaired < size; page++) {
               const params = new URLSearchParams({
                 timeMin, timeMax, singleEvents: "true", maxResults: "250",
               });
@@ -508,25 +510,50 @@ Deno.serve(async (req) => {
               const data = await res.json();
               if (!res.ok) throw new Error(String(data?.error?.message ?? `list ${res.status}`));
               for (const ev of data?.items ?? []) {
-                if (stray >= size) break;
+                if (stray + repaired >= size) break;
                 if (ev?.recurringEventId) continue;
                 if (!String(ev?.summary ?? "").startsWith("Training: ")) continue;
-                if (owned.has(String(ev.id))) continue;
-                const del = await fetch(`${CAL_API}/calendars/${cal}/events/${encodeURIComponent(ev.id)}`,
-                  { method: "DELETE", headers: auth });
-                if (!del.ok && del.status !== 404 && del.status !== 410) {
-                  throw new Error(`stray delete ${del.status}`);
+                const bk = owned.get(String(ev.id));
+                if (!bk) {
+                  const del = await fetch(`${CAL_API}/calendars/${cal}/events/${encodeURIComponent(ev.id)}`,
+                    { method: "DELETE", headers: auth });
+                  if (!del.ok && del.status !== 404 && del.status !== 410) {
+                    throw new Error(`stray delete ${del.status}`);
+                  }
+                  stray++;
+                  await sleep(120);
+                  continue;
                 }
-                stray++;
-                await sleep(120);
+                // The row owns this event but the times disagree: the booking
+                // MOVED and the fire-and-forget PATCH after the move failed,
+                // so the event stayed at the old time — looking exactly like a
+                // cancelled session still on the calendar, and invisible to
+                // the backfill because the row's pointer is not null. The
+                // listing already carries the event's time, so the drift is
+                // free to detect; the booking is the schedule's truth, so the
+                // event is re-written to it (a hand-dragged Google event snaps
+                // back too — the app owns this calendar's Training events).
+                // Ghost owners can't reach here: a cancelled row with a
+                // pointer lands in the sweep above, not in this branch.
+                const evStart = Date.parse(String(ev?.start?.dateTime ?? ev?.start?.date ?? ""));
+                const evEnd = Date.parse(String(ev?.end?.dateTime ?? ev?.end?.date ?? ""));
+                const drifted = Number.isFinite(evStart) &&
+                  (Math.abs(evStart - +new Date(bk.start_at)) >= 60000 ||
+                    (Number.isFinite(evEnd) && Math.abs(evEnd - +new Date(bk.end_at)) >= 60000));
+                if (drifted && bk.status === "booked") {
+                  await writeEvent(bk, cal, auth);
+                  repaired++;
+                  await sleep(120);
+                }
               }
               pageToken = String(data?.nextPageToken ?? "");
               if (!pageToken) break;
             }
             await sb.from("google_calendar").update({ last_error: null }).eq("coach_id", coachId);
-            // done only when a full scan deleted nothing; a capped pass
+            // done only when a full scan changed nothing; a capped pass
             // reports progress so the caller loops straight back in.
-            return json({ ok: true, written: 0, removed: stray, remaining: 0, done: stray === 0 });
+            return json({ ok: true, written: repaired, removed: stray, remaining: 0,
+              done: stray === 0 && repaired === 0 });
           }
 
           let written = 0, removed = 0;
