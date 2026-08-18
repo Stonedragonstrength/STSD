@@ -12,6 +12,8 @@ const assert = require("assert");
 
 const ROOT = path.join(__dirname, "..");
 const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
+// The exercise library moved to src/training/library.js (Phase 2 extraction).
+const librarySrc = fs.readFileSync(path.join(ROOT, "src", "training", "library.js"), "utf8");
 const eqSrc = fs.readFileSync(path.join(ROOT, "exercise-equipment.js"), "utf8");
 const demoSrc = fs.readFileSync(path.join(ROOT, "exercise-demos.js"), "utf8");
 const musclesSrc = fs.readFileSync(path.join(ROOT, "exercise-muscles.js"), "utf8");
@@ -34,7 +36,7 @@ function exKey(name) {
 }
 
 const ANATOMY_GROUPS = extractLiteral(appSrc, "const ANATOMY_GROUPS = [");
-const EXERCISE_LIBRARY = extractLiteral(appSrc, "const EXERCISE_LIBRARY = [");
+const EXERCISE_LIBRARY = extractLiteral(librarySrc, "const EXERCISE_LIBRARY = [");
 const EXERCISE_DEMOS = extractLiteral(demoSrc, "window.EXERCISE_DEMOS =[");
 const GEAR = extractLiteral(appSrc, "const GEAR = [");
 const EXERCISE_EQUIPMENT = extractLiteral(eqSrc, "window.EXERCISE_EQUIPMENT = {");

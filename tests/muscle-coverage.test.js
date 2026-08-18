@@ -39,8 +39,10 @@ function extractLiteral(src, marker) {
 }
 
 const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
+// The exercise library moved to src/training/library.js (Phase 2 extraction).
+const librarySrc = fs.readFileSync(path.join(ROOT, "src", "training", "library.js"), "utf8");
 const ANATOMY_GROUPS = extractLiteral(appSrc, "const ANATOMY_GROUPS = [");
-const EXERCISE_LIBRARY = extractLiteral(appSrc, "const EXERCISE_LIBRARY = [");
+const EXERCISE_LIBRARY = extractLiteral(librarySrc, "const EXERCISE_LIBRARY = [");
 
 const demoSrc = fs.readFileSync(path.join(ROOT, "exercise-demos.js"), "utf8");
 const musclesSrc = fs.readFileSync(path.join(ROOT, "exercise-muscles.js"), "utf8");

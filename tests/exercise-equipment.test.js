@@ -11,6 +11,8 @@ const assert = require("assert");
 
 const ROOT = path.join(__dirname, "..");
 const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
+// The exercise library moved to src/training/library.js (Phase 2 extraction).
+const librarySrc = fs.readFileSync(path.join(ROOT, "src", "training", "library.js"), "utf8");
 const eqSrc = fs.readFileSync(path.join(ROOT, "exercise-equipment.js"), "utf8");
 
 function extractLiteral(src, marker) {
@@ -32,7 +34,7 @@ const { exKey, EXERCISE_MODIFIERS } = globalThis.STSD.training;
 
 const GEAR = extractLiteral(appSrc, "const GEAR = [");
 const ANATOMY_GROUPS = extractLiteral(appSrc, "const ANATOMY_GROUPS = [");
-const EXERCISE_LIBRARY = extractLiteral(appSrc, "const EXERCISE_LIBRARY = [");
+const EXERCISE_LIBRARY = extractLiteral(librarySrc, "const EXERCISE_LIBRARY = [");
 const MAP = extractLiteral(eqSrc, "window.EXERCISE_EQUIPMENT = {");
 
 const gearIds = new Set(GEAR.map((g) => g.id));

@@ -15,6 +15,8 @@ const assert = require("assert");
 
 const ROOT = path.join(__dirname, "..");
 const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
+// The exercise library moved to src/training/library.js (Phase 2 extraction).
+const librarySrc = fs.readFileSync(path.join(ROOT, "src", "training", "library.js"), "utf8");
 const statsSrc = fs.readFileSync(path.join(ROOT, "exercise-stats.js"), "utf8");
 
 function extractLiteral(src, marker) {
@@ -34,7 +36,7 @@ function exKey(name) {
   return String(name || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/[.,;:!]+$/, "");
 }
 
-const EXERCISE_LIBRARY = extractLiteral(appSrc, "const EXERCISE_LIBRARY = [");
+const EXERCISE_LIBRARY = extractLiteral(librarySrc, "const EXERCISE_LIBRARY = [");
 const win = {};
 new Function("window", statsSrc)(win);
 const S = win.EXERCISE_STATS;

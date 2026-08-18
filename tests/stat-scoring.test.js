@@ -26,6 +26,8 @@ const assert = require("assert");
 
 const ROOT = path.join(__dirname, "..");
 const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
+// The exercise library moved to src/training/library.js (Phase 2 extraction).
+const librarySrc = fs.readFileSync(path.join(ROOT, "src", "training", "library.js"), "utf8");
 const statsPath = path.join(ROOT, "exercise-stats.js");
 
 function extractLiteral(src, marker) {
@@ -66,10 +68,10 @@ function constSrc(src, name) {
   throw new Error(`unterminated: const ${name}`);
 }
 
-const EXERCISE_LIBRARY = extractLiteral(appSrc, "const EXERCISE_LIBRARY = [");
-const TIMED_CATS = extractLiteral(appSrc, "const TIMED_CATS = [");
+const EXERCISE_LIBRARY = extractLiteral(librarySrc, "const EXERCISE_LIBRARY = [");
+const TIMED_CATS = extractLiteral(librarySrc, "const TIMED_CATS = [");
 
-const CONSTS = ["CARRY_NAMES", "STAT_KEYS", "STAT_IMPULSE_PROFILE", "STAT_MOBILITY_PROFILE",
+const CONSTS = ["STAT_KEYS", "STAT_IMPULSE_PROFILE", "STAT_MOBILITY_PROFILE",
   "STAT_STR_HARD", "STAT_EFFORT_MULT", "STAT_CARDIO_MULT", "STAT_TIMED_REF_SEC",
   "STAT_TIMED_MIN", "STAT_DAY_FULL", "STAT_DAY_HALF"];
 // exKey, exSwapFor and exResolvedName moved to src/training/tags.js (Phase 2
@@ -77,10 +79,13 @@ const CONSTS = ["CARRY_NAMES", "STAT_KEYS", "STAT_IMPULSE_PROFILE", "STAT_MOBILI
 // the sandbox still runs the real bodies.
 const tagsSrc = fs.readFileSync(path.join(ROOT, "src", "training", "tags.js"), "utf8");
 const TAG_FNS = ["function exKey(", "function exSwapFor(", "function exResolvedName("];
+// isCarryName, exIsTimed and CARRY_NAMES moved to src/training/library.js
+// (Phase 2 extraction) — concatenated from the module file, like the tag fns.
+const LIB_FNS = ["function isCarryName(", "function exIsTimed("];
 const FNS = [
   // What the engine leans on from the rest of app.js.
-  "function customExerciseList(", "function libCatFor(", "function isCarryName(",
-  "function exIsTimed(", "function cardioLogsAll(", "function athleteOwnDays(",
+  "function customExerciseList(", "function libCatFor(",
+  "function cardioLogsAll(", "function athleteOwnDays(",
   "function sessionDays(", "function hoardExerciseIndex(",
   // The engine itself.
   "function statZero(", "function statTable(", "function statProfileByKey(",
@@ -92,8 +97,10 @@ const FNS = [
 ];
 const body = [
   "let _libCatByKey = null;",
+  constSrc(librarySrc, "CARRY_NAMES"),
   ...CONSTS.map((c) => constSrc(appSrc, c)),
   ...TAG_FNS.map((f) => fnSrc(tagsSrc, f)),
+  ...LIB_FNS.map((f) => fnSrc(librarySrc, f)),
   ...FNS.map((f) => fnSrc(appSrc, f)),
   "return { statProfileFor, statVectorForEntry, statBucketForDate, statCapDay, statSeconds, STAT_KEYS, STAT_STR_HARD, STAT_EFFORT_MULT };",
 ].join("\n\n");
