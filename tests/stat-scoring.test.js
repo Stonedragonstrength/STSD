@@ -78,13 +78,16 @@ const CONSTS = ["STAT_KEYS", "STAT_IMPULSE_PROFILE", "STAT_MOBILITY_PROFILE",
 // extraction); their source is concatenated from the shipped module file, so
 // the sandbox still runs the real bodies.
 const tagsSrc = fs.readFileSync(path.join(ROOT, "src", "training", "tags.js"), "utf8");
+const builderSrc = fs.readFileSync(path.join(ROOT, "src", "training", "builder.js"), "utf8");
 const TAG_FNS = ["function exKey(", "function exSwapFor(", "function exResolvedName("];
 // isCarryName, exIsTimed and CARRY_NAMES moved to src/training/library.js
 // (Phase 2 extraction) — concatenated from the module file, like the tag fns.
 const LIB_FNS = ["function isCarryName(", "function exIsTimed("];
+// libCatFor moved on to src/training/builder.js.
+const BUILDER_FNS = ["function libCatFor("];
 const FNS = [
   // What the engine leans on from the rest of app.js.
-  "function customExerciseList(", "function libCatFor(",
+  "function customExerciseList(",
   "function cardioLogsAll(", "function athleteOwnDays(",
   "function sessionDays(", "function hoardExerciseIndex(",
   // The engine itself.
@@ -101,6 +104,7 @@ const body = [
   ...CONSTS.map((c) => constSrc(appSrc, c)),
   ...TAG_FNS.map((f) => fnSrc(tagsSrc, f)),
   ...LIB_FNS.map((f) => fnSrc(librarySrc, f)),
+  ...BUILDER_FNS.map((f) => fnSrc(builderSrc, f)),
   ...FNS.map((f) => fnSrc(appSrc, f)),
   "return { statProfileFor, statVectorForEntry, statBucketForDate, statCapDay, statSeconds, STAT_KEYS, STAT_STR_HARD, STAT_EFFORT_MULT };",
 ].join("\n\n");

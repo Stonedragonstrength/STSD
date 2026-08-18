@@ -16,6 +16,7 @@ const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
 const librarySrc = fs.readFileSync(path.join(ROOT, "src", "training", "library.js"), "utf8");
 const anatomySrc = fs.readFileSync(path.join(ROOT, "src", "training", "anatomy.js"), "utf8");
 const levelsSrc = fs.readFileSync(path.join(ROOT, "src", "training", "levels.js"), "utf8");
+const builderSrc = fs.readFileSync(path.join(ROOT, "src", "training", "builder.js"), "utf8");
 const eqSrc = fs.readFileSync(path.join(ROOT, "exercise-equipment.js"), "utf8");
 const demoSrc = fs.readFileSync(path.join(ROOT, "exercise-demos.js"), "utf8");
 const musclesSrc = fs.readFileSync(path.join(ROOT, "exercise-muscles.js"), "utf8");
@@ -47,9 +48,9 @@ const TRAINING_LEVEL_BY_ID = Object.fromEntries(TRAINING_LEVELS.map((l) => [l.id
 const TRAINING_PHASES = extractLiteral(levelsSrc, "const TRAINING_PHASES = [");
 const TRAINING_PHASE_BY_ID = Object.fromEntries(TRAINING_PHASES.map((p) => [p.id, p]));
 const EFFORT_LEVELS = extractLiteral(levelsSrc, "const EFFORT_LEVELS = {");
-const SPLITS = extractLiteral(appSrc, "const SPLITS = {");
-const GEN_STYLES = extractLiteral(appSrc, "const GEN_STYLES = [");
-const BUILDER_SLOT_EFFORT = extractLiteral(appSrc, "const BUILDER_SLOT_EFFORT = {");
+const SPLITS = extractLiteral(builderSrc, "const SPLITS = {");
+const GEN_STYLES = extractLiteral(builderSrc, "const GEN_STYLES = [");
+const BUILDER_SLOT_EFFORT = extractLiteral(builderSrc, "const BUILDER_SLOT_EFFORT = {");
 
 // ---- musclesForExercise, copied from muscle-coverage.test.js --------------
 const DEMO_MUSCLE_GROUPS = {
@@ -184,7 +185,7 @@ function coverageScore(name) {
 }
 // Mirrors BUILDER_SKIP_CATS in app.js. Kept in sync by hand — if the builder
 // starts or stops skipping a category, this line moves with it.
-const BUILDER_SKIP_CATS = new Set(extractLiteral(appSrc, "const BUILDER_SKIP_CATS = new Set(["));
+const BUILDER_SKIP_CATS = new Set(extractLiteral(builderSrc, "const BUILDER_SKIP_CATS = new Set(["));
 // Roles are DATA, so they are read out of the source rather than copied.
 const rolesSrc = fs.readFileSync(path.join(ROOT, "exercise-roles.js"), "utf8");
 const EXERCISE_ROLES = extractLiteral(rolesSrc, "window.EXERCISE_ROLES = {");
@@ -192,7 +193,7 @@ function exRole(name) { return EXERCISE_ROLES[exKey(name)] || "isolation"; }
 const EXERCISE_PATTERN = extractLiteral(rolesSrc, "window.EXERCISE_PATTERN = {");
 const EXERCISE_REP_WINDOW = extractLiteral(rolesSrc, "window.EXERCISE_REP_WINDOW = {");
 function exPattern(name) { return EXERCISE_PATTERN[exKey(name)] || ""; }
-const ROLE_RANK = extractLiteral(appSrc, "const ROLE_RANK = {");
+const ROLE_RANK = extractLiteral(builderSrc, "const ROLE_RANK = {");
 // The slot a movement occupies ON A GIVEN DAY, which is what the builder writes
 // and therefore what the ordering has to be judged against. An accessory only
 // counts as one where it supports that day's own main lift; parked on another
@@ -249,10 +250,10 @@ function skeletonFor(dayCount, gear) {
   return { days, dropped };
 }
 
-const DAY_CAP = Number((appSrc.match(/const DAY_CAP = (\d+)/) || [])[1]);
+const DAY_CAP = Number((builderSrc.match(/const DAY_CAP = (\d+)/) || [])[1]);
 // Read rather than copied: this number is a tuning decision, and a copy would
 // drift silently while every assertion below kept passing against the copy.
-const OVERSHOOT_COST = Number((appSrc.match(/const OVERSHOOT_COST = ([\d.]+)/) || [])[1]);
+const OVERSHOOT_COST = Number((builderSrc.match(/const OVERSHOOT_COST = ([\d.]+)/) || [])[1]);
 // MIRRORS app.js. These are hand-written copies, so a change there has to be
 // made here too — that is exactly how the deterministic-roll bug survived a
 // green suite: app.js was fixed and this copy was not, and the assertion
@@ -260,7 +261,7 @@ const OVERSHOOT_COST = Number((appSrc.match(/const OVERSHOOT_COST = ([\d.]+)/) |
 // READ, not copied. This drifted the moment app.js moved it 0.9 -> 0.5, and a
 // drifted reach means every measurement taken through this file describes a
 // builder that is not the one shipping.
-const PICK_REACH = Number((appSrc.match(/const PICK_REACH = ([\d.]+)/) || [])[1]);
+const PICK_REACH = Number((builderSrc.match(/const PICK_REACH = ([\d.]+)/) || [])[1]);
 function pickNearBest(scored) {
   if (!scored.length) return null;
   let top = -Infinity;
@@ -486,7 +487,7 @@ check("every constant read out of app.js actually parsed", () => {
   // Declared before this point in the file; the rest are checked where they are.
   Object.entries({ DAY_CAP, OVERSHOOT_COST, PICK_REACH })
     .forEach(([name, v]) => assert.ok(Number.isFinite(v) && v > 0,
-      `${name} read out of app.js as ${v} — the regex stopped matching`));
+      `${name} read out of the builder module as ${v} — the regex stopped matching`));
 });
 
 check("no compound or accessory is left believing it trains one muscle", () => {
@@ -832,10 +833,10 @@ const stubs = {
 // The rep ladder is the behaviour under test, so _pickReps and _repsFor are
 // PULLED from app.js rather than stubbed. Stubbing them is what would let the
 // ladder rot: buildWeek would keep passing while shipping 3x7 and 4x11.
-const REP_LADDER = extractLiteral(appSrc, "const REP_LADDER = [");
+const REP_LADDER = extractLiteral(builderSrc, "const REP_LADDER = [");
 const repFns = Function("REP_LADDER", "_rand", "GEN_HOLD_KW", "GEN_CRAWL_KW", "exRepWindow", `
-  ${fnSrc(appSrc, "function _pickReps(")}
-  ${fnSrc(appSrc, "function _repsFor(")}
+  ${fnSrc(builderSrc, "function _pickReps(")}
+  ${fnSrc(builderSrc, "function _repsFor(")}
   return { _pickReps, _repsFor };
 `)(REP_LADDER,
   (arr) => arr[Math.floor(Math.random() * arr.length)],
@@ -851,11 +852,11 @@ const deps = {
   skeletonFor, seatCompounds, seatAccessories, fillDeficit, proposalSets,
   resolveRealization, patternReachable, coverageScore, exRole, ...stubs,
 };
-const TRIM_FLOOR_SETS = Number((appSrc.match(/const TRIM_FLOOR_SETS = (\d+)/) || [])[1]);
-const DEEPEN_MAX_SETS = Number((appSrc.match(/const DEEPEN_MAX_SETS = (\d+)/) || [])[1]);
-const BEGINNER_MIN_REPS = Number((appSrc.match(/const BEGINNER_MIN_REPS = (\d+)/) || [])[1]);
-const BEGINNER_MAX_SETS = Number((appSrc.match(/const BEGINNER_MAX_SETS = (\d+)/) || [])[1]);
-const TRIM_FLOOR_ANCHOR = Number((appSrc.match(/const TRIM_FLOOR_ANCHOR = (\d+)/) || [])[1]);
+const TRIM_FLOOR_SETS = Number((builderSrc.match(/const TRIM_FLOOR_SETS = (\d+)/) || [])[1]);
+const DEEPEN_MAX_SETS = Number((builderSrc.match(/const DEEPEN_MAX_SETS = (\d+)/) || [])[1]);
+const BEGINNER_MIN_REPS = Number((builderSrc.match(/const BEGINNER_MIN_REPS = (\d+)/) || [])[1]);
+const BEGINNER_MAX_SETS = Number((builderSrc.match(/const BEGINNER_MAX_SETS = (\d+)/) || [])[1]);
+const TRIM_FLOOR_ANCHOR = Number((builderSrc.match(/const TRIM_FLOOR_ANCHOR = (\d+)/) || [])[1]);
 const buildWeek = Function(...Object.keys(deps), `
   let _libCatByKey = null;
   const TRIM_FLOOR_SETS = ${TRIM_FLOOR_SETS};
@@ -863,16 +864,16 @@ const buildWeek = Function(...Object.keys(deps), `
   const DEEPEN_MAX_SETS = ${DEEPEN_MAX_SETS};
   const BEGINNER_MIN_REPS = ${BEGINNER_MIN_REPS};
   const BEGINNER_MAX_SETS = ${BEGINNER_MAX_SETS};
-  ${fnSrc(appSrc, "function isBeginner(")}
-  ${fnSrc(appSrc, "function schemeForLevel(")}
+  ${fnSrc(builderSrc, "function isBeginner(")}
+  ${fnSrc(builderSrc, "function schemeForLevel(")}
   const OVERSHOOT_COST = ${OVERSHOOT_COST};
-  ${fnSrc(appSrc, "function coverageGain(")}
-  ${fnSrc(appSrc, "function builtWeekSets(")}
-  ${fnSrc(appSrc, "function trimToBands(")}
-  ${fnSrc(appSrc, "function deepenShort(")}
-  ${fnSrc(appSrc, "function libCatFor(")}
-  ${fnSrc(appSrc, "function builderEffort(")}
-  ${fnSrc(appSrc, "function buildWeek(")}
+  ${fnSrc(builderSrc, "function coverageGain(")}
+  ${fnSrc(builderSrc, "function builtWeekSets(")}
+  ${fnSrc(builderSrc, "function trimToBands(")}
+  ${fnSrc(builderSrc, "function deepenShort(")}
+  ${fnSrc(builderSrc, "function libCatFor(")}
+  ${fnSrc(builderSrc, "function builderEffort(")}
+  ${fnSrc(builderSrc, "function buildWeek(")}
   return buildWeek;
 `)(...Object.values(deps));
 
@@ -1076,25 +1077,25 @@ check("app.js itself still varies its picks rather than taking a strict maximum"
   // the first strict maximum, every roll returned the same movements with new
   // sets and reps, and a green suite said nothing. So assert against the real
   // source for the properties the copies cannot vouch for.
-  assert.ok(/function pickNearBest\(/.test(appSrc),
-    "app.js has no pickNearBest — the gap filler cannot vary");
-  const fill = fnSrc(appSrc, "function fillDeficit(");   // brace-matched, not a magic length
+  assert.ok(/function pickNearBest\(/.test(builderSrc),
+    "the builder module has no pickNearBest — the gap filler cannot vary");
+  const fill = fnSrc(builderSrc, "function fillDeficit(");   // brace-matched, not a magic length
   assert.ok(/pickNearBest\(/.test(fill), "fillDeficit no longer calls pickNearBest");
   assert.ok(!/bestScore|bestGain/.test(fill),
     "fillDeficit is back to a first-strict-maximum pick, so every roll is identical");
   // Openers are chosen EVENLY among role-eligible movements — no ranking at all,
   // because ranking by coverageScore is what put a Leg Press at the head of
   // every squat day.
-  const bfp = appSrc.slice(appSrc.indexOf("function bestForPattern("), appSrc.indexOf("function seatCompounds("));
+  const bfp = builderSrc.slice(builderSrc.indexOf("function bestForPattern("), builderSrc.indexOf("function seatCompounds("));
   assert.ok(/Math\.random\(\)/.test(bfp), "bestForPattern no longer picks at random");
   assert.ok(!/coverageScore/.test(bfp),
     "bestForPattern is ranking by coverageScore again, which measures demo-DB tagging");
 });
 
-check("app.js seats accessories before it fills gaps", () => {
+check("buildWeek seats accessories before it fills gaps", () => {
   // The order is the fix. Filling first means quads are already past their band
   // when the accessory tier runs, and every lunge scores as overshoot.
-  const body = appSrc.slice(appSrc.indexOf("const sk = skeletonFor(days, gear);"));
+  const body = builderSrc.slice(builderSrc.indexOf("const sk = skeletonFor(days, gear);"));
   const acc = body.indexOf("seatAccessories(");
   const fill = body.indexOf("fillDeficit(");
   assert.ok(acc > 0, "buildWeek never seats accessories");
@@ -1343,7 +1344,7 @@ check("the squat day holds a lunge or a split squat, and no crawl", () => {
 check("the trim and deepen constants read out of app.js too", () => {
   Object.entries({ TRIM_FLOOR_SETS, TRIM_FLOOR_ANCHOR, DEEPEN_MAX_SETS, BEGINNER_MIN_REPS, BEGINNER_MAX_SETS })
     .forEach(([name, v]) => assert.ok(Number.isFinite(v) && v > 0,
-      `${name} read out of app.js as ${v} — the regex stopped matching`));
+      `${name} read out of the builder module as ${v} — the regex stopped matching`));
   assert.ok(TRIM_FLOOR_ANCHOR > TRIM_FLOOR_SETS,
     "a day's opening lift must have a higher floor than a fill");
 });
