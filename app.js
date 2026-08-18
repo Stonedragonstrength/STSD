@@ -271,6 +271,7 @@
     mergeExerciseLogs,
     filledPrescriptions, mergeById,
     deleteTemplateById, liveTemplates, purgeTemplateTombstones,
+    emptyProgress, ensureProgressShape,
   } = globalThis.STSD.sync;
 
   // Re-pull on returning to the app. Push-then-pull, always: a device's own
@@ -27193,37 +27194,10 @@
       err.classList.remove("hidden");
     }
   }
-  function emptyProgress() { return { exerciseLogs: {}, bodyweightLog: [], feedback: "", dayCompletions: {}, personalRecords: [], packageRequests: [], dayNotes: {}, dismissedBulletins: {}, seenMessages: {}, totalWorkoutMs: 0, workoutMoods: {}, addedExercises: {}, athleteDays: [], formChecks: {}, swaps: {}, nutritionTargets: {}, foodLog: {}, customFoods: [], savedMeals: [], waterLog: {}, nutritionGame: {}, statField: {}, avatarId: "" }; }
-  function ensureProgressShape(p) {
-    if (typeof p.avatarId !== "string") p.avatarId = "";
-    if (!p.exerciseLogs) p.exerciseLogs = {};
-    if (!p.bodyweightLog) p.bodyweightLog = [];
-    if (p.feedback == null) p.feedback = "";
-    if (!p.dayCompletions) p.dayCompletions = {};
-    if (!p.personalRecords) p.personalRecords = [];
-    if (!p.packageRequests) p.packageRequests = [];
-    if (!p.dayNotes) p.dayNotes = {};
-    if (!Array.isArray(p.cardioLogs)) p.cardioLogs = [];
-    if (!p.dismissedBulletins) p.dismissedBulletins = {};
-    if (!p.seenMessages) p.seenMessages = {};
-    if (typeof p.totalWorkoutMs !== "number" || !isFinite(p.totalWorkoutMs)) p.totalWorkoutMs = 0;
-    if (!p.workoutMoods || typeof p.workoutMoods !== "object") p.workoutMoods = {};
-    if (!p.pendingDeloads || typeof p.pendingDeloads !== "object") p.pendingDeloads = {};
-    // The stat field's per-date buckets, keyed YYYY-MM-DD. Backfilled empty on
-    // old shapes; syncStatField rebuilds it from the logs on first read.
-    if (!p.statField || typeof p.statField !== "object") p.statField = {};
-    if (!p.readiness || typeof p.readiness !== "object") p.readiness = {};
-    if (!Array.isArray(p.athleteDays)) p.athleteDays = [];
-    if (!p.formChecks || typeof p.formChecks !== "object") p.formChecks = {};
-    if (!p.swaps || typeof p.swaps !== "object") p.swaps = {};
-    if (!p.nutritionTargets || typeof p.nutritionTargets !== "object") p.nutritionTargets = {};
-    if (!p.foodLog || typeof p.foodLog !== "object") p.foodLog = {};
-    if (!Array.isArray(p.customFoods)) p.customFoods = [];
-    if (!Array.isArray(p.savedMeals)) p.savedMeals = [];
-    if (!p.waterLog || typeof p.waterLog !== "object") p.waterLog = {};
-    if (!p.nutritionGame || typeof p.nutritionGame !== "object") p.nutritionGame = {};
-    return p;
-  }
+  // emptyProgress and ensureProgressShape moved to src/sync/progress-shape.js
+  // (Phase 1 extraction); their namespace pull lives at the TOP of this IIFE
+  // with the other extractions — see the comment there for why position is
+  // load-bearing.
 
   // -------- Cardio log (athlete side) --------
   const CARDIO_TYPES = [
