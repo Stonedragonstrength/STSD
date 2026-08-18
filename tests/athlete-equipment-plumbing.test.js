@@ -14,9 +14,10 @@ const assert = require("assert");
 
 const ROOT = path.join(__dirname, "..");
 const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
-const cloudSrc = fs.readFileSync(path.join(ROOT, "cloud.js"), "utf8");
-// buildProgramFromAthlete moved to src/sync/program.js (Phase 1 extraction).
+// buildProgramFromAthlete moved to src/sync/program.js, and the row mappers
+// to src/sync/rows.js (Phase 1 extraction).
 const programSrc = fs.readFileSync(path.join(ROOT, "src", "sync", "program.js"), "utf8");
+const rowsSrc = fs.readFileSync(path.join(ROOT, "src", "sync", "rows.js"), "utf8");
 
 function fnBody(src, decl) {
   const at = src.indexOf(decl);
@@ -44,12 +45,12 @@ check("buildProgramFromAthlete carries equipment to the athlete's device", () =>
 });
 
 check("athleteToRow writes equipment", () => {
-  assert.ok(/equipment\s*:/.test(fnBody(cloudSrc, "function athleteToRow(")),
+  assert.ok(/equipment\s*:/.test(fnBody(rowsSrc, "function athleteToRow(")),
     "athleteToRow must write equipment");
 });
 
 check("rowToAthlete reads equipment back", () => {
-  assert.ok(/equipment\s*:\s*r\.equipment/.test(fnBody(cloudSrc, "function rowToAthlete(")),
+  assert.ok(/equipment\s*:\s*r\.equipment/.test(fnBody(rowsSrc, "function rowToAthlete(")),
     "rowToAthlete must map equipment back");
 });
 
@@ -66,7 +67,7 @@ check("an empty list is written rather than null", () => {
   // athleteToRow coerces most optional fields to null with `|| null`. Equipment
   // must NOT: an empty array and null mean the same thing to the reader, and
   // sending [] keeps the column's type stable from the very first write.
-  const body = fnBody(cloudSrc, "function athleteToRow(");
+  const body = fnBody(rowsSrc, "function athleteToRow(");
   assert.ok(/equipment\s*:\s*c\.equipment\s*\|\|\s*\[\]/.test(body),
     "athleteToRow should send [] rather than null for equipment");
 });

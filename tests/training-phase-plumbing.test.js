@@ -24,9 +24,10 @@ const assert = require("assert");
 
 const ROOT = path.join(__dirname, "..");
 const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
-const cloudSrc = fs.readFileSync(path.join(ROOT, "cloud.js"), "utf8");
-// buildProgramFromAthlete moved to src/sync/program.js (Phase 1 extraction).
+// buildProgramFromAthlete moved to src/sync/program.js, and the row mappers
+// to src/sync/rows.js (Phase 1 extraction).
 const programSrc = fs.readFileSync(path.join(ROOT, "src", "sync", "program.js"), "utf8");
+const rowsSrc = fs.readFileSync(path.join(ROOT, "src", "sync", "rows.js"), "utf8");
 
 // Grab a function's body by brace-matching from its declaration.
 function fnBody(src, decl) {
@@ -57,12 +58,12 @@ check("buildProgramFromAthlete carries trainingPhase to the athlete's device", (
 });
 
 check("athleteToRow writes training_phase", () => {
-  const body = fnBody(cloudSrc, "function athleteToRow(");
+  const body = fnBody(rowsSrc, "function athleteToRow(");
   assert.ok(/training_phase\s*:/.test(body), "athleteToRow must write training_phase");
 });
 
 check("rowToAthlete reads training_phase back", () => {
-  const body = fnBody(cloudSrc, "function rowToAthlete(");
+  const body = fnBody(rowsSrc, "function rowToAthlete(");
   assert.ok(/trainingPhase\s*:\s*r\.training_phase/.test(body),
     "rowToAthlete must map training_phase back to trainingPhase");
 });

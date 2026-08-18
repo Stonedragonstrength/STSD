@@ -22,8 +22,10 @@ describe("declSource", () => {
   });
 
   it("reads other files too", () => {
-    const src = declSource("function rowToAthlete(", "cloud.js");
-    expect(src).toContain("rowToAthlete");
+    // The fixture was rowToAthlete until it moved to src/sync/rows.js
+    // (Phase 1 extraction); upsertCoach stays in cloud.js.
+    const src = declSource("function upsertCoach(", "cloud.js");
+    expect(src).toContain("upsertCoach");
   });
 
   it("ends a statement declaration at its semicolon, not at some later brace", () => {
