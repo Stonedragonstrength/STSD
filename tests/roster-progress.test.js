@@ -40,12 +40,17 @@ function fnSrc(src, decl) {
   throw new Error(`unbalanced: ${decl}`);
 }
 
-// mergedRosterProgress leans on mergeExerciseLogs; load both real bodies.
+// mergedRosterProgress leans on mergeExerciseLogs, which moved to
+// src/sync/merge-logs.js in the Phase 1 extraction. The shipped module file
+// assigns onto globalThis.STSD when executed, so requiring it here hands this
+// test the same real body the app runs — no copy, no brace-match.
+require(path.join(ROOT, "src", "sync", "merge-logs.js"));
+const mergeExerciseLogs = globalThis.STSD.sync.mergeExerciseLogs;
 const mergedRosterProgress = new Function(
-  `${fnSrc(appSrc, "function mergeExerciseLogs(")};
-   ${fnSrc(appSrc, "function mergedRosterProgress(")};
+  "mergeExerciseLogs",
+  `${fnSrc(appSrc, "function mergedRosterProgress(")};
    return mergedRosterProgress;`
-)();
+)(mergeExerciseLogs);
 
 let failures = 0;
 function check(label, fn) {

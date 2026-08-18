@@ -1,6 +1,10 @@
 # A test runner, and getting the logic out of the IIFE
 
-**Status:** phase 0 shipped (`c5a9e60`). Phases 1+ awaiting owner sign-off.
+**Status:** phase 0 shipped (`c5a9e60`). Phase 1 (Sync) underway — owner
+approved 2026-08-17 evening. Mechanism while no bundler ships: each `src/`
+module is a classic script assigning onto `globalThis.STSD`, loaded by its own
+`?v=` script tag before `app.js`; tier-1 specs import the same file and read
+the namespace, so the shipped code is the tested code.
 **Owner decisions on file:** incremental extraction, pure logic first; domain order
 Sync → Training → Money → Scheduling; Vite deferred (see §2).
 
