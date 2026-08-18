@@ -23,9 +23,12 @@
 //                                       booking with no event yet. Returns what
 //                                       remains so the caller can loop until done
 //
-// The coach may call any of them. An athlete may call only `push` and `remove`,
-// and only for a booking of their own — that is what keeps the coach's calendar
-// honest when an athlete books, moves or cancels a session themselves.
+// The coach may call any of them. An athlete may call only `push` and `remove`
+// — and only for a booking of their own, which is what keeps the coach's
+// calendar honest when an athlete books, moves or cancels a session themselves
+// — plus `freebusy`, so the booking grid can hide hours the coach is busy on
+// their own calendar. freebusy returns intervals only, no titles: the same
+// information "that slot is taken" already leaks by design.
 //
 // Setup (one time, by the coach — none of this can be done from the app):
 //   1. Google Cloud console -> new project -> APIs & Services -> enable
@@ -138,16 +141,26 @@ Deno.serve(async (req) => {
     if (coach) {
       coachId = coach.id as string;
     } else {
-      if (action !== "push" && action !== "remove") return json({ ok: false, error: "coach only" }, 403);
+      // freebusy joined push/remove on 2026-08-17: the athlete booking grid
+      // subtracts the coach's Google busy time, and that grid runs as the
+      // athlete. Intervals only, resolved to the athlete's OWN coach — never
+      // a coach id off the request.
+      if (action !== "push" && action !== "remove" && action !== "freebusy") {
+        return json({ ok: false, error: "coach only" }, 403);
+      }
       const { data: athlete } = await sb
-        .from("athletes").select("id").eq("auth_user_id", userId).maybeSingle();
+        .from("athletes").select("id, coach_id").eq("auth_user_id", userId).maybeSingle();
       if (!athlete) return json({ ok: false, error: "coach only" }, 403);
-      const { data: bk } = await sb
-        .from("bookings").select("athlete_id, coach_id")
-        .eq("id", String(body?.bookingId ?? "")).maybeSingle();
-      if (!bk || bk.athlete_id !== athlete.id) return json({ ok: false, error: "not your booking" }, 403);
-      coachId = bk.coach_id as string;
-      athleteId = athlete.id as string;
+      if (action === "freebusy") {
+        coachId = athlete.coach_id as string;
+      } else {
+        const { data: bk } = await sb
+          .from("bookings").select("athlete_id, coach_id")
+          .eq("id", String(body?.bookingId ?? "")).maybeSingle();
+        if (!bk || bk.athlete_id !== athlete.id) return json({ ok: false, error: "not your booking" }, 403);
+        coachId = bk.coach_id as string;
+        athleteId = athlete.id as string;
+      }
     }
 
     if (!clientId || !clientSecret || !redirectUri) {

@@ -23250,6 +23250,33 @@
       .sort((x, z) => x.startMs - z.startMs);
   }
 
+  // The coach's Google busy windows for [fromMs, toMs), in the same
+  // { start, end } shape the taken-slots read uses, or [] whenever Google is
+  // disconnected, degraded or unreachable — a slot grid degrades to
+  // bookings-only availability, never blocks on Google. Cached briefly so
+  // stepping through days doesn't re-ask for the same window. Coach-level
+  // data, so the cache surviving an athlete switch is correct here.
+  let _googleBusy = { key: "", at: 0, busy: [] };
+  async function googleBusyWindows(fromMs, toMs) {
+    if (!window.Cloud?.enabled) return [];
+    const key = `${Math.floor(fromMs / 3600000)}|${Math.floor(toMs / 3600000)}`;
+    if (_googleBusy.key === key && Date.now() - _googleBusy.at < 120000) return _googleBusy.busy;
+    const res = await window.Cloud.googleCall?.("freebusy", {
+      from: new Date(fromMs).toISOString(),
+      to: new Date(toMs).toISOString(),
+    });
+    const busy = res?.ok && Array.isArray(res.busy) ? res.busy : [];
+    _googleBusy = { key, at: Date.now(), busy };
+    return busy;
+  }
+  // The cached copy, for synchronous callers — the coach's quick-picks paint
+  // in one pass and cannot await. Empty until a fetch has run recently, and
+  // only ever advisory: "Other time" sits beside the picks and takes anything.
+  function googleBusyCached(fromMs, toMs) {
+    if (Date.now() - _googleBusy.at > 10 * 60000) return [];
+    return _googleBusy.busy.filter((b) => +new Date(b.end) > fromMs && +new Date(b.start) < toMs);
+  }
+
   // Slots grouped into the days they fall on, for rendering.
   function groupSlotsByDay(slots, tz) {
     const zone = tz || localTz();
@@ -23379,19 +23406,27 @@
       renderAthleteNextSession();
       return;
     }
-    const [taken, mine, reqs] = await Promise.all([
+    const [taken, mine, reqs, gbusy] = await Promise.all([
       // Deliberately NOT scoped to this athlete: it is every taken slot, so the
       // grid can subtract them. Only start/end come back, never who.
       window.Cloud.getBookedWindow(new Date(from).toISOString(), new Date(toMs).toISOString()),
       window.Cloud.getBookings(new Date(from - 86400000).toISOString(), new Date(toMs).toISOString(), false, meId),
       window.Cloud.getBookingRequests(true, meId),
+      // The coach's Google busy time. This card's header has promised the
+      // subtraction since the day it shipped; nothing called freebusy until
+      // 2026-08-17, so an athlete could book straight over the coach's own
+      // appointment. [] on any failure — the grid must not hang on Google.
+      googleBusyWindows(from, toMs),
     ]);
     _athleteBookings = onlyMine(mine);
     _athleteRequests = onlyMine(reqs);
     // +1 day of horizon because an instant near midnight still reads as the
     // previous calendar day in the coach's zone, so day 0 can be yesterday.
     _athleteSlots = availabilityIsSet(a)
-      ? generateSlots(a, from, a.horizonDays + 1, (taken || []).map((t) => ({ start: t.start, end: t.end })))
+      ? generateSlots(a, from, a.horizonDays + 1, [
+          ...(taken || []).map((t) => ({ start: t.start, end: t.end })),
+          ...gbusy,
+        ])
       : [];
     renderAthleteBooking();
     // The Overview's Book button and next-session line are both decided by data
@@ -23846,6 +23881,11 @@
         // fetch landed drew them empty and nothing ever came back for it.
         if (!$("#view-money")?.classList.contains("hidden")) renderMoneyWeekStrip();
       }
+      // Warm the Google busy cache for the near term, fire-and-forget: the
+      // booking sheet's quick-picks paint in one synchronous pass and read
+      // the cache, and this is what lets them subtract a personal
+      // appointment. Advisory — a failure just means bookings-only picks.
+      googleBusyWindows(Date.now(), Date.now() + 45 * 86400000);
       // Pending change requests ride along with the bookings they belong to,
       // and the inbox is repainted once they land: this call is what puts the
       // count on the ⚡ pill, and it finishes well after showCoachOverview's own
@@ -24200,15 +24240,15 @@
     const g = _googleStatus;
     const connected = !!g?.connected;
     const expired = googleNeedsReconnect(g);
-    // The old line claimed "times you're busy there stop showing as free".
-    // Nothing has ever called the freebusy action — the Edge Function
-    // implements it and no caller exists — so the card was promising a feature
-    // that does not run. Say only what is true.
+    // "Times you're busy there stop showing as free" came BACK on 2026-08-17:
+    // the athlete grid now awaits freebusy and the coach's quick-picks read a
+    // warmed cache. It degrades to bookings-only whenever Google is down,
+    // which the copy does not need to say.
     const blurb = !connected
       ? "Not connected. Connect it and every booking lands on your calendar."
       : expired
         ? escapeHtml(g.email || "Connected") + ". Google has expired this connection, so nothing has reached your calendar since it went. Reconnect and the missed bookings get pushed."
-        : escapeHtml(g.email || "Connected") + ". New bookings land on it as they're made.";
+        : escapeHtml(g.email || "Connected") + ". New bookings land on it as they're made, and times you're busy there stop showing as free.";
     host.innerHTML =
       `<div class="sched-google-row ${connected ? "on" : ""}${expired ? " needs-reconnect" : ""}">` +
         `<span class="sched-google-ico">${expired ? "⚠️" : "📆"}</span>` +
@@ -24809,7 +24849,12 @@
     const dayStart = zonedTimeToUtc(y, m, d, 0, 0, tz);
     const busy = _coachBookings
       .filter((b) => b.status === "booked")
-      .map((b) => ({ start: b.start_at, end: b.end_at }));
+      .map((b) => ({ start: b.start_at, end: b.end_at }))
+      // Google busy time rides along from the cache refreshCoachSchedule
+      // warmed — synchronously, because this function paints in one pass.
+      // Empty when the cache is cold or Google is down: advisory picks
+      // degrade to bookings-only rather than waiting on a network call.
+      .concat(googleBusyCached(dayStart, dayStart + 2 * 86400000));
     // blackouts cleared: a day off is a day athletes can't book, not one the
     // coach is forbidden from putting a session on.
     //
