@@ -444,7 +444,15 @@ Deno.serve(async (req) => {
         const row = await loadToken();
         if (!row) return json({ ok: true, connected: false });
         const size = Math.max(1, Math.min(50, Number(body?.batch ?? 25)));
-        const from = String(body?.from ?? new Date().toISOString());
+        // The floor reaches back one day, not to this instant. The backfill
+        // deliberately skips deep history, but "history" used to begin at
+        // right now — so a session that finished this MORNING never got an
+        // event, and the coach reviewing his day on Google read it as missing
+        // (Ursula, 8am, found 2026-08-17: her series was booked while the
+        // grant was dead, the reconnect backfill ran at 12:36, and the one
+        // session already behind it was skipped). A day is read whole; 24
+        // hours covers today in every timezone without zone maths here.
+        const from = String(body?.from ?? new Date(Date.now() - 24 * 3600000).toISOString());
         const pending = () => sb.from("bookings")
           .select("id", { count: "exact", head: true })
           .eq("coach_id", coachId).eq("status", "booked")
