@@ -1169,10 +1169,15 @@
     try {
       const [subs, pays] = await Promise.all([
         sb.from("billing_subscriptions").select("*").eq("coach_id", coachId),
-        // Only what a money surface actually reads. A year of history is
-        // pointless payload on every sign-in.
-        sb.from("billing_payments").select("*").eq("coach_id", coachId)
-          .gte("month_key", monthsAgoKey(3)),
+        // ALL of them, deliberately. This had a three-month floor "to keep
+        // sign-in payload down", and it is why Books lied about history: a
+        // month settled by card outside the window had its charge row
+        // withheld here AND its package skipped in moneyLedger for being
+        // card-paid, so the money vanished from the year view entirely. The
+        // table grows by a few hundred small rows a year; that is not
+        // payload worth lying over. The athlete read below keeps its window
+        // — an athlete surface only shows recent and outstanding charges.
+        sb.from("billing_payments").select("*").eq("coach_id", coachId),
       ]);
       if (subs.error) { console.warn("[Cloud] getBillingForCoach subs", subs.error.message); return null; }
       return { subscriptions: subs.data || [], payments: pays.error ? [] : (pays.data || []) };

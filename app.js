@@ -8781,8 +8781,16 @@
         // Already on the books as a charge, or already settled by one.
         const mk = pkgMonth(pkg);
         if (mk && covered.has(mk)) return;
-        if (pkg.paidBy === "card") return;
-        const owed = pkgOwed(pkg);
+        // A card-paid package is usually covered — its charge row was pushed
+        // just above. It used to be skipped unconditionally here, which
+        // assumed the charge row always exists: a card payment with no row
+        // (taken outside the app, or from before the charge table) then left
+        // its month with no entry at all, and past years read zero card
+        // revenue. If the row exists, `covered` already caught it; if it
+        // doesn't, the package is the only record and it belongs on the
+        // books — as card, settled.
+        const card = pkg.paidBy === "card";
+        const owed = card ? false : pkgOwed(pkg);
         entries.push({
           bankId: c.id, name, membership,
           monthKey: mk || dateISO(new Date(pkg.addedAt || pkg.paidAt || Date.now())).slice(0, 7),
@@ -8790,7 +8798,7 @@
           sessions: Number(pkg.size) || 0,
           amount: price,
           paid: !owed,
-          how: "cash",
+          how: card ? "card" : "cash",
           pkg,
         });
       });
