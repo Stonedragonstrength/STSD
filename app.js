@@ -343,6 +343,9 @@
     pkgMonth, pkgOwed, pkgExpired, bankLedger,
     creditCapOf, creditsOn, creditEntries, creditBalance,
     membershipPerSession, athleteSessionRate, flatMonthlyFor, bankPackagePrice,
+    monthPackageOf, grantedThisMonth, bankMembership,
+    sessionsInMonth, billSessionsFor,
+    sessionBankSummary, monthChargePlan, raiseProjection,
   } = globalThis.STSD.money;
   // The library module's classifiers resolve the coach's CUSTOM exercises,
   // and the anatomy module the coach-tuned muscle credits, through these
@@ -366,6 +369,11 @@
     // The pricing module resolves tiers (owner edits and retired ones
     // included) through this. Function declaration, hoists, safe this early.
     membershipById,
+    // The projection module resolves a couple's other half and normalizes a
+    // bank's shape through these. ensureSessionBank is a transaction
+    // boundary (§4 rule 7) — it stays HERE, the module only calls it.
+    // Function declarations, hoist, safe this early.
+    partnerOf, ensureSessionBank,
   };
 
   // Re-pull on returning to the app. Push-then-pull, always: a device's own
@@ -1116,17 +1124,10 @@
     saveTrainer();
   }
 
-  function sessionBankSummary(c) {
-    ensureSessionBank(c);
-    const l = bankLedger(c.sessionBank, todayISO().slice(0, 7), !!c.sessionBank.rollover);
-    // Money still to collect, in packages and in dollars. Never "waiting" —
-    // the sessions went out the day they were granted, so this is a list of
-    // people to chase, not of anything being held back.
-    const owed = c.sessionBank.packages.filter(pkgOwed);
-    const owedAmount = owed.reduce((n, p) => n + (Number(p.price) || 0), 0);
-    return { ...l, owedCount: owed.length, owedAmount };
-  }
-
+  // sessionBankSummary (the wrapper every screen should call) moved to
+  // src/money/projection.js (Phase 3 extraction); the namespace pull lives
+  // at the TOP of this IIFE. It reaches ensureSessionBank and the clock
+  // through the STSD.app getters published beside that pull.
   // The small numbers under a balance, on the coach's card and the athlete's.
   // Every one of them now ADDS UP to the big number above it. The old card put
   // all-time "purchased" next to a balance that only counts this month, so a
@@ -7412,65 +7413,11 @@
   // flatMonthlyFor (what a month of a program-only tier costs THIS athlete
   // — the grandfathering mechanism) moved to src/money/pricing.js (Phase 3
   // extraction); the namespace pull lives at the TOP of this IIFE.
-  function monthChargePlan(c, monthKey) {
-    ensureSessionBank(c);
-    const rate = athleteSessionRate(c);
-    const membership = bankMembership(c);
-    // Asked about the month named, not about today. This used to read
-    // sessionBankSummary().thisMonthUsed, which is anchored to the current
-    // month however far ahead you are looking — so billing September in August
-    // proposed August's session count. See billSessionsFor: the month's own
-    // booked count, else what was logged in it, else the tier's size.
-    const pkg = monthPackageOf(c, monthKey);
-    const sessions = billSessionsFor(c, monthKey, membership);
-    const allowance = Number(pkg?.size) || Number(membership?.sessions) || 0;
-    const flat = flatMonthlyFor(c, membership);
-    const gross = flat || Math.round(sessions * rate);
-    // Credit for months that closed with sessions unused. Never more than the
-    // invoice itself — a credit bigger than the bill would produce a negative
-    // charge, and the rest stays on the balance for next time.
-    const credit = Math.min(creditBalance(c), gross);
-    return {
-      sessions, rate, allowance, flat, gross, credit,
-      over: allowance ? Math.max(0, sessions - allowance) : 0,
-      amount: Math.max(0, gross - credit),
-    };
-  }
-  // The Raise fold's forward look, Nathan's own arithmetic: what this bank
-  // BUYS next month minus what is SITTING IN IT today. A missed session stays
-  // in the bank, so every miss visibly pushes next month's number down the
-  // day it happens — that is the point of the row. The charge button beside
-  // it keeps monthChargePlan's exact invoice amount; this is the lens, not
-  // the bill.
-  //
-  // Two readings per bank, and they bracket reality:
-  //   projected — sessions − bank today. The HEADLINE, and already the
-  //               missed-sessions number: it is what next month is worth if
-  //               every remaining session got missed and stayed in the bank.
-  //   hitsAll   — they burn the bank before the 1st, so the full buy stands.
-  // Every attended session moves the projection up toward the ceiling; the
-  // two meet on the 1st. (A third "missed every other session" middle lived
-  // here for one evening — Nathan couldn't verify it against anything, and a
-  // money figure the owner can't check has no business on the page.)
-  // A bank in DEBT (negative) adds to the projection — sessions were
-  // delivered unpaid, and next month is where that money comes back.
-  function raiseProjection(c, monthKey) {
-    const plan = monthChargePlan(c, monthKey);
-    const left = sessionBankSummary(c).remaining;
-    if (plan.flat) {
-      // Program-only: the bank never offsets a flat price.
-      return { ...plan, left, net: 0, projected: plan.amount, hitsAll: plan.amount };
-    }
-    const price = (n) => Math.round(n * plan.rate * 100) / 100;
-    return {
-      ...plan,
-      left,
-      net: Math.max(0, plan.sessions - left),
-      projected: price(Math.max(0, plan.sessions - left)),
-      hitsAll: price(plan.sessions),
-    };
-  }
-
+  // monthChargePlan (what the invoice says) and raiseProjection (Nathan's
+  // forward arithmetic — buying minus holding, and the ceiling) moved to
+  // src/money/projection.js (Phase 3 extraction); the namespace pull lives
+  // at the TOP of this IIFE. raiseTotals stays: it folds those readings
+  // over the roster and the _billing window, which never leave this file.
   // The roster's three numbers in one pass, used by the Raise footer AND by
   // the Books ghost bar — one source, so the chart can never disagree with
   // the workspace above it. The ghost draws the FLOOR, the strictest read,
@@ -19883,25 +19830,15 @@
   // This month's monthly package, whichever route put it there. Auto-renew
   // already defers to a manual grant, and without the second key a batch would
   // land a full allowance on top of a package auto-renew put there this morning.
-  function monthPackageOf(c, key) {
-    return (c?.sessionBank?.packages || [])
-      .find((p) => p.membershipGrant === key || p.autoRenewGrant === key) || null;
-  }
-  // Guard against creating a SECOND package for the month. Deliberately true
-  // for an uncollected one too — the answer to money not yet in hand is to go
-  // and collect it, never to grant a second allowance beside the first.
-  function grantedThisMonth(c, key) { return !!monthPackageOf(c, key); }
+  // monthPackageOf and grantedThisMonth (which package a month has) moved
+  // to src/money/projection.js (Phase 3 extraction); the namespace pull
+  // lives at the TOP of this IIFE.
   function monthGrantLabel() {
     return monthKeyLabel(monthGrantKey());
   }
-  // The tier a bank runs on. A couple's two halves are one bank, so either
-  // half's membership answers for both — bankMutated mirrors it, but a row
-  // that was linked before the tier was set can still be one-sided.
-  function bankMembership(c) {
-    if (!c) return null;
-    return membershipById(c.sessionBank?.membership)
-      || membershipById(partnerOf(c)?.sessionBank?.membership);
-  }
+  // bankMembership (the tier a BANK runs on — either half of a couple
+  // answers) moved to src/money/projection.js (Phase 3 extraction); it
+  // reads the roster through the STSD.app.partnerOf getter.
   // One row per BANK, not per athlete: a couple share one allowance, so they
   // are one line and one grant. `granted` is read off the bank rather than off
   // a list of who we granted, so a package mirrored over from a partner counts.
@@ -20379,24 +20316,9 @@
     });
   }
 
-  // Sessions actually taken in a given month, off the bank's own redemption
-  // log. monthChargePlan answers this for the CURRENT month only (it reads
-  // sessionBankSummary, which is anchored to today), and a sheet with a month
-  // stepper on it needs the same question answered about any month.
-  function sessionsInMonth(c, monthKey) {
-    return (c?.sessionBank?.redemptions || [])
-      .filter((r) => String(r?.date || "").slice(0, 7) === monthKey).length;
-  }
-  // What to bill for, in order of how much it knows: what the month's package
-  // says was booked against it, what was actually logged, and failing both the
-  // tier's own size — a month billed in advance has neither of the first two.
-  function billSessionsFor(c, monthKey, membership) {
-    const pkg = monthPackageOf(c, monthKey);
-    const booked = Number(pkg?.booked);
-    const used = sessionsInMonth(c, monthKey);
-    const n = Math.max(Number.isFinite(booked) ? booked : 0, used);
-    return n || Number(membership?.sessions) || 0;
-  }
+  // sessionsInMonth and billSessionsFor (what to bill a month for) moved
+  // to src/money/projection.js (Phase 3 extraction); the namespace pull
+  // lives at the TOP of this IIFE.
   // Card or cash, remembered per bank. Seeded from how they last actually paid,
   // so the answer is right the first time for everybody who already has history
   // — and then it is just a chip the coach can flip.
