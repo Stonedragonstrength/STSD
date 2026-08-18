@@ -115,6 +115,15 @@ one is a failure this codebase has already had.
 7. **Transaction boundaries stay put.** `saveTrainer` (478), `saveClient` (562),
    `bankMutated` (1208), `ensureSessionBank` (923) and the apply halves do not
    move. ~600 call sites depend on their exact side-effect set.
+8. **Namespace pulls go at the TOP of the IIFE, and the boot smoke must pass.**
+   The extracted functions were declarations, which hoist; the `const` that
+   replaces them does not. A pull placed at the old declaration site sat below
+   the boot migrations that call it, the TDZ killed the IIFE, and the login
+   painted with nothing clickable — while 125 tests stayed green, because
+   nothing in the suite executed app.js top to bottom. All pulls live in one
+   block at the top of the IIFE now, and `tests/boot-smoke.spec.js` executes
+   every shipped script in index.html's order so this class fails in the
+   suite first.
 
 ## 5. Phases
 
