@@ -39,8 +39,10 @@ the original, change the copy here too, or the test is guarding nothing.**
 Tests for domains that have been extracted out of the IIFE do not live here:
 they move to `src/**/*.spec.js` in the same commit as the code, where they
 `import` the shipped module for real instead of brace-matching it out of
-`app.js`. So far (Phase 1, sync): `merge-exercise-logs.test.js`,
+`app.js`. So far: Phase 1 (sync) moved `merge-exercise-logs.test.js`,
 `template-tombstones.test.js`, `roster-progress.test.js` and
-`sync/program-allowlist.spec.js` have moved to `src/sync/merge-logs.spec.js`,
+`sync/program-allowlist.spec.js` to `src/sync/merge-logs.spec.js`,
 `src/sync/merge-by-id.spec.js`, `src/sync/roster-progress.spec.js` and
-`src/sync/program.spec.js`, header stories and assertions intact.
+`src/sync/program.spec.js`; Phase 2 (training) moved
+`tags/pause-and-equipment.spec.js` to `src/training/tags.spec.js`. Header
+stories and assertions intact throughout.

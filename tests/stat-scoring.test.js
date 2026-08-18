@@ -72,10 +72,14 @@ const TIMED_CATS = extractLiteral(appSrc, "const TIMED_CATS = [");
 const CONSTS = ["CARRY_NAMES", "STAT_KEYS", "STAT_IMPULSE_PROFILE", "STAT_MOBILITY_PROFILE",
   "STAT_STR_HARD", "STAT_EFFORT_MULT", "STAT_CARDIO_MULT", "STAT_TIMED_REF_SEC",
   "STAT_TIMED_MIN", "STAT_DAY_FULL", "STAT_DAY_HALF"];
+// exKey, exSwapFor and exResolvedName moved to src/training/tags.js (Phase 2
+// extraction); their source is concatenated from the shipped module file, so
+// the sandbox still runs the real bodies.
+const tagsSrc = fs.readFileSync(path.join(ROOT, "src", "training", "tags.js"), "utf8");
+const TAG_FNS = ["function exKey(", "function exSwapFor(", "function exResolvedName("];
 const FNS = [
   // What the engine leans on from the rest of app.js.
-  "function customExerciseList(", "function exKey(", "function exSwapFor(",
-  "function exResolvedName(", "function libCatFor(", "function isCarryName(",
+  "function customExerciseList(", "function libCatFor(", "function isCarryName(",
   "function exIsTimed(", "function cardioLogsAll(", "function athleteOwnDays(",
   "function sessionDays(", "function hoardExerciseIndex(",
   // The engine itself.
@@ -89,6 +93,7 @@ const FNS = [
 const body = [
   "let _libCatByKey = null;",
   ...CONSTS.map((c) => constSrc(appSrc, c)),
+  ...TAG_FNS.map((f) => fnSrc(tagsSrc, f)),
   ...FNS.map((f) => fnSrc(appSrc, f)),
   "return { statProfileFor, statVectorForEntry, statBucketForDate, statCapDay, statSeconds, STAT_KEYS, STAT_STR_HARD, STAT_EFFORT_MULT };",
 ].join("\n\n");
@@ -198,7 +203,7 @@ check("the Impulse tags are real modifier tags, in their own group", () => {
   // would pass even if the group did not exist — and then the coach would have
   // no way to SET the tag, and exerciseDisplayLabel would prepend it to the
   // name. Pin the group itself.
-  const MODS = extractLiteral(appSrc, "const EXERCISE_MODIFIERS = [");
+  const MODS = extractLiteral(tagsSrc, "const EXERCISE_MODIFIERS = [");
   const impulse = MODS.find((g) => g.group === "Impulse");
   assert.ok(impulse, "no Impulse group in EXERCISE_MODIFIERS — the tag is unsettable");
   assert.ok(!impulse.multi, "Impulse is single-select: a movement is one class or the other");
@@ -211,7 +216,7 @@ check("the Impulse tags are real modifier tags, in their own group", () => {
   assert.ok(style.tags.includes("Explosive"), "Explosive belongs to Style");
   assert.ok(!impulse.tags.includes("Explosive"), "Explosive must NOT be an Impulse tag");
   // liftKey must not fragment PR history on a new group.
-  const LIFT_ID_GROUPS = extractLiteral(appSrc, "const LIFT_ID_GROUPS = [");
+  const LIFT_ID_GROUPS = extractLiteral(tagsSrc, "const LIFT_ID_GROUPS = [");
   assert.ok(!LIFT_ID_GROUPS.includes("Impulse"),
     "Impulse in LIFT_ID_GROUPS would split every tagged lift's PR history");
 });

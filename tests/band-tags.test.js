@@ -54,40 +54,18 @@ function extractConst(src, name) {
   return eval(m[1]);
 }
 
-const EXERCISE_MODIFIERS = extractLiteral(appSrc, "const EXERCISE_MODIFIERS = [");
-const TAG_COLORS         = extractLiteral(appSrc, "const TAG_COLORS = {");
-const TAG_LONG           = extractLiteral(appSrc, "const TAG_LONG = {");
-const LIFT_ID_GROUPS     = extractLiteral(appSrc, "const LIFT_ID_GROUPS = [");
+const TAG_COLORS = extractLiteral(appSrc, "const TAG_COLORS = {");
+
+// The tag system and lift identity moved to src/training/tags.js (Phase 2
+// extraction). The shipped module assigns onto globalThis.STSD when executed,
+// so requiring it hands this test the same real tables and functions the app
+// runs — the hand-copied stand-ins this file used to carry are gone with it.
+require(path.join(ROOT, "src", "training", "tags.js"));
+const { EXERCISE_MODIFIERS, TAG_LONG, LIFT_ID_GROUPS, liftKey,
+        groupForTag, orderedModifiers,
+        BAND_TAGS, bandOf, nextBandUp } = globalThis.STSD.training;
 
 const BANDS = ["Yellow", "Red", "Purple", "Green", "Grey"];
-
-// ---- copies of the app.js logic ------------------------------------------
-function exKey(name) {
-  return String(name || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/[.,;:!]+$/, "");
-}
-function groupForTag(tag) {
-  return EXERCISE_MODIFIERS.find((g) => g.tags.includes(tag)) || null;
-}
-function orderedModifiers(ex) {
-  return [...(ex.modifiers || [])].sort((a, b) => {
-    const ga = EXERCISE_MODIFIERS.findIndex((g) => g.tags.includes(a));
-    const gb = EXERCISE_MODIFIERS.findIndex((g) => g.tags.includes(b));
-    if (ga !== gb) return ga - gb;
-    const g = EXERCISE_MODIFIERS[ga];
-    return g ? g.tags.indexOf(a) - g.tags.indexOf(b) : 0;
-  });
-}
-function liftTags(ex) {
-  return orderedModifiers(ex || {}).filter((t) => LIFT_ID_GROUPS.includes(groupForTag(t)?.group));
-}
-// exResolvedName() resolves template placeholders; irrelevant here, so the bare
-// name stands in for it.
-function liftKey(ex) {
-  const bare = exKey(ex?.name || "");
-  if (!bare) return "";
-  const tags = liftTags(ex).map((t) => t.toLowerCase()).sort().join("+");
-  return tags ? `${bare}|${tags}` : bare;
-}
 
 let n = 0;
 const check = (label, fn) => { fn(); n++; console.log("  ok  " + label); };
@@ -183,14 +161,8 @@ check("next band up, and grey is the top", () => {
 
 // ---- the helpers the card uses -------------------------------------------
 // Copied from app.js — see the note at the top of tests/README.md.
-const BAND_TAGS = (EXERCISE_MODIFIERS.find((g) => g.group === "Band") || {}).tags || [];
-function bandOf(ex) {
-  return (ex?.modifiers || []).find((t) => BAND_TAGS.includes(t)) || null;
-}
-function nextBandUp(tag) {
-  const i = BAND_TAGS.indexOf(tag);
-  return i < 0 || i === BAND_TAGS.length - 1 ? null : BAND_TAGS[i + 1];
-}
+// BAND_TAGS, bandOf and nextBandUp come from the shipped module (required at
+// the top of this file) — no more copies to drift.
 
 check("BAND_TAGS is read from the group, so it cannot drift from the ladder", () => {
   assert.deepStrictEqual(BAND_TAGS, BANDS);

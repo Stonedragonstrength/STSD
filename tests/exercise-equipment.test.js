@@ -25,12 +25,12 @@ function extractLiteral(src, marker) {
   }
   throw new Error(`unbalanced: ${marker}`);
 }
-function exKey(name) {
-  return String(name || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/[.,;:!]+$/, "");
-}
+// exKey and EXERCISE_MODIFIERS moved to src/training/tags.js (Phase 2
+// extraction); requiring the shipped module hands this test the real ones.
+require(path.join(ROOT, "src", "training", "tags.js"));
+const { exKey, EXERCISE_MODIFIERS } = globalThis.STSD.training;
 
 const GEAR = extractLiteral(appSrc, "const GEAR = [");
-const EXERCISE_MODIFIERS = extractLiteral(appSrc, "const EXERCISE_MODIFIERS = [");
 const ANATOMY_GROUPS = extractLiteral(appSrc, "const ANATOMY_GROUPS = [");
 const EXERCISE_LIBRARY = extractLiteral(appSrc, "const EXERCISE_LIBRARY = [");
 const MAP = extractLiteral(eqSrc, "window.EXERCISE_EQUIPMENT = {");
