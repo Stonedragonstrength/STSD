@@ -42,6 +42,7 @@ const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
 // The anatomy tables, muscle map and demo matcher moved to
 // src/training/anatomy.js (Phase 2 extraction).
 const anatomySrc = fs.readFileSync(path.join(ROOT, "src", "training", "anatomy.js"), "utf8");
+const levelsSrc = fs.readFileSync(path.join(ROOT, "src", "training", "levels.js"), "utf8");
 // The exercise library moved to src/training/library.js (Phase 2 extraction).
 const librarySrc = fs.readFileSync(path.join(ROOT, "src", "training", "library.js"), "utf8");
 const ANATOMY_GROUPS = extractLiteral(anatomySrc, "const ANATOMY_GROUPS = [");
@@ -180,15 +181,15 @@ function _musclesForExercise(ex) {
 // numbers. A copied table would drift silently and the test would cheerfully
 // guard the copy — and it would also pass before app.js had the table at all,
 // which is no test.
-const TRAINING_LEVELS = extractLiteral(appSrc, "const TRAINING_LEVELS = [");
+const TRAINING_LEVELS = extractLiteral(levelsSrc, "const TRAINING_LEVELS = [");
 const TRAINING_LEVEL_BY_ID = Object.fromEntries(TRAINING_LEVELS.map((l) => [l.id, l]));
 const DEFAULT_TRAINING_LEVEL = "intermediate";
 
 // Same reasoning for the phase table and the burn ladder it points at: read,
 // never copied, so the assertions below pin the numbers Nathan actually chose.
-const TRAINING_PHASES = extractLiteral(appSrc, "const TRAINING_PHASES = [");
+const TRAINING_PHASES = extractLiteral(levelsSrc, "const TRAINING_PHASES = [");
 const TRAINING_PHASE_BY_ID = Object.fromEntries(TRAINING_PHASES.map((p) => [p.id, p]));
-const EFFORT_LEVELS = extractLiteral(appSrc, "const EFFORT_LEVELS = {");
+const EFFORT_LEVELS = extractLiteral(levelsSrc, "const EFFORT_LEVELS = {");
 
 // The LOGIC is copied, per the convention at the top of this file.
 function phaseOf(client) { return TRAINING_PHASE_BY_ID[client?.trainingPhase] || null; }

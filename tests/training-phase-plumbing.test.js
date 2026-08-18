@@ -28,6 +28,8 @@ const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
 // to src/sync/rows.js (Phase 1 extraction).
 const programSrc = fs.readFileSync(path.join(ROOT, "src", "sync", "program.js"), "utf8");
 const rowsSrc = fs.readFileSync(path.join(ROOT, "src", "sync", "rows.js"), "utf8");
+// TRAINING_PHASES moved to src/training/levels.js (Phase 2 extraction).
+const levelsSrc = fs.readFileSync(path.join(ROOT, "src", "training", "levels.js"), "utf8");
 
 // Grab a function's body by brace-matching from its declaration.
 function fnBody(src, decl) {
@@ -84,7 +86,7 @@ check("the ids in the migration match the ids in the phase table", () => {
   // debounce fires, the row never changes.
   const sql = fs.readFileSync(
     path.join(ROOT, "supabase/migrations/20260813120000_training_phase.sql"), "utf8");
-  const ids = [...appSrc.matchAll(/\{\s*id:\s*"(fatloss|maintenance)"/g)].map((m) => m[1]);
+  const ids = [...levelsSrc.matchAll(/\{\s*id:\s*"(fatloss|maintenance)"/g)].map((m) => m[1]);
   assert.ok(ids.length >= 2, "TRAINING_PHASES should declare both phases");
   ids.forEach((id) => assert.ok(sql.includes(`'${id}'`), `migration is missing '${id}'`));
 });

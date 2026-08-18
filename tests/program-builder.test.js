@@ -15,6 +15,7 @@ const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
 // The exercise library moved to src/training/library.js (Phase 2 extraction).
 const librarySrc = fs.readFileSync(path.join(ROOT, "src", "training", "library.js"), "utf8");
 const anatomySrc = fs.readFileSync(path.join(ROOT, "src", "training", "anatomy.js"), "utf8");
+const levelsSrc = fs.readFileSync(path.join(ROOT, "src", "training", "levels.js"), "utf8");
 const eqSrc = fs.readFileSync(path.join(ROOT, "exercise-equipment.js"), "utf8");
 const demoSrc = fs.readFileSync(path.join(ROOT, "exercise-demos.js"), "utf8");
 const musclesSrc = fs.readFileSync(path.join(ROOT, "exercise-muscles.js"), "utf8");
@@ -39,13 +40,13 @@ function exKey(name) {
 const ANATOMY_GROUPS = extractLiteral(anatomySrc, "const ANATOMY_GROUPS = [");
 const EXERCISE_LIBRARY = extractLiteral(librarySrc, "const EXERCISE_LIBRARY = [");
 const EXERCISE_DEMOS = extractLiteral(demoSrc, "window.EXERCISE_DEMOS =[");
-const GEAR = extractLiteral(appSrc, "const GEAR = [");
+const GEAR = extractLiteral(levelsSrc, "const GEAR = [");
 const EXERCISE_EQUIPMENT = extractLiteral(eqSrc, "window.EXERCISE_EQUIPMENT = {");
-const TRAINING_LEVELS = extractLiteral(appSrc, "const TRAINING_LEVELS = [");
+const TRAINING_LEVELS = extractLiteral(levelsSrc, "const TRAINING_LEVELS = [");
 const TRAINING_LEVEL_BY_ID = Object.fromEntries(TRAINING_LEVELS.map((l) => [l.id, l]));
-const TRAINING_PHASES = extractLiteral(appSrc, "const TRAINING_PHASES = [");
+const TRAINING_PHASES = extractLiteral(levelsSrc, "const TRAINING_PHASES = [");
 const TRAINING_PHASE_BY_ID = Object.fromEntries(TRAINING_PHASES.map((p) => [p.id, p]));
-const EFFORT_LEVELS = extractLiteral(appSrc, "const EFFORT_LEVELS = {");
+const EFFORT_LEVELS = extractLiteral(levelsSrc, "const EFFORT_LEVELS = {");
 const SPLITS = extractLiteral(appSrc, "const SPLITS = {");
 const GEN_STYLES = extractLiteral(appSrc, "const GEN_STYLES = [");
 const BUILDER_SLOT_EFFORT = extractLiteral(appSrc, "const BUILDER_SLOT_EFFORT = {");
