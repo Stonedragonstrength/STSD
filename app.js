@@ -274,6 +274,7 @@
     emptyProgress, ensureProgressShape,
     mergedRosterProgress,
     buildProgramFromAthlete,
+    mayAdoptRow, adoptedAthleteProgress,
   } = globalThis.STSD.sync;
 
   // Re-pull on returning to the app. Push-then-pull, always: a device's own
@@ -332,10 +333,7 @@
           // exists, the local copy stays the authority (same window the
           // realtime handler honours).
           if (fresh.progress && !_progressDirtyAt) {
-            const merged = fresh.progress;
-            merged.exerciseLogs = mergeExerciseLogs(state.clientData.progress?.exerciseLogs, fresh.progress.exerciseLogs);
-            state.clientData.progress = merged;
-            ensureProgressShape(state.clientData.progress);
+            state.clientData.progress = adoptedAthleteProgress(state.clientData.progress, fresh.progress);
           }
           saveClient();
         }
@@ -401,8 +399,8 @@
     if (state.mode === "trainer" || state.previewMode) {
       const c = (state.trainerData.clients || []).find((x) => x.id === row.id);
       if (!c) { resyncNow(true); return; } // a new athlete appeared elsewhere
-      if ((mapped._rev || 0) <= (Number(c._rev) || 0)) return; // echo / stale
-      if (dirtyAthletes()[c.id]) return; // unconfirmed local edits own this row
+      // Echo/stale rev, or unconfirmed local edits own this row.
+      if (!mayAdoptRow({ incomingRev: mapped._rev, knownRev: c._rev, locallyDirty: dirtyAthletes()[c.id] })) return;
       const preserved = c.importedProgress; // lives on the client object, not the row
       Object.assign(c, mapped);
       c.importedProgress = preserved;
@@ -412,9 +410,8 @@
     } else {
       // Our own PR push is about to bump this row's rev — its echo must not
       // rebuild the program mid-workout. The push's response adopts the rev,
-      // after which the normal guard below covers any repeat.
-      if (_athleteRowPushAt) return;
-      if ((mapped._rev || 0) <= (Number(state.clientData?.program?._rev) || 0)) return;
+      // after which the rev guard covers any repeat.
+      if (!mayAdoptRow({ incomingRev: mapped._rev, knownRev: state.clientData?.program?._rev, locallyDirty: _athleteRowPushAt })) return;
       state.clientData.program = buildProgramFromAthlete(mapped);
       state.clientData.program._rev = mapped._rev;
       localStorage.setItem(KEY_CLIENT, JSON.stringify(state.clientData));
@@ -433,10 +430,9 @@
       // Unconfirmed coach edits (live-session logging mid-push) own this row —
       // usually this event is that push's own echo, arrived before its
       // response taught us the new rev.
-      if (_coachProgressDirtyAt[c.id]) return;
-      if ((mapped._rev || 0) <= (Number(c.importedProgress?._rev) || 0)) return;
-      const localLogs = c.importedProgress?.exerciseLogs;
-      c.importedProgress = { ...mapped, exerciseLogs: mergeExerciseLogs(localLogs, mapped.exerciseLogs), syncedAt: Date.now() };
+      if (!mayAdoptRow({ incomingRev: mapped._rev, knownRev: c.importedProgress?._rev, locallyDirty: _coachProgressDirtyAt[c.id] })) return;
+      // Same applier as the pull paths: adopt the row, union the logs.
+      c.importedProgress = mergedRosterProgress(c.importedProgress, mapped, false);
       localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
       // Mid-live-session: the athlete logged from their own phone — the
       // working clone follows, same merge.
@@ -449,11 +445,8 @@
       // dirtyAthletes guard). This is usually our own push echoing back
       // before its response taught us the new rev; either way the next
       // confirmed push or resync reconciles.
-      if (_progressDirtyAt) return;
-      if ((mapped._rev || 0) <= (Number(state.clientData?.progress?._rev) || 0)) return;
-      const merged = { ...mapped, exerciseLogs: mergeExerciseLogs(state.clientData.progress?.exerciseLogs, mapped.exerciseLogs) };
-      ensureProgressShape(merged);
-      state.clientData.progress = merged;
+      if (!mayAdoptRow({ incomingRev: mapped._rev, knownRev: state.clientData?.progress?._rev, locallyDirty: _progressDirtyAt })) return;
+      state.clientData.progress = adoptedAthleteProgress(state.clientData.progress, mapped);
       localStorage.setItem(KEY_CLIENT, JSON.stringify(state.clientData));
       rerenderAfterSync();
     }
@@ -4101,8 +4094,16 @@
 
       if (result?.athlete) {
         const { athlete, progress } = result;
+        // Union exercise logs with the cached copy only when that cache is
+        // THIS account's data (owner ruling 2026-08-17): sign-in was the one
+        // remaining door where a set typed just before the app closed could
+        // be dropped by a wholesale adopt. A different email on a shared
+        // device still adopts wholesale — another athlete's logs must not
+        // leak into this account.
+        const sameAccount = !!state.clientData.profile?.email &&
+          state.clientData.profile.email === (user?.email || email);
         state.clientData.program = buildProgramFromAthlete(athlete);
-        if (progress) state.clientData.progress = progress;
+        if (progress) state.clientData.progress = adoptedAthleteProgress(state.clientData.progress, progress, { mergeLogs: sameAccount });
         if (!state.clientData.progress) state.clientData.progress = emptyProgress();
         ensureProgressShape(state.clientData.progress);
         state.clientData.profile = { name: athlete.name, email, createdAt: Date.now() };
@@ -42126,8 +42127,8 @@
                   // Same entry-level merge the resync path does. Wholesale
                   // adoption dropped anything typed in the last seconds before
                   // the previous close, when the pagehide flush didn't finish.
-                  fresh.progress.exerciseLogs = mergeExerciseLogs(state.clientData.progress?.exerciseLogs, fresh.progress.exerciseLogs);
-                  state.clientData.progress = fresh.progress;
+                  // (This path already checked profile email === session email.)
+                  state.clientData.progress = adoptedAthleteProgress(state.clientData.progress, fresh.progress);
                 }
                 ensureProgressShape(state.clientData.progress);
                 saveClient();
@@ -42144,8 +42145,14 @@
           const athleteResult = await window.Cloud.getAthleteByAuthUserId(userId);
           if (athleteResult?.athlete) {
             const { athlete, progress } = athleteResult;
+            // Same-account rule as sign-in: union cached logs only when the
+            // cache belongs to this session's email; otherwise wholesale.
+            const sameAccount = !!state.clientData.profile?.email &&
+              state.clientData.profile.email === session.user.email;
             state.clientData.program = buildProgramFromAthlete(athlete);
-            state.clientData.progress = progress || emptyProgress();
+            state.clientData.progress = progress
+              ? adoptedAthleteProgress(state.clientData.progress, progress, { mergeLogs: sameAccount })
+              : emptyProgress();
             ensureProgressShape(state.clientData.progress);
             state.clientData.profile = { name: athlete.name, email: session.user.email, createdAt: Date.now() };
             saveClient();
