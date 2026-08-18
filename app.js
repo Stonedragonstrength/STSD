@@ -1271,6 +1271,10 @@
   // partner union in syncUpcomingBookingsToAthletes instead, so the couple's
   // shared slot shows on both calendars). The mirrored membership/autoRenew +
   // the mirrored monthKey grant guard keep auto-renew from double-granting.
+  // The credit pot (credits/creditUnused/creditCap) and the 💳/💵 memory
+  // (payBy) ride the mirror too — owner-ruled 2026-08-18, one pot per couple.
+  // They didn't always: reconcileCoupleBanks() below heals pairs whose halves
+  // diverged before the mirror covered them.
   function partnerOf(c) {
     if (!c?.partnerId) return null;
     return (state.trainerData.clients || []).find((x) => x.id === c.partnerId) || null;
@@ -1291,9 +1295,79 @@
     // under one of them, so mirroring the rate can't double-count it.
     p.sessionBank.rate = c.sessionBank.rate;
     p.sessionBank.flatRate = c.sessionBank.flatRate;
+    // The credit pot is the bank's, not the athlete's: earned under one half,
+    // it has to show and spend from either, or a month billed from the other
+    // half silently skips the discount. Every writer already called
+    // bankMutated expecting exactly this.
+    p.sessionBank.credits = structuredClone(c.sessionBank.credits || []);
+    p.sessionBank.creditUnused = c.sessionBank.creditUnused;
+    p.sessionBank.creditCap = c.sessionBank.creditCap;
+    // 💳/💵 is how the BANK pays — the Bill sheet writes it on whichever half
+    // carries the row that month, and next month's sheet may open on the other.
+    p.sessionBank.payBy = c.sessionBank.payBy;
     // Through the dirty guard, like every athlete push. The raw debounce this
     // used to be was one of the holes the tablet's lost settles went through.
     pushAthlete(p);
+  }
+  // The merge rules for the pot fields, shared by the boot reconcile and
+  // linkPartners. Writes the same merged pot onto BOTH banks and nothing else,
+  // so healing a pair can't clobber fields that weren't diverged.
+  function mergeBankPot(a, b) {
+    // Union by entry id so running this twice adds nothing, and a half that
+    // missed an entry gains it rather than wiping the other's.
+    const key = (e) => (e && e.id) || JSON.stringify(e);
+    const have = new Set((a.credits || []).map(key));
+    const credits = [...(a.credits || []), ...(b.credits || []).filter((e) => e && !have.has(key(e)))];
+    // On for the bank if either half was switched on — but rollover still
+    // wins, the same "never both" rule the drawer toggles enforce and the same
+    // way creditsOn() reads it.
+    const creditUnused = !!(a.creditUnused || b.creditUnused) && !(a.rollover || b.rollover);
+    const caps = [a.creditCap, b.creditCap].map(Number).filter((n) => Number.isFinite(n) && n >= 0);
+    const how = (v) => (v === "card" || v === "manual" ? v : "");
+    const pa = how(a.payBy), pb = how(b.payBy);
+    [a, b].forEach((bank) => {
+      bank.credits = structuredClone(credits);
+      bank.creditUnused = creditUnused;
+      // Two typed caps can only predate the mirror; the kinder one stands —
+      // the drawer shows it, so a wrong pick is visible and one tap to fix.
+      if (caps.length) bank.creditCap = Math.max(...caps); else delete bank.creditCap;
+      // Two halves that DISAGREE on 💳/💵 can only predate the mirror, and
+      // bankPayBy already falls back to how they last actually paid — so
+      // clearing both is the answer that stays honest.
+      if (pa && pb && pa !== pb) delete bank.payBy;
+      else if (pa || pb) bank.payBy = pa || pb;
+      else delete bank.payBy;
+    });
+  }
+  // Heal the halves the mirror used to miss. Every writer of the credit pot
+  // and the 💳/💵 memory called bankMutated expecting it to reach the partner,
+  // and it didn't — so each landed on whichever half the coach had open and
+  // stayed there. Union the halves; bankMutated keeps them in lockstep from
+  // here. Idempotent and cheap at roster size, so it runs on every boot and
+  // before every billing settle — a stale device can re-diverge a pair, and
+  // this heals it the next time a current build looks. Touches ONLY the pot
+  // fields, and only pushes a pair that actually changed.
+  function reconcileCoupleBanks() {
+    if (!state.trainerData?.clients?.length) return;
+    const pot = (b) => JSON.stringify([b.credits || [], !!b.creditUnused, b.creditCap ?? null, b.payBy ?? null]);
+    const seen = new Set();
+    let touched = false;
+    state.trainerData.clients.forEach((c) => {
+      if (seen.has(c.id)) return;
+      seen.add(c.id);
+      const p = partnerOf(c);
+      if (!p) return;
+      seen.add(p.id);
+      ensureSessionBank(c); ensureSessionBank(p);
+      const before = pot(c.sessionBank) + pot(p.sessionBank);
+      mergeBankPot(c.sessionBank, p.sessionBank);
+      if (pot(c.sessionBank) + pot(p.sessionBank) === before) return;
+      touched = true;
+      // Both halves, through the dirty guard — the merged pot is new data on
+      // each of their rows.
+      pushAthlete(c); pushAthlete(p);
+    });
+    if (touched) localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
   }
   function linkPartners(a, b) {
     ensureSessionBank(a); ensureSessionBank(b);
@@ -1312,6 +1386,10 @@
     a.sessionBank.missedSessions = dedupe([...a.sessionBank.missedSessions, ...b.sessionBank.missedSessions]);
     a.sessionBank.membership = a.sessionBank.membership || b.sessionBank.membership;
     a.sessionBank.autoRenew = !!(a.sessionBank.autoRenew || b.sessionBank.autoRenew);
+    // The credit pot and 💳/💵 merge on the same rules the boot reconcile
+    // uses — without this, the clone below would wipe whichever half's credit
+    // the link happened not to start from.
+    mergeBankPot(a.sessionBank, b.sessionBank);
     a.partnerId = b.id;
     b.partnerId = a.id;
     bankMutated(a); // clones the merged bank onto b and pushes b's row
@@ -3133,6 +3211,11 @@
     // self-heals the next time that athlete is edited).
     changedClients.forEach((c) => pushAthlete(c));
   }
+
+  // Couples: heal the pot fields the partner mirror historically missed
+  // (credits + their settings, 💳/💵). Self-persists and pushes only pairs
+  // that actually changed, so a converged roster costs nothing here.
+  reconcileCoupleBanks();
 
   if (_trainerDataDirty) saveTrainer();
 
@@ -15702,6 +15785,10 @@
     const data = await window.Cloud.getBillingForCoach(state.trainerData.coachId);
     if (!data) return;
     _billing = { ...data, loadedAt: Date.now() };
+    // Settle and the credit accrual below both read the couple pot from
+    // whichever half they land on, so heal any divergence a stale device
+    // pushed before either of them decides anything with it.
+    reconcileCoupleBanks();
     settleBilledPackages();
     // After the settle, because a month's leftovers are only worth crediting
     // once the app agrees on what was actually granted and paid for it.
