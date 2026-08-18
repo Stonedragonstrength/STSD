@@ -6,54 +6,43 @@
 // followed, all silent:
 //   - flush() found nothing to flush, so "Sync issue. Tap to retry" retried
 //     nothing;
-//   - `_progressDirtyAt` (app.js:294) is cleared only by a SUCCESSFUL progress
-//     push, so it stayed set forever, and every reader of it — resyncNow at
-//     :335 and the realtime progress handler at :453 — bails while it is set.
-//     One failed push therefore stopped the device accepting any cloud data
-//     for the rest of the session;
+//   - `_progressDirtyAt` (app.js) is cleared only by a SUCCESSFUL progress
+//     push, so it stayed set forever, and every reader of it — resyncNow and
+//     the realtime progress handler — bails while it is set. One failed push
+//     therefore stopped the device accepting any cloud data for the rest of
+//     the session;
 //   - nothing was logged beyond a console warning nobody reads.
 //
 // So these assert what the queue is FOR, not what it did: work handed to it is
 // either delivered or still visibly pending, never quietly dropped.
+//
+// Ported from tests/sync/push-retry.spec.js when the queue moved out of
+// cloud.js — tier 1 now: the shipped file is imported for real. Each test
+// builds an ISOLATED queue through the exported factory (the same code the
+// app's one instance is constructed from); the app itself only ever touches
+// STSD.sync.pushQueue, and the singleton pin below holds that contract.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { loadFns } from "../helpers/load-fn.js";
+import "./push-queue.js";
 
-// The queue's state and functions share one closure in cloud.js, so they have
-// to be rebuilt into one scope together. State first: `const`/`let` do not
-// hoist, and a function that ran before them would see a dead zone.
-const DECLS = [
-  "const _debounceTimers = new Map()",
-  "const _pushSeq = new Map()",
-  "const _retryAttempts = new Map()",
-  "let _inflightPushes = 0",
-  "let _pushFailedAt = 0",
-  "let _syncCb = null",
-  "const RETRY_MS = [",
-  "function onSyncActivity(",
-  "function pendingPushes(",
-  "function lastPushFailureAt(",
-  "function _sync(",
-  "function _requeue(",
-  "function _runPush(",
-  "function debounce(",
-  "async function flush(",
-];
+const { pushQueue, makePushQueue } = globalThis.STSD.sync;
+const makeQueue = ({ online = true } = {}) => {
+  // The queue reads the GLOBAL navigator at call time (never captured);
+  // stubbing it is how a test goes offline.
+  vi.stubGlobal("navigator", { onLine: online });
+  return makePushQueue();
+};
 
-const EXPOSE = ["onSyncActivity", "pendingPushes", "lastPushFailureAt", "debounce", "flush", "RETRY_MS"];
-
-function makeQueue({ online = true } = {}) {
-  return loadFns(DECLS, {
-    // Injected so a test can go offline; shadows the real global inside the
-    // rebuilt scope only.
-    navigator: { onLine: online },
-    // The queue logs a warning on every failure; these tests cause a lot of
-    // them on purpose and the output is not the subject.
-    console: { warn() {}, log() {}, error() {} },
-  }, { file: "cloud.js", expose: EXPOSE });
-}
-
-beforeEach(() => vi.useFakeTimers());
-afterEach(() => vi.useRealTimers());
+beforeEach(() => {
+  vi.useFakeTimers();
+  // The queue warns on every failure; these tests cause a lot of them on
+  // purpose and the output is not the subject.
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 /** A push function that fails its first `failures` calls, then succeeds. */
 function flaky(failures) {
@@ -65,6 +54,16 @@ function flaky(failures) {
   fn.calls = () => calls;
   return fn;
 }
+
+describe("the singleton contract", () => {
+  it("the module constructs THE instance once, and the factory never touches it", async () => {
+    const q = makeQueue();
+    q.debounce("progress:a", flaky(0));
+    expect(q.pendingPushes()).toBe(1);
+    expect(pushQueue.pendingPushes(), "a spec queue leaked into the app's instance").toBe(0);
+    await vi.advanceTimersByTimeAsync(1500);
+  });
+});
 
 describe("the push queue: delivery", () => {
   it("runs a queued push once when it succeeds, and never again", async () => {
@@ -105,6 +104,17 @@ describe("the push queue: delivery", () => {
     q.debounce("progress:a", flaky(99));
     await vi.advanceTimersByTimeAsync(1500);
     expect(q.pendingPushes()).toBe(1);
+  });
+
+  it("counts a push IN FLIGHT as pending work", async () => {
+    // The timer has fired and left the map; the write is on the wire and
+    // unconfirmed. "Everything is saved" is not claimable yet.
+    const q = makeQueue();
+    q.debounce("progress:a", () => new Promise((res) => setTimeout(() => res("ok"), 3000)));
+    await vi.advanceTimersByTimeAsync(1500);   // fired, unsettled
+    expect(q.pendingPushes(), "an unconfirmed write must keep the chip honest").toBe(1);
+    await vi.advanceTimersByTimeAsync(3000);   // settles
+    expect(q.pendingPushes()).toBe(0);
   });
 
   it("backs off, so a broken connection is not hammered", async () => {
@@ -165,6 +175,29 @@ describe("the push queue: staleness", () => {
     await vi.advanceTimersByTimeAsync(600000);
     expect(a.calls(), "the stale push must never run again").toBe(1);
     expect(b.calls()).toBe(1);
+  });
+
+  it("a push still IN FLIGHT when newer state lands cannot re-queue itself over it", async () => {
+    // The subtler stale-write: A has fired and is sitting on the wire when the
+    // user edits again and B is queued. A then fails. Its re-queue must be
+    // refused — without the sequence check it would file A's STALE function
+    // under the key, clobbering nothing visible, and deliver the old state on
+    // the next backoff tick.
+    const q = makeQueue();
+    let aCalls = 0;
+    // Rejection lands on ITS OWN timer, so A is genuinely unsettled while B
+    // gets queued and delivered.
+    const slowFail = () => { aCalls++; return new Promise((_, rej) => setTimeout(() => rej(new Error("late")), 3000)); };
+    const b = flaky(0);
+    q.debounce("progress:x", slowFail);
+    await vi.advanceTimersByTimeAsync(1500);   // A fires, stays in flight
+    expect(aCalls).toBe(1);
+    q.debounce("progress:x", b);               // newer state while A is on the wire
+    await vi.advanceTimersByTimeAsync(1500);   // B delivers
+    expect(b.calls()).toBe(1);
+    await vi.advanceTimersByTimeAsync(600000); // A's failure lands, backoffs elapse
+    expect(aCalls, "the stale in-flight push must never run again").toBe(1);
+    expect(q.pendingPushes()).toBe(0);
   });
 
   it("gives a newer push a full set of attempts", async () => {

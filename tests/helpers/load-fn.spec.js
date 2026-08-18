@@ -34,14 +34,16 @@ describe("declSource", () => {
     // The trap: `const x = new Map();` has no brace of its own, so brace-matching
     // would run on to an unrelated block far below and swallow it whole —
     // silently, since the result still compiles.
-    const map = declSource("const _debounceTimers = new Map()", "cloud.js");
+    // These fixtures moved with the push queue (src/sync/push-queue.js, the
+    // deferred brick) — the declarations are the same bytes, one file over.
+    const map = declSource("const _debounceTimers = new Map()", "src/sync/push-queue.js");
     expect(map).toBe("const _debounceTimers = new Map();");
 
-    const arr = declSource("const RETRY_MS = [", "cloud.js");
+    const arr = declSource("const RETRY_MS = [", "src/sync/push-queue.js");
     expect(arr).toBe("const RETRY_MS = [5000, 15000, 45000, 120000];");
     expect(arr).not.toContain("function");
 
-    const num = declSource("let _inflightPushes = 0", "cloud.js");
+    const num = declSource("let _inflightPushes = 0", "src/sync/push-queue.js");
     expect(num).toBe("let _inflightPushes = 0;");
   });
 
