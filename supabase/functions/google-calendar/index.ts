@@ -189,6 +189,9 @@ Deno.serve(async (req) => {
         description: bk.note ? String(bk.note) : "Booked in Stone Dragon.",
         start: { dateTime: new Date(bk.start_at).toISOString() },
         end: { dateTime: new Date(bk.end_at).toISOString() },
+        // The booking's id rides on the event, so an app-created event stays
+        // recognisable even if the row's pointer to it is ever lost again.
+        extendedProperties: { private: { stsdBookingId: String(bk.id) } },
       };
       const url = bk.google_event_id
         ? `${CAL_API}/calendars/${cal}/events/${encodeURIComponent(bk.google_event_id)}`
@@ -219,8 +222,25 @@ Deno.serve(async (req) => {
     };
     const dropEvent = async (bk: any, cal: string, auth: Record<string, string>) => {
       if (!bk.google_event_id) return false;
-      await fetch(`${CAL_API}/calendars/${cal}/events/${encodeURIComponent(bk.google_event_id)}`,
-        { method: "DELETE", headers: auth });
+      // The DELETE must be verified before the pointer is nulled. This used
+      // to fire-and-null, which turned every failed delete (dead grant, rate
+      // limit, wrong account) into a permanent ghost: the event stayed on the
+      // calendar while the only row that knew its id forgot it. 404/410 count
+      // as gone — the event no longer exists on this calendar either way.
+      // Anything else retries with writeEvent's backoff, and a delete that
+      // still fails keeps its pointer so the next sweep can try again.
+      const url = `${CAL_API}/calendars/${cal}/events/${encodeURIComponent(bk.google_event_id)}`;
+      for (let attempt = 0; ; attempt++) {
+        const res = await fetch(url, { method: "DELETE", headers: auth });
+        if (res.ok || res.status === 404 || res.status === 410) break;
+        const limited = res.status === 429 || res.status === 403;
+        if (!limited || attempt >= 4) {
+          let msg = `delete ${res.status}`;
+          try { msg = String((await res.json())?.error?.message ?? msg); } catch { /* keep the status */ }
+          throw new Error(msg);
+        }
+        await sleep(400 * Math.pow(2, attempt) + Math.random() * 250);
+      }
       await sb.from("bookings").update({ google_event_id: null }).eq("id", bk.id);
       return true;
     };
@@ -374,10 +394,14 @@ Deno.serve(async (req) => {
             // A cancelled row never has an event, whichever action asked.
             if (!wanted || bk.status !== "booked") {
               if (await dropEvent(bk, cal, auth)) removed++;
-              continue;
+            } else {
+              await writeEvent(bk, cal, auth);
+              written++;
             }
-            await writeEvent(bk, cal, auth);
-            written++;
+            // Pace a series the way the backfill paces itself: the write
+            // meter is per-calendar, and cancelling a 12-week series used to
+            // burst every DELETE into it flat out.
+            if (list.length > 1) await sleep(120);
           }
           await sb.from("google_calendar").update({ last_error: null }).eq("coach_id", coachId);
           return json({ ok: true, written, removed });
@@ -436,14 +460,62 @@ Deno.serve(async (req) => {
         const list = rows ?? [];
         const { data: ghostRows } = await orphans();
         const ghosts = ghostRows ?? [];
-        if (!list.length && !ghosts.length) {
-          return json({ ok: true, written: 0, removed: 0, remaining: 0, done: true });
-        }
 
         try {
           const token = await accessToken(row.refresh_token, clientId, clientSecret);
           const cal = encodeURIComponent(row.calendar_id || "primary");
           const auth = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+
+          // Nothing left that the DATABASE knows about. That used to be the
+          // end of the repair, and it left one class of ghost untouchable:
+          // dropEvent once nulled google_event_id without checking whether
+          // Google actually deleted the event, so a failed delete erased the
+          // only pointer to a live event. For those, the calendar itself is
+          // the only remaining record — so diff it. List this app's events
+          // ("Training:" summaries only the app writes; recurring instances
+          // are never ours) and delete any the bookings table no longer
+          // names. A booked row that loses its event this way is re-created
+          // by the backfill on the next pass, so a wrongly-orphaned KEPT
+          // session self-heals rather than disappearing.
+          if (!list.length && !ghosts.length) {
+            const { data: ownedRows } = await sb.from("bookings")
+              .select("google_event_id").eq("coach_id", coachId)
+              .not("google_event_id", "is", null);
+            const owned = new Set((ownedRows ?? []).map((r: any) => String(r.google_event_id)));
+            const timeMin = new Date(Date.now() - 45 * 864e5).toISOString();
+            const timeMax = new Date(Date.now() + 180 * 864e5).toISOString();
+            let stray = 0;
+            let pageToken = "";
+            for (let page = 0; page < 8 && stray < size; page++) {
+              const params = new URLSearchParams({
+                timeMin, timeMax, singleEvents: "true", maxResults: "250",
+              });
+              if (pageToken) params.set("pageToken", pageToken);
+              const res = await fetch(`${CAL_API}/calendars/${cal}/events?${params}`, { headers: auth });
+              const data = await res.json();
+              if (!res.ok) throw new Error(String(data?.error?.message ?? `list ${res.status}`));
+              for (const ev of data?.items ?? []) {
+                if (stray >= size) break;
+                if (ev?.recurringEventId) continue;
+                if (!String(ev?.summary ?? "").startsWith("Training: ")) continue;
+                if (owned.has(String(ev.id))) continue;
+                const del = await fetch(`${CAL_API}/calendars/${cal}/events/${encodeURIComponent(ev.id)}`,
+                  { method: "DELETE", headers: auth });
+                if (!del.ok && del.status !== 404 && del.status !== 410) {
+                  throw new Error(`stray delete ${del.status}`);
+                }
+                stray++;
+                await sleep(120);
+              }
+              pageToken = String(data?.nextPageToken ?? "");
+              if (!pageToken) break;
+            }
+            await sb.from("google_calendar").update({ last_error: null }).eq("coach_id", coachId);
+            // done only when a full scan deleted nothing; a capped pass
+            // reports progress so the caller loops straight back in.
+            return json({ ok: true, written: 0, removed: stray, remaining: 0, done: stray === 0 });
+          }
+
           let written = 0, removed = 0;
           // Cancellations first: taking a session OFF the calendar matters more
           // than adding one, because a ghost appointment is read as real and
