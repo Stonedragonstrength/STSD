@@ -15468,6 +15468,22 @@
       weekActionsInto(addRow);
     }
 
+    // The copy is structuredClone, not spreads: a spread shares every nested
+    // object — the week's diet, an exercise's modifiers and per-set weights,
+    // the progression config — so editing the duplicate edited the original,
+    // silently, in whichever field happened to be an object. Day and exercise
+    // ids are regenerated because logs and completions key on them; everything
+    // else is content and comes across untouched.
+    function cloneWeekForDuplicate(src) {
+      const clone = structuredClone(src);
+      clone.id = uid();
+      (clone.days || []).forEach((day) => {
+        day.id = uid();
+        (day.exercises || []).forEach((ex) => { ex.id = uid(); });
+      });
+      return clone;
+    }
+
     // Duplicate / delete for the week ON SCREEN, parked at the right-hand end
     // of the day-action row. One control row serves both scopes and the button
     // text says which is which ("Add day" vs "Duplicate week"), so this costs
@@ -15489,15 +15505,7 @@
         const at = _coachActiveWeekIdx;
         const src = list[at]; if (!src) return;
         const originalLabel = src.label;
-        const clone = {
-          ...src,
-          id: uid(),
-          days: (src.days || []).map((day) => ({
-            ...day,
-            id: uid(),
-            exercises: (day.exercises || []).map((ex) => ({ ...ex, id: uid() })),
-          })),
-        };
+        const clone = cloneWeekForDuplicate(src);
         list.splice(at + 1, 0, clone);
         renumberDefaultWeekLabels(list);
         _coachActiveWeekIdx = at + 1;
