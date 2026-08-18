@@ -254,11 +254,24 @@
   })();
 
 
-  // Moved to src/sync/merge-logs.js (Phase 1 extraction). The script tag in
-  // index.html loads it before this file; pulling it into a const keeps every
-  // call site unchanged and fails LOUDLY at boot if the tag goes missing —
-  // a silent fallback here would be this codebase's house failure.
-  const { mergeExerciseLogs } = globalThis.STSD.sync;
+  // Extracted functions (Phase 1: src/sync/*.js, loaded by index.html before
+  // this file) pulled off the namespace in ONE block, and its position is
+  // load-bearing: these used to be function declarations, which HOIST, so
+  // call sites anywhere in the file — including the boot migrations a few
+  // thousand lines down — could run before the declaration's line. A const
+  // does not hoist. On 2026-08-17 the merge-by-id pull sat at the old
+  // declaration site, below the boot migration that purges template
+  // tombstones, and the TDZ ReferenceError killed the whole IIFE: the login
+  // painted and nothing was clickable. Every future extraction adds its
+  // names HERE, above everything that runs at boot. Failing loudly when a
+  // script tag goes missing is still right — a silent fallback would be this
+  // codebase's house failure — it just has to fail before anything, not
+  // midway through boot.
+  const {
+    mergeExerciseLogs,
+    filledPrescriptions, mergeById,
+    deleteTemplateById, liveTemplates, purgeTemplateTombstones,
+  } = globalThis.STSD.sync;
 
   // Re-pull on returning to the app. Push-then-pull, always: a device's own
   // fresh work must be in the cloud before the cloud is allowed to overwrite
@@ -4356,14 +4369,10 @@
     }
   }
 
-  // Moved to src/sync/merge-by-id.js (Phase 1 extraction), together with
-  // mergeById and the tombstone family below — the template merge and its
-  // tombstones are one mechanism and moved as one. Same loud-boot contract
-  // as merge-logs: a missing script tag fails here, not silently later.
-  const {
-    filledPrescriptions, mergeById,
-    deleteTemplateById, liveTemplates, purgeTemplateTombstones,
-  } = globalThis.STSD.sync;
+  // filledPrescriptions, mergeById and the tombstone family moved to
+  // src/sync/merge-by-id.js (Phase 1 extraction); their namespace pull lives
+  // at the TOP of this IIFE with the other extractions — see the comment
+  // there for why position is load-bearing.
 
   // "This device is wrong — take the server's copy."
   //
