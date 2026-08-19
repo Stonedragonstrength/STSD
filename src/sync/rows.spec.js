@@ -82,6 +82,7 @@ const progress = () => ({
   dayNotes: { d1: "hip tight" },
   pendingDeloads: { exsquat: true },
   statField: { "2026-08-10": { STR: 2 } },
+  overviewTiles: ["ring", "hoard", "toppr"],
 });
 
 /** Column names one of the module's functions writes (6-space object keys). */

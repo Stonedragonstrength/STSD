@@ -26942,12 +26942,10 @@
     host.innerHTML = tiles.join("");
   }
 
-  // -------- Customizable "racing" stats bar (slanted rows in the stats card) --------
+  // -------- The stat pool: small value tiles for the Overview board --------
   // Each stat: { id, icon, label, get(ctx) -> { value, unit?, when?, trend?, trendNeutral? } | null }.
-  function racingRowHtml(label, d, secret) {
-    const tr = d.trend ? `<span class="sr-trend ${d.trend}${d.trendNeutral ? " neutral" : ""}">${d.trend === "up" ? "▲" : "▼"}</span>` : "";
-    return `<div class="ov-stat-row${secret ? " bw-secret" : ""}"><div class="sr-in"><span class="sr-lbl">${escapeHtml(label)}${d.when ? ` <span class="sr-when">${escapeHtml(d.when)}</span>` : ""}</span><span class="sr-val">${escapeHtml(String(d.value))}${d.unit ? `<span class="sr-unit">${escapeHtml(d.unit)}</span>` : ""}${tr}</span></div></div>`;
-  }
+  // These were the rows of the old "racing" stats bar; the board renders them
+  // as simple value tiles now, so nothing the old bar could show was lost.
   const RACING_LIB = [
     { id: "workouts", icon: "🏋️", label: "Workouts", get: (x) => ({ value: completionDateList(x.progress).length }) },
     { id: "prs", icon: "🥇", label: "PRs", get: (x) => ({ value: (x.progress.personalRecords || []).length }) },
@@ -26968,11 +26966,12 @@
     { id: "month", icon: "📆", label: "This month", get: (x) => {
         const ym = x.today.slice(0, 7);
         return { value: completionDateList(x.progress).filter((d) => d.slice(0, 7) === ym).length }; } },
-    // No "Week streak" or "This week" here: the calendar header above already
-    // shows both, from the same numbers, inches up the same screen. Picking
-    // them put the identical figure on screen twice. Anyone who had them
-    // selected drops them silently — getRacingStatIds filters to ids the
-    // library still knows, and falls back to the default set if that empties.
+    // No "Week streak" or "This week" here: the player strip and the ring
+    // tile already show both from the same numbers. Picking them would put
+    // the identical figure on screen twice. Anyone who somehow has them
+    // selected drops them silently — getBoardTileIds filters to ids the
+    // libraries still know, and falls back to the default board if that
+    // empties.
     { id: "bw", icon: "⚖️", label: "Bodyweight", secret: true, get: (x) => {
         const log = [...(x.progress.bodyweightLog || [])].filter((e) => e.date && isFinite(parseFloat(e.weightLb))).sort((a, b) => a.date.localeCompare(b.date));
         if (!log.length) return null;
@@ -27025,43 +27024,246 @@
         const n = totalRepsAll(x.progress);
         return n ? { value: n.toLocaleString() } : null; } },
   ];
-  const RACING_DEFAULT = ["workouts", "highestpr", "timetrained", "tonnage"];
-  function getRacingStatIds(progress) {
-    const ids = Array.isArray(progress?.racingStats)
-      ? progress.racingStats.filter((id) => RACING_LIB.some((s) => s.id === id)) : null;
-    return ids && ids.length ? ids : RACING_DEFAULT.slice();
+  // -------- The Overview board --------
+  // A bento of tiles. The featured tiles below are bespoke renderers (week
+  // ring, stat field, the Hoard, food, the 30-day strip...); every RACING_LIB
+  // stat rides along as a simple value tile. Athletes add, remove and reorder
+  // tiles from ＋ Edit board; the picks live in progress.overviewTiles
+  // (synced — rows.js + the 20260818120000 migration). A tile whose data is
+  // empty renders nothing at all, so a default board never shows a dead box:
+  // no trials assigned means no trials tile, food only shows for athletes
+  // with targets or a log, and the stat field waits for its first session.
+  const TILE_DEFAULT = ["ring", "pentagon", "hoard", "toppr", "food", "trials", "heat", "bw", "trophies", "recap"];
+  // Stats a featured tile already carries, kept out of the pool so the
+  // customizer never offers the same number twice.
+  const TILE_POOL_SKIP = new Set(["highestpr", "bw", "trophies"]);
+  const KEY_OVCAL_OPEN = "trainerpro_ovcal_open_v1";
+  // v2 on purpose: the old fold's remembered "open" would re-inflate the page
+  // the redesign just shortened, so everyone restarts folded.
+  const KEY_OVRECAP_OPEN = "trainerpro_ovrecap_open_v2";
+
+  function getBoardTileIds(progress) {
+    const known = (id) => BOARD_TILES.some((t) => t.id === id)
+      || RACING_LIB.some((s) => s.id === id && !TILE_POOL_SKIP.has(id));
+    const ids = Array.isArray(progress?.overviewTiles) ? progress.overviewTiles.filter(known) : null;
+    return ids && ids.length ? ids : TILE_DEFAULT.slice();
   }
-  function renderRacingRows(ctx) {
-    return getRacingStatIds(ctx.progress)
-      .map((id) => RACING_LIB.find((s) => s.id === id)).filter(Boolean)
-      .map((def) => { const d = def.get(ctx); return d ? racingRowHtml(def.label, d, def.secret) : ""; }).join("");
+
+  // One shell for every tile so the grid stays one CSS contract. `door` is a
+  // client tab the tap opens; special tiles pass `act` instead and the board's
+  // click handler switches on it.
+  function ovbTile({ id, cls = "", door = "", act = "", label, aria, body, wide = false, game = false, secret = false }) {
+    return `<button type="button" class="ovb-tile${wide ? " ovb-wide" : ""}${game ? " game-only" : ""}${secret ? " bw-secret" : ""}${cls ? " " + cls : ""}" data-tile="${id}"${door ? ` data-door="${door}"` : ""}${act ? ` data-act="${act}"` : ""} aria-label="${escapeHtml(aria || label)}">
+      <span class="ovb-tl">${escapeHtml(label)}</span><span class="ovb-go" aria-hidden="true">›</span>
+      ${body}
+    </button>`;
   }
-  // Soft cap: show RACING_CAP rows, scroll the rest inside a fixed-height window
-  // with a fade at whichever edge has more. Only sizes while the (collapsible)
-  // stats card is open, so it's re-run on toggle.
-  const RACING_CAP = 4;
-  function wireRacingCap() {
-    const vp = $("#racing-vp"); if (!vp) return;
-    vp.classList.remove("is-capped", "at-top", "at-bottom");
-    vp.style.maxHeight = "";
-    const rows = vp.children.length;
-    if (rows <= RACING_CAP || !vp.offsetParent) return;
-    const gap = parseFloat(getComputedStyle(vp).rowGap) || 0;
-    vp.style.maxHeight = (vp.children[RACING_CAP].offsetTop - gap) + "px";
-    vp.classList.add("is-capped", "at-top");
-    const update = () => {
-      const max = vp.scrollHeight - vp.clientHeight;
-      vp.classList.toggle("at-top", vp.scrollTop <= 1);
-      vp.classList.toggle("at-bottom", vp.scrollTop >= max - 1);
-    };
-    vp.addEventListener("scroll", update, { passive: true });
-    update();
+  function ovbRing({ pct, text, gold = false }) {
+    const CIRC = 2 * Math.PI * 16;
+    const off = CIRC * (1 - Math.max(0, Math.min(100, pct)) / 100);
+    return `<span class="ovb-ringwrap"><svg viewBox="0 0 36 36" class="ovb-ring${gold ? " is-gold" : ""}" aria-hidden="true">
+        <circle class="ovb-ring-track" cx="18" cy="18" r="16"/>
+        <circle class="ovb-ring-fill" cx="18" cy="18" r="16" style="stroke-dasharray:${CIRC.toFixed(1)};stroke-dashoffset:${off.toFixed(1)}"/>
+      </svg><span class="ovb-ring-txt">${escapeHtml(String(text))}</span></span>`;
   }
-  // Athlete (or coach in a live session) picks which racing stats show and their order.
-  function openRacingStatsCustomizer() {
+  function ovbSpark(vals, cls = "") {
+    if (!Array.isArray(vals) || vals.length < 2) return "";
+    const min = Math.min(...vals), max = Math.max(...vals);
+    const span = max - min || 1;
+    const pts = vals.map((v, i) => `${(2 + (i * 82) / (vals.length - 1)).toFixed(1)},${(15 - ((v - min) / span) * 12).toFixed(1)}`).join(" ");
+    return `<svg class="ovb-spark${cls ? " " + cls : ""}" width="86" height="18" viewBox="0 0 86 18" aria-hidden="true"><polyline points="${pts}"/></svg>`;
+  }
+
+  const BOARD_TILES = [
+    { id: "ring", icon: "🎯", label: "This week", html: (x) => {
+        if (!x.totalDays) return "";
+        const left = x.totalDays - x.doneDays;
+        const body = `<span class="ovb-row">${ovbRing({ pct: (x.doneDays / x.totalDays) * 100, text: `${x.doneDays}/${x.totalDays}` })}
+          <span class="ovb-ts">${left <= 0 ? "Week complete 🎉" : `${left} to go`}${x.bookingLabel ? `<br>📅 ${escapeHtml(x.bookingLabel)}` : ""}</span></span>`;
+        return ovbTile({ id: "ring", door: "workouts", label: "This week",
+          aria: `${x.doneDays} of ${x.totalDays} workouts done this week. Opens your program.`, body });
+      } },
+    { id: "pentagon", icon: "✨", label: "Stat field", html: (x) => {
+        const read = readStatField(x.c, x.progress, x.today);
+        if (!read || !STAT_AXES.some((k) => statAxisFrac(k, read.cur[k]) > 0)) return "";
+        const lit = STAT_AXES.filter((k) => Number(read.peak[k]) > 0);
+        const dead = STAT_AXES.length - lit.length;
+        const lead = lit.map((k) => ({ k, f: statAxisFrac(k, read.cur[k]) })).sort((a, b) => b.f - a.f)[0];
+        const cap = `${lead ? `${lead.k} leads` : ""}${dead ? `${lead ? " · " : ""}${dead} untested` : ""}`;
+        const body = `<span class="ovb-sf sf-mini">${statFieldSvg({ cur: read.cur, peak: read.peak, size: 60, labels: false })}</span>
+          <span class="ovb-ts">${escapeHtml(cap)}</span>`;
+        return ovbTile({ id: "pentagon", door: "prs", label: "Stat field", body, cls: "ovb-center" });
+      } },
+    { id: "hoard", icon: "🐉", label: "The Hoard", game: true, html: (x) => {
+        const g = x.hoardGame; if (!g || !g.lb) return "";
+        const look = hoardLook(g.level);
+        const pct = g.need ? Math.max(0, Math.min(100, (g.into / g.need) * 100)) : 100;
+        const body = `<span class="ovb-xprow" style="--rank-c:${look.color}">
+            <span class="ovb-rankname">${g.rank.icon} ${escapeHtml(g.rank.name)}</span>
+            <span class="ovb-xptrack"><span class="ovb-xpfill" style="width:${pct.toFixed(1)}%"></span></span>
+            <span class="ovb-xplbl">${escapeHtml(hoardLbLabel(g.lb, unitOf(x.c)))}</span>
+          </span>`;
+        return ovbTile({ id: "hoard", door: "prs", label: "The Hoard",
+          aria: `The Hoard: ${g.rank.name}, ${hoardLbLabel(g.lb, unitOf(x.c))} moved. Opens the ladder.`, body, wide: true, game: true });
+      } },
+    { id: "toppr", icon: "🏅", label: "Top PR", html: (x) => {
+        const top = highestPR(x.c, x.progress); if (!top) return "";
+        const db = isDumbbellLift(top.name);
+        const body = `<span class="ovb-tv">${escapeHtml(String(dispW(top.weight)))}<em>${db ? "s" : unitLbl()}</em></span>
+          <span class="ovb-ts">${escapeHtml(top.name || "")}</span>`;
+        return ovbTile({ id: "toppr", door: "prs", label: "Top PR", body });
+      } },
+    { id: "food", icon: "🍎", label: "Food today", html: (x) => {
+        const eff = effectiveTargets(x.c, x.progress);
+        const day = dayScore(x.progress, eff.plan, x.today);
+        if (!eff.plan && !day.logged) return "";
+        const inZone = day.parts.calories === 100;
+        const sub = inZone ? "In the zone" : day.logged
+          ? `${Math.round(day.totals.kcal).toLocaleString()} kcal so far` : "Nothing logged yet";
+        const body = `<span class="ovb-row">${ovbRing({ pct: day.score || 0, text: day.score == null ? "—" : day.score, gold: inZone })}
+          <span class="ovb-ts">${escapeHtml(sub)}</span></span>`;
+        return ovbTile({ id: "food", door: "diet", label: "Food today", body });
+      } },
+    { id: "trials", icon: "⚔️", label: "Trials", game: true, html: (x) => {
+        if (!x.trials.length) return "";
+        const won = x.trials.filter((t) => t.done).length;
+        const t0 = x.trials.find((t) => !t.done) || x.trials[x.trials.length - 1];
+        const pct = t0.done ? 100 : t0.target > 0 ? Math.max(0, Math.min(100, (t0.cur / t0.target) * 100)) : 0;
+        const body = `<span class="ovb-trialrow"><span class="ovb-trialico">${t0.t.icon || "🎯"}</span>
+            <span class="ovb-trialbody"><span class="ovb-trialname">${escapeHtml(t0.t.name || "Trial")}</span>
+            <span class="ovb-xptrack is-cyan"><span class="ovb-xpfill" style="width:${pct.toFixed(1)}%"></span></span></span>
+            <span class="ovb-ts ovb-nowrap">${t0.done ? "Won ✓" : escapeHtml(t0.label || "")}</span>
+          </span>`;
+        return ovbTile({ id: "trials", act: "trials", label: `Trials · ${won} of ${x.trials.length} won`, body, wide: true, game: true });
+      } },
+    { id: "heat", icon: "📆", label: "Last 30 days", html: (x) => {
+        const done = new Set(completionDateList(x.progress));
+        const prDates = new Set((x.progress.personalRecords || []).map((p) => p.date).filter(Boolean));
+        let cells = "", n = 0;
+        for (let i = 29; i >= 0; i--) {
+          const d = addDaysISO(x.today, -i);
+          const on = done.has(d);
+          if (on) n++;
+          cells += `<i class="${prDates.has(d) ? "gold" : on ? "on" : ""}"></i>`;
+        }
+        const body = `<span class="ovb-dots" role="img" aria-label="${n} sessions in the last 30 days">${cells}</span>`;
+        return ovbTile({ id: "heat", act: "cal", label: `Last 30 days · ${n} session${n === 1 ? "" : "s"}`,
+          aria: `${n} sessions in the last 30 days. Opens the month calendar.`, body, wide: true, cls: "ovb-expander" });
+      } },
+    { id: "bw", icon: "⚖️", label: "Bodyweight", secret: true, html: (x) => {
+        const log = [...(x.progress.bodyweightLog || [])].filter((e) => e.date && isFinite(parseFloat(e.weightLb))).sort((a, b) => a.date.localeCompare(b.date));
+        if (!log.length) return "";
+        const latest = log[log.length - 1], cur = parseFloat(latest.weightLb);
+        const cutoff = addDaysISO(latest.date, -30);
+        let ref = null; for (const e of log) { if (e.date <= cutoff) ref = e; }
+        const diff = ref ? cur - parseFloat(ref.weightLb) : 0;
+        const arrow = Math.abs(diff) < 0.1 ? "" : `<span class="ovb-trend neutral">${diff > 0 ? "▲" : "▼"}</span>`;
+        const body = `<span class="ovb-tv">${Math.round(dispNum(cur))}<em>${unitLbl()}</em>${arrow}</span>
+          ${ovbSpark(log.slice(-10).map((e) => parseFloat(e.weightLb)), "is-green")}`;
+        return ovbTile({ id: "bw", door: "prs", label: "Bodyweight", body, secret: true });
+      } },
+    { id: "trophies", icon: "🏆", label: "Trophies", game: true, html: (x) => {
+        const badges = computeBadges(x.progress, x.c);
+        const earned = badges.filter((b) => b.earned).length;
+        if (!earned) return "";
+        const body = `<span class="ovb-tv">🏆 ${earned}<em>/ ${badges.length}</em></span>`;
+        return ovbTile({ id: "trophies", act: "trophies", label: "Trophies", body, game: true });
+      } },
+    { id: "recap", icon: "📋", label: "Program recap", html: (x) => {
+        const wk = (x.c.weeks || []).length; if (!wk) return "";
+        const body = `<span class="ovb-ts">📋 ${wk} week${wk === 1 ? "" : "s"}, every day at a glance</span>`;
+        return ovbTile({ id: "recap", act: "recap", label: "Program recap", body, wide: true, cls: "ovb-expander" });
+      } },
+  ];
+
+  function ovbPoolTile(def, ctx) {
+    const d = def.get(ctx); if (!d) return "";
+    const door = def.id.indexOf("cardio") === 0 ? "workouts" : "prs";
+    const tr = d.trend ? `<span class="ovb-trend ${d.trend}${d.trendNeutral ? " neutral" : ""}">${d.trend === "up" ? "▲" : "▼"}</span>` : "";
+    const body = `<span class="ovb-tv">${escapeHtml(String(d.value))}${d.unit ? `<em>${escapeHtml(d.unit)}</em>` : ""}${tr}</span>
+      ${d.when ? `<span class="ovb-ts">${escapeHtml(d.when)}</span>` : ""}`;
+    return ovbTile({ id: def.id, door, label: `${def.icon} ${def.label}`, body });
+  }
+
+  function renderOverviewBoard(ctx) {
+    const tiles = getBoardTileIds(ctx.progress).map((id) => {
+      const f = BOARD_TILES.find((t) => t.id === id);
+      if (f) return f.html(ctx);
+      const p = RACING_LIB.find((s) => s.id === id);
+      return p && !TILE_POOL_SKIP.has(p.id) ? ovbPoolTile(p, ctx) : "";
+    }).join("");
+    return `<div class="ovb-grid" id="ov-board">${tiles}
+      <button type="button" class="ovb-tile ovb-edit" data-act="edit">＋ Edit board</button>
+    </div>`;
+  }
+
+  // The month calendar and the recap matrix sit UNDER the board, hidden until
+  // their tiles are tapped; the choice is remembered per device rather than
+  // re-derived, so the page opens the way it was left.
+  function syncOverviewExpands(c, progress) {
+    const calOpen = localStorage.getItem(KEY_OVCAL_OPEN) === "1";
+    const recapOpen = localStorage.getItem(KEY_OVRECAP_OPEN) === "1";
+    $("#ov-calendar")?.classList.toggle("hidden", !calOpen);
+    const rh = $("#ov-recap-host");
+    if (rh) {
+      rh.classList.toggle("hidden", !recapOpen);
+      rh.innerHTML = "";
+      if (recapOpen && c) {
+        // Same shim the old fold used: seat the athlete's own progress where
+        // the coach-side matrix expects importedProgress. Built fresh at
+        // render time, never cached, so it can't go stale across a sync.
+        const el = buildRecapMatrix({ ...c, importedProgress: progress });
+        if (el) {
+          const card = document.createElement("div");
+          card.className = "card ov-program-recap";
+          card.appendChild(el);
+          rh.appendChild(card);
+        }
+      }
+    }
+    $('#ov-board [data-tile="heat"]')?.classList.toggle("is-open", calOpen);
+    $('#ov-board [data-tile="recap"]')?.classList.toggle("is-open", recapOpen);
+  }
+
+  function openTrialsSheet() {
+    const c = state.clientData.program?.client, progress = state.clientData.progress;
+    if (!c || !progress) return;
+    const trials = syncTrials(c, progress, true);
+    if (!trials.length) return;
+    const won = trials.filter((t) => t.done).length;
+    const rows = trials.map((s) => {
+      const pct = s.target > 0 ? Math.max(0, Math.min(100, (s.cur / s.target) * 100)) : 0;
+      return `<div class="ov-trial${s.done ? " is-won" : ""}">
+          <span class="ov-trial-ico">${s.t.icon || "🎯"}</span>
+          <span class="ov-trial-body">
+            <span class="ov-trial-name">${escapeHtml(s.t.name || "Trial")}</span>
+            <span class="ov-trial-track"><span class="ov-trial-fill" style="width:${s.done ? 100 : pct.toFixed(1)}%"></span></span>
+          </span>
+          <span class="ov-trial-meta">${s.done ? "Won ✓" : escapeHtml(s.label || "")}</span>
+        </div>`;
+    }).join("");
+    openModal({ title: `⚔️ Trials · ${won}/${trials.length}`, body: `<div class="ov-trial-list">${rows}</div>`,
+      actions: [{ label: "Done", className: "btn btn-primary", onClick: closeModal }] });
+  }
+  function openTrophiesSheet() {
+    const c = state.clientData.program?.client, progress = state.clientData.progress;
+    if (!c || !progress) return;
+    const badges = computeBadges(progress, c);
+    const earned = badges.filter((b) => b.earned).length;
+    openModal({ title: `🏆 Trophy case · ${earned}/${badges.length}`,
+      body: `<div class="trophy-grid">${badges.map((b) => `<div class="trophy${b.earned ? " earned" : ""}" title="${escapeHtml(b.hint)}"><span class="trophy-icon">${b.icon}</span><span class="trophy-name">${escapeHtml(b.name)}</span></div>`).join("")}</div>`,
+      actions: [{ label: "Done", className: "btn btn-primary", onClick: closeModal }] });
+  }
+
+  // Athlete (or coach in a live session) picks the board's tiles and their
+  // order. Same modal mechanics the racing customizer had; the two pools are
+  // featured tiles first, then the plain stats.
+  function openBoardCustomizer() {
     const progress = state.clientData.progress; if (!progress) return;
-    const sel = getRacingStatIds(progress);
-    const commit = () => { progress.racingStats = sel.slice(); saveClient(); renderAthleteOverview(); };
+    const sel = getBoardTileIds(progress);
+    const commit = () => { progress.overviewTiles = sel.slice(); saveClient(); renderAthleteOverview(); };
+    const defOf = (id) => BOARD_TILES.find((t) => t.id === id)
+      || (TILE_POOL_SKIP.has(id) ? null : RACING_LIB.find((s) => s.id === id)) || null;
     const rowHtml = (def, selected, i, total) => `<div class="stat-cust-row${selected ? " on" : ""}" data-id="${def.id}">
         <span class="stat-cust-name"><span class="stat-cust-ico">${def.icon}</span>${escapeHtml(def.label)}</span>
         <span class="stat-cust-ctrls">
@@ -27071,15 +27273,14 @@
         </span>
       </div>`;
     const draw = () => {
-      const selDefs = sel.map((id) => RACING_LIB.find((s) => s.id === id)).filter(Boolean);
-      const poolDefs = RACING_LIB.filter((s) => !sel.includes(s.id));
-      // No volume-chart switch here any more: the chart has a permanent home on
-      // the Progress tab, so an option to also print it inside the stats bar
-      // only ever produced the same chart twice.
+      const selDefs = sel.map(defOf).filter(Boolean);
+      const featPool = BOARD_TILES.filter((t) => !sel.includes(t.id));
+      const statPool = RACING_LIB.filter((s) => !TILE_POOL_SKIP.has(s.id) && !sel.includes(s.id));
       $("#modal-body").innerHTML = `
-        <p class="muted stat-cust-intro">Choose the stats for your stats bar and reorder them with the arrows.</p>
-        <div class="stat-cust-list">${selDefs.map((d, i) => rowHtml(d, true, i, selDefs.length)).join("") || `<p class="muted" style="padding:0.3em 0">Nothing selected yet.</p>`}</div>
-        ${poolDefs.length ? `<div class="stat-cust-sub">Add more</div><div class="stat-cust-list">${poolDefs.map((d) => rowHtml(d, false)).join("")}</div>` : ""}`;
+        <p class="muted stat-cust-intro">Your board, your call: add, remove and reorder tiles. A tile with nothing to show stays off the board on its own.</p>
+        <div class="stat-cust-list">${selDefs.map((d, i) => rowHtml(d, true, i, selDefs.length)).join("") || `<p class="muted" style="padding:0.3em 0">Nothing on the board yet.</p>`}</div>
+        ${featPool.length ? `<div class="stat-cust-sub">Add tiles</div><div class="stat-cust-list">${featPool.map((d) => rowHtml(d, false)).join("")}</div>` : ""}
+        ${statPool.length ? `<div class="stat-cust-sub">More stats</div><div class="stat-cust-list">${statPool.map((d) => rowHtml(d, false)).join("")}</div>` : ""}`;
       $("#modal-body").querySelectorAll(".stat-cust-row[data-id]").forEach((row) => {
         const id = row.dataset.id;
         row.querySelectorAll("[data-act]").forEach((btn) => btn.addEventListener("click", () => {
@@ -27091,7 +27292,17 @@
         }));
       });
     };
-    openModal({ title: "Customize stats", body: "", actions: [{ label: "Done", className: "btn btn-primary", onClick: closeModal }] });
+    // Share moved in here with the stats it prints — the board head has no
+    // button row any more.
+    const lifeStats = {
+      workouts: completionDateList(progress).length,
+      prs: (progress.personalRecords || []).length,
+      volume: progress?.hoard?.lb || 0,
+    };
+    openModal({ title: "Edit your board", body: "", actions: [
+      { label: "📤 Share stats", className: "btn btn-ghost", onClick: () => shareLifetimeImage(lifeStats, state.clientData.program?.client?.name) },
+      { label: "Done", className: "btn btn-primary", onClick: closeModal },
+    ] });
     draw();
   }
 
@@ -27127,11 +27338,17 @@
   function renderAthleteOverview() {
     const host = $("#overview-stats");
     const heroHost = $("#overview-hero");
-    const trophyHost = $("#overview-trophies");
     if (!host) return;
     const prog = state.clientData.program;
     const c = prog?.client;
-    if (!c) { host.innerHTML = ""; if (heroHost) heroHost.innerHTML = ""; $("#overview-greeting") && ($("#overview-greeting").innerHTML = ""); if (trophyHost) trophyHost.innerHTML = ""; renderAthleteCoachMessages(null); return; }
+    if (!c) {
+      host.innerHTML = "";
+      if (heroHost) heroHost.innerHTML = "";
+      $("#overview-greeting") && ($("#overview-greeting").innerHTML = "");
+      $("#ov-recap-host")?.classList.add("hidden");
+      renderAthleteCoachMessages(null);
+      return;
+    }
     ensureSessionBank(c);
     renderAthleteCoachMessages(c);
     renderCycleNudge();
@@ -27205,58 +27422,27 @@
     const ton = hoardGame.lb;
     const lastWk = lastWorkoutVolume(progress);
     const lastWkLabel = lastWk ? new Date(lastWk.date + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
-    // Lifetime lifting stats — the tonnage lives here (not as a mini tile too)
-    const lifeStats = {
-      workouts: completionDateList(progress).length,
-      prs: (progress.personalRecords || []).length,
-      volume: ton,
-    };
-    // Combined, collapsible "Lifting stats": lifetime totals + last workout + volume chart.
-    const KEY_LIFTSTATS_OPEN = "trainerpro_liftstats_open_v1";
-    const liftOpen = localStorage.getItem(KEY_LIFTSTATS_OPEN) !== "0";
-    const racingCtx = { progress, c, today, lastWk, lastWkLabel, ton, streakN, doneDays, totalDays };
-    const statsHtml = (lifeStats.workouts || ton) ? `<details class="card ov-liftstats"${liftOpen ? " open" : ""}>
-        <summary><svg class="ov-liftstats-ico" viewBox="0 0 24 24" aria-hidden="true"><text class="lsi-d lsi-1" x="1" y="11">1</text><text class="lsi-d lsi-2" x="8" y="16">2</text><text class="lsi-d lsi-3" x="15" y="21">3</text></svg><span class="ov-liftstats-title">Lifting stats</span><span class="ov-liftstats-chev">▸</span></summary>
-        <div class="ov-liftstats-body">
-          <div class="ov-recap-head"><h4>Your stats</h4><div class="ov-recap-actions"><button class="btn btn-ghost btn-sm" id="btn-racing-customize" type="button" title="Customize these stats" aria-label="Customize these stats">⋯</button><button class="btn btn-ghost btn-sm" id="btn-share-recap" type="button">📤 Share</button></div></div>
-          <div class="ov-stats-list racing-vp" id="racing-vp">${renderRacingRows(racingCtx)}</div>
-        </div>
-      </details>` : "";
-    const badges = computeBadges(progress, c);
-    const earnedCount = badges.filter((b) => b.earned).length;
-    // Collapsed by default — the summary line carries the earned count.
-    const trophyHtml = earnedCount ? `<details class="card ov-trophies game-only">
-        <summary>🏆 Trophy case <span class="muted">${earnedCount}/${badges.length}</span><span class="ov-trophies-chev">▸</span></summary>
-        <div class="trophy-grid">${badges.map((b) => `<div class="trophy${b.earned ? " earned" : ""}" title="${escapeHtml(b.hint)}"><span class="trophy-icon">${b.icon}</span><span class="trophy-name">${escapeHtml(b.name)}</span></div>`).join("")}</div>
-      </details>` : "";
-
-    // Trials: the coach's own challenges, above the generic trophy case
-    // because these are personal and worth more attention. Open by default
-    // while any are outstanding — a goal nobody sees isn't a goal.
+    // ---- Board context ----
+    // Trials sync once here; the tile and its sheet both read the result.
     const trials = syncTrials(c, progress, true);
-    const trialsWon = trials.filter((t) => t.done).length;
-    const trialsHtml = trials.length ? `<details class="card ov-trials"${trialsWon < trials.length ? " open" : ""}>
-        <summary>⚔️ Trials <span class="muted">${trialsWon}/${trials.length}</span><span class="ov-trophies-chev">▸</span></summary>
-        <div class="ov-trial-list">${trials.map((s) => {
-          const pct = s.target > 0 ? Math.max(0, Math.min(100, (s.cur / s.target) * 100)) : 0;
-          return `<div class="ov-trial${s.done ? " is-won" : ""}">
-            <span class="ov-trial-ico">${s.t.icon || "🎯"}</span>
-            <span class="ov-trial-body">
-              <span class="ov-trial-name">${escapeHtml(s.t.name || "Trial")}</span>
-              <span class="ov-trial-track"><span class="ov-trial-fill" style="width:${s.done ? 100 : pct.toFixed(1)}%"></span></span>
-            </span>
-            <span class="ov-trial-meta">${s.done ? "Won ✓" : escapeHtml(s.label || "")}</span>
-          </div>`;
-        }).join("")}</div>
-      </details>` : "";
+    const ctx = { progress, c, today, lastWk, lastWkLabel, ton, streakN, doneDays, totalDays, weekLabel, bookingLabel, hoardGame, trials };
 
-    // The hero opens the page: the day's name, the lifts inside it, how much
-    // work it is, and one Start. A part-finished day says so on its own bar and
-    // offers to resume instead. Rest and caught-up states keep the short shape.
-    // No rank line here: the header crest carries it on every screen, so a bar
-    // under the greeting would just say the same thing twice.
+    // The player strip opens the page as "you": avatar, rank, where the
+    // program stands, the streak. The hero below keeps carrying "what now".
+    const phase = (week?.phaseLabel || week?.focus || "").trim();
+    const rank = hoardGame.lb ? hoardGame.rank : null;
+    const rankLook = rank ? hoardLook(hoardGame.level) : null;
+    const subBits = [
+      rank ? `<span class="ovb-rank game-only" style="--rank-c:${rankLook.color}">${rank.icon} ${escapeHtml(rank.name)}</span>` : "",
+      totalDays ? escapeHtml(weekLabel) : "",
+      phase ? escapeHtml(phase) : "",
+    ].filter(Boolean).join('<span class="ovb-dot" aria-hidden="true">·</span>');
     const greetHost = $("#overview-greeting");
-    if (greetHost) greetHost.innerHTML = `<div class="ov-greeting">Hey, ${firstName} 👋</div>`;
+    if (greetHost) greetHost.innerHTML = `<div class="ovb-player">
+      ${avatarTileHtml(c, progress, { size: "md" })}
+      <div class="ovb-who"><span class="ovb-hi">Hey, ${firstName}</span>${subBits ? `<span class="ovb-sub">${subBits}</span>` : ""}</div>
+      ${streakN ? `<span class="ovb-streak game-only" title="Consecutive weeks with at least one completed workout">🔥 ${streakN}<small>wk streak</small></span>` : ""}
+    </div>`;
     if (heroHost) {
       const p = hero.plan;
       // Four lifts is what fits on a phone in two lines; the rest are counted.
@@ -27291,28 +27477,27 @@
         </div>`;
     }
     renderCalHeaderStats({ doneDays, totalDays, weekLabel, streakN, bookingLabel });
-    host.innerHTML = statsHtml;
+    host.innerHTML = renderOverviewBoard(ctx);
+    syncOverviewExpands(c, progress);
 
-    // ---- Program recap: the whole block at a glance (2026-08-19) ----
-    // The athlete's own copy of the coach roster's recap matrix — Nathan:
-    // "the workout overview you just created, for easy viewing" on the
-    // athlete overview. The shim seats this athlete's own progress where
-    // the coach-side helpers expect importedProgress; built fresh at render
-    // time, never cached, so it can't go stale across a sync.
-    const rcShim = { ...c, importedProgress: progress };
-    const recapEl = buildRecapMatrix(rcShim);
-    if (recapEl) {
-      const KEY_OVRECAP_OPEN = "trainerpro_ovrecap_open_v1";
-      const det = document.createElement("details");
-      det.className = "card ov-program-recap";
-      if (localStorage.getItem(KEY_OVRECAP_OPEN) !== "0") det.open = true;
-      det.innerHTML = `<summary>📋 Program recap<span class="ov-trophies-chev">▸</span></summary>`;
-      det.appendChild(recapEl);
-      host.prepend(det);
-      det.addEventListener("toggle", () => localStorage.setItem(KEY_OVRECAP_OPEN, det.open ? "1" : "0"));
-    }
-
-    if (trophyHost) trophyHost.innerHTML = trialsHtml + trophyHtml;
+    // One delegated handler for the whole board: doors open tabs, expanders
+    // toggle the calendar and recap that sit under it, sheets open the modal.
+    $("#ov-board")?.addEventListener("click", (e) => {
+      const t = e.target.closest("[data-tile],[data-act]"); if (!t) return;
+      const act = t.dataset.act;
+      if (act === "edit") return openBoardCustomizer();
+      if (act === "trials") return openTrialsSheet();
+      if (act === "trophies") return openTrophiesSheet();
+      if (act === "cal" || act === "recap") {
+        const key = act === "cal" ? KEY_OVCAL_OPEN : KEY_OVRECAP_OPEN;
+        const opening = localStorage.getItem(key) !== "1";
+        localStorage.setItem(key, opening ? "1" : "0");
+        syncOverviewExpands(c, progress);
+        if (opening) $(act === "cal" ? "#ov-calendar" : "#ov-recap-host")?.scrollIntoView({ block: "nearest" });
+        return;
+      }
+      if (t.dataset.door) setClientTab(t.dataset.door);
+    });
 
     if (hero.jump) {
       const heroEl = $("#ov-hero");
@@ -27323,13 +27508,6 @@
     }
     renderClientHeaderSessions();
     renderClientHeaderRank();
-    $("#btn-share-recap")?.addEventListener("click", () => shareLifetimeImage(lifeStats, c.name));
-    $("#btn-racing-customize")?.addEventListener("click", openRacingStatsCustomizer);
-    $(".ov-liftstats")?.addEventListener("toggle", (e) => {
-      localStorage.setItem(KEY_LIFTSTATS_OPEN, e.target.open ? "1" : "0");
-      if (e.target.open) wireRacingCap();
-    });
-    wireRacingCap();
   }
   // Sessions-remaining chip in the athlete header, right of the profile name.
   // The rank in the app header. The logo becomes the crest: a gold arc for
@@ -27886,8 +28064,6 @@
     if (!$("#ex-library-overlay")?.classList.contains("hidden")) dismissExLibrary();
     $$(".tab[data-ctab]").forEach((t) => t.classList.toggle("active", t.dataset.ctab === name));
     $$(".tab-panel[data-ctab-panel]").forEach((p) => p.classList.toggle("active", p.dataset.ctabPanel === name));
-    // The racing bar's soft cap can only measure once its panel is visible.
-    if (name === "overview") wireRacingCap();
     // Progress is built on arrival: the Hoard, the volume chart and the
     // strength charts all read logs that a workout may have changed since the
     // last visit.
@@ -36991,7 +37167,7 @@
       { sel: "#screen-client .tabs", go: () => setClientTab("overview"),
         title: "Welcome to Stone Dragon", text: "A quick lap around your training hub, a couple of minutes. Skip any time, and replay it whenever you like from the ? up top. These tabs are everything." },
       { sel: '[data-ctab-panel="overview"]',
-        title: "Overview", text: "The card up top is your next workout: the lifts in it, how long it runs, and one tap to start. Under it sit your program recap (every week and day as a grid, tap any day for the sets behind it), your calendar, your streak, your lifetime totals and your trophies. It fills in as you train. Tap ⋯ on the stats card to pick what shows, like cardio time, distance, or total push-ups and pull-ups." },
+        title: "Overview", text: "Your next workout up top, one tap to start. Under it is your board: tiles for your week, your stats, your PRs, your food and more, and every tile opens the page behind it. The Last 30 days tile unfolds your full calendar, Program recap unfolds the whole block. Tap ＋ Edit board to add, remove or reorder tiles, like cardio time, distance, or total push-ups. It fills in as you train." },
       // The card became a header pill, so the step follows it. No `go`: the
       // pill is in the header on every tab, which is the point of the move.
       { sel: "#btn-client-messages",

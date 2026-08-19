@@ -125,6 +125,10 @@
       // because an upsert naming a column that does not exist fails and takes
       // every progress save with it, not just this feature.
       stat_field: p.statField || {},
+      // The Overview board's tile picks. Column added 20260818120000, applied
+      // to the live project before this line shipped — same contract as
+      // stat_field above.
+      overview_tiles: p.overviewTiles || [],
       synced_at: new Date().toISOString(),
     };
   }
@@ -158,6 +162,7 @@
       dayNotes: r.day_notes || {},
       pendingDeloads: r.pending_deloads || {},
       statField: r.stat_field || {},
+      overviewTiles: r.overview_tiles || [],
       syncedAt: r.synced_at,
       _rev: Number(r.rev) || 0,
     };

@@ -2690,9 +2690,8 @@ input.cex-finisher-input { width: 72px; flex: 0 0 72px; text-align: center; }
 #overview-hero { margin: 0 0 1rem; }
 #overview-hero:empty { display: none; }
 .tab-panel[data-ctab-panel="overview"] { padding-bottom: 1.5rem; }
-#overview-trophies { margin-bottom: 1.4rem; }
-#overview-trophies:empty { display: none; }
-.ov-greeting { font-size: 1.15rem; font-weight: 800; letter-spacing: 0.01em; }
+#ov-recap-host { margin-bottom: 1.4rem; }
+#ov-recap-host:empty { display: none; }
 
 /* The first thing on the athlete's home: what's next, what's in it, and one
    Start. In flow at the top of the page — the calendar answers "when", this
@@ -10127,73 +10126,92 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 /* Monthly recap */
 .ov-recap-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6em; margin-bottom: 0.6em; }
 .ov-recap-head h4 { margin: 0; }
-.ov-trophies { margin-top: 0.85rem; }
-
-/* Lifetime totals as a racing-game style slanted stats list */
-.ov-stats-list { display: flex; flex-direction: column; gap: 0.3rem; }
-.ov-stat-row {
-  transform: skewX(-15deg);
-  border-radius: 5px;
-  border: 1px solid rgba(var(--primary-bright-rgb), 0.28);
-  border-left: 3px solid var(--primary-bright);
-  background:
-    linear-gradient(100deg, rgba(var(--primary-rgb), 0.32) 0%, rgba(var(--primary-rgb), 0.08) 46%, rgba(var(--primary-rgb), 0) 82%),
-    linear-gradient(180deg, var(--surface-2), var(--surface));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  overflow: hidden;
-  margin: 0 3px;
+/* -------- The Overview board: a bento of tap-through tiles -------- */
+/* Two colors carry the meaning across the whole board: cyan is what you DO
+   (actions, training, doors), gold is what you EARNED (Hoard, in-the-zone).
+   Tiles are real <button>s so they focus and announce; every tile is a door. */
+.ovb-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; }
+.ovb-tile {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start;
+  gap: 0.28rem; min-height: 4.7rem; min-width: 0; text-align: left;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px;
+  padding: 0.62rem 0.75rem 0.6rem; color: var(--text); font: inherit; cursor: pointer;
 }
-.ov-stat-row .sr-in {
-  transform: skewX(15deg);
-  display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem;
-  padding: 0.3em 1.1em;
+.ovb-tile:active { transform: scale(0.98); }
+.ovb-tile:focus-visible { outline: 2px solid var(--primary-bright); outline-offset: 2px; }
+.ovb-wide { grid-column: 1 / -1; min-height: 0; }
+.ovb-center { align-items: center; text-align: center; }
+.ovb-tl { font-size: 0.62rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); padding-right: 1.1rem; }
+.ovb-go { position: absolute; top: 0.5rem; right: 0.65rem; color: var(--border-strong); font-weight: 800; font-size: 0.85rem; transition: transform 0.15s ease; }
+.ovb-tile.is-open .ovb-go { transform: rotate(90deg); color: var(--primary-bright); }
+.ovb-tv {
+  font-size: 1.35rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums;
+  display: flex; align-items: baseline; gap: 0.25rem; color: var(--text);
 }
-.sr-lbl { font-size: 0.66rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-soft); }
-.sr-when { font-size: 0.58rem; font-weight: 700; letter-spacing: 0.02em; color: var(--muted); margin-left: 0.3em; }
-.sr-val { font-size: 1.15rem; font-weight: 900; color: var(--primary-bright); line-height: 1; font-variant-numeric: tabular-nums; text-shadow: 0 0 12px rgba(var(--primary-bright-rgb), 0.35); }
-.sr-unit { font-size: 0.62rem; font-weight: 700; color: var(--text-soft); margin-left: 0.15em; }
-.sr-trend { font-size: 0.72rem; font-weight: 800; margin-left: 0.35em; vertical-align: middle; }
-.sr-trend.up { color: var(--accent-ink); }
-.sr-trend.down { color: var(--warn); }
-.sr-trend.neutral { color: var(--text-soft); }
-.ov-recap-actions { display: flex; align-items: center; gap: 0.3em; }
-/* Racing bar soft cap: show a few rows, scroll the rest with an edge fade */
-.racing-vp { position: relative; }
-.racing-vp .ov-stat-row { flex: 0 0 auto; }
-.racing-vp.is-capped {
-  overflow-y: auto; scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
-  mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
+.ovb-tv em { font-style: normal; font-size: 0.72rem; font-weight: 700; color: var(--text-soft); }
+.ovb-ts { font-size: 0.7rem; font-weight: 600; color: var(--muted); line-height: 1.35; }
+.ovb-nowrap { white-space: nowrap; }
+.ovb-row { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
+.ovb-trend { font-size: 0.72rem; font-weight: 800; margin-left: 0.2em; }
+.ovb-trend.up { color: var(--accent-ink); }
+.ovb-trend.down { color: var(--warn-ink); }
+.ovb-trend.neutral { color: var(--text-soft); }
+/* Rings: week progress (cyan) and the food day score (gold when in the zone) */
+.ovb-ringwrap { position: relative; width: 46px; height: 46px; flex: 0 0 auto; display: grid; place-items: center; }
+.ovb-ring { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ovb-ring-track { fill: none; stroke: var(--surface-3); stroke-width: 4.4; }
+.ovb-ring-fill { fill: none; stroke: var(--primary-bright); stroke-width: 4.4; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 18px 18px; }
+.ovb-ring.is-gold .ovb-ring-fill { stroke: var(--gold); }
+.ovb-ring-txt { position: relative; font-size: 0.72rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.ovb-spark { display: block; margin-top: auto; }
+.ovb-spark polyline { fill: none; stroke: var(--primary-bright); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ovb-spark.is-green polyline { stroke: var(--accent-ink); }
+/* The Hoard bar: gold fill, the rank name lit in its own ladder heat */
+.ovb-xprow { display: flex; align-items: center; gap: 0.6rem; width: 100%; min-width: 0; }
+.ovb-rankname { font-size: 0.78rem; font-weight: 800; color: var(--rank-c, var(--gold)); white-space: nowrap; }
+.ovb-xptrack { flex: 1; min-width: 0; height: 9px; border-radius: 6px; background: var(--surface-3); border: 1px solid var(--border); overflow: hidden; }
+.ovb-xpfill { display: block; height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--warn), var(--gold)); }
+.ovb-xptrack.is-cyan .ovb-xpfill { background: linear-gradient(90deg, var(--primary), var(--primary-bright)); }
+.ovb-xplbl { font-size: 0.7rem; font-weight: 700; color: var(--text-soft); white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* Trials tile row (the full list opens in a sheet) */
+.ovb-trialrow { display: flex; align-items: center; gap: 0.55rem; width: 100%; min-width: 0; }
+.ovb-trialico { font-size: 1.05rem; flex: 0 0 auto; }
+.ovb-trialbody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.ovb-trialname { font-size: 0.8rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 30-day strip: sessions cyan, PR days gold */
+.ovb-dots { display: grid; grid-template-columns: repeat(15, 1fr); gap: 3px; width: 100%; margin-top: 0.15rem; }
+.ovb-dots i {
+  aspect-ratio: 1; border-radius: 3px;
+  background: var(--surface-3); border: 1px solid var(--border);
 }
-.racing-vp.is-capped.at-top {
-  -webkit-mask-image: linear-gradient(to bottom, #000 88%, transparent);
-  mask-image: linear-gradient(to bottom, #000 88%, transparent);
+.ovb-dots i.on { background: rgba(var(--primary-rgb), 0.75); border-color: transparent; }
+.ovb-dots i.gold { background: rgba(var(--gold-rgb), 0.85); border-color: transparent; }
+/* The stat field mini lives inside its tile without the roster's side margin */
+.ovb-sf { margin: 0 auto; }
+.ovb-sf.sf-mini { margin-left: 0; }
+/* ＋ Edit board: the customizer's door, quiet and last */
+.ovb-edit {
+  flex-direction: row; align-items: center; justify-content: center; gap: 0.3rem;
+  min-height: 2.7rem; border-style: dashed; color: var(--muted); font-weight: 700; font-size: 0.8rem;
 }
-.racing-vp.is-capped.at-bottom {
-  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12%);
-  mask-image: linear-gradient(to bottom, transparent, #000 12%);
+.ovb-edit:hover { color: var(--text-soft); border-color: var(--border-strong); }
+/* Player strip: avatar, name, rank + phase, streak */
+.ovb-player { display: flex; align-items: center; gap: 0.7rem; }
+.ovb-who { min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.ovb-hi { font-size: 1.2rem; font-weight: 800; line-height: 1.1; letter-spacing: 0.01em; }
+.ovb-sub { font-size: 0.66rem; font-weight: 700; color: var(--muted); letter-spacing: 0.07em; text-transform: uppercase; display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+.ovb-rank { color: var(--rank-c, var(--gold)); }
+.ovb-dot { color: var(--border-strong); }
+.ovb-streak {
+  margin-left: auto; flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 0.05rem;
+  font-size: 0.92rem; font-weight: 800; font-variant-numeric: tabular-nums;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 0.32rem 0.55rem;
 }
-.racing-vp.is-capped::-webkit-scrollbar { display: none; }
-
-/* Combined, collapsible lifting stats: lifetime totals + last workout + volume */
-.ov-liftstats { margin-top: 0.85rem; }
-.ov-liftstats > summary {
-  list-style: none; cursor: pointer; user-select: none;
-  display: flex; align-items: center; gap: 0.5em;
-  font-weight: 700; font-size: 1rem;
-}
-.ov-liftstats > summary::-webkit-details-marker { display: none; }
-/* Overlapping diagonal "123" mark for the lifting-stats header */
-.ov-liftstats-ico { width: 1.4em; height: 1.4em; flex: 0 0 auto; color: var(--primary-bright); overflow: visible; }
-.ov-liftstats-ico .lsi-d { font-family: inherit; font-weight: 900; font-size: 13px; fill: currentColor; }
-.ov-liftstats-ico .lsi-1 { opacity: 0.4; }
-.ov-liftstats-ico .lsi-2 { opacity: 0.68; }
-.ov-liftstats-ico .lsi-3 { opacity: 1; }
-.ov-liftstats-chev { margin-left: auto; color: var(--text-soft); transition: transform 0.15s ease; }
-.ov-liftstats[open] .ov-liftstats-chev { transform: rotate(90deg); }
-.ov-liftstats[open] > summary { margin-bottom: 0.85em; }
-.ov-liftstats-body .ov-volchart {
-  margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);
+.ovb-streak small { font-size: 0.5rem; font-weight: 700; letter-spacing: 0.12em; color: var(--muted); text-transform: uppercase; }
+/* Wider screens: the same board, four tracks */
+@media (min-width: 600px) {
+  .ovb-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .ovb-wide { grid-column: span 2; }
 }
 
 /* Monthly volume bars (athlete overview) */

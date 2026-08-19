@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=ovrecap1" />
+  <link rel="stylesheet" href="styles.css?v=ovboard1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -1235,7 +1235,13 @@
              header now; this host only carries the read-only last line a coach
              sees while running a live session. -->
         <div id="ov-messages" class="ov-messages"></div>
-        <div class="session-calendar">
+        <div id="overview-stats" class="overview-stats"></div>
+        <!-- The two board expanders. The calendar keeps every internal id it
+             has always had (paintMonthGrid + renderAthleteNextSession write
+             into them whether or not it is showing); the board's Last 30 days
+             tile toggles it, the Program recap tile fills and toggles the
+             recap host. Both remember their state per device. -->
+        <div class="session-calendar hidden" id="ov-calendar">
           <div class="calendar-head">
             <div class="cal-nav">
               <button class="btn btn-ghost btn-sm" id="ccal-prev">‹</button>
@@ -1261,8 +1267,7 @@
                reusing it fed this card's HTML straight into the arrow button. -->
           <div id="ccal-upnext" class="ccal-next hidden"></div>
         </div>
-        <div id="overview-stats" class="overview-stats"></div>
-        <div id="overview-trophies"></div>
+        <div id="ov-recap-host" class="hidden"></div>
       </div>
 
       <!-- Workouts (clipboard picker + detail) -->
@@ -1667,7 +1672,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="bugreport.js?v=bug2"></script>
   <script src="config.js?v=horm2"></script>
-  <script src="src/sync/rows.js?v=x1"></script>
+  <script src="src/sync/rows.js?v=x2"></script>
   <script src="src/sync/dirty.js?v=x1"></script>
   <script src="src/sync/push-queue.js?v=x1"></script>
   <script src="src/sync/bank-merge.js?v=x1"></script>
@@ -1703,7 +1708,7 @@
   <script src="src/scheduling/series.js?v=x1"></script>
   <script src="src/scheduling/merge.js?v=x1"></script>
   <script src="src/scheduling/availability.js?v=x1"></script>
-  <script src="app.js?v=x35"></script>
+  <script src="app.js?v=x36"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.
