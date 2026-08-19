@@ -36909,7 +36909,7 @@
       { sel: "#btn-coach-inbox", go: () => showCoachOverview(),
         title: "What needs you", text: "Sessions athletes ask to cancel or move, purchase requests, form videos to watch, athletes out of sessions or gone quiet, and everything they've logged. The number is how many are waiting on you." },
       { sel: "#client-grid", go: () => renderDashboard(),
-        title: "Your athletes", text: "One card per athlete. Tap a card and its row opens in place, without leaving the roster: when they last trained, how they've been eating, and their cardio." },
+        title: "Your athletes", text: "One card per athlete. Tap a card and its row opens in place, without leaving the roster: when they last trained, how they've been eating, their cardio, and their whole program as a grid of days. Tap any day for the sets behind it, or Full recap for the block week by week." },
       // Was `.client-row-view`, the 🏋️ button on the row itself, which was
       // deleted when the drawer took over — so this step had been silently
       // skipping for every coach. The drawer only builds for the open row, and
