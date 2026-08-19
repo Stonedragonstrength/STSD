@@ -702,6 +702,45 @@
     } catch (e) { console.warn("[Cloud] updateAthleteHideOpenSlots", e); return false; }
   }
 
+  // ── Apple Health in-path ──
+  // The token lives on the athlete's own row (their RLS already covers the
+  // update), never inside the mapped athlete object — it must not ride along
+  // on program upserts. The mailbox is drained by id list, so a batch that
+  // fails to merge stays put for the next boot instead of being lost.
+  async function setAthleteHealthToken(athleteId, token) {
+    if (!athleteId) return false;
+    try {
+      const { data, error } = await sb.from("athletes")
+        .update({ health_token: token || null }).eq("id", athleteId).select("id");
+      if (error) { console.warn("[Cloud] setAthleteHealthToken", error.message); return false; }
+      return !!(data && data.length); // zero rows back = RLS filtered it = failure
+    } catch (e) { console.warn("[Cloud] setAthleteHealthToken", e); return false; }
+  }
+  async function getAthleteHealthToken(athleteId) {
+    if (!athleteId) return null;
+    try {
+      const { data, error } = await sb.from("athletes")
+        .select("health_token").eq("id", athleteId).maybeSingle();
+      if (error || !data) return null;
+      return data.health_token || null;
+    } catch (e) { console.warn("[Cloud] getAthleteHealthToken", e); return null; }
+  }
+  async function pullHealthInbox(athleteId) {
+    if (!athleteId) return [];
+    try {
+      const { data, error } = await sb.from("health_inbox")
+        .select("id, payload").eq("athlete_id", athleteId).order("id").limit(50);
+      if (error) { console.warn("[Cloud] pullHealthInbox", error.message); return []; }
+      return data || [];
+    } catch (e) { console.warn("[Cloud] pullHealthInbox", e); return []; }
+  }
+  async function deleteHealthInbox(athleteId, ids) {
+    if (!athleteId || !ids || !ids.length) return;
+    try {
+      await sb.from("health_inbox").delete().eq("athlete_id", athleteId).in("id", ids);
+    } catch (e) { console.warn("[Cloud] deleteHealthInbox", e); }
+  }
+
   // Coach-side write: may this athlete book their own sessions? A single-column
   // update rather than a whole-athlete upsert, so flipping a switch can't race
   // a program edit and write back a stale `weeks`.
@@ -1364,6 +1403,10 @@
     updateAthleteCoachPRs,
     updateAthleteHideOpenSlots,
     updateAthleteCanBook,
+    setAthleteHealthToken,
+    getAthleteHealthToken,
+    pullHealthInbox,
+    deleteHealthInbox,
     updateAthleteProfileFields,
     updateCoachAvatar,
     // Cycle tracking

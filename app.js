@@ -26965,6 +26965,8 @@
     startRealtimeSync();
     pullAthletePrefs(); // cloud copy wins, then re-renders the cards
     pullCycle();        // their own private row, same deal
+    drainHealthInbox(); // Apple Health mailbox: merge, save, then delete
+    refreshHealthTokenCache();
     // First time on this device: offer one guided lap (never during a coach
     // live session — that's the coach's screen, not the athlete's).
     if (!state.previewMode && !localStorage.getItem(KEY_TOUR_ATHLETE)) {
@@ -36375,18 +36377,280 @@
   }
   // Merge parsed weigh-ins into a bodyweight log. Dedupe by date + time so
   // multiple weigh-ins on one day are all kept, but re-importing the same
-  // file adds nothing.
-  function mergeScaleEntries(log, entries) {
+  // file adds nothing. Apple Health entries come through here too, stamped
+  // with their own source.
+  function mergeScaleEntries(log, entries, source) {
     const seen = new Set(log.map((e) => e.date + "|" + (e.time || "")));
     let added = 0;
     entries.forEach((e) => {
       const key = e.date + "|" + (e.time || "");
       if (seen.has(key)) return;
       seen.add(key);
-      log.push({ id: uid(), date: e.date, time: e.time, weightLb: e.weightLb, metrics: e.metrics, source: "renpho" });
+      log.push({ id: uid(), date: e.date, time: e.time, weightLb: e.weightLb, metrics: e.metrics, source: source || "renpho" });
       added++;
     });
     return added;
+  }
+
+  // -------- Apple Health in-path --------
+  // Two doors, one merge layer. The webhook door: an iOS Shortcut posts to
+  // the health-sync Edge Function, which queues batches in health_inbox (it
+  // must never write progress columns; merge_progress replaces them whole,
+  // so the athlete's next push would clobber a server-side write) and the
+  // app drains the mailbox on boot. The file door: the Health app's export
+  // file, streamed through a chunk-safe scanner. Both end in
+  // applyHealthPayloads, which is the only writer.
+
+  // A webhook-or-scanner weigh-in, normalized to the bodyweight-log shape.
+  function normHealthWeight(w) {
+    if (!w || !/^\d{4}-\d{2}-\d{2}$/.test(String(w.date || ""))) return null;
+    let lb = NaN;
+    if (w.weightLb != null && w.weightLb !== "") lb = parseFloat(w.weightLb);
+    else if (w.weightKg != null && w.weightKg !== "") {
+      const kg = parseFloat(w.weightKg);
+      lb = isFinite(kg) ? kg * KG_TO_LB : NaN;
+    }
+    if (!isFinite(lb) || lb <= 0) return null;
+    const out = { date: String(w.date), weightLb: String(Math.round(lb * 10) / 10) };
+    if (w.time) out.time = String(w.time);
+    return out;
+  }
+  // A workout, normalized to the cardio-log shape. HK activity types map
+  // onto the app's cardio names; strength and mat work return null because
+  // lifting is already logged in-app and importing it as cardio would
+  // double-count the same session.
+  function normHealthWorkout(w) {
+    if (!w || !/^\d{4}-\d{2}-\d{2}$/.test(String(w.date || ""))) return null;
+    const minutes = Math.round(parseFloat(w.minutes));
+    if (!isFinite(minutes) || minutes < 1 || minutes > 1440) return null;
+    let type = String(w.type || "").trim();
+    if (/^HKWorkoutActivityType/.test(type)) {
+      const key = type.replace(/^HKWorkoutActivityType/, "");
+      if (/StrengthTraining|Yoga|Pilates|Flexibility|Stretching|CoreTraining|Cooldown|MindAndBody|Preparation/.test(key)) return null;
+      const named = {
+        Running: "Run", Walking: "Walk", Cycling: "Bike", Rowing: "Row",
+        Swimming: "Swim", Hiking: "Hike", StairClimbing: "Stairs",
+        Stairs: "Stairs", StepTraining: "Stairs", Elliptical: "Elliptical",
+        JumpRope: "Jump rope", HighIntensityIntervalTraining: "HIIT",
+        CrossTraining: "HIIT", MixedCardio: "Other",
+      };
+      type = named[key] ||
+        key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/^(.)(.*)$/, (m, a, b) => a + b.toLowerCase());
+    }
+    if (!type) type = "Other";
+    const out = { date: String(w.date), type, minutes };
+    const miles = w.miles != null && w.miles !== "" ? parseFloat(w.miles) : NaN;
+    if (isFinite(miles) && miles > 0) out.miles = Math.round(miles * 100) / 100;
+    if (w.srcId) out.srcId = String(w.srcId);
+    return out;
+  }
+  // Merge workouts into the cardio log. Dedupe on srcId when the source has
+  // one, else date+type+minutes, so webhook replays and re-imports add
+  // nothing. No intensity is set; the app's views default to Moderate.
+  function mergeCardioEntries(log, entries) {
+    const seen = new Set();
+    log.forEach((l) => {
+      if (l.srcId) seen.add("s:" + l.srcId);
+      seen.add("k:" + l.date + "|" + (l.type || "") + "|" + (l.minutes || 0));
+    });
+    let added = 0;
+    entries.forEach((e) => {
+      const sKey = e.srcId ? "s:" + e.srcId : null;
+      const kKey = "k:" + e.date + "|" + (e.type || "") + "|" + (e.minutes || 0);
+      if ((sKey && seen.has(sKey)) || seen.has(kKey)) return;
+      if (sKey) seen.add(sKey);
+      seen.add(kKey);
+      const row = { id: uid(), date: e.date, type: e.type, minutes: e.minutes, source: "apple-health" };
+      if (e.miles != null) row.miles = e.miles;
+      if (e.srcId) row.srcId = e.srcId;
+      log.push(row);
+      added++;
+    });
+    return added;
+  }
+  // The one writer both doors call: normalize every batch, merge both logs,
+  // report what actually landed.
+  function applyHealthPayloads(progress, payloads) {
+    if (!progress.bodyweightLog) progress.bodyweightLog = [];
+    if (!Array.isArray(progress.cardioLogs)) progress.cardioLogs = [];
+    const weights = [];
+    const workouts = [];
+    (payloads || []).forEach((p) => {
+      (Array.isArray(p && p.weights) ? p.weights : []).forEach((w) => {
+        const n = normHealthWeight(w);
+        if (n) weights.push(n);
+      });
+      (Array.isArray(p && p.workouts) ? p.workouts : []).forEach((w) => {
+        const n = normHealthWorkout(w);
+        if (n) workouts.push(n);
+      });
+    });
+    return {
+      weights: mergeScaleEntries(progress.bodyweightLog, weights, "apple-health"),
+      workouts: mergeCardioEntries(progress.cardioLogs, workouts),
+    };
+  }
+
+  // Incremental scanner for the Health app's export.xml, which can run to
+  // hundreds of MB, so no DOMParser and no whole-file string. Feed it text
+  // chunks; it keeps everything after the last closed tag as carry, so a
+  // record split across chunks is parsed when its tail arrives. Emits RAW
+  // HK types; normHealthWorkout does the mapping.
+  function makeHealthXmlScanner() {
+    let carry = "";
+    const weights = [];
+    const workouts = [];
+    let lastWorkout = null;
+    const attr = (tag, name) => {
+      const m = tag.match(new RegExp(name + '="([^"]*)"'));
+      return m ? m[1] : "";
+    };
+    const distToMiles = (v, unit) => {
+      const u = String(unit || "").toLowerCase();
+      const mi = u.indexOf("km") >= 0 ? v * 0.621371 : u === "m" ? v * 0.000621371 : v;
+      return Math.round(mi * 100) / 100;
+    };
+    const onTag = (tag) => {
+      if (tag.slice(0, 8) === "<Record " && tag.indexOf("HKQuantityTypeIdentifierBodyMass") >= 0) {
+        const start = attr(tag, "startDate");
+        const value = parseFloat(attr(tag, "value"));
+        if (!isFinite(value) || value <= 0 || start.length < 16) return;
+        const entry = { date: start.slice(0, 10), time: start.slice(11, 16) };
+        if (attr(tag, "unit").toLowerCase().indexOf("kg") >= 0) entry.weightKg = value;
+        else entry.weightLb = value;
+        weights.push(entry);
+      } else if (tag.slice(0, 9) === "<Workout ") {
+        lastWorkout = null;
+        const start = attr(tag, "startDate");
+        let minutes = parseFloat(attr(tag, "duration"));
+        const du = attr(tag, "durationUnit").toLowerCase();
+        if (du === "s" || du === "sec") minutes = minutes / 60;
+        else if (du === "hr" || du === "h") minutes = minutes * 60;
+        if (start.length < 10 || !isFinite(minutes)) return;
+        const w = { date: start.slice(0, 10), type: attr(tag, "workoutActivityType"), minutes: Math.round(minutes) };
+        const dist = parseFloat(attr(tag, "totalDistance"));
+        if (isFinite(dist) && dist > 0) w.miles = distToMiles(dist, attr(tag, "totalDistanceUnit"));
+        workouts.push(w);
+        lastWorkout = w;
+      } else if (tag.slice(0, 19) === "<WorkoutStatistics " && tag.indexOf("Distance") >= 0) {
+        if (!lastWorkout || lastWorkout.miles != null) return;
+        const sum = parseFloat(attr(tag, "sum"));
+        if (isFinite(sum) && sum > 0) lastWorkout.miles = distToMiles(sum, attr(tag, "unit"));
+      }
+    };
+    const feed = (chunk) => {
+      const text = carry + chunk;
+      const last = text.lastIndexOf(">");
+      if (last < 0) {
+        carry = text.length > 1000000 ? text.slice(-100000) : text;
+        return;
+      }
+      carry = text.slice(last + 1);
+      const scan = text.slice(0, last + 1);
+      const re = /<(?:Record|Workout|WorkoutStatistics)\s[^>]*>/g;
+      let m;
+      while ((m = re.exec(scan))) onTag(m[0]);
+    };
+    return { feed, result: () => ({ weights, workouts }) };
+  }
+
+  // Minimal zip reader for export.zip: find the central directory, locate
+  // export.xml, stream its bytes (DecompressionStream inflates the deflate
+  // case). Zip64 exports throw and the catch tells the athlete to unzip by
+  // hand and upload export.xml instead.
+  async function healthXmlStreamFromZip(file) {
+    const tail = new Uint8Array(await file.slice(Math.max(0, file.size - 65558), file.size).arrayBuffer());
+    let eocd = -1;
+    for (let i = tail.length - 22; i >= 0; i--) {
+      if (tail[i] === 0x50 && tail[i + 1] === 0x4b && tail[i + 2] === 0x05 && tail[i + 3] === 0x06) { eocd = i; break; }
+    }
+    if (eocd < 0) throw new Error("no zip directory");
+    const ev = new DataView(tail.buffer, tail.byteOffset + eocd);
+    const cdSize = ev.getUint32(12, true);
+    const cdOfs = ev.getUint32(16, true);
+    if (cdOfs === 0xffffffff) throw new Error("zip64");
+    const cd = new Uint8Array(await file.slice(cdOfs, cdOfs + cdSize).arrayBuffer());
+    const cv = new DataView(cd.buffer, cd.byteOffset);
+    let p = 0;
+    while (p + 46 <= cd.length) {
+      if (cv.getUint32(p, true) !== 0x02014b50) break;
+      const method = cv.getUint16(p + 10, true);
+      const compSize = cv.getUint32(p + 20, true);
+      const nameLen = cv.getUint16(p + 28, true);
+      const extraLen = cv.getUint16(p + 30, true);
+      const cmtLen = cv.getUint16(p + 32, true);
+      const localOfs = cv.getUint32(p + 42, true);
+      const name = new TextDecoder().decode(cd.subarray(p + 46, p + 46 + nameLen));
+      p += 46 + nameLen + extraLen + cmtLen;
+      if (!/(^|\/)export\.xml$/i.test(name)) continue;
+      if (compSize === 0xffffffff || localOfs === 0xffffffff) throw new Error("zip64");
+      const lh = new DataView(await file.slice(localOfs, localOfs + 30).arrayBuffer());
+      if (lh.getUint32(0, true) !== 0x04034b50) throw new Error("bad local header");
+      const dataStart = localOfs + 30 + lh.getUint16(26, true) + lh.getUint16(28, true);
+      const blob = file.slice(dataStart, dataStart + compSize);
+      if (method === 0) return blob.stream();
+      if (method === 8) return blob.stream().pipeThrough(new DecompressionStream("deflate-raw"));
+      throw new Error("compression method " + method);
+    }
+    throw new Error("export.xml not found in zip");
+  }
+
+  async function importAppleHealthFile(file) {
+    if (!file) return;
+    toast("Reading your Apple Health export…");
+    try {
+      const stream = /\.zip$/i.test(file.name || "") ? await healthXmlStreamFromZip(file) : file.stream();
+      const scanner = makeHealthXmlScanner();
+      const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
+      for (;;) {
+        const r = await reader.read();
+        if (r.done) break;
+        scanner.feed(r.value);
+      }
+      const found = scanner.result();
+      if (!found.weights.length && !found.workouts.length) {
+        toast("No weigh-ins or workouts in that file.");
+        return;
+      }
+      ensureProgressShape(state.clientData.progress || (state.clientData.progress = emptyProgress()));
+      const res = applyHealthPayloads(state.clientData.progress, [found]);
+      saveClient();
+      toast(res.weights || res.workouts
+        ? `Imported ${res.weights} weigh-in${res.weights === 1 ? "" : "s"} and ${res.workouts} workout${res.workouts === 1 ? "" : "s"} ✓`
+        : "Already up to date. Nothing new.");
+      refreshAfterHealthMerge();
+    } catch (e) {
+      console.warn("[Health] import", e);
+      toast("Couldn't read that file. If it's export.zip, unzip it and upload export.xml.");
+    }
+  }
+  function refreshAfterHealthMerge() {
+    try { renderAthleteCardio(); } catch (e) {}
+    try { renderDiet(); } catch (e) {}
+    try { renderAthleteOverview(); } catch (e) {}
+  }
+
+  // Drain the webhook mailbox: merge locally, save, and only then delete the
+  // consumed rows, so a batch that fails to merge is retried next boot
+  // rather than lost. Duplicate deliveries are absorbed by the merge dedupe.
+  async function drainHealthInbox() {
+    const id = athleteSelfId();
+    if (!id || state.previewMode || !window.Cloud?.enabled || !window.Cloud.pullHealthInbox) return;
+    try {
+      const rows = await window.Cloud.pullHealthInbox(id);
+      if (!rows.length) return;
+      ensureProgressShape(state.clientData.progress || (state.clientData.progress = emptyProgress()));
+      const res = applyHealthPayloads(state.clientData.progress, rows.map((r) => r.payload));
+      saveClient();
+      await window.Cloud.deleteHealthInbox(id, rows.map((r) => r.id));
+      const bits = [];
+      if (res.weights) bits.push(`${res.weights} weigh-in${res.weights === 1 ? "" : "s"}`);
+      if (res.workouts) bits.push(`${res.workouts} workout${res.workouts === 1 ? "" : "s"}`);
+      if (bits.length) {
+        toast(`Apple Health: ${bits.join(" and ")} added`);
+        refreshAfterHealthMerge();
+      }
+    } catch (e) { console.warn("[Health] drain", e); }
   }
   // Coach-side: same parser, into the athlete's mirrored progress, pushed back
   // up the same way form-check replies are.
@@ -38301,6 +38565,96 @@
   // Profile → one settings card: what reaches the athlete's phone, how much
   // app they want, and what leaves it. All three are set-once-and-forget, so
   // none of them earns permanent height on a screen visited to edit details.
+  // The Apple Health fold. The token is cached on clientData so the fold can
+  // render offline; refreshHealthTokenCache trues it up against the cloud
+  // when there is one. Kept out of `progress` deliberately: it is device
+  // plumbing, not training data, and must not ride the sync payload.
+  function healthFoldHtml() {
+    const t = state.clientData.healthToken;
+    const sub = t ? "Connected. Syncs when your Shortcut runs" : "Weigh-ins and cardio, straight from your iPhone";
+    const url = (window.STONE_DRAGON_CONFIG?.SUPABASE_URL || "") + "/functions/v1/health-sync";
+    const body = t ? `
+      <p class="pref-hint">Your Shortcut posts to this address with your key. Apple only lets Health data leave the phone while it is unlocked, so the daily automation fires at your next unlock.</p>
+      <div class="health-copy-row"><span class="health-copy-lbl">Address</span><code class="health-code" id="health-url">${escapeHtml(url)}</code><button type="button" class="btn btn-ghost btn-sm slim-btn" data-copy="#health-url" title="Copy the address">📋</button></div>
+      <div class="health-copy-row"><span class="health-copy-lbl">Key</span><code class="health-code" id="health-token">${escapeHtml(t)}</code><button type="button" class="btn btn-ghost btn-sm slim-btn" data-copy="#health-token" title="Copy your key">📋</button></div>
+      <p class="pref-foot">Ask your coach for the shortcut link. It asks for this key once when you add it.</p>
+      <div class="pref-actions">
+        <button class="btn btn-ghost btn-sm slim-btn" id="btn-health-disconnect" type="button">Disconnect</button>
+      </div>` : `
+      <p class="pref-foot">Connect to get a personal key, then add your coach's shortcut on your iPhone. It sends new weigh-ins and cardio here every day, and nothing else.</p>
+      <div class="pref-actions">
+        <button class="btn btn-primary btn-sm slim-btn" id="btn-health-connect" type="button">🍏 Connect Apple Health</button>
+      </div>`;
+    return `
+      <details class="pref-fold" id="pref-fold-health">
+        <summary>
+          <span class="pref-fold-ico">🍏</span>
+          <span class="pref-fold-text">
+            <span class="pref-fold-title">Apple Health</span>
+            <span class="pref-fold-sub">${escapeHtml(sub)}</span>
+          </span>
+          <span class="pref-fold-chev">▸</span>
+        </summary>
+        ${body}
+        <div class="pref-actions">
+          <label class="btn btn-ghost btn-sm slim-btn health-import-btn">⬆ Import history (export.zip)
+            <input type="file" id="health-import-file" accept=".xml,.zip,application/zip,text/xml" class="hidden" />
+          </label>
+        </div>
+        <p class="pref-foot">History import reads the Health app's export file. Weigh-ins and workouts only; everything else in the file is ignored.</p>
+      </details>`;
+  }
+  function wireHealthFold(fold) {
+    fold.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => {
+      const el = fold.querySelector(b.dataset.copy);
+      try { await navigator.clipboard.writeText(el.textContent); toast("Copied ✓"); }
+      catch (e) { toast("Couldn't copy. Long-press the text instead."); }
+    }));
+    const reopen = () => {
+      renderAthleteSettingsCards();
+      // Re-rendering snaps folds shut; the athlete was just in this one.
+      const f = $("#pref-fold-health");
+      if (f) f.open = true;
+    };
+    fold.querySelector("#btn-health-connect")?.addEventListener("click", async () => {
+      const id = athleteSelfId();
+      if (!id || !window.Cloud?.enabled || !window.Cloud.setAthleteHealthToken) { toast("Connecting needs the internet. Try again online."); return; }
+      const bytes = new Uint8Array(12);
+      crypto.getRandomValues(bytes);
+      const token = "ht_" + [...bytes].map((x) => x.toString(16).padStart(2, "0")).join("");
+      const ok = await window.Cloud.setAthleteHealthToken(id, token);
+      if (!ok) { toast("Couldn't connect. Try again in a minute."); return; }
+      state.clientData.healthToken = token;
+      saveClient();
+      reopen();
+      toast("Connected ✓");
+    });
+    fold.querySelector("#btn-health-disconnect")?.addEventListener("click", async () => {
+      if (!window.confirm("Disconnect Apple Health? The Shortcut's key stops working. Nothing already imported is touched.")) return;
+      const ok = await window.Cloud?.setAthleteHealthToken?.(athleteSelfId(), null);
+      if (!ok) { toast("Couldn't disconnect. Try again in a minute."); return; }
+      delete state.clientData.healthToken;
+      saveClient();
+      reopen();
+      toast("Disconnected");
+    });
+    fold.querySelector("#health-import-file")?.addEventListener("change", (e) => {
+      const f = e.target.files && e.target.files[0];
+      e.target.value = "";
+      if (f) importAppleHealthFile(f);
+    });
+  }
+  async function refreshHealthTokenCache() {
+    const id = athleteSelfId();
+    if (!id || state.previewMode || !window.Cloud?.enabled || !window.Cloud.getAthleteHealthToken) return;
+    const remote = await window.Cloud.getAthleteHealthToken(id);
+    if ((remote || null) === (state.clientData.healthToken || null)) return;
+    if (remote) state.clientData.healthToken = remote;
+    else delete state.clientData.healthToken;
+    saveClient();
+    renderAthleteSettingsCards();
+  }
+
   function renderAthleteSettingsCards() {
     const host = $("#athlete-settings-host");
     if (!host) return;
@@ -38327,6 +38681,7 @@
         ${trainingAgeFoldHtml(athleteCoverageClient()?.trainingLevel || "")}
         ${unitsFoldHtml(unitNow())}
         ${cycleFoldHtml()}
+        ${healthFoldHtml()}
         <details class="pref-fold">
           <summary>
             <span class="pref-fold-ico">🔒</span>
@@ -38380,6 +38735,8 @@
     // it doesn't live in athlete_prefs and must never be sent to that table).
     const cycleFold = host.querySelector("#pref-fold-cycle");
     if (cycleFold) wireCycleFold(cycleFold);
+    const healthFold = host.querySelector("#pref-fold-health");
+    if (healthFold) wireHealthFold(healthFold);
     $("#btn-export-my-data")?.addEventListener("click", exportMyData);
     $("#btn-signout-everywhere")?.addEventListener("click", signOutEverywhere);
     $("#btn-purge-form-checks")?.addEventListener("click", purgeMyFormChecks);

@@ -3889,6 +3889,18 @@ input.trial-input {
 }
 .move-dest .pull-src-meta { margin-left: auto; }
 .move-dest .pull-ex-name { flex: 0 1 auto; }
+
+/* Apple Health fold (athlete Profile). The import control is a <label>
+   wrapping a hidden file input; the base label rule uppercases and adds
+   margin, both undone here so it reads as the button it is. */
+.health-copy-row { display: flex; align-items: center; gap: 0.5em; margin: 0.4em 0; min-width: 0; }
+.health-copy-lbl { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-soft); flex: 0 0 4.2em; }
+.health-code {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 0.74rem; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 0.3em 0.5em;
+}
+.health-import-btn { text-transform: none; letter-spacing: normal; margin: 0; display: inline-flex; align-items: center; cursor: pointer; }
 .pull-ex input { flex-shrink: 0; width: 18px; height: 18px; accent-color: var(--primary); }
 .pull-ex-name {
   font-size: 0.88rem;

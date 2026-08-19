@@ -447,6 +447,13 @@ entrypoint = "./functions/google-calendar/index.ts"
 verify_jwt = false
 entrypoint = "./functions/square-webhook/index.ts"
 
+# Apple Health mailbox. verify_jwt OFF for the square-webhook reason: an iOS
+# Shortcut has no Supabase JWT to present. The athlete's health_token is the
+# authentication — see the notes at the top of the function.
+[functions.health-sync]
+verify_jwt = false
+entrypoint = "./functions/health-sync/index.ts"
+
 # Square billing, called from the coach's browser. verify_jwt OFF for the same
 # reason as google-calendar: the CORS preflight carries no credentials, so a
 # gateway JWT check answers it with 401 and the real request never gets sent.
