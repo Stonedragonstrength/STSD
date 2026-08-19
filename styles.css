@@ -1027,6 +1027,55 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
    six destinations is more than a band can hold and stay readable. */
 .cd-door { flex: 1 1 calc(50% - 0.35rem); }
 
+/* ---- Program Recap matrix (roster drawer) --------------------------------
+   One cell per program day, weeks across, day slots down. Semantic colors
+   are the theme-stable channels (--accent-rgb/--warn-rgb/--danger-rgb) with
+   the -ink text vars, so done/partial/missed mean the same thing on all ten
+   themes, White included. No animation on the cells — pulses strobe on
+   mobile. */
+.cd-matrix {
+  flex: 1 1 100%; min-width: 0;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface);
+  padding: 0.45rem 0.55rem 0.5rem;
+  overflow-x: auto;
+}
+.cd-matrix-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6em; margin-bottom: 0.4rem; }
+.cd-matrix-title {
+  font-size: 0.56rem; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cd-matrix-title b { color: var(--text); font-size: 0.68rem; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.cd-matrix-open {
+  border: 0; background: none; padding: 0; margin: 0;
+  font: inherit; font-size: 0.66rem; font-weight: 700; color: var(--primary-bright);
+  cursor: pointer; white-space: nowrap;
+}
+.cd-matrix-open:hover { text-decoration: underline; }
+/* Shrink-wrapped: in an fr-less grid the free space goes to the auto label
+   track, which pushed the cells to the drawer's far edge on a laptop. */
+.mx { display: grid; gap: 3px 4px; align-items: center; justify-items: center; width: max-content; max-width: 100%; }
+.mx-lbl { font-size: 0.52rem; font-weight: 700; color: var(--muted); justify-self: start; }
+.mx-lbl.mx-col { justify-self: center; }
+.mx-cell {
+  width: 100%; max-width: 26px; min-width: 14px; aspect-ratio: 1;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 5px; padding: 0; margin: 0;
+  font: inherit; font-size: 0.6rem; font-weight: 800; line-height: 1;
+  background: var(--surface-3); border: 1px solid var(--border);
+  color: transparent; cursor: pointer;
+}
+.mx-cell.is-void { visibility: hidden; }
+.mx-cell.done { background: rgba(var(--accent-rgb), 0.22); border-color: rgba(var(--accent-rgb), 0.65); color: var(--accent-ink); }
+.mx-cell.part { background: linear-gradient(180deg, rgba(var(--warn-rgb), 0.28) 50%, transparent 50%); border-color: rgba(var(--warn-rgb), 0.6); color: var(--warn-ink); }
+.mx-cell.miss { background: rgba(var(--danger-rgb), 0.1); border-color: rgba(var(--danger-rgb), 0.45); color: var(--danger); }
+.mx-cell.next { border-color: var(--primary-bright); box-shadow: 0 0 0 1px rgba(var(--primary-bright-rgb), 0.35) inset; color: var(--primary-bright); }
+.mx-legend { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; margin-top: 0.45rem; font-size: 0.58rem; color: var(--text-soft); }
+.mx-legend b { font-weight: 800; }
+.mx-legend .lg-done b { color: var(--accent-ink); }
+.mx-legend .lg-part b { color: var(--warn-ink); }
+.mx-legend .lg-miss b { color: var(--danger); }
+.mx-legend .lg-next b { color: var(--primary-bright); }
+
 /* Training age on the Training setup card: ONE pill showing where they are,
    which opens a picker. The other hub rows lay their options out inline, but
    three named levels each carrying a years blurb do not fit that shape the way
@@ -3564,6 +3613,53 @@ input.trial-input {
 /* An exercise with nothing logged against the day — shows the target it was
    measured against rather than a bare "Not logged". */
 .breakdown-untouched { font-size: 0.8rem; color: var(--muted); font-style: italic; }
+
+/* ---- Program Recap day popup + sheet ------------------------------------
+   After the breakdown base above on purpose: the draft pill leans on it.
+   "Typed but never ✓-locked" reads in the rep sheet's own draft color
+   (--edited-val) with a dashed edge — visibly work, visibly not done. */
+.breakdown-set-pill.is-draft {
+  background: transparent; border: 1px dashed rgba(var(--edited-val-rgb), 0.55);
+  color: var(--edited-val); opacity: 0.9;
+}
+.rc-exflag { font-size: 0.66rem; font-weight: 700; color: var(--edited-val); white-space: nowrap; }
+.rc-kicker {
+  font-size: 0.62rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted);
+}
+.rc-status { font-size: 0.82rem; font-weight: 700; margin: 0.2rem 0 0.5rem; }
+.rc-st-done { color: var(--accent-ink); }
+.rc-st-part { color: var(--warn-ink); }
+.rc-st-miss { color: var(--danger); }
+.rc-st-next { color: var(--primary-bright); }
+.rc-st-up { color: var(--muted); }
+.rc-empty { margin: 0.4rem 0 0; }
+.rc-headline { font-size: 0.88rem; color: var(--text-soft); margin: 0.15rem 0 0.6rem; }
+.rc-headline b { color: var(--text); font-weight: 800; font-variant-numeric: tabular-nums; }
+.rc-wk { border-top: 1px solid var(--border); padding: 0.45rem 0; }
+.rc-wk-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6em; }
+.rc-wk-name { font-size: 0.8rem; font-weight: 800; }
+.rc-wk-count { font-size: 0.72rem; font-weight: 800; color: var(--accent-ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rc-wk-count.is-low { color: var(--warn-ink); }
+.rc-wk-count.is-none { color: var(--muted); font-weight: 700; }
+.rc-wk.is-upcoming .rc-wk-name { opacity: 0.55; }
+.rc-wk-days { margin-top: 0.25rem; display: flex; flex-direction: column; gap: 0.18rem; }
+.rc-day-line {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 0.6em;
+  width: 100%; border: 0; background: none; padding: 0.14rem 0; margin: 0;
+  font: inherit; font-size: 0.8rem; text-align: left; cursor: pointer; color: var(--text);
+}
+.rc-day-line.is-flat { cursor: default; }
+.rc-day-line .rc-day-name { font-weight: 700; }
+.rc-day-line .rc-st-done, .rc-day-line .rc-st-part { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rc-day-line .rc-st-miss, .rc-day-line .rc-st-next { font-weight: 700; white-space: nowrap; }
+.rc-day-open {
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2);
+  padding: 0.15rem 0.6rem 0.4rem; margin: 0.15rem 0 0.3rem;
+}
+.rc-day-open .breakdown-ex { padding: 0.45rem 0; }
+.rc-tail { border-top: 1px solid var(--border); padding-top: 0.5rem; margin-top: 0.1rem; font-size: 0.76rem; color: var(--text-soft); }
+.rc-foot { margin-top: 0.55rem; font-size: 0.7rem; color: var(--muted); font-style: italic; }
 
 /* ---- "What happened on this day" sheet (both calendars) ---- */
 .cday-sec { margin-bottom: 0.9rem; }

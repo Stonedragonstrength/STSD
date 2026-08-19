@@ -317,6 +317,7 @@
     STAT_FULL, statAxisFrac,
     makeExercise, makeWorkoutTemplate,
     FINISHER_PCTS, GEN_ARCHETYPES, _maybeFinisher, generateWorkoutDay,
+    recapModel, recapExerciseDisplay, recapExtraSessions,
   } = globalThis.STSD.training;
   // Phase 3 (Money) pulls, same contract and same load-bearing position.
   const {
@@ -371,6 +372,10 @@
     // out the live array at call time, never the object to keep.
     dateISO,
     billingPayments: () => _billing.payments || [],
+    // The recap module (src/training/recap.js) decides "locked" through the
+    // app's own checker, so its counts can never drift from what the rep
+    // sheet actually locks. Function declaration, hoists, safe this early.
+    isLogEntryLocked,
   };
 
   // Re-pull on returning to the app. Push-then-pull, always: a device's own
@@ -5248,6 +5253,14 @@
     tiles.innerHTML = lastTile + eatTile + cardioTile;
     wrap.appendChild(tiles);
 
+    // The recap matrix: the whole block at a glance, one cell per program
+    // day, between the glance tiles and the doors. An athlete with no
+    // program simply doesn't get one. Derivation lives in
+    // src/training/recap.js; tapping a cell opens that day's work, and
+    // "Full recap" opens the sheet.
+    const matrix = buildRecapMatrix(c);
+    if (matrix) wrap.appendChild(matrix);
+
     const doors = document.createElement("div");
     doors.className = "cd-doors";
     // Six doors, ordered in PAIRS and laid out two-up at every width, so the
@@ -5299,6 +5312,237 @@
     // how someone is programmed already are. The drawer is destinations; the
     // setup card is settings.
     return wrap;
+  }
+
+  // -------- Program Recap (2026-08-18) ------------------------------------
+  // The drawer's week-by-day matrix, the day popup behind its cells, and the
+  // full recap sheet. All three are coach-side and READ-ONLY: every number is
+  // the athlete's last-synced copy (importedProgress), the same source the
+  // roster % uses, and changing anything still goes through Fill out. The
+  // popup and the sheet are modals over the roster, exactly the Money-sheet
+  // contract: no nav push, closing leaves the drawer open underneath.
+  const RECAP_SYM = { done: "✓", partial: "◐", skipped: "✕", missed: "✕", next: "→", upcoming: "" };
+  const RECAP_CLS = { done: "done", partial: "part", skipped: "miss", missed: "miss", next: "next", upcoming: "" };
+
+  function clientRecapModel(c) {
+    const weeks = (c.weeks || []).filter((w) => (w.days || []).length);
+    if (!weeks.length) return null;
+    return recapModel(weeks, c.importedProgress || null, athleteCurrentDay(c)?.dayId || null);
+  }
+
+  // Day names carry their icon/subtitle after an em dash; the recap wants
+  // the short half, same trim currentProgressLabel does.
+  function recapDayName(name) { return (name || "").split(" — ")[0] || name || "Day"; }
+
+  function recapDate(iso) {
+    if (!iso) return "";
+    return new Date(iso + "T12:00:00").toLocaleDateString(undefined, {
+      weekday: "short", month: "short", day: "numeric",
+    });
+  }
+
+  function buildRecapMatrix(c) {
+    const model = clientRecapModel(c);
+    if (!model) return null;
+    const box = document.createElement("div");
+    box.className = "cd-matrix";
+    let h = `<div class="cd-matrix-head">` +
+      `<span class="cd-matrix-title">Program · <b>${model.doneDays}/${model.totalDays}</b> days</span>` +
+      `<button type="button" class="cd-matrix-open">Full recap ↗</button></div>`;
+    // Tracks are content-sized and capped: 1fr tracks on a laptop-width
+    // drawer spread six cells across 800px and the matrix stopped reading
+    // as one. minmax keeps the grid snug at every width; a monster program
+    // scrolls sideways inside the box instead of squeezing below 14px.
+    h += `<div class="mx" style="grid-template-columns:auto repeat(${model.weeks.length}, minmax(14px, 26px))">`;
+    h += `<span class="mx-lbl"></span>` + model.weeks.map((w, i) =>
+      `<span class="mx-lbl mx-col" title="${escapeHtml(w.label)}">W${i + 1}</span>`).join("");
+    for (let s = 0; s < model.maxSlots; s++) {
+      h += `<span class="mx-lbl">D${s + 1}</span>`;
+      model.weeks.forEach((w) => {
+        const d = w.days[s];
+        if (!d) { h += `<span class="mx-cell is-void"></span>`; return; }
+        h += `<button type="button" class="mx-cell ${RECAP_CLS[d.state]}"` +
+          ` data-wid="${w.id}" data-did="${d.id}"` +
+          ` title="${escapeHtml(`${w.label} · ${recapDayName(d.name)}`)}">${RECAP_SYM[d.state]}</button>`;
+      });
+    }
+    h += `</div>`;
+    h += `<div class="mx-legend">` +
+      `<span class="lg-done"><b>✓</b> done</span>` +
+      `<span class="lg-part"><b>◐</b> partial</span>` +
+      `<span class="lg-miss"><b>✕</b> missed</span>` +
+      `<span class="lg-next"><b>→</b> next up</span></div>`;
+    box.innerHTML = h;
+    // stopPropagation everywhere, same as the doors: a tap here must never
+    // read as the row tap that would fold the drawer shut.
+    box.querySelector(".cd-matrix-open").addEventListener("click", (e) => {
+      e.stopPropagation();
+      openRecapSheet(c);
+    });
+    box.querySelectorAll(".mx-cell[data-did]").forEach((btn) =>
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const w = model.weeks.find((x) => x.id === btn.dataset.wid);
+        const d = w?.days.find((x) => x.id === btn.dataset.did);
+        if (d) openRecapDayModal(c, w, d);
+      }));
+    return box;
+  }
+
+  function recapDayStatusHtml(d) {
+    if (d.state === "done") {
+      const extra = d.locked < d.total ? ` · ${d.locked}/${d.total} locked` : "";
+      return `<span class="rc-st-done">✓ Completed ${recapDate(d.date)}${extra}</span>`;
+    }
+    if (d.state === "partial") {
+      const rest = d.total - d.locked - d.typed - d.skipped;
+      return `<span class="rc-st-part">◐ ${d.locked}/${d.total} locked` +
+        `${d.typed ? ` · ${d.typed} typed` : ""}` +
+        `${d.skipped ? ` · ${d.skipped} skipped` : ""}` +
+        `${rest > 0 ? ` · ${rest} not logged` : ""}</span>`;
+    }
+    if (d.state === "skipped") return `<span class="rc-st-miss">✕ Skipped${d.date ? ` · ${recapDate(d.date)}` : ""}</span>`;
+    if (d.state === "missed") return `<span class="rc-st-miss">✕ Nothing logged</span>`;
+    if (d.state === "next") return `<span class="rc-st-next">→ Next up</span>`;
+    return `<span class="rc-st-up">Coming up</span>`;
+  }
+
+  // What actually happened on one day, exercise by exercise. The newest entry
+  // that carries data is shown flagged with ITS state, so numbers typed but
+  // never ✓-locked read as "✎ typed, not locked" instead of silently looking
+  // done — the "4/6 but it looks full" report, answered on screen.
+  function recapDayBreakdownHtml(c, dayId) {
+    const ip = c.importedProgress || {};
+    const day = [...(c.weeks || []).flatMap((w) => w.days || []),
+                 ...(c.oneOffDays || [])].find((x) => x.id === dayId);
+    const exs = day?.exercises || [];
+    if (!exs.length) return `<p class="muted rc-empty">No exercises on this day.</p>`;
+    let h = "";
+    exs.forEach((ex) => {
+      const disp = recapExerciseDisplay(ex, ip);
+      let sets;
+      if (disp.kind === "none") sets = `<span class="dvs-notlogged">Not logged</span>`;
+      else if (disp.kind === "skipped") sets = `<span class="dvs-notlogged">Skipped ✕</span>`;
+      else {
+        const draft = disp.kind === "typed" ? " is-draft" : "";
+        if (disp.rounds) {
+          sets = `<span class="breakdown-set-pill${draft}">${disp.rounds.done}/${disp.rounds.total} rounds</span>`;
+        } else if (disp.sets && disp.sets.length) {
+          sets = disp.sets.map((s, n) =>
+            `<span class="breakdown-set-pill${draft}">S${n + 1} ${s.weight ? escapeHtml(wLabel(s.weight, unitOf(c))) : "—"} × ${s.reps || "—"}</span>`).join("");
+        } else {
+          sets = `<span class="dvs-notlogged">Not logged</span>`;
+        }
+      }
+      const flag = disp.kind === "typed" ? ` <span class="rc-exflag">✎ typed, not locked</span>` : "";
+      h += `<div class="breakdown-ex"><div class="breakdown-ex-name">${breakdownExNameHtml(ex, ip)}${flag}</div>` +
+        `<div class="breakdown-sets">${sets}</div></div>`;
+    });
+    const note = ip.dayNotes?.[dayId];
+    if (note) h += `<div class="breakdown-note"><span class="breakdown-note-label">Session note</span><p>${escapeHtml(note)}</p></div>`;
+    return h;
+  }
+
+  function openRecapDayModal(c, w, d) {
+    openModal({
+      title: `${w.label} · ${recapDayName(d.name)}`,
+      body: `<div class="rc-day">` +
+        `<div class="rc-kicker">${escapeHtml(c.name || "Athlete")}</div>` +
+        `<div class="rc-status">${recapDayStatusHtml(d)}</div>` +
+        recapDayBreakdownHtml(c, d.id) +
+        `</div>`,
+      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
+    });
+  }
+
+  // "Week 4" .. "Week 6" collapse to "Weeks 4 to 6" when the labels are the
+  // stock ones; custom labels fall back to naming both ends.
+  function recapRangeLabel(ws) {
+    if (ws.length === 1) return ws[0].label || "Upcoming";
+    const nums = ws.map((w) => /^Week (\d+)$/.exec(w.label || "")?.[1]);
+    if (nums.every(Boolean)) return `Weeks ${nums[0]} to ${nums[nums.length - 1]}`;
+    return `${ws[0].label || "?"} to ${ws[ws.length - 1].label || "?"}`;
+  }
+
+  function openRecapSheet(c) {
+    const model = clientRecapModel(c);
+    if (!model) return;
+    const ip = c.importedProgress || null;
+    const extra = recapExtraSessions(
+      [...(c.oneOffDays || []), ...((ip?.athleteDays) || [])], ip);
+
+    // Trailing untouched weeks collapse to one line; a week stays expanded
+    // the moment anything in it happened (or is next).
+    let cut = model.weeks.length;
+    while (cut > 0 && model.weeks[cut - 1].days.every((d) => d.state === "upcoming")) cut--;
+
+    let h = `<div class="rc-sheet">` +
+      `<div class="rc-kicker">${escapeHtml(c.name || "Athlete")}</div>` +
+      `<p class="rc-headline"><b>${model.doneDays} of ${model.totalDays} days</b>` +
+      `${model.lastTrained ? ` · last trained ${recapDate(model.lastTrained)}` : " · not started yet"}</p>`;
+
+    model.weeks.slice(0, cut).forEach((w) => {
+      const countCls = w.done === w.total && w.total ? "" : w.done ? " is-low" : " is-none";
+      h += `<div class="rc-wk"><div class="rc-wk-head">` +
+        `<span class="rc-wk-name">${escapeHtml(w.label)}${w.phaseLabel ? ` · ${escapeHtml(w.phaseLabel)}` : ""}</span>` +
+        `<span class="rc-wk-count${countCls}">${w.done}/${w.total}${w.done === w.total && w.total ? " ✓" : ""}</span></div>` +
+        `<div class="rc-wk-days">`;
+      w.days.forEach((d) => {
+        const stTxt =
+          d.state === "done" ? `<span class="rc-st-done">✓ ${recapDate(d.date)}</span>` :
+          d.state === "partial" ? `<span class="rc-st-part">◐ ${d.locked}/${d.total}${d.date ? ` · ${recapDate(d.date)}` : ""}</span>` :
+          d.state === "skipped" ? `<span class="rc-st-miss">✕ skipped</span>` :
+          d.state === "missed" ? `<span class="rc-st-miss">✕ missed</span>` :
+          d.state === "next" ? `<span class="rc-st-next">→ next up</span>` :
+          `<span class="rc-st-up">—</span>`;
+        const canOpen = d.state === "done" || d.state === "partial" || d.state === "skipped";
+        if (canOpen) {
+          // Partial days arrive pre-opened: the odd day is the one the sheet
+          // was opened to explain.
+          const open = d.state === "partial";
+          h += `<button type="button" class="rc-day-line" data-did="${d.id}">` +
+            `<span class="rc-day-name">${escapeHtml(recapDayName(d.name))}</span>${stTxt}</button>` +
+            `<div class="rc-day-open${open ? "" : " hidden"}" data-open="${d.id}">` +
+            `${open ? recapDayBreakdownHtml(c, d.id) : ""}</div>`;
+        } else {
+          h += `<div class="rc-day-line is-flat">` +
+            `<span class="rc-day-name">${escapeHtml(recapDayName(d.name))}</span>${stTxt}</div>`;
+        }
+      });
+      h += `</div></div>`;
+    });
+
+    if (cut < model.weeks.length) {
+      const tailWeeks = model.weeks.slice(cut);
+      const tailDays = tailWeeks.reduce((n, w) => n + w.total, 0);
+      h += `<div class="rc-wk is-upcoming"><div class="rc-wk-head">` +
+        `<span class="rc-wk-name">${escapeHtml(recapRangeLabel(tailWeeks))}</span>` +
+        `<span class="rc-wk-count is-none">upcoming · ${tailDays} day${tailDays === 1 ? "" : "s"}</span></div></div>`;
+    }
+
+    if (extra) h += `<div class="rc-tail">+ ${extra} session${extra === 1 ? "" : "s"} outside the program</div>`;
+    h += `<div class="rc-foot">Read-only. Changing anything still goes through Fill out.</div></div>`;
+
+    openModal({
+      title: "Program recap",
+      body: h,
+      actions: [{ label: "Close", className: "btn btn-ghost", onClick: closeModal }],
+    });
+
+    const root = $("#modal-body");
+    root.querySelectorAll(".rc-day-line[data-did]").forEach((btn) =>
+      btn.addEventListener("click", () => {
+        const box = root.querySelector(`[data-open="${btn.dataset.did}"]`);
+        if (!box) return;
+        if (box.classList.contains("hidden")) {
+          // Filled on first open, kept after: toggling back and forth must
+          // not rebuild what the coach already scrolled through.
+          if (!box.innerHTML) box.innerHTML = recapDayBreakdownHtml(c, btn.dataset.did);
+          show(box);
+        } else {
+          hide(box);
+        }
+      }));
   }
 
   // Names stay on one line: shrink the font until the full name fits its row
