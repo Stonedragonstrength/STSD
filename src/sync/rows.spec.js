@@ -83,6 +83,7 @@ const progress = () => ({
   pendingDeloads: { exsquat: true },
   statField: { "2026-08-10": { STR: 2 } },
   overviewTiles: ["ring", "hoard", "toppr"],
+  exTweaks: { exbench: { sets: 1, warm: 1 } },
 });
 
 /** Column names one of the module's functions writes (6-space object keys). */

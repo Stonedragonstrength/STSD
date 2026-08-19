@@ -129,6 +129,10 @@
       // to the live project before this line shipped — same contract as
       // stat_field above.
       overview_tiles: p.overviewTiles || [],
+      // Per-exercise quick-tool deltas (set / warm-up row counts). Column
+      // added 20260819120000, applied to the live project before this line
+      // shipped — same contract as stat_field above.
+      ex_tweaks: p.exTweaks || {},
       synced_at: new Date().toISOString(),
     };
   }
@@ -163,6 +167,7 @@
       pendingDeloads: r.pending_deloads || {},
       statField: r.stat_field || {},
       overviewTiles: r.overview_tiles || [],
+      exTweaks: r.ex_tweaks || {},
       syncedAt: r.synced_at,
       _rev: Number(r.rev) || 0,
     };

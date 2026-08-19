@@ -28094,6 +28094,36 @@
     });
   }
 
+  // -------- Quick-tool tweaks (athlete set / warm-up row deltas) --------
+  // Small per-exercise adjustments made from the logger's Tools menu, stored
+  // on progress.exTweaks keyed by exercise id. They live on progress, not the
+  // program, because a coach push rebuilds the program wholesale and would
+  // wipe anything written there. Deltas rather than absolutes, so the set-leg
+  // progression can keep moving the base count underneath them.
+  function exTweakOf(progress, exId) {
+    const t = progress && progress.exTweaks ? progress.exTweaks[exId] : null;
+    const n = (v) => (Number.isFinite(v) ? v : 0);
+    return { sets: n(t && t.sets), warm: n(t && t.warm) };
+  }
+  function setExTweak(progress, exId, tweak) {
+    if (!progress) return;
+    progress.exTweaks = progress.exTweaks || {};
+    const sets = Number.isFinite(tweak && tweak.sets) ? tweak.sets : 0;
+    const warm = Number.isFinite(tweak && tweak.warm) ? tweak.warm : 0;
+    if (!sets && !warm) delete progress.exTweaks[exId];
+    else progress.exTweaks[exId] = { sets, warm };
+  }
+  // Copy this exercise's tweak onto the same lift on the same-named day in
+  // every LATER week — laterWeekMatches, so day name plus lift identity and
+  // never position. A zeroed source tweak CLEARS later entries: undoing here
+  // undoes everywhere the button reached.
+  function applyTweakToLaterWeeks(client, progress, weekId, day, ex) {
+    const matches = laterWeekMatches(client, weekId, day, liftKey(ex));
+    const t = exTweakOf(progress, ex.id);
+    matches.forEach((m) => setExTweak(progress, m.ex.id, t));
+    return matches.length;
+  }
+
   // The portal draws from a structuredClone of the athlete's program, so the
   // week/day/exercise a card is holding are copies — editing one saves nothing.
   // Resolve back to the real objects on state.trainerData by id first, which is
@@ -30428,7 +30458,11 @@
     // Effective set count: the set leg (📈 "add sets before the weight moves")
     // stacks earned sets on top of what the coach wrote. Everything downstream
     // that cares how many rows this card has reads THIS, not ex.sets.
-    const effSets = (prog && prog.sets) || parseInt(ex.sets, 10) || 0;
+    // Quick-tool row deltas stack on top: an athlete-added fourth set rides
+    // whatever base the coach and the progression agreed on this week.
+    const tweak = exTweakOf(state.clientData.progress, ex.id);
+    const baseEffSets = (prog && prog.sets) || parseInt(ex.sets, 10) || 0;
+    const effSets = (baseEffSets || tweak.sets) ? Math.max(1, Math.min(10, baseEffSets + tweak.sets)) : 0;
     // True when this exercise logs reps only (no weight): a plain BW lift, or a
     // BW-graduating lift still in its bodyweight phase. Once it graduates
     // (prog.bw === false) the athlete logs real weight, so steppers/seeds return.
@@ -30884,7 +30918,13 @@
     // and labeled W1/W2. When present they're part of completing the card —
     // required to lock, same as working sets.
     const warmupInputs = []; // { wt, rp }
-    const warmups = (ex.warmups || []).slice(0, 3);
+    // Prescribed warm-ups plus the athlete's delta. An added row has no
+    // prescription behind it — empty object, generic placeholders — and has
+    // to be filled (or removed again) before the card will lock.
+    const warmupsBase = (ex.warmups || []).slice(0, 3);
+    const warmupCount = Math.max(0, Math.min(3, warmupsBase.length + tweak.warm));
+    const warmups = warmupsBase.slice(0, warmupCount);
+    while (warmups.length < warmupCount) warmups.push({});
     warmups.forEach((w, i) => {
       const col = document.createElement("div");
       col.className = "cex-set-col cex-warm-col" + (i === warmups.length - 1 ? " cex-warm-last" : "");
@@ -31253,7 +31293,7 @@
     toolsBtn.className = "cex-tools-btn";
     // Lucide "wrench" (same inlined line-icon set as the nav / day-icon picker).
     toolsBtn.innerHTML = '<svg class="cex-tools-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg><span>Tools</span>';
-    toolsBtn.title = "Skip sets, skip the exercise, or clear your numbers";
+    toolsBtn.title = "Skip or add sets and warm-ups, skip the exercise, or clear your numbers";
     toolsBtn.setAttribute("aria-haspopup", "true");
     toolsBtn.setAttribute("aria-expanded", "false");
     toolsWrap.appendChild(toolsBtn);
@@ -31303,6 +31343,81 @@
     skipUnit.textContent = "sets";
     skipRow.append(skipLbl, mkSkipStep("−", -1), skipCount, mkSkipStep("+", 1), skipUnit);
 
+    // ── Row-count tweaks ──
+    // Add or drop set / warm-up rows on this week's copy of the lift. The
+    // steppers adjust a PENDING count so several taps read as one change;
+    // the commit happens when the menu closes, because changing the row count
+    // means rebuilding the card, which would tear the open menu down mid-tap.
+    let pendingSets = numSets;
+    let pendingWarm = warmups.length;
+    const mkTweakRow = (label, get, set, lo, hi) => {
+      const row = document.createElement("div");
+      row.className = "cex-tools-skiprow";
+      const lbl = document.createElement("span");
+      lbl.className = "cex-tools-skiplbl";
+      lbl.textContent = label;
+      const count = document.createElement("span");
+      count.className = "cex-tools-count";
+      const paint = () => { count.textContent = String(get()); };
+      const step = (glyph, delta) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "cex-tools-step";
+        b.textContent = glyph;
+        b.addEventListener("click", (e) => {
+          e.stopPropagation();
+          set(Math.max(lo, Math.min(hi, get() + delta)));
+          paint();
+        });
+        return b;
+      };
+      paint();
+      row.append(lbl, step("−", -1), count, step("+", 1));
+      return row;
+    };
+    const setsTweakRow = mkTweakRow("Sets", () => pendingSets, (v) => { pendingSets = v; }, 1, 10);
+    const warmTweakRow = mkTweakRow("Warm-ups", () => pendingWarm, (v) => { pendingWarm = v; }, 0, 3);
+    // True when a row about to be dropped holds numbers — that deserves a
+    // question, not a silent delete.
+    const droppedRowHasData = () =>
+      setInputs.slice(pendingSets).some((it) => !it.skipped && (it.wt.value || it.rp.value)) ||
+      warmupInputs.slice(pendingWarm).some((it) => it.wt.value || it.rp.value);
+    const commitTweaks = () => {
+      if (pendingSets === numSets && pendingWarm === warmups.length) return;
+      if (droppedRowHasData() &&
+          !window.confirm("Drop the removed rows? The numbers typed in them go too.")) {
+        pendingSets = numSets; pendingWarm = warmups.length;
+        return;
+      }
+      setExTweak(state.clientData.progress, ex.id, {
+        sets: pendingSets - (numSets - tweak.sets),
+        warm: pendingWarm - warmupsBase.length,
+      });
+      saveClient();
+      renderWorkoutDetailUI();
+    };
+
+    // One tap sends this lift's current shape to the same lift on the
+    // same-named day in every later week. One-offs and the athlete's own
+    // sessions sit outside the program, so there is nothing to carry into.
+    const applyWeeksItem = document.createElement("button");
+    applyWeeksItem.type = "button";
+    applyWeeksItem.className = "cex-tools-item";
+    applyWeeksItem.textContent = "📅 Apply shape to later weeks";
+    applyWeeksItem.title = "Carry these set and warm-up counts into later weeks of the program";
+    applyWeeksItem.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeToolsMenu(); // commits any pending row change first
+      const client = state.clientData.program?.client;
+      const n = applyTweakToLaterWeeks(client, state.clientData.progress, week?.id, day, ex);
+      if (n) saveClient();
+      toast(n
+        ? `Applied to ${n} later week${n === 1 ? "" : "s"}`
+        : "No later week has this lift on this day");
+    });
+    const inProgramWeek = !!(week && week.id !== "oneoff" &&
+      (state.clientData.program?.client?.weeks || []).some((w) => w.id === week.id));
+
     const toolsDiv = document.createElement("div");
     toolsDiv.className = "cex-tools-div";
     const skipExItem = document.createElement("button");
@@ -31343,7 +31458,9 @@
       openPlatePicker(toolsBtn);
     });
 
-    toolsMenu.append(skipRow, toolsDiv, swapItem, platesItem, skipExItem, clearItem);
+    toolsMenu.append(skipRow, setsTweakRow, warmTweakRow, toolsDiv, swapItem, platesItem);
+    if (inProgramWeek) toolsMenu.append(applyWeeksItem);
+    toolsMenu.append(skipExItem, clearItem);
 
     const refreshToolsState = () => {
       clearItem.disabled = !draftHasData();
@@ -31361,6 +31478,7 @@
       document.removeEventListener("click", onToolsAway, true);
       window.removeEventListener("scroll", onToolsAway, true);
       window.removeEventListener("resize", onToolsAway, true);
+      commitTweaks(); // last: may confirm and rebuild the card
     };
     const openToolsMenu = () => {
       bulkN = trailingSkipCount();
