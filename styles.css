@@ -2120,9 +2120,12 @@ input.cex-finisher-input { width: 72px; flex: 0 0 72px; text-align: center; }
   border-color: rgba(56,189,248,0.4);
   background: rgba(56,189,248,0.06);
 }
-/* Gap divider after the last warm-up — margin (not padding) so it doesn't
-   shrink the column under box-sizing: border-box. */
-.cex-warm-last { margin-right: 0.6rem; }
+/* Gap divider after the last warm-up. The old margin-RIGHT was a leftover
+   from the column-per-set era: on today's row layout it stole 0.6rem from
+   that one row's flexed fields, so its ×, boxes and ✓ sat 10px left of
+   every other row's. The divider now runs on the vertical axis, where the
+   rows actually stack. */
+.cex-warm-last { margin-bottom: 0.35rem; }
 
 /* ===== Theme picker (coach Appearance / athlete Profile) ===== */
 .theme-picker {
@@ -7416,7 +7419,7 @@ input:focus, textarea:focus, select:focus {
 }
 .mw-amt.none { color: var(--muted); font-weight: 600; }
 
-.money-roster { display: flex; flex-direction: column; gap: 0; padding: 0.9rem 1rem; }
+.money-roster { display: flex; flex-direction: column; gap: 0.45rem; padding: 0.9rem 1rem; }
 .mr-head {
   display: flex; align-items: baseline; gap: 0.6rem;
   padding-bottom: 0.6rem; margin-bottom: 0.2rem;
@@ -7427,12 +7430,17 @@ input:focus, textarea:focus, select:focus {
   margin-left: auto; font-size: 0.7rem; font-weight: 700;
   letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-soft);
 }
+/* Each athlete is a box, not a run of lines. The old separator was a 1px
+   hairline at 8% alpha between three-line-tall rows, and Nathan could not
+   tell where one athlete's money ended and the next began. Same boxed-row
+   grammar as the pull sheet and the roster cells. */
 .mr-row {
-  padding: 0.55rem 0;
-  border-bottom: 1px solid rgba(var(--primary-rgb), 0.08);
+  padding: 0.55rem 0.7rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
   cursor: pointer;
 }
-.mr-row:last-child { border-bottom: 0; }
 .mr-row:hover:not(.is-open) .mr-name { color: var(--primary-bright); }
 .mr-top { display: flex; align-items: center; gap: 0.55rem; }
 /* An athlete's whole session panel, opened under their row. Inset and boxed so
@@ -7446,7 +7454,7 @@ input:focus, textarea:focus, select:focus {
   background: var(--surface-2);
   cursor: default;
 }
-.mr-row.is-open { border-bottom-color: transparent; }
+.mr-row.is-open { border-color: rgba(var(--primary-rgb), 0.45); }
 .mr-row.is-open .mr-name { color: var(--primary-bright); }
 /* Inside the drawer the panel is already in a box, so its own cards drop their
    outer chrome. Only the "Sessions" heading goes — the athlete's name is on the
