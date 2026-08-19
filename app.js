@@ -10174,6 +10174,165 @@
     return out;
   }
 
+  // What the lift is prescribed as, in one glance, so a picker row doesn't
+  // need the day it came from open in another tab. Shared by ⇄ Pull and ⇢ Move.
+  function exPrescriptionMeta(ex, u) {
+    const sets = String(ex.sets || "").trim();
+    if (ex.kind === "mobility") {
+      const rounds = sets || "1";
+      return ex.currentReps ? `${rounds} × ${ex.currentReps}s hold` : `${rounds} round${rounds === "1" ? "" : "s"}`;
+    }
+    const bits = [];
+    if (sets) bits.push(`${sets} set${sets === "1" ? "" : "s"}`);
+    const w = exWeightLabel(ex, ex.currentWeight, u);
+    if (w) bits.push(w);
+    if (ex.currentReps) bits.push(`× ${ex.currentReps}${ex.timed ? "s" : ""}`);
+    return bits.join(" · ");
+  }
+
+  // ⇢ Move: relocate exercises between days. The inverse of ⇄ Pull — and
+  // deliberately NOT a copy: the exercise object crosses with its id, so an
+  // athlete's logs, keyed on ex.id, stay attached to the lift they belong to.
+  // Superset links follow Pull's rule: minted fresh when a run moves together,
+  // dropped when a member moves alone — a carried id would collide with a run
+  // already in the destination.
+  function moveExercisesToDay(fromDay, toDay, ids) {
+    const want = new Set(ids || []);
+    const moving = (fromDay.exercises || []).filter((ex) => want.has(ex.id));
+    if (!moving.length) return 0;
+    const runN = {};
+    moving.forEach((ex) => { if (ex.supersetId) runN[ex.supersetId] = (runN[ex.supersetId] || 0) + 1; });
+    const remap = {};
+    fromDay.exercises = fromDay.exercises.filter((ex) => !want.has(ex.id));
+    toDay.exercises = toDay.exercises || [];
+    moving.forEach((ex) => {
+      if (ex.supersetId && runN[ex.supersetId] > 1) {
+        remap[ex.supersetId] = remap[ex.supersetId] || uid();
+        ex.supersetId = remap[ex.supersetId];
+      } else {
+        delete ex.supersetId;
+      }
+      toDay.exercises.push(ex);
+    });
+    return moving.length;
+  }
+
+  // Where a day's exercises may move TO: the day's own collection, self
+  // excluded, empty days included — moving to a fresh day is the whole point.
+  // A Day Library entry only offers other library entries: a move never writes
+  // into an athlete's live program from the template shelf, or the reverse.
+  function moveTargetDays(day) {
+    const out = [];
+    const lib = state.trainerData.workoutTemplates || [];
+    if (lib.some((t) => t.id === day.id)) {
+      lib.forEach((t) => {
+        if (t.id === day.id) return;
+        out.push({ day: t, name: t.name || "Day", icon: t.icon || "📚", meta: "Day Library" });
+      });
+      return out;
+    }
+    const owner = _programEditorId ? currentProgramTemplate() : currentClient();
+    (owner?.weeks || []).forEach((w) => {
+      (w.days || []).forEach((d) => {
+        if (d.id === day.id) return;
+        out.push({ day: d, name: d.name || "Day", icon: d.icon || "🐉", meta: w.label || "Week" });
+      });
+    });
+    if (!_programEditorId) {
+      (currentClient()?.oneOffDays || []).forEach((d) => {
+        if (d.id === day.id) return;
+        out.push({
+          day: d, name: d.name || "Coach session", icon: d.icon || "🐉",
+          meta: d.date
+            ? new Date(d.date + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })
+            : "One-off",
+        });
+      });
+    }
+    return out;
+  }
+
+  function openMoveToDayModal(day, rerenderFn) {
+    if (!(day.exercises || []).length) { toast("Nothing on this day to move yet"); return; }
+    const targets = moveTargetDays(day);
+    if (!targets.length) { toast("No other day to move to yet. Build another day first"); return; }
+    const u = unitOf(_programEditorId ? null : currentClient());
+    const picked = new Set();
+    let destIdx = null;
+
+    const body = `
+      <p class="muted pull-intro">Tick what to move and pick where. Everything crosses with its sets, weights and notes — and leaves this day.</p>
+      <div class="move-ex-list">
+        ${day.exercises.map((ex) => `
+          <label class="pull-ex">
+            <input type="checkbox" data-mvpick="${escapeHtml(ex.id)}" />
+            <span class="pull-ex-name">${escapeHtml(ex.name || "Untitled")}</span>
+            <span class="pull-ex-meta">${escapeHtml(exPrescriptionMeta(ex, u))}</span>
+          </label>`).join("")}
+      </div>
+      <p class="move-dest-head">To</p>
+      <div class="move-dest-list">
+        ${targets.map((t, i) => `
+          <label class="pull-ex move-dest">
+            <input type="radio" name="mv-dest" data-mvdest="${i}" />
+            <span class="pull-src-ico">${dayIconHtml(t.icon)}</span>
+            <span class="pull-ex-name">${escapeHtml(t.name)}</span>
+            <span class="pull-src-meta">${escapeHtml(t.meta)}</span>
+            <span class="pull-src-n">${(t.day.exercises || []).length}</span>
+          </label>`).join("")}
+      </div>`;
+
+    openModal({
+      title: "Move to another day",
+      body,
+      actions: [
+        { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        {
+          label: "Move",
+          className: "btn btn-primary",
+          onClick: () => {
+            if (destIdx == null || !picked.size) return;
+            const t = targets[destIdx];
+            const n = moveExercisesToDay(day, t.day, [...picked]);
+            if (!n) return;
+            saveEditor();
+            closeModal();
+            rerenderFn();
+            toast(`Moved ${n} exercise${n === 1 ? "" : "s"} to ${t.name}`);
+          },
+        },
+      ],
+    });
+
+    // The footer button says what it will do before it does it, and stays
+    // dead until both halves of the choice are made.
+    const moveBtn = $("#modal-foot .btn-primary");
+    const sync = () => {
+      if (!moveBtn) return;
+      moveBtn.disabled = destIdx == null || picked.size === 0;
+      moveBtn.textContent = picked.size ? `Move ${picked.size} exercise${picked.size === 1 ? "" : "s"}` : "Move";
+    };
+    sync();
+
+    // Delegated from the lists, not #modal-body — openModal only replaces the
+    // body's innerHTML, so a body listener would outlive this sheet.
+    const exList = $("#modal-body .move-ex-list");
+    const destList = $("#modal-body .move-dest-list");
+    if (!exList || !destList) return;
+    exList.addEventListener("change", (e) => {
+      const cb = e.target.closest("input[data-mvpick]");
+      if (!cb) return;
+      if (cb.checked) picked.add(cb.dataset.mvpick); else picked.delete(cb.dataset.mvpick);
+      sync();
+    });
+    destList.addEventListener("change", (e) => {
+      const r = e.target.closest("input[data-mvdest]");
+      if (!r) return;
+      destIdx = Number(r.dataset.mvdest);
+      sync();
+    });
+  }
+
   function openPullFromDayModal(day, rerenderFn, opts) {
     opts = opts || {};
     const sources = opts.pullSources ? opts.pullSources(day) : pullSourceDays(day);
@@ -10181,21 +10340,7 @@
     const u = unitOf(opts.athlete ? state.clientData.program?.client : (_programEditorId ? null : currentClient()));
     const picked = new Set(); // "sourceId::exerciseId"
 
-    // What the lift is prescribed as, in one glance, so the choice doesn't
-    // need the day it came from open in another tab.
-    const exMeta = (ex) => {
-      const sets = String(ex.sets || "").trim();
-      if (ex.kind === "mobility") {
-        const rounds = sets || "1";
-        return ex.currentReps ? `${rounds} × ${ex.currentReps}s hold` : `${rounds} round${rounds === "1" ? "" : "s"}`;
-      }
-      const bits = [];
-      if (sets) bits.push(`${sets} set${sets === "1" ? "" : "s"}`);
-      const w = exWeightLabel(ex, ex.currentWeight, u);
-      if (w) bits.push(w);
-      if (ex.currentReps) bits.push(`× ${ex.currentReps}${ex.timed ? "s" : ""}`);
-      return bits.join(" · ");
-    };
+    const exMeta = (ex) => exPrescriptionMeta(ex, u);
 
     const body = `
       <p class="muted pull-intro">Tick what you want. Everything comes across with its sets, weights and notes, and the day you take it from is left alone.</p>
@@ -13804,6 +13949,15 @@
     pullBtn.textContent = "⇄ Pull";
     pullBtn.addEventListener("click", () => { if (!atCap()) openPullFromDayModal(day, rerenderFn, opts); });
 
+    // Pull's inverse. Coach-only: the athlete's own sessions live on the
+    // progress row and cap their exercise count — moving between them is a
+    // different feature with different plumbing, not offered here.
+    const moveExBtn = document.createElement("button");
+    moveExBtn.className = "btn btn-ghost btn-xs";
+    moveExBtn.title = "Send exercises to another day, with their numbers";
+    moveExBtn.textContent = "⇢ Move";
+    moveExBtn.addEventListener("click", () => openMoveToDayModal(day, rerenderFn));
+
     const delDayBtn = document.createElement("button");
     delDayBtn.className = "btn btn-ghost btn-xs";
     delDayBtn.style.color = "var(--danger)";
@@ -13822,6 +13976,7 @@
     actionBar.appendChild(nameWrap);
     actionBar.appendChild(spacer);
     actionBar.appendChild(pullBtn);
+    if (!opts.athlete) actionBar.appendChild(moveExBtn);
     actionBar.appendChild(libBtn);
     if (!opts.hideDelete) actionBar.appendChild(delDayBtn);
 
