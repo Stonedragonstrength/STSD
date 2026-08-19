@@ -5525,7 +5525,11 @@
     }
 
     if (extra) h += `<div class="rc-tail">+ ${extra} session${extra === 1 ? "" : "s"} outside the program</div>`;
-    h += `<div class="rc-foot">Read-only. Changing anything still goes through Fill out.</div></div>`;
+    // Same sheet, two readers: the coach's door for changing things is Fill
+    // out; the athlete's is their own workout screen.
+    h += `<div class="rc-foot">${state.mode === "trainer"
+      ? "Read-only. Changing anything still goes through Fill out."
+      : "Read-only. Log your work from the workout screen as usual."}</div></div>`;
 
     openModal({
       title: "Program recap",
@@ -27288,6 +27292,26 @@
     }
     renderCalHeaderStats({ doneDays, totalDays, weekLabel, streakN, bookingLabel });
     host.innerHTML = statsHtml;
+
+    // ---- Program recap: the whole block at a glance (2026-08-19) ----
+    // The athlete's own copy of the coach roster's recap matrix — Nathan:
+    // "the workout overview you just created, for easy viewing" on the
+    // athlete overview. The shim seats this athlete's own progress where
+    // the coach-side helpers expect importedProgress; built fresh at render
+    // time, never cached, so it can't go stale across a sync.
+    const rcShim = { ...c, importedProgress: progress };
+    const recapEl = buildRecapMatrix(rcShim);
+    if (recapEl) {
+      const KEY_OVRECAP_OPEN = "trainerpro_ovrecap_open_v1";
+      const det = document.createElement("details");
+      det.className = "card ov-program-recap";
+      if (localStorage.getItem(KEY_OVRECAP_OPEN) !== "0") det.open = true;
+      det.innerHTML = `<summary>📋 Program recap<span class="ov-trophies-chev">▸</span></summary>`;
+      det.appendChild(recapEl);
+      host.prepend(det);
+      det.addEventListener("toggle", () => localStorage.setItem(KEY_OVRECAP_OPEN, det.open ? "1" : "0"));
+    }
+
     if (trophyHost) trophyHost.innerHTML = trialsHtml + trophyHtml;
 
     if (hero.jump) {
@@ -36967,7 +36991,7 @@
       { sel: "#screen-client .tabs", go: () => setClientTab("overview"),
         title: "Welcome to Stone Dragon", text: "A quick lap around your training hub, a couple of minutes. Skip any time, and replay it whenever you like from the ? up top. These tabs are everything." },
       { sel: '[data-ctab-panel="overview"]',
-        title: "Overview", text: "The card up top is your next workout: the lifts in it, how long it runs, and one tap to start. Under it sit your calendar, your streak, your lifetime totals and your trophies. It fills in as you train. Tap ⋯ on the stats card to pick what shows, like cardio time, distance, or total push-ups and pull-ups." },
+        title: "Overview", text: "The card up top is your next workout: the lifts in it, how long it runs, and one tap to start. Under it sit your program recap (every week and day as a grid, tap any day for the sets behind it), your calendar, your streak, your lifetime totals and your trophies. It fills in as you train. Tap ⋯ on the stats card to pick what shows, like cardio time, distance, or total push-ups and pull-ups." },
       // The card became a header pill, so the step follows it. No `go`: the
       // pill is in the header on every tab, which is the point of the move.
       { sel: "#btn-client-messages",

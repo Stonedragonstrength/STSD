@@ -3708,6 +3708,12 @@ input.trial-input {
 .dci-row.is-total .dci-val { color: var(--primary-bright); }
 .dci-note { margin: 0.3rem 0 0; font-size: 0.68rem; color: var(--text-soft); }
 
+/* ---- Athlete overview: the Program recap card. The card provides the
+   chrome, so the matrix sheds the box it wears inside the roster drawer. */
+.ov-program-recap summary { display: flex; align-items: center; gap: 0.4em; cursor: pointer; font-weight: 700; }
+.ov-program-recap summary .ov-trophies-chev { margin-left: auto; }
+.ov-program-recap .cd-matrix { border: 0; background: transparent; padding: 0.55rem 0 0; overflow-x: auto; }
+
 /* ---- "What happened on this day" sheet (both calendars) ---- */
 .cday-sec { margin-bottom: 0.9rem; }
 .cday-sec-head {
