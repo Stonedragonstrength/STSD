@@ -30545,7 +30545,7 @@
     const doneSyncs = [];
     // Card fill line: fraction of working sets filled in (or skipped).
     // Locked cards read full.
-    const setDoneNow = (it) => it.skipped || (it.rp.value && (it.wt.value || repsOnlyLog));
+    const setDoneNow = (it) => it.skipped || (!it.unchecked && it.rp.value && (it.wt.value || repsOnlyLog));
     // Warm-ups count toward the fill line too — they're required to lock, so
     // the bar shouldn't read full while they're still empty. (warmupInputs is
     // declared below but only read at call time, after the card is built.)
@@ -30553,7 +30553,7 @@
       const wTotal = warmupInputs.length;
       if (isLocked) return { done: numSets + wTotal, total: numSets + wTotal };
       const wDone = warmupInputs.filter((it, i) =>
-        it.rp.value && (it.wt.value || repsOnlyLog || warmups[i]?.weight === "BW")).length;
+        !it.unchecked && it.rp.value && (it.wt.value || repsOnlyLog || warmups[i]?.weight === "BW")).length;
       return { done: setInputs.filter(setDoneNow).length + wDone, total: numSets + wTotal };
     };
     exBar = document.createElement("div");
@@ -30594,7 +30594,11 @@
     // line (a set is done when it holds values), so nothing new is persisted.
     // Tapping an empty set accepts the prescription and rolls the rest timer —
     // lift, tap, rest, next — which is the whole point of the row layout.
-    // Tapping a done set clears it again: the direct inverse, one tap to undo.
+    // Tapping a done set un-marks it but KEEPS the numbers — the circle reads
+    // as a row lock, and wiping typed values here cost real logs (with one set
+    // the draft save then deleted the whole entry). `unchecked` is transient
+    // row state, never stored: any edit or re-tap re-derives done from the
+    // values, and Tools ▸ Clear is the eraser now.
     // Warm-ups pass rest:false; their rest is short and isn't the working rest.
     const mkDoneBtn = (item, seedAt, { rest = true } = {}) => {
       const b = document.createElement("button");
@@ -30607,15 +30611,16 @@
         b.classList.toggle("skipped", skipped);
         b.textContent = skipped ? "⊘" : (on ? "✓" : "");
         b.disabled = skipped || isLocked;
-        b.title = skipped ? "Skipped" : on ? "Logged. Tap to clear." : "Mark this set done";
+        b.title = skipped ? "Skipped" : on ? "Logged. Tap to edit." : "Mark this set done";
         b.setAttribute("aria-label", b.title);
       };
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         if (isLocked || item.skipped) return;
         if (setDoneNow(item)) {
-          item.wt.value = ""; item.rp.value = "";
+          item.unchecked = true;
         } else {
+          delete item.unchecked;
           const { w, r } = seedAt();
           if (item.rp.value === "" && Number.isFinite(r)) item.rp.value = String(r);
           if (item.wt.value === "" && !repsOnlyLog && Number.isFinite(w)) item.wt.value = String(w);
@@ -30741,14 +30746,14 @@
       wt.className = "cex-input"; rp.className = "cex-input";
       wt.addEventListener("click", (e) => e.stopPropagation());
       rp.addEventListener("click", (e) => e.stopPropagation());
-      wt.addEventListener("input", () => { markEdited(wt); fillSibling(rp, rSeed); });
-      rp.addEventListener("input", () => { markEdited(rp); fillSibling(wt, wSeed); });
-
       const wItem = { wt, rp, skipped: false };
+      wt.addEventListener("input", () => { delete wItem.unchecked; markEdited(wt); fillSibling(rp, rSeed); });
+      rp.addEventListener("input", () => { delete wItem.unchecked; markEdited(rp); fillSibling(wt, wSeed); });
+
       col.appendChild(lbl);
-      col.appendChild(mkStepField(wt, wStep, wSeed, w.weight !== "BW", () => fillSibling(rp, rSeed), w.weight !== "BW" ? "weight" : null));
+      col.appendChild(mkStepField(wt, wStep, wSeed, w.weight !== "BW", () => { delete wItem.unchecked; fillSibling(rp, rSeed); }, w.weight !== "BW" ? "weight" : null));
       col.appendChild(setX());
-      col.appendChild(mkStepField(rp, isTimed ? 5 : 1, rSeed, true, () => fillSibling(wt, wSeed), "reps"));
+      col.appendChild(mkStepField(rp, isTimed ? 5 : 1, rSeed, true, () => { delete wItem.unchecked; fillSibling(wt, wSeed); }, "reps"));
       col.appendChild(mkDoneBtn(wItem, () => ({ w: wSeed, r: rSeed }), { rest: false }));
 
       setTable.appendChild(col);
@@ -30771,10 +30776,11 @@
       wt.className = "cex-input"; rp.className = "cex-input";
       wt.addEventListener("click", (e) => e.stopPropagation());
       rp.addEventListener("click", (e) => e.stopPropagation());
-      wt.addEventListener("input", () => { markEdited(wt); fillSibling(rp, rSeedAt(s)); });
-      rp.addEventListener("input", () => { markEdited(rp); fillSibling(wt, wSeedAt(s)); });
-
       const item = { wt, rp, skipped: false };
+      // A deliberate edit ends the row's un-marked state — done re-derives
+      // from the values (typing here; steppers/grid below via onUserEdit).
+      wt.addEventListener("input", () => { delete item.unchecked; markEdited(wt); fillSibling(rp, rSeedAt(s)); });
+      rp.addEventListener("input", () => { delete item.unchecked; markEdited(rp); fillSibling(wt, wSeedAt(s)); });
       item.applySkip = () => {
         col.classList.toggle("skipped", item.skipped);
         lbl.innerHTML = item.skipped ? `S${s + 1}<span class="cex-skip-mark">⊘</span>` : `S${s + 1}`;
@@ -30786,10 +30792,10 @@
       col.appendChild(lbl);
       // Weight field, one change-plate pair per tap (bodyweight lifts log reps
       // only — no weight steppers).
-      col.appendChild(mkStepField(wt, wStep, wSeedAt(s), !repsOnlyLog, () => fillSibling(rp, rSeedAt(s)), repsOnlyLog ? null : "weight"));
+      col.appendChild(mkStepField(wt, wStep, wSeedAt(s), !repsOnlyLog, () => { delete item.unchecked; fillSibling(rp, rSeedAt(s)); }, repsOnlyLog ? null : "weight"));
       col.appendChild(setX());
       // Reps field, ±1 (carries count seconds, ±5).
-      col.appendChild(mkStepField(rp, isTimed ? 5 : 1, rSeedAt(s), true, () => fillSibling(wt, wSeedAt(s)), "reps"));
+      col.appendChild(mkStepField(rp, isTimed ? 5 : 1, rSeedAt(s), true, () => { delete item.unchecked; fillSibling(wt, wSeedAt(s)); }, "reps"));
       const doneBtn = mkDoneBtn(item, () => ({ w: wSeedAt(s), r: rSeedAt(s) }));
       col.appendChild(doneBtn);
 
@@ -31021,8 +31027,11 @@
       updateExBar();     // ...and the card/day progress fills too
       clearTimeout(_ast);
       clearTimeout(_alt);
-      if (!isLocked && !manualUnlock) {
-        _alt = setTimeout(() => { if (!isLocked && !manualUnlock) lockIn({ silent: true }); }, AUTOLOCK_MS);
+      // A row the athlete just un-marked is mid-edit — auto-lock waits until
+      // an edit re-derives it done (the flag clears on any deliberate touch).
+      const anyUnchecked = () => setInputs.some((it) => it.unchecked) || warmupInputs.some((it) => it.unchecked);
+      if (!isLocked && !manualUnlock && !anyUnchecked()) {
+        _alt = setTimeout(() => { if (!isLocked && !manualUnlock && !anyUnchecked()) lockIn({ silent: true }); }, AUTOLOCK_MS);
       }
       _ast = setTimeout(() => {
         const sets = setInputs.map(({ wt, rp, skipped }) => (skipped ? { weight: "", reps: "", skipped: true } : { weight: outW(wt.value), reps: rp.value }))
@@ -31275,6 +31284,10 @@
       if (!complete) { if (!silent) toast("Fill in all sets before locking in."); return false; }
       if (!warmupComplete()) { if (!silent) toast("Fill in your warm-up sets before locking in."); return false; }
       if (!finisherComplete()) { if (!silent) toast("Fill in your burnout/dropset reps before locking in."); return false; }
+      // Locking is explicit: re-mark any un-marked rows — their values are
+      // what gets stored either way, and a locked card must read all-✓.
+      setInputs.forEach((it) => { delete it.unchecked; });
+      warmupInputs.forEach((it) => { delete it.unchecked; });
       clearTimeout(_ast);
       clearTimeout(_alt);
       manualUnlock = false;
