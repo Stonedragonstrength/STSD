@@ -2546,7 +2546,10 @@ input.cex-finisher-input { width: 72px; flex: 0 0 72px; text-align: center; }
   gap: 0.6em;
   margin: 0 0 0.7em;
 }
-.bw-charts-head h4 { margin: 0; font-size: 0.95rem; }
+.bw-charts-head h4 {
+  margin: 0; font-size: 0.82rem; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-soft);
+}
 .bw-range {
   display: inline-flex;
   gap: 2px;
@@ -3942,7 +3945,10 @@ input.trial-input {
   gap: 0.7em;
   margin-bottom: 0.55em;
 }
-.pr-recent-head h4 { margin: 0; }
+.pr-recent-head h4 {
+  margin: 0; font-size: 0.82rem; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-soft);
+}
 .pr-recent-sub { color: var(--muted); font-size: 0.78rem; }
 .pr-recent-strip {
   display: flex;
@@ -10125,7 +10131,10 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 
 /* Monthly recap */
 .ov-recap-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6em; margin-bottom: 0.6em; }
-.ov-recap-head h4 { margin: 0; }
+.ov-recap-head h4 {
+  margin: 0; font-size: 0.82rem; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-soft);
+}
 /* -------- The Overview board: a bento of tap-through tiles -------- */
 /* Two colors carry the meaning across the whole board: cyan is what you DO
    (actions, training, doors), gold is what you EARNED (Hoard, in-the-zone).
