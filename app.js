@@ -7529,7 +7529,7 @@
           // A bank in debt reads "2 owed", not "−2 left". The line underneath
           // has always said "+ 2 owed" for the same number, so the chip was
           // contradicting it two lines up.
-          `<span class="booked-balance-chip${left <= 1 ? " low" : ""}" title="${
+          `<span class="booked-balance-chip${left <= 0 ? " low" : ""}" title="${
             left < 0 ? `${Math.abs(left)} session${Math.abs(left) === 1 ? "" : "s"} already delivered and not yet paid for`
                      : `${left} session${left === 1 ? "" : "s"} left in the bank`}${partner ? ", shared" : ""}">${lineIco("sd:ticket")} ${
             left < 0 ? `${Math.abs(left)} owed` : `${left} left`}${shareMark}</span>` +
@@ -9276,7 +9276,7 @@
     const m = membershipById(c.sessionBank.membership);
     const pending = openRequestsFor(c).length;
     const live = sum.granted > 0 || sum.used > 0 || !!m;
-    el.classList.toggle("low", live && sum.remaining <= 1);
+    el.classList.toggle("low", live && sum.remaining <= 0);
     el.classList.toggle("blank", !live);
     // Same line-mark ticket as the roster chips, so it takes the pill's colour
     // rather than staying red inside an amber one.
@@ -16830,15 +16830,16 @@
   // too late to notice it across a whole day.
   //
   // Only athletes with a package history get one: "0 left" on someone who has
-  // never bought a session is noise on every row that isn't about money. The
-  // low threshold matches the roster chip (<= 1) rather than the sheet's (<= 0),
-  // because one left is the moment to say something, not none.
+  // never bought a session is noise on every row that isn't about money.
+  // Red means OUT (0 left, or owed) — Nathan's ruling, 2026-08-19: one left
+  // stays on the chip's own amber, everywhere the ticket appears; the amber
+  // base is already the "moment to say something".
   function schedBalHtml(c) {
     if (!c) return "";
     const sum = sessionBankSummary(c);
     if (!sum.granted && !sum.used) return "";
     const n = sum.remaining;
-    return `<span class="dv-bal${n <= 1 ? " low" : ""}" title="${escapeHtml(bankBreakdown(sum))}">` +
+    return `<span class="dv-bal${n <= 0 ? " low" : ""}" title="${escapeHtml(bankBreakdown(sum))}">` +
       `${lineIco("sd:ticket")}${n}</span>`;
   }
 
