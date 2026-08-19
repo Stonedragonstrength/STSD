@@ -27,6 +27,12 @@
     throw new Error("src/sync/push-queue.js must load before cloud.js");
   }
   const { debounce, flush, pendingPushes, lastPushFailureAt, onSyncActivity } = pushQueue;
+  // The bank merge rides every rebased athlete push (see upsertAthlete).
+  // Checked at load so a missing script tag fails HERE, by name.
+  const { mergeSessionBank } = globalThis.STSD.sync;
+  if (typeof mergeSessionBank !== "function") {
+    throw new Error("src/sync/bank-merge.js must load before cloud.js");
+  }
 
   const cfg = window.STONE_DRAGON_CONFIG;
   if (!cfg?.SUPABASE_URL || !cfg?.SUPABASE_ANON_KEY) {
@@ -571,23 +577,53 @@
         const { data, error } = await sb.from("athletes")
           .update(row).eq("id", row.id).eq("rev", base).select("rev");
         if (error) { console.warn("[Cloud] upsertAthlete error", error.message); return false; }
-        if (data && data.length) { athlete._rev = data[0].rev; return true; }
-        // The cloud moved past this device's copy. Rebase and retry once.
+        if (data && data.length) { athlete._rev = data[0].rev; athlete._bankEditAt = 0; return true; }
+        // The cloud moved past this device's copy. Rebase and retry once —
+        // and MERGE the bank rather than overwrite it. A whole-row retry
+        // used to carry this device's stale session_bank over whatever
+        // landed since (a charge from another device, a granted package),
+        // which is how an athlete's money history could vanish with no
+        // error anywhere. Everything else in the row stays last-write-wins;
+        // the bank is the one ledger a race must not erase.
         const { data: head, error: e2 } = await sb.from("athletes")
-          .select("rev").eq("id", row.id).maybeSingle();
+          .select("rev, session_bank").eq("id", row.id).maybeSingle();
         if (e2 || !head) { console.warn("[Cloud] upsertAthlete rebase read failed", e2?.message); return false; }
+        row.session_bank = mergeSessionBank(row.session_bank, head.session_bank,
+          { deliberate: !!athlete._bankEditAt });
         const { data: d2, error: e3 } = await sb.from("athletes")
           .update(row).eq("id", row.id).eq("rev", head.rev).select("rev");
         if (e3 || !d2 || !d2.length) { console.warn("[Cloud] upsertAthlete rebase write lost a second race"); return false; }
         athlete._rev = d2[0].rev;
+        // The local copy adopts the merged bank too, or the device that just
+        // lost the race keeps rendering its pre-merge view until the next pull.
+        if (row.session_bank) athlete.sessionBank = row.session_bank;
+        athlete._bankEditAt = 0;
         try { _conflictCb && _conflictCb(athlete.id, athlete.name || ""); } catch (e) {}
         return true;
       }
       const { data, error } = await sb.from("athletes").upsert(row).select("rev");
       if (error) { console.warn("[Cloud] upsertAthlete error", error.message); return false; }
       if (data && data[0]) athlete._rev = Number(data[0].rev) || 0;
+      athlete._bankEditAt = 0;
       return true;
     } catch (e) { console.warn("[Cloud] upsertAthlete", e); return false; }
+  }
+
+  // Attach an athlete to bookings that were created without one, or whose
+  // athlete the roster can no longer resolve. Scoped to the whole series
+  // when there is one, so a standing appointment links once, not week by
+  // week. Returns how many rows moved (0 on failure).
+  async function relinkBooking(scope, athleteId) {
+    if (!athleteId || !scope) return 0;
+    try {
+      let q = sb.from("bookings").update({ athlete_id: athleteId });
+      if (scope.seriesId) q = q.eq("series_id", scope.seriesId);
+      else if (scope.bookingId) q = q.eq("id", scope.bookingId);
+      else return 0;
+      const { data, error } = await q.select("id");
+      if (error) { console.warn("[Cloud] relinkBooking", error.message); return 0; }
+      return (data || []).length;
+    } catch (e) { console.warn("[Cloud] relinkBooking", e); return 0; }
   }
 
   async function deleteAthlete(athleteId) {
@@ -1318,6 +1354,7 @@
     // Athlete
     upsertAthlete,
     deleteAthlete,
+    relinkBooking,
     unlinkAthleteAuth,
     getAthleteByInviteCode,
     getProgressByInviteCode,

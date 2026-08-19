@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=recap3" />
+  <link rel="stylesheet" href="styles.css?v=catchup1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -333,6 +333,7 @@
           <div id="dash-cal-day" class="dash-cal-day-view hidden"></div>
           <div id="dash-cal-week" class="dash-cal-week-view hidden"></div>
           <div id="dash-cal-grid" class="cal-grid dash-cal-grid hidden"></div>
+          <div id="dash-cal-unlinked" class="dash-cal-unlinked hidden"></div>
         </div>
 
         <!-- The right rail: money first, then the standing arrangements the
@@ -1668,7 +1669,8 @@
   <script src="src/sync/rows.js?v=x1"></script>
   <script src="src/sync/dirty.js?v=x1"></script>
   <script src="src/sync/push-queue.js?v=x1"></script>
-  <script src="cloud.js?v=books3"></script>
+  <script src="src/sync/bank-merge.js?v=x1"></script>
+  <script src="cloud.js?v=bankmerge1"></script>
   <script src="exercise-demos.js?v=demos1"></script>
   <script src="exercise-muscles.js?v=mus2"></script>
   <script src="exercise-equipment.js?v=plyo1"></script>
@@ -1694,11 +1696,12 @@
   <script src="src/money/pricing.js?v=x1"></script>
   <script src="src/money/projection.js?v=x1"></script>
   <script src="src/money/charges.js?v=x1"></script>
+  <script src="src/money/redeem-plan.js?v=x1"></script>
   <script src="src/scheduling/zone.js?v=x1"></script>
   <script src="src/scheduling/series.js?v=x1"></script>
   <script src="src/scheduling/merge.js?v=x1"></script>
   <script src="src/scheduling/availability.js?v=x1"></script>
-  <script src="app.js?v=x30"></script>
+  <script src="app.js?v=x32"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

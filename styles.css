@@ -3661,6 +3661,26 @@ input.trial-input {
 .rc-tail { border-top: 1px solid var(--border); padding-top: 0.5rem; margin-top: 0.1rem; font-size: 0.76rem; color: var(--text-soft); }
 .rc-foot { margin-top: 0.55rem; font-size: 0.7rem; color: var(--muted); font-style: italic; }
 
+/* ---- Catch-up charges modal (auto-redeem backlogs ask first) ------------ */
+.cu-intro { margin: -0.4em 0 0.8em; font-size: 0.84rem; }
+.cu-sec { border-top: 1px solid var(--border); padding: 0.65rem 0; }
+.cu-name { font-weight: 800; font-size: 0.92rem; margin-bottom: 0.3rem; }
+.cu-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 0.8em;
+  font-size: 0.8rem; padding: 0.1rem 0; font-variant-numeric: tabular-nums;
+}
+.cu-row .cu-note { color: var(--text-soft); }
+.cu-charge { margin-top: 0.45rem; }
+
+/* ---- Unlinked booked sessions: loud, at every calendar zoom ------------- */
+.dash-cal-unlinked {
+  margin-top: 0.6rem; padding: 0.5rem 0.7rem;
+  border: 1px solid rgba(var(--warn-rgb), 0.45); border-radius: 8px;
+  background: rgba(var(--warn-rgb), 0.08);
+  font-size: 0.8rem; color: var(--warn-ink);
+}
+.dv-tag.is-warn { color: var(--warn-ink); border-color: rgba(var(--warn-rgb), 0.55); }
+
 /* ---- "What happened on this day" sheet (both calendars) ---- */
 .cday-sec { margin-bottom: 0.9rem; }
 .cday-sec-head {

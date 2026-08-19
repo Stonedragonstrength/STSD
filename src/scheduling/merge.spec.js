@@ -126,7 +126,14 @@ describe("wiring: app.js routes through the module", () => {
   });
 
   it("auto-redeem still charges once per SLOT through slotsMatch", () => {
-    expect(appSrc).toContain("if (reds.some((r) => slotsMatch(r.slot, slot))) return;");
+    // The guard moved into src/money/redeem-plan.js (2026-08-19, the
+    // catch-up-asks-first extraction); the sweep in app.js must route
+    // through the plan and hand it THIS slot identity, and the plan must
+    // still hold the guard. Its behavior is specced in redeem-plan.spec.js.
+    expect(appSrc).toContain("redeemSweepPlan(_dashCalSetmoreEvents");
+    expect(appSrc).toMatch(/redeemSweepPlan\(_dashCalSetmoreEvents[\s\S]{0,400}slotsMatch/);
+    const planSrc = fs.readFileSync(path.join(ROOT, "src/money/redeem-plan.js"), "utf8");
+    expect(planSrc).toContain("if (reds.some((r) => slotsMatch(r.slot, slot))) return;");
   });
 
   it("late-cancel still refuses a second token for the same slot", () => {

@@ -329,6 +329,7 @@
     sessionBankSummary, monthChargePlan, raiseProjection,
     billingRefundedFor, athleteOwed, lastPaymentFor, unpaidChargeMonths,
     chargeFor,
+    redeemSweepPlan,
   } = globalThis.STSD.money;
   // Phase 4 (Scheduling) pulls, same contract and same load-bearing position.
   const {
@@ -4002,6 +4003,9 @@
     });
     saveTrainer();
     localStorage.setItem(KEY_CLOUD_BACKFILLED, String(Date.now()));
+    // Dirty athletes are NOT re-pushed here: the boot's session-restore path
+    // already retries every dirty athlete right after its populate call, and
+    // mid-session populates run under a live retry queue.
   }
 
   function setRememberMe(remember) {
@@ -15606,6 +15610,10 @@
   // Persist + cloud-push one athlete's trainer-side data (session bank edits).
   function pushAthleteBank(c) {
     bankMutated(c);
+    // A deliberate bank edit: if this push loses the rev race, the merge in
+    // upsertAthlete lets the LOCAL bank speak for the coach's intent
+    // (scalars and id collisions) instead of deferring to the head.
+    c._bankEditAt = Date.now();
     localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
     pushAthlete(c);
   }
@@ -16375,55 +16383,111 @@
   // src/scheduling/merge.js (Phase 4 extraction); the namespace pull lives
   // at the TOP of this IIFE.
   // Auto-spend a session token for each matched booking that has finished.
-  // Guards: never charges bookings that ended before the feature was enabled
-  // (autoRedeemSince watermark), one redemption per booking (setmoreUid),
-  // and skipped when the coach already logged a manual redemption for that
-  // athlete on that date.
+  // The guards (watermark, one charge per booking AND per slot, manual
+  // redemptions, close calls) moved to src/money/redeem-plan.js — the sweep
+  // here only applies what the plan allows.
+  //
+  // ONE fresh session per athlete charges automatically, as it always has.
+  // TWO OR MORE in one run is a CATCH-UP: sessions that finished days or
+  // weeks ago and were never charged (usually a booking that wasn't linked
+  // to the athlete at the time). A catch-up ASKS first — Leo Frostholm's
+  // bank spent four tokens in one silent batch on 2026-08-19, and the
+  // coach's first sight of it was the balance.
   function autoRedeemFinishedBookings() {
     const since = state.trainerData.autoRedeemSince;
     if (!since || !(state.trainerData.clients || []).length) return;
-    const now = Date.now();
-    const spent = [];
-    _dashCalSetmoreEvents.forEach((e) => {
-      if (!e.uid) return;
-      const end = new Date(e.endAt || e.startAt).getTime();
-      if (!(end > since && end <= now)) return;
-      const c = matchAthleteForEvent(e);
-      if (!c) return;
-      ensureSessionBank(c);
-      const date = dateISO(new Date(e.startAt));
-      const reds = c.sessionBank.redemptions;
-      const slot = Math.floor(new Date(e.startAt).getTime() / 60000);
-      const note = `Booked session · ${fmtSetmoreTime(e.startAt)}`;
-      if (reds.some((r) => r.setmoreUid === e.uid)) return;
-      if (reds.some((r) => !r.setmoreUid && r.date === date)) return;
-      // ONE CHARGE PER SLOT, not per uid. The uid guard above only knows that
-      // this particular booking hasn't been charged — it cannot tell that the
-      // same real session already got charged under a different id, which is
-      // exactly what happened when a Setmore mirror and a native booking both
-      // described it. The slot is the session; the uid is only one name for it.
-      if (reds.some((r) => slotsMatch(r.slot, slot))) return;
-      // Same guard for rows written before `slot` existed: a duplicate presents
-      // as the identical date and note, because both come off the same instant.
-      if (reds.some((r) => r.date === date && r.note === note)) return;
-      // Close-called bookings are waived — never auto-charge them.
-      if ((c.sessionBank.missedSessions || []).some((m) => m.setmoreUid === e.uid && m.type === "closecall")) return;
-      reds.push({
-        id: uid(), date, slot, note,
-        setmoreUid: e.uid,
-      });
-      spent.push(c);
-      bankMutated(c);
+    const plan = redeemSweepPlan(_dashCalSetmoreEvents, {
+      since, now: Date.now(),
+      resolve: matchAthleteForEvent,
+      bankOf: (id) => {
+        const c = (state.trainerData.clients || []).find((x) => x.id === id);
+        if (!c) return null;
+        ensureSessionBank(c);
+        return c.sessionBank;
+      },
+      slotsMatch,
+      dateOf: (e) => dateISO(new Date(e.startAt)),
+      noteOf: (e) => `Booked session · ${fmtSetmoreTime(e.startAt)}`,
     });
-    if (!spent.length) return;
-    localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
-    // Push each charged athlete (saveTrainer only pushes the open one)
-    spent.forEach((c) => pushAthlete(c));
-    toast(`🎟 Session token spent: ${spent.map((c) => c.name).join(", ")}`);
-    if (state.currentClientId && spent.some((c) => c.id === state.currentClientId)) {
-      renderCoachSessions();
-      renderCoachCalendar();
+    if (!plan.length) return;
+    const byAthlete = new Map();
+    plan.forEach((p) => {
+      if (!byAthlete.has(p.athleteId)) byAthlete.set(p.athleteId, []);
+      byAthlete.get(p.athleteId).push(p);
+    });
+    const spent = [];
+    const ask = [];
+    byAthlete.forEach((items, id) => {
+      const c = (state.trainerData.clients || []).find((x) => x.id === id);
+      if (!c) return;
+      if (items.length === 1) {
+        applyPlannedRedemptions(c, items);
+        spent.push(c);
+      } else {
+        ask.push({ c, items });
+      }
+    });
+    if (spent.length) {
+      localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+      // Push each charged athlete (saveTrainer only pushes the open one)
+      spent.forEach((c) => pushAthlete(c));
+      toast(`🎟 Session token spent: ${spent.map((c) => c.name).join(", ")}`);
+      if (state.currentClientId && spent.some((c) => c.id === state.currentClientId)) {
+        renderCoachSessions();
+        renderCoachCalendar();
+      }
     }
+    if (ask.length) offerCatchupCharges(ask);
+  }
+
+  function applyPlannedRedemptions(c, items) {
+    ensureSessionBank(c);
+    // Re-guarded at apply time: a pull can land between planning and the
+    // coach's tap, and a charge that arrived from another device must not
+    // apply twice.
+    items.filter((p) => !c.sessionBank.redemptions.some((r) => r.setmoreUid === p.uid))
+      .forEach((p) => c.sessionBank.redemptions.push({
+        id: uid(), date: p.date, slot: p.slot, note: p.note, setmoreUid: p.uid,
+      }));
+    bankMutated(c);
+  }
+
+  // Session-scoped: the same backlog isn't re-asked on every calendar fetch,
+  // but a NEW uncharged session changes the key and asks again — and a
+  // backlog declined now is offered again on the next app open.
+  const _catchupAsked = new Set();
+  function offerCatchupCharges(ask) {
+    const keyOf = ({ c, items }) => c.id + ":" + items.map((i) => i.uid).sort().join(",");
+    const fresh = ask.filter((a) => !_catchupAsked.has(keyOf(a)));
+    if (!fresh.length) return;
+    // Never stomp something the coach is mid-way through in the modal.
+    if (!$("#modal")?.classList.contains("hidden")) return;
+    fresh.forEach((a) => _catchupAsked.add(keyOf(a)));
+    const secHtml = fresh.map(({ c, items }) => `
+      <div class="cu-sec" data-cu-sec="${c.id}">
+        <div class="cu-name">${escapeHtml(c.name)}</div>
+        ${items.map((p) => `<div class="cu-row"><span>${escapeHtml(recapDate(p.date))}</span><span class="cu-note">${escapeHtml(p.note)}</span></div>`).join("")}
+        <button type="button" class="btn btn-primary btn-sm cu-charge" data-cu="${escapeHtml(c.id)}">Charge ${items.length} sessions</button>
+      </div>`).join("");
+    openModal({
+      title: "Catch-up charges",
+      body: `<p class="muted cu-intro">These sessions finished but were never charged, usually because the
+        booking wasn't linked to the athlete at the time. Nothing is spent until you say so; Not now offers
+        them again on the next app open.</p>` + secHtml,
+      actions: [{ label: "Not now", className: "btn btn-ghost", onClick: closeModal }],
+    });
+    const root = $("#modal-body");
+    root.querySelectorAll(".cu-charge").forEach((btn) => btn.addEventListener("click", () => {
+      const hit = fresh.find(({ c }) => c.id === btn.dataset.cu);
+      if (!hit) return;
+      applyPlannedRedemptions(hit.c, hit.items);
+      localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+      pushAthlete(hit.c);
+      toast(`🎟 ${hit.items.length} session tokens spent: ${hit.c.name}`);
+      if (state.currentClientId === hit.c.id) { renderCoachSessions(); renderCoachCalendar(); }
+      root.querySelector(`[data-cu-sec="${hit.c.id}"]`)?.remove();
+      if (!root.querySelector(".cu-sec")) closeModal();
+    }));
   }
 
   // Store each athlete's upcoming (future) matched bookings on their record so
@@ -16475,9 +16539,17 @@
     if (anyChanged) localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
   }
 
-  function openLinkSetmoreNameModal(bookingName) {
+  // Links a booking to an athlete. Two halves, and both matter:
+  // - the ALIAS teaches name-matching, which is all a Setmore mirror needs;
+  // - a NATIVE booking that lost its athlete (or was created without one)
+  //   needs its row fixed in the database, whole series at once — an alias
+  //   can never repair it, because a native row is matched by id, not name.
+  // Finished sessions that become chargeable by the link go through the
+  // normal sweep: one on its own charges as usual, a backlog asks first.
+  function openLinkSetmoreNameModal(bookingName, ev) {
     const clients = state.trainerData.clients || [];
     if (!clients.length) { toast("No athletes to link yet"); return; }
+    const native = !!(ev && ev.native && ev.bookingId);
     const rows = clients.map((c) => `
       <button class="day-log-opt" type="button" data-link-athlete="${escapeHtml(c.id)}">
         <span class="day-log-name">${escapeHtml(c.name)}</span>
@@ -16485,21 +16557,43 @@
     openModal({
       title: `Link "${escapeHtml(bookingName)}"`,
       body: `
-        <p class="muted" style="margin-top:-0.4em">Pick which athlete this Setmore booking name belongs to. Future bookings under this name will match automatically (and their finished sessions will use a token).</p>
+        <p class="muted" style="margin-top:-0.4em">Pick which athlete this booking belongs to.
+        ${native && ev.seriesId ? "The whole weekly series links with it." : "Future bookings under this name will match automatically."}
+        A finished session this uncovers charges normally: one on its own right away, a backlog only after you confirm.</p>
         <div class="day-log-picker">${rows}</div>`,
       actions: [{ label: "Cancel", className: "btn btn-ghost", onClick: closeModal }],
     });
     $$("[data-link-athlete]").forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", async () => {
         const c = clients.find((x) => x.id === btn.dataset.linkAthlete);
         if (!c) return;
-        if (!Array.isArray(c.setmoreAliases)) c.setmoreAliases = [];
-        const n = normSetmoreName(bookingName);
-        if (!c.setmoreAliases.includes(n)) c.setmoreAliases.push(n);
-        saveTrainer();
-        pushAthlete(c);
+        // The alias teaches NAME matching, which only mirrors use. A native
+        // booking's display name here is the nameOf() fallback ("Athlete"),
+        // and saving that as an alias would silently match any OTHER broken
+        // native row to this athlete later. Native repair is the row update
+        // below; the alias stays a Setmore-name affair.
+        if (!native) {
+          if (!Array.isArray(c.setmoreAliases)) c.setmoreAliases = [];
+          const n = normSetmoreName(bookingName);
+          if (n && !c.setmoreAliases.includes(n)) c.setmoreAliases.push(n);
+          saveTrainer();
+          pushAthlete(c);
+        }
         closeModal();
-        toast(`Linked to ${c.name} ✓`);
+        if (native && window.Cloud?.enabled) {
+          const fixed = await window.Cloud.relinkBooking(
+            ev.seriesId ? { seriesId: ev.seriesId } : { bookingId: ev.bookingId }, c.id);
+          if (fixed) {
+            toast(`Linked ${fixed} booking${fixed === 1 ? "" : "s"} to ${c.name} ✓`);
+            // The events in memory still carry the old athlete id; refetch so
+            // the calendar, the mirrors and the sweep all see the repair.
+            _dashCalSetmoreFetchKey = null;
+          } else {
+            toast(`Couldn't update the booking. Check the connection and try again.`);
+          }
+        } else {
+          toast(`Linked to ${c.name} ✓`);
+        }
         autoRedeemFinishedBookings();
         renderDashboardCalendar();
       });
@@ -16609,9 +16703,35 @@
       el.classList.toggle("hidden", m !== c.mode);
       if (m !== c.mode) el.innerHTML = "";
     });
-    if (c.mode === "day") return renderCalDayView(dayHost, c.date);
-    if (c.mode === "week") return renderCalWeekView(weekHost, c.date);
-    renderCalMonthGrid(grid, year, month);
+    if (c.mode === "day") renderCalDayView(dayHost, c.date);
+    else if (c.mode === "week") renderCalWeekView(weekHost, c.date);
+    else renderCalMonthGrid(grid, year, month);
+    renderDashCalUnlinked();
+  }
+
+  // Booked sessions the app cannot attach to an athlete never charge, never
+  // mirror to the athlete's calendar, and used to never say so anywhere —
+  // Leo Frostholm's ran three weeks unnoticed (2026-08-19). This strip makes
+  // the condition loud at every zoom, scoped to the recent past and future
+  // so old pre-cutover history doesn't nag forever.
+  function renderDashCalUnlinked() {
+    const host = $("#dash-cal-unlinked");
+    if (!host) return;
+    const cutoff = addDaysISO(todayISO(), -14);
+    const hits = new Map(); // display name -> count
+    _dashCalSetmoreEvents.forEach((e) => {
+      if (!e.startAt) return;
+      if (dateISO(new Date(e.startAt)) < cutoff) return;
+      if (matchAthleteForEvent(e)) return;
+      const label = e.clientName || "Unnamed booking";
+      hits.set(label, (hits.get(label) || 0) + 1);
+    });
+    if (!hits.size) { hide(host); host.innerHTML = ""; return; }
+    const total = [...hits.values()].reduce((a, b) => a + b, 0);
+    host.innerHTML = `⚠ ${total} booked session${total === 1 ? "" : "s"} not linked to an athlete ` +
+      `(${[...hits.keys()].map((n) => escapeHtml(n)).join(", ")}). ` +
+      `Open one of their days and tap the session to link it.`;
+    show(host);
   }
 
   // One line per athlete on a date. A booking and a programmed workout are the
@@ -16809,7 +16929,7 @@
           r.client ? ` style="--athlete-rgb:${AVATAR_RGB[athleteColorIdx(r.client)]}"` : ""
         } data-dv="${it.idx}">` +
         `<span class="dv-face">${r.client ? athleteFaceHtml(r.client) : `<span class="av-tile av-sm av-empty">?</span>`}</span>` +
-        `<span class="dv-name">${escapeHtml(r.name)}${r.unlinked ? ` <span class="dv-tag">unlinked</span>` : ""}</span>` +
+        `<span class="dv-name">${escapeHtml(r.name)}${r.unlinked ? ` <span class="dv-tag is-warn">⚠ not linked</span>` : ""}</span>` +
         schedBalHtml(r.client) +
         `<span class="dv-what${guess ? " is-next" : ""}">${escapeHtml(what)}</span>` +
         (r.time ? `<span class="dv-time">${escapeHtml(r.time)}</span>` : "") +
@@ -17016,7 +17136,7 @@
     on("extend", () => { closeModal(); if (series) openExtendSeries(series); });
     on("cancel", () => { closeModal(); cancelBookingFlow(e.bookingId, e.seriesId, e.startAt); });
     on("unlink", () => { closeModal(); unlinkSetmoreBooking(e.clientName); });
-    on("link", () => { closeModal(); openLinkSetmoreNameModal(e.clientName); });
+    on("link", () => { closeModal(); openLinkSetmoreNameModal(e.clientName, e); });
     root.querySelectorAll("[data-fc]").forEach((btn) => btn.addEventListener("click", () => {
       const clip = formChecksForDay(c.importedProgress, wdRow?.day.id)[Number(btn.dataset.fc)];
       if (clip) playFormCheck(clip.path);
