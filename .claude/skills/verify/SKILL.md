@@ -76,6 +76,18 @@ be tested at 390/768/1024 without resizing Chrome. Rules learned 2026-08-12:
   its timers re-save its own in-memory state and silently overwrite whatever
   you seed for the iframe. Park the outer tab on `/manifest.json` (same
   origin, no app boot) before seeding, then create the iframe.
+- **Reseeding mid-session: REMOVE the iframe first, then seed, then create a
+  fresh iframe.** `clear() → setItem() → iframe.reload()` loses the race: the
+  still-running instance's debounced saves fire between the setItem and the
+  reload and quietly restore the old state (cost a cycle on 2026-08-19).
+  Killing the node kills its timers; only then is the store yours to write.
+- **A completed day reopens AT ITS OWN DATE.** Clicking a done day's card
+  reviews that session — `logDate` becomes the old session's date, not today.
+  Anything keyed on "strictly before the date being logged" (the LAST TIME
+  line, progression walks) then correctly hides or shifts, which looks like
+  a bug in the sandbox and is not. To exercise "returning athlete" behavior,
+  seed TWO weeks, log week 1's copy, and open week 2's — that is the real
+  production shape (each week's exercise has its own id).
 - **Clear localStorage fully when switching roles.** Leftover coach
   `trainerpro_data_v1` next to a seeded athlete `trainerpro_client_v1` boots
   the athlete screen in live-log/preview mode ("← Back to coach view"), where
