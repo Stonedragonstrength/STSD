@@ -13513,12 +13513,17 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 0.45em;
+  gap: 0.35em;
   padding-left: 0.7em;
   padding-right: 0.7em;
+  /* A chip with no count is a bare glyph, which without this floors out at
+     ~35px wide — under a thumb. The counted state is already wider. */
+  min-width: 44px;
 }
-.week-chip-special .chip-ico svg { width: 15px; height: 15px; display: block; }
-.week-chip-special .chip-ico { font-size: 0.9rem; line-height: 1; }
+/* Wordless (2026-08-19), so the glyph carries the chip on its own and is sized
+   up to match the weight the week chips' text has beside it. */
+.week-chip-special .chip-ico svg { width: 17px; height: 17px; display: block; }
+.week-chip-special .chip-ico { font-size: 1.02rem; line-height: 1; }
 .week-chip-special .chip-n {
   font-size: 0.62rem;
   font-weight: 800;

@@ -28672,11 +28672,17 @@
     const bucket = pickerBucket();
     const coachN = (prog.client.oneOffDays || []).length;
     const ownN = athleteOwnDays(state.clientData.progress).length;
+    // Icon and count only. These were the only chips on the bar carrying a word
+    // beside a glyph, which made them read as a different kind of control from
+    // the week chips they sit in the same segmented bar with. The section that
+    // opens underneath already names itself, so the label was the name twice;
+    // it lives on in the tooltip and the accessible name.
     const specialChip = (kind, icon, label, n) => {
       const b = document.createElement("button");
       b.className = `week-chip week-chip-special is-${kind}${bucket === kind ? " active" : ""}`;
-      b.title = kind === "own" ? "Sessions the athlete built themselves" : "Dated sessions your coach set up";
-      b.innerHTML = `<span class="chip-ico">${icon}</span><span class="chip-label">${escapeHtml(label)}</span>` +
+      b.title = `${label} · ${kind === "own" ? "sessions the athlete built themselves" : "dated sessions your coach set up"}`;
+      b.setAttribute("aria-label", label);
+      b.innerHTML = `<span class="chip-ico">${icon}</span>` +
         (n ? `<span class="chip-n">${n}</span>` : "");
       b.addEventListener("click", () => { state.pickerBucket = kind; renderWorkoutPickerUI(); });
       return b;
