@@ -30511,28 +30511,9 @@
       chip.title = `Swapped in for ${ex.name || "the prescribed exercise"}`;
       nameBlock.appendChild(chip);
     }
-    // Coach-only, and only in a live session: rewrite THIS lift's prescription
-    // without leaving the athlete's day for the full editor. Athlete-built
-    // sessions aren't the coach's to rewrite, so they don't get it.
-    if (state.previewMode && week && !isOwnDay(day)) {
-      const edit = document.createElement("button");
-      edit.type = "button";
-      edit.className = "cex-coach-edit";
-      edit.textContent = "✎";
-      edit.title = "Edit this exercise in the program";
-      edit.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const t = coachExerciseTarget(week, day, ex);
-        if (!t) { toast("This exercise isn't in the program yet."); return; }
-        openCoachExerciseSheet(t.week, t.day, t.ex, () => {
-          // The portal is drawn from a CLONE of the program, so pull the edit
-          // through before redrawing or the card shows the old numbers.
-          refreshLiveProgram();
-          renderWorkoutDetailUI({ keepScroll: true });
-        });
-      });
-      nameBlock.appendChild(edit);
-    }
+    // The coach's per-lift program edit lived here as a loose ✎ beside the
+    // name until 2026-08-19; it now sits in the Tools menu with the other
+    // card actions, and the title keeps its width. Built below with the menu.
 
     content.appendChild(nameBlock);
 
@@ -30627,21 +30608,28 @@
       rxEl.appendChild(chip);
     }
 
+    // Last session's numbers moved OFF this meta line 2026-08-19 (Nathan's
+    // call): the rx line clipped them first on a loaded phone card, and the
+    // place an athlete wants them is next to the boxes they are about to
+    // fill. Built here (lastLog is in scope), appended above the set table.
+    let lastLine = null;
     if (lastLog) {
-      const ll = document.createElement("span");
-      ll.className = "cex-last-log";
+      lastLine = document.createElement("div");
+      lastLine.className = "cex-last-line";
+      let txt;
       if (lastLog.sets?.length) {
         // All working sets from the previous session. One weight → "135 lb × 9, 9, 8";
         // mixed weights → "135×9 · 130×8".
         const wts = [...new Set(lastLog.sets.map((s) => dispW(s.weight) || "BW"))];
-        ll.textContent = wts.length === 1
-          ? `Last: ${wts[0] === "BW" ? "BW" : wts[0] + (dbS || " " + unitLbl())} × ${lastLog.sets.map((s) => (s.reps ? s.reps + tS : "?")).join(", ")}`
-          : `Last: ${lastLog.sets.map((s) => `${s.weight ? dispW(s.weight) + dbS : "BW"}×${s.reps ? s.reps + tS : "?"}`).join(" · ")}`;
+        txt = wts.length === 1
+          ? `${wts[0] === "BW" ? "BW" : wts[0] + (dbS || " " + unitLbl())} × ${lastLog.sets.map((s) => (s.reps ? s.reps + tS : "?")).join(", ")}`
+          : lastLog.sets.map((s) => `${s.weight ? dispW(s.weight) + dbS : "BW"}×${s.reps ? s.reps + tS : "?"}`).join(" · ");
       } else {
-        ll.textContent = `Last: ${lastLog.weight ? dispW(lastLog.weight) + (dbS || " " + unitLbl()) : "BW"} × ${lastLog.reps ? lastLog.reps + tS : "?"}`;
+        txt = `${lastLog.weight ? dispW(lastLog.weight) + (dbS || " " + unitLbl()) : "BW"} × ${lastLog.reps ? lastLog.reps + tS : "?"}`;
       }
-      ll.title = `Previous session (${lastLog.date})`;
-      rxEl.appendChild(ll);
+      lastLine.innerHTML = `<span class="cex-last-k">Last time</span><span class="cex-last-v"></span>`;
+      lastLine.querySelector(".cex-last-v").textContent = txt;
+      lastLine.title = `Previous session (${lastLog.date})`;
     }
 
     content.appendChild(rxEl);
@@ -31443,6 +31431,32 @@
     clearItem.className = "cex-tools-item cex-tools-clear";
     clearItem.textContent = "⌫ Clear my numbers";
 
+    // Coach-only, live session: rewrite THIS lift's prescription without
+    // leaving the athlete's day. Moved here from a loose ✎ beside the name.
+    // The Tools button hides while the card is locked, so editing a locked
+    // lift means the program editor — acceptable: prescriptions get rewritten
+    // before the sets go in, not after.
+    let coachEditItem = null;
+    if (state.previewMode && week && !isOwnDay(day)) {
+      coachEditItem = document.createElement("button");
+      coachEditItem.type = "button";
+      coachEditItem.className = "cex-tools-item";
+      coachEditItem.textContent = "✎ Edit exercise";
+      coachEditItem.title = "Edit this exercise in the program";
+      coachEditItem.addEventListener("click", (e) => {
+        e.stopPropagation();
+        closeToolsMenu();
+        const t = coachExerciseTarget(week, day, ex);
+        if (!t) { toast("This exercise isn't in the program yet."); return; }
+        openCoachExerciseSheet(t.week, t.day, t.ex, () => {
+          // The portal is drawn from a CLONE of the program, so pull the edit
+          // through before redrawing or the card shows the old numbers.
+          refreshLiveProgram();
+          renderWorkoutDetailUI({ keepScroll: true });
+        });
+      });
+    }
+
     // Swap: same prescription, different movement. Undo restores the original.
     const swapItem = document.createElement("button");
     swapItem.type = "button";
@@ -31472,7 +31486,9 @@
       openPlatePicker(toolsBtn);
     });
 
-    toolsMenu.append(skipRow, setsTweakRow, warmTweakRow, toolsDiv, swapItem, platesItem);
+    toolsMenu.append(skipRow, setsTweakRow, warmTweakRow, toolsDiv);
+    if (coachEditItem) toolsMenu.append(coachEditItem);
+    toolsMenu.append(swapItem, platesItem);
     if (inProgramWeek) toolsMenu.append(applyWeeksItem);
     toolsMenu.append(skipExItem, clearItem);
 
@@ -31689,6 +31705,7 @@
     refreshLockUI();
     if (todayLog?.skipped && isLocked) applySkippedUI(true);
 
+    if (lastLine) logForm.appendChild(lastLine);
     logForm.appendChild(setTable);
     logForm.appendChild(plateRow);
     updatePlates();

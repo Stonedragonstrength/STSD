@@ -7079,13 +7079,22 @@ input:focus, textarea:focus, select:focus {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.cex-last-log {
-  font-size: 0.67rem;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex-shrink: 1;
+/* Last session's numbers: their own quiet line above the set rows, where
+   the athlete is about to type — moved off the title's meta line, which
+   clipped them first on a loaded phone card. */
+.cex-last-line {
+  display: flex; align-items: baseline; gap: 0.5em; min-width: 0;
+  padding: 0.1rem 0.15rem 0.25rem;
+  border-bottom: 1px dashed var(--border);
+  margin-bottom: 0.3rem;
+}
+.cex-last-k {
+  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.07em;
+  text-transform: uppercase; color: var(--text-soft); flex-shrink: 0;
+}
+.cex-last-v {
+  font-size: 0.72rem; color: var(--muted); font-variant-numeric: tabular-nums;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 /* Earned auto-progression bump on the athlete exercise card */
 .cex-prog-chip {
@@ -7283,18 +7292,6 @@ input:focus, textarea:focus, select:focus {
 .breakdown-ex-name .exn-chips { margin-left: 0.4em; vertical-align: middle; }
 
 /* ===== Single-exercise editor (coach, mid-session) ===== */
-/* The ✎ beside a lift's name on the athlete's card. Coach-only and quiet — it
-   sits in the athlete's UI, so it must not read as something they can press. */
-.cex-coach-edit {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 1.5rem; height: 1.5rem; margin-left: 0.35em;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: none; color: var(--text-soft);
-  font-family: inherit; font-size: 0.72rem; line-height: 1;
-  cursor: pointer;
-}
-.cex-coach-edit:hover { border-color: var(--primary-bright); color: var(--primary-bright); }
 .cxs-kicker {
   margin: 0 0 0.6rem; font-size: 0.66rem; font-weight: 800;
   letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-soft);
@@ -15828,8 +15825,6 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
      Every control around them was grown and these were left at desk size. */
   .cex-mob-check { width: 36px; height: 36px; }
   .cex-tools-step { width: 36px; height: 36px; }
-  /* The coach's ✎ on an athlete card — pressed with a lifter waiting. */
-  .cex-coach-edit { width: 34px; height: 34px; }
   /* ---- The ✕ that clears a search field ---- */
   /* Four of these across anatomy, the exercise library, the roster and
      billing. Three are byte-identical rules that were copy-pasted to each
