@@ -30646,18 +30646,30 @@
 
     content.appendChild(rxEl);
 
-    // Left rail: the coach's intensity cue (flames only, no words) sitting
-    // right above the done-check that fills in when the exercise is completed.
+    // Left rail: the coach's intensity cue sitting right above the done-check
+    // that fills in when the exercise is completed. Rendered as RAIL TICKS
+    // (Nathan's pick off the Card-Title-Four-Ways board, 2026-08-19): a
+    // filled signal bar instead of the old flames pill, whose four-flame case
+    // ate 60px of a 346px phone row and folded long names to two lines. All
+    // four slots always render, so the empty ones say what max would be, and
+    // the rail is the same 12px at every intensity. Flames stay the effort
+    // language everywhere else (picker, coach row, coverage copy).
     const leftCol = document.createElement("div");
     leftCol.className = "cex-left";
     const effortMeta = effortLevel(ex);
     if (effortMeta) {
       applyEffortWrapper(wrapper, ex);
       const tag = document.createElement("span");
-      tag.className = "effort-tag flames-only";
+      tag.className = "effort-ticks";
       tag.style.setProperty("--effort-rgb", effortMeta.rgb);
-      tag.textContent = effortMeta.flames;
       tag.title = effortMeta.label + " intensity";
+      tag.setAttribute("role", "img");
+      tag.setAttribute("aria-label", effortMeta.label + " intensity");
+      for (let i = 1; i <= 4; i++) {
+        const t = document.createElement("i");
+        if (i <= effortMeta.rank) t.className = "on";
+        tag.appendChild(t);
+      }
       leftCol.appendChild(tag);
     }
     leftCol.appendChild(doneCircle);
