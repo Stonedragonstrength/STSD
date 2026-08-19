@@ -6574,6 +6574,37 @@ input:focus, textarea:focus, select:focus {
 /* A recorded miss — not done, not in progress. Muted on purpose: the card
    should read as "nothing happened here", never as an achievement state. */
 .wc-status.skipped { color: var(--muted); font-weight: 700; text-decoration: line-through; text-decoration-thickness: 1px; }
+/* How a finished day compared with the last time through the same workout, as a
+   percent of the weight moved. It TAKES THE PLACE of the exercise count in this
+   line rather than adding to it: on a finished day the count is the least useful
+   token here, since "Done ✓" already says all of them happened, and swapping
+   instead of appending is the whole reason the card keeps its size.
+
+   That is also why it is not in a right-hand column beside "Skipped it?", which
+   was the first design and reads well on paper. A column is new structure on a
+   card that had none — skipCtl needs !checked and moveCtl is coach-only, so a
+   done card carried no .wc-actions at all — and it takes ~58px out of a text box
+   with no slack. The readiness and mood chips that finished days carry then wrap
+   to another row. Measured over 320/360/390/430/768/1000/1280px against day-name
+   lengths, exercise counts and chip counts, the column grew the card in 90 of 168
+   configurations, by up to 57px. This swap grew it in none of them.
+
+   Up is the accent green. Down is the same soft grey as the rest of the line,
+   NOT the amber the finish sheet uses: a lighter day is often a deliberate one
+   (a deload, or more range of motion at less load, which tonnage cannot see), so
+   the card reports it without scoring it. Bold and the ▼ carry it from there. */
+.wc-delta { font-weight: 800; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.wc-delta-arrow { font-size: 0.82em; }
+.wc-delta.up { color: var(--accent); }
+.wc-delta.down { color: var(--text-soft); }
+/* "vs last" is what makes a bare percent mean something the first time an
+   athlete sees it, and on a phone — where they actually are — it costs nothing.
+   It only stops fitting once .workout-grid goes to three columns and the card
+   drops to ~300px, where the meta line wraps and takes 13px with it. So the
+   label leaves at exactly the breakpoint that causes it, and the number keeps
+   its title attribute everywhere. Placed AFTER the plain rule on purpose: a
+   later plain rule would outrank this block whatever the media query says. */
+@media (min-width: 1000px) { .wc-delta-u { display: none; } }
 .workout-card.is-skipped { opacity: 0.75; }
 .workout-card.is-skipped .workout-card-icon { filter: grayscale(0.7); }
 /* The card's action column, between the body and the chevron. These controls

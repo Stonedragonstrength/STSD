@@ -26754,6 +26754,36 @@
     return best;
   }
 
+  // The number the day card carries once a session is finished: how much weight
+  // this one moved against the last time through the same workout, in percent.
+  // Built on the same dayLogStats + previousDayOccurrence pair the finish sheet
+  // compares with, so a change to either moves both surfaces at once. The sheet
+  // cannot call this directly — it tells "dead even" apart from "first time
+  // through", which the null below deliberately conflates.
+  //
+  // One deliberate difference from the sheet. The sheet scopes to a single date
+  // (dayLogStats(day, p, logDate)) because it is reporting the session that was
+  // just finished. The card is labelling the DAY, so it passes no date and sums
+  // every date logged under it: a session begun Monday and finished Tuesday is
+  // one workout on this card, and reporting only Tuesday's half of it would
+  // read as a collapse. Both sides of the comparison are summed the same way,
+  // so the ratio stays honest. For the ordinary single-date day the two agree
+  // exactly, which is every day that was not left half-done overnight.
+  //
+  // Null means "the card says nothing", and there are three ways to get it:
+  // nothing was moved this time (an all-bodyweight day), there is no earlier
+  // occurrence to measure against, or the result rounds to zero. That last one
+  // is a judgement call rather than a rounding artifact: on a list of five
+  // cards a row reading 0% is noise, and dead even is not news.
+  function dayVolumeDelta(day, progress) {
+    const now = dayLogStats(day, progress);
+    if (!now.volume) return null;
+    const prev = previousDayOccurrence(day, now.date);
+    if (!prev || !prev.volume) return null;
+    const pct = Math.round(((now.volume - prev.volume) / prev.volume) * 100);
+    return pct === 0 ? null : { pct, date: prev.date };
+  }
+
   // PRs stamped today that belong to a lift in this day. Scoped by lift so a
   // PR logged from somewhere else on the same date doesn't get claimed here.
   function dayPRsOn(day, progress, onDate) {
@@ -28754,16 +28784,45 @@
       const moveCtl = state.previewMode
         ? `<span class="wc-move" role="button" tabindex="0" title="Move this day">⇄ Move</span>`
         : "";
+      // Finished days report how they went against the last time through this
+      // workout. Finished ONLY: a half-logged day would read as a collapse
+      // against a complete one, and a skipped day has nothing to compare. The
+      // condition is deliberately the same one that paints the card is-done.
+      //
+      // It goes in the meta line, in PLACE of the exercise count — the note over
+      // .wc-delta in styles.css has the measurements. Short version: a done card
+      // carried no .wc-actions at all (skipCtl needs !checked, moveCtl is
+      // coach-only), so putting the number in a right-hand column, which is
+      // where this started, is new structure that costs the text box ~58px. The
+      // readiness and mood chips a finished day carries then wrap onto another
+      // row. Over seven widths that grew the card in 90 of 168 configurations,
+      // by as much as 57px; swapping the count out grew it in none of them.
+      //
+      // Passive text either way, so the tap-target rule that keeps controls out
+      // of the card's middle is not in play here: there is nothing to hit.
+      const delta = !skippedNow && (checked || allLogged)
+        ? dayVolumeDelta(day, state.clientData.progress)
+        : null;
+      const deltaTok = delta
+        ? `<span class="wc-delta ${delta.pct > 0 ? "up" : "down"}" title="${escapeHtml(
+            `${Math.abs(delta.pct)}% ${delta.pct > 0 ? "more" : "less"} weight moved than ${shortLogDate(delta.date)}`)}">` +
+          `<span class="wc-delta-arrow">${delta.pct > 0 ? "▲" : "▼"}</span> ${Math.abs(delta.pct)}%` +
+          `<span class="wc-delta-u"> vs last</span></span>`
+        : "";
       const moods = dayMoods(state.clientData.progress, day.id);
       const rdy = dayReadiness(state.clientData.progress, day.id);
       // When this session was first filled out, so a week of cards reads as a
       // history at a glance instead of only saying what is left to do.
       const firstLogged = dayFirstLogDate(day);
+      // What the meta line leads with. The exercise count is the default, and
+      // the "vs last" number displaces it on a finished day that has something
+      // to compare — never joins it, which is what keeps the line one row.
+      const metaLead = deltaTok || `${totalEx} exercise${totalEx === 1 ? "" : "s"}`;
       card.innerHTML = `
         <div class="workout-card-icon">${dayIconHtml(icon)}</div>
         <div class="workout-card-body">
           <h4 class="workout-card-title">${escapeHtml(day.name)}</h4>
-          <div class="workout-card-meta">${totalEx} exercise${totalEx === 1 ? "" : "s"} · ${status}${
+          <div class="workout-card-meta">${metaLead} · ${status}${
             firstLogged ? `<span class="wc-first">${escapeHtml(shortLogDate(firstLogged))}</span>` : ""}</div>
           ${rdy || moods.length ? `<span class="wc-tags">${readinessChipHtml(rdy)}${moodChipsHtml(moods)}</span>` : ""}
         </div>

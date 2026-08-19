@@ -62,11 +62,52 @@ if (metaMatch) {
     !meta.includes("${moveCtl}") && !meta.includes("wc-move"),
     "an inline control there sits on the card's own centre — see the header of this file"
   );
+  // The "vs last" delta DOES live in this line, unlike the two controls above —
+  // it is passive text, so it is not a tap hazard. What it must never do is
+  // ADD to the line. It is interpolated via `metaLead`, which is the delta OR
+  // the exercise count, never both; see the size measurements below.
+  check(
+    "the delta reaches the meta line only through metaLead",
+    meta.includes("${metaLead}") && !meta.includes("${deltaTok}"),
+    "the delta must displace the exercise count, not append to it"
+  );
 }
 check(
   "the controls are wrapped in .wc-actions",
   /class="wc-actions">\$\{skipCtl\}\$\{moveCtl\}<\/div>/.test(template),
   "expected a .wc-actions wrapper holding skipCtl + moveCtl"
+);
+// The load-bearing half of the placement. A done athlete card carries NO
+// .wc-actions at all — skipCtl needs !checked, moveCtl is coach-only — so
+// putting the delta in that column creates one, costing the text box ~58px and
+// wrapping the readiness/mood chips a finished day carries. Measured across
+// 320/360/390/430/768/1000/1280px it grew the card in 90 of 168 configurations,
+// by up to 57px. Swapping the count out grew it in none. Keep it a swap.
+check(
+  "the delta displaces the exercise count rather than joining it",
+  /const metaLead = deltaTok \|\| `\$\{totalEx\} exercise/.test(app),
+  "metaLead must be `deltaTok || <count>` — appending the delta to the count " +
+  "is what makes the card grow; see the note over .wc-delta in styles.css"
+);
+check(
+  "the delta is not in the actions column",
+  !/class="wc-actions">[^<]*\$\{deltaTok\}/.test(template) && !template.includes("wc-actions\">${deltaTok}"),
+  "a column on a done card is new structure — that is the +57px case"
+);
+// Neither half of the guard may be loosened: a partial day compared against a
+// complete one reads as a collapse, and a skipped day has nothing to compare.
+check(
+  "the delta only renders on a finished, unskipped day",
+  /const delta = !skippedNow && \(checked \|\| allLogged\)/.test(app),
+  "the delta must not appear on partial or skipped days"
+);
+// .wc-delta must stay an inline token. Turning it back into a flex column (the
+// first design) breaks the meta line's single row on every finished card.
+const deltaRule = css.match(/^\.wc-delta\s*\{([^}]*)\}/m);
+check(
+  ".wc-delta is an inline token, not a flex column",
+  !!deltaRule && !/display:\s*flex/.test(deltaRule[1]),
+  deltaRule ? "rule was: " + deltaRule[1].trim() : ".wc-delta rule not found"
 );
 // .wc-actions must be a SIBLING of .workout-card-body, not inside it: inside,
 // it lands under the meta line, which on a two-line card is still mid-card.
