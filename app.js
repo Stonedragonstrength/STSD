@@ -329,7 +329,7 @@
     sessionBankSummary, monthChargePlan, raiseProjection,
     billingRefundedFor, athleteOwed, lastPaymentFor, unpaidChargeMonths,
     chargeFor,
-    redeemSweepPlan,
+    redeemSweepPlan, calIncomeSummary,
   } = globalThis.STSD.money;
   // Phase 4 (Scheduling) pulls, same contract and same load-bearing position.
   const {
@@ -16707,6 +16707,7 @@
     else if (c.mode === "week") renderCalWeekView(weekHost, c.date);
     else renderCalMonthGrid(grid, year, month);
     renderDashCalUnlinked();
+    renderDashCalIncomeStrip();
   }
 
   // Booked sessions the app cannot attach to an athlete never charge, never
@@ -16731,6 +16732,47 @@
     host.innerHTML = `⚠ ${total} booked session${total === 1 ? "" : "s"} not linked to an athlete ` +
       `(${[...hits.keys()].map((n) => escapeHtml(n)).join(", ")}). ` +
       `Open one of their days and tap the session to link it.`;
+    show(host);
+  }
+
+  // The frame's money, under whichever zoom is showing (2026-08-19, Nathan's
+  // ask): income per membership tier for exactly the sessions the calendar
+  // draws — past days of the frame included, because the frame IS the
+  // question — plus the total of all of them. Priced per athlete the same
+  // way the Income card prices its forecast, grouped the way Books cuts its
+  // breakdown, and under the same eye as every other money figure: the
+  // title stays legible while the numbers are covered.
+  function renderDashCalIncomeStrip() {
+    const host = $("#dash-cal-income");
+    if (!host) return;
+    const c = dashCal();
+    const dates = c.mode === "day" ? [c.date]
+      : c.mode === "week" ? weekDatesOf(c.date)
+      : Array.from({ length: new Date(c.year, c.month + 1, 0).getDate() },
+          (_, i) => dateISO(new Date(c.year, c.month, i + 1)));
+    const s = calIncomeSummary(dates, dashCalSetmoreByDate(), (e) => {
+      const a = matchAthleteForEvent(e);
+      if (!a) return null;
+      const mb = bankMembership(a);
+      return { label: mb ? membershipTitle(mb) : "No membership", rate: athleteSessionRate(a) || 0 };
+    });
+    if (!s.sessions) { hide(host); host.innerHTML = ""; return; }
+    const row = (lbl, n, amt, cls) =>
+      `<div class="dci-row${cls || ""}"><span class="dci-lbl">${escapeHtml(lbl)}` +
+      `<span class="dci-sub">${escapeHtml(plural(n, "session"))}</span></span>` +
+      `<span class="dci-val">${escapeHtml(money(amt))}</span></div>`;
+    const notes = [];
+    if (s.unpriced) notes.push(`${plural(s.unpriced, "session")} with no rate set. Add one on their Profile.`);
+    if (s.unlinked) notes.push(`${plural(s.unlinked, "session")} not linked to an athlete, counted at $0.`);
+    host.innerHTML =
+      `<div class="dci-strip${incomeShown() ? "" : " is-hidden"}">` +
+        `<div class="dci-head"><span class="dci-title">Income</span></div>` +
+        `<div class="dci-figs">` +
+          s.groups.map((g) => row(g.label, g.sessions, g.amount)).join("") +
+          row("Total", s.sessions, s.amount, " is-total") +
+          notes.map((t) => `<p class="dci-note">${escapeHtml(t)}</p>`).join("") +
+        `</div>` +
+      `</div>`;
     show(host);
   }
 
@@ -22330,6 +22372,7 @@
     renderIncomeCard();
     renderBooks();
     renderMoneyWeekStrip(); // third figure host in the same fold, same eye
+    renderDashCalIncomeStrip(); // and the calendar's frame strip on Overview
   }
 
   // ---- Coach: book an athlete straight off the month grid ----

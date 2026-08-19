@@ -3681,6 +3681,33 @@ input.trial-input {
 }
 .dv-tag.is-warn { color: var(--warn-ink); border-color: rgba(var(--warn-rgb), 0.55); }
 
+/* ---- Calendar income strip: the frame's money per tier, plus the total.
+   Blur mirrors .income-card.is-hidden .income-figs exactly; the title stays
+   legible so the strip still says what it is while it is covered. --------- */
+.dci-strip {
+  margin-top: 0.6rem; padding: 0.55rem 0.7rem 0.6rem;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface);
+}
+.dci-title {
+  font-size: 0.62rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted);
+}
+.dci-figs { margin-top: 0.3rem; }
+.dci-strip.is-hidden .dci-figs { filter: blur(8px); user-select: none; }
+.dci-strip.is-hidden .dci-figs * { pointer-events: none; }
+.dci-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 0.8em;
+  padding: 0.18rem 0; font-size: 0.82rem;
+}
+.dci-lbl { color: var(--text); font-weight: 600; min-width: 0; }
+.dci-sub { display: block; font-size: 0.68rem; color: var(--muted); }
+.dci-val { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dci-row.is-total { border-top: 1px solid var(--border); margin-top: 0.25rem; padding-top: 0.4rem; }
+.dci-row.is-total .dci-lbl { font-weight: 800; }
+.dci-row.is-total .dci-val { color: var(--primary-bright); }
+.dci-note { margin: 0.3rem 0 0; font-size: 0.68rem; color: var(--text-soft); }
+
 /* ---- "What happened on this day" sheet (both calendars) ---- */
 .cday-sec { margin-bottom: 0.9rem; }
 .cday-sec-head {
