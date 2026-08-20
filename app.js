@@ -15432,7 +15432,9 @@
       <div class="bw-import">
         <button class="btn btn-ghost btn-sm slim-btn" type="button" id="btn-coach-import-scale">Import from scale…</button>
         <span class="muted">Renpho CSV. Weigh-ins land on ${escapeHtml(c.name)}'s log.</span>
-        <input type="file" id="coach-scale-csv-input" accept=".csv,text/csv,text/comma-separated-values,application/csv,application/vnd.ms-excel" hidden />
+        <!-- No accept filter: see the note in index.html on the athlete's
+             copy of this control. The picker greys out real exports. -->
+        <input type="file" id="coach-scale-csv-input" hidden />
       </div>`;
     bwCard.querySelector("#btn-coach-import-scale").addEventListener("click", () =>
       bwCard.querySelector("#coach-scale-csv-input").click());
@@ -36262,7 +36264,7 @@
         <p class="muted" style="margin-top:0">
           Export your data from Cronometer, then pick the CSV files here. Your
           foods, recipes, recent diary, water and weight all come across.</p>
-        <input type="file" id="imp-files" multiple accept=".csv,text/csv" class="imp-file" />
+        <input type="file" id="imp-files" multiple class="imp-file" />
         <label class="btn btn-primary imp-pick" id="imp-pick-label" for="imp-files">Choose CSV files</label>
         <p class="muted imp-chosen" id="imp-chosen">No files chosen yet.</p>
         <div id="imp-result"></div>`,
@@ -36882,6 +36884,15 @@
   // column order, missing readings ("--"), and lb-vs-kg (unit lives in the
   // header, e.g. "Weight(lb)"); kg columns are converted to lb.
   function parseScaleCsv(text) {
+    // A spreadsheet is not a CSV, and FileReader hands us its raw bytes as
+    // text: an .xlsx arrives as "PK" and a zip header, and anything saved as
+    // Excel Unicode Text is full of NULs. Both used to fall through to the
+    // column check below and be reported as a file with no Date and Weight
+    // columns, which sends whoever is importing off after the wrong problem.
+    const head = String(text).slice(0, 200);
+    if (/^PK[\u0003\u0004]/.test(head) || head.includes("\u0000")) {
+      return { entries: [], error: /^PK/.test(head) ? "That is a spreadsheet, not a CSV. Open it, choose Save As, pick CSV, and upload that file." : "That is not a CSV file. If it is a spreadsheet, open it and Save As CSV first." };
+    }
     const lines = String(text).replace(/^﻿/, "").split(/\r?\n/).filter((l) => l.trim().length);
     if (lines.length < 2) return { entries: [], error: "That file has no data rows." };
     const headers = csvSplitLine(lines[0]);
