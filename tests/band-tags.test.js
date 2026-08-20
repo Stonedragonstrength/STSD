@@ -262,16 +262,24 @@ const PROG_MAX_ADD_SETS = extractConst(progressionSrc, "PROG_MAX_ADD_SETS");
 const PROG_BACKOFF_PCTS = extractConst(progressionSrc, "PROG_BACKOFF_PCTS");
 const PROG_STALL_DEFAULT = extractConst(progressionSrc, "PROG_STALL_DEFAULT");
 const PROG_NO_CAP = extractConst(progressionSrc, "PROG_NO_CAP");
+// RIR autoregulation reads a per-rule target (2026-08-19), so progressionRule
+// now closes over these two as well. Every constant the extracted body names
+// has to be injected here or the Function call throws — see the extraction
+// rules at the top of this block.
+const PROG_RIR_EASY = extractConst(progressionSrc, "PROG_RIR_EASY");
+const PROG_RIR_TARGET = extractConst(progressionSrc, "PROG_RIR_TARGET");
 // Stub: real exIsTimed() also name-sniffs carries (isCarryName), which no
 // fixture below relies on — only the explicit ex.timed flag matters here.
 const exIsTimedStub = (ex) => !!(ex && ex.timed === true);
 
 const realProgressionRuleFn = new Function(
   "ex", "exIsTimed", "bandOf", "PROG_TIME_STEP", "PROG_MAX_ADD_SETS", "PROG_BACKOFF_PCTS", "PROG_STALL_DEFAULT", "PROG_NO_CAP",
+  "PROG_RIR_EASY", "PROG_RIR_TARGET",
   fnBody(progressionSrc, "function progressionRule(ex) {")
 );
 function realProgressionRule(ex) {
-  return realProgressionRuleFn(ex, exIsTimedStub, bandOf, PROG_TIME_STEP, PROG_MAX_ADD_SETS, PROG_BACKOFF_PCTS, PROG_STALL_DEFAULT, PROG_NO_CAP);
+  return realProgressionRuleFn(ex, exIsTimedStub, bandOf, PROG_TIME_STEP, PROG_MAX_ADD_SETS, PROG_BACKOFF_PCTS, PROG_STALL_DEFAULT, PROG_NO_CAP,
+    PROG_RIR_EASY, PROG_RIR_TARGET);
 }
 const realProgressionResult = new Function(
   "st", "rule", "writtenSets", "base",
@@ -320,7 +328,7 @@ check("REGRESSION: REAL progressionRule() is byte-identical for a weighted lift"
   const ex = { currentWeight: "185", currentReps: "5", progression: { ceil: "8", inc: "5" } };
   assert.deepStrictEqual(realProgressionRule(ex), {
     floor: 5, ceil: 8, inc: 5, reset: 5, step: 1, timed: false,
-    addSets: 0, backoff: 0, stallAfter: 2,
+    addSets: 0, backoff: 0, stallAfter: 2, targetRir: 2,
   });
 });
 
@@ -328,12 +336,12 @@ check("REGRESSION: REAL progressionRule() is byte-identical for a bodyweight lif
   const plain = { currentWeight: "BW", currentReps: "10", progression: { ceil: "15" } };
   assert.deepStrictEqual(realProgressionRule(plain), {
     floor: 10, ceil: 15, inc: 0, reset: 10, bw: true, step: 1, timed: false,
-    addSets: 0, backoff: 0, stallAfter: 2,
+    addSets: 0, backoff: 0, stallAfter: 2, targetRir: 2,
   });
   const graduating = { currentWeight: "BW", currentReps: "10", progression: { ceil: "15", inc: "10" } };
   assert.deepStrictEqual(realProgressionRule(graduating), {
     floor: 10, ceil: 15, inc: 10, reset: 10, bw: true, graduate: true, step: 1, timed: false,
-    addSets: 0, backoff: 0, stallAfter: 2,
+    addSets: 0, backoff: 0, stallAfter: 2, targetRir: 2,
   });
 });
 
@@ -342,11 +350,16 @@ check("REGRESSION: REAL progressionResult() gains atCap but every other field is
   const st = { weight: 190, reps: 5, extra: 0, stall: 0, earned: 1, deloads: 0, last: "jump" };
   const res = realProgressionResult(st, rule, 3, 185);
   assert.strictEqual(res.atCap, false, "a weight jump is not a band cap");
-  const { atCap, ...withoutAtCap } = res;
-  assert.deepStrictEqual(withoutAtCap, {
+  // `ground` and `easyRun` joined the result with RIR autoregulation
+  // (2026-08-19) the same way atCap did — peeled off here for the same reason:
+  // this assertion is about the fields that existed BEFORE, and it must keep
+  // failing on a change to any of those.
+  const { atCap, ground, easyRun, ...older } = res;
+  assert.strictEqual(ground, false, "a weight jump is not a ground-out hold");
+  assert.deepStrictEqual(older, {
     weight: 190, reps: 5, earned: 1, gained: 5, extra: 0, sets: 3, stall: 0, deloads: 0,
     justDeloaded: false, floor: 5, ceil: 8, inc: 5, reset: 5, step: 1, timed: false,
-    addSets: 0, backoff: 0, stallAfter: 2,
+    addSets: 0, backoff: 0, stallAfter: 2, targetRir: 2,
   }, "every pre-existing field computes exactly as it did before atCap existed");
 });
 

@@ -264,7 +264,10 @@ describe("effectiveProgression: the weighted chain", () => {
     expect(t4.earned).toBe(1);
   });
 
-  it("a hit with plenty in reserve climbs two rungs, still capped at the ceiling", () => {
+  // Pre-cutover dates: this pins the GRANDFATHERED behaviour. The rule for
+  // sessions logged from PROG_RIR_V2_FROM on is two-easy-in-a-row — see the
+  // "RIR: two in a row to accelerate" describe at the foot of this file.
+  it("a hit with plenty in reserve climbs two rungs on a legacy log, still capped at the ceiling", () => {
     const weeks = program([bench("a", "185"), bench("b", "185")]);
     const logs = { a: [hit("2026-08-04", 185, 8, { rir: 4 })] };
     const t2 = effectiveProgression(weeks, weeks[1].days[0].exercises[0], logs);
@@ -362,5 +365,108 @@ describe("progressionRule edges", () => {
     const r = progressionRule({ currentReps: "8", currentWeight: "BW", progression: { ceil: PROG_NO_CAP, inc: 5 } });
     expect(r.graduate).toBeUndefined();
     expect(r.inc).toBe(0);
+  });
+});
+
+// ── RIR autoregulation, reworked 2026-08-19 (Nathan: "the rep target and the
+//    weight shouldn't both climb just because of one good day of RIR", then
+//    "we need a better system"). Three rules replace the single-session
+//    doubling: acceleration needs TWO easy sessions in a row and pays out in
+//    REPS only, the weight leg moves one increment forever, and a session
+//    ground out at RIR 0 HOLDS the ladder instead of climbing it — the brake
+//    the old system never had. Sessions logged before PROG_RIR_V2_FROM keep
+//    the old behaviour so nobody's live numbers move overnight. ─────────────
+describe("RIR: two in a row to accelerate, and a grind is a brake", () => {
+  const wide = (id) => bench(id, "185", { progression: { ceil: 14 } });
+  const OLD = "2026-08-04";  // before the cutover
+  const D1 = "2026-08-20";   // on it
+  const D2 = "2026-08-21";
+  const D3 = "2026-08-22";
+  const reps = (weeks, i, logs) => effectiveProgression(weeks, weeks[i].days[0].exercises[0], logs);
+
+  it("ONE easy session no longer doubles the step — it takes a single rung", () => {
+    const weeks = program([wide("a"), wide("b")]);
+    const t = reps(weeks, 1, { a: [hit(D1, 185, 8, { rir: 4 })] });
+    expect(t.reps, "one easy day must be worth one rung, not two").toBe(9);
+  });
+
+  it("TWO easy sessions in a row earn the extra rung, and spend the run doing it", () => {
+    const weeks = program([wide("a"), wide("b"), wide("c"), wide("d")]);
+    const logs = {
+      a: [hit(D1, 185, 8, { rir: 4 })],   // easyRun 1 → 9
+      b: [hit(D2, 185, 9, { rir: 4 })],   // easyRun 2 → extra rung → 11, run spent
+      c: [hit(D3, 185, 11, { rir: 4 })],  // easyRun 1 again → 12
+    };
+    expect(reps(weeks, 2, logs).reps, "second easy session pays the extra rung").toBe(11);
+    expect(reps(weeks, 3, logs).reps, "the run resets when it pays out").toBe(12);
+  });
+
+  it("a normal session between two easy ones breaks the run", () => {
+    const weeks = program([wide("a"), wide("b"), wide("c")]);
+    const logs = {
+      a: [hit(D1, 185, 8, { rir: 4 })],   // easyRun 1 → 9
+      b: [hit(D2, 185, 9, { rir: 2 })],   // at target → run cleared → 10
+    };
+    expect(reps(weeks, 2, logs).reps).toBe(10);
+  });
+
+  it("the WEIGHT leg never doubles, even standing on a banked easy run", () => {
+    const tight = (id) => bench(id, "185", { progression: { ceil: 9 } });
+    const weeks = program([tight("a"), tight("b"), tight("c")]);
+    const logs = {
+      a: [hit(D1, 185, 8, { rir: 4 })],  // easyRun 1 → reps 9 (the ceiling)
+      b: [hit(D2, 185, 9, { rir: 4 })],  // at the ceiling with a run banked → jump
+    };
+    const t = reps(weeks, 2, logs);
+    expect(t.weight, "one increment, not two").toBe(190);
+    expect(t.earned).toBe(1);
+    expect(t.gained).toBe(5);
+  });
+
+  it("a session ground out at RIR 0 HOLDS the ladder even though the reps were there", () => {
+    const weeks = program([wide("a"), wide("b")]);
+    const t = reps(weeks, 1, { a: [hit(D1, 185, 8, { rir: 0 })] });
+    expect(t.reps, "they hit it, but not the way it was asked for").toBe(8);
+    expect(t.stall, "a hold is not a stall — nothing failed").toBe(0);
+  });
+
+  it("…and a grind on a MISS counts one stall, not two", () => {
+    const weeks = program([wide("a"), wide("b")]);
+    const missed = { a: [{ date: D1, locked: true, rir: 0,
+      sets: [{ weight: 185, reps: 8 }, { weight: 185, reps: 4 }, { weight: 185, reps: 8 }] }] };
+    expect(reps(weeks, 1, missed).stall).toBe(1);
+  });
+
+  it("plenty left on a MISS still shields it from the stall count", () => {
+    const weeks = program([wide("a"), wide("b")]);
+    const missed = { a: [{ date: D1, locked: true, rir: 4,
+      sets: [{ weight: 185, reps: 8 }, { weight: 185, reps: 4 }, { weight: 185, reps: 8 }] }] };
+    const t = reps(weeks, 1, missed);
+    expect(t.stall).toBe(0);
+    expect(t.reps).toBe(8);
+  });
+
+  it("no RIR tagged at all is untouched: one rung, no brake", () => {
+    const weeks = program([wide("a"), wide("b")]);
+    expect(reps(weeks, 1, { a: [hit(D1, 185, 8)] }).reps).toBe(9);
+  });
+
+  it("the target is what RIR is measured against, not a fixed 4", () => {
+    // targetRir 4 means 4-left IS the ask — so it earns nothing, and the
+    // athlete has to leave 6 to read as easy.
+    const t4 = (id) => bench(id, "185", { progression: { ceil: 14, targetRir: 4 } });
+    const weeks = program([t4("a"), t4("b"), t4("c")]);
+    const atTarget = { a: [hit(D1, 185, 8, { rir: 4 })], b: [hit(D2, 185, 9, { rir: 4 })] };
+    expect(reps(weeks, 2, atTarget).reps, "two at-target sessions are two single rungs").toBe(10);
+    // And RIR 2 against a target of 4 is a grind: two under.
+    expect(reps(weeks, 1, { a: [hit(D1, 185, 8, { rir: 2 })] }).reps).toBe(8);
+  });
+
+  it("sessions logged BEFORE the cutover keep the old single-session double", () => {
+    const weeks = program([wide("a"), wide("b")]);
+    expect(reps(weeks, 1, { a: [hit(OLD, 185, 8, { rir: 4 })] }).reps,
+      "grandfathered: nobody's live numbers move overnight").toBe(10);
+    // …and the old rules have no brake, so a grind still climbs.
+    expect(reps(weeks, 1, { a: [hit(OLD, 185, 8, { rir: 0 })] }).reps).toBe(9);
   });
 });

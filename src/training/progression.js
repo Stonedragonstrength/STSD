@@ -34,9 +34,12 @@
   //     weeks are counted, and the coach can have the chain back off a % and
   //     re-climb instead of sitting at a wall forever;
   //   • RIR autoregulation — the athlete tags a locked exercise with how much
-  //     was left in the tank. 4+ in reserve makes a hit climb two rungs instead
-  //     of one, and stops a miss counting as a stall (they stopped early, they
-  //     didn't fail).
+  //     was left in the tank, and the engine reads it against what the set was
+  //     ASKED to feel like (rule.targetRir). Two easy sessions IN A ROW earn
+  //     one extra rep rung; a session ground out two under target HOLDS the
+  //     ladder even though the reps were there; and a miss with plenty left
+  //     never counts as a stall (they stopped early, they didn't fail).
+  //     The weight leg moves one increment whatever the effort said.
   // Ceiling sentinel for bodyweight rep ladders with no cap ("∞").
   const PROG_NO_CAP = 999;
   // Timed exercises run the SAME double progression, but the ladder rung is
@@ -53,9 +56,27 @@
   // held week is normal; two in a row is a signal.
   const PROG_STALL_SHOW = 2;
   // RIR ("reps in reserve") buckets the athlete can tag a locked exercise with.
-  // At or above PROG_RIR_EASY the set was submaximal: climb faster, and don't
-  // let a miss at that effort count as a strength stall.
+  // PROG_RIR_EASY is the value behind the top button, not a rule any more —
+  // effort is judged against the exercise's TARGET, so the same tap means
+  // different things in a strength block and a hypertrophy one.
   const PROG_RIR_EASY = 4;
+  // What the set was supposed to feel like. Two left in the tank is the
+  // default ask, which is exactly what the three buttons already say: None is
+  // two under it, About 2 is on it, 4 or more is two over.
+  const PROG_RIR_TARGET = 2;
+  // How far off target counts as a different KIND of session rather than
+  // noise. One rep either way is a judgement call; two is a fact.
+  const PROG_RIR_BAND = 2;
+  // Sessions this dated or later are judged by the rules above. Everything
+  // logged before it keeps the old single-session doubling.
+  //
+  // The engine holds no state — it re-walks the whole log on every render —
+  // so a rule change re-grades history, and an athlete who had been tagging
+  // "4 or more" would have opened the app to a bar 10 or 15lb lighter than
+  // yesterday with nothing on screen explaining it. Nathan's call (2026-08-19)
+  // was to grandfather rather than re-grade. The fork costs one date compare
+  // and should be deleted once no live chain reaches back past it.
+  const PROG_RIR_V2_FROM = "2026-08-20";
 
   function progressionRule(ex) {
     const p = ex && ex.progression;
@@ -70,10 +91,15 @@
     // The three optional layers. Every one of them is clamped here so the rest
     // of the engine can trust the numbers without re-checking.
     const bo = parseInt(p.backoff, 10);
+    const tr = parseInt(p.targetRir, 10);
     const layers = {
       addSets: Math.max(0, Math.min(PROG_MAX_ADD_SETS, parseInt(p.sets, 10) || 0)),
       backoff: PROG_BACKOFF_PCTS.includes(bo) ? bo : 0,
       stallAfter: Math.max(1, parseInt(p.stallAfter, 10) || PROG_STALL_DEFAULT),
+      // What the set is meant to feel like. Clamped rather than trusted: a
+      // target above the top button would make "easy" unreachable and quietly
+      // freeze the ladder.
+      targetRir: Number.isFinite(tr) ? Math.max(0, Math.min(PROG_RIR_EASY, tr)) : PROG_RIR_TARGET,
     };
     // Bodyweight: rep ladder. Without an increment it holds at the cap forever.
     // With an increment (and a real cap) it *graduates*: at the cap it starts
@@ -125,7 +151,9 @@
   // `protect` rides along when the athlete checked in beat up before this
   // session — see the readiness section. It only ever cancels a stall.
   function progressionAttempt(exCopy, effWeight, effSets, logsMap, ctx) {
-    const none = { logged: false, min: null, rir: null, protect: false };
+    // `date` rides along so the step can tell which ruleset judges this
+    // session — see PROG_RIR_V2_FROM.
+    const none = { logged: false, min: null, rir: null, protect: false, date: null };
     const arr = logsMap?.[exCopy.id];
     if (!Array.isArray(arr) || !arr.length) return none;
     const entry = [...arr].sort((a, b) => String(b.date).localeCompare(String(a.date)))
@@ -150,11 +178,11 @@
         readinessFlagAnswer(rdy) === 1);
     let min = Infinity;
     for (const s of entry.sets.slice(0, need)) {
-      if (s.skipped) return { logged: true, min: null, rir, protect }; // skipped set = a real miss
-      if ((parseFloat(s.weight) || 0) < effWeight - 0.01) return { logged: true, min: null, rir, protect };
+      if (s.skipped) return { logged: true, min: null, rir, protect, date: entry.date }; // skipped set = a real miss
+      if ((parseFloat(s.weight) || 0) < effWeight - 0.01) return { logged: true, min: null, rir, protect, date: entry.date };
       min = Math.min(min, parseInt(s.reps, 10) || 0);
     }
-    return { logged: true, min, rir, protect };
+    return { logged: true, min, rir, protect, date: entry.date };
   }
 
   // Stall reset: hand back the earned weight at the coach's %, rounded down to
@@ -242,25 +270,46 @@
   // `st` is the running ladder state and is mutated in place; `base` is the
   // written weight the back-off may never cut below.
   function progressionStep(st, rule, att, base) {
-    if (!att.logged) { st.last = "rest"; return; } // nothing to judge
-    const easy = att.rir != null && att.rir >= PROG_RIR_EASY;
+    if (!att.logged) { st.last = "rest"; return; } // nothing to judge — run intact
+    // Which ruleset judges this session. See PROG_RIR_V2_FROM: a log with no
+    // date at all falls to the old rules, which are the generous ones.
+    const legacy = !att.date || String(att.date) < PROG_RIR_V2_FROM;
+    // Effort read against what the set was ASKED to feel like, not a fixed
+    // number, so the same tap means one thing at a target of 2 and another at
+    // a target of 4.
+    const off = att.rir == null ? 0 : att.rir - rule.targetRir;
+    const easier = att.rir != null &&
+      (legacy ? att.rir >= PROG_RIR_EASY : off >= PROG_RIR_BAND);
+    const harder = !legacy && att.rir != null && off <= -PROG_RIR_BAND;
+
     if (att.min == null || att.min < st.reps) {
-      // A miss with 4+ left in the tank isn't a strength failure — they stopped
-      // early. Hold the target, but don't hold it against them. Same for a miss
-      // on a day they checked in beat up: that's a bad night's sleep, not a
-      // strength failure. Note `boost` below is NOT protected-aware — readiness
-      // is a brake only, it never speeds the ladder up.
-      if (easy || att.protect) { st.last = "hold"; return; }
+      st.easyRun = 0; // a miss ends the run whatever the effort said
+      // A miss with plenty left in the tank isn't a strength failure — they
+      // stopped early. Hold the target, but don't hold it against them. Same
+      // for a miss on a day they checked in beat up: that's a bad night's
+      // sleep, not a strength failure. A miss ground out at RIR 0 counts ONCE,
+      // like any other: the brake for that athlete is the hold below, which
+      // fires a session earlier and costs them nothing.
+      if (easier || att.protect) { st.last = "hold"; return; }
       st.stall += 1;
       st.last = "miss";
       if (rule.backoff && st.stall >= rule.stallAfter) progressionBackoff(st, rule, base);
       return;
     }
     st.stall = 0;
-    // Left plenty in the tank on a hit → take two rungs instead of one.
-    const boost = easy ? 2 : 1;
+    // They hit the reps, but two under target getting there — the number was
+    // met, the quality asked for was not. Hold, and say nothing against them:
+    // this is the brake the old system never had, and it fires BEFORE the
+    // session that would otherwise have been the failure.
+    if (harder) { st.easyRun = 0; st.last = "grind"; return; }
+    st.easyRun = easier ? st.easyRun + 1 : 0;
+    // Acceleration is EARNED, not tapped: two easy sessions in a row, and the
+    // run is spent paying out so a long streak pays every other session rather
+    // than every one. Legacy sessions keep their single-session double.
+    const fast = legacy ? easier : st.easyRun >= PROG_RIR_BAND;
+    if (fast && !legacy) st.easyRun = 0;
     if (att.min < rule.ceil) {
-      st.reps = Math.min(att.min + rule.step * boost, rule.ceil);
+      st.reps = Math.min(att.min + rule.step * (fast ? 2 : 1), rule.ceil);
       st.last = "climb";
       return;
     }
@@ -269,15 +318,23 @@
     // No weight leg to spend (reps-only, or bodyweight that never graduates):
     // the ladder just holds at its ceiling.
     if (rule.repsOnly || (rule.bw && !rule.graduate)) { st.reps = rule.ceil; st.last = "cap"; return; }
-    st.weight += rule.inc * boost;
+    // The WEIGHT leg moves one increment. Reps are the fast lane and they are
+    // self-correcting — a rung taken too early has to be hit again next time
+    // or the ladder stalls — whereas a doubled jump goes straight onto the bar
+    // off one self-reported tap, which is what this rework is for.
+    const wBoost = legacy && easier ? 2 : 1;
+    st.weight += rule.inc * wBoost;
     st.reps = rule.reset;
     st.extra = 0;
-    st.earned += boost;
+    st.earned += wBoost;
+    st.easyRun = 0; // a jump is the payout; the run doesn't survive it
     st.last = "jump";
   }
 
   function newProgressionState(weight, reps) {
-    return { weight, reps, extra: 0, stall: 0, earned: 0, deloads: 0, last: null };
+    // easyRun: consecutive sessions logged easier than the target. Walk state
+    // like everything else here — never stored, re-derived on every render.
+    return { weight, reps, extra: 0, stall: 0, earned: 0, deloads: 0, easyRun: 0, last: null };
   }
 
   function progressionResult(st, rule, writtenSets, base) {
@@ -298,6 +355,15 @@
       // "they have earned the next band" — the card offers it, and the coach
       // still takes it. The engine computes targets; it does not re-prescribe.
       atCap: st.last === "cap",
+      // The last session hit its reps but was ground out two under the target
+      // effort, so the ladder held rather than climbed. A held target with no
+      // reason on screen reads as a bug, so this is here for the card to say
+      // so; nothing renders it yet.
+      ground: st.last === "grind",
+      // How many easy sessions are banked toward the next extra rung. Two
+      // earns it; one is worth surfacing as "keep going" if the card ever wants
+      // to.
+      easyRun: st.easyRun || 0,
       ...rule,
     };
   }
@@ -381,6 +447,7 @@
   NS.training = Object.assign(NS.training || {}, {
     PROG_NO_CAP, PROG_TIME_STEP, PROG_MAX_ADD_SETS, PROG_STALL_DEFAULT,
     PROG_BACKOFF_PCTS, PROG_STALL_SHOW, PROG_RIR_EASY,
+    PROG_RIR_TARGET, PROG_RIR_BAND, PROG_RIR_V2_FROM,
     progressionRule, progressionAttempt, progressionBackoff,
     deloadTargetWeight, dayOccurrences, isSkipOccurrence,
     consecutiveDaySkips, dayDeloadPending,

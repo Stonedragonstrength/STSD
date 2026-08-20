@@ -1945,11 +1945,15 @@
   // feels about it. The number is the answer, so it's on the button.
   const RIR_OPTS = [
     { v: 0, icon: "sd:tank1", label: "None", timedLabel: "None",
-      hint: "Nothing left in the tank.", timedHint: "Nothing left. Could not have held it a second longer." },
+      hint: "Nothing left in the tank. Your target holds where it is.", timedHint: "Nothing left. Could not have held it a second longer. Your target holds." },
     { v: 2, icon: "sd:tank2", label: "About 2", timedLabel: "A few sec",
       hint: "About 2 good reps left.", timedHint: "Could have held it a few seconds longer." },
+    // The hints say what the tap actually DOES now. "Your targets will climb
+    // faster" was true when one tap doubled the rung; acceleration takes two
+    // sessions in a row since 2026-08-19, and the bottom option is a brake
+    // rather than nothing. See src/training/progression.js.
     { v: PROG_RIR_EASY, icon: "sd:tank3", label: "4 or more", timedLabel: "Plenty",
-      hint: "4 or more reps left. Your targets will climb faster.", timedHint: "Plenty left. Your targets will climb faster." },
+      hint: "4 or more reps left. Two sessions like this in a row and your targets jump.", timedHint: "Plenty left. Two in a row and your targets jump." },
   ];
 
   // The double-progression engine (progressionRule, progressionAttempt,
