@@ -7,8 +7,12 @@
 // (setmore_ics_url) that the app's anon-key client never touches directly.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { CORS, preflight } from "../_shared/cors.ts";
 
-Deno.serve(async (_req) => {
+Deno.serve(async (req) => {
+  // A preflight carries no body and no credentials: answer it first.
+  const pre = preflight(req);
+  if (pre) return pre;
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -32,13 +36,13 @@ Deno.serve(async (_req) => {
     }
 
     return new Response(JSON.stringify({ ok: true, results }), {
-      headers: { "Content-Type": "application/json" },
+      headers: { ...CORS, "Content-Type": "application/json" },
     });
   } catch (e) {
     console.error("[sync-setmore] fatal:", e);
     return new Response(JSON.stringify({ ok: false, error: String(e) }), {
       status: 500,
-      headers: { "Content-Type": "application/json" },
+      headers: { ...CORS, "Content-Type": "application/json" },
     });
   }
 });

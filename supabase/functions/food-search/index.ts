@@ -13,6 +13,8 @@
 // Set the secret with:
 //   supabase secrets set USDA_API_KEY=...
 
+import { CORS, preflight } from "../_shared/cors.ts";
+
 const SEARCH_URL = "https://api.nal.usda.gov/fdc/v1/foods/search";
 const PAGE_SIZE = 25;
 // USDA nutrientNumber codes. These are stable identifiers, not array indexes.
@@ -21,7 +23,7 @@ const N_KCAL = "208", N_PROTEIN = "203", N_FAT = "204", N_CARBS = "205";
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { ...CORS, "Content-Type": "application/json" },
   });
 
 const round1 = (v: unknown) => Math.round((Number(v) || 0) * 10) / 10;
@@ -59,6 +61,9 @@ function normalise(food: any) {
 }
 
 Deno.serve(async (req) => {
+  // A preflight carries no body and no credentials: answer it first.
+  const pre = preflight(req);
+  if (pre) return pre;
   try {
     const apiKey = Deno.env.get("USDA_API_KEY");
     if (!apiKey) {

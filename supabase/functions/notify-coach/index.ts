@@ -25,11 +25,12 @@ import { callerUserId } from "../_shared/caller-auth.ts";
 import { vapidDetails } from "../_shared/webpush.ts";
 import { deliverToCoach } from "../_shared/coach-notify.ts";
 import { RECIPES, type Athlete } from "../_shared/coach-recipes.ts";
+import { CORS, preflight } from "../_shared/cors.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { ...CORS, "Content-Type": "application/json" },
   });
 
 // An event is only news for a couple of minutes. Re-posting the same id later
@@ -47,6 +48,9 @@ const NO_ROW_CLOCK = new Set([
 ]);
 
 Deno.serve(async (req) => {
+  // A preflight carries no body and no credentials: answer it first.
+  const pre = preflight(req);
+  if (pre) return pre;
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;

@@ -16,14 +16,18 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { callerUserId } from "../_shared/caller-auth.ts";
 import { allowedTargets, type Prefs, type PushKind } from "../_shared/notify-prefs.ts";
 import { pushPayload, sendToSubscriptions, vapidDetails } from "../_shared/webpush.ts";
+import { CORS, preflight } from "../_shared/cors.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { ...CORS, "Content-Type": "application/json" },
   });
 
 Deno.serve(async (req) => {
+  // A preflight carries no body and no credentials: answer it first.
+  const pre = preflight(req);
+  if (pre) return pre;
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
