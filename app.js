@@ -3210,10 +3210,34 @@
   const Nav = (function () {
     const stack = [];
     let inBack = false;
+    // History entries we are unwinding ourselves, whose popstate must NOT run a
+    // handler: the thing that owned the level was already closed synchronously
+    // (a Done button, a pick, the next sheet replacing this one). Without this
+    // the unwind would pop the level BELOW and run somebody else's back.
+    let silent = 0;
+    // Returns a handle, so a level can be given back by IDENTITY later. It is
+    // not always the top one by then: a Tools menu that opens a sheet releases
+    // its level one task later, with the sheet's already sitting on top of it,
+    // and dropping the top would take the sheet's Back and leave the sheet with
+    // no way out. History entries are anonymous, so removing the middle of the
+    // stack and consuming the newest entry keeps depth and order honest.
     function push(backFn) {
-      if (inBack || typeof backFn !== "function") return;
-      stack.push(backFn);
+      if (inBack || typeof backFn !== "function") return null;
+      const level = { fn: backFn };
+      stack.push(level);
       try { history.pushState({ sdDepth: stack.length }, ""); } catch (e) {}
+      return level;
+    }
+    function depth() { return stack.length; }
+    // Give a level back because its owner closed some other way. The history
+    // entry still has to go; the handler must not run.
+    function drop(level) {
+      if (inBack) return;
+      const i = level ? stack.indexOf(level) : stack.length - 1;
+      if (i < 0) return;
+      stack.splice(i, 1);
+      silent++;
+      try { history.back(); } catch (e) { silent--; }
     }
     function reset() {
       if (inBack) return;
@@ -3242,14 +3266,65 @@
       if (depth) { try { history.go(-depth); } catch (e) {} }
     }
     window.addEventListener("popstate", () => {
-      const fn = stack.pop();
-      if (!fn) return;
+      if (silent > 0) { silent--; return; }
+      const level = stack.pop();
+      if (!level) return;
       inBack = true;
-      try { fn(); } catch (e) { console.warn("[Nav] back handler failed", e); }
+      try { level.fn(); } catch (e) { console.warn("[Nav] back handler failed", e); }
       inBack = false;
     });
-    return { push, reset, back, exit };
+    return { push, reset, back, exit, depth, drop };
   })();
+
+  // A transient layer — a sheet, a popover, a menu — that the phone's Back
+  // should CLOSE rather than navigate past. It owns one Nav level from the
+  // moment it opens until it goes away, however it goes away: Back runs
+  // `closeFn`, and every other route calls `done()` to hand the level back
+  // without running anything. Either way the level is spent exactly once.
+  function navLayer(closeFn) {
+    let live = true;
+    // The handle is kept so the level is given back BY IDENTITY: by the time a
+    // layer releases, something else may already be sitting on top of it.
+    const level = Nav.push(() => {
+      if (!live) return;
+      live = false;
+      try { closeFn(); } catch (e) { console.warn("[Nav] layer close failed", e); }
+    });
+    return { done() { if (!live) return; live = false; Nav.drop(level); } };
+  }
+
+  // A Nav level owned by a SLOT rather than by one element: "a sheet is up",
+  // "a popover is up", "a Tools menu is up". Only one thing is ever in a slot,
+  // and things replace each other inside it constantly — a sheet that closes to
+  // open the next, a popover opened by the same tap that dismissed the last.
+  //
+  // Handing a level back and taking a new one in the same gesture would race
+  // its own history.back(): the pushState lands while the traversal is still in
+  // flight and the entry is lost, and a lost entry means the next Back leaves
+  // the app instead of closing what is on screen — the exact bug this is here
+  // to fix. So a release waits one task, and a re-open inside that window keeps
+  // the level it was about to give up.
+  function navSlot() {
+    let layer = null, releasing = false, closeFn = null;
+    return {
+      open(fn) {
+        closeFn = fn;
+        releasing = false;
+        // Cleared BEFORE closing, so the close path below sees no layer and
+        // doesn't schedule a release for a level that is already spent.
+        if (!layer) layer = navLayer(() => { layer = null; releasing = false; closeFn?.(); });
+      },
+      close() {
+        if (!layer || releasing) return;
+        releasing = true;
+        setTimeout(() => {
+          if (!releasing) return; // something re-opened and kept it
+          releasing = false;
+          const l = layer; layer = null; closeFn = null; l.done();
+        }, 0);
+      },
+    };
+  }
 
   function playLoginFlash() {
     document.body.classList.add("login-success");
@@ -4107,6 +4182,10 @@
 
   // -------- Dashboard --------
   // ------------ Coach view router ------------
+  // Set while a coach top-level view other than Overview holds a Back level.
+  // See the #coach-nav click handler; the athlete's twin is _tabLevel.
+  let _coachNavLevel = false;
+
   function switchCoachView(name) {
     const map = {
       athletes:        "#view-dashboard",
@@ -12524,14 +12603,26 @@
     pop.style.visibility = "visible";
   }
 
+  // Every popover in the app comes through here, which makes it the one place
+  // to give them all a Back button. The level is dropped by overriding
+  // `pop.remove` rather than by hooking each caller: a picker leaves by an
+  // outside tap, by a pick, or by the next picker replacing it, and all three
+  // routes end in pop.remove().
+  const _popSlot = navSlot();
+  // Every exercise card builds its own Tools menu, but only one is ever open.
+  const _toolsSlot = navSlot();
   function _attachOutsideClose(pop, anchorEl) {
     const handler = (e) => {
-      if (!pop.contains(e.target) && e.target !== anchorEl) {
-        pop.remove();
-        document.removeEventListener("mousedown", handler, true);
-      }
+      if (!pop.contains(e.target) && e.target !== anchorEl) pop.remove();
     };
     document.addEventListener("mousedown", handler, true);
+    _popSlot.open(() => pop.remove());
+    const realRemove = pop.remove.bind(pop);
+    pop.remove = () => {
+      document.removeEventListener("mousedown", handler, true);
+      realRemove();
+      _popSlot.close();
+    };
   }
 
   function openGridPicker(label, values, currentVal, cb, anchorEl, cols) {
@@ -28336,6 +28427,39 @@
     // throw away the athlete's place in the food log.
     if (scroll) window.scrollTo({ top: 0 });
   }
+  // Tapping the athlete's tab bar. A top-level tab used to be a clean root, so
+  // the phone's Back on Program exited the app — which is not what Back means
+  // to anyone holding an Android (Nathan, 2026-08-19). Every tab that isn't
+  // Overview leaves exactly ONE level behind, so Back is always one hop home
+  // from anywhere on the bar.
+  //
+  // ONE level, not a trail: moving Program → Progress reuses the level it
+  // already has rather than stacking a second, so Back never walks the bar
+  // sideways. Tapping Overview spends the level through Back itself, which is
+  // what keeps the history honest — otherwise Back from Overview would find a
+  // stale entry and do nothing before exiting.
+  //
+  // Off in a live session: the coach's Back has to leave the session (see
+  // exitPreview), and a tab level under it would swallow that press.
+  let _tabLevel = false;
+  function navToClientTab(name) {
+    if (state.previewMode) { setClientTab(name); return; }
+    // Already standing on a tab level and asking for home: spend it through
+    // Back itself rather than resetting past it, so Back from Overview exits
+    // the way it always did instead of finding a stale entry and doing nothing.
+    if (name === "overview" && _tabLevel && Nav.depth() === 1) { Nav.back(); return; }
+    _tabLevel = false;
+    Nav.reset(); // jumping across the bar drops whatever was drilled into
+    setClientTab(name);
+    // Pushed AFTER the render, not before: some tab renders reset the stack on
+    // the way in (backToWorkoutPicker calls it — the day list is its own root),
+    // and a level pushed first would be wiped by the very view it was for.
+    if (name !== "overview") {
+      _tabLevel = true;
+      Nav.push(() => { _tabLevel = false; setClientTab("overview"); });
+    }
+  }
+
   function setClientTab(name) {
     // Leaving the tab underneath it: the library drawer goes too, rather than
     // floating over whatever the athlete switched to.
@@ -31702,6 +31826,7 @@
       document.removeEventListener("click", onToolsAway, true);
       window.removeEventListener("scroll", onToolsAway, true);
       window.removeEventListener("resize", onToolsAway, true);
+      _toolsSlot.close(); // phone Back closes this menu; every other route hands it back
       commitTweaks(); // last: may confirm and rebuild the card
     };
     const openToolsMenu = () => {
@@ -31711,6 +31836,9 @@
       document.body.appendChild(toolsMenu);
       toolsMenu.classList.remove("hidden");
       toolsBtn.setAttribute("aria-expanded", "true");
+      // Shared slot, not one level per card: opening another card's menu closes
+      // this one in the same gesture, so the level has to survive the handover.
+      _toolsSlot.open(closeToolsMenu);
       // Anchor under the button, right-aligned, clamped to the viewport.
       const r = toolsBtn.getBoundingClientRect();
       const mw = toolsMenu.offsetWidth, mh = toolsMenu.offsetHeight;
@@ -38245,6 +38373,12 @@
   // kept showing the old numbers. The edit had saved; the screen was stale.
   // Callers that pass no onClose are unaffected.
   let _modalOnClose = null;
+  // One level for "a sheet is up", so the phone's Back closes it instead of
+  // navigating out from under it. A slot rather than a level per open: several
+  // flows swap one sheet for the next without closing (the barcode scanner into
+  // the lookup, the lookup into the portion picker), and that is one thing on
+  // screen the whole way through.
+  const _modalSlot = navSlot();
   function openModal({ title, body, actions = [], onClose = null }) {
     _modalOnClose = onClose;
     // Any modal transition tears down a running camera. The scanner replaces
@@ -38264,6 +38398,12 @@
       foot.appendChild(btn);
     }
     show($("#modal"));
+    // One Nav level for as long as a sheet is up, so the phone's Back closes
+    // it instead of navigating out from under it. Not per-open: several flows
+    // swap one sheet for the next without closing (the barcode scanner into
+    // the lookup, the lookup into the portion picker), and each of those is
+    // one thing on screen, so it is one level.
+    _modalSlot.open(closeModal);
     // Hold the page still underneath. Without this, a scroll that starts on
     // the sheet — or continues past its end — scrolls the page behind it, so
     // closing the sheet leaves the coach somewhere else entirely.
@@ -38296,6 +38436,10 @@
   }
   function closeModal() {
     stopScan(); clearDayCompleteDressing(); hide($("#modal")); lockPageScroll(false);
+    // Hand the history entry back. A no-op when Back is what got us here (the
+    // level is already spent), and deferred one task so a hook below that
+    // opens the next sheet keeps it rather than racing a fresh one.
+    _modalSlot.close();
     // Cleared BEFORE it runs: a hook that closes a modal itself would otherwise
     // recurse, and several flows close one sheet to open the next.
     const hook = _modalOnClose;
@@ -39318,8 +39462,13 @@
     initAnatomyLibrary(); // build the coach + athlete body maps once
     document.querySelectorAll('#coach-nav [data-coach-nav]').forEach((b) => {
       b.addEventListener("click", () => {
-        Nav.reset(); // top-level nav is a new root
         const target = b.dataset.coachNav;
+        // Same rule as the athlete's tab bar (see navToClientTab): every
+        // top-level view except Overview leaves one level behind, so the
+        // phone's Back walks up the nav bar instead of out of the app.
+        if (target === "overview" && _coachNavLevel && Nav.depth() === 1) { Nav.back(); return; }
+        _coachNavLevel = false;
+        Nav.reset(); // top-level nav drops whatever was drilled into
         if (target === "library") {
           _programEditorId = null;
           state.currentClientId = null;
@@ -39395,6 +39544,13 @@
         } else {
           _programEditorId = null;
           renderDashboard();
+        }
+        // Pushed AFTER the branch, not before: renderDashboard() resets the
+        // stack on the way in (it is the coach root), so a level pushed first
+        // would be wiped by the very view it was pushed for.
+        if (target !== "overview") {
+          _coachNavLevel = true;
+          Nav.push(() => { _coachNavLevel = false; showCoachOverview(); });
         }
       });
     });
@@ -39624,10 +39780,7 @@
     });
 
     $$(".tab[data-tab]").forEach((t) => t.addEventListener("click", () => setTab(t.dataset.tab)));
-    $$(".tab[data-ctab]").forEach((t) => t.addEventListener("click", () => {
-      if (!state.previewMode) Nav.reset(); // switching top-level tabs is a new root (except mid-preview)
-      setClientTab(t.dataset.ctab);
-    }));
+    $$(".tab[data-ctab]").forEach((t) => t.addEventListener("click", () => navToClientTab(t.dataset.ctab)));
     $$("#fb-jump .a-shelf-btn").forEach((b) =>
       b.addEventListener("click", () => setFuelBody(b.dataset.fb, { scroll: true })));
 
