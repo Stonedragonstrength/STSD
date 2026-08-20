@@ -141,6 +141,19 @@ a stream of notifications.
 `deliverToCoach` directly with the service role. There is no caller to verify
 because there is no caller.
 
+**Correction, found while checking whether the coach had setup to do
+(2026-08-19).** No Square dashboard change is needed: the subscription already
+covers every event the money categories want, and it is provably live, with 21
+events received. But `billing_events` holds only `payment.updated` (18) and
+`payment.created` (3). There has never been a single `invoice.payment_made` or
+`invoice.scheduled_charge_failed`, because the money arrives as card charges
+rather than Square invoices.
+
+So `charge_failed` must hang off a FAILED `status` on `payment.updated`, which
+that handler already reads, and NOT off `invoice.scheduled_charge_failed` as
+assumed above. Wiring it to the invoice event would have shipped a
+notification that could never fire, and nothing would have reported it.
+
 ## The digest
 
 `supabase/functions/coach-digest`, on pg_cron every 15 minutes, the same
