@@ -30896,6 +30896,19 @@
       chip.textContent = `↓ Backed off ${prog.backoff}%`;
       chip.title = "The target got stuck, so it stepped back to give you a running start. Climb it again.";
       rxEl.appendChild(chip);
+    } else if (prog && prog.ground) {
+      // The ladder held because the last session was ground out well under the
+      // effort it asked for. Without this the target simply doesn't move and
+      // there is nothing on screen saying why, which reads as the app being
+      // broken rather than the app being careful. Ahead of the stall chip in
+      // this chain because it describes the LAST session, and because a hold
+      // and a stall can't both be true of it (a hold zeroes the stall).
+      const chip = document.createElement("span");
+      chip.className = "cex-hold-chip";
+      chip.textContent = "⏸ Target held";
+      chip.title = "You hit the reps last time, but with nothing left in the tank. "
+        + "The target stays here until it comes back easier — no stall, nothing lost.";
+      rxEl.appendChild(chip);
     } else if (prog && prog.stall >= PROG_STALL_SHOW) {
       const chip = document.createElement("span");
       chip.className = "cex-stall-chip";
@@ -30903,6 +30916,16 @@
       chip.title = prog.backoff
         ? `Same target ${prog.stall} weeks running. It backs off ${prog.backoff}% after ${prog.stallAfter}.`
         : `Same target ${prog.stall} weeks running. Talk to your coach if it stays there.`;
+      rxEl.appendChild(chip);
+    } else if (prog && prog.easyRun >= 1) {
+      // The other half of the same silence: acceleration takes two easy
+      // sessions in a row, and one banked is otherwise invisible. Can't collide
+      // with the two above — an easy hit zeroes the stall and clears a hold.
+      const chip = document.createElement("span");
+      chip.className = "cex-run-chip";
+      chip.textContent = "⚡ One more like that";
+      chip.title = "You left plenty in the tank last time. Log another session like it "
+        + "and the target takes an extra step instead of one.";
       rxEl.appendChild(chip);
     }
 

@@ -7149,9 +7149,15 @@ input:focus, textarea:focus, select:focus {
   border-color: rgba(var(--gold-rgb), 0.35);
 }
 /* Stall handling. Amber = the target has been sitting still; green = the
-   back-off fired and gave them a running start, which is a good thing. */
+   back-off fired and gave them a running start, which is a good thing.
+   Slate = the ladder held for one ground-out session, which is neither a
+   warning nor a win — it is the engine waiting. Cyan = an easy session is
+   banked and the next one like it pays double, the same "target moved"
+   colour as the progression chip because that is what it is promising. */
 .cex-stall-chip,
-.cex-deload-chip {
+.cex-deload-chip,
+.cex-hold-chip,
+.cex-run-chip {
   font-size: 0.64rem;
   font-weight: 700;
   border-radius: 999px;
@@ -7168,6 +7174,16 @@ input:focus, textarea:focus, select:focus {
   color: var(--accent);
   background: var(--accent-soft);
   border-color: rgba(16, 185, 129, 0.4);
+}
+.cex-hold-chip {
+  color: var(--text-soft);
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+}
+.cex-run-chip {
+  color: var(--primary-bright);
+  background: rgba(var(--primary-bright-rgb), 0.12);
+  border-color: rgba(var(--primary-bright-rgb), 0.35);
 }
 
 /* ===== Left in the tank (RIR) ===== */
