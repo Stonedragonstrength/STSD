@@ -15431,7 +15431,7 @@
     bwCard.innerHTML = `<h4 style="margin-top:0">Body weight</h4>
       <div class="bw-import">
         <button class="btn btn-ghost btn-sm slim-btn" type="button" id="btn-coach-import-scale">Import from scale…</button>
-        <span class="muted">Renpho CSV. Weigh-ins land on ${escapeHtml(c.name)}'s log.</span>
+        <span class="muted">Renpho CSV or Excel file. Weigh-ins land on ${escapeHtml(c.name)}'s log.</span>
         <!-- No accept filter: see the note in index.html on the athlete's
              copy of this control. The picker greys out real exports. -->
         <input type="file" id="coach-scale-csv-input" hidden />
@@ -37227,10 +37227,39 @@
   }
   // Coach-side: same parser, into the athlete's mirrored progress, pushed back
   // up the same way form-check replies are.
-  function coachImportScaleCsv(file, c) {
+  /**
+   * Hand an imported table to a parser as text, whatever the file turned out
+   * to be.
+   *
+   * A phone gives you what it has. The Renpho export arrives by email as a
+   * CSV, and the moment anyone opens it to look at it, it comes back as a
+   * spreadsheet. Telling the coach to Save As CSV is a real answer and a bad
+   * one: on a phone that is four screens of fiddling with the file already
+   * in front of him.
+   *
+   * So the bytes are read rather than the text, and a zip header means an
+   * .xlsx, which src/import/xlsx.js turns into CSV text. Nothing downstream
+   * changes: parseScaleCsv keeps taking a string, and every tolerance it has
+   * earned for odd dates and missing readings keeps applying.
+   */
+  function readImportedTable(file, onText) {
     const reader = new FileReader();
-    reader.onload = () => {
-      const { entries, error } = parseScaleCsv(String(reader.result || ""));
+    reader.onload = async () => {
+      const buf = reader.result;
+      if (globalThis.STSD?.xlsx?.looksLikeZip(new Uint8Array(buf))) {
+        const { csv, error } = await globalThis.STSD.xlsx.toCsv(buf);
+        if (error) { toast(error, 5000); return; }
+        onText(csv);
+        return;
+      }
+      onText(new TextDecoder("utf-8").decode(new Uint8Array(buf)));
+    };
+    reader.onerror = () => toast("Couldn't read that file.");
+    reader.readAsArrayBuffer(file);
+  }
+  function coachImportScaleCsv(file, c) {
+    readImportedTable(file, (text) => {
+      const { entries, error } = parseScaleCsv(text);
       if (error) { toast(error); return; }
       if (!entries.length) { toast("No weigh-ins found in that file."); return; }
       if (!c.importedProgress) c.importedProgress = { ...emptyProgress(), syncedAt: Date.now() };
@@ -37239,14 +37268,11 @@
       saveAthleteProgressFromCoach(c);
       renderDiet();
       toast(added ? `Imported ${added} weigh-in${added === 1 ? "" : "s"} for ${c.name} ✓` : "Already up to date. Nothing new.");
-    };
-    reader.onerror = () => toast("Couldn't read that file.");
-    reader.readAsText(file);
+    });
   }
   function importScaleCsv(file) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const { entries, error } = parseScaleCsv(String(reader.result || ""));
+    readImportedTable(file, (text) => {
+      const { entries, error } = parseScaleCsv(text);
       if (error) { toast(error); return; }
       if (!entries.length) { toast("No weigh-ins found in that file."); return; }
       const added = mergeScaleEntries(state.clientData.progress.bodyweightLog, entries);
@@ -37255,9 +37281,7 @@
       renderBwHistory();
       renderFoodDay(); // an import can put the targets out of date
       toast(added ? `Imported ${added} weigh-in${added === 1 ? "" : "s"} ✓` : "Already up to date. Nothing new.");
-    };
-    reader.onerror = () => toast("Couldn't read that file.");
-    reader.readAsText(file);
+    });
   }
 
   // -------- Body-composition trend charts (hand-rolled SVG small multiples) --------

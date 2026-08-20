@@ -1386,7 +1386,7 @@
             </div>
             <div class="bw-import">
               <button class="btn btn-ghost btn-sm slim-btn" type="button" id="btn-import-scale">Import from scale…</button>
-              <span class="muted">Renpho: Profile → Settings → Export Data, then upload the CSV.</span>
+              <span class="muted">Renpho: Profile → Settings → Export Data, then upload the file. CSV or Excel.</span>
               <!-- NO accept filter, deliberately. Android's picker greys
                    out anything whose reported MIME is not in the list, and
                    a Renpho CSV pulled off a phone reports as none of the
@@ -1692,6 +1692,7 @@
   <script src="src/sync/program.js?v=x1"></script>
   <script src="src/sync/rules.js?v=x1"></script>
   <script src="src/notify/coach-kinds.js?v=x1"></script>
+  <script src="src/import/xlsx.js?v=x1"></script>
   <script src="src/training/tags.js?v=x1"></script>
   <script src="src/training/library.js?v=x1"></script>
   <script src="src/training/readiness.js?v=x1"></script>
@@ -1712,7 +1713,7 @@
   <script src="src/scheduling/series.js?v=x1"></script>
   <script src="src/scheduling/merge.js?v=x1"></script>
   <script src="src/scheduling/availability.js?v=x1"></script>
-  <script src="app.js?v=x58"></script>
+  <script src="app.js?v=x59"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

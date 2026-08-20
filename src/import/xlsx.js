@@ -27,7 +27,12 @@
 (function () {
   "use strict";
 
-  const te = new TextDecoder("utf-8");
+  // Built on demand, never at load. A shipped script that throws while it is
+  // being evaluated takes every script after it down with it, and this one is
+  // only ever needed after somebody presses an import button. The boot smoke
+  // caught exactly that.
+  let _te = null;
+  const decode = (bytes) => (_te || (_te = new TextDecoder("utf-8"))).decode(bytes);
 
   // ---- ZIP ----
 
@@ -64,7 +69,7 @@
       const extraLen = dv.getUint16(p + 30, true);
       const cmtLen = dv.getUint16(p + 32, true);
       const localOff = dv.getUint32(p + 42, true);
-      const name = te.decode(bytes.subarray(p + 46, p + 46 + nameLen));
+      const name = decode(bytes.subarray(p + 46, p + 46 + nameLen));
       out.set(name, { method, compSize, localOff });
       p += 46 + nameLen + extraLen + cmtLen;
     }
@@ -88,10 +93,10 @@
     const extraLen = dv.getUint16(p + 28, true);
     const start = p + 30 + nameLen + extraLen;
     const raw = new Uint8Array(buf, start, entry.compSize);
-    if (entry.method === 0) return te.decode(raw);      // stored
+    if (entry.method === 0) return decode(raw);      // stored
     if (entry.method !== 8) return null;                 // not deflate: unsupported
     const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-    return te.decode(await new Response(stream).arrayBuffer());
+    return decode(await new Response(stream).arrayBuffer());
   }
 
   // ---- XML ----
