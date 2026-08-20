@@ -12701,6 +12701,11 @@
     "lu:mappin": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></svg>',
     // Program sheet — the athlete-created sessions pill and its section header.
     "lu:clipboardlist": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>',
+    // The same clipboard with a plus in it, for the EMPTY state of that pill:
+    // a bucket with nothing in it is not somewhere to look, it is something to
+    // make. UI-only, deliberately out of DAY_ICON_CATEGORIES — a day icon that
+    // reads as a button would be a lie on a day card.
+    "lu:clipboardplus": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 14h6"/><path d="M12 11v6"/></svg>',
     "lu:milestone": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 13v8"/><path d="M12 3v3"/><path d="M4 6a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1h13a1 1 0 0 0 .78-.375l1.6-2a1 1 0 0 0 0-1.25l-1.6-2A1 1 0 0 0 17 6z"/></svg>',
     "lu:sailboat": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 18H2a4 4 0 0 0 4 4h12a4 4 0 0 0 4-4Z"/><path d="M21 14 10 2 3 14h18Z"/><path d="M10 2v16"/></svg>',
     "lu:tornado": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4H3"/><path d="M18 8H6"/><path d="M19 12H9"/><path d="M16 16h-6"/><path d="M11 20H9"/></svg>',
@@ -28728,24 +28733,34 @@
     const bucket = pickerBucket();
     const coachN = (prog.client.oneOffDays || []).length;
     const ownN = athleteOwnDays(state.clientData.progress).length;
-    // Icon and count only. These were the only chips on the bar carrying a word
-    // beside a glyph, which made them read as a different kind of control from
-    // the week chips they sit in the same segmented bar with. The section that
-    // opens underneath already names itself, so the label was the name twice;
-    // it lives on in the tooltip and the accessible name.
-    const specialChip = (kind, icon, label, n) => {
+    // Icon and count, no word. These were the only chips on the bar carrying a
+    // word beside a glyph, which made them read as a different kind of control
+    // from the week chips they sit in the same segmented bar with. The section
+    // that opens underneath already names itself, so the label was the name
+    // twice; it lives on in the tooltip and the accessible name.
+    //
+    // ONE exception, `word`: a bucket an athlete has never put anything in has
+    // to say what it is, because there is no count to read and no reason to
+    // press an icon you have never pressed. It is spent on the first session
+    // and never comes back. See ownSessionPrompt() for the other half of that.
+    const specialChip = (kind, icon, label, n, word) => {
       const b = document.createElement("button");
-      b.className = `week-chip week-chip-special is-${kind}${bucket === kind ? " active" : ""}`;
-      b.title = `${label} · ${kind === "own" ? "sessions the athlete built themselves" : "dated sessions your coach set up"}`;
+      b.className = `week-chip week-chip-special is-${kind}${bucket === kind ? " active" : ""}${word ? " has-word" : ""}`;
+      b.title = `${label} · ${kind === "own" ? "sessions built outside the program" : "dated sessions your coach set up"}`;
       b.setAttribute("aria-label", label);
       b.innerHTML = `<span class="chip-ico">${icon}</span>` +
+        (word ? `<span class="chip-label">${escapeHtml(label)}</span>` : "") +
         (n ? `<span class="chip-n">${n}</span>` : "");
       b.addEventListener("click", () => { state.pickerBucket = kind; renderWorkoutPickerUI(); });
       return b;
     };
     chips.appendChild(Object.assign(document.createElement("span"), { className: "week-chip-sep" }));
+    // The coach pill only renders when it holds something, so it never needs
+    // the word — its count is already the reason to press it.
     if (coachN) chips.appendChild(specialChip("coach", "🐉", "Coach", coachN));
-    chips.appendChild(specialChip("own", dayIconHtml("lu:clipboardlist"), "Athlete Created", ownN));
+    chips.appendChild(specialChip("own",
+      dayIconHtml(ownN ? "lu:clipboardlist" : "lu:clipboardplus"),
+      ownBucketLabel(), ownN, !ownN));
 
     // Looking at one of those buckets: the week's day cards step aside.
     if (bucket !== "week") {
@@ -28947,6 +28962,29 @@
   // (Phase 2 extraction).
   const isOwnDay = (day) => !!day?.byAthlete;
 
+  // What that bucket is called, in the voice of whoever is holding the phone.
+  // It is the athlete's screen, so "Your own" is the right name on it — but a
+  // coach in a live session is standing in the same screen looking at somebody
+  // else's sessions, and "your own" would be a lie to them.
+  function ownBucketLabel() { return state.previewMode ? "Athlete created" : "Your own"; }
+
+  // The other half of the wordless chip. An athlete who has never built a
+  // session has no count to read and no reason to press an icon, and a filter
+  // bar is a poor place to learn what the app can do. So while that bucket is
+  // empty, one line sits under the week's day cards, where they are already
+  // looking, and says it in a sentence. The first session spends it for good.
+  function ownSessionPrompt() {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "ownday-prompt";
+    b.title = "Build a workout you did outside your program and log it";
+    b.innerHTML = `<span class="ownday-prompt-txt">${state.previewMode
+      ? "Trained without you?" : "Trained on your own?"}</span>` +
+      `<span class="ownday-prompt-cta">＋ Add the session</span>`;
+    b.addEventListener("click", openNewOwnSessionSheet);
+    return b;
+  }
+
   function oneOffWeekShim(client, day) {
     const dateLbl = day?.date
       ? new Date(day.date + "T12:00:00").toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })
@@ -29122,10 +29160,16 @@
     if (!host) return;
     host.innerHTML = "";
     const bucket = pickerBucket();
-    if (bucket !== "own" && bucket !== "all") return; // its chip isn't selected
     const p = state.clientData.progress;
     if (!p) return;
     const sessions = athleteOwnDays(p);
+    if (bucket !== "own" && bucket !== "all") {
+      // Its chip isn't selected — but this container sits directly under the
+      // week's day grid, which is exactly where the never-built-one prompt
+      // belongs. Nothing else renders here in that case.
+      if (bucket === "week" && !sessions.length) host.appendChild(ownSessionPrompt());
+      return;
+    }
 
     const sec = document.createElement("div");
     sec.className = "ownday-section";
@@ -29133,7 +29177,7 @@
     head.className = "wp-head wp-head-own";
     // No count here either — the chip carries it.
     head.innerHTML = `<span class="wp-head-ico">${dayIconHtml("lu:clipboardlist")}</span>` +
-      `<span class="wp-head-title">Athlete Created</span>`;
+      `<span class="wp-head-title">${escapeHtml(ownBucketLabel())}</span>`;
     const addBtn = document.createElement("button");
     addBtn.type = "button";
     addBtn.className = "btn btn-ghost btn-sm wp-head-action";

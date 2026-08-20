@@ -13576,6 +13576,38 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
   box-shadow: 0 3px 10px rgba(var(--primary-rgb), 0.35);
 }
 .week-chip-special.active .chip-n { background: rgba(0, 0, 0, 0.16); }
+/* The one-time worded state: an empty bucket says what it is until the first
+   session fills it. Slightly tighter tracking than a week chip so the extra
+   word costs the bar as little width as possible. */
+.week-chip-special.has-word { letter-spacing: 0.02em; }
+.week-chip-special.has-word .chip-label { font-size: 0.76rem; }
+
+/* The invitation under the week's day cards, shown only while that athlete has
+   never built a session of their own. A dashed edge so it reads as an empty
+   slot asking to be filled rather than another card. */
+.ownday-prompt {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  margin-top: 0.7rem;
+  padding: 0.6rem 0.8rem;
+  background: rgba(var(--primary-rgb), 0.05);
+  border: 1px dashed rgba(var(--primary-rgb), 0.45);
+  border-radius: 12px;
+  color: var(--text-soft);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.ownday-prompt:hover {
+  background: rgba(var(--primary-rgb), 0.1);
+  border-color: var(--primary-bright);
+}
+.ownday-prompt-cta { margin-left: auto; color: var(--primary-bright); font-weight: 700; white-space: nowrap; }
 
 
 .wp-head-ico {
@@ -15901,6 +15933,9 @@ button.wk-chip:hover { border-color: rgba(var(--primary-rgb), 0.7); color: var(-
      sized for a thumb and whose bottom half isn't is the "uneven" part you see
      before you read a word of it. */
   .cex-tools-item { min-height: 44px; }
+  /* The one-time "add your own session" line is a real button, and the only
+     door to that feature for an athlete who has never used it. */
+  .ownday-prompt { min-height: 46px; }
   /* ---- The ✕ that clears a search field ---- */
   /* Four of these across anatomy, the exercise library, the roster and
      billing. Three are byte-identical rules that were copy-pasted to each
