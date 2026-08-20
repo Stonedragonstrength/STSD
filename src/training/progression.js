@@ -56,8 +56,8 @@
   // held week is normal; two in a row is a signal.
   const PROG_STALL_SHOW = 2;
   // RIR ("reps in reserve") buckets the athlete can tag a locked exercise with.
-  // PROG_RIR_EASY is the value behind the top button, not a rule any more —
-  // effort is judged against the exercise's TARGET, so the same tap means
+  // PROG_RIR_EASY is the value behind the top button, not a rule any more.
+  // Effort is judged against the exercise's TARGET, so the same tap means
   // different things in a strength block and a hypertrophy one.
   const PROG_RIR_EASY = 4;
   // What the set was supposed to feel like. Two left in the tank is the
@@ -70,7 +70,7 @@
   // Sessions this dated or later are judged by the rules above. Everything
   // logged before it keeps the old single-session doubling.
   //
-  // The engine holds no state — it re-walks the whole log on every render —
+  // The engine holds no state (it re-walks the whole log on every render),
   // so a rule change re-grades history, and an athlete who had been tagging
   // "4 or more" would have opened the app to a bar 10 or 15lb lighter than
   // yesterday with nothing on screen explaining it. Nathan's call (2026-08-19)
@@ -152,7 +152,7 @@
   // session — see the readiness section. It only ever cancels a stall.
   function progressionAttempt(exCopy, effWeight, effSets, logsMap, ctx) {
     // `date` rides along so the step can tell which ruleset judges this
-    // session — see PROG_RIR_V2_FROM.
+    // session. See PROG_RIR_V2_FROM.
     const none = { logged: false, min: null, rir: null, protect: false, date: null };
     const arr = logsMap?.[exCopy.id];
     if (!Array.isArray(arr) || !arr.length) return none;
@@ -270,7 +270,7 @@
   // `st` is the running ladder state and is mutated in place; `base` is the
   // written weight the back-off may never cut below.
   function progressionStep(st, rule, att, base) {
-    if (!att.logged) { st.last = "rest"; return; } // nothing to judge — run intact
+    if (!att.logged) { st.last = "rest"; return; } // nothing to judge, run intact
     // Which ruleset judges this session. See PROG_RIR_V2_FROM: a log with no
     // date at all falls to the old rules, which are the generous ones.
     const legacy = !att.date || String(att.date) < PROG_RIR_V2_FROM;
@@ -284,7 +284,7 @@
 
     if (att.min == null || att.min < st.reps) {
       st.easyRun = 0; // a miss ends the run whatever the effort said
-      // A miss with plenty left in the tank isn't a strength failure — they
+      // A miss with plenty left in the tank isn't a strength failure. They
       // stopped early. Hold the target, but don't hold it against them. Same
       // for a miss on a day they checked in beat up: that's a bad night's
       // sleep, not a strength failure. A miss ground out at RIR 0 counts ONCE,
@@ -297,7 +297,7 @@
       return;
     }
     st.stall = 0;
-    // They hit the reps, but two under target getting there — the number was
+    // They hit the reps, but two under target getting there: the number was
     // met, the quality asked for was not. Hold, and say nothing against them:
     // this is the brake the old system never had, and it fires BEFORE the
     // session that would otherwise have been the failure.
@@ -319,8 +319,8 @@
     // the ladder just holds at its ceiling.
     if (rule.repsOnly || (rule.bw && !rule.graduate)) { st.reps = rule.ceil; st.last = "cap"; return; }
     // The WEIGHT leg moves one increment. Reps are the fast lane and they are
-    // self-correcting — a rung taken too early has to be hit again next time
-    // or the ladder stalls — whereas a doubled jump goes straight onto the bar
+    // self-correcting, because a rung taken too early has to be hit again
+    // next time or the ladder stalls, whereas a doubled jump goes onto the bar
     // off one self-reported tap, which is what this rework is for.
     const wBoost = legacy && easier ? 2 : 1;
     st.weight += rule.inc * wBoost;
@@ -333,7 +333,7 @@
 
   function newProgressionState(weight, reps) {
     // easyRun: consecutive sessions logged easier than the target. Walk state
-    // like everything else here — never stored, re-derived on every render.
+    // like everything else here: never stored, re-derived on every render.
     return { weight, reps, extra: 0, stall: 0, earned: 0, deloads: 0, easyRun: 0, last: null };
   }
 

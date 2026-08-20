@@ -7151,7 +7151,7 @@ input:focus, textarea:focus, select:focus {
 /* Stall handling. Amber = the target has been sitting still; green = the
    back-off fired and gave them a running start, which is a good thing.
    Slate = the ladder held for one ground-out session, which is neither a
-   warning nor a win — it is the engine waiting. Cyan = an easy session is
+   warning nor a win, it is the engine waiting. Cyan = an easy session is
    banked and the next one like it pays double, the same "target moved"
    colour as the progression chip because that is what it is promising. */
 .cex-stall-chip,
@@ -8280,7 +8280,7 @@ input.pyr-weight-input { -moz-appearance: textfield; appearance: textfield; }
   font-variant-numeric: tabular-nums;
 }
 .cex-tools-div { height: 1px; background: var(--border); margin: 0.15rem 0; }
-/* Glyph in a fixed slot, label after it — so every label in the menu starts on
+/* Glyph in a fixed slot, label after it, so every label in the menu starts on
    the same x. The glyphs are emoji and symbols with wildly different advance
    widths, which is what made the list read as ragged. */
 .cex-tools-item {
@@ -10239,14 +10239,14 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
    Tiles are real <button>s so they focus and announce; every tile is a door. */
 /* DENSE on purpose (2026-08-19). A full-width tile cannot share a row, so a
    half-width tile sitting in front of one was stranded alone with the other
-   half of its row empty — two 177x83 holes down a default phone board, and
+   half of its row empty: two 177x83 holes down a default phone board, and
    more as tiles are added and removed from ＋ Edit board. Dense lets a later
    half-width tile fall back into the hole instead: tiles drop into the first
    slot that fits them and the board closes up behind one that leaves.
 
    The cost is that visual order can differ from DOM order. These tiles are
    independent doors with no reading sequence between them, and each one names
-   itself, so nothing is lost — and tab order still follows the DOM. */
+   itself, so nothing is lost, and tab order still follows the DOM. */
 .ovb-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -13585,7 +13585,7 @@ body.bw-private .bw-secret:not(.is-shown) * { pointer-events: none; }
   padding-left: 0.7em;
   padding-right: 0.7em;
   /* A chip with no count is a bare glyph, which without this floors out at
-     ~35px wide — under a thumb. The counted state is already wider. */
+     ~35px wide, under a thumb. The counted state is already wider. */
   min-width: 44px;
 }
 /* Wordless (2026-08-19), so the glyph carries the chip on its own and is sized

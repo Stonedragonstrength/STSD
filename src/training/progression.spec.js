@@ -265,7 +265,7 @@ describe("effectiveProgression: the weighted chain", () => {
   });
 
   // Pre-cutover dates: this pins the GRANDFATHERED behaviour. The rule for
-  // sessions logged from PROG_RIR_V2_FROM on is two-easy-in-a-row — see the
+  // sessions logged from PROG_RIR_V2_FROM on is two-easy-in-a-row. See the
   // "RIR: two in a row to accelerate" describe at the foot of this file.
   it("a hit with plenty in reserve climbs two rungs on a legacy log, still capped at the ceiling", () => {
     const weeks = program([bench("a", "185"), bench("b", "185")]);
@@ -373,7 +373,7 @@ describe("progressionRule edges", () => {
 //    "we need a better system"). Three rules replace the single-session
 //    doubling: acceleration needs TWO easy sessions in a row and pays out in
 //    REPS only, the weight leg moves one increment forever, and a session
-//    ground out at RIR 0 HOLDS the ladder instead of climbing it — the brake
+//    ground out at RIR 0 HOLDS the ladder instead of climbing it, the brake
 //    the old system never had. Sessions logged before PROG_RIR_V2_FROM keep
 //    the old behaviour so nobody's live numbers move overnight. ─────────────
 describe("RIR: two in a row to accelerate, and a grind is a brake", () => {
@@ -384,7 +384,7 @@ describe("RIR: two in a row to accelerate, and a grind is a brake", () => {
   const D3 = "2026-08-22";
   const reps = (weeks, i, logs) => effectiveProgression(weeks, weeks[i].days[0].exercises[0], logs);
 
-  it("ONE easy session no longer doubles the step — it takes a single rung", () => {
+  it("ONE easy session no longer doubles the step, it takes a single rung", () => {
     const weeks = program([wide("a"), wide("b")]);
     const t = reps(weeks, 1, { a: [hit(D1, 185, 8, { rir: 4 })] });
     expect(t.reps, "one easy day must be worth one rung, not two").toBe(9);
@@ -427,7 +427,7 @@ describe("RIR: two in a row to accelerate, and a grind is a brake", () => {
     const weeks = program([wide("a"), wide("b")]);
     const t = reps(weeks, 1, { a: [hit(D1, 185, 8, { rir: 0 })] });
     expect(t.reps, "they hit it, but not the way it was asked for").toBe(8);
-    expect(t.stall, "a hold is not a stall — nothing failed").toBe(0);
+    expect(t.stall, "a hold is not a stall, nothing failed").toBe(0);
   });
 
   it("…and a grind on a MISS counts one stall, not two", () => {
@@ -452,7 +452,7 @@ describe("RIR: two in a row to accelerate, and a grind is a brake", () => {
   });
 
   it("the target is what RIR is measured against, not a fixed 4", () => {
-    // targetRir 4 means 4-left IS the ask — so it earns nothing, and the
+    // targetRir 4 means 4-left IS the ask, so it earns nothing, and the
     // athlete has to leave 6 to read as easy.
     const t4 = (id) => bench(id, "185", { progression: { ceil: 14, targetRir: 4 } });
     const weeks = program([t4("a"), t4("b"), t4("c")]);

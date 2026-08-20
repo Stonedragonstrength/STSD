@@ -264,7 +264,7 @@ const PROG_STALL_DEFAULT = extractConst(progressionSrc, "PROG_STALL_DEFAULT");
 const PROG_NO_CAP = extractConst(progressionSrc, "PROG_NO_CAP");
 // RIR autoregulation reads a per-rule target (2026-08-19), so progressionRule
 // now closes over these two as well. Every constant the extracted body names
-// has to be injected here or the Function call throws — see the extraction
+// has to be injected here or the Function call throws. See the extraction
 // rules at the top of this block.
 const PROG_RIR_EASY = extractConst(progressionSrc, "PROG_RIR_EASY");
 const PROG_RIR_TARGET = extractConst(progressionSrc, "PROG_RIR_TARGET");
@@ -351,7 +351,7 @@ check("REGRESSION: REAL progressionResult() gains atCap but every other field is
   const res = realProgressionResult(st, rule, 3, 185);
   assert.strictEqual(res.atCap, false, "a weight jump is not a band cap");
   // `ground` and `easyRun` joined the result with RIR autoregulation
-  // (2026-08-19) the same way atCap did — peeled off here for the same reason:
+  // (2026-08-19) the same way atCap did, peeled off here for the same reason:
   // this assertion is about the fields that existed BEFORE, and it must keep
   // failing on a change to any of those.
   const { atCap, ground, easyRun, ...older } = res;

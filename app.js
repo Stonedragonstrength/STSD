@@ -3280,7 +3280,7 @@
     return { push, reset, back, exit, depth, drop };
   })();
 
-  // A transient layer — a sheet, a popover, a menu — that the phone's Back
+  // A transient layer (a sheet, a popover, a menu) that the phone's Back
   // should CLOSE rather than navigate past. It owns one Nav level from the
   // moment it opens until it goes away, however it goes away: Back runs
   // `closeFn`, and every other route calls `done()` to hand the level back
@@ -3299,13 +3299,13 @@
 
   // A Nav level owned by a SLOT rather than by one element: "a sheet is up",
   // "a popover is up", "a Tools menu is up". Only one thing is ever in a slot,
-  // and things replace each other inside it constantly — a sheet that closes to
+  // and things replace each other inside it constantly: a sheet that closes to
   // open the next, a popover opened by the same tap that dismissed the last.
   //
   // Handing a level back and taking a new one in the same gesture would race
   // its own history.back(): the pushState lands while the traversal is still in
   // flight and the entry is lost, and a lost entry means the next Back leaves
-  // the app instead of closing what is on screen — the exact bug this is here
+  // the app instead of closing what is on screen, the exact bug this is here
   // to fix. So a release waits one task, and a re-open inside that window keeps
   // the level it was about to give up.
   function navSlot() {
@@ -12798,7 +12798,7 @@
     "lu:clipboardlist": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>',
     // The same clipboard with a plus in it, for the EMPTY state of that pill:
     // a bucket with nothing in it is not somewhere to look, it is something to
-    // make. UI-only, deliberately out of DAY_ICON_CATEGORIES — a day icon that
+    // make. UI-only, deliberately out of DAY_ICON_CATEGORIES: a day icon that
     // reads as a button would be a lie on a day card.
     "lu:clipboardplus": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 14h6"/><path d="M12 11v6"/></svg>',
     "lu:milestone": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 13v8"/><path d="M12 3v3"/><path d="M4 6a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1h13a1 1 0 0 0 .78-.375l1.6-2a1 1 0 0 0 0-1.25l-1.6-2A1 1 0 0 0 17 6z"/></svg>',
@@ -28274,11 +28274,11 @@
     const d = w && (w.days || []).find((x) => x.id === day.id);
     const e = d && (d.exercises || []).find((x) => x.id === ex.id);
     if (e) return { week: w, day: d, ex: e };
-    // A lift added on the day itself is NOT in the coach's weeks — it lives in
+    // A lift added on the day itself is NOT in the coach's weeks. It lives in
     // the athlete's progress (see addAthleteExercise), which is exactly why the
     // lookup above misses it. It is still the coach's to edit; it just saves
     // through the progress row instead of the program. Before this, the one
-    // card a coach most wants to fix mid-session — the lift they just added —
+    // card a coach most wants to fix mid-session, the lift they just added,
     // was the only one the pencil refused.
     //
     // The live working copy, not the coach's importedProgress mirror: that is
@@ -28313,7 +28313,7 @@
     };
   }
 
-  // `opts.added` — the lift lives in the athlete's progress.addedExercises, not
+  // `opts.added`: the lift lives in the athlete's progress.addedExercises, not
   // in a program week. Same row editor, three differences: it saves through
   // saveClient (the progress row, which is where the object actually is), there
   // is no carry-forward (a lift outside the program has no later week to carry
@@ -28327,7 +28327,7 @@
     // weeks still hold the OLD name, which is what we have to go looking for.
     const originalKey = liftKey(ex);
     const originalLabel = liftLabel(ex);
-    // An athlete's own program — plain saveTrainer. An added lift is progress,
+    // An athlete's own program gets plain saveTrainer. An added lift is progress,
     // and in a live session saveClient is what mirrors it back to their row.
     _editorSave = opts.added ? saveClient : null;
     openModal({
@@ -28432,7 +28432,7 @@
     if (scroll) window.scrollTo({ top: 0 });
   }
   // Tapping the athlete's tab bar. A top-level tab used to be a clean root, so
-  // the phone's Back on Program exited the app — which is not what Back means
+  // the phone's Back on Program exited the app, which is not what Back means
   // to anyone holding an Android (Nathan, 2026-08-19). Every tab that isn't
   // Overview leaves exactly ONE level behind, so Back is always one hop home
   // from anywhere on the bar.
@@ -28440,7 +28440,7 @@
   // ONE level, not a trail: moving Program → Progress reuses the level it
   // already has rather than stacking a second, so Back never walks the bar
   // sideways. Tapping Overview spends the level through Back itself, which is
-  // what keeps the history honest — otherwise Back from Overview would find a
+  // what keeps the history honest. Otherwise Back from Overview would find a
   // stale entry and do nothing before exiting.
   //
   // Off in a live session: the coach's Back has to leave the session (see
@@ -28456,7 +28456,7 @@
     Nav.reset(); // jumping across the bar drops whatever was drilled into
     setClientTab(name);
     // Pushed AFTER the render, not before: some tab renders reset the stack on
-    // the way in (backToWorkoutPicker calls it — the day list is its own root),
+    // the way in (backToWorkoutPicker calls it; the day list is its own root),
     // and a level pushed first would be wiped by the very view it was for.
     if (name !== "overview") {
       _tabLevel = true;
@@ -28884,7 +28884,7 @@
     };
     chips.appendChild(Object.assign(document.createElement("span"), { className: "week-chip-sep" }));
     // The coach pill only renders when it holds something, so it never needs
-    // the word — its count is already the reason to press it.
+    // the word: its count is already the reason to press it.
     if (coachN) chips.appendChild(specialChip("coach", "🐉", "Coach", coachN));
     chips.appendChild(specialChip("own",
       dayIconHtml(ownN ? "lu:clipboardlist" : "lu:clipboardplus"),
@@ -29091,7 +29091,7 @@
   const isOwnDay = (day) => !!day?.byAthlete;
 
   // What that bucket is called, in the voice of whoever is holding the phone.
-  // It is the athlete's screen, so "Your own" is the right name on it — but a
+  // It is the athlete's screen, so "Your own" is the right name on it. But a
   // coach in a live session is standing in the same screen looking at somebody
   // else's sessions, and "your own" would be a lie to them.
   function ownBucketLabel() { return state.previewMode ? "Athlete created" : "Your own"; }
@@ -29292,7 +29292,7 @@
     if (!p) return;
     const sessions = athleteOwnDays(p);
     if (bucket !== "own" && bucket !== "all") {
-      // Its chip isn't selected — but this container sits directly under the
+      // Its chip isn't selected, but this container sits directly under the
       // week's day grid, which is exactly where the never-built-one prompt
       // belongs. Nothing else renders here in that case.
       if (bucket === "week" && !sessions.length) host.appendChild(ownSessionPrompt());
@@ -30907,7 +30907,7 @@
       chip.className = "cex-hold-chip";
       chip.textContent = "⏸ Target held";
       chip.title = "You hit the reps last time, but with nothing left in the tank. "
-        + "The target stays here until it comes back easier — no stall, nothing lost.";
+        + "The target stays here until it comes back easier. No stall, nothing lost.";
       rxEl.appendChild(chip);
     } else if (prog && prog.stall >= PROG_STALL_SHOW) {
       const chip = document.createElement("span");
@@ -30920,7 +30920,7 @@
     } else if (prog && prog.easyRun >= 1) {
       // The other half of the same silence: acceleration takes two easy
       // sessions in a row, and one banked is otherwise invisible. Can't collide
-      // with the two above — an easy hit zeroes the stall and clears a hold.
+      // with the two above: an easy hit zeroes the stall and clears a hold.
       const chip = document.createElement("span");
       chip.className = "cex-run-chip";
       chip.textContent = "⚡ One more like that";
@@ -31628,7 +31628,7 @@
     // time and it showed. Two rules:
     //
     //  1. A menu item is a fixed-width GLYPH slot then a label. Written as one
-    //     string ("✎ Edit exercise"), the labels sat on a ragged left edge —
+    //     string ("✎ Edit exercise"), the labels sat on a ragged left edge:
     //     emoji advance widths are all over the place, so ✎, ⇄, 🏋, 📅 and ⌫
     //     each pushed their text to a different x.
     //  2. A stepper row is a label then a stepper cluster pinned RIGHT (the
@@ -31837,7 +31837,7 @@
 
     function onToolsAway(e) {
       // The menu can scroll itself on a short phone viewport, and this listener
-      // is on window in the CAPTURE phase — so an inner scroll reaches it too
+      // is on window in the CAPTURE phase, so an inner scroll reaches it too
       // and would close the menu under the thumb that was scrolling it.
       if (e.type === "scroll") {
         if (!toolsMenu.contains(e.target)) closeToolsMenu();
