@@ -28173,17 +28173,63 @@
     const w = (c.weeks || []).find((x) => x.id === week?.id);
     const d = w && (w.days || []).find((x) => x.id === day.id);
     const e = d && (d.exercises || []).find((x) => x.id === ex.id);
-    return e ? { week: w, day: d, ex: e } : null;
+    if (e) return { week: w, day: d, ex: e };
+    // A lift added on the day itself is NOT in the coach's weeks — it lives in
+    // the athlete's progress (see addAthleteExercise), which is exactly why the
+    // lookup above misses it. It is still the coach's to edit; it just saves
+    // through the progress row instead of the program. Before this, the one
+    // card a coach most wants to fix mid-session — the lift they just added —
+    // was the only one the pencil refused.
+    //
+    // The live working copy, not the coach's importedProgress mirror: that is
+    // the object the portal renders and the one saveClient() pushes.
+    const addedHome = addedExerciseHome(day);
+    const a = addedHome && addedHome.list.find((x) => x.id === ex.id);
+    return a ? { added: true, week: w || null, day: addedHome.day, ex: a } : null;
   }
 
-  function openCoachExerciseSheet(week, day, ex, onDone) {
+  // The added-exercise list for a day, wrapped so it walks and talks like a
+  // `day` to renderExerciseRow: reorder writes through the array, and a delete
+  // (which ASSIGNS day.exercises) writes through the setter instead of landing
+  // on a detached copy. Null when the day holds none.
+  function addedExerciseHome(day) {
+    const p = state.clientData?.progress;
+    const list = p && p.addedExercises && p.addedExercises[day?.id];
+    if (!Array.isArray(list) || !list.length) return null;
+    return {
+      list,
+      day: {
+        id: day.id,
+        name: day.name,
+        get exercises() { return (state.clientData?.progress?.addedExercises || {})[day.id] || []; },
+        set exercises(v) {
+          const store = state.clientData?.progress;
+          if (!store) return;
+          store.addedExercises = store.addedExercises || {};
+          if (v && v.length) store.addedExercises[day.id] = v;
+          else delete store.addedExercises[day.id];
+        },
+      },
+    };
+  }
+
+  // `opts.added` — the lift lives in the athlete's progress.addedExercises, not
+  // in a program week. Same row editor, three differences: it saves through
+  // saveClient (the progress row, which is where the object actually is), there
+  // is no carry-forward (a lift outside the program has no later week to carry
+  // into), and the kicker says so.
+  function openCoachExerciseSheet(week, day, ex, onDone, opts) {
+    opts = opts || {};
     const c = currentClient();
-    if (!c || !week || !day || !ex) return;
+    if (!c || !day || !ex) return;
+    if (!week && !opts.added) return;
     // Captured BEFORE any edit: rename the lift in this sheet and the later
     // weeks still hold the OLD name, which is what we have to go looking for.
     const originalKey = liftKey(ex);
     const originalLabel = liftLabel(ex);
-    _editorSave = null; // an athlete's own program — plain saveTrainer
+    // An athlete's own program — plain saveTrainer. An added lift is progress,
+    // and in a live session saveClient is what mirrors it back to their row.
+    _editorSave = opts.added ? saveClient : null;
     openModal({
       title: "Edit exercise",
       body: "",
@@ -28243,7 +28289,9 @@
       host.innerHTML = "";
       const kick = document.createElement("p");
       kick.className = "cxs-kicker";
-      kick.textContent = `${week.label || "Program"} · ${day.name || "Day"}`;
+      kick.textContent = opts.added
+        ? `${day.name || "Day"} · added on the day`
+        : `${week.label || "Program"} · ${day.name || "Day"}`;
       host.appendChild(kick);
       // The row is built for the coach's full-width editor table and overflows
       // a sheet. `.cxs-row` lets it wrap and hides the reorder controls, which
@@ -28252,7 +28300,15 @@
       rowBox.className = "cxs-row";
       rowBox.appendChild(renderExerciseRow(day, ex, draw, {}));
       host.appendChild(rowBox);
-      host.appendChild(carryBlock());
+      if (opts.added) {
+        const note = document.createElement("p");
+        note.className = "cxs-carry-none";
+        note.textContent = "Added during a session, so it isn't part of the program. "
+          + "The change sticks to this day only. To keep it every time, add it to the day in the program editor.";
+        host.appendChild(note);
+      } else {
+        host.appendChild(carryBlock());
+      }
     };
     draw();
   }
@@ -28815,6 +28871,11 @@
           `<span class="wc-delta-arrow">${delta.pct > 0 ? "▲" : "▼"}</span> ${Math.abs(delta.pct)}%` +
           `<span class="wc-delta-u"> vs last</span></span>`
         : "";
+      // Rendered COMPACT (2026-08-19, Nathan's call): emoji only, no "Strong" /
+      // "Energized" wordmark beside them. On a finished card these sit under a
+      // title and a meta line that are already carrying the words, and the
+      // labelled pills were wide enough to wrap the tag row onto a second line
+      // on a phone. The label stays in each chip's title attribute.
       const moods = dayMoods(state.clientData.progress, day.id);
       const rdy = dayReadiness(state.clientData.progress, day.id);
       // When this session was first filled out, so a week of cards reads as a
@@ -28830,7 +28891,7 @@
           <h4 class="workout-card-title">${escapeHtml(day.name)}</h4>
           <div class="workout-card-meta">${metaLead} · ${status}${
             firstLogged ? `<span class="wc-first">${escapeHtml(shortLogDate(firstLogged))}</span>` : ""}</div>
-          ${rdy || moods.length ? `<span class="wc-tags">${readinessChipHtml(rdy)}${moodChipsHtml(moods)}</span>` : ""}
+          ${rdy || moods.length ? `<span class="wc-tags">${readinessChipHtml(rdy, true)}${moodChipsHtml(moods, true)}</span>` : ""}
         </div>
         ${skipCtl || moveCtl ? `<div class="wc-actions">${skipCtl}${moveCtl}</div>` : ""}
         <div class="workout-card-chevron">›</div>
@@ -31368,6 +31429,36 @@
     const toolsMenu = document.createElement("div");
     toolsMenu.className = "cex-tools-menu hidden";
 
+    // One shape for every row in here, because the menu was built a row at a
+    // time and it showed. Two rules:
+    //
+    //  1. A menu item is a fixed-width GLYPH slot then a label. Written as one
+    //     string ("✎ Edit exercise"), the labels sat on a ragged left edge —
+    //     emoji advance widths are all over the place, so ✎, ⇄, 🏋, 📅 and ⌫
+    //     each pushed their text to a different x.
+    //  2. A stepper row is a label then a stepper cluster pinned RIGHT (the
+    //     CSS does that half). Laid out inline, "Skip last", "Sets" and
+    //     "Warm-ups" being different lengths put their − 0 + at three
+    //     different offsets down a 212px menu.
+    const setToolsItem = (b, glyph, label) => {
+      b.innerHTML = `<span class="cex-tools-glyph" aria-hidden="true"></span><span class="cex-tools-lbl"></span>`;
+      b.querySelector(".cex-tools-glyph").textContent = glyph;
+      b.querySelector(".cex-tools-lbl").textContent = label;
+      return b;
+    };
+    const mkToolsItem = (glyph, label, cls) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "cex-tools-item" + (cls ? ` ${cls}` : "");
+      return setToolsItem(b, glyph, label);
+    };
+    const stepperCluster = (...kids) => {
+      const s = document.createElement("span");
+      s.className = "cex-tools-stepper";
+      s.append(...kids);
+      return s;
+    };
+
     // Skip last N sets: X's out the highest-numbered sets. Governs the trailing
     // block only, so a per-set label tap in the middle is left untouched.
     let bulkN = 0;
@@ -31408,7 +31499,9 @@
     const skipUnit = document.createElement("span");
     skipUnit.className = "cex-tools-skipunit";
     skipUnit.textContent = "sets";
-    skipRow.append(skipLbl, mkSkipStep("−", -1), skipCount, mkSkipStep("+", 1), skipUnit);
+    // The unit joins the LABEL rather than trailing the stepper: "Skip last
+    // sets" then the cluster, which is the same shape as the two rows under it.
+    skipRow.append(skipLbl, skipUnit, stepperCluster(mkSkipStep("−", -1), skipCount, mkSkipStep("+", 1)));
 
     // ── Row-count tweaks ──
     // Add or drop set / warm-up rows on this week's copy of the lift. The
@@ -31439,7 +31532,7 @@
         return b;
       };
       paint();
-      row.append(lbl, step("−", -1), count, step("+", 1));
+      row.append(lbl, stepperCluster(step("−", -1), count, step("+", 1)));
       return row;
     };
     const setsTweakRow = mkTweakRow("Sets", () => pendingSets, (v) => { pendingSets = v; }, 1, 10);
@@ -31467,10 +31560,7 @@
     // One tap sends this lift's current shape to the same lift on the
     // same-named day in every later week. One-offs and the athlete's own
     // sessions sit outside the program, so there is nothing to carry into.
-    const applyWeeksItem = document.createElement("button");
-    applyWeeksItem.type = "button";
-    applyWeeksItem.className = "cex-tools-item";
-    applyWeeksItem.textContent = "📅 Apply shape to later weeks";
+    const applyWeeksItem = mkToolsItem("📅", "Apply shape to later weeks");
     applyWeeksItem.title = "Carry these set and warm-up counts into later weeks of the program";
     applyWeeksItem.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -31487,14 +31577,8 @@
 
     const toolsDiv = document.createElement("div");
     toolsDiv.className = "cex-tools-div";
-    const skipExItem = document.createElement("button");
-    skipExItem.type = "button";
-    skipExItem.className = "cex-tools-item";
-    skipExItem.textContent = "⊘ Skip whole exercise";
-    const clearItem = document.createElement("button");
-    clearItem.type = "button";
-    clearItem.className = "cex-tools-item cex-tools-clear";
-    clearItem.textContent = "⌫ Clear my numbers";
+    const skipExItem = mkToolsItem("⊘", "Skip whole exercise");
+    const clearItem = mkToolsItem("⌫", "Clear my numbers", "cex-tools-clear");
 
     // Coach-only, live session: rewrite THIS lift's prescription without
     // leaving the athlete's day. Moved here from a loose ✎ beside the name.
@@ -31503,10 +31587,7 @@
     // before the sets go in, not after.
     let coachEditItem = null;
     if (state.previewMode && week && !isOwnDay(day)) {
-      coachEditItem = document.createElement("button");
-      coachEditItem.type = "button";
-      coachEditItem.className = "cex-tools-item";
-      coachEditItem.textContent = "✎ Edit exercise";
+      coachEditItem = mkToolsItem("✎", "Edit exercise");
       coachEditItem.title = "Edit this exercise in the program";
       coachEditItem.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -31515,20 +31596,20 @@
         if (!t) { toast("This exercise isn't in the program yet."); return; }
         openCoachExerciseSheet(t.week, t.day, t.ex, () => {
           // The portal is drawn from a CLONE of the program, so pull the edit
-          // through before redrawing or the card shows the old numbers.
+          // through before redrawing or the card shows the old numbers. An
+          // added lift is already in the live progress the portal reads, so
+          // the rebuild is a no-op for it and the redraw is what shows it.
           refreshLiveProgram();
           renderWorkoutDetailUI({ keepScroll: true });
-        });
+        }, { added: !!t.added });
       });
     }
 
     // Swap: same prescription, different movement. Undo restores the original.
-    const swapItem = document.createElement("button");
-    swapItem.type = "button";
-    swapItem.className = "cex-tools-item";
+    const swapItem = mkToolsItem("⇄", "Swap exercise");
     const refreshSwapItem = () => {
-      swapItem.textContent = exSwapFor(ex, state.clientData.progress)
-        ? "⇄ Undo swap" : "⇄ Swap exercise";
+      setToolsItem(swapItem, "⇄", exSwapFor(ex, state.clientData.progress)
+        ? "Undo swap" : "Swap exercise");
     };
     refreshSwapItem();
     swapItem.addEventListener("click", (e) => {
@@ -31541,10 +31622,7 @@
     // Plate math: the readout only shows itself on lifts the app can tell are
     // plate-loaded, so this is how an athlete turns it on for one it guessed
     // wrong — and how anyone reaches the bar and rack settings.
-    const platesItem = document.createElement("button");
-    platesItem.type = "button";
-    platesItem.className = "cex-tools-item";
-    platesItem.textContent = "🏋 Plate math";
+    const platesItem = mkToolsItem("🏋", "Plate math");
     platesItem.addEventListener("click", (e) => {
       e.stopPropagation();
       closeToolsMenu();
@@ -31563,7 +31641,14 @@
     };
 
     function onToolsAway(e) {
-      if (e.type === "scroll" || (!toolsMenu.contains(e.target) && !toolsWrap.contains(e.target))) closeToolsMenu();
+      // The menu can scroll itself on a short phone viewport, and this listener
+      // is on window in the CAPTURE phase — so an inner scroll reaches it too
+      // and would close the menu under the thumb that was scrolling it.
+      if (e.type === "scroll") {
+        if (!toolsMenu.contains(e.target)) closeToolsMenu();
+        return;
+      }
+      if (!toolsMenu.contains(e.target) && !toolsWrap.contains(e.target)) closeToolsMenu();
     }
     const closeToolsMenu = () => {
       if (toolsMenu.classList.contains("hidden")) return;
