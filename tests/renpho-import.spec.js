@@ -1,15 +1,17 @@
-// Joby's ACTUAL Renpho export, parsed by the real parser out of app.js.
+// A real Renpho export's SHAPE, parsed by the real parser out of app.js.
 //
-// The file is checked in as a fixture because every previous fix to this
-// importer came from a real export behaving unlike the one before it: Renpho
-// writes "2026.06.26", the same file after a trip through Excel comes back as
-// "8/12/26", and the format follows the PHONE's locale, so every athlete's
-// file can differ. A fixture from a real phone is worth more than a
-// hand-written one that only contains what I already thought of.
+// The numbers are invented and the athlete is nobody. What is real, and what
+// this fixture exists for, is the format: every fix this importer has needed
+// came from an export behaving unlike the one before it. Renpho writes
+// "2026.06.26", the same file after a trip through Excel comes back as
+// "8/12/26", and which one you get depends on the PHONE's locale, so every
+// athlete's file can differ.
 //
-// This one also carries a row where every reading except the weight is "--",
-// which is what a weigh-in looks like when the scale could not read
-// impedance, and a header with a non-unit parenthesis in it.
+// It also carries a row where every reading except weight and BMI is "--",
+// which is what a weigh-in looks like when the scale could not read impedance,
+// and a header with a non-unit parenthesis in it.
+//
+// Athlete data does not go in this repo: it is public and permanent.
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -17,7 +19,7 @@ import { fileURLToPath } from "node:url";
 import { loadFns } from "./helpers/load-fn.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const csv = readFileSync(join(HERE, "fixtures", "renpho-joby.csv"), "utf8");
+const csv = readFileSync(join(HERE, "fixtures", "renpho-export.csv"), "utf8");
 
 const { parseScaleCsv } = loadFns(
   ["function csvSplitLine(", "function scaleDateISO(", "function normScaleTime(",
@@ -25,7 +27,7 @@ const { parseScaleCsv } = loadFns(
   { KG_TO_LB: 2.20462 },
 );
 
-describe("Joby's real Renpho export", () => {
+describe("a real-shaped Renpho export", () => {
   const { entries, error } = parseScaleCsv(csv);
 
   it("parses without an error", () => {
@@ -34,7 +36,7 @@ describe("Joby's real Renpho export", () => {
 
   it("keeps the weigh-in that has readings and the one that has only a weight", () => {
     expect(entries.length).toBe(2);
-    expect(entries.map((e) => e.weightLb)).toEqual(["218", "224.8"]);
+    expect(entries.map((e) => e.weightLb)).toEqual(["180", "182.4"]);
   });
 
   it("reads the two-digit Excel date as 2026, not 0026 or 2012", () => {
@@ -47,11 +49,11 @@ describe("Joby's real Renpho export", () => {
 
   it("carries the body composition through, without the -- placeholders", () => {
     const byLabel = Object.fromEntries(entries[0].metrics.map((m) => [m.label, m]));
-    expect(byLabel["Body Fat Percentage"]).toEqual({ label: "Body Fat Percentage", value: 28.3, unit: "%" });
-    expect(byLabel["Muscle Mass"]).toEqual({ label: "Muscle Mass", value: 145.8, unit: "lb" });
+    expect(byLabel["Body Fat Percentage"]).toEqual({ label: "Body Fat Percentage", value: 22, unit: "%" });
+    expect(byLabel["Muscle Mass"]).toEqual({ label: "Muscle Mass", value: 129.6, unit: "lb" });
     // The row where the impedance reading failed keeps exactly what the scale
     // could still work out from weight alone, and invents nothing.
-    expect(entries[1].metrics).toEqual([{ label: "BMI", value: 30.5, unit: "" }]);
+    expect(entries[1].metrics).toEqual([{ label: "BMI", value: 25.4, unit: "" }]);
   });
 
   it("does not keep the row number as a metric", () => {
