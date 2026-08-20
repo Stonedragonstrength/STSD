@@ -21497,6 +21497,7 @@
       refreshAthleteBooking();
       return;
     }
+    tellCoach("booking_cancelled", b.id);
     toast("Session cancelled");
     // Take it off the coach's Google Calendar. Best-effort, exactly like the
     // push after a booking: the cancellation already stands either way.
@@ -21734,6 +21735,7 @@
       return;
     }
     toast("Booked ✓");
+    tellCoach("booking_made", row.id);
     // Put it on the coach's Google Calendar. The booking is already saved, so a
     // failure here is a sync problem and never undoes the booking.
     window.Cloud?.googleCall?.("push", { bookingId: row.id });
@@ -22064,6 +22066,11 @@
     const fold = $("#pref-fold-coach-notify");
     if (!fold) return;
     if (open) fold.open = true;
+    wireCoachNotifySettings();
+    // The settings draw from a cache so the panel is never blank, then redraw
+    // once the row lands. Only on the first pass: a repaint on every render
+    // would fight the tap-to-repaint in wireCoachNotifySettings.
+    if (!_coachPrefsLoaded) loadCoachPrefs().then(() => renderCoachNotifyCard());
     $("#btn-coach-push")?.addEventListener("click", async () => {
       const btn = $("#btn-coach-push");
       if (btn) { btn.disabled = true; btn.textContent = "Working…"; }
@@ -22085,7 +22092,156 @@
   function coachNotifyFoldSub() {
     if (!pushSupported()) return "Not supported in this browser";
     if (Notification.permission === "denied") return "Blocked in your browser settings";
-    return pushOn(true) ? "On for this device" : "Get told when an athlete asks about a session";
+    if (!pushOn(true)) return "Get told what happens on your roster";
+    const modes = _coachPrefs.modes || {};
+    const N = STSD.notify.COACH_KINDS.length;
+    const off = STSD.notify.COACH_KINDS.filter((k) => STSD.notify.coachModeFor(modes, k.id) === "off").length;
+    return off ? `On · ${N - off} of ${N} categories` : "On for this device";
+  }
+
+  // Tell the coach something happened on the athlete's side.
+  //
+  // Fire and forget: every call site is a side effect of something the athlete
+  // wanted to do, and none of them should wait or fail because a notification
+  // did. The server writes the words; all that goes up is a kind and an id.
+  //
+  // The previewMode guard is load-bearing. A coach filling out a session IS
+  // running the athlete's app, so without it every tap in a live session would
+  // notify the coach about themselves.
+  function tellCoach(kind, refId) {
+    if (state.previewMode || state.mode === "trainer") return;
+    if (!refId || !window.Cloud?.enabled) return;
+    window.Cloud.notifyCoach?.(kind, refId);
+  }
+
+  // -------- The coach's notification settings --------
+  // Loaded once per session and written through on every tap. The row is the
+  // server's copy; this is a cache so the panel can draw before the fetch
+  // lands, which matters because the whole thing is inside a fold the coach
+  // opens and closes.
+  let _coachPrefs = {};
+  let _coachPrefsLoaded = false;
+  let _coachQueueN = 0;
+  async function loadCoachPrefs() {
+    const id = state.trainerData?.coachId;
+    if (!id || !window.Cloud?.enabled) { _coachPrefsLoaded = true; return; }
+    const [prefs, n] = await Promise.all([
+      window.Cloud.getCoachPrefs?.(id),
+      window.Cloud.coachQueueCount?.(id),
+    ]);
+    if (prefs) _coachPrefs = prefs;
+    _coachQueueN = n || 0;
+    _coachPrefsLoaded = true;
+  }
+  // Write-through, debounced by nothing: a tap is a decision and there are
+  // seventeen of them, so losing one to a race would be worse than the traffic.
+  function saveCoachPrefPatch(patch) {
+    Object.assign(_coachPrefs, patch);
+    const id = state.trainerData?.coachId;
+    if (id && window.Cloud?.enabled) window.Cloud.saveCoachPrefs?.(id, patch);
+  }
+  function setCoachMode(kind, mode) {
+    const modes = { ...(_coachPrefs.modes || {}), [kind]: mode };
+    saveCoachPrefPatch({ modes });
+  }
+
+  // One row per category: name, what it means, and a three-way segmented
+  // control. Grouped into four labelled sections rather than nested folds,
+  // because seventeen rows behind four more chevrons is a filing cabinet.
+  function coachNotifyRowsHtml() {
+    const modes = _coachPrefs.modes || {};
+    const seg = (kind, cur) => STSD.notify.MODES.map((m) => {
+      const label = m === "off" ? "Off" : m === "instant" ? "Now" : "Daily";
+      return `<button type="button" class="cn-seg${m === cur ? " on" : ""}" ` +
+        `data-cn-kind="${escapeHtml(kind)}" data-cn-mode="${m}">${label}</button>`;
+    }).join("");
+    return STSD.notify.GROUPS.map((g) => {
+      const rows = STSD.notify.COACH_KINDS.filter((k) => k.group === g.id).map((k) => {
+        const cur = STSD.notify.coachModeFor(modes, k.id);
+        return `<div class="cn-row">
+          <span class="cn-row-text">
+            <span class="cn-row-name">${escapeHtml(k.label)}</span>
+            <span class="cn-row-hint">${escapeHtml(k.hint)}</span>
+          </span>
+          <span class="cn-seg-wrap" role="group" aria-label="${escapeHtml(k.label)}">${seg(k.id, cur)}</span>
+        </div>`;
+      }).join("");
+      return `<div class="cn-group">
+        <div class="cn-group-head">${escapeHtml(g.label)}</div>
+        <p class="cn-group-blurb">${escapeHtml(g.blurb)}</p>
+        ${rows}
+      </div>`;
+    }).join("");
+  }
+
+  function coachNotifySettingsHtml() {
+    const p = _coachPrefs;
+    const quietOn = p.quietOn !== false; // default on, same as the column
+    return `
+      ${coachNotifyRowsHtml()}
+      <div class="cn-group">
+        <div class="cn-group-head">When</div>
+        <p class="cn-group-blurb">Anything set to Daily arrives in one summary at this time, in your own timezone.${
+          _coachQueueN ? ` <strong>${_coachQueueN} waiting now.</strong>` : ""}</p>
+        <div class="cn-row cn-row-tight">
+          <span class="cn-row-name">Daily summary at</span>
+          <input type="time" class="cn-time" id="cn-digest-at" value="${escapeHtml(p.digestAt || "19:00")}" />
+        </div>
+        <div class="cn-row cn-row-tight">
+          <span class="cn-row-text">
+            <span class="cn-row-name">Quiet hours</span>
+            <span class="cn-row-hint">Nothing buzzes between these. It is held, not dropped, and arrives the moment quiet hours end.</span>
+          </span>
+          <label class="cn-switch"><input type="checkbox" id="cn-quiet-on"${quietOn ? " checked" : ""} /><span>On</span></label>
+        </div>
+        <div class="cn-row cn-row-tight${quietOn ? "" : " is-dim"}" id="cn-quiet-times">
+          <span class="cn-row-name">From</span>
+          <input type="time" class="cn-time" id="cn-quiet-from" value="${escapeHtml(p.quietFrom || "21:00")}" />
+          <span class="cn-row-name">to</span>
+          <input type="time" class="cn-time" id="cn-quiet-to" value="${escapeHtml(p.quietTo || "07:00")}" />
+        </div>
+      </div>
+      <p class="pref-foot">Push has no way of telling you it failed, so this is the only way to know it works.</p>
+      <div class="pref-actions">
+        <button class="btn btn-ghost btn-sm slim-btn" id="btn-coach-push-test" type="button">🔔 Send me a test</button>
+      </div>`;
+  }
+
+  function wireCoachNotifySettings() {
+    const host = $("#pref-fold-coach-notify");
+    if (!host) return;
+    host.querySelectorAll("[data-cn-kind]").forEach((b) => b.addEventListener("click", () => {
+      setCoachMode(b.dataset.cnKind, b.dataset.cnMode);
+      // Repaint only this row's segment, not the fold: re-rendering the fold
+      // closes it, and a settings screen that shuts itself on every tap is
+      // unusable with seventeen switches in it.
+      b.parentElement.querySelectorAll(".cn-seg").forEach((s) => s.classList.toggle("on", s === b));
+      renderCoachSettingsSubs();
+    }));
+    $("#cn-digest-at")?.addEventListener("change", (e) =>
+      saveCoachPrefPatch({ digestAt: e.target.value || "19:00" }));
+    $("#cn-quiet-from")?.addEventListener("change", (e) =>
+      saveCoachPrefPatch({ quietFrom: e.target.value || "21:00" }));
+    $("#cn-quiet-to")?.addEventListener("change", (e) =>
+      saveCoachPrefPatch({ quietTo: e.target.value || "07:00" }));
+    $("#cn-quiet-on")?.addEventListener("change", (e) => {
+      saveCoachPrefPatch({ quietOn: e.target.checked });
+      $("#cn-quiet-times")?.classList.toggle("is-dim", !e.target.checked);
+    });
+    $("#btn-coach-push-test")?.addEventListener("click", async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = "Sending…";
+      const res = await window.Cloud?.sendCoachTestPush?.();
+      btn.disabled = false;
+      btn.textContent = "🔔 Send me a test";
+      // sent: 0 without an error is the useful answer and its own message:
+      // this device has no subscription, which is a different problem from a
+      // muted category or a broken key.
+      if (!res?.ok) toast("Couldn't reach the server. Check your connection", 3000);
+      else if (!res.sent) toast("No device is subscribed yet. Turn notifications on above first", 4000);
+      else toast(`Sent to ${res.sent} device${res.sent === 1 ? "" : "s"} ✓`);
+    });
   }
   function coachNotifyFoldHtml() {
     const supported = pushSupported();
@@ -22098,13 +22254,17 @@
       inner = `<p class="pref-foot">Notifications are blocked for this site. Allow them in your browser settings, then come back.</p>`;
     } else {
       inner = `<p class="pref-foot">${enabled
-        ? "This device gets a notification when an athlete asks to cancel or move a session too close to the start to do it themselves. Turn it on again on any other phone or computer you use. It's per device."
-        : "Without this the only sign of a change request is the ⚡ count in the app, which is no use for a session tomorrow morning if you don't happen to open it."}</p>` +
+        ? "This device is subscribed. The switch is per device, so turn it on again on any other phone or computer you use. What you actually get is set below, and those settings follow your account everywhere."
+        : "Without this the only sign of anything is a count in the app, which is no use for a session tomorrow morning if you don't happen to open it."}</p>` +
         (/iphone|ipad|ipod/i.test(navigator.userAgent) && !isStandalone()
           ? `<p class="pref-foot">On iPhone: install the app first (Share → Add to Home Screen), then enable here.</p>` : "") +
         `<div class="pref-actions">` +
           `<button class="btn ${enabled ? "btn-ghost" : "btn-primary"} btn-sm slim-btn" id="btn-coach-push" type="button">` +
-          `${enabled ? "🔕 Turn off notifications" : "🔔 Enable notifications"}</button></div>`;
+          `${enabled ? "🔕 Turn off notifications" : "🔔 Enable notifications"}</button></div>` +
+        // The categories only mean anything once a device is subscribed, and
+        // showing seventeen switches that cannot fire would be a menu of
+        // nothing.
+        (enabled ? `<div class="cn-panel">${coachNotifySettingsHtml()}</div>` : "");
     }
     return `
       <details class="pref-fold" id="pref-fold-coach-notify">
@@ -24774,6 +24934,7 @@
       renderMessagesView();
     } else {
       MSG.thread.push(row);
+      tellCoach("message", row.id);
       renderAthleteCoachMessages(state.clientData.program?.client);
     }
     renderThreadSheet();
@@ -25529,6 +25690,11 @@
     clean.date = logDate || todayISO();
     clean.score = readinessScore(clean);
     p.readiness[dayId] = clean;
+    // Only the rough end is worth a coach's phone, and only for today: a
+    // check-in dated to a past session is history, not a heads-up.
+    if (readinessLevel(clean)?.id === "low" && clean.date === todayISO()) {
+      tellCoach("readiness_low", dayId);
+    }
     saveClient();
   }
   // readinessFlagAnswer moved to src/training/readiness.js with the rest
@@ -27024,6 +27190,7 @@
       const key = `${day.id}:${logDate}`;
       if (!_celebratedDays.has(key)) {
         _celebratedDays.add(key);
+        tellCoach("workout_logged", day.id);
         // Drop the keyboard first. The last set is usually still focused when
         // auto-lock fires, and on a phone a fixed overlay measured against the
         // layout viewport lands off-screen while the keyboard is up.
@@ -29199,6 +29366,7 @@
       if (idx >= 0) arr[idx] = entry; else arr.push(entry);
     });
     saveClient();
+    tellCoach("day_skipped", day.id);
     renderWorkoutPickerUI();
     // Two of this day in a row → offer the one-session pullback. A consumed
     // marker doesn't block a fresh offer; a still-pending one does.
@@ -29583,6 +29751,9 @@
       toggle.classList.toggle("has-note", !!ta.value.trim());
       toggle.querySelector(".day-note-label").textContent = ta.value.trim() ? "Session note" : "Add a note for your coach";
     });
+    // NOT on input, which fires per keystroke. One notification per visit to
+    // the field, raised when they leave it with something in it.
+    ta.addEventListener("change", () => { if (ta.value.trim()) tellCoach("session_note", dayId); });
 
     area.appendChild(ta);
     block.appendChild(toggle);
@@ -29708,6 +29879,7 @@
       sizeBytes: blob.size, downscaled,
     });
     saveClient();
+    tellCoach("form_check", day.id);
     toast("Sent to your coach ✓");
     onDone && onDone();
   }
@@ -37850,6 +38022,7 @@
     const pair = usesDumbbellPair(ex);
     prs.push(makePR({ name, lift: key, pair, weight: cur.weight, reps: String(cur.reps), date: entry.date, notes: "Auto-detected during workout 🎉", auto: true }));
     if (cardEl) celebrateElement(cardEl, "pr-celebrate");
+    tellCoach("pr_set", ex.id);
     toast(`🎉 New PR · ${name}: ${bw ? cur.reps + " reps" : dispW(cur.weight) + (pair ? "s × " : ` ${unitLbl()} × `) + cur.reps}!`, 3500);
   }
 

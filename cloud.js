@@ -478,12 +478,37 @@
   // Puts a filed request on the coach's phone. Only an id crosses the wire —
   // the Edge Function writes the wording itself from the rows, so an athlete
   // can never choose the text that appears on the coach's lock screen.
-  async function notifyCoachOfRequest(requestId) {
+  // Tell the coach something happened. The athlete sends a KIND and an ID and
+  // nothing else: the sentence that lands on the coach's phone is written
+  // server-side from the rows, because a caller that could pass text could put
+  // anything it liked on somebody's lock screen. See the header of
+  // supabase/functions/notify-coach/index.ts.
+  //
+  // Fire and forget by design. Every call site is a side effect of something
+  // the athlete actually wanted to do, and none of them should fail or wait
+  // because a notification did.
+  async function notifyCoach(kind, refId) {
+    if (!kind || !refId) return null;
     try {
-      const { data, error } = await sb.functions.invoke("notify-coach", { body: { requestId } });
-      if (error) { console.warn("[Cloud] notifyCoachOfRequest", error.message || error); return null; }
+      const { data, error } = await sb.functions.invoke("notify-coach", { body: { kind, refId } });
+      if (error) { console.warn("[Cloud] notifyCoach", kind, error.message || error); return null; }
       return data;
-    } catch (e) { console.warn("[Cloud] notifyCoachOfRequest", e); return null; }
+    } catch (e) { console.warn("[Cloud] notifyCoach", kind, e); return null; }
+  }
+  // The original single-purpose call. Kept so the booking path does not have to
+  // change in the same commit as the rewrite.
+  async function notifyCoachOfRequest(requestId) {
+    return await notifyCoach("booking_request", requestId);
+  }
+  // "Send me a test" in the coach's notification settings. There is otherwise
+  // no way to tell from a phone whether any of this works, and push fails
+  // silently by design.
+  async function sendCoachTestPush() {
+    try {
+      const { data, error } = await sb.functions.invoke("notify-coach-test", { body: {} });
+      if (error) { console.warn("[Cloud] sendCoachTestPush", error.message || error); return null; }
+      return data;
+    } catch (e) { console.warn("[Cloud] sendCoachTestPush", e); return null; }
   }
 
   // ---- Google Calendar ----
@@ -916,6 +941,61 @@
       if (error) { console.warn("[Cloud] saveAthletePrefs", error.message); return false; }
       return true;
     } catch (e) { console.warn("[Cloud] saveAthletePrefs", e); return false; }
+  }
+
+  // -------- Coach preferences --------
+  // The coach's notification settings. Its own table for the same reason
+  // athlete_prefs is: coach-digest and notify-coach read it on every send, and
+  // last_digest_on is server-written.
+  //
+  // The per-category modes ride in one jsonb column rather than seventeen
+  // boolean columns, so adding a category is a code change instead of a
+  // migration. src/notify/coach-kinds.js is the canonical list of what may go
+  // in there.
+  const COACH_PREF_COLS = {
+    modes:      "notify_modes",
+    tz:         "tz",
+    digestAt:   "digest_at",
+    quietOn:    "quiet_on",
+    quietFrom:  "quiet_from",
+    quietTo:    "quiet_to",
+  };
+  async function getCoachPrefs(coachId) {
+    if (!coachId) return null;
+    try {
+      const { data, error } = await sb.from("coach_prefs")
+        .select("*").eq("coach_id", coachId).maybeSingle();
+      if (error || !data) return null;
+      const out = {};
+      for (const [k, col] of Object.entries(COACH_PREF_COLS)) {
+        if (data[col] !== null && data[col] !== undefined) out[k] = data[col];
+      }
+      return out;
+    } catch (e) { console.warn("[Cloud] getCoachPrefs", e); return null; }
+  }
+  async function saveCoachPrefs(coachId, prefs) {
+    if (!coachId || !prefs) return false;
+    try {
+      const row = { coach_id: coachId, updated_at: new Date().toISOString() };
+      for (const [k, col] of Object.entries(COACH_PREF_COLS)) {
+        if (prefs[k] !== undefined) row[col] = prefs[k];
+      }
+      const { error } = await sb.from("coach_prefs").upsert(row, { onConflict: "coach_id" });
+      if (error) { console.warn("[Cloud] saveCoachPrefs", error.message); return false; }
+      return true;
+    } catch (e) { console.warn("[Cloud] saveCoachPrefs", e); return false; }
+  }
+  // What is sitting in the coach's outbox waiting for tonight's summary. Read
+  // only, and only used to show a count in the settings so the digest is not a
+  // black box.
+  async function coachQueueCount(coachId) {
+    if (!coachId) return 0;
+    try {
+      const { count, error } = await sb.from("coach_notice_queue")
+        .select("id", { count: "exact", head: true }).eq("coach_id", coachId);
+      if (error) return 0;
+      return count || 0;
+    } catch (e) { return 0; }
   }
 
   // -------- Cycle tracking (private by default) --------
@@ -1388,6 +1468,11 @@
     resolveBookingRequest,
     getBookingRequests,
     notifyCoachOfRequest,
+    notifyCoach,
+    sendCoachTestPush,
+    getCoachPrefs,
+    saveCoachPrefs,
+    coachQueueCount,
     googleCall,
     googleStatus,
     // Athlete
