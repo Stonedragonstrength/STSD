@@ -10221,7 +10221,22 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 /* Two colors carry the meaning across the whole board: cyan is what you DO
    (actions, training, doors), gold is what you EARNED (Hoard, in-the-zone).
    Tiles are real <button>s so they focus and announce; every tile is a door. */
-.ovb-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; }
+/* DENSE on purpose (2026-08-19). A full-width tile cannot share a row, so a
+   half-width tile sitting in front of one was stranded alone with the other
+   half of its row empty — two 177x83 holes down a default phone board, and
+   more as tiles are added and removed from ＋ Edit board. Dense lets a later
+   half-width tile fall back into the hole instead: tiles drop into the first
+   slot that fits them and the board closes up behind one that leaves.
+
+   The cost is that visual order can differ from DOM order. These tiles are
+   independent doors with no reading sequence between them, and each one names
+   itself, so nothing is lost — and tab order still follows the DOM. */
+.ovb-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-flow: row dense;
+  gap: 0.55rem;
+}
 .ovb-tile {
   position: relative; display: flex; flex-direction: column; align-items: flex-start;
   gap: 0.28rem; min-height: 4.7rem; min-width: 0; text-align: left;
@@ -10284,6 +10299,11 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 .ovb-edit {
   flex-direction: row; align-items: center; justify-content: center; gap: 0.3rem;
   min-height: 2.7rem; border-style: dashed; color: var(--muted); font-weight: 700; font-size: 0.8rem;
+  /* Full width, and therefore last: under dense packing a half-width control
+     would be free to fall into a hole halfway up the board, and "＋ Edit board"
+     wedged between two stat tiles reads as one of them. A tile that cannot
+     share a row can only ever land after everything else. */
+  grid-column: 1 / -1;
 }
 .ovb-edit:hover { color: var(--text-soft); border-color: var(--border-strong); }
 /* Player strip: avatar, name, rank + phase, streak */
@@ -10303,6 +10323,10 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 @media (min-width: 600px) {
   .ovb-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .ovb-wide { grid-column: span 2; }
+  /* Two tracks here rather than the phone's full width: on four columns a wide
+     tile leaves half a row spare behind it, and the ＋ tile is the one thing on
+     the board that is happy to be whatever shape the gap is. */
+  .ovb-edit { grid-column: span 2; }
 }
 
 /* Monthly volume bars (athlete overview) */
