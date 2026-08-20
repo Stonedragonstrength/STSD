@@ -30,12 +30,7 @@ const app = readFileSync(join(ROOT, "app.js"), "utf8");
 // Kinds with no producer YET. Empty is the goal; anything listed here is a
 // switch the coach can turn on that will never fire, and it is listed so that
 // the gap is a decision somebody wrote down rather than a silence.
-const NOT_WIRED = new Set([
-  // Needs a trigger decision: the session bank is computed in the coach's
-  // browser (src/money/ledger.js), and nothing on the server can say a
-  // balance reached zero without duplicating that arithmetic.
-  "balance_zero",
-]);
+const NOT_WIRED = new Set([]);
 
 /** Kinds app.js fires through tellCoach(), plus the legacy booking wrapper. */
 function clientProduced() {

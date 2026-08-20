@@ -21741,6 +21741,13 @@
     }
     toast("Booked ✓");
     tellCoach("booking_made", row.id);
+    // Booking into the red. The count comes from here rather than the server
+    // because this is where the real ledger runs, and the athlete was already
+    // shown "you have no sessions left" on the confirm before they tapped. It
+    // reads the balance BEFORE this booking is redeemed, which is the coach's
+    // side of the same sentence.
+    const bal = client ? sessionBankSummary(client) : null;
+    if (bal && bal.remaining <= 0) tellCoach("balance_zero", row.id);
     // Put it on the coach's Google Calendar. The booking is already saved, so a
     // failure here is a sync problem and never undoes the booking.
     window.Cloud?.googleCall?.("push", { bookingId: row.id });

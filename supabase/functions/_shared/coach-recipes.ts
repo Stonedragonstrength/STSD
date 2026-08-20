@@ -117,6 +117,31 @@ async function bookingMade(sb: Db, a: Athlete, refId: string): Promise<Notice | 
   };
 }
 
+/**
+ * They booked with nothing left in the bank.
+ *
+ * The one recipe that takes the athlete's word for something. Every other kind
+ * is proved against a row, and this one cannot be: the session bank is an
+ * allowance with expiry, rollover and a credit pot, computed in the browser by
+ * src/money/ledger.js, and a second copy of that arithmetic here is how two
+ * screens end up disagreeing about the same person's balance.
+ *
+ * What IS proved is the booking: it exists, it is this athlete's, and the app
+ * already showed them "you have no sessions left" before they confirmed. The
+ * worst a tampered client could do is tell the coach somebody is out of
+ * sessions when they are not, about themselves. That is a nuisance, not a
+ * hole, and it buys the coach the moment that actually costs him money.
+ */
+async function balanceZero(sb: Db, a: Athlete, refId: string): Promise<Notice | null> {
+  const b = await bookingRow(sb, a, refId);
+  if (!b) return null;
+  return {
+    title: "⚠️ Out of sessions",
+    body: `${nameOf(a)} booked ${when(b.start_at, await coachTz(sb, b.coach_id))} with no sessions left`,
+    url: "./",
+  };
+}
+
 async function bookingCancelled(sb: Db, a: Athlete, refId: string): Promise<Notice | null> {
   const b = await bookingRow(sb, a, refId);
   if (!b) return null;
@@ -211,6 +236,7 @@ export const RECIPES: Record<string, (sb: Db, a: Athlete, refId: string) => Prom
   booking_request: bookingRequest,
   booking_made: bookingMade,
   booking_cancelled: bookingCancelled,
+  balance_zero: balanceZero,
   message,
   bug_report: bugReport,
   invite_claimed: (_sb, a) => Promise.resolve(inviteClaimed(a)),

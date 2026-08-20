@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
     // Freshness, where there is a row clock to read it from.
     if (!NO_ROW_CLOCK.has(kind)) {
       const table = kind === "booking_request" ? "booking_requests"
-        : kind.startsWith("booking_") ? "bookings"
+        : kind.startsWith("booking_") || kind === "balance_zero" ? "bookings"
         : kind === "message" ? "messages"
         : kind === "bug_report" ? "bug_reports"
         : null;
