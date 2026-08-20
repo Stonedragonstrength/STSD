@@ -147,3 +147,32 @@ be tested at 390/768/1024 without resizing Chrome. Rules learned 2026-08-12:
   are already there before clicking. Anything that needs a real
   `state.currentClientId` (Anatomy coverage, for one) has to go through that
   door, because the coach nav clears the id on the way to every top-level view.
+
+## Progress shapes you will get wrong when seeding
+
+Every one of these threw or silently rendered nothing on 2026-08-19. They are
+not guessable from the field name, and `ensureProgressShape` does not repair
+them because a wrong-typed value looks present.
+
+| Field | Shape | Not |
+|---|---|---|
+| `dayCompletions[dayId]` | `["2026-08-17"]`, an ARRAY of dates | `true` |
+| `workoutMoods[dayId]` | `{ date, moods: ["strong","energized"] }` | `["strong"]` |
+| `readiness[dayId]` | `{ date, sleep, sore, stress }`, each 1-4 | a score |
+| `addedExercises[dayId]` | array of full exercise objects | names |
+| `exerciseLogs[exId][n]` | `{ date, locked: true, sets: [{weight, reps}], rir }` | |
+
+`dayCompletions: { d1: true }` throws inside `dayFirstLogDate` and kills the
+whole day-card render with an empty grid and one console exception. If a grid
+comes back empty, read the console before assuming the feature is broken.
+
+Readiness only counts when `readiness[dayId].date` EQUALS the log's date, and
+RIR only reaches the engine on an entry with `locked: true` and at least as
+many sets as prescribed.
+
+## Driving the phone Back button
+
+`history.back()` from `javascript_tool` is a faithful stand-in for the hardware
+button, and the whole Nav stack ([[nav-back-button-levels]]) is testable that
+way: assert the DOM between presses rather than screenshotting. Allow ~600ms
+after each press; popstate handlers re-render.
