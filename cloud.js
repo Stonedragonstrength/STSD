@@ -1347,9 +1347,17 @@
 
   // -------- Bug reports --------
   // Insert is open (login-screen bugs happen pre-auth); reads are coach-only.
+  //
+  // Returns the new row id, which is what lets the coach be told about it:
+  // notify-coach takes an id and reads the words off the row itself. The id
+  // is generated HERE rather than read back with .select(), because SELECT is
+  // coach-only and the athletes most likely to file a report would get a 403
+  // for the row they just wrote.
   async function submitBugReport(report) {
+    const id = crypto.randomUUID ? crypto.randomUUID() : "";
     try {
       const { error } = await sb.from("bug_reports").insert({
+        ...(id ? { id } : {}),
         reporter_role: report.role || "",
         reporter_name: report.name || "",
         athlete_id: report.athleteId || null,
@@ -1357,7 +1365,7 @@
         diagnostics: report.diagnostics || {},
       });
       if (error) { console.warn("[Cloud] submitBugReport", error.message); return false; }
-      return true;
+      return id || true;
     } catch (e) { console.warn("[Cloud] submitBugReport", e); return false; }
   }
   async function getBugReports(limit = 50) {

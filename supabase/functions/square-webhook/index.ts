@@ -61,6 +61,13 @@
 // subscriptions. Point the secrets at whichever you are testing.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { deliverToCoach } from "../_shared/coach-notify.ts";
+
+/** Cents to "$81.00". Square sends integers; a coach reads money. */
+const usd = (cents: unknown) =>
+  typeof cents === "number" && Number.isFinite(cents)
+    ? `$${(cents / 100).toFixed(2)}`
+    : "";
 
 const enc = new TextEncoder();
 
@@ -159,6 +166,30 @@ Deno.serve(async (req) => {
   try {
     const obj = evt?.data?.object ?? {};
 
+    /**
+     * Put a money event on the coach's phone, and NEVER let that break the
+     * money write.
+     *
+     * Everything below this line is inside the handler's try, and that catch
+     * deletes the ledger row and returns 500 so Square retries. A notification
+     * failing must not cause a payment to be processed twice, so this swallows
+     * its own errors: a push nobody gets is a bad day, a double-charged month
+     * is a real problem.
+     */
+    const tellCoach = async (
+      coachId: string | null | undefined, athleteId: string, kind: string,
+      make: (name: string) => { title: string; body: string; url?: string },
+    ) => {
+      if (!coachId) return;
+      try {
+        const { data: a } = await sb
+          .from("athletes").select("display_name").eq("id", athleteId).maybeSingle();
+        await deliverToCoach(sb, coachId, kind, make(a?.display_name || "An athlete"));
+      } catch (e) {
+        console.error(`[square-webhook] notify ${kind} failed`, (e as Error).message);
+      }
+    };
+
     // ---- Subscription lifecycle ----
     if (type === "subscription.created" || type === "subscription.updated") {
       const sub = obj.subscription ?? obj;
@@ -242,6 +273,11 @@ Deno.serve(async (req) => {
         status: "active", past_due_since: null,
         last_event_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       }).eq("athlete_id", row.athlete_id);
+      await tellCoach(row.coach_id, row.athlete_id, "payment_in", (name) => ({
+        title: "💵 Payment landed",
+        body: `${name} paid${amount ? ` ${usd(amount)}` : ""}`,
+        url: "./",
+      }));
       return new Response("ok", { status: 200 });
     }
 
@@ -266,6 +302,16 @@ Deno.serve(async (req) => {
         past_due_since: row.past_due_since ?? new Date().toISOString(),
         last_event_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       }).eq("athlete_id", row.athlete_id);
+      // Wired even though this event has never once arrived on this account:
+      // the money comes as card charges rather than Square invoices, so the
+      // decline that really happens is the FAILED payment below. If a genuine
+      // invoice subscription is ever set up, the coach hears about it rather
+      // than this being the one path that silently does not tell him.
+      await tellCoach(row.coach_id, row.athlete_id, "charge_failed", (name) => ({
+        title: "⚠️ Charge failed",
+        body: `${name}'s card was declined. No money moved.`,
+        url: "./",
+      }));
       return new Response("ok", { status: 200 });
     }
 
@@ -304,7 +350,7 @@ Deno.serve(async (req) => {
 
       if (st === "COMPLETED" && orderId) {
         const { data: charge } = await sb.from("billing_payments")
-          .select("id, status").eq("square_order_id", orderId).maybeSingle();
+          .select("id, status, coach_id, athlete_id").eq("square_order_id", orderId).maybeSingle();
         if (charge) {
           // Only ever forward, and only from 'sent'. Square sends both created
           // and updated for one payment, plus retries; without this guard a
@@ -318,12 +364,43 @@ Deno.serve(async (req) => {
               // the athlete somehow paid a different amount.
               amount_cents: p?.amount_money?.amount ?? undefined,
             }).eq("id", charge.id);
+            // The one that actually happens: this is how a month gets paid.
+            await tellCoach(charge.coach_id, charge.athlete_id, "payment_in", (name) => {
+              const paid = usd(p?.amount_money?.amount);
+              return {
+                title: "💵 Payment landed",
+                body: `${name} paid${paid ? ` ${paid}` : ""}`,
+                url: "./",
+              };
+            });
           }
           return new Response("ok", { status: 200 });
         }
         // An order we didn't raise — a card taken in person, say. Not ours to
         // interpret, and inventing a month for it would settle the wrong one.
         return new Response("ok", { status: 200 });
+      }
+
+      // A DECLINE, which is not the same thing as the reversal below: a refund
+      // is money going back on purpose and a cancel is a charge that never
+      // started, while this is a card that said no to money the coach was
+      // owed. It is the branch a real failure reaches on this account, since
+      // no invoice event has ever arrived here. Matched back to the row we
+      // raised so the coach hears WHOSE card it was.
+      if (st === "FAILED" && (orderId || p?.id)) {
+        const { data: hit } = await sb.from("billing_payments")
+          .select("coach_id, athlete_id")
+          .eq(orderId ? "square_order_id" : "square_payment_id", orderId ?? p.id)
+          .maybeSingle();
+        if (hit) {
+          await tellCoach(hit.coach_id, hit.athlete_id, "charge_failed", (name) => ({
+            title: "⚠️ Charge failed",
+            body: `${name}'s card was declined. No money moved.`,
+            url: "./",
+          }));
+        } else {
+          console.warn("[square-webhook] FAILED payment matched no row", p?.id, orderId);
+        }
       }
 
       const reversed = st === "FAILED" || st === "CANCELED" || (p?.refunded_money?.amount ?? 0) > 0;

@@ -1,8 +1,13 @@
 // The coach's daily summary, and the catch-up for anything quiet hours held
 // back. Runs every 15 minutes on pg_cron.
 //
-// Two jobs in one pass, which is why it cannot simply run once a day at the
+// Three jobs in one pass, which is why it cannot simply run once a day at the
 // digest hour:
+//
+//   0. SWEEP. Two categories are true of the roster rather than raised by
+//      anything: nobody DOES "gone quiet" or "still uncollected". They are
+//      worked out here, once per coach per local day, before the queue below
+//      is read so they can ride the same summary.
 //
 //   1. FLUSH. An `instant` notification that arrived inside quiet hours was
 //      queued with deferred = true rather than dropped. The moment the coach
@@ -22,8 +27,11 @@ import { isServiceRoleCaller } from "../_shared/cron-auth.ts";
 import { localNow } from "../_shared/notify-prefs.ts";
 import { vapidDetails } from "../_shared/webpush.ts";
 import {
-  coachIsQuiet, digestIsDue, pushToCoachNow, type CoachPrefs,
+  coachIsQuiet, dailyTaskDue, deliverToCoach, digestIsDue, pushToCoachNow, type CoachPrefs,
 } from "../_shared/coach-notify.ts";
+import {
+  QUIET_DAYS, nameList, quietCrossers, uncollectedIsDue, uncollectedThisMonth,
+} from "../_shared/coach-derived.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -88,6 +96,61 @@ export function digestBody(rows: Row[]): string {
   return parts.join(" · ");
 }
 
+/**
+ * The kinds nothing raises: true of the roster rather than caused by an event.
+ *
+ * Runs once per coach per local day, on the same clock as their digest and
+ * BEFORE the queue is read, so anything it finds rides today's summary instead
+ * of tomorrow's. Everything goes through deliverToCoach, so a coach who has
+ * these on instant gets them at their digest time and one who has them off
+ * gets nothing.
+ *
+ * The rules themselves are pure and live in _shared/coach-derived.ts, with
+ * fixtures in tests/coach-derived.spec.js. This function is only the IO.
+ */
+async function sweepDerived(sb: Row, prefs: CoachPrefs, at: Date) {
+  const today = localNow(prefs.tz, at).date;
+  const { data: roster } = await sb
+    .from("athletes").select("id, display_name, session_bank").eq("coach_id", prefs.coach_id);
+  if (!roster?.length) return;
+
+  const named = (id: string, fallback = "An athlete") =>
+    roster.find((a: Row) => a.id === id)?.display_name || fallback;
+
+  // ---- Gone quiet ----
+  const { data: prog } = await sb
+    .from("progress").select("athlete_id, day_completions")
+    .in("athlete_id", roster.map((a: Row) => a.id));
+  const crossed = quietCrossers(
+    (prog ?? []).map((p: Row) => ({
+      id: p.athlete_id, name: named(p.athlete_id), dayCompletions: p.day_completions,
+    })),
+    today,
+  );
+  for (const a of crossed) {
+    await deliverToCoach(sb, prefs.coach_id, "athlete_quiet", {
+      title: "🌙 Gone quiet",
+      body: `${a.name} has not logged a session in ${QUIET_DAYS} days`,
+      url: "./",
+    }, at);
+  }
+
+  // ---- Still uncollected ----
+  if (!uncollectedIsDue(today)) return;
+  const owed = uncollectedThisMonth(
+    roster.map((a: Row) => ({ id: a.id, name: named(a.id), bank: a.session_bank })),
+    today.slice(0, 7),
+  );
+  if (!owed.length) return;
+  const sessions = owed.reduce((n, r) => n + r.sessions, 0);
+  await deliverToCoach(sb, prefs.coach_id, "month_uncollected", {
+    title: "💸 Still uncollected",
+    body: `${sessions} session${sessions === 1 ? "" : "s"} granted this month are unpaid: ${
+      nameList(owed.map((r) => r.name))}`,
+    url: "./",
+  }, at);
+}
+
 Deno.serve(async (req) => {
   if (!isServiceRoleCaller(req.headers.get("Authorization"))) {
     return json({ error: "forbidden" }, 403);
@@ -97,12 +160,28 @@ Deno.serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     if (!vapidDetails()) return json({ error: "VAPID keys not configured" }, 500);
     const sb = createClient(supabaseUrl, serviceKey);
+    const at = new Date();
+
+    // The derived kinds come first, and outside the queue check below: they
+    // are what PUTS things in the queue, so a coach whose queue is empty is
+    // exactly the coach who still needs sweeping.
+    let swept = 0;
+    const { data: allPrefs } = await sb.from("coach_prefs").select("*");
+    for (const p of (allPrefs ?? []) as CoachPrefs[]) {
+      if (!dailyTaskDue(p, p.last_derived_on, at)) continue;
+      await sweepDerived(sb, p, at);
+      // Stamped whether or not it found anything: the question was asked today.
+      await sb.from("coach_prefs")
+        .update({ last_derived_on: localNow(p.tz, at).date, updated_at: new Date().toISOString() })
+        .eq("coach_id", p.coach_id);
+      swept++;
+    }
 
     // Only coaches with something waiting. No queue, nothing to do, and the
     // usual pass costs one query.
     const { data: queued } = await sb
       .from("coach_notice_queue").select("id, coach_id, kind, title, body, url, deferred");
-    if (!queued?.length) return json({ ok: true, flushed: 0, digested: 0 });
+    if (!queued?.length) return json({ ok: true, flushed: 0, digested: 0, swept });
 
     const coachIds = [...new Set(queued.map((r: Row) => r.coach_id))];
     const { data: prefRows } = await sb.from("coach_prefs").select("*").in("coach_id", coachIds);
@@ -111,7 +190,6 @@ Deno.serve(async (req) => {
     );
 
     let flushed = 0, digested = 0;
-    const at = new Date();
 
     for (const coachId of coachIds) {
       const prefs = prefsById.get(coachId) ?? null;
@@ -141,7 +219,7 @@ Deno.serve(async (req) => {
       digested += forDigest.length;
     }
 
-    return json({ ok: true, flushed, digested });
+    return json({ ok: true, flushed, digested, swept });
   } catch (e) {
     console.error("[coach-digest] fatal:", e);
     return json({ ok: false, error: String(e) }, 500);

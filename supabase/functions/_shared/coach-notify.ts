@@ -23,6 +23,7 @@ export type CoachPrefs = {
   tz: string;
   digest_at: string;
   last_digest_on: string | null;
+  last_derived_on: string | null;
   quiet_on: boolean;
   quiet_from: string;
   quiet_to: string;
@@ -79,13 +80,28 @@ export function coachIsQuiet(prefs: CoachPrefs | null, at = new Date()): boolean
   } as any, at);
 }
 
-/** True once the coach's local clock has passed their chosen digest time. */
-export function digestIsDue(prefs: CoachPrefs, at = new Date()): boolean {
+/**
+ * True once the coach's local clock has passed their chosen digest time, and
+ * whatever `lastOn` stamps has not already happened today.
+ *
+ * Two jobs now run on that one clock: sending the digest, and working out the
+ * derived kinds that go into it. They need separate stamps. Sharing
+ * last_digest_on would mean a pass that computes the derived kinds but sends
+ * no digest, because the coach has those categories on instant or off and
+ * nothing was queued, never marks the day done, and fifteen minutes later the
+ * sweep runs again and pushes the same thing.
+ */
+export function dailyTaskDue(prefs: CoachPrefs, lastOn: string | null, at = new Date()): boolean {
   const want = minutesOfDay(prefs.digest_at);
   if (want == null) return false;
   const now = localNow(prefs.tz, at);
-  if (prefs.last_digest_on === now.date) return false; // already sent today
+  if (lastOn === now.date) return false; // already done today
   return now.minutes >= want;
+}
+
+/** True once the coach's local clock has passed their chosen digest time. */
+export function digestIsDue(prefs: CoachPrefs, at = new Date()): boolean {
+  return dailyTaskDue(prefs, prefs.last_digest_on, at);
 }
 
 export async function getCoachPrefs(sb: Db, coachId: string): Promise<CoachPrefs | null> {

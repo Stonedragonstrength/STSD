@@ -3614,10 +3614,15 @@
       }
       const athleteId = state.clientData.program?.clientId;
       const inviteCode = state.clientData.program?.client?.inviteCode;
-      if (athleteId) await window.Cloud.linkAthleteToAuth(athleteId, user.id, email, inviteCode);
+      const claimed = athleteId
+        ? await window.Cloud.linkAthleteToAuth(athleteId, user.id, email, inviteCode)
+        : false;
       state.clientData.profile = { name, email, createdAt: Date.now() };
       saveClient();
       if (athleteId) window.Cloud.upsertAthleteProfile(athleteId, { name, email });
+      // Only once the claim went through: notify-coach identifies the caller
+      // by athletes.auth_user_id, and the claim RPC is what sets it.
+      if (claimed) tellCoach("invite_claimed", athleteId);
       setRememberMe(true); // default remember for new profile
       rememberEmail("athlete", email, true);
       err.classList.add("hidden");
@@ -38665,7 +38670,15 @@
 
   async function sendBugReport(report) {
     if (window.Cloud?.enabled && navigator.onLine) {
-      if (await Cloud.submitBugReport(report)) return true;
+      const id = await Cloud.submitBugReport(report);
+      if (id) {
+        // Tell the coach. tellCoach is already silent for his own reports and
+        // for a coach previewing an athlete, and the recipe drops any row that
+        // does not belong to the athlete who filed it, so a report from the
+        // sign-in screen reaches nobody by either path.
+        if (typeof id === "string" && report.athleteId) tellCoach("bug_report", id);
+        return true;
+      }
     }
     try {
       const q = JSON.parse(localStorage.getItem(KEY_BUG_QUEUE) || "[]");
@@ -38682,7 +38695,13 @@
     if (!q.length) return;
     localStorage.removeItem(KEY_BUG_QUEUE);
     const failed = [];
-    for (const r of q) if (!(await Cloud.submitBugReport(r))) failed.push(r);
+    for (const r of q) {
+      const id = await Cloud.submitBugReport(r);
+      if (!id) { failed.push(r); continue; }
+      // Filed offline, sent now: the row is new even though the report is
+      // old, and the freshness guard reads the row, so this still lands.
+      if (typeof id === "string" && r.athleteId) tellCoach("bug_report", id);
+    }
     if (failed.length) {
       try { localStorage.setItem(KEY_BUG_QUEUE, JSON.stringify(failed)); } catch (e) {}
     }

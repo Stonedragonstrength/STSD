@@ -17,8 +17,11 @@
 // POST { kind, refId } -> { ok, result }
 // POST { requestId }   -> the old shape, still accepted; see below.
 //
-// Deployed like send-push: no config.toml entry, so verify_jwt stays on, and no
-// CORS block. That combination is what already works from the browser.
+// Deployed like send-push: no config.toml entry, so verify_jwt stays on. It
+// also shipped with no CORS block, in the belief that this was the combination
+// already working from the browser. It was not: send-push had never worked
+// from a browser either, and neither had this. Both answer the preflight now.
+// See _shared/cors.ts.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { callerUserId } from "../_shared/caller-auth.ts";
