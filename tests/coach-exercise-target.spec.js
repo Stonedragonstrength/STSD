@@ -27,9 +27,19 @@ const CLIENT = {
 
 function build({ client = CLIENT, added = null } = {}) {
   return loadFns("function coachExerciseTarget(", {
-    currentClient: () => client,
+    editorAthlete: () => client,
     addedExerciseHome: () => added,
   }).coachExerciseTarget;
+}
+
+// The resolver itself. It exists because `state.currentClientId` is nulled by
+// a dozen places — every coach-nav destination among them — and a live session
+// already knows whose session it is.
+function buildResolver({ previewMode, programClientId, clients, currentId }) {
+  return loadFns("function editorAthlete(", {
+    state: { previewMode, trainerData: { clients }, clientData: { program: { clientId: programClientId } } },
+    currentClient: () => clients.find((c) => c.id === currentId),
+  }).editorAthlete;
 }
 
 describe("coachExerciseTarget", () => {
@@ -75,5 +85,35 @@ describe("coachExerciseTarget", () => {
 
   it("says no when there is no athlete open", () => {
     expect(build({ client: null })({ id: "w4" }, { id: "d4" }, EX)).toBeNull();
+  });
+});
+
+describe("editorAthlete", () => {
+  const A = { id: "a1", name: "Nathan" };
+  const B = { id: "a2", name: "Someone else" };
+
+  it("uses the live session's own athlete when currentClientId has been nulled", () => {
+    const f = buildResolver({ previewMode: true, programClientId: "a1", clients: [A, B], currentId: null });
+    expect(f()).toBe(A);
+  });
+
+  it("prefers the live session's athlete over a currentClientId pointing elsewhere", () => {
+    const f = buildResolver({ previewMode: true, programClientId: "a1", clients: [A, B], currentId: "a2" });
+    expect(f()).toBe(A);
+  });
+
+  it("falls back to currentClient outside a live session", () => {
+    const f = buildResolver({ previewMode: false, programClientId: "a1", clients: [A, B], currentId: "a2" });
+    expect(f()).toBe(B);
+  });
+
+  it("returns null rather than undefined when nothing resolves", () => {
+    const f = buildResolver({ previewMode: false, programClientId: null, clients: [], currentId: null });
+    expect(f()).toBeNull();
+  });
+
+  it("falls back when the live id names an athlete no longer on the roster", () => {
+    const f = buildResolver({ previewMode: true, programClientId: "gone", clients: [A, B], currentId: "a2" });
+    expect(f()).toBe(B);
   });
 });

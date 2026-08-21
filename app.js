@@ -13664,12 +13664,35 @@
       // the same row as day-scope ones — and made Delete materialise under the
       // finger that had just tapped Duplicate, because a button appearing
       // reflows a row. Nothing reflows a menu.
-      if (wIdx === _coachActiveWeekIdx && !_coachOneOffTab) {
-        const dots = mkScopeMenuBtn(`Actions for ${week.label}`, "on-tab on-week-tab");
+      // Hung off _coachActiveWeekIdx rather than off the *selected* tab: the
+      // pinned Coaching tab can be the selected one, and it is not a week, so
+      // gating on selection would leave no ⋯ on screen and no way to add a
+      // week at all. It just loses the active tab's underline while Coaching
+      // is up, and the menu's caption says which week it means.
+      if (wIdx === _coachActiveWeekIdx) {
+        const dots = mkScopeMenuBtn(`Actions for ${week.label}`,
+          "on-week-tab" + (_coachOneOffTab ? "" : " on-tab"));
         dots.addEventListener("click", (e) => {
           e.stopPropagation();
+          // The builder reads bands, phase and gear off a real athlete. In an
+          // athlete's own program that is simply them; in a program template
+          // there is nobody, so the sheet opens on an athlete picker and the
+          // built week still lands in the template.
+          const buildTarget = _programEditorId ? currentProgramTemplate() : currentClient();
+          const room = showAdd && weeks.length < 12;
           openScopeMenu(dots, [
             { head: week.label },
+            ...(room ? [{ glyph: "＋", label: "Add week", onClick: () => {
+              _coachActiveWeekIdx = weeks.length;
+              _coachOneOffTab = false;
+              addWeek();
+            }, hint: "Add an empty week to the end of the program" }] : []),
+            ...(room && buildTarget ? [{ glyph: "⚡", label: "Build a week", onClick: () =>
+              (_programEditorId ? openBuildWeekSheet(null, buildTarget) : openBuildWeekSheet(buildTarget)),
+              hint: _programEditorId
+                ? "Build a week calibrated to one of your athletes"
+                : "Build the week from their coverage" }] : []),
+            "-",
             { glyph: "⧉", label: "Duplicate week", onClick: () => duplicateActiveWeek(),
               hint: `Add a copy of ${week.label} after it` },
             ...(wIdx > 0 ? ["-", { glyph: "🗑", label: "Delete week", danger: true,
@@ -13680,35 +13703,9 @@
       }
     });
 
-    if (showAdd && weeks.length < 12) {
-      const addBtn = document.createElement("button");
-      addBtn.className = "coach-week-tab coach-week-tab-add";
-      addBtn.textContent = "+";
-      addBtn.title = "Add week";
-      addBtn.addEventListener("click", () => {
-        _coachActiveWeekIdx = weeks.length;
-        _coachOneOffTab = false;
-        addWeek();
-      });
-      strip.appendChild(addBtn);
-      // The builder reads bands, phase and gear off a real athlete. In an
-      // athlete's own program that is simply them; in a program template there
-      // is nobody, so the sheet opens on an athlete picker and the built week
-      // still lands in the template.
-      const buildTarget = _programEditorId ? currentProgramTemplate() : currentClient();
-      if (buildTarget) {
-        const buildBtn = document.createElement("button");
-        buildBtn.className = "coach-week-tab coach-week-tab-add coach-week-tab-build";
-        buildBtn.textContent = "⚡";
-        buildBtn.title = _programEditorId
-          ? "Build a week calibrated to one of your athletes"
-          : "Build the week from their coverage";
-        buildBtn.addEventListener("click", () => _programEditorId
-          ? openBuildWeekSheet(null, buildTarget)
-          : openBuildWeekSheet(buildTarget));
-        strip.appendChild(buildBtn);
-      }
-    }
+    // The + and ⚡ chips that used to sit here moved into the week ⋯ on
+    // 2026-08-21: this strip is week tabs and the pinned Coaching tab, nothing
+    // else. Add week is gated on the same 12-week cap it always was.
 
     // ── Pinned Coaching tab ──
     // One-off sessions belong to an athlete, not a program template, so this
@@ -28661,8 +28658,29 @@
   // week/day/exercise a card is holding are copies — editing one saves nothing.
   // Resolve back to the real objects on state.trainerData by id first, which is
   // what makes the sheet's saveTrainer() persist and push.
+  /**
+   * The athlete the day editor is acting on.
+   *
+   * NOT just currentClient(). That reads `state.currentClientId`, which a
+   * dozen places null — every coach-nav destination among them
+   * ([[stsd-saveTrainer pushes one athlete]] is the same trap from the other
+   * side). A live session knows perfectly well whose session it is without
+   * asking: `state.clientData.program.clientId` is set when the session opens
+   * and never moves. When the id has drifted, the pencil used to refuse to
+   * edit a lift that was plainly on screen, and openCoachExerciseSheet — which
+   * has the same `currentClient()` gate — silently returned doing nothing.
+   */
+  function editorAthlete() {
+    const liveId = state.previewMode && state.clientData?.program?.clientId;
+    if (liveId) {
+      const own = (state.trainerData?.clients || []).find((x) => x.id === liveId);
+      if (own) return own;
+    }
+    return currentClient() || null;
+  }
+
   function coachExerciseTarget(week, day, ex) {
-    const c = currentClient();
+    const c = editorAthlete();
     if (!c || !day || !ex) return null;
     const oneOffWeek = { id: "oneoff", label: "Coach session" };
     // Declared out here because the added-lift branch at the bottom reports it:
@@ -28745,8 +28763,10 @@
   // into), and the kicker says so.
   function openCoachExerciseSheet(week, day, ex, onDone, opts) {
     opts = opts || {};
-    const c = currentClient();
-    if (!c || !day || !ex) return;
+    // Same resolution the target lookup uses, and for the same reason: a null
+    // client here used to make the sheet return with nothing on screen at all.
+    const c = editorAthlete();
+    if (!c || !day || !ex) { toast("Open the athlete again — this editor lost track of whose program it is."); return; }
     if (!week && !opts.added) return;
     // Captured BEFORE any edit: rename the lift in this sheet and the later
     // weeks still hold the OLD name, which is what we have to go looking for.
