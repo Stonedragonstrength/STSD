@@ -9359,6 +9359,9 @@ input.pyr-weight-input { -moz-appearance: textfield; appearance: textfield; }
   border-bottom: 1px solid var(--border);
 }
 .day-add-btn { flex-shrink: 0; }
+/* Holds Move day's cell open in the narrow grid below. The wide row is flex
+   with slack in it, so there it is simply not there. */
+.day-add-spacer { display: none; }
 /* Week-scoped actions, pushed to the far end of the day-action row — as far
    from both tab strips as the layout allows. The button text ("Duplicate week"
    vs "Add day") is what says which scope you are acting on. */
@@ -9369,6 +9372,12 @@ input.pyr-weight-input { -moz-appearance: textfield; appearance: textfield; }
   flex-shrink: 0;
 }
 .week-del-btn:hover { color: var(--danger); border-color: var(--danger); }
+/* Delete is LAST in the DOM and first on screen here. `.week-actions` hugs the
+   right edge, so a delete button laid out after Duplicate would shove Duplicate
+   leftward and land itself exactly where Duplicate had been — under the finger
+   that just tapped it. Ordering it instead of reordering the DOM leaves the
+   narrow grid below free to place it somewhere else entirely. */
+.week-actions .week-del-btn { order: -1; }
 
 /* On a phone the row wraps, and `margin-left: auto` kept pushing the week group
    right AFTER it wrapped — so "Duplicate week" landed alone on a second line,
@@ -9393,6 +9402,17 @@ input.pyr-weight-input { -moz-appearance: textfield; appearance: textfield; }
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  /* Delete gets a row of its own at the bottom, and only ever that row.
+     `display: contents` above dissolves .week-actions, so its buttons flow as
+     grid items among the day ones — which means the wide layout's `order: -1`
+     would fling Delete to the very front of the grid, and plain source order
+     would drop it into the half-slot Duplicate is sitting in. Week 1 has no
+     Delete, so duplicating week 1 did exactly that: the button appeared in the
+     cell Duplicate had just been in and Duplicate slid over to make room.
+     Spanning both columns at the end pins Duplicate's slot whether Delete is
+     there or not, and puts the destructive control on its own line. */
+  .day-add-row .week-del-btn { order: 0; grid-column: 1 / -1; }
+  .day-add-spacer { display: block; }
 }
 .day-tab[draggable="true"] { cursor: grab; }
 .day-tab-dragging { opacity: 0.45; }

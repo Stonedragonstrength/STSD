@@ -13713,6 +13713,18 @@
         moveBtn.title = "Move this day within the week or to another week";
         moveBtn.addEventListener("click", openMoveDaySheet);
         addRow.appendChild(moveBtn);
+      } else {
+        // An empty grid cell in its place, narrow layouts only. Move day is the
+        // OTHER thing that can appear when you duplicate a week: a one-week
+        // program has nowhere to move a day to, and the second week gives it
+        // somewhere. In the 2-up grid that pushes "Duplicate week" from the
+        // left column to the right one, so the button you just tapped moves
+        // and Move day takes its cell. Holding the slot open costs nothing and
+        // pins the whole row's geometry.
+        const spacer = document.createElement("span");
+        spacer.className = "day-add-spacer";
+        spacer.setAttribute("aria-hidden", "true");
+        addRow.appendChild(spacer);
       }
       weekActionsInto(addRow);
     }
@@ -13785,13 +13797,18 @@
           renderWeeks();
           if (!_programEditorId) { renderDiet(); renderCoachCalendar(); }
         });
-        // Prepended, NOT appended. `.week-actions` is right-aligned
-        // (margin-left: auto), so a delete button added after Duplicate pushes
-        // Duplicate leftward and lands itself exactly where Duplicate just was.
-        // Week 1 has no delete, so duplicating it made a Delete button appear
-        // under the finger that had just tapped Duplicate. Delete goes on the
-        // left and Duplicate keeps its anchor at the right edge.
-        acts.prepend(del);
+        // Appended, and CSS decides where it sits — because the two layouts
+        // want opposite DOM orders and hard-coding one broke the other.
+        //
+        // Week 1 has no delete, so duplicating it makes a Delete button appear;
+        // whatever slot it takes must not be a slot Duplicate was already in,
+        // or it materialises under the finger that just tapped Duplicate.
+        // Wide: `.week-actions` is right-aligned, so `order: -1` puts Delete on
+        // the LEFT and Duplicate keeps its anchor at the right edge. Narrow:
+        // the row is a 2-up grid and `.week-actions` is `display: contents`, so
+        // Delete takes a full-width row of its own at the BOTTOM and Duplicate
+        // does not move at all. Both rules live beside `.week-del-btn`.
+        acts.appendChild(del);
       }
       row.appendChild(acts);
     }
