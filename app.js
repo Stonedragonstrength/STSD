@@ -6602,6 +6602,7 @@
       if (isRecordsSheetOpen()) {
         renderCoachPRs();
         renderStrengthProgress($("#coach-strength-charts"), c, c.importedProgress || {});
+        renderCoverageMatrix($("#coach-coverage"), c, c.importedProgress || {});
         renderClientLogs();
       }
     } else if (!$("#view-dashboard")?.classList.contains("hidden")) {
@@ -6813,6 +6814,7 @@
     // cloud pull lands, so whatever it last rendered is stale by definition.
     renderCoachPRs();
     renderStrengthProgress($("#coach-strength-charts"), c, c.importedProgress || {});
+    renderCoverageMatrix($("#coach-coverage"), c, c.importedProgress || {});
     renderClientLogs();
     show(sheet);
     document.body.classList.add("records-sheet-open");
@@ -34079,6 +34081,7 @@
     if (syncStatField(c, progress)) saveClient();
     renderStatFieldCard($("#prog-pentagon"), c, progress);
     renderProgressOverlay($("#prog-volume"), c, progress);
+    renderCoverageMatrix($("#prog-coverage"), c, progress);
     renderStrengthProgress($("#athlete-strength-charts"), c, progress);
   }
 
@@ -34375,6 +34378,7 @@
     container.insertAdjacentHTML("beforeend",
       `<div class="card food-week-card" id="food-week-host"></div>`);
     renderFoodDay();
+    renderNutritionOverlay($("#nutrition-chart"), state.clientData.program?.client, state.clientData.progress);
   }
 
   // Open the meal it's plausibly time for, so the common case is one tap.
@@ -37777,6 +37781,317 @@
   // as a contiguous run ending at the current period — quiet periods show as
   // zero rather than vanishing. Capped to the last 12 buckets.
   const KEY_VOLMODE = "trainerpro_volmode_v1"; // "week" (default) | "month"
+  // ============ Coverage over time ============
+  //
+  // The Anatomy page grades the week you WROTE: prescribed sets, this week,
+  // against this athlete's bands. This is the other question, and Nathan's:
+  // what did the training actually hit, week after week, and how hard.
+  //
+  // So it reads LOGGED sets rather than programmed ones, through the same
+  // muscle map the figure uses (musclesForExercise, which honours the coach's
+  // per-exercise credit overrides). A set of dumbbell rows lands on lats and
+  // biceps without anyone tagging it, and half-credit stays half.
+  //
+  // Intensity comes from effortRank, the burn level the row carries, weighted
+  // by the sets it was carried on. That is the app's existing notion of how
+  // hard a set was asked to be, and it is what phase grading already reads.
+  const COV_WEEKS = 8;                 // eight columns is a block, and fits a phone sideways
+  const COV_HARD_RANK = 2.6;           // mean burn at or above this reads as hard work
+
+  /**
+   * Every logged set, bucketed by week and by the muscles it credited.
+   *
+   * Returns { weeks: [ISO monday], rows: [{ id, name, sets: [], hard: [] }] }
+   * with one entry per anatomy group, so the matrix has a stable shape even for
+   * a muscle that was never trained: an empty row is the finding.
+   */
+  function coverageHistory(client, progress, weekCount = COV_WEEKS) {
+    const logs = progress?.exerciseLogs || {};
+    // Every exercise the athlete could have logged, by id: the program's weeks
+    // plus the one-off and imported sessions, which is the same union the
+    // strength history walks.
+    const byId = new Map();
+    [...(client?.weeks || []), { days: sessionDays(client, progress) }]
+      .forEach((w) => (w?.days || []).forEach((d) => (d?.exercises || []).forEach((ex) => {
+        if (ex?.id) byId.set(ex.id, ex);
+      })));
+
+    const thisMonday = weekStartISO(todayISO());
+    const weeks = [];
+    for (let i = weekCount - 1; i >= 0; i--) weeks.push(addDaysISO(thisMonday, -7 * i));
+    const idx = new Map(weeks.map((w, i) => [w, i]));
+
+    const zero = () => weeks.map(() => 0);
+    const rows = ANATOMY_GROUPS.map((g) => ({
+      id: g.id, name: g.name, sets: zero(), rank: zero(), ranked: zero(),
+    }));
+    const rowById = new Map(rows.map((r) => [r.id, r]));
+
+    let counted = 0, unmapped = 0;
+    Object.entries(logs).forEach(([exId, entries]) => {
+      const ex = byId.get(exId);
+      if (!ex) return;                                  // logged against an exercise that no longer exists
+      const hits = ex.kind === "mobility" ? [] : musclesForExercise(ex);
+      const rank = effortRank(ex);
+      (entries || []).forEach((l) => {
+        if (!l?.date) return;
+        const w = idx.get(weekStartISO(l.date));
+        if (w == null) return;                          // outside the window
+        // A set counts when it carries a real number, so a row that was opened
+        // and abandoned does not read as training.
+        const n = (l.sets || []).filter((s) => (parseFloat(s?.weight) > 0 || parseInt(s?.reps, 10) > 0)).length;
+        if (!n) return;
+        if (!hits.length) { unmapped += n; return; }
+        counted += n;
+        hits.forEach((h) => {
+          const row = rowById.get(h.id);
+          if (!row) return;
+          row.sets[w] += n * h.weight;
+          if (rank) { row.rank[w] += rank * n * h.weight; row.ranked[w] += n * h.weight; }
+        });
+      });
+    });
+
+    rows.forEach((r) => {
+      r.sets = r.sets.map((v) => Math.round(v * 10) / 10);
+      r.hard = r.rank.map((total, i) => (r.ranked[i] ? total / r.ranked[i] : 0));
+      delete r.rank; delete r.ranked;
+    });
+    return { weeks, rows, counted, unmapped, max: Math.max(1, ...rows.flatMap((r) => r.sets)) };
+  }
+
+  /** "Aug 10", the way the rest of the app writes a short date. */
+  function covWeekLabel(iso) {
+    return new Date(iso + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  function renderCoverageMatrix(host, client, progress) {
+    if (!host) return;
+    const hist = coverageHistory(client, progress);
+    // Nothing logged in eight weeks is not a matrix of zeroes, it is no answer.
+    if (!hist.counted) { host.innerHTML = ""; return; }
+
+    const cell = (row, i) => {
+      const v = row.sets[i];
+      const a = v ? (0.12 + (v / hist.max) * 0.72) : 0;
+      const hard = row.hard[i] >= COV_HARD_RANK;
+      const title = v
+        ? `${row.name}, week of ${covWeekLabel(hist.weeks[i])}: ${v} set${v === 1 ? "" : "s"}` +
+          (row.hard[i] ? `, effort ${row.hard[i].toFixed(1)}` : "")
+        : `${row.name}: nothing the week of ${covWeekLabel(hist.weeks[i])}`;
+      return `<div class="cvm-cell${v ? "" : " is-none"}${hard ? " is-hard" : ""}"` +
+        `${v ? ` style="background:rgba(var(--primary-rgb),${a.toFixed(2)})"` : ""}` +
+        ` title="${escapeHtml(title)}">${v ? escapeHtml(String(v)) : ""}</div>`;
+    };
+
+    host.innerHTML = `
+      <div class="card po-card cvm-card">
+        <div class="bw-charts-head">
+          <h4>🗺️ Coverage</h4>
+          <span class="cvm-key">Darker is more sets · <span class="cvm-key-hard">gold</span> is hard work</span>
+        </div>
+        <div class="cvm-scroll">
+          <div class="cvm" style="--cvm-cols:${hist.weeks.length}">
+            <div class="cvm-row cvm-head">
+              <span></span>${hist.weeks.map((w) => `<span class="cvm-wk">${escapeHtml(covWeekLabel(w))}</span>`).join("")}
+            </div>
+            ${hist.rows.map((r) => `
+              <div class="cvm-row">
+                <span class="cvm-name">${escapeHtml(r.name)}</span>
+                ${r.sets.map((_, i) => cell(r, i)).join("")}
+              </div>`).join("")}
+          </div>
+        </div>
+        <p class="po-key">Logged sets, counted where they landed. ${
+          hist.unmapped ? `${hist.unmapped} set${hist.unmapped === 1 ? "" : "s"} came from exercises with no muscles mapped.` : ""}</p>
+      </div>`;
+  }
+
+
+  // ============ The nutrition overlay ============
+  //
+  // Same chart as the progress overlay on the PR screen, pointed at what they
+  // ate. Nathan picked it off a rendered comparison on 2026-08-20.
+  //
+  // Everything is drawn as percent of ITS OWN target, which is what lets
+  // calories, grams of protein and cups of water share one axis: 100% is on
+  // plan whatever the unit, and the band is within 10% of it. Raw numbers would
+  // put 2400 calories and 12 cups on the same scale and one of them would be a
+  // flat line on the floor.
+  //
+  // The one thing it must not do is join a line across a day nobody logged.
+  // An unlogged Tuesday is not zero calories and it is not a straight line from
+  // Monday to Wednesday either: the line BREAKS, and the ticks along the bottom
+  // say which days have anything behind them.
+  const KEY_NUTOVERLAY = "trainerpro_nutoverlay_on_v1";
+  let _nutRange = "30";
+
+  /** The five things worth plotting, each with the target it is measured against. */
+  function nutritionSeries(client, progress) {
+    const plan = effectiveTargets(client, progress).plan;
+    const water = waterGoalCups(client, progress);
+    const out = [];
+    const add = (key, label, cls, target, pick) => {
+      if (!(Number(target) > 0)) return;   // no target, nothing to be a percent of
+      out.push({ key, label, cls, target: Number(target), pick });
+    };
+    add("kcal", "Calories", "s-weight", plan?.calories, (t) => t.kcal);
+    add("protein", "Protein", "s-muscle", plan?.protein, (t) => t.protein);
+    add("carbs", "Carbs", "s-fat", plan?.carbs, (t) => t.carbs);
+    add("fat", "Fat", "s-lift2", plan?.fat, (t) => t.fat);
+    add("water", "Water", "s-lift3", water, (t) => t.water);
+    return out;
+  }
+
+  /**
+   * One row per day in the window, totals resolved once.
+   *
+   * `logged` is the whole point of the shape: a day with a food entry is a day
+   * with an answer, and a day without one is a hole rather than a zero.
+   */
+  function nutritionDays(progress, fromISO, toISO) {
+    const food = progress?.foodLog || {};
+    const water = progress?.waterLog || {};
+    // EVERY day in the window, not only the days with a key. A day nobody
+    // opened the logger on has no key at all, and if it is simply absent the
+    // chart draws a straight line straight through it — which is the one thing
+    // this must not do. It has to be present and `logged: false` so the line
+    // breaks there.
+    const keys = [];
+    const last = toISO || todayISO();
+    for (let d = fromISO; d <= last; d = addDaysISO(d, 1)) keys.push(d);
+    // Anything logged outside that span (an import, a clock change) still counts.
+    [...Object.keys(food), ...Object.keys(water)].forEach((k) => {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(k) && k >= fromISO && k <= last && !keys.includes(k)) keys.push(k);
+    });
+    keys.sort();
+    return keys.map((date) => {
+      const entries = food[date] || [];
+      const totals = foodDayTotals(entries);
+      return {
+        date,
+        t: new Date(date + "T12:00:00").getTime(),
+        logged: entries.length > 0,
+        kcal: totals.kcal, protein: totals.protein, carbs: totals.carbs, fat: totals.fat,
+        water: Number(water[date]) || 0,
+      };
+    });
+  }
+
+  function renderNutritionOverlay(host, client, progress) {
+    if (!host) return;
+    const series = nutritionSeries(client, progress);
+    // No targets set means nothing here has a denominator, and a chart of
+    // percentages of nothing is worse than no chart.
+    if (!series.length) { host.innerHTML = ""; return; }
+    const RANGES = [
+      { k: "30", label: "30d", days: 30 },
+      { k: "90", label: "90d", days: 90 },
+      { k: "all", label: "All", days: FOOD_LOG_DAYS },
+    ];
+
+    let saved = null;
+    try {
+      const raw = JSON.parse(localStorage.getItem(KEY_NUTOVERLAY) || "null");
+      if (Array.isArray(raw)) saved = new Set(raw);
+    } catch (e) { /* corrupt: fall back to the default */ }
+    const on = saved || new Set(["kcal", "protein"]);
+
+    host.innerHTML = `
+      <div class="card po-card">
+        <div class="bw-charts-head">
+          <h4>🍎 Against your targets</h4>
+          <div class="bw-range" role="group" aria-label="Time range">${RANGES.map((r) =>
+            `<button type="button" class="bw-range-btn${r.k === _nutRange ? " on" : ""}" data-nur="${r.k}">${r.label}</button>`).join("")}</div>
+        </div>
+        <div class="po-plot"><svg class="po-svg" aria-hidden="true"></svg></div>
+        <div class="po-switches" role="group" aria-label="What to show">
+          ${series.map((s) => `<button type="button" class="po-sw ${s.cls}${on.has(s.key) ? " on" : ""}" data-nus="${s.key}"><i></i>${escapeHtml(s.label)}</button>`).join("")}
+        </div>
+        <p class="po-key po-nut-key">100% is your target; the band is within 10% of it. Ticks are days you logged, and the line breaks where you did not.</p>
+      </div>`;
+
+    const plot = host.querySelector(".po-plot");
+    const svg = host.querySelector(".po-svg");
+    const keyEl = host.querySelector(".po-nut-key");
+
+    function draw() {
+      const r = RANGES.find((x) => x.k === _nutRange) || RANGES[0];
+      const days = nutritionDays(progress, addDaysISO(todayISO(), -r.days));
+      const W = Math.max(260, Math.round(plot.clientWidth || 320));
+      const H = 176, padL = 34, padR = 8, padT = 12, padB = 24;
+      const logged = days.filter((d) => d.logged);
+      if (logged.length < 2) {
+        svg.innerHTML = "";
+        keyEl.textContent = logged.length
+          ? "One day logged in this range. Two makes a line."
+          : "Nothing logged in this range yet.";
+        return;
+      }
+      keyEl.textContent = `100% is your target; the band is within 10% of it. ${logged.length} of ${r.days} days logged.`;
+
+      const tMin = days[0].t, tMax = days[days.length - 1].t;
+      const span = Math.max(1, tMax - tMin);
+      const x = (t) => padL + ((t - tMin) / span) * (W - padL - padR);
+      const live = series.filter((s) => on.has(s.key));
+
+      let lo = 80, hi = 120;
+      live.forEach((s) => logged.forEach((d) => {
+        const pct = (s.pick(d) / s.target) * 100;
+        if (isFinite(pct)) { lo = Math.min(lo, pct); hi = Math.max(hi, pct); }
+      }));
+      const padV = (hi - lo) * 0.1;
+      lo -= padV; hi += padV;
+      const y = (p) => padT + (1 - (p - lo) / (hi - lo)) * (H - padT - padB);
+
+      let out = `<rect class="po-band" x="${padL}" y="${y(110).toFixed(1)}" width="${(W - padL - padR).toFixed(1)}" height="${Math.max(0, y(90) - y(110)).toFixed(1)}"/>`;
+      for (let i = 0; i <= 3; i++) {
+        const gy = padT + (i / 3) * (H - padT - padB);
+        const val = hi - (i / 3) * (hi - lo);
+        out += `<line class="po-grid" x1="${padL}" y1="${gy.toFixed(1)}" x2="${W - padR}" y2="${gy.toFixed(1)}"/>`;
+        out += `<text class="po-axis" x="${padL - 5}" y="${(gy + 3).toFixed(1)}" text-anchor="end">${val.toFixed(0)}%</text>`;
+      }
+      out += `<line class="po-target" x1="${padL}" y1="${y(100).toFixed(1)}" x2="${W - padR}" y2="${y(100).toFixed(1)}"/>`;
+
+      live.forEach((s) => {
+        // The break: a run of consecutive logged days is one path, and an
+        // unlogged day ends it rather than being drawn through.
+        let d = "", pen = false;
+        days.forEach((day) => {
+          const v = s.pick(day);
+          if (!day.logged || !isFinite(v) || (s.key !== "water" && !v)) { pen = false; return; }
+          d += `${pen ? "L" : "M"}${x(day.t).toFixed(1)} ${y((v / s.target) * 100).toFixed(1)} `;
+          pen = true;
+        });
+        out += `<path class="po-line ${s.cls}" d="${d.trim()}"/>`;
+      });
+
+      out += logged.map((d) =>
+        `<line class="po-tick" x1="${x(d.t).toFixed(1)}" y1="${H - padB + 5}" x2="${x(d.t).toFixed(1)}" y2="${H - padB + 10}"/>`).join("");
+
+      svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+      svg.innerHTML = out;
+    }
+
+    host.querySelectorAll("[data-nur]").forEach((b) => b.addEventListener("click", () => {
+      _nutRange = b.dataset.nur;
+      host.querySelectorAll("[data-nur]").forEach((x) => x.classList.toggle("on", x === b));
+      draw();
+    }));
+    host.querySelectorAll("[data-nus]").forEach((b) => b.addEventListener("click", () => {
+      const k = b.dataset.nus;
+      if (on.has(k)) on.delete(k); else on.add(k);
+      b.classList.toggle("on", on.has(k));
+      try { localStorage.setItem(KEY_NUTOVERLAY, JSON.stringify([...on])); } catch (e) {}
+      draw();
+    }));
+
+    draw();
+    requestAnimationFrame(draw);
+    if (typeof ResizeObserver === "function") new ResizeObserver(draw).observe(plot);
+  }
+
+
   // ============ The athlete's progress overlay ============
   //
   // One chart at the top of the PR screen, replacing the weekly volume bars and
