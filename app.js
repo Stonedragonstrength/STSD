@@ -15447,7 +15447,7 @@
       const charts = document.createElement("div");
       charts.id = "bw-charts-coach";
       bwCard.appendChild(charts);
-      renderBwCharts(charts, bwLog);
+      renderBwCharts(charts, bwLog, c.importedProgress?.nutritionTargets?.calc?.goal);
       const list = document.createElement("div");
       list.className = "bw-list";
       [...bwLog].sort(bwSort).forEach((b) => {
@@ -33982,7 +33982,8 @@
   // off, and the charts take an empty log.
   function renderAthleteBodyComp() {
     renderCycleCard();
-    renderBwCharts($("#prog-bw"), state.clientData.progress?.bodyweightLog || []);
+    renderBwCharts($("#prog-bw"), state.clientData.progress?.bodyweightLog || [],
+      state.clientData.progress?.nutritionTargets?.calc?.goal);
   }
 
   // One slim row at the top of the athlete's overview: badge, rank, a thin
@@ -36761,7 +36762,7 @@
     }
     // The trend charts sit under this fold on the same tab again, so a weigh-in
     // entered here redraws the curve it just moved without a tab change.
-    renderBwCharts($("#prog-bw"), log);
+    renderBwCharts($("#prog-bw"), log, state.clientData.progress?.nutritionTargets?.calc?.goal);
     const wrap = $("#bw-history");
     wrap.innerHTML = "";
     if (!log.length) { wrap.innerHTML = `<p class="muted">No weight entries yet.</p>`; return; }
@@ -37297,11 +37298,35 @@
   // `unit: null` marks a series that IS a weight, so the chart takes both its
   // label and its conversion from the athlete's setting. A percentage is a
   // percentage in any country.
+  // `dir` is which way is the right way: "down" and "up" are not in question
+  // for fat and muscle, and weight is "goal" because a lean bulk's +6 lb and
+  // a cut's -6 lb are the same number and opposite outcomes. See bwTrendTone.
   const BW_CHART_SPECS = [
-    { key: "weight", title: "Weight", unit: null, val: (e) => { const v = parseFloat(e.weightLb); return isFinite(v) ? v : null; } },
-    { key: "bodyfat", title: "Body Fat", unit: "%", val: (e) => bwMetricVal(e, /^body fat perc/i) },
-    { key: "muscle", title: "Muscle Mass", unit: null, val: (e) => { const v = bwMetricVal(e, /^muscle mass/i); return v != null ? v : bwMetricVal(e, /^skeletal muscle mass/i); } },
+    { key: "weight", title: "Weight", unit: null, dir: "goal", val: (e) => { const v = parseFloat(e.weightLb); return isFinite(v) ? v : null; } },
+    { key: "bodyfat", title: "Body Fat", unit: "%", dir: "down", val: (e) => bwMetricVal(e, /^body fat perc/i) },
+    { key: "muscle", title: "Muscle Mass", unit: null, dir: "up", val: (e) => { const v = bwMetricVal(e, /^muscle mass/i); return v != null ? v : bwMetricVal(e, /^skeletal muscle mass/i); } },
   ];
+  // Below this, a change is rounding rather than a direction.
+  const BW_FLAT = 0.05;
+  /**
+   * Is this run going the right way? "good", "bad", or "" for neither.
+   *
+   * Fat and muscle answer themselves. WEIGHT reads the goal the targets
+   * calculator already stores (progress.nutritionTargets.calc.goal), because
+   * without it there is no right direction: painting a deliberate lean bulk
+   * red on the athlete's own progress screen needs no explaining and is
+   * wrong. No goal set, or the goal is to maintain, and the card keeps its
+   * own colour rather than inventing a verdict.
+   */
+  function bwTrendTone(spec, delta, goal) {
+    if (!isFinite(delta) || Math.abs(delta) < BW_FLAT) return "";
+    const down = delta < 0;
+    if (spec.dir === "down") return down ? "good" : "bad";
+    if (spec.dir === "up") return down ? "bad" : "good";
+    if (goal === "cut") return down ? "good" : "bad";
+    if (goal === "lean") return down ? "bad" : "good";
+    return "";
+  }
   function bwMetricVal(e, re) {
     if (!Array.isArray(e.metrics)) return null;
     const m = e.metrics.find((x) => re.test(x.label));
@@ -37316,7 +37341,10 @@
   }
   // Render the small-multiple trend cards into `container` from a bodyweight log.
   // Shared by the athlete's own view and the coach's read-only athlete view.
-  function renderBwCharts(container, log) {
+  // `goal` is the athlete's diet goal, which is the only thing that can say
+  // whether a weight change is the right one. Optional: without it the weight
+  // card stays neutral and the other two are unaffected.
+  function renderBwCharts(container, log, goal) {
     if (!container) return;
     container.innerHTML = "";
     const all = [...(log || [])];
@@ -37337,7 +37365,7 @@
         .filter((p) => p.v != null && p.t >= cutoff)
         .sort((a, b) => a.t - b.t);
       if (pts.length < 2) return; // need at least two readings to draw a trend
-      grid.appendChild(bwChartCard(spec, pts));
+      grid.appendChild(bwChartCard(spec, pts, goal));
     });
     if (!grid.children.length) return; // e.g. range too tight — show nothing
 
@@ -37355,12 +37383,12 @@
     }
     head.querySelectorAll(".bw-range-btn").forEach((b) => b.addEventListener("click", () => {
       bwChartRange = b.dataset.r;
-      renderBwCharts(container, log);
+      renderBwCharts(container, log, goal);
     }));
     container.appendChild(head);
     container.appendChild(grid);
   }
-  function bwChartCard(spec, pts) {
+  function bwChartCard(spec, pts, goal) {
     const unit = spec.unit == null ? unitLbl() : spec.unit; // null = it's a weight
     const W = 320, H = 96, padL = 4, padR = 4, padT = 12, padB = 10;
     const last = pts[pts.length - 1].v;
@@ -37374,10 +37402,18 @@
     const yOf = (v) => padT + (1 - (v - vMin) / (vMax - vMin)) * (H - padT - padB);
     const xy = pts.map((p) => ({ x: xOf(p.t), y: yOf(p.v), v: p.v, date: p.date, time: p.time }));
     const line = xy.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
-    const area = `${line} L${xy[xy.length - 1].x.toFixed(1)} ${H - padB} L${xy[0].x.toFixed(1)} ${H - padB} Z`;
     const lastPt = xy[xy.length - 1];
-    const gid = "bwg-" + spec.key + "-" + Math.random().toString(36).slice(2, 7);
-    const arrow = Math.abs(delta) < 0.05 ? "▬" : (delta > 0 ? "▲" : "▼");
+    const arrow = Math.abs(delta) < BW_FLAT ? "▬" : (delta > 0 ? "▲" : "▼");
+    const tone = bwTrendTone(spec, delta, goal);
+    // Where the run began, drawn across the whole card. The band between it
+    // and the line is the entire story in one shape: a card that only shows
+    // today's number and a delta makes you do that arithmetic in your head.
+    // "Start" follows the range buttons, because the delta above it always
+    // has: on 30d both mean the first reading still in view.
+    const first = xy[0], y0 = first.y;
+    const startBand = `${line} L${lastPt.x.toFixed(1)} ${y0.toFixed(1)} L${first.x.toFixed(1)} ${y0.toFixed(1)} Z`;
+    const startLabel = new Date(`${pts[0].date}T12:00:00`)
+      .toLocaleDateString(undefined, { month: "short", day: "numeric" });
     // Cycle bands sit behind the trend line, clipped to the visible range.
     // Athlete-only and only while tracking is on — cycleOn() is false in a
     // coach preview, so this never paints on someone else's screen.
@@ -37395,23 +37431,25 @@
     card.innerHTML = `
       <div class="bw-chart-top">
         <span class="bw-chart-title">${escapeHtml(spec.title)}</span>
-        <span class="bw-chart-delta" title="Change over range">${arrow} ${Math.abs(delta).toFixed(1)}</span>
+        <span class="bw-chart-delta ${tone}" title="Change over range">${arrow} ${Math.abs(delta).toFixed(1)}</span>
       </div>
       <div class="bw-chart-val">${escapeHtml(String(round1(last)))}<span class="bw-chart-unit">${escapeHtml(unit)}</span></div>
       <div class="bw-chart-plot">
         <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="bw-chart-svg" aria-hidden="true">
-          <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="currentColor" stop-opacity="0.22"/>
-            <stop offset="1" stop-color="currentColor" stop-opacity="0"/>
-          </linearGradient></defs>
           ${bands}
-          <path d="${area}" fill="url(#${gid})" stroke="none"/>
+          <path class="bw-band ${tone}" d="${startBand}"/>
+          <line class="bw-start-rule" x1="0" y1="${y0.toFixed(1)}" x2="${W}" y2="${y0.toFixed(1)}" vector-effect="non-scaling-stroke"/>
           <path d="${line}" fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>
         </svg>
         <div class="bw-cross" style="display:none"></div>
         <div class="bw-dot bw-hover-dot" style="display:none"></div>
+        <div class="bw-dot bw-start-dot" style="left:${(first.x / W * 100).toFixed(2)}%; top:${(first.y / H * 100).toFixed(2)}%"></div>
         <div class="bw-dot bw-last-dot" style="left:${(lastPt.x / W * 100).toFixed(2)}%; top:${(lastPt.y / H * 100).toFixed(2)}%"></div>
         <div class="bw-chart-tip" style="display:none"></div>
+      </div>
+      <div class="bw-chart-foot">
+        <span>${escapeHtml(startLabel)} <b>${escapeHtml(String(round1(pts[0].v)))}</b></span>
+        <span class="now">now <b>${escapeHtml(String(round1(last)))}</b></span>
       </div>`;
 
     const plot = card.querySelector(".bw-chart-plot");

@@ -2625,6 +2625,32 @@ input.cex-finisher-input { width: 72px; flex: 0 0 72px; text-align: center; }
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 .bw-chart-tip span { color: var(--muted); }
+/* Where the run began, and the gap between there and now.
+   Tinted from the theme's own accent/danger rgb pairs rather than a fixed
+   green, so the card still reads on all ten themes including the light one. */
+.bw-band { fill: currentColor; fill-opacity: 0.16; stroke: none; }
+.bw-band.good { fill: rgba(var(--accent-rgb), 0.9); fill-opacity: 0.18; }
+.bw-band.bad { fill: rgba(var(--danger-rgb), 0.9); fill-opacity: 0.16; }
+.bw-start-rule { stroke: currentColor; stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.45; }
+/* Hollow, so the run reads left to right: this is where you were, the solid
+   one is where you are. */
+.bw-start-dot {
+  background: var(--surface-2);
+  border: 2px solid currentColor;
+  width: 8px; height: 8px;
+  opacity: 0.85;
+}
+.bw-chart-foot {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 0.4em;
+  margin-top: 0.45em; padding-top: 0.4em;
+  border-top: 1px solid var(--border);
+  font-size: 0.68rem; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.bw-chart-foot b { color: var(--text-soft); font-weight: 600; }
+.bw-chart-foot .now b { color: var(--text); }
+.bw-chart-delta.good { color: var(--accent-ink); }
+.bw-chart-delta.bad { color: var(--danger); }
 
 /* Trainer's client logs view */
 .log-week-card {
