@@ -1639,7 +1639,10 @@
       <div class="coach-sheet-body" id="records-sheet-body">
         <div class="records-pane" data-rpane="prs">
           <div id="coach-strength-charts"></div>
-          <div id="coach-coverage"></div>
+          <!-- #coach-coverage removed 2026-08-21. Coverage over time has one
+               home now, the bottom of the Anatomy page's Coverage view, which
+               is where the same question gets asked for a single week. -->
+
           <div id="coach-pr-container"></div>
           <p class="muted records-empty hidden" id="coach-pr-empty">No PRs yet. Add one to start tracking strength milestones.</p>
         </div>
@@ -1721,7 +1724,7 @@
   <script src="src/scheduling/series.js?v=x1"></script>
   <script src="src/scheduling/merge.js?v=x1"></script>
   <script src="src/scheduling/availability.js?v=x1"></script>
-  <script src="app.js?v=x77"></script>
+  <script src="app.js?v=x78"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

@@ -6602,7 +6602,6 @@
       if (isRecordsSheetOpen()) {
         renderCoachPRs();
         renderStrengthProgress($("#coach-strength-charts"), c, c.importedProgress || {});
-        renderCoverageMatrix($("#coach-coverage"), c, c.importedProgress || {});
         renderClientLogs();
       }
     } else if (!$("#view-dashboard")?.classList.contains("hidden")) {
@@ -6814,7 +6813,6 @@
     // cloud pull lands, so whatever it last rendered is stale by definition.
     renderCoachPRs();
     renderStrengthProgress($("#coach-strength-charts"), c, c.importedProgress || {});
-    renderCoverageMatrix($("#coach-coverage"), c, c.importedProgress || {});
     renderClientLogs();
     show(sheet);
     document.body.classList.add("records-sheet-open");
