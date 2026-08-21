@@ -28570,17 +28570,41 @@
   function coachExerciseTarget(week, day, ex) {
     const c = currentClient();
     if (!c || !day || !ex) return null;
+    const oneOffWeek = { id: "oneoff", label: "Coach session" };
+    // Declared out here because the added-lift branch at the bottom reports it:
+    // an added lift has no program week, and `week: w || null` is what tells
+    // the editor there is nothing to carry forward into.
+    const w = week?.id === "oneoff" ? null : (c.weeks || []).find((x) => x.id === week?.id);
     if (week?.id === "oneoff") {
       const d = (c.oneOffDays || []).find((x) => x.id === day.id);
       const e = d && (d.exercises || []).find((x) => x.id === ex.id);
       // No `week` object means no later weeks to carry into, which is correct
       // for a one-off: it sits outside the program entirely.
-      return e ? { week: { id: "oneoff", label: "Coach session" }, day: d, ex: e } : null;
+      if (e) return { week: oneOffWeek, day: d, ex: e };
+    } else {
+      const d = w && (w.days || []).find((x) => x.id === day.id);
+      const e = d && (d.exercises || []).find((x) => x.id === ex.id);
+      if (e) return { week: w, day: d, ex: e };
     }
-    const w = (c.weeks || []).find((x) => x.id === week?.id);
-    const d = w && (w.days || []).find((x) => x.id === day.id);
-    const e = d && (d.exercises || []).find((x) => x.id === ex.id);
-    if (e) return { week: w, day: d, ex: e };
+
+    // The portal renders a CLONE of the program taken when the session opened,
+    // and the coach's own record moves under it — a pull landing mid-session,
+    // an edit made on the phone, a realtime row. When that happens the week or
+    // the day this card believes it sits in stops resolving, and the pencil
+    // refused to edit a lift that is plainly on screen ("this exercise isn't
+    // in the program yet" on a card you are looking at, which came right on
+    // its own a minute later when the next pull landed). Ids are unique, so
+    // find the lift wherever it actually lives instead.
+    for (const wk of (c.weeks || [])) {
+      for (const dd of (wk.days || [])) {
+        const hit = (dd.exercises || []).find((x) => x.id === ex.id);
+        if (hit) return { week: wk, day: dd, ex: hit };
+      }
+    }
+    for (const dd of (c.oneOffDays || [])) {
+      const hit = (dd.exercises || []).find((x) => x.id === ex.id);
+      if (hit) return { week: oneOffWeek, day: dd, ex: hit };
+    }
     // A lift added on the day itself is NOT in the coach's weeks. It lives in
     // the athlete's progress (see addAthleteExercise), which is exactly why the
     // lookup above misses it. It is still the coach's to edit; it just saves
@@ -32133,11 +32157,20 @@
     if (state.previewMode && week && !isOwnDay(day)) {
       coachEditItem = mkToolsItem("✎", "Edit exercise");
       coachEditItem.title = "Edit this exercise in the program";
-      coachEditItem.addEventListener("click", (e) => {
+      coachEditItem.addEventListener("click", async (e) => {
         e.stopPropagation();
         closeToolsMenu();
-        const t = coachExerciseTarget(week, day, ex);
-        if (!t) { toast("This exercise isn't in the program yet."); return; }
+        let t = coachExerciseTarget(week, day, ex);
+        if (!t && window.Cloud?.enabled && navigator.onLine) {
+          // Still missing after the by-id sweep means the coach's record really
+          // does not have this lift yet — the athlete added it on a device
+          // whose push has not landed, most likely. Waiting for the next pull
+          // used to fix it, so do the pull instead of saying no.
+          toast("Catching up with the cloud…");
+          await resyncNow(true);
+          t = coachExerciseTarget(week, day, ex);
+        }
+        if (!t) { toast("Can't find this lift to edit — it hasn't reached the cloud yet."); return; }
         openCoachExerciseSheet(t.week, t.day, t.ex, () => {
           // The portal is drawn from a CLONE of the program, so pull the edit
           // through before redrawing or the card shows the old numbers. An
