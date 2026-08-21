@@ -2625,6 +2625,15 @@ input.cex-finisher-input { width: 72px; flex: 0 0 72px; text-align: center; }
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 .bw-chart-tip span { color: var(--muted); }
+/* A blank the coach still has to fill, marked when Save sweeps the program.
+   Outline rather than border so nothing on the row moves when it appears, and
+   the label reddens too: at this size the ring alone is easy to miss. */
+.picker-btn.needs-fill {
+  outline: 2px solid var(--danger);
+  outline-offset: 1px;
+  color: var(--danger);
+  border-color: var(--danger);
+}
 /* Where the run began, and the gap between there and now.
    Tinted from the theme's own accent/danger rgb pairs rather than a fixed
    green, so the card still reads on all ten themes including the light one. */

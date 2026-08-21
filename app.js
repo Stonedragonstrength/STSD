@@ -13127,6 +13127,91 @@
   }
 
   // -------- Weeks/program --------
+  /**
+   * Every exercise missing one of the three numbers a session cannot run
+   * without. Pure, so tests/program-gaps.spec.js can hold the rule honest.
+   *
+   * What does NOT count is the interesting part. "BW" and "BAR" are what the
+   * weight picker writes for bodyweight and an empty bar: they are answers,
+   * and outlining a pull-up in red for having no weight teaches the coach to
+   * ignore the red. Mobility rows render Rounds × Hold and never get a weight
+   * button, so asking them for one would flag a control that is not there.
+   */
+  function programGaps(weeks, oneOffs) {
+    const out = [];
+    const blank = (v) => String(v ?? "").trim() === "";
+    const scan = (day, where) => {
+      (day?.exercises || []).forEach((ex) => {
+        const isMob = ex.kind === "mobility";
+        const missing = [];
+        if (blank(ex.sets)) missing.push(isMob ? "rounds" : "sets");
+        if (!isMob && blank(ex.currentWeight)) missing.push("weight");
+        if (blank(ex.currentReps)) missing.push(isMob ? "hold" : "reps");
+        if (missing.length) {
+          out.push({ where, day: day.name || "", exId: ex.id, name: ex.name || "", missing });
+        }
+      });
+    };
+    (weeks || []).forEach((w, i) => (w?.days || []).forEach((d) => scan(d, w.label || `Week ${i + 1}`)));
+    (oneOffs || []).forEach((d) => d && scan(d, "One-off"));
+    return out;
+  }
+
+  /** Whatever the program editor is currently showing: a template, or an athlete. */
+  function editorProgram() {
+    if (_programEditorId) {
+      const tpl = currentProgramTemplate();
+      return { weeks: tpl?.weeks || [], oneOffs: [] };
+    }
+    const c = currentClient();
+    return { weeks: c?.weeks || [], oneOffs: c?.oneOffDays || [] };
+  }
+
+  /**
+   * Put the red on the control that is actually blank.
+   *
+   * The buttons already carry `.empty` from the moment they are unfilled, so
+   * this only has to say which of those the coach should be looking at right
+   * now. Cleared first, so a row that has been fixed stops shouting.
+   *
+   * Returns the gaps it could NOT show, which are the ones on days that are
+   * not rendered: those get named in the toast instead, because a save that
+   * looks clean while week 3 is half empty is the failure this is for.
+   */
+  function markProgramGaps(gaps) {
+    $$(".picker-btn.needs-fill").forEach((b) => b.classList.remove("needs-fill"));
+    const onScreen = new Map();
+    $$(".ex-row-wrapper").forEach((w) => { if (w.dataset.exid) onScreen.set(w.dataset.exid, w); });
+    let first = null;
+    gaps.forEach((g) => {
+      const wrapper = onScreen.get(g.exId);
+      if (!wrapper) return;
+      // Only the blanks this gap is about. "rounds" and "hold" are what a
+      // mobility row calls its sets and reps, and they are the same controls.
+      const want = new Set(g.missing.map((m) =>
+        m === "rounds" ? "sets" : m === "hold" ? "reps" : m));
+      wrapper.querySelectorAll("[data-fill]").forEach((b) => {
+        if (!want.has(b.dataset.fill)) return;
+        b.classList.add("needs-fill");
+        if (!first) first = b;
+      });
+    });
+    if (first) first.scrollIntoView({ behavior: "smooth", block: "center" });
+    return gaps.filter((g) => !onScreen.has(g.exId));
+  }
+
+  /** The sentence the coach reads: how many, and where the unseen ones are. */
+  function programGapMessage(gaps, offScreen) {
+    const n = gaps.length;
+    let msg = `${n} exercise${n === 1 ? "" : "s"} still ${n === 1 ? "needs" : "need"} sets, weight or reps.`;
+    if (offScreen.length) {
+      const days = [...new Set(offScreen.map((g) => `${g.where} ${g.day}`.trim()))];
+      msg += ` Including ${days.slice(0, 3).join(", ")}` +
+        (days.length > 3 ? ` and ${days.length - 3} more` : "") + ".";
+    }
+    return msg;
+  }
+
   function renderWeeks() {
     if (_programEditorId) {
       const tpl = currentProgramTemplate(); if (!tpl) return;
@@ -14318,11 +14403,13 @@
     // Sets
     const setsBtn = document.createElement("button");
     setsBtn.className = "picker-btn picker-btn-sm" + (ex.sets ? "" : " empty");
+    setsBtn.dataset.fill = "sets"; // markProgramGaps reddens by this, not by title
     setsBtn.textContent = ex.sets || "—";
     setsBtn.title = isMob ? "Rounds" : "Sets";
     const refreshSetsBtn = () => {
       setsBtn.textContent = ex.sets || "—";
       setsBtn.classList.toggle("empty", !ex.sets);
+      setsBtn.classList.remove("needs-fill"); // answered, so stop asking
     };
     setsBtn.addEventListener("click", (e) => { e.stopPropagation(); openGridPicker(isMob ? "Rounds" : "Sets", SETS_VALUES, ex.sets || "3", (val) => {
       ex.sets = val; saveEditor(); refreshSetsBtn();
@@ -14332,10 +14419,12 @@
     // hold length) and displays like "30s". Only used when isMob.
     const holdBtn = document.createElement("button");
     holdBtn.className = "picker-btn picker-btn-sm" + (ex.currentReps ? "" : " empty");
+    holdBtn.dataset.fill = "reps"; // markProgramGaps reddens by this, not by title
     holdBtn.textContent = ex.currentReps ? ex.currentReps + "s" : "Hold";
     holdBtn.title = "Hold (seconds)";
     holdBtn.addEventListener("click", (e) => { e.stopPropagation(); openGridPicker("Hold (sec)", HOLD_SEC_VALUES, ex.currentReps || "30", (val) => {
       ex.currentReps = val; saveEditor(); holdBtn.textContent = val + "s"; holdBtn.classList.remove("empty");
+      holdBtn.classList.remove("needs-fill"); // answered, so stop asking
     }, holdBtn, 4); });
 
     // Mobility placement toggle: warm-up (top) vs finisher (bottom). Only used
@@ -14359,11 +14448,13 @@
     // stays in the data model but has no UI, like goalReps)
     const cwBtn = document.createElement("button");
     cwBtn.className = "picker-btn picker-btn-sm" + (ex.currentWeight ? "" : " empty");
+    cwBtn.dataset.fill = "weight"; // markProgramGaps reddens by this, not by title
     const refreshCwLabel = () => { cwBtn.textContent = exWeightLabel(ex, ex.currentWeight) || "Wt"; };
     refreshCwLabel();
     cwBtn.title = "Prescribed weight";
     cwBtn.addEventListener("click", (e) => { e.stopPropagation(); openWeightPicker(ex.currentWeight || "BW", (val) => {
       ex.currentWeight = val; saveEditor(); refreshCwLabel(); cwBtn.classList.toggle("empty", !val);
+      cwBtn.classList.remove("needs-fill"); // answered, so stop asking
       refreshProgBtn(); // BW ↔ weighted flips the progression rule type
     }, cwBtn); });
 
@@ -14374,6 +14465,7 @@
     const crLabel = (v) => (isTimed && /^\d+(\.\d+)?$/.test(String(v)) ? v + "s" : v);
     const crBtn = document.createElement("button");
     crBtn.className = "picker-btn picker-btn-sm" + (ex.currentReps ? "" : " empty");
+    crBtn.dataset.fill = "reps"; // markProgramGaps reddens by this, not by title
     crBtn.textContent = crLabel(ex.currentReps) || "—";
     crBtn.title = isTimed ? "Prescribed time (seconds)" : "Prescribed reps";
     crBtn.addEventListener("click", (e) => { e.stopPropagation(); openGridPicker(
@@ -14381,6 +14473,7 @@
       isTimed ? CARRY_SEC_VALUES : REPS_VALUES,
       ex.currentReps || (isTimed ? "30" : "8"), (val) => {
       ex.currentReps = val; crBtn.textContent = crLabel(val); crBtn.classList.toggle("empty", !val);
+      crBtn.classList.remove("needs-fill"); // answered, so stop asking
       // Suggest a flame level, but only into a blank and only for rep work.
       // Timed and mobility prescriptions store SECONDS here, so a 45s hold
       // would otherwise be read as 45 reps and stamped "Light".
@@ -39902,6 +39995,13 @@
       // local copy with the cloud's empty one. Ask what actually happened.
       const failedBefore = window.Cloud?.lastPushFailureAt?.() || 0;
       saveTrainer(); // localStorage is written synchronously here
+      // Flag, never block. A half-filled program is a nuisance; refusing to
+      // save one because a rep box is blank is how work gets lost, and this
+      // app has lost a program before. The save above has already happened.
+      const { weeks, oneOffs } = editorProgram();
+      const gaps = programGaps(weeks, oneOffs);
+      if (gaps.length) toast(programGapMessage(gaps, markProgramGaps(gaps)), 6000);
+      else $$(".picker-btn.needs-fill").forEach((b) => b.classList.remove("needs-fill"));
       const orig = btn.textContent;
       btn.disabled = true; btn.textContent = "Saving…";
       try {
