@@ -11633,6 +11633,12 @@
             <div class="anatomy-detail-empty">Pick a muscle on the body or in the list.</div>
           </div>
         </div>
+        <!-- Coverage over time, under the body that answers it for one week.
+             Moved off the athlete's Progress tab 2026-08-20: coverage lives
+             here, and the matrix is the week-after-week half of the same
+             question. Coverage mode only — in Reference mode there is no week
+             being graded, so there is nothing for it to be the history of. -->
+        <div class="a-cov-matrix" data-cov-matrix></div>
       </div>
       <div class="a-shelf hidden" data-pane="str"></div>
       <div class="a-shelf hidden" data-pane="nut"></div>
@@ -11667,13 +11673,23 @@
       const whoEl = root.querySelector("[data-cov-who]");
       const noteEl = root.querySelector("[data-cov-verdict]");
       const subjEl = root.querySelector("[data-cov-subject]");
+      const matrixEl = root.querySelector("[data-cov-matrix]");
       root.classList.toggle("is-coverage", mode === "coverage");
       noteEl.classList.toggle("hidden", mode !== "coverage");
       if (mode !== "coverage") {
         whoEl.textContent = "";
         if (subjEl) subjEl.innerHTML = "";
+        if (matrixEl) matrixEl.innerHTML = "";
         root.querySelectorAll(".a-zone[data-cov]").forEach((z) => z.removeAttribute("data-cov"));
         return;
+      }
+      // The logs behind the matrix come from wherever this mount's subject
+      // keeps them: the coach reads the athlete's stored copy, the athlete
+      // (and a live session, which renders a built copy of the client) reads
+      // the progress the app is actually writing to.
+      if (matrixEl) {
+        if (client) renderCoverageMatrix(matrixEl, client, isCoach ? (client.importedProgress || {}) : (state.clientData?.progress || {}));
+        else matrixEl.innerHTML = "";
       }
       const who = isCoach ? (client?.name || "") : "";
       // Just the week up here — the athlete's name lives under the figure now.
@@ -26770,7 +26786,6 @@
     renderAthletePRs();
     renderAthleteProgressTab();
     renderAthleteBodyComp(); // the trend is plotted in the unit that just changed
-    renderStrengthProgress($("#athlete-strength-charts"), state.clientData.program?.client, state.clientData.progress);
     renderAthleteOverview();
     renderFoodDay();
     renderAthleteSettingsCards();
@@ -27376,7 +27391,6 @@
     renderClientProgress();
     renderAthleteCardio();
     renderAthletePRs();
-    renderStrengthProgress($("#athlete-strength-charts"), prog.client, state.clientData.progress);
     renderAthleteSessions();
     renderAthleteOverview();
     refreshAthleteOpenSlots();
@@ -32299,8 +32313,7 @@
       syncStatField(state.clientData.program?.client, state.clientData.progress);
       saveClient();
       offerWeightRebase(ex, entry, week);
-      renderStrengthProgress($("#athlete-strength-charts"), state.clientData.program?.client, state.clientData.progress);
-      if (typeof renderAthletePRs === "function") renderAthletePRs();
+        if (typeof renderAthletePRs === "function") renderAthletePRs();
       isLocked = true;
       refreshLockUI();
       doneCircle.classList.add("done"); doneCircle.textContent = "✓";
@@ -34123,8 +34136,6 @@
     if (syncStatField(c, progress)) saveClient();
     renderStatFieldCard($("#prog-pentagon"), c, progress);
     renderProgressOverlay($("#prog-volume"), c, progress);
-    renderCoverageMatrix($("#prog-coverage"), c, progress);
-    renderStrengthProgress($("#athlete-strength-charts"), c, progress);
   }
 
   // -------- Athlete: the body-comp block on Fuel & Body --------
@@ -38463,7 +38474,19 @@
         const bw = Math.max(3, (W - padL - padR) / Math.max(vis.length, 1) * 0.62);
         out += vis.map((b) => {
           const h = (b.v / vMax) * (H - padT - padB);
-          return `<rect class="po-bar" x="${(x(b.t) - bw / 2).toFixed(1)}" y="${(H - padB - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, h).toFixed(1)}" rx="2"/>`;
+          // Bars are centred on their week, and the filter above deliberately
+          // keeps one bucket starting just before tMin — so the first and last
+          // hang half a bar past the plot. .po-svg is overflow:visible (the
+          // end dots need it), which means they are not clipped, they are
+          // DRAWN, over the card and across the percentage labels. Narrow
+          // screens make it obvious because a bar is a bigger share of the
+          // width. Clamp to the plot and trim the width; a bar left entirely
+          // outside is dropped.
+          const cx = x(b.t);
+          const x0 = Math.max(padL, cx - bw / 2);
+          const x1 = Math.min(W - padR, cx + bw / 2);
+          if (x1 - x0 <= 0.5) return "";
+          return `<rect class="po-bar" x="${x0.toFixed(1)}" y="${(H - padB - h).toFixed(1)}" width="${(x1 - x0).toFixed(1)}" height="${Math.max(0, h).toFixed(1)}" rx="2"/>`;
         }).join("");
       }
       for (let i = 0; i <= 3; i++) {
