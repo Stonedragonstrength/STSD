@@ -8344,6 +8344,80 @@ input.pyr-weight-input { -moz-appearance: textfield; appearance: textfield; }
   overflow-y: auto;
 }
 .cex-tools-menu.hidden { display: none; }
+
+/* ---- Scope menus: the program editor's ⋯ dropdowns ----
+   One menu shape for program, week and day (openScopeMenu). Fixed-positioned
+   and portalled to the body: the tab strips scroll sideways, and a strip with
+   `overflow-x: auto` clips on BOTH axes, so a menu nested in one never shows.
+   Sized for a mouse first — this gets built on a desktop far more than a
+   phone — but every row still clears the 44px touch target on a phone. */
+.scope-menu {
+  position: fixed;
+  z-index: 9999;
+  min-width: 232px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  padding: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+}
+.scope-menu-head {
+  font-size: 0.64rem; font-weight: 800; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--muted);
+  padding: 0.45rem 0.6rem 0.25rem;
+}
+.scope-menu-sep { height: 1px; background: var(--border); margin: 0.3rem 0.15rem; }
+.scope-menu-item {
+  display: flex; width: 100%;
+  align-items: center;
+  gap: 0.55em;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.86rem; font-weight: 600;
+  padding: 0.55em 0.6em;
+  border-radius: 8px;
+  cursor: pointer;
+}
+/* Fixed slot: emoji advance widths differ enough that inline glyphs put every
+   label at a different x. Same fix as .cex-tools-glyph above. */
+.scope-menu-glyph { flex: none; width: 1.3em; text-align: center; line-height: 1; font-size: 0.98em; }
+.scope-menu-lbl { min-width: 0; }
+.scope-menu-item:hover { background: var(--surface); color: var(--primary-bright); }
+.scope-menu-item:focus-visible { outline: 2px solid var(--primary-bright); outline-offset: -2px; }
+.scope-menu-item.is-danger { color: #fca5a5; }
+.scope-menu-item.is-danger:hover { background: rgba(var(--danger-rgb), 0.14); color: var(--danger); }
+
+/* The ⋯ itself. Rides the active tab in both strips, so it reads as part of
+   the tab rather than as one more loose pill in a row. */
+.scope-menu-btn {
+  flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 30px; padding: 0 0.35rem;
+  background: none; border: 0;
+  color: var(--muted); font-family: inherit; font-size: 1.05rem; line-height: 1;
+  cursor: pointer; border-radius: 7px;
+  transition: color 0.15s, background 0.15s;
+}
+.scope-menu-btn:hover { color: var(--primary-bright); background: rgba(var(--primary-rgb), 0.12); }
+.scope-menu-btn:focus-visible { outline: 2px solid var(--primary-bright); outline-offset: -2px; }
+/* Attached to the tab it belongs to: no gap, and it carries the tab's own
+   underline so the pair reads as one selected thing. */
+.scope-menu-btn.on-tab {
+  margin-left: -0.5rem;
+  align-self: stretch;
+  color: var(--primary);
+  border-bottom: 2px solid var(--primary);
+  border-radius: 7px 7px 0 0;
+}
+.scope-menu-btn.on-week-tab { margin-left: -0.35rem; }
 /* Label left, stepper right: the three rows carry labels of three different
    lengths, and laid out inline their − 0 + landed at three different offsets.
    The cluster is pinned to the right edge so they stack in one column. */
@@ -8892,7 +8966,7 @@ input.pyr-weight-input { -moz-appearance: textfield; appearance: textfield; }
 
 /* The in-tab ⧉ / × buttons were removed 2026-08-05: sitting inside the tab, they
    were a mis-tap away from the label, so switching weeks on a phone kept
-   cloning one. Both live in .week-actions now. */
+   cloning one. Both ride the ⋯ on the active week tab now. */
 .coach-week-tab-dragging { opacity: 0.45; }
 .coach-week-tab-dragover { border-bottom-color: var(--primary); background: var(--surface-2); }
 
@@ -9346,74 +9420,10 @@ input.pyr-weight-input { -moz-appearance: textfield; appearance: textfield; }
 }
 .day-tab:hover { color: var(--text); }
 .day-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
-/* Add day / import a day. Deliberately OUT of the tab strip: as chips at the
-   end of the tabs they were a mis-tap away from the last day, and a mis-tap
-   made a day. Own row, own spacing, nothing to hit them by accident from. */
-.day-add-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.55rem 1rem;
-  background: rgba(0, 0, 0, 0.1);
-  border-bottom: 1px solid var(--border);
-}
+/* The day-add row is gone (2026-08-21): Add day, Import a day, Move day and
+   the two week actions all ride the ⋯ on the active tab now. .day-add-btn
+   survives for the one button that shows when a week has no days yet. */
 .day-add-btn { flex-shrink: 0; }
-/* Holds Move day's cell open in the narrow grid below. The wide row is flex
-   with slack in it, so there it is simply not there. */
-.day-add-spacer { display: none; }
-/* Week-scoped actions, pushed to the far end of the day-action row — as far
-   from both tab strips as the layout allows. The button text ("Duplicate week"
-   vs "Add day") is what says which scope you are acting on. */
-.week-actions {
-  display: flex;
-  gap: 0.4rem;
-  margin-left: auto;
-  flex-shrink: 0;
-}
-.week-del-btn:hover { color: var(--danger); border-color: var(--danger); }
-/* Delete is LAST in the DOM and first on screen here. `.week-actions` hugs the
-   right edge, so a delete button laid out after Duplicate would shove Duplicate
-   leftward and land itself exactly where Duplicate had been — under the finger
-   that just tapped it. Ordering it instead of reordering the DOM leaves the
-   narrow grid below free to place it somewhere else entirely. */
-.week-actions .week-del-btn { order: -1; }
-
-/* On a phone the row wraps, and `margin-left: auto` kept pushing the week group
-   right AFTER it wrapped — so "Duplicate week" landed alone on a second line,
-   right-aligned against nothing. A push to the far end only means anything when
-   there is slack to push through.
-   Narrow gets an even 2-up grid instead: the buttons pair off, every one is the
-   same width, and there is no orphan. `display: contents` dissolves the
-   week-actions wrapper so its buttons become grid items alongside the day ones,
-   which is what lets one grid own all four. */
-@media (max-width: 640px) {
-  .day-add-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.4rem;
-  }
-  .week-actions { display: contents; }
-  .day-add-row .btn {
-    width: 100%;
-    min-width: 0;
-    justify-content: center;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  /* Delete gets a row of its own at the bottom, and only ever that row.
-     `display: contents` above dissolves .week-actions, so its buttons flow as
-     grid items among the day ones — which means the wide layout's `order: -1`
-     would fling Delete to the very front of the grid, and plain source order
-     would drop it into the half-slot Duplicate is sitting in. Week 1 has no
-     Delete, so duplicating week 1 did exactly that: the button appeared in the
-     cell Duplicate had just been in and Duplicate slid over to make room.
-     Spanning both columns at the end pins Duplicate's slot whether Delete is
-     there or not, and puts the destructive control on its own line. */
-  .day-add-row .week-del-btn { order: 0; grid-column: 1 / -1; }
-  .day-add-spacer { display: block; }
-}
 .day-tab[draggable="true"] { cursor: grab; }
 .day-tab-dragging { opacity: 0.45; }
 .day-tab-dragover { border-bottom-color: var(--primary); background: var(--surface-2); }

@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=weekdel2" />
+  <link rel="stylesheet" href="styles.css?v=scopemenu1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -895,14 +895,14 @@
           <div class="program-head">
             <h3>Training Program</h3>
             <div class="program-actions">
-              <!-- PRs, the strength chart and the cardio log. These used to be
-                   reached only by tapping tiles on the Overview snapshot, so
-                   deleting that page took their only door with it. They are
-                   training records, and this is the training page. -->
-              <button class="btn btn-ghost" id="btn-open-records" title="PRs, strength progress and the cardio log">🏆 Records</button>
-              <button class="btn btn-ghost" id="btn-save-program-to-library" title="Save this program to your Program Library so you can reuse it on any athlete">💾 Save to Library</button>
-              <button class="btn btn-ghost" id="btn-archive-program">📁 Archive</button>
-              <button class="btn btn-primary" id="btn-load-program">📂 Load Program</button>
+              <!-- Four loose pills until 2026-08-21 — Records, Save to Library,
+                   Archive, Load Program — three different jobs in one row with
+                   nothing saying so. They live behind this ⋯ now, the same way
+                   week and day actions ride the ⋯ on their own tab. Built in
+                   app.js (#btn-program-menu) so the labels and the handlers sit
+                   in one place. -->
+              <button class="btn btn-ghost" id="btn-program-menu" aria-haspopup="true"
+                      title="Load, save, archive, and this athlete's records">⋯ Program</button>
             </div>
           </div>
           <div id="weeks-container" class="weeks-container"></div>
@@ -1724,7 +1724,7 @@
   <script src="src/scheduling/series.js?v=x1"></script>
   <script src="src/scheduling/merge.js?v=x1"></script>
   <script src="src/scheduling/availability.js?v=x1"></script>
-  <script src="app.js?v=x78"></script>
+  <script src="app.js?v=x79"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

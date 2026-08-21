@@ -12650,6 +12650,76 @@
     };
   }
 
+  /**
+   * The dropdown behind every ⋯ in the program editor.
+   *
+   * Everything that acts on a program, a week or a day lives behind the ⋯ on
+   * the thing it acts on (2026-08-21, Nathan's pick off a rendered comparison
+   * of four layouts). Before this the editor carried fourteen loose buttons in
+   * five rows with nothing on screen saying which scope each acted on — and
+   * two pairs of them were genuinely different actions wearing nearly the same
+   * name ("⇄ Move day" moves the DAY, "⇢ Move" moves EXERCISES out of it).
+   *
+   * Portalled to the body and positioned rather than nested, because a tab
+   * strip scrolls sideways: `overflow-x: auto` forces overflow-y to compute to
+   * auto as well, so a menu rendered inside a strip is clipped by it and never
+   * appears. Same reason every other popover in here is fixed-positioned.
+   *
+   * `items` takes { glyph, label, onClick, danger, hint }, the string "-" for
+   * a divider, and { head } for a caption. The glyph gets a fixed-width slot:
+   * emoji advance widths differ enough that inline glyphs put every label at a
+   * different x (the same lesson as the exercise card's Tools menu).
+   */
+  function openScopeMenu(anchorEl, items) {
+    document.querySelector(".scope-menu")?.remove();
+    const pop = document.createElement("div");
+    pop.className = "scope-menu";
+    pop.style.cssText = "position:fixed;z-index:9999;visibility:hidden";
+    (items || []).forEach((it) => {
+      if (!it) return;
+      if (it === "-") {
+        pop.appendChild(Object.assign(document.createElement("div"), { className: "scope-menu-sep" }));
+        return;
+      }
+      if (it.head) {
+        const h = document.createElement("div");
+        h.className = "scope-menu-head";
+        h.textContent = it.head;
+        pop.appendChild(h);
+        return;
+      }
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "scope-menu-item" + (it.danger ? " is-danger" : "");
+      b.innerHTML = `<span class="scope-menu-glyph" aria-hidden="true"></span><span class="scope-menu-lbl"></span>`;
+      b.querySelector(".scope-menu-glyph").textContent = it.glyph || "";
+      b.querySelector(".scope-menu-lbl").textContent = it.label;
+      if (it.hint) b.title = it.hint;
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        pop.remove();
+        it.onClick();
+      });
+      pop.appendChild(b);
+    });
+    document.body.appendChild(pop);
+    requestAnimationFrame(() => _positionPop(pop, anchorEl));
+    _attachOutsideClose(pop, anchorEl);
+    return pop;
+  }
+
+  /** The ⋯ that opens one. Built here so all three read identically. */
+  function mkScopeMenuBtn(label, cls) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "scope-menu-btn" + (cls ? ` ${cls}` : "");
+    b.textContent = "⋯";
+    b.title = label;
+    b.setAttribute("aria-label", label);
+    b.setAttribute("aria-haspopup", "true");
+    return b;
+  }
+
   function openGridPicker(label, values, currentVal, cb, anchorEl, cols) {
     document.querySelector(".grid-picker-pop")?.remove();
     const pop = document.createElement("div");
@@ -13471,6 +13541,57 @@
   function renumberDefaultWeekLabels(list) {
     list.forEach((w, i) => { if (/^Week \d+$/.test(w.label)) w.label = `Week ${i + 1}`; });
   }
+  /** Whichever week list the editor is pointed at — a template's or an athlete's. */
+  function editorWeekList() {
+    return _programEditorId ? currentProgramTemplate()?.weeks : currentClient()?.weeks;
+  }
+  // The copy is structuredClone, not spreads: a spread shares every nested
+  // object — the week's diet, an exercise's modifiers and per-set weights, the
+  // progression config — so editing the duplicate edited the original,
+  // silently, in whichever field happened to be an object. Day and exercise
+  // ids are regenerated because logs and completions key on them; everything
+  // else is content and comes across untouched.
+  function cloneWeekForDuplicate(src) {
+    const clone = structuredClone(src);
+    clone.id = uid();
+    (clone.days || []).forEach((day) => {
+      day.id = uid();
+      (day.exercises || []).forEach((ex) => { ex.id = uid(); });
+    });
+    return clone;
+  }
+  // Both of these hung off the day-action row until 2026-08-21 and now hang off
+  // the ⋯ on the active week tab, so they live out here where either can reach
+  // them.
+  function duplicateActiveWeek() {
+    const list = editorWeekList();
+    if (!list) return;
+    if (list.length >= 12) { toast("12-week maximum reached"); return; }
+    const at = _coachActiveWeekIdx;
+    const src = list[at];
+    if (!src) return;
+    const originalLabel = src.label;
+    list.splice(at + 1, 0, cloneWeekForDuplicate(src));
+    renumberDefaultWeekLabels(list);
+    _coachActiveWeekIdx = at + 1;
+    saveTrainer();
+    renderWeeks();
+    if (!_programEditorId) { renderDiet(); renderCoachCalendar(); }
+    toast(`Duplicated ${originalLabel}`);
+  }
+  function deleteActiveWeek() {
+    const at = _coachActiveWeekIdx;
+    const list = editorWeekList();
+    if (!list || !list[at]) return;
+    if (!window.confirm(`Delete ${list[at].label}? This cannot be undone.`)) return;
+    list.splice(at, 1);
+    renumberDefaultWeekLabels(list);
+    _coachActiveWeekIdx = Math.max(0, Math.min(at, list.length - 1));
+    saveTrainer();
+    renderWeeks();
+    if (!_programEditorId) { renderDiet(); renderCoachCalendar(); }
+  }
+
   function renderCoachWeekTabs(weeks, container, showAdd = true) {
     // ── Tab strip ──
     const strip = document.createElement("div");
@@ -13490,7 +13611,7 @@
       // instead. A confirm was the wrong fix: it does not stop the mis-tap, it
       // just adds a dialog to dismiss. Both moved to a toolbar that acts on the
       // week you are already looking at, leaving the tabs as pure navigation
-      // with nothing destructive in them. See weekActionsInto().
+      // with nothing destructive in them. They ride the ⋯ on the active tab.
       tab.appendChild(lbl);
       tab.addEventListener("click", () => {
         _coachActiveWeekIdx = wIdx;
@@ -13537,6 +13658,26 @@
       });
 
       strip.appendChild(tab);
+
+      // The active week carries its own actions. Duplicate and Delete used to
+      // be pills in the day-action row below, which put week-scope buttons in
+      // the same row as day-scope ones — and made Delete materialise under the
+      // finger that had just tapped Duplicate, because a button appearing
+      // reflows a row. Nothing reflows a menu.
+      if (wIdx === _coachActiveWeekIdx && !_coachOneOffTab) {
+        const dots = mkScopeMenuBtn(`Actions for ${week.label}`, "on-tab on-week-tab");
+        dots.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openScopeMenu(dots, [
+            { head: week.label },
+            { glyph: "⧉", label: "Duplicate week", onClick: () => duplicateActiveWeek(),
+              hint: `Add a copy of ${week.label} after it` },
+            ...(wIdx > 0 ? ["-", { glyph: "🗑", label: "Delete week", danger: true,
+              onClick: () => deleteActiveWeek(), hint: `Delete ${week.label}` }] : []),
+          ]);
+        });
+        strip.appendChild(dots);
+      }
     });
 
     if (showAdd && weeks.length < 12) {
@@ -13603,10 +13744,6 @@
     if (week._activeDayIdx === undefined || week._activeDayIdx >= week.days.length) week._activeDayIdx = 0;
     const tabStrip  = document.createElement("div");
     tabStrip.className = "day-tab-strip";
-    // Its own row under the tabs, refilled by renderDayTabs. A stable element
-    // rather than one re-inserted each render, which would stack copies.
-    const addRow = document.createElement("div");
-    addRow.className = "day-add-row";
     const dayContent = document.createElement("div");
     dayContent.className = "day-content-area";
 
@@ -13633,7 +13770,6 @@
     let dayDragFrom = null;
     function renderDayTabs() {
       tabStrip.innerHTML = "";
-      addRow.innerHTML = "";
       const moodClient = _programEditorId ? null : currentClient();
       week.days.forEach((day, dIdx) => {
         const tab = document.createElement("button");
@@ -13674,57 +13810,62 @@
         });
         tabStrip.appendChild(tab);
       });
-      // Add / import used to be the last two chips IN the tab strip, so a tap
-      // that missed the last day tab landed on "+ Day" and made one. They sit
-      // in their own row now, off the end of the tabs and visually separate:
-      // you hit them because you meant to.
-      const addDayBtn = document.createElement("button");
-      addDayBtn.type = "button";
-      addDayBtn.className = "btn btn-ghost btn-sm slim-btn day-add-btn";
-      addDayBtn.textContent = "＋ Add day";
-      addDayBtn.addEventListener("click", () => {
-        week.days.push(makeDay(week.days.length + 1));
-        week._activeDayIdx = week.days.length - 1;
-        saveTrainer(); renderDayTabs(); renderActiveDayContent();
-      });
-      addRow.appendChild(addDayBtn);
-
-      const importDayBtn = document.createElement("button");
-      importDayBtn.type = "button";
-      importDayBtn.className = "btn btn-ghost btn-sm slim-btn day-add-btn";
-      importDayBtn.textContent = "📥 From library";
-      importDayBtn.title = "Import a day from your Workout Library";
-      importDayBtn.addEventListener("click", () => {
-        openImportDayModal(week, () => { renderDayTabs(); renderActiveDayContent(); });
-      });
-      addRow.appendChild(importDayBtn);
-
-      // A visible door for what the tab drag was supposed to be: the drag is
-      // desktop-only HTML5 DnD with no affordance, and its own author couldn't
-      // find it on the surface it was built for. Renders only when there is
-      // somewhere for the day to go.
-      if (week.days.length && (week.days.length > 1 || weeks.length > 1)) {
-        const moveBtn = document.createElement("button");
-        moveBtn.type = "button";
-        moveBtn.className = "btn btn-ghost btn-sm slim-btn day-add-btn";
-        moveBtn.textContent = "⇄ Move day";
-        moveBtn.title = "Move this day within the week or to another week";
-        moveBtn.addEventListener("click", openMoveDaySheet);
-        addRow.appendChild(moveBtn);
+      // Everything that acts on this week's days rides the ⋯ on the active day
+      // tab (2026-08-21). Add day used to be a loose pill in a row below,
+      // deliberately kept out of the tab strip because a chip flush against
+      // the last tab caught mis-taps and made days by accident — inside a menu
+      // that cannot happen at all, so the row is gone.
+      if (week.days.length) {
+        const active = tabStrip.querySelector(".day-tab.active");
+        const day = week.days[Math.min(week._activeDayIdx, week.days.length - 1)];
+        const dots = mkScopeMenuBtn("Actions for this day", "on-tab");
+        dots.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openScopeMenu(dots, dayScopeItems(week, day));
+        });
+        if (active && active.nextSibling) tabStrip.insertBefore(dots, active.nextSibling);
+        else tabStrip.appendChild(dots);
       } else {
-        // An empty grid cell in its place, narrow layouts only. Move day is the
-        // OTHER thing that can appear when you duplicate a week: a one-week
-        // program has nowhere to move a day to, and the second week gives it
-        // somewhere. In the 2-up grid that pushes "Duplicate week" from the
-        // left column to the right one, so the button you just tapped moves
-        // and Move day takes its cell. Holding the slot open costs nothing and
-        // pins the whole row's geometry.
-        const spacer = document.createElement("span");
-        spacer.className = "day-add-spacer";
-        spacer.setAttribute("aria-hidden", "true");
-        addRow.appendChild(spacer);
+        // No days yet, so there is no tab to hang the menu on. One button, and
+        // it is the only thing you could want here.
+        const first = document.createElement("button");
+        first.type = "button";
+        first.className = "btn btn-ghost btn-sm slim-btn day-add-btn day-first-btn";
+        first.textContent = "＋ Add day";
+        first.addEventListener("click", addDayToWeek);
+        tabStrip.appendChild(first);
       }
-      weekActionsInto(addRow);
+    }
+
+    function addDayToWeek() {
+      week.days.push(makeDay(week.days.length + 1));
+      week._activeDayIdx = week.days.length - 1;
+      saveTrainer(); renderDayTabs(); renderActiveDayContent();
+    }
+
+    // The day menu, in the order a day gets built: make one, fill it, move it,
+    // remove it. renderDayContent parks its own three actions on the rendered
+    // day (_dayActions) rather than drawing them as buttons, so the day header
+    // is just the icon and the name again.
+    function dayScopeItems(week, day) {
+      const acts = dayContent.firstElementChild?._dayActions || {};
+      const canMove = week.days.length > 1 || weeks.length > 1;
+      return [
+        { head: day.name || "This day" },
+        { glyph: "＋", label: "Add day", onClick: addDayToWeek,
+          hint: "Add another training day to this week" },
+        { glyph: "📥", label: "Import a day", onClick: () =>
+            openImportDayModal(week, () => { renderDayTabs(); renderActiveDayContent(); }),
+          hint: "Copy a day in from your Workout Library" },
+        "-",
+        ...(acts.pull ? [{ glyph: "⤵", label: "Pull exercises in", onClick: acts.pull,
+          hint: "Take exercises from another day, with their numbers" }] : []),
+        ...(acts.sendEx ? [{ glyph: "⇢", label: "Send exercises out", onClick: acts.sendEx,
+          hint: "Send exercises to another day, with their numbers" }] : []),
+        ...(canMove ? [{ glyph: "⇄", label: "Move this day", onClick: openMoveDaySheet,
+          hint: "Move the whole day within the week or to another week" }] : []),
+        ...(acts.del ? ["-", { glyph: "🗑", label: "Delete day", danger: true, onClick: acts.del }] : []),
+      ];
     }
 
     // The copy is structuredClone, not spreads: a spread shares every nested
@@ -13733,83 +13874,6 @@
     // silently, in whichever field happened to be an object. Day and exercise
     // ids are regenerated because logs and completions key on them; everything
     // else is content and comes across untouched.
-    function cloneWeekForDuplicate(src) {
-      const clone = structuredClone(src);
-      clone.id = uid();
-      (clone.days || []).forEach((day) => {
-        day.id = uid();
-        (day.exercises || []).forEach((ex) => { ex.id = uid(); });
-      });
-      return clone;
-    }
-
-    // Duplicate / delete for the week ON SCREEN, parked at the right-hand end
-    // of the day-action row. One control row serves both scopes and the button
-    // text says which is which ("Add day" vs "Duplicate week"), so this costs
-    // no extra chrome — and puts the two destructive controls as far from both
-    // tab strips as the layout allows.
-    function weekActionsInto(row) {
-      const acts = document.createElement("div");
-      acts.className = "week-actions";
-
-      const dup = document.createElement("button");
-      dup.type = "button";
-      dup.className = "btn btn-ghost btn-sm slim-btn";
-      dup.textContent = "⧉ Duplicate week";
-      dup.title = `Add a copy of ${week.label} after it`;
-      dup.addEventListener("click", () => {
-        const list = _programEditorId ? currentProgramTemplate()?.weeks : currentClient()?.weeks;
-        if (!list) return;
-        if (list.length >= 12) { toast("12-week maximum reached"); return; }
-        const at = _coachActiveWeekIdx;
-        const src = list[at]; if (!src) return;
-        const originalLabel = src.label;
-        const clone = cloneWeekForDuplicate(src);
-        list.splice(at + 1, 0, clone);
-        renumberDefaultWeekLabels(list);
-        _coachActiveWeekIdx = at + 1;
-        saveTrainer();
-        renderWeeks();
-        if (!_programEditorId) { renderDiet(); renderCoachCalendar(); }
-        toast(`Duplicated ${originalLabel}`);
-      });
-      acts.appendChild(dup);
-
-      // Week 1 was never deletable from the old tab button either — a program
-      // has to keep a week.
-      if (_coachActiveWeekIdx > 0) {
-        const del = document.createElement("button");
-        del.type = "button";
-        del.className = "btn btn-ghost btn-sm slim-btn week-del-btn";
-        del.textContent = "🗑 Delete week";
-        del.title = `Delete ${week.label}`;
-        del.addEventListener("click", () => {
-          const at = _coachActiveWeekIdx;
-          const list = _programEditorId ? currentProgramTemplate()?.weeks : currentClient()?.weeks;
-          if (!list || !list[at]) return;
-          if (!window.confirm(`Delete ${list[at].label}? This cannot be undone.`)) return;
-          list.splice(at, 1);
-          renumberDefaultWeekLabels(list);
-          _coachActiveWeekIdx = Math.max(0, Math.min(at, list.length - 1));
-          saveTrainer();
-          renderWeeks();
-          if (!_programEditorId) { renderDiet(); renderCoachCalendar(); }
-        });
-        // Appended, and CSS decides where it sits — because the two layouts
-        // want opposite DOM orders and hard-coding one broke the other.
-        //
-        // Week 1 has no delete, so duplicating it makes a Delete button appear;
-        // whatever slot it takes must not be a slot Duplicate was already in,
-        // or it materialises under the finger that just tapped Duplicate.
-        // Wide: `.week-actions` is right-aligned, so `order: -1` puts Delete on
-        // the LEFT and Duplicate keeps its anchor at the right edge. Narrow:
-        // the row is a 2-up grid and `.week-actions` is `display: contents`, so
-        // Delete takes a full-width row of its own at the BOTTOM and Duplicate
-        // does not move at all. Both rules live beside `.week-del-btn`.
-        acts.appendChild(del);
-      }
-      row.appendChild(acts);
-    }
 
     function renderActiveDayContent() {
       dayContent.innerHTML = "";
@@ -13822,12 +13886,11 @@
       }
       const dayIdx = Math.min(week._activeDayIdx, week.days.length - 1);
       const rerender = () => { renderDayTabs(); renderActiveDayContent(); };
-      dayContent.appendChild(renderDayContent(week, week.days[dayIdx], rerender));
+      dayContent.appendChild(renderDayContent(week, week.days[dayIdx], rerender, { deferActions: true }));
     }
 
     renderDayTabs(); renderActiveDayContent();
     body.appendChild(tabStrip);
-    body.appendChild(addRow);
     body.appendChild(dayContent);
     container.appendChild(body);
   }
@@ -14198,10 +14261,26 @@
 
     actionBar.appendChild(nameWrap);
     actionBar.appendChild(spacer);
-    actionBar.appendChild(pullBtn);
-    if (!opts.athlete) actionBar.appendChild(moveExBtn);
+    // The coach's program editor hangs these off the ⋯ on the active day tab
+    // instead of drawing them here, so the day header is just the icon and the
+    // name (2026-08-21). It reads them back off the rendered day — every other
+    // caller of this editor (the athlete's own sessions, the Day Library, a
+    // live session) has no day tabs to hang a menu on and still gets buttons.
+    wrapper._dayActions = {
+      pull: () => pullBtn.click(),
+      sendEx: opts.athlete ? null : () => moveExBtn.click(),
+      library: () => libBtn.click(),
+      del: opts.hideDelete ? null : () => delDayBtn.click(),
+    };
+    if (!opts.deferActions) {
+      actionBar.appendChild(pullBtn);
+      if (!opts.athlete) actionBar.appendChild(moveExBtn);
+    }
+    // The exercise library is about EXERCISES, not the day, and on a phone this
+    // is its only door — it stays on the bar either way, hidden by CSS wherever
+    // the sidebar is already on screen.
     actionBar.appendChild(libBtn);
-    if (!opts.hideDelete) actionBar.appendChild(delDayBtn);
+    if (!opts.hideDelete && !opts.deferActions) actionBar.appendChild(delDayBtn);
 
     // Row legend. The old version was a 6-column grid over a flex row, so the
     // labels never sat above their controls — and "Goal" labelled nothing at
@@ -40882,11 +40961,24 @@
       ?.addEventListener("click", () => Nav.back(closeRecordsSheet));
     $$("#records-sheet-tabs .records-tab").forEach((b) =>
       b.addEventListener("click", () => setRecordsPane(b.dataset.rtab)));
-    $("#btn-load-program").addEventListener("click", openLoadProgramModal);
     $("#btn-load-program-empty").addEventListener("click", openLoadProgramModal);
-    $("#btn-archive-program").addEventListener("click", archiveCurrentProgram);
-    $("#btn-save-program-to-library")?.addEventListener("click", saveClientProgramToLibrary);
-    $("#btn-open-records")?.addEventListener("click", () => openRecordsSheet("prs"));
+    // The four program pills became one ⋯ on 2026-08-21. Labels changed with
+    // them: "Save to Library" sat on a screen that already has an Exercise
+    // Library panel and saved neither, and "Records" read like a verb.
+    $("#btn-program-menu")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openScopeMenu(e.currentTarget, [
+        { glyph: "📂", label: "Load program", onClick: openLoadProgramModal,
+          hint: "Replace this program with one from your Program Library" },
+        { glyph: "💾", label: "Save as template", onClick: saveClientProgramToLibrary,
+          hint: "Save this program to your Program Library so you can reuse it on any athlete" },
+        "-",
+        { glyph: "🏆", label: "Records & charts", onClick: () => openRecordsSheet("prs"),
+          hint: "PRs, strength progress and the cardio log" },
+        { glyph: "📁", label: "Archive this program", onClick: archiveCurrentProgram,
+          hint: "File it under Past programs and start fresh" },
+      ]);
+    });
     $("#btn-new-tpl-folder")?.addEventListener("click", openNewTemplateFolder);
     $("#coach-avatar-more")?.addEventListener("click", () => {
       $("#coach-avatar-picker")?.classList.toggle("is-open");
