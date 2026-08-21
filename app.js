@@ -32257,6 +32257,7 @@
       // logs stay keyed by the old ones.
       syncStatField(state.clientData.program?.client, state.clientData.progress);
       saveClient();
+      offerWeightRebase(ex, entry, week);
       renderStrengthProgress($("#athlete-strength-charts"), state.clientData.program?.client, state.clientData.progress);
       if (typeof renderAthletePRs === "function") renderAthletePRs();
       isLocked = true;
@@ -37781,6 +37782,160 @@
   // as a contiguous run ending at the current period — quiet periods show as
   // zero rather than vanishing. Capped to the last 12 buckets.
   const KEY_VOLMODE = "trainerpro_volmode_v1"; // "week" (default) | "month"
+  // ============ Starting lighter than the card asked ============
+  //
+  // Nathan, 2026-08-20: "if on the first workout of a day a client puts lighter
+  // weights into an exercise field, it should ask if they would like to convert
+  // the following weeks to the weight they put in for that first week."
+  //
+  // Three things shape what this could be:
+  //
+  // 1. A lift on AUTO-PROGRESSION already handles this. The engine computes
+  //    every target by walking the lift's copies and the logs, so a lighter
+  //    session is already the number the next target climbs from, and rewriting
+  //    the stored weights underneath it would be fighting it. So the offer only
+  //    appears for lifts with progression off, where the coach's number simply
+  //    sits there being wrong for the rest of the block.
+  //
+  // 2. Only the weeks that still agree get rewritten. If week 5 was deliberately
+  //    set to something else, it was set deliberately, and this leaves it alone.
+  //
+  // 3. It can only be offered where the program can actually be SAVED. An
+  //    athlete's own device never pushes the athlete row (it pushes progress),
+  //    and a live session runs on a built copy, so both would show a tidy
+  //    confirmation and then lose the change on the next pull. It writes to
+  //    trainerData and mirrors the copy on screen, and it does not appear at all
+  //    when trainerData has no row for this athlete.
+  const KEY_REBASE_ASKED = "trainerpro_rebase_asked_v1";
+
+  /** Asked once per exercise: a declined offer must not return every set. */
+  function rebaseAsked(exId) {
+    try {
+      const raw = JSON.parse(localStorage.getItem(KEY_REBASE_ASKED) || "[]");
+      return Array.isArray(raw) && raw.includes(exId);
+    } catch (e) { return false; }
+  }
+  function markRebaseAsked(exId) {
+    try {
+      const raw = JSON.parse(localStorage.getItem(KEY_REBASE_ASKED) || "[]");
+      const list = Array.isArray(raw) ? raw : [];
+      if (!list.includes(exId)) list.push(exId);
+      localStorage.setItem(KEY_REBASE_ASKED, JSON.stringify(list.slice(-400)));
+    } catch (e) { /* a full store just means it may ask twice */ }
+  }
+
+  /**
+   * The later copies of this lift that still carry the weight this one had.
+   *
+   * Matched on the lift's key rather than the exercise id, because every week's
+   * copy has its own id. Weeks are walked in order and only the ones AFTER the
+   * week being logged are considered.
+   */
+  function laterCopiesOfLift(weeks, weekId, ex) {
+    const key = exKey(ex?.name);
+    if (!key) return [];
+    const from = (weeks || []).findIndex((w) => w.id === weekId);
+    if (from < 0) return [];
+    const out = [];
+    (weeks || []).slice(from + 1).forEach((w) => (w.days || []).forEach((d) => (d.exercises || []).forEach((e) => {
+      if (exKey(e.name) === key && String(e.currentWeight) === String(ex.currentWeight)) out.push(e);
+    })));
+    return out;
+  }
+
+  /**
+   * Was this session genuinely lighter than prescribed?
+   *
+   * The top set is the comparison, the same set the strength history plots: a
+   * lighter warm-up is not a lighter session. Both sides are read in STORED
+   * units so a kg athlete is not compared against a pound number.
+   */
+  function loggedLighterThan(ex, entry) {
+    const asked = parseFloat(storeW(ex?.currentWeight));
+    if (!isFinite(asked) || asked <= 0) return null;      // BW, BAR or blank: nothing to be lighter than
+    let top = 0;
+    (entry?.sets || []).forEach((s) => {
+      const w = parseFloat(s?.weight);
+      if (isFinite(w) && w > top) top = w;
+    });
+    if (!top) return null;
+    // A 2% difference is rounding or a different bar, not a decision.
+    if (top >= asked * 0.98) return null;
+    return { asked, top };
+  }
+
+  /**
+   * The offer itself. Silent unless every condition holds, because a prompt
+   * that appears when it cannot deliver is worse than no prompt.
+   */
+  /**
+   * Run once no other sheet is on screen.
+   *
+   * Locking the last card of a day opens the mood prompt in the same tick, and
+   * two modals in one tick means the second one silently replaces the first.
+   * This waits its turn rather than stealing it, and gives up rather than
+   * ambushing somebody a minute later.
+   */
+  function whenModalFree(fn, tries = 40) {
+    if (tries <= 0) return;
+    // ALWAYS waits a beat before looking. Checking immediately is what broke
+    // the first version: the competing sheet is opened later in the same tick,
+    // so the check ran while nothing was on screen, the offer opened, and the
+    // mood prompt then replaced it. Deferring lets the other one exist first.
+    setTimeout(() => {
+      const modal = document.getElementById("modal");
+      if (!modal || modal.classList.contains("hidden")) fn();
+      else whenModalFree(fn, tries - 1);
+    }, 350);
+  }
+
+  function offerWeightRebase(ex, entry, week) {
+    if (!ex || !week || rebaseAsked(ex.id)) return;
+    if (progressionRule(ex)) return;                       // the engine has this
+    const lighter = loggedLighterThan(ex, entry);
+    if (!lighter) return;
+
+    // The coach's real copy of this athlete. Absent on the athlete's own
+    // device, which is exactly where this could not be saved.
+    const athleteId = state.clientData.program?.clientId;
+    const owner = (state.trainerData?.clients || []).find((c) => c.id === athleteId);
+    if (!owner) return;
+
+    const targets = laterCopiesOfLift(owner.weeks, week.id, ex);
+    if (!targets.length) return;
+
+    markRebaseAsked(ex.id);
+    const shown = dispW(String(lighter.top));
+    const askedShown = dispW(String(lighter.asked));
+    whenModalFree(() => openModal({
+      title: "Carry this weight forward?",
+      body: `
+        <p>The card asked for <strong>${escapeHtml(askedShown)} ${escapeHtml(unitLbl())}</strong> and
+        ${escapeHtml(ex.name || "this lift")} went in at <strong>${escapeHtml(shown)} ${escapeHtml(unitLbl())}</strong>.</p>
+        <p class="muted">There ${targets.length === 1 ? "is" : "are"} <strong>${targets.length}</strong> later
+        ${targets.length === 1 ? "copy" : "copies"} of this lift still set to ${escapeHtml(askedShown)}. Changing them now
+        saves editing each week by hand. Weeks you have already set to something else are left alone.</p>`,
+      actions: [
+        { label: "Leave them", className: "btn btn-ghost", onClick: closeModal },
+        { label: `Set ${targets.length} to ${shown}`, className: "btn btn-primary", onClick: () => {
+          const val = storeW(String(lighter.top));
+          targets.forEach((e) => { e.currentWeight = val; });
+          // The live session renders a COPY, so the same rewrite has to land on
+          // what is on screen or the change is real and invisible at once.
+          const shownWeeks = state.clientData.program?.client?.weeks;
+          if (shownWeeks && shownWeeks !== owner.weeks) {
+            laterCopiesOfLift(shownWeeks, week.id, ex).forEach((e) => { e.currentWeight = val; });
+          }
+          localStorage.setItem(KEY_TRAINER, JSON.stringify(state.trainerData));
+          pushAthlete(owner);
+          closeModal();
+          toast(`${ex.name || "That lift"} set to ${shown} ${unitLbl()} for the rest of the block ✓`);
+        } },
+      ],
+    }));
+  }
+
+
   // ============ Coverage over time ============
   //
   // The Anatomy page grades the week you WROTE: prescribed sets, this week,
