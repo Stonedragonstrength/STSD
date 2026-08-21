@@ -386,21 +386,40 @@
     if (!rule) return null;
     const name = liftKey(ex);
     if (!name) return null;
-    if (rule.bw) {
-      // Bodyweight rep ladder: worst set + 1 on a hit. Without graduation it
-      // holds at the cap (no weight to jump to). With graduation, hitting the
-      // cap on every set adds `inc` lb of load and resets reps, after which the
-      // ladder climbs weight like the weighted chain below — while every week's
-      // written weight stays "BW". A hand-edited written REPS value re-bases the
-      // rep floor (only before graduating), mirroring the weighted chain's
+    // ── The loadless leg ──
+    // Two kinds of lift have no number to climb: bodyweight, and band-only
+    // (where the band IS the load). Both run the same rep ladder — worst set
+    // + 1 on a hit, holding at the ceiling — so they share one walk,
+    // parameterised only by which copies belong to the chain.
+    //
+    // `chains` is the load-scheme test, and it is the whole design decision.
+    // A lift can cross between bar+band weeks and band-only weeks under ONE
+    // liftKey (Band is deliberately not in LIFT_ID_GROUPS — a band is load,
+    // not an implement). Those weeks share no number: treating a blank weight
+    // as 0, or as the bar, would corrupt the weighted chain that runs beside
+    // it. So each leg walks only its own kind and ignores the other, which is
+    // exactly what the bodyweight leg has always done against weighted copies.
+    // The cost is bought knowingly: a band-only week does not inform the next
+    // bar+band week, because there is nothing true to carry.
+    if (rule.bw || rule.band) {
+      // Bodyweight without graduation holds at the cap (no weight to jump to).
+      // With graduation, hitting the cap on every set adds `inc` lb of load and
+      // resets reps, after which the ladder climbs weight like the weighted
+      // chain below — while every week's written weight stays "BW". Band-only
+      // never graduates (inc is 0): topping out means they have earned the next
+      // BAND, which `atCap` says and the card offers. A hand-edited written
+      // REPS value re-bases the rep floor, mirroring the weighted chain's
       // re-base on a written-weight edit.
+      const chains = rule.bw
+        ? (e) => e.currentWeight === "BW"
+        : (e) => !String(e.currentWeight || "").trim() && !!bandOf(e);
       const st = newProgressionState(0, rule.floor);
       let prevFloor = null;
       for (const w of weeks || []) {
         for (const d of w.days || []) {
           for (const e of d.exercises || []) {
             if (liftKey(e) !== name) continue;
-            if (e.currentWeight !== "BW") continue; // ladder only chains BW copies
+            if (!chains(e)) continue; // the other load scheme's copies are not on this ladder
             const f = parseInt(e.currentReps, 10);
             if (!f) continue;
             if (st.weight === 0 && (prevFloor === null || f !== prevFloor)) {

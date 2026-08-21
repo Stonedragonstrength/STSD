@@ -10111,6 +10111,20 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
   cursor: pointer;
 }
 .mod-chip-up:hover { color: var(--text); border-color: rgba(var(--primary-rgb), 0.5); }
+/* Earned it: a band-only lift has topped out its rep ladder, so the next band
+   is the only place left to go. Gold rather than the accent — this is the
+   app's "you hit it" colour everywhere else, and it must not read as the
+   theme's decoration. Still just an offer: the coach takes it. */
+.mod-chip-up.earned {
+  color: var(--gold);
+  border-color: rgba(var(--gold-rgb), 0.55);
+  background: rgba(var(--gold-rgb), 0.12);
+}
+.mod-chip-up.earned:hover {
+  color: var(--gold);
+  border-color: rgba(var(--gold-rgb), 0.85);
+  background: rgba(var(--gold-rgb), 0.2);
+}
 
 .mod-add-btn {
   display: inline-flex;

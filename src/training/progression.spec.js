@@ -470,3 +470,104 @@ describe("RIR: two in a row to accelerate, and a grind is a brake", () => {
     expect(reps(weeks, 1, { a: [hit(OLD, 185, 8, { rir: 0 })] }).reps).toBe(9);
   });
 });
+
+// ── The band-only leg (2026-08-21) ──
+// A band-only lift has no number to climb: the band IS the load. It gets the
+// same rep ladder bodyweight gets without graduation, and topping out means
+// "they have earned the next band" rather than "add 5 lb".
+//
+// The design call this pins: a lift can cross between bar+band weeks and
+// band-only weeks under ONE liftKey, because Band is deliberately not in
+// LIFT_ID_GROUPS. Those weeks share no number, so each leg walks only its own
+// load scheme and ignores the other — treating a blank weight as 0 or as the
+// bar would corrupt the weighted chain running beside it.
+describe("effectiveProgression: the band-only leg", () => {
+  /** Band-only: no written weight, a band tag carrying the load. */
+  const band = (id, tag, opts = {}) => ({
+    id, name: "Band Pull-Apart", sets: "3", currentWeight: "", currentReps: "8",
+    modifiers: [tag],
+    progression: { ceil: 10, ...opts.progression },
+  });
+  const D1 = "2026-08-04", D2 = "2026-08-11";
+  const bhit = (date, reps) => ({ date, locked: true,
+    sets: [{ weight: "", reps }, { weight: "", reps }, { weight: "", reps }] });
+
+  it("gets a target at all — the whole point, it used to return null", () => {
+    const weeks = program([band("a", "Red"), band("b", "Red")]);
+    const t = effectiveProgression(weeks, weeks[0].days[0].exercises[0], {});
+    expect(t, "a band-only lift had no progression at all before this").not.toBeNull();
+    expect(t.reps).toBe(8);
+    expect(t.sets).toBe(3);
+  });
+
+  it("reports no weight rather than a number, so no card can print one", () => {
+    const weeks = program([band("a", "Red")]);
+    const t = effectiveProgression(weeks, weeks[0].days[0].exercises[0], {});
+    expect(t.weight).toBeNull();
+    // Two known-broken shortcuts this rules out: NaN (which re-bases the chain
+    // every week, because NaN !== NaN) and the bw branch (which makes the card
+    // print "BW" on a banded lift).
+    expect(Number.isNaN(t.weight)).toBe(false);
+    expect(t.bw).toBeFalsy();
+  });
+
+  it("climbs the rep ladder off the worst set", () => {
+    const weeks = program([band("a", "Red"), band("b", "Red")]);
+    const t = effectiveProgression(weeks, weeks[1].days[0].exercises[0], { a: [bhit(D1, 8)] });
+    expect(t.reps).toBe(9);
+  });
+
+  it("holds at the ceiling and raises atCap — the earned-the-next-band signal", () => {
+    const weeks = program([band("a", "Red"), band("b", "Red"), band("c", "Red")]);
+    const logs = { a: [bhit(D1, 9)], b: [bhit(D2, 10)] };
+    const t = effectiveProgression(weeks, weeks[2].days[0].exercises[0], logs);
+    expect(t.reps, "nothing to jump to, so the ladder holds").toBe(10);
+    expect(t.atCap).toBe(true);
+    expect(t.weight, "still no number, even at the top").toBeNull();
+    expect(t.earned, "no weight was ever earned").toBe(0);
+  });
+
+  it("does NOT chain through a bar+band week sitting between two band-only ones", () => {
+    // Same liftKey throughout — Band is not part of lift identity.
+    const weeks = program([band("a", "Red"), bandedBar("b", "Red", "95"), band("c", "Red")]);
+    const logs = { a: [bhit(D1, 8)], b: [{ date: D2, locked: true,
+      sets: [{ weight: 95, reps: 10 }, { weight: 95, reps: 10 }, { weight: 95, reps: 10 }] }] };
+    const t = effectiveProgression(weeks, weeks[2].days[0].exercises[0], logs);
+    // Week 1's 8 earned one rung. Week 2 is a different load scheme and is
+    // skipped, so week 3 asks 9 — not 10, and certainly not a weight.
+    expect(t.reps).toBe(9);
+    expect(t.weight).toBeNull();
+  });
+
+  it("and the bar+band week runs its own weighted chain, unaffected", () => {
+    const weeks = program([bandedBar("a", "Red", "95"), band("b", "Red"), bandedBar("c", "Red", "95")]);
+    const logs = { a: [{ date: D1, locked: true,
+      sets: [{ weight: 95, reps: 10 }, { weight: 95, reps: 10 }, { weight: 95, reps: 10 }] }] };
+    const t = effectiveProgression(weeks, weeks[2].days[0].exercises[0], logs);
+    expect(t.weight, "the ceiling on every set is a weight jump").toBe(100);
+    expect(t.reps).toBe(8);
+  });
+
+  it("a hand-edited rep floor re-bases the ladder, as it does on bodyweight", () => {
+    const weeks = program([band("a", "Red"), band("b", "Red"), band("c", "Red")]);
+    // Below the ceiling of 10 — a floor above it is not a rule at all, and
+    // progressionRule correctly refuses one.
+    weeks[2].days[0].exercises[0].currentReps = "6";
+    const logs = { a: [bhit(D1, 8)], b: [bhit(D2, 9)] };
+    const t = effectiveProgression(weeks, weeks[2].days[0].exercises[0], logs);
+    expect(t.reps, "the coach typed a new floor; that is the new bottom rung").toBe(6);
+  });
+
+  it("a band-only lift with no band tag is not on the ladder at all", () => {
+    // "no weight and no band" is an unfinished prescription, not a scheme.
+    const weeks = program([band("a", "Red")]);
+    weeks[0].days[0].exercises[0].modifiers = [];
+    expect(effectiveProgression(weeks, weeks[0].days[0].exercises[0], {})).toBeNull();
+  });
+});
+
+/** Bar + band: a real written weight AND a band tag. A different load scheme. */
+function bandedBar(id, tag, weight) {
+  return { id, name: "Band Pull-Apart", sets: "3", currentWeight: weight, currentReps: "8",
+    modifiers: [tag], progression: { ceil: 10, inc: 5 } };
+}

@@ -2719,6 +2719,28 @@
     document.addEventListener("mousedown", handler, true);
   }
 
+  /**
+   * Has the athlete earned the next band on this lift?
+   *
+   * True only for a BAND-ONLY lift (no written weight — the band is the load)
+   * whose rep ladder has topped out. A bar+band lift climbs its weight instead,
+   * so its band is a fixed modifier and there is nothing to earn.
+   *
+   * Answers false for a program TEMPLATE: a template has no athlete and no
+   * logs, so nobody has earned anything in it. Chain walks are cheap and never
+   * cached — the same rule the rest of the engine follows, because a cached
+   * answer here would outlive the session that earned it.
+   */
+  function bandStepUpEarned(ex) {
+    if (_programEditorId) return false;
+    const c = currentClient();
+    if (!c || !bandOf(ex)) return false;
+    if (String(ex.currentWeight || "").trim()) return false; // bar+band climbs weight, not bands
+    const prog = effectiveProgression(c.weeks, ex, c.importedProgress?.exerciseLogs,
+                                      c.importedProgress?.readiness);
+    return !!(prog && prog.band && prog.atCap);
+  }
+
   function renderModChips(container, ex, position, openPicker) {
     // position: "before" = Unilateral+Equipment+Position  "after" = Style+Hold
     // Chips are display-only — clicking one opens the tag picker (if provided)
@@ -2765,12 +2787,22 @@
       if (openPicker && BAND_TAGS.includes(tag)) {
         const up = nextBandUp(tag);
         if (up) {
+          // A band-only lift has no weight to add, so topping out its rep
+          // ladder IS "they have earned the next band" — that is what the
+          // engine's atCap means here. The button says so and glows; it does
+          // NOT step itself up. The engine computes targets, it does not
+          // re-prescribe, and which band comes next is the coach's call.
+          const earned = bandStepUpEarned(ex);
           const btn = document.createElement("button");
           btn.type = "button";
-          btn.className = "mod-chip-up";
+          btn.className = "mod-chip-up" + (earned ? " earned" : "");
           btn.textContent = "↑";
-          btn.title = `Step up to the ${up.toLowerCase()} band`;
-          btn.setAttribute("aria-label", `Step up to the ${up.toLowerCase()} band`);
+          btn.title = earned
+            ? `Topped out the rep ladder on ${tag.toLowerCase()} — step up to the ${up.toLowerCase()} band`
+            : `Step up to the ${up.toLowerCase()} band`;
+          btn.setAttribute("aria-label", earned
+            ? `Earned the next band. Step up to the ${up.toLowerCase()} band`
+            : `Step up to the ${up.toLowerCase()} band`);
           btn.addEventListener("click", (e) => {
             e.stopPropagation();
             ex.modifiers = (ex.modifiers || []).filter((m) => !BAND_TAGS.includes(m));
