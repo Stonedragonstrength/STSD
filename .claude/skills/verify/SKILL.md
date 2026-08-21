@@ -176,3 +176,35 @@ many sets as prescribed.
 button, and the whole Nav stack ([[nav-back-button-levels]]) is testable that
 way: assert the DOM between presses rather than screenshotting. Allow ~600ms
 after each press; popstate handlers re-render.
+
+## Playwright instead of the Chrome extension (2026-08-20)
+
+When the extension is not connected there is still a real browser here:
+Playwright's chromium is cached at
+`%LOCALAPPDATA%\ms-playwright\chromium-*\chrome-win64\chrome.exe`. `npm i
+playwright-core` in the scratchpad and `chromium.launch({ executablePath })` is
+about a minute of setup, and it beats the extension for this work because
+`setInputFiles` drives a real file input and `page.evaluate` seeds localStorage
+before the app boots.
+
+Each launch gets a CLEAN profile, so seed inside the same script that asserts —
+a second script cannot see the first one's localStorage.
+
+**Selectors that cost a cycle each:**
+
+| thing | selector |
+|---|---|
+| athlete's PR/progress screen | `[data-ctab="prs"]` — there is **no** `progress` tab, and clicking a tab that does not exist fails silently, so the renderer never runs and an empty result reads as a broken feature |
+| athlete tabs, in full | `overview`, `workouts`, `prs`, `diet`, `anatomy` |
+| live session | `.client-row-main` to open the row, then the `.client-cell .cd-door` whose text contains **Fill out** (the doors are 🏋️ Fill out / 📋 Program / 🎟️ Sessions / 💵 Money / 🥗 Nutrition / 👤 Profile) |
+| a set's weight and reps | `.cex-input`, alternating weight, reps, weight, reps… |
+| the first-run tour | dismiss it with the **No thanks** button or it swallows a click |
+
+**Assert through the DOM, and read localStorage for what persisted.** The
+question "did it save" is `JSON.parse(localStorage.getItem("trainerpro_data_v1"))`,
+not a screenshot.
+
+**When a feature renders nothing, prove which half is wrong before theorising.**
+A `console.log` inside the renderer said "never called" in one run, after three
+wrong guesses about the data. The bug was the harness clicking a tab that does
+not exist.
