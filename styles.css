@@ -2625,6 +2625,72 @@ input.cex-finisher-input { width: 72px; flex: 0 0 72px; text-align: center; }
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 .bw-chart-tip span { color: var(--muted); }
+
+/* ---- Athlete progress overlay: one chart, switchable series ---- */
+/* Series colours are FIXED rather than theme-derived, and defined once here so
+   every theme inherits them. A categorical palette has a different job from the
+   theme accent: six lines have to stay apart from each other, and hue-shifting
+   them per theme would collapse two of them together on some of the ten. These
+   six are mid-toned on purpose, so they hold on the obsidian ground and on the
+   light theme's. */
+:root {
+  --ser-1: #22d3ee;
+  --ser-2: #f59e0b;
+  --ser-3: #34d399;
+  --ser-4: #a78bfa;
+  --ser-5: #fb7185;
+  --ser-6: #60a5fa;
+}
+.po-card { margin-bottom: 1rem; }
+.po-plot { position: relative; width: 100%; height: 176px; }
+.po-svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.po-grid { stroke: var(--border); stroke-width: 1; opacity: 0.55; }
+.po-zero { stroke: var(--border-strong); stroke-width: 1; stroke-dasharray: 4 4; }
+.po-axis { fill: var(--muted); font-size: 9px; font-variant-numeric: tabular-nums; }
+.po-tick { stroke: var(--primary); stroke-width: 2; opacity: 0.5; }
+.po-bar { fill: rgba(var(--primary-rgb), 0.15); }
+.po-pr { fill: var(--gold); }
+.po-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.po-line.s-weight, .po-end.s-weight { stroke: var(--ser-1); fill: none; }
+.po-line.s-fat, .po-end.s-fat { stroke: var(--ser-2); }
+.po-line.s-muscle, .po-end.s-muscle { stroke: var(--ser-3); }
+.po-line.s-lift1, .po-end.s-lift1 { stroke: var(--ser-4); }
+.po-line.s-lift2, .po-end.s-lift2 { stroke: var(--ser-5); }
+.po-line.s-lift3, .po-end.s-lift3 { stroke: var(--ser-6); }
+.po-line.s-lift4, .po-end.s-lift4 { stroke: var(--ser-2); stroke-dasharray: 5 3; }
+.po-end.s-weight { fill: var(--ser-1); }
+.po-end.s-fat { fill: var(--ser-2); }
+.po-end.s-muscle { fill: var(--ser-3); }
+.po-end.s-lift1 { fill: var(--ser-4); }
+.po-end.s-lift2 { fill: var(--ser-5); }
+.po-end.s-lift3 { fill: var(--ser-6); }
+.po-end.s-lift4 { fill: var(--ser-2); }
+
+.po-switches { display: flex; flex-wrap: wrap; gap: 0.35em; margin-top: 0.6em; }
+.po-sw {
+  display: inline-flex; align-items: center; gap: 0.4em;
+  background: var(--surface-2); border: 1px solid var(--border);
+  color: var(--muted); border-radius: 999px;
+  padding: 0.24em 0.7em 0.24em 0.5em;
+  font: inherit; font-size: 0.74rem; font-weight: 600;
+  cursor: pointer; min-height: 32px;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+/* The dot carries the series colour; the switch dims the whole chip when off,
+   so which lines are drawn is readable without matching colours by eye. */
+.po-sw i { width: 9px; height: 9px; border-radius: 50%; background: currentColor; opacity: 0.3; }
+.po-sw.on { color: var(--text); border-color: var(--border-strong); background: var(--surface-3); }
+.po-sw.on i { opacity: 1; }
+.po-sw.s-weight i { color: var(--ser-1); }
+.po-sw.s-fat i { color: var(--ser-2); }
+.po-sw.s-muscle i { color: var(--ser-3); }
+.po-sw.s-lift1 i { color: var(--ser-4); }
+.po-sw.s-lift2 i { color: var(--ser-5); }
+.po-sw.s-lift3 i { color: var(--ser-6); }
+.po-sw.s-lift4 i { color: var(--ser-2); }
+.po-sw.s-vol i { color: var(--primary); }
+.po-key { margin: 0.5em 0 0; font-size: 0.68rem; color: var(--muted); }
+.po-pr-key { color: var(--gold); }
 /* A blank the coach still has to fill, marked when Save sweeps the program.
    Outline rather than border so nothing on the row moves when it appears, and
    the label reddens too: at this size the ring alone is easy to miss. */
@@ -17035,3 +17101,7 @@ input.credit-cap:disabled { opacity: 0.4; }
   .cn-seg { min-height: 40px; }
   .cn-time { min-height: 40px; }
 }
+
+/* The session history inside a tracked lift's PR card. It sits under the three
+   record slots, so it reads as "and here is how you got there". */
+.pr-card-chart { margin-top: 0.5rem; }

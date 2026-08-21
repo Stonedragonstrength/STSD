@@ -18808,13 +18808,13 @@
     let renamed = [migratePRLiftNames(prog.client.coachPRs),
       migratePRLiftMerges(prog.client.coachPRs)].some(Boolean);
     const coachPRs = (prog.client.coachPRs || []).filter(p => p.name);
-    renderPRArchive($("#athlete-pr-archive"), state.clientData.progress.personalRecords || []);
     if (!athleteOwn.length && !coachPRs.length) show(empty); else hide(empty);
 
     // Shared 1RM/2RM/3RM cards — same list the coach sees; either side can fill them in.
     const pushCoachPRs = pushAthleteCoachPRs;
     const athleteLogs = state.clientData.progress?.exerciseLogs || {};
     const athleteClaims = prCardClaims(prog.client.coachPRs);
+    const prHistory = exerciseHistoryByName(prog.client, state.clientData.progress);
     let autoFilled = false;
     coachPRs.forEach(entry => {
       const best = bestLoggedByReps(entry.name, [...(prog.client.weeks || []), { days: sessionDays(prog.client, state.clientData.progress) }], athleteLogs, athleteClaims);
@@ -18851,6 +18851,22 @@
         });
       });
       wirePRLoggedChips(card, entry, best, () => { pushCoachPRs(); renderAthletePRs(); });
+      // The run behind the records. A tracked lift with fewer than two logged
+      // sessions has no line to draw and simply does not get one, rather than
+      // a chart of a single dot.
+      // A card can still carry a retired seeded name ("Barbell Squat") for a
+      // lift the library calls something else ("Back Squat"). prLiftAlias is
+      // what bridges them, and bestLoggedByReps matches the same two keys.
+      const prKeys = new Set([exKey(entry.name), exKey(prLiftAlias(entry.name))].filter(Boolean));
+      const hist = prHistory[Object.keys(prHistory).find((n) => prKeys.has(exKey(n))) || ""];
+      if (hist && hist.length > 1) {
+        const body = card.querySelector(".pr-fold-body");
+        const chart = strengthChartCard(entry.name, hist, {
+          title: `Every session · ${hist.length}`,
+        });
+        chart.classList.add("pr-card-chart");
+        if (body) body.appendChild(chart);
+      }
       container.appendChild(card);
     });
     if (autoFilled || renamed) pushAthleteCoachPRs();
@@ -34062,7 +34078,7 @@
     // which also means the coach's roster would never see it.
     if (syncStatField(c, progress)) saveClient();
     renderStatFieldCard($("#prog-pentagon"), c, progress);
-    renderVolumeChart(progress, $("#prog-volume"));
+    renderProgressOverlay($("#prog-volume"), c, progress);
     renderStrengthProgress($("#athlete-strength-charts"), c, progress);
   }
 
@@ -37636,56 +37652,6 @@
     });
     host.appendChild(card);
   }
-  // -------- PR archive (each recorded PR plotted over time) --------
-  // Groups the athlete's logged PRs by lift and plots the milestone value over
-  // time — weight for weighted lifts, reps for bodyweight — so they can see
-  // when their last PR landed. Needs ≥2 dated PRs for a given lift to draw.
-  function prArchiveByName(prs) {
-    const byName = {};
-    (prs || []).forEach((p) => {
-      if (!p.name || !p.date) return;
-      const repOnly = prIsRepOnly(p);
-      // Weight points are plotted in the athlete's unit; rep milestones are
-      // just counts and never convert.
-      const v = repOnly ? (parseInt(p.reps, 10) || 0) : dispNum(p.weight);
-      if (!v || !isFinite(v)) return;
-      const k = prLiftKey(p);
-      (byName[k] = byName[k] || { name: p.name.trim(), bw: repOnly, pts: [] })
-        .pts.push({ t: new Date(p.date + "T12:00:00").getTime(), v, reps: parseInt(p.reps, 10) || 0, date: p.date });
-    });
-    Object.keys(byName).forEach((k) => {
-      const seen = {};
-      byName[k].pts = byName[k].pts.sort((a, b) => a.t - b.t)
-        .filter((p) => (seen[p.date] ? false : (seen[p.date] = 1)));
-      if (byName[k].pts.length < 2) delete byName[k];
-    });
-    return byName;
-  }
-  function renderPRArchive(host, prs) {
-    if (!host) return;
-    host.innerHTML = "";
-    const byName = prArchiveByName(prs);
-    const keys = Object.keys(byName).sort((a, b) => byName[b].pts.length - byName[a].pts.length);
-    if (!keys.length) return;
-    const hid = host.id || "pra";
-    let sel = _strengthSelByHost[hid];
-    if (!byName[sel]) sel = keys[0];
-    _strengthSelByHost[hid] = sel;
-    const g = byName[sel];
-    const card = document.createElement("div");
-    card.className = "card strength-progress-card";
-    card.innerHTML = `
-      <div class="bw-charts-head">
-        <h4>🏆 PR archive</h4>
-        <select class="strength-ex-select" aria-label="Exercise">${keys.map((k) => `<option value="${escapeHtml(k)}"${k === sel ? " selected" : ""}>${escapeHtml(byName[k].name)}</option>`).join("")}</select>
-      </div>`;
-    card.appendChild(strengthChartCard(g.name, g.pts, { unit: g.bw ? "reps" : unitLbl(), title: `${g.pts.length} PRs over time`, bw: g.bw }));
-    card.querySelector(".strength-ex-select").addEventListener("change", (e) => {
-      _strengthSelByHost[hid] = e.target.value;
-      renderPRArchive(host, prs);
-    });
-    host.appendChild(card);
-  }
 
   // Same anatomy/interaction as the bodyweight trend cards (shared CSS).
   // opts.unit / opts.title / opts.bw let the PR archive reuse this component
@@ -37706,31 +37672,36 @@
     const yOf = (v) => padT + (1 - (v - vMin) / (vMax - vMin)) * (H - padT - padB);
     const xy = pts.map((p) => ({ x: xOf(p.t), y: yOf(p.v), v: p.v, reps: p.reps, date: p.date }));
     const line = xy.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
-    const area = `${line} L${xy[xy.length - 1].x.toFixed(1)} ${H - padB} L${xy[0].x.toFixed(1)} ${H - padB} Z`;
     const lastPt = xy[xy.length - 1];
-    const gid = "sxg-" + Math.random().toString(36).slice(2, 7);
-    const arrow = Math.abs(delta) < 0.05 ? "▬" : (delta > 0 ? "▲" : "▼");
+    const arrow = Math.abs(delta) < BW_FLAT ? "▬" : (delta > 0 ? "▲" : "▼");
+    const tone = bwTrendTone({ key: "lift", dir: "up" }, delta);
+    const first = xy[0], y0 = first.y;
+    const startBand = `${line} L${xy[xy.length - 1].x.toFixed(1)} ${y0.toFixed(1)} L${first.x.toFixed(1)} ${y0.toFixed(1)} Z`;
+    const startLabel = new Date(`${pts[0].date}T12:00:00`)
+      .toLocaleDateString(undefined, { month: "short", day: "numeric" });
     const card = document.createElement("div");
     card.className = "bw-chart-card";
     card.innerHTML = `
       <div class="bw-chart-top">
         <span class="bw-chart-title">${escapeHtml(title)}</span>
-        <span class="bw-chart-delta" title="Change over the logged history">${arrow} ${Math.abs(delta).toFixed(0)} ${escapeHtml(unit)}</span>
+        <span class="bw-chart-delta ${tone}" title="Change over the logged history">${arrow} ${Math.abs(delta).toFixed(0)} ${escapeHtml(unit)}</span>
       </div>
       <div class="bw-chart-val">${escapeHtml(String(last))}<span class="bw-chart-unit">${escapeHtml(unit)}</span></div>
       <div class="bw-chart-plot">
         <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="bw-chart-svg" aria-hidden="true">
-          <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="currentColor" stop-opacity="0.22"/>
-            <stop offset="1" stop-color="currentColor" stop-opacity="0"/>
-          </linearGradient></defs>
-          <path d="${area}" fill="url(#${gid})" stroke="none"/>
+          <path class="bw-band ${tone}" d="${startBand}"/>
+          <line class="bw-start-rule" x1="0" y1="${y0.toFixed(1)}" x2="${W}" y2="${y0.toFixed(1)}" vector-effect="non-scaling-stroke"/>
           <path d="${line}" fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>
         </svg>
         <div class="bw-cross" style="display:none"></div>
         <div class="bw-dot bw-hover-dot" style="display:none"></div>
+        <div class="bw-dot bw-start-dot" style="left:${(first.x / W * 100).toFixed(2)}%; top:${(first.y / H * 100).toFixed(2)}%"></div>
         <div class="bw-dot bw-last-dot" style="left:${(lastPt.x / W * 100).toFixed(2)}%; top:${(lastPt.y / H * 100).toFixed(2)}%"></div>
         <div class="bw-chart-tip" style="display:none"></div>
+      </div>
+      <div class="bw-chart-foot">
+        <span>${escapeHtml(startLabel)} <b>${escapeHtml(String(pts[0].v))}</b></span>
+        <span class="now">now <b>${escapeHtml(String(last))}</b></span>
       </div>`;
     const plot = card.querySelector(".bw-chart-plot");
     const cross = card.querySelector(".bw-cross");
@@ -37806,6 +37777,239 @@
   // as a contiguous run ending at the current period — quiet periods show as
   // zero rather than vanishing. Capped to the last 12 buckets.
   const KEY_VOLMODE = "trainerpro_volmode_v1"; // "week" (default) | "month"
+  // ============ The athlete's progress overlay ============
+  //
+  // One chart at the top of the PR screen, replacing the weekly volume bars and
+  // the PR archive that used to sit there. Nathan picked it off a rendered
+  // comparison on 2026-08-20: concept A (everything as percent moved from the
+  // start) with concept C (weekly volume behind it) folded in as one more
+  // switch rather than a second chart.
+  //
+  // Why percent and not pounds: a 12 lb bodyweight drop and a 30 lb bench gain
+  // cannot share a pounds axis without one of them becoming a flat line. Percent
+  // from the start of the range puts every metric on the same picture, and the
+  // exact numbers still live on the cards below. It is also the same sentence
+  // the body composition cards started telling today: here is where you began.
+  //
+  // Everything it draws already exists. Top sets come from exerciseHistoryByName
+  // (every logged session, swaps attributed to the lift actually performed),
+  // weigh-ins from the scale import, volume from volumeBuckets, and PRs from the
+  // athlete's own records.
+  const KEY_OVERLAY = "trainerpro_overlay_on_v1";
+  const OVERLAY_RANGES = [
+    { k: "30", label: "30d", days: 30 },
+    { k: "90", label: "90d", days: 90 },
+    { k: "all", label: "All", days: null },
+  ];
+  let _overlayRange = "all";
+
+  /**
+   * Percent moved from the first reading still in the window.
+   *
+   * The baseline follows the range buttons on purpose: on 30d, "since the
+   * start" means since the first reading in view, exactly like the delta on
+   * every other card here. A series with one reading in the window is refused
+   * rather than drawn flat at 0%, because a single weigh-in is not a month of
+   * holding steady.
+   */
+  function overlayNorm(pts, fromT) {
+    const win = (pts || []).filter((p) => p.t >= fromT);
+    if (win.length < 2) return null;
+    const base = win[0].v;
+    if (!isFinite(base) || base === 0) return null;
+    return { base, pts: win.map((p) => ({ t: p.t, v: p.v, pct: ((p.v - base) / base) * 100 })) };
+  }
+
+  /** Every DAY the athlete logged anything, for the ticks along the bottom. */
+  function overlaySessionDates(progress) {
+    const seen = new Set();
+    Object.values(progress?.exerciseLogs || {}).forEach((ls) => (ls || []).forEach((l) => {
+      if (l && l.date) seen.add(l.date);
+    }));
+    return [...seen].sort();
+  }
+
+  /** Which switches are on. Per device, not synced: it is a view, not data. */
+  function overlayOn() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(KEY_OVERLAY) || "null");
+      if (Array.isArray(raw)) return new Set(raw);
+    } catch (e) { /* corrupt: fall through to the defaults */ }
+    return null;
+  }
+  function saveOverlayOn(set) {
+    try { localStorage.setItem(KEY_OVERLAY, JSON.stringify([...set])); } catch (e) {}
+  }
+
+  /**
+   * The series on offer: body composition first, then the lifts they track.
+   *
+   * Tracked lifts are the coachPRs list, which is already the athlete's
+   * "favourites" — the ＋ Track a lift button writes it. A tracked lift with no
+   * logged history yet is dropped rather than offered as a switch that draws
+   * nothing.
+   */
+  function overlaySeries(client, progress) {
+    const out = [];
+    const log = [...(progress?.bodyweightLog || [])].sort(bwSort);
+    const metric = (key, label, cls, pick) => {
+      const pts = log.map((e) => ({ t: bwEntryTime(e), v: pick(e) }))
+        .filter((p) => p.v != null && isFinite(p.v))
+        .sort((a, b) => a.t - b.t);
+      if (pts.length > 1) out.push({ key, label, cls, unit: key === "fat" ? "%" : unitLbl(), pts });
+    };
+    metric("weight", "Weight", "s-weight", (e) => { const v = parseFloat(e.weightLb); return isFinite(v) ? dispNum(v) : null; });
+    metric("fat", "Body fat", "s-fat", (e) => bwMetricVal(e, /^body fat perc/i));
+    metric("muscle", "Muscle", "s-muscle", (e) => {
+      const v = bwMetricVal(e, /^muscle mass/i);
+      return v != null ? v : bwMetricVal(e, /^skeletal muscle mass/i);
+    });
+
+    const hist = exerciseHistoryByName(client, progress);
+    const tracked = (client?.coachPRs || []).map((p) => p.name).filter(Boolean);
+    // Tracked first, in the athlete's own order, then anything else they train
+    // often enough to have a line. Capped: a switch strip is a strip, not a list.
+    const names = [...tracked, ...Object.keys(hist).sort((a, b) => hist[b].length - hist[a].length)];
+    let liftN = 0;   // colour by position among the lifts, not among all series
+    const seen = new Set();
+    names.forEach((n) => {
+      const key = exKey(n);
+      if (seen.has(key) || !hist[n] || out.length >= 9) return;
+      seen.add(key);
+      out.push({ key: "lift:" + key, label: n, cls: "s-lift" + ((liftN++ % 4) + 1), unit: unitLbl(), lift: n, pts: hist[n] });
+    });
+    return out;
+  }
+
+  /**
+   * The chart. Drawn at the plot's real pixel width rather than a fixed viewBox
+   * stretched to fit: scaling the box scales the axis TEXT with it, which turns
+   * "+22%" into something unreadable on a wide screen.
+   */
+  function renderProgressOverlay(host, client, progress) {
+    if (!host) return;
+    const series = overlaySeries(client, progress);
+    if (series.length < 1) { host.innerHTML = ""; return; }
+
+    const saved = overlayOn();
+    // A first-time default that shows the shape of the thing: bodyweight, body
+    // fat and the first tracked lift. Everything else is one tap away.
+    const on = saved || new Set([
+      ...series.filter((s) => s.key === "weight" || s.key === "fat").map((s) => s.key),
+      ...series.filter((s) => s.lift).slice(0, 1).map((s) => s.key),
+    ]);
+    const sessions = overlaySessionDates(progress);
+    const prs = (progress?.personalRecords || []).filter((p) => p.name && p.date);
+    const buckets = volumeBuckets(progress, "week");
+
+    host.innerHTML = `
+      <div class="card po-card">
+        <div class="bw-charts-head">
+          <h4>📈 Progress</h4>
+          <div class="bw-range" role="group" aria-label="Time range">${OVERLAY_RANGES.map((r) =>
+            `<button type="button" class="bw-range-btn${r.k === _overlayRange ? " on" : ""}" data-por="${r.k}">${r.label}</button>`).join("")}</div>
+        </div>
+        <div class="po-plot"><svg class="po-svg" aria-hidden="true"></svg></div>
+        <div class="po-switches" role="group" aria-label="What to show">
+          ${series.map((s) => `<button type="button" class="po-sw ${s.cls}${on.has(s.key) ? " on" : ""}" data-pos="${escapeHtml(s.key)}"><i></i>${escapeHtml(s.label)}</button>`).join("")}
+          ${buckets.length > 1 ? `<button type="button" class="po-sw s-vol${on.has("volume") ? " on" : ""}" data-pos="volume"><i></i>Volume</button>` : ""}
+        </div>
+        <p class="po-key">Percent moved since the start of the range. <span class="po-pr-key">▲</span> is a PR, and the ticks are sessions you logged.</p>
+      </div>`;
+
+    const plot = host.querySelector(".po-plot");
+    const svg = host.querySelector(".po-svg");
+
+    function draw() {
+      const W = Math.max(260, Math.round(plot.clientWidth || 320));
+      const H = 176, padL = 34, padR = 8, padT = 12, padB = 24;
+      const r = OVERLAY_RANGES.find((x) => x.k === _overlayRange) || OVERLAY_RANGES[2];
+      const everyT = series.flatMap((s) => s.pts.map((p) => p.t));
+      if (!everyT.length) { svg.innerHTML = ""; return; }
+      const tMax = Math.max(...everyT);
+      const tMin = r.days == null ? Math.min(...everyT) : tMax - r.days * 86400000;
+      const span = Math.max(1, tMax - tMin);
+      const x = (t) => padL + ((t - tMin) / span) * (W - padL - padR);
+
+      const live = series.filter((s) => on.has(s.key))
+        .map((s) => ({ ...s, norm: overlayNorm(s.pts, tMin) }))
+        .filter((s) => s.norm);
+
+      let lo = 0, hi = 0;
+      live.forEach((s) => s.norm.pts.forEach((p) => { lo = Math.min(lo, p.pct); hi = Math.max(hi, p.pct); }));
+      if (lo === hi) { lo -= 2; hi += 2; }
+      const padV = (hi - lo) * 0.15;
+      lo -= padV; hi += padV;
+      const y = (pct) => padT + (1 - (pct - lo) / (hi - lo)) * (H - padT - padB);
+
+      let out = "";
+      // Volume rides behind on its own scale: it is context for the lines, not
+      // a series sharing their axis.
+      if (on.has("volume") && buckets.length > 1) {
+        const vis = buckets.map((b) => ({ t: new Date(b.key + "T12:00:00").getTime(), v: b.v }))
+          .filter((b) => isFinite(b.t) && b.t >= tMin - 3.5 * 86400000);
+        const vMax = Math.max(...buckets.map((b) => b.v), 1) * 1.15;
+        const bw = Math.max(3, (W - padL - padR) / Math.max(vis.length, 1) * 0.62);
+        out += vis.map((b) => {
+          const h = (b.v / vMax) * (H - padT - padB);
+          return `<rect class="po-bar" x="${(x(b.t) - bw / 2).toFixed(1)}" y="${(H - padB - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, h).toFixed(1)}" rx="2"/>`;
+        }).join("");
+      }
+      for (let i = 0; i <= 3; i++) {
+        const gy = padT + (i / 3) * (H - padT - padB);
+        const val = hi - (i / 3) * (hi - lo);
+        out += `<line class="po-grid" x1="${padL}" y1="${gy.toFixed(1)}" x2="${W - padR}" y2="${gy.toFixed(1)}"/>`;
+        out += `<text class="po-axis" x="${padL - 5}" y="${(gy + 3).toFixed(1)}" text-anchor="end">${val > 0 ? "+" : ""}${val.toFixed(0)}%</text>`;
+      }
+      out += `<line class="po-zero" x1="${padL}" y1="${y(0).toFixed(1)}" x2="${W - padR}" y2="${y(0).toFixed(1)}"/>`;
+      out += sessions.map((d) => new Date(d + "T12:00:00").getTime())
+        .filter((t) => isFinite(t) && t >= tMin && t <= tMax)
+        .map((t) => `<line class="po-tick" x1="${x(t).toFixed(1)}" y1="${H - padB + 5}" x2="${x(t).toFixed(1)}" y2="${H - padB + 10}"/>`).join("");
+
+      live.forEach((s) => {
+        const d = s.norm.pts.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)} ${y(p.pct).toFixed(1)}`).join(" ");
+        out += `<path class="po-line ${s.cls}" d="${d}"/>`;
+        const last = s.norm.pts[s.norm.pts.length - 1];
+        out += `<circle class="po-end ${s.cls}" cx="${x(last.t).toFixed(1)}" cy="${y(last.pct).toFixed(1)}" r="3"/>`;
+      });
+
+      // A PR is drawn on the line it belongs to, so it reads as a moment in
+      // that lift's run rather than a mark floating over the chart.
+      live.filter((s) => s.lift).forEach((s) => {
+        prs.filter((p) => exKey(p.name) === exKey(s.lift)).forEach((p) => {
+          const t = new Date(p.date + "T12:00:00").getTime();
+          if (!isFinite(t) || t < tMin || t > tMax) return;
+          const near = s.norm.pts.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a));
+          const yy = y(near.pct) - 9;
+          out += `<path class="po-pr" d="M${x(t).toFixed(1)} ${yy.toFixed(1)} l3.4 6.8 h-6.8 Z"><title>${escapeHtml(p.name)} PR</title></path>`;
+        });
+      });
+
+      svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+      svg.innerHTML = out;
+    }
+
+    host.querySelectorAll("[data-por]").forEach((b) => b.addEventListener("click", () => {
+      _overlayRange = b.dataset.por;
+      host.querySelectorAll("[data-por]").forEach((x) => x.classList.toggle("on", x === b));
+      draw();
+    }));
+    host.querySelectorAll("[data-pos]").forEach((b) => b.addEventListener("click", () => {
+      const k = b.dataset.pos;
+      if (on.has(k)) on.delete(k); else on.add(k);
+      b.classList.toggle("on", on.has(k));
+      saveOverlayOn(on);
+      draw();
+    }));
+
+    draw();
+    // The first draw runs before the card has been laid out, so its width is
+    // measured again once it has one.
+    requestAnimationFrame(draw);
+    if (typeof ResizeObserver === "function") new ResizeObserver(draw).observe(plot);
+  }
+
+
   function volumeBuckets(progress, mode) {
     const by = {};
     Object.values(progress?.exerciseLogs || {}).forEach((ls) => (ls || []).forEach((l) => {
@@ -37837,32 +38041,6 @@
         : new Date(o.key + "-15T12:00:00").toLocaleDateString(undefined, { month: "short" });
     });
     return last12;
-  }
-  function renderVolumeChart(progress, hostEl) {
-    const host = hostEl || $("#prog-volume");
-    if (!host) return;
-    const mode = localStorage.getItem(KEY_VOLMODE) === "month" ? "month" : "week";
-    const buckets = volumeBuckets(progress, mode);
-    if (buckets.length < 2) { host.innerHTML = ""; return; }
-    const maxV = Math.max(...buckets.map((m) => m.v), 1);
-    host.innerHTML = `<div class="ov-volchart">
-      <div class="ov-recap-head"><h4>${mode === "week" ? "Weekly" : "Monthly"} volume</h4>
-        <div class="bw-range" role="group" aria-label="Bucket size">
-          <button type="button" class="bw-range-btn${mode === "week" ? " on" : ""}" data-volmode="week">Weeks</button>
-          <button type="button" class="bw-range-btn${mode === "month" ? " on" : ""}" data-volmode="month">Months</button>
-        </div>
-      </div>
-      <div class="vol-chart">${buckets.map((m) => `
-        <div class="vol-col" title="${mode === "week" ? "Week of " : ""}${escapeHtml(m.label)}: ${Math.round(tonNum(m.v)).toLocaleString()} ${unitLbl()} lifted">
-          <span class="vol-val">${m.v ? formatTonnage(tonNum(m.v)) : ""}</span>
-          <div class="vol-bar" style="height:${Math.max(2, Math.round((m.v / maxV) * 100))}%"></div>
-          <span class="vol-lbl">${escapeHtml(m.label)}</span>
-        </div>`).join("")}</div>
-    </div>`;
-    host.querySelectorAll("[data-volmode]").forEach((b) => b.addEventListener("click", () => {
-      localStorage.setItem(KEY_VOLMODE, b.dataset.volmode);
-      renderVolumeChart(progress, host);
-    }));
   }
 
   // Total volume (weight × reps, working sets) of the most recent logged day.
