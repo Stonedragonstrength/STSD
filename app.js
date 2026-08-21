@@ -40972,13 +40972,11 @@
       setProgramStatus(tpl, tpl.status === "ready" ? "draft" : "ready");
       updateProgramStatusBtn(tpl);
     });
-    $("#btn-save-program-to-library")?.addEventListener("click", () => {
-      const tpl = currentProgramTemplate(); if (!tpl) return;
-      if (!tpl.name?.trim()) { toast("Give the program a name first."); $("#program-editor-name").focus(); return; }
-      tpl.savedToLibrary = true;
-      saveTrainer();
-      toast(`"${tpl.name}" saved to Library ✓`);
-    });
+    // A second listener on #btn-save-program-to-library lived here, flagging a
+    // TEMPLATE as savedToLibrary. Removed 2026-08-21: that button became the
+    // "Save as template" item in the program ⋯, and the flag it set was written
+    // nowhere else and read nowhere at all — a dead write behind a dead door.
+    // Templates are in the library by existing; there is no second state.
     $("#program-editor-name")?.addEventListener("input", (e) => {
       const tpl = currentProgramTemplate(); if (!tpl) return;
       tpl.name = e.target.value;
