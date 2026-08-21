@@ -27315,6 +27315,7 @@
       const key = `${day.id}:${logDate}`;
       if (!_celebratedDays.has(key)) {
         _celebratedDays.add(key);
+        awardDayPRs(day, logDate);
         tellCoach("workout_logged", day.id);
         // Drop the keyboard first. The last set is usually still focused when
         // auto-lock fires, and on a phone a fixed overlay measured against the
@@ -30461,7 +30462,18 @@
   // opts.keepScroll: skip the scroll-into-view. Used when the coach day sheet
   // closes — the page underneath re-renders, but the coach should land back on
   // the exact spot they were looking at, not at the top of the day.
+  // Pending drafts belonging to the filler cards currently on screen. Rebuilding
+  // the day throws every input away, so whatever is still in a card's 800ms
+  // autosave fuse gets committed on the way past.
+  let _cardDraftFlushers = [];
+  function flushOpenDayDrafts() {
+    const pending = _cardDraftFlushers;
+    _cardDraftFlushers = [];
+    pending.forEach((f) => { try { f(); } catch (e) { console.warn("[filler] draft flush failed", e); } });
+  }
+
   function renderWorkoutDetailUI(opts) {
+    flushOpenDayDrafts();
     const prog = state.clientData.program;
     let week = prog?.client?.weeks?.find((w) => w.id === state.workoutView.weekId);
     let day = week?.days?.find((d) => d.id === state.workoutView.dayId);
@@ -30598,6 +30610,12 @@
     list.appendChild(renderDayNoteBlock(day.id));
     list.appendChild(renderFormCheckBlock(day));
 
+    // Was the day already on screen? Then this is a re-render — adding a set,
+    // a card locking itself, a sync landing — and yanking the athlete to the
+    // top of the program mid-session is never what they asked for. The scroll
+    // is only for ARRIVING at a day from the picker, where the page is still
+    // sitting wherever the day cards were.
+    const wasOpen = !$("#workout-detail").classList.contains("hidden");
     hide($("#workout-picker"));
     show($("#workout-detail"));
     // Keyed by day + date so a re-render or a trip to another tab continues the
@@ -30607,8 +30625,8 @@
     showRestTimer();
     // Keep the picker grid count fresh in case user comes back.
     renderWorkoutPickerUI();
-    // Scroll detail into view smoothly.
-    if (!opts?.keepScroll) {
+    // Scroll detail into view smoothly — on arrival only, never on a re-render.
+    if (!opts?.keepScroll && !wasOpen) {
       setTimeout(() => $("#workout-detail")?.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
     }
   }
@@ -31077,6 +31095,7 @@
     if (pyrW) wrapper.classList.add("pyramid-tint");
     wrapper.dataset.week = week.id;
     wrapper.dataset.day = day.id;
+    wrapper.dataset.exid = ex.id;   // the day-end PR sweep celebrates on this card
 
     // ── Compact row ──
     const row = document.createElement("div");
@@ -31683,11 +31702,16 @@
 
     // Pre-fill today's existing log so edits persist. Logged weights come out
     // of storage in pounds — inW is the boundary back into the athlete's unit.
+    // A DRAFT only stores the rows that hold something, so `s.i` is which row
+    // it came from: without it a draft with only set 2 filled comes back in
+    // set 1, and every re-render of the day walks the numbers up the card. A
+    // locked entry stores every row, so an entry with no `i` is positional.
     if (todayLog?.sets?.length) {
       todayLog.sets.forEach((s, i) => {
-        if (!setInputs[i]) return;
-        if (s.skipped) { setInputs[i].skipped = true; setInputs[i].applySkip(); }
-        else { setInputs[i].wt.value = inW(s.weight || ""); setInputs[i].rp.value = s.reps || ""; }
+        const it = setInputs[Number.isInteger(s.i) ? s.i : i];
+        if (!it) return;
+        if (s.skipped) { it.skipped = true; it.applySkip(); }
+        else { it.wt.value = inW(s.weight || ""); it.rp.value = s.reps || ""; }
       });
     }
     if (todayLog?.warmups?.length) {
@@ -31837,6 +31861,42 @@
     // Once the athlete unlocks with ✎ Edit, auto-lock stays off for this
     // card — relocking is theirs to do with 🔒.
     let manualUnlock = false;
+    // The debounced half of autoSave, lifted out under its own name so a
+    // re-render of the day can commit it FIRST. The inputs are about to be
+    // thrown away and rebuilt from storage, and anything still sitting in the
+    // 800ms fuse would go with them — which is what "it cleared my work"
+    // looked like from the athlete's side.
+    const commitDraft = () => {
+      _ast = null;
+      // `i` is the row each set came from. The filter below drops empty rows,
+      // and without the row number a draft that only holds set 2 comes back in
+      // set 1 the next time the card is built.
+      const sets = setInputs.map(({ wt, rp, skipped }, i) => (skipped ? { weight: "", reps: "", skipped: true, i } : { weight: outW(wt.value), reps: rp.value, i }))
+                            .filter(s => s.skipped || s.weight || s.reps);
+      // A quick note with no numbers behind it is still a record worth
+      // keeping ("did this, it hurt"), so it holds the entry open here.
+      if (!sets.length && !finisherHasData() && !warmupHasData() && !noteIds.length) {
+        if (state.clientData.progress.exerciseLogs[ex.id]) {
+          state.clientData.progress.exerciseLogs[ex.id] =
+            state.clientData.progress.exerciseLogs[ex.id].filter(l => l.date !== logDate);
+        }
+        saveClient();
+        renderAthleteCalendar();
+        return;
+      }
+      if (!state.clientData.progress.exerciseLogs[ex.id])
+        state.clientData.progress.exerciseLogs[ex.id] = [];
+      const exLogs = state.clientData.progress.exerciseLogs[ex.id];
+      const idx = exLogs.findIndex(l => l.date === logDate);
+      const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, m: Date.now(), sets, locked: false, ...collectWarmups(), ...collectFinishers(), ...collectRir(), ...collectNotes() };
+      if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
+      saveClient();
+      renderAthleteCalendar();
+    };
+    // Every open card parks its pending draft here; renderWorkoutDetailUI
+    // drains the list before it rebuilds. A card that is already locked has
+    // nothing in the fuse, so the flush is a no-op for it.
+    _cardDraftFlushers.push(() => { if (_ast) { clearTimeout(_ast); commitDraft(); } });
     const autoSave = () => {
       refreshToolsState(); // values are already current — keep ⌫ Clear in sync live
       updateExBar();     // ...and the card/day progress fills too
@@ -31848,29 +31908,7 @@
       if (!isLocked && !manualUnlock && !anyUnchecked()) {
         _alt = setTimeout(() => { if (!isLocked && !manualUnlock && !anyUnchecked()) lockIn({ silent: true }); }, AUTOLOCK_MS);
       }
-      _ast = setTimeout(() => {
-        const sets = setInputs.map(({ wt, rp, skipped }) => (skipped ? { weight: "", reps: "", skipped: true } : { weight: outW(wt.value), reps: rp.value }))
-                              .filter(s => s.skipped || s.weight || s.reps);
-        // A quick note with no numbers behind it is still a record worth
-        // keeping ("did this, it hurt"), so it holds the entry open here.
-        if (!sets.length && !finisherHasData() && !warmupHasData() && !noteIds.length) {
-          if (state.clientData.progress.exerciseLogs[ex.id]) {
-            state.clientData.progress.exerciseLogs[ex.id] =
-              state.clientData.progress.exerciseLogs[ex.id].filter(l => l.date !== logDate);
-          }
-          saveClient();
-          renderAthleteCalendar();
-          return;
-        }
-        if (!state.clientData.progress.exerciseLogs[ex.id])
-          state.clientData.progress.exerciseLogs[ex.id] = [];
-        const exLogs = state.clientData.progress.exerciseLogs[ex.id];
-        const idx = exLogs.findIndex(l => l.date === logDate);
-        const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, m: Date.now(), sets, locked: false, ...collectWarmups(), ...collectFinishers(), ...collectRir(), ...collectNotes() };
-        if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
-        saveClient();
-        renderAthleteCalendar();
-      }, 800);
+      _ast = setTimeout(commitDraft, 800);
     };
     setInputs.forEach(({ wt, rp }) => {
       wt.addEventListener("input", autoSave);
@@ -32251,7 +32289,10 @@
       const entry = { id: idx >= 0 ? exLogs[idx].id : uid(), date: logDate, m: Date.now(), sets, locked: true, ...(dl ? { deload: true } : {}), ...collectWarmups(), ...collectFinishers(), ...collectRir(), ...collectNotes() };
       if (idx >= 0) exLogs[idx] = entry; else exLogs.push(entry);
       if (dl && !dl.date) dl.date = logDate;
-      detectAndCelebratePR(ex, entry, wrapper);
+      // PRs are awarded once, at the end of the day (autoSyncDayCompletion),
+      // not here. A card auto-locks four idle seconds after the last number
+      // goes in, so awarding from this point handed out a PR to anyone who
+      // stopped to answer a text.
       // Price the day now, while the definitions behind these logs still
       // exist: assigning a program regenerates every exercise id, and these
       // logs stay keyed by the old ones.
@@ -38793,7 +38834,47 @@
   // one. Weighted lifts are judged by estimated 1RM (so rep PRs count too);
   // bodyweight lifts by reps. Matching normalises the name so renames/typos
   // don't split history, and warm-ups/skipped sets never count.
-  function detectAndCelebratePR(ex, entry, cardEl) {
+  /**
+   * Every PR the day earned, judged once, when the day is finished.
+   *
+   * PRs used to be awarded from lockIn, which meant a card that auto-locked
+   * after four idle seconds could hand one out with nobody having pressed
+   * anything. A day is the honest unit: the athlete has stopped, every lift is
+   * in, and the numbers are not going to change again.
+   *
+   * One toast for the lot rather than one per lift — three PRs used to stack
+   * three toasts on top of each other — and the confetti still lands on the
+   * card that earned it. The order matters: a lift judges itself against every
+   * other log, so awarding them one at a time in card order is the same
+   * answer lockIn gave, just later.
+   */
+  function awardDayPRs(day, logDate) {
+    const won = [];
+    // Lifts the athlete added on the fly log through the same card, so they
+    // earn PRs the same way.
+    const added = state.clientData.progress?.addedExercises?.[day?.id] || [];
+    [...(day?.exercises || []), ...added].forEach((ex) => {
+      const entry = (state.clientData.progress?.exerciseLogs?.[ex.id] || [])
+        .find((l) => l.date === logDate && l.locked === true && !l.skipped);
+      if (!entry) return;
+      const card = document.querySelector(`.cex-wrapper[data-exid="${cssEscape(ex.id)}"]`);
+      const pr = detectAndCelebratePR(ex, entry, card, { announce: false });
+      if (pr) won.push(pr);
+    });
+    if (!won.length) return;
+    saveClient();
+    if (won.length === 1) toast(`🎉 New PR · ${won[0].label}!`, 3500);
+    else toast(`🎉 ${won.length} new PRs · ${won.map((p) => p.name).join(", ")}`, 4500);
+    if (typeof renderAthletePRs === "function") renderAthletePRs();
+  }
+
+  // Ids are generated by uid(), but a selector built from a value is a selector
+  // built from a value — quote what CSS would otherwise read as syntax.
+  function cssEscape(v) {
+    return window.CSS?.escape ? window.CSS.escape(String(v)) : String(v).replace(/["\\]/g, "\\$&");
+  }
+
+  function detectAndCelebratePR(ex, entry, cardEl, { announce = true } = {}) {
     // Swapped lifts file their PR under what was actually done.
     const prog = state.clientData.progress;
     const name = liftLabel(ex, prog).trim();
@@ -38844,12 +38925,15 @@
     if (!bw && cur.score > prev * 1.4) return;
 
     const prs = state.clientData.progress.personalRecords || (state.clientData.progress.personalRecords = []);
-    if (prs.some((p) => prLiftKey(p) === key && p.date === entry.date && String(p.weight) === String(cur.weight) && String(p.reps) === String(cur.reps))) return;
+    if (prs.some((p) => prLiftKey(p) === key && p.date === entry.date && String(p.weight) === String(cur.weight) && String(p.reps) === String(cur.reps))) return null;
     const pair = usesDumbbellPair(ex);
-    prs.push(makePR({ name, lift: key, pair, weight: cur.weight, reps: String(cur.reps), date: entry.date, notes: "Auto-detected during workout 🎉", auto: true }));
+    const rec = makePR({ name, lift: key, pair, weight: cur.weight, reps: String(cur.reps), date: entry.date, notes: "Auto-detected during workout 🎉", auto: true });
+    prs.push(rec);
     if (cardEl) celebrateElement(cardEl, "pr-celebrate");
     tellCoach("pr_set", ex.id);
-    toast(`🎉 New PR · ${name}: ${bw ? cur.reps + " reps" : dispW(cur.weight) + (pair ? "s × " : ` ${unitLbl()} × `) + cur.reps}!`, 3500);
+    const label = `${name}: ${bw ? cur.reps + " reps" : dispW(cur.weight) + (pair ? "s × " : ` ${unitLbl()} × `) + cur.reps}`;
+    if (announce) toast(`🎉 New PR · ${label}!`, 3500);
+    return { ...rec, label };
   }
 
   // -------- Guided tour (spotlight walkthrough) --------
