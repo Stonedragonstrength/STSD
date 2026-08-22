@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=bandcap1" />
+  <link rel="stylesheet" href="styles.css?v=stmt2" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -491,16 +491,25 @@
             <div id="raise-sessions-panel" class="raise-sessions">
               <div class="program-head">
                 <h3>Sessions</h3>
+                <!-- Two, not three. "🎁 Gift" is a kind of package rather than
+                     a peer of "add one", and three buttons wrapped onto two
+                     lines on a phone. It lives inside the Add sheet now. -->
                 <div class="library-head-actions">
-                  <button class="btn btn-ghost" id="btn-redeem-session">− Redeem session</button>
-                  <button class="btn btn-ghost" id="btn-gift-session" title="Give free sessions">🎁 Gift</button>
-                  <button class="btn btn-primary" id="btn-add-package">+ Add package</button>
+                  <button class="btn btn-ghost" id="btn-redeem-session">− Redeem</button>
+                  <button class="btn btn-primary" id="btn-add-package">＋ Add</button>
                 </div>
               </div>
-              <!-- Session options: what this athlete is on, what they pay, and the
-                   two policy switches. Everything that decides the number in the
-                   balance card sits directly above it, and each control saves on
-                   change — there is no edit/save mode to enter for a dropdown. -->
+              <!-- The balance FIRST. Setup used to stand above it: nine controls
+                   that are set once and then never touched, permanently outranking
+                   the only number on the panel that changes. -->
+              <div id="session-balance-host"></div>
+              <!-- Session options, folded. What this athlete is on, what they pay,
+                   and the policy switches; each control saves on change, so there
+                   is no edit/save mode to enter for a dropdown. The summary line
+                   is written by renderSessionOptions() so the fold still says what
+                   they are on without being opened. -->
+              <details class="session-manage" id="coach-setup-fold">
+                <summary id="coach-setup-summary">Setup</summary>
               <div class="card session-options-card">
                 <div class="session-options-head">
                   <h4>Membership</h4>
@@ -556,7 +565,7 @@
                      it on. Filled in by renderBillingRow(). -->
                 <div id="session-billing-row"></div>
               </div>
-              <div id="session-balance-host"></div>
+              </details>
               <!-- Folded, because a month grid is 590px and this panel now
                    opens inside a list of one-line rows — always-open, it was
                    more than half the drawer's height. It still renders whether
@@ -576,14 +585,17 @@
                   <div id="cal-grid" class="cal-grid"></div>
                 </div>
               </details>
-              <details class="session-manage" id="coach-session-details">
-                <summary>Manage packages &amp; history</summary>
-                <p class="muted session-manage-note">No money moves through this app. You collect outside it (Venmo, cash, Stripe link), then tick <strong>Mark collected</strong> here. That tick is a note to yourself and nothing more: sessions are live from the moment they're granted, whether you've been paid or not. A monthly allowance expires with its month; a package you add by hand never does.</p>
-                <div class="session-manage-actions">
-                  <button class="btn btn-ghost btn-sm" id="btn-export-sessions" title="Download payment &amp; use history (opens in Excel)">⬇ Export</button>
-                </div>
-                <div id="session-bank-container"></div>
-              </details>
+              <!-- The statement, NOT folded. It was "Manage packages & history",
+                   two lists behind a closed door, and the balance above it could
+                   not be explained without opening it and doing the ledger's
+                   arithmetic by eye. It is the answer to the only question this
+                   panel is ever opened with, so it is on screen. -->
+              <div class="statement-head">
+                <h4>Statement</h4>
+                <button class="btn btn-ghost btn-sm slim-btn" id="btn-export-sessions" title="Download payment &amp; use history (opens in Excel)">⬇ Export</button>
+              </div>
+              <div id="session-bank-container"></div>
+              <p class="muted session-manage-note statement-foot">No money moves through this app. You collect outside it (Venmo, cash, Stripe link), then tick <strong>Collect</strong> on the row. That tick is a note to yourself and nothing more: sessions are live from the moment they're granted, whether you've been paid or not.</p>
             </div>
           </div>
         </details>
@@ -1724,7 +1736,7 @@
   <script src="src/scheduling/series.js?v=x1"></script>
   <script src="src/scheduling/merge.js?v=x1"></script>
   <script src="src/scheduling/availability.js?v=x1"></script>
-  <script src="app.js?v=x82"></script>
+  <script src="app.js?v=stmt1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

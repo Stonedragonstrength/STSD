@@ -1157,6 +1157,165 @@
       `<span class="session-stat-lbl">${escapeHtml(lbl)}</span></div>`).join("") + `</div>`;
   }
 
+  // The balance, showing its working. A bare "5" is a number you either trust
+  // or you don't; "5 = 4 left of August's allowance + 1 banked from packages"
+  // is one you can check — and on 2026-08-21 checking it took a query against
+  // production, because nothing on any screen said where the 5 came from.
+  //
+  // Only when the total is genuinely made of two parts. With a single source
+  // the stat tiles directly above already say it, and a restatement would be
+  // the same figure in its third place on one card.
+  //
+  // Deliberately money-free: this renders on the athlete's balance card too,
+  // and what the coach has been paid is none of their business.
+  function bankWhyLine(sum) {
+    if (!sum) return "";
+    const banked = Number(sum.banked) || 0;
+    if (banked <= 0) return "";
+    const monthLeft = Math.max(0, Number(sum.thisMonth) || 0);
+    const monthName = monthKeyLabel(todayISO().slice(0, 7)).split(" ")[0] || "this month";
+    const inner = sum.thisMonthGrant
+      ? `<b>${escapeHtml(String(sum.remaining))}</b> = <b>${escapeHtml(String(monthLeft))}</b> left of ` +
+        `${escapeHtml(monthName)}'s allowance + <b>${escapeHtml(String(banked))}</b> banked from packages`
+      : `<b>${escapeHtml(String(banked))}</b> banked from packages · no allowance granted for ${escapeHtml(monthName)}`;
+    return `<div class="balance-why">${inner}</div>`;
+  }
+
+  // WHICH of the five doors made this package. Four buttons create one
+  // (openAddPackageModal, the per-athlete grant, the roster-wide grant,
+  // approvePackageRequest) and runAutoRenewGrants makes the fifth — and until
+  // now a row said only what SHAPE it was, so an allowance the app granted at
+  // 7:43am and one the coach typed by hand were indistinguishable afterwards.
+  // Every one of them has always carried addedAt; nothing ever printed it.
+  function pkgOrigin(p) {
+    if (p.gift) return { icon: "🎁", text: "Gift", cls: "bk-gift" };
+    if (p.autoRenewGrant) return { icon: "🔁", text: "Auto-renew", cls: "bk-auto" };
+    if (p.membershipGrant) return { icon: "＋", text: "Granted by you", cls: "bk-hand" };
+    if (p.requestId) return { icon: "🙋", text: "From their request", cls: "bk-hand" };
+    return { icon: "＋", text: "Added by hand", cls: "bk-hand" };
+  }
+
+  // One package, on the session log's own four-column grid so packages and
+  // sessions line up as one stream. `side` is "coach" or "athlete": the
+  // athlete sees what landed and when, never the price or the controls.
+  function bankPkgRowHtml(p, ctx) {
+    const coach = ctx.side !== "athlete";
+    const mk = pkgMonth(p);
+    const expired = pkgExpired(p, ctx.thisMk, ctx.rollover);
+    const owed = coach && !p.gift && pkgOwed(p);
+    const o = pkgOrigin(p);
+    const stamp = Number(p.addedAt || p.paidAt) || 0;
+    const when = stamp
+      ? `${escapeHtml(sessionLogWhen(dateISO(new Date(stamp))))}` +
+        `<em>${escapeHtml(new Date(stamp).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }))}</em>`
+      : escapeHtml(mk ? monthKeyLabel(mk) : "");
+    // What it is and how long it lasts, in one line. The distinction the whole
+    // ledger turns on: an allowance dies with its month, a pack never does.
+    const life = mk
+      ? `${escapeHtml(monthKeyLabel(mk))} allowance · ${expired ? "expired" : "expires end of month"}`
+      : "never expires";
+    const price = coach && p.price ? ` · ${escapeHtml(money(p.price))}` : "";
+    // The note, unless the app wrote it. runAutoRenewGrants stamps
+    // "Auto-renew · August 2026 · 4 booked sessions", every word of which the
+    // origin chip, the lifetime line and the booked advisory now say on their
+    // own — printing it too put "August 2026" on the row three times. A note
+    // the COACH typed is his own and always shows.
+    const machineNote = /^Auto-renew\s*·|^Membership:\s/.test(String(p.note || ""));
+    const note = p.note && !machineNote ? `<span class="bk-note">${escapeHtml(p.note)}</span>` : "";
+    // What they have actually booked against the allowance they are billed for.
+    // Advisory only, and silent when it agrees with the tier — it is the one
+    // number that says a membership is the wrong size. It had a line in the old
+    // package list and very nearly did not survive the rewrite.
+    const booked = coach && typeof p.booked === "number" && p.booked !== p.size
+      ? `<span class="bk-booked ${p.booked > p.size ? "over" : "under"}">${p.booked} booked · ${
+          p.booked > p.size
+            ? `${p.booked - p.size} over the tier`
+            : `${p.size - p.booked} of the allowance unused`}</span>`
+      : "";
+    return `<div class="sl-row sl-pkg${expired ? " is-expired" : ""}">
+      <span class="sl-when">${when}</span>
+      <span class="sl-mid sl-pkg-mid">
+        <span class="bk-origin ${o.cls}">${o.icon} ${escapeHtml(o.text)}</span>
+        <span class="bk-life">${life}${price}</span>
+        ${note}
+        ${booked}
+        ${owed ? `<span class="bk-owed">${escapeHtml(money(p.price || 0))} still to collect</span>` : ""}
+      </span>
+      <span class="bk-delta">+${escapeHtml(String(p.size))}</span>
+      ${coach ? `<span class="bk-acts">
+        ${owed ? `<button class="btn btn-primary btn-sm pkg-pay-btn" data-pay="${escapeHtml(p.id)}">Collect</button>` : ""}
+        <button class="btn-edit-mini" data-edit="${escapeHtml(p.id)}" title="Edit sessions and price">✎</button>
+        <button class="btn-delete-mini" data-pkg-del="${escapeHtml(p.id)}" title="Remove">×</button>
+      </span>` : `<span class="sl-spacer" aria-hidden="true"></span>`}
+    </div>`;
+  }
+
+  // Packages and sessions as ONE stream, newest first, grouped by month.
+  //
+  // They were two cards, so answering "why is the balance 5?" meant reading
+  // the package list against the session list and doing bankLedger's
+  // arithmetic by eye — while bankLedger was already computing exactly that
+  // and returning it as `byMonth`, which nothing rendered.
+  //
+  // A package sits in the month it was FOR when it has one, and otherwise in
+  // the month it was created, which is the same rule the old list sorted by.
+  // That keeps a month's rows and its header arithmetic describing the same
+  // thing: a September allowance granted on 25 August belongs under September,
+  // with "granted Tue 25 Aug, 8:02 AM" on the row itself.
+  function bankStatementHtml(c, side) {
+    const sum = sessionBankSummary(c);
+    const thisMk = todayISO().slice(0, 7);
+    const rollover = !!c.sessionBank.rollover;
+    const ctx = { thisMk, rollover, side };
+    const byMonth = new Map();
+    (c.sessionBank.packages || []).forEach((p) => {
+      if (p.status === "cancelled") return;   // a declined request, not an event
+      const stamp = Number(p.addedAt || p.paidAt) || 0;
+      const mk = pkgMonth(p) || (stamp ? dateISO(new Date(stamp)).slice(0, 7) : thisMk);
+      const bucket = byMonth.get(mk) || { pkgs: [], rows: [] };
+      byMonth.set(mk, bucket);
+      bucket.pkgs.push({ p, at: stamp });
+    });
+    // Sessions keep every column the log gave them — the kind pill, the time,
+    // the note and the undo — because all four are still the right answer.
+    sessionLogRows(c).forEach((r) => {
+      const mk = String(r.date || "").slice(0, 7);
+      if (!/^\d{4}-\d{2}$/.test(mk)) return;
+      const bucket = byMonth.get(mk) || { pkgs: [], rows: [] };
+      byMonth.set(mk, bucket);
+      bucket.rows.push(r);
+    });
+    if (!byMonth.size) return "";
+    const months = [...byMonth.keys()].sort((a, b) => b.localeCompare(a));
+    return months.map((mk) => {
+      const b = byMonth.get(mk);
+      const led = sum.byMonth?.get?.(mk) || { grant: 0, used: 0, left: 0 };
+      const missed = b.rows.filter((r) => r.kind === "missed").length;
+      const waived = b.rows.filter((r) => r.kind === "waived").length;
+      // granted / used / left come from bankLedger so the header can never
+      // disagree with the balance above it. missed and waived come from the
+      // log, because the ledger counts a missed session as used and the coach
+      // still needs to see that it was missed.
+      const bits = [];
+      if (led.grant) bits.push(`<b>${led.grant}</b> granted`);
+      bits.push(`<b>${led.used}</b> used`);
+      if (led.grant) bits.push(`<b>${led.left}</b> left`);
+      if (missed) bits.push(`${missed} missed`);
+      if (waived) bits.push(`${waived} waived`);
+      // Within a month: newest first, packages and sessions interleaved on
+      // their own timestamps. A package with no stamp at all sorts to the top
+      // of its month rather than vanishing.
+      const items = [
+        ...b.pkgs.map((x) => ({ at: x.at ? dateISO(new Date(x.at)) : mk + "-99", html: bankPkgRowHtml(x.p, ctx) })),
+        ...b.rows.map((r) => ({ at: r.date || mk + "-00", html: sessionLogRowHtml(r, { undo: side !== "athlete" }) })),
+      ].sort((x, y) => String(y.at).localeCompare(String(x.at)));
+      return `<div class="sl-month">
+          <span class="sl-month-name">${escapeHtml(monthKeyLabel(mk))}</span>
+          <span class="sl-month-n${led.grant && led.left === 0 ? " is-full" : ""}">${bits.join(" · ")}</span>
+        </div>${items.map((i) => i.html).join("")}`;
+    }).join("");
+  }
+
   // -------- Partner link (couples share one session bank) --------
   // Linked partners (partnerId set both ways) carry identical copies of the
   // bank's money fields, so either athlete's app shows the shared balance with
@@ -7184,9 +7343,27 @@
   // The Sessions tab's top card. Every control saves the moment it changes:
   // this block used to sit inside the Profile edit form on another tab, so
   // picking a tier did nothing until you found Save over there.
+  // Closed, the Setup fold still has to say what this athlete is on — the
+  // same doctrine the coach Profile folds follow. A fold whose summary is the
+  // bare word "Setup" is a door you have to open to find out whether you need
+  // to open it.
+  function renderSetupFoldSummary(c) {
+    const el = $("#coach-setup-summary");
+    if (!el) return;
+    const m = bankMembership(c);
+    const rate = athleteSessionRate(c);
+    const bits = [m ? membershipTitle(m) : "No membership set"];
+    if (rate) bits.push(`${money(rate)} a session`);
+    if (c.sessionBank?.autoRenew) bits.push("🔁 auto-renew");
+    if (c.sessionBank?.rollover) bits.push("↻ rolls over");
+    else if (c.sessionBank?.creditUnused) bits.push("💸 credits unused");
+    el.innerHTML = `Setup <span class="setup-sum">${escapeHtml(bits.join(" · "))}</span>`;
+  }
+
   function renderSessionOptions(c) {
     if (!c) return;
     ensureSessionBank(c);
+    renderSetupFoldSummary(c);
     populateMembershipSelect(c); // also refreshes the grant button
     // refreshRatePlaceholder owns the box now: which field it shows depends on
     // whether the tier is program-only, so filling it from `rate` here first
@@ -19565,7 +19742,8 @@
         <div class="session-balance-num">${sum.remaining}</div>
         <div class="session-balance-label">sessions remaining</div>
       </div>
-      ${balanceStatsHtml(sum, pending.length ? [[pending.length, "requested"]] : [])}`;
+      ${balanceStatsHtml(sum, pending.length ? [[pending.length, "requested"]] : [])}
+      ${bankWhyLine(sum)}`;
     // Balance card lives in the always-visible host above the calendar.
     const balHost = $("#athlete-balance-host");
     if (balHost) balHost.replaceChildren(balance); else container.appendChild(balance);
@@ -20253,6 +20431,7 @@
         <div class="session-balance-label">sessions remaining</div>
       </div>
       ${balanceStatsHtml(sum)}
+      ${bankWhyLine(sum)}
       ${owedNote}`;
     // Balance card lives in the always-visible host above the calendar; the
     // rest of the ledger renders into the collapsible container below.
@@ -20313,8 +20492,9 @@
       // Only show card if there were unapproved requests rendered
       if (reqCard.querySelector(".pending-request-row")) {
         container.appendChild(reqCard);
-        // Surface pending requests by auto-expanding the collapsible.
-        const det = $("#coach-session-details"); if (det) det.open = true;
+        // No auto-expand any more: #coach-session-details is gone. The
+        // statement and everything rendered into this container are on screen
+        // by default, so a request is already visible the moment it arrives.
         reqCard.querySelectorAll("[data-approve]").forEach((btn) => {
           btn.addEventListener("click", () => approvePackageRequest(c, btn.dataset.approve, Number(btn.dataset.size), Number(btn.dataset.price) || 0));
         });
@@ -20324,84 +20504,14 @@
       }
     }
 
-    // Package history
+    // The statement: packages and sessions as one stream, grouped by month.
+    // Two cards stood here — "Packages" and "Session log" — and answering
+    // "why is the balance 5?" meant reading one against the other and doing
+    // bankLedger's arithmetic by eye. See bankStatementHtml.
     const pkgCard = document.createElement("div");
-    pkgCard.className = "card";
-    pkgCard.innerHTML = `<h4 style="margin-top:0">Packages</h4>`;
-    if (!c.sessionBank.packages.length) {
-      pkgCard.insertAdjacentHTML("beforeend", `<p class="muted">No packages yet. The monthly allowance lands here on its own; <strong>+ Add package</strong> is for anything extra.</p>`);
-    } else {
-      const thisMonth = todayISO().slice(0, 7);
-      const rollover = !!c.sessionBank.rollover;
-      // Newest month first. Sorting on paidAt put a July allowance whose money
-      // was collected in August ABOVE August's own — the list read as history
-      // in no particular order, which is half of why an old month looked
-      // current. A grant sorts by the month it was FOR; a bought pack, which
-      // belongs to no month, sorts by the day it was added.
-      const monthOfRow = (p) => pkgMonth(p) || dateISO(new Date(p.paidAt || p.addedAt || Date.now())).slice(0, 7);
-      const sorted = [...c.sessionBank.packages].sort((a, b) =>
-        monthOfRow(b).localeCompare(monthOfRow(a)) || (b.addedAt || 0) - (a.addedAt || 0));
-      sorted.forEach((pkg) => {
-        const mk = pkgMonth(pkg);
-        const expired = pkgExpired(pkg, thisMonth, rollover);
-        const owed = !pkg.gift && pkgOwed(pkg);
-        const row = document.createElement("div");
-        row.className = `session-pkg-row${expired ? " is-expired" : ""}`;
-        // A monthly allowance and a bought pack are different things and now
-        // say so: the allowance is named for its month and dies with it, the
-        // pack is a standing balance that never expires.
-        const label = pkg.gift
-          ? `🎁 ${escapeHtml(String(pkg.size))}-session gift`
-          : mk
-            ? `${escapeHtml(String(pkg.size))}-session allowance`
-            : `${escapeHtml(String(pkg.size))}-session package`;
-        // Two independent facts, and conflating them is what made a July row
-        // read as August's. Whether the SESSIONS are still usable is decided by
-        // the month; whether the MONEY has come in is a note the coach keeps.
-        // An expired allowance can still be owed for, and usually is — that is
-        // a debt to chase, not sessions anyone can book.
-        const sessionPill = pkg.gift
-          ? `<span class="status-pill status-gift">gift</span>`
-          : expired
-            ? `<span class="status-pill status-expired">expired</span>`
-            : `<span class="status-pill status-paid">live</span>`;
-        const moneyPill = owed ? `<span class="status-pill status-unpaid">to collect</span>` : "";
-        const payBtn = owed
-          ? `<button class="btn btn-primary btn-sm pkg-pay-btn" data-pay="${escapeHtml(pkg.id)}">Mark collected</button>`
-          : "";
-        // Which month this was, spelled out. The note usually carries it too,
-        // but the note is free text the coach can overwrite and this is the
-        // field the balance actually runs on.
-        const when = mk
-          ? `${escapeHtml(monthKeyLabel(mk))}${expired ? " · ended" : " · this month"}`
-          : `added ${escapeHtml(new Date(pkg.addedAt || pkg.paidAt || Date.now()).toLocaleDateString())} · never expires`;
-        // What they have actually booked against the allowance they are billed
-        // for. Advisory only — it never moved the price — and it is the one
-        // number that says a membership is the wrong size. Silent when it
-        // agrees with the tier, so it only appears when it is worth reading.
-        const booked = typeof pkg.booked === "number" && pkg.booked !== pkg.size
-          ? `<div class="pkg-booked ${pkg.booked > pkg.size ? "over" : "under"}">${pkg.booked} booked · ${
-              pkg.booked > pkg.size
-                ? `${pkg.booked - pkg.size} over the tier`
-                : `${pkg.size - pkg.booked} unused`}</div>`
-          : "";
-        row.innerHTML = `
-          <div>
-            <strong>${label}</strong>
-            <div class="pkg-when">${when}${pkg.price ? ` · ${escapeHtml(money(pkg.price))}` : ""}</div>
-            ${pkg.note ? `<div class="muted" style="font-size:0.85rem">${escapeHtml(pkg.note)}</div>` : ""}
-            ${booked}
-          </div>
-          <div class="session-pkg-row-right">
-            ${sessionPill}
-            ${moneyPill}
-            ${payBtn}
-            <button class="btn-edit-mini" data-edit="${escapeHtml(pkg.id)}" title="Edit sessions and price">✎</button>
-            <button class="btn-delete-mini" data-del="${escapeHtml(pkg.id)}" title="Remove">×</button>
-          </div>`;
-        pkgCard.appendChild(row);
-      });
-    }
+    pkgCard.className = "card bank-statement";
+    const statement = bankStatementHtml(c, "coach");
+    pkgCard.innerHTML = statement || `<p class="muted">Nothing yet. The monthly allowance lands here on its own once auto-renew runs; <strong>＋ Add</strong> is for anything extra, and sessions appear as they are delivered.</p>`;
     container.appendChild(pkgCard);
     pkgCard.querySelectorAll("[data-pay]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -20427,33 +20537,24 @@
     pkgCard.querySelectorAll("[data-edit]").forEach((btn) => {
       btn.addEventListener("click", () => openPackageEditor(c, btn.dataset.edit));
     });
-    pkgCard.querySelectorAll("[data-del]").forEach((btn) => {
+    // data-pkg-del, NOT data-del: packages and sessions share one container
+    // now, and sessionLogRowHtml emits data-del for its undo. One selector for
+    // both would have wired "remove this package" to the × on a session row —
+    // a delete on the wrong record, silently, which is the worst class of bug
+    // this app has.
+    pkgCard.querySelectorAll("[data-pkg-del]").forEach((btn) => {
       btn.addEventListener("click", () => {
         if (!window.confirm("Remove this package? Redemptions are kept.")) return;
-        c.sessionBank.packages = c.sessionBank.packages.filter((p) => p.id !== btn.dataset.del);
+        c.sessionBank.packages = c.sessionBank.packages.filter((p) => p.id !== btn.dataset.pkgDel);
         bankMutated(c);
         saveTrainer();
         verifyMoneySync([c, partnerOf(c)], "Package removal");
         renderCoachSessions();
       });
     });
-
-    // The session log. Was "Redemption history": one flat reverse-chronological
-    // run of bare ISO dates, so "how many did I do for her in July" meant
-    // counting rows by eye against an allowance that wasn't on screen.
-    const redCard = document.createElement("div");
-    redCard.className = "card";
-    redCard.innerHTML = `<h4 style="margin-top:0">Session log</h4>`;
-    const months = sessionLogMonths(c);
-    if (!months.length) {
-      redCard.insertAdjacentHTML("beforeend", `<p class="muted">No sessions logged yet. Booked sessions land here on their own once they finish; <strong>− Redeem session</strong> adds one by hand.</p>`);
-    } else {
-      redCard.insertAdjacentHTML("beforeend", months.map((mo) =>
-        sessionLogMonthHeadHtml(mo) + mo.rows.map((r) => sessionLogRowHtml(r, { undo: true })).join("")
-      ).join(""));
-    }
-    container.appendChild(redCard);
-    redCard.querySelectorAll("[data-del]").forEach((btn) => {
+    // Undo a redemption. Same container as the packages above; the selectors
+    // are what keep them apart.
+    pkgCard.querySelectorAll("[data-del]").forEach((btn) => {
       btn.addEventListener("click", () => {
         if (!window.confirm("Undo this redemption?")) return;
         c.sessionBank.redemptions = c.sessionBank.redemptions.filter((r) => r.id !== btn.dataset.del);
@@ -20477,9 +20578,38 @@
         </label>`,
       actions: [
         { label: "Cancel", className: "btn btn-ghost", onClick: closeModal },
+        // Gift used to be its own button in the panel header, beside Add — but
+        // a gift IS a package, just one nobody pays for, so it was a peer of
+        // the thing it is a kind of. Three buttons also wrapped to two lines on
+        // a phone. Same sheet, one step in.
+        { label: "🎁 Gift instead…", className: "btn btn-ghost", onClick: () => {
+          closeModal();
+          openGiftSessionModal();
+        } },
         { label: "Add package", className: "btn btn-primary", onClick: () => {
           const size = parseInt($("#pkg-size-input").value, 10);
           if (!size || size < 1 || size > 50) { toast("Enter a number between 1 and 50"); return; }
+          // The collision this button could not see. A pack added here carries
+          // no month, and monthPackageOf() matches only membershipGrant /
+          // autoRenewGrant — so a month granted through this modal is invisible
+          // to the guard that stops auto-renew granting the same month again.
+          // One athlete got August twice that way: a 4-pack added by hand on 29 July,
+          // then the automatic 4 on 1 August at 7:43am, and nothing anywhere
+          // said the two were the same month.
+          //
+          // Deliberately a warning and not a block. Sessions on top of the
+          // allowance are a real and ordinary thing — a make-up, a bought
+          // pack — so this only has to make sure the coach MEANT it.
+          const mk = todayISO().slice(0, 7);
+          const already = monthPackageOf(c, mk);
+          if (already) {
+            const who = c.name || "This athlete";
+            const has = Number(already.size) || 0;
+            const via = already.autoRenewGrant ? "by auto-renew" : "by you";
+            if (!window.confirm(
+              `${who} already has ${monthKeyLabel(mk)}'s ${has} session${has === 1 ? "" : "s"}, granted ${via}.\n\n` +
+              `This adds ${size} more on top, as a package that never expires. Go ahead?`)) return;
+          }
           const note = $("#pkg-note").value.trim();
           const pkg = { id: uid(), size, status: "paid", addedAt: Date.now(), paidAt: Date.now(), note };
           ensureSessionBank(c);
@@ -41062,7 +41192,9 @@
     setupExAddForm("ex-lib-md-add");
 
     $("#btn-add-package")?.addEventListener("click", openAddPackageModal);
-    $("#btn-gift-session")?.addEventListener("click", openGiftSessionModal);
+    // #btn-gift-session is gone from the header; Gift is an action inside the
+    // Add sheet now. The listener went with it rather than being left to
+    // optional-chain into nothing, which is how a dead wire hides for months.
     // The post button now lives inside the Open slots sheet, wired when it opens.
     $("#btn-open-slots")?.addEventListener("click", openOpenSlotsSheet);
     $("#btn-edit-availability")?.addEventListener("click", openAvailabilityEditor);

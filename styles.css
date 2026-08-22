@@ -5057,6 +5057,24 @@ input.bill-in {
   padding-top: 0.7em;
   border-top: 1px solid var(--border);
 }
+/* The balance showing its working. Sits between the stat tiles and the owed
+   line, and renders on the athlete's card too — so nothing in here is money. */
+.balance-why {
+  flex-basis: 100%;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-soft);
+  text-align: center;
+  padding-top: 0.7em;
+  border-top: 1px solid var(--border);
+}
+.balance-why b {
+  color: var(--primary-bright);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+/* Two explanatory lines in a row need one divider between them, not two. */
+.balance-why + .balance-owed { border-top: 0; padding-top: 0.35em; }
 .session-balance-stats > div {
   display: flex;
   flex-direction: column;
@@ -5225,6 +5243,91 @@ input.bill-in {
     font-size: 0.76rem;
   }
   .sl-row .status-pill { padding: 0.15em 0.45em; letter-spacing: 0.03em; }
+}
+
+/* ===== The bank statement =====
+   Packages ride the session log's own four-column grid so the two read as one
+   stream. Everything below is placed AFTER .sl-row and its media blocks on
+   purpose: these are overrides of that base, and a rule that sits above the
+   rule it overrides loses silently. */
+.bank-statement { padding-top: 0.55em; }
+/* The statement's own head, standing where the "Manage packages & history"
+   summary used to. Not a fold: this is the answer the panel is opened for. */
+.statement-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6em;
+  margin: 1.1em 0 0.1em;
+}
+.statement-head h4 { margin: 0; }
+.statement-foot { margin: 0.5em 0 0; }
+/* What the athlete is on, said on the closed Setup fold. */
+.setup-sum {
+  font-weight: 600;
+  font-size: 0.85em;
+  color: var(--muted);
+  margin-left: 0.4em;
+}
+/* A package row is taller than a session row — origin, lifetime, sometimes a
+   note — so its columns align to the top rather than the middle. */
+.sl-row.sl-pkg { align-items: start; padding: 0.55em 0.1em; }
+.sl-pkg .sl-when { padding-top: 0.1em; display: flex; flex-direction: column; line-height: 1.25; }
+/* The creation time, under the date. THE thing this redesign exists to show:
+   every package has carried addedAt since the beginning and nothing printed it. */
+.sl-when em {
+  font-style: normal;
+  font-size: 0.86em;
+  font-weight: 600;
+  color: var(--muted);
+}
+/* The middle cell stops being a single truncating line for a package. */
+.sl-pkg .sl-pkg-mid {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  display: flex;
+  flex-direction: column;
+  gap: 0.12em;
+}
+.bk-origin { font-weight: 800; color: var(--text); }
+.bk-auto { color: var(--primary-bright); }
+.bk-hand { color: var(--text); }
+.bk-gift { color: var(--gold); }
+.bk-life { font-size: 0.88em; color: var(--muted); }
+.bk-note { font-size: 0.88em; color: var(--text-soft); }
+.bk-owed { font-size: 0.88em; font-weight: 700; color: var(--warn-ink); }
+/* Booked against the tier. Under is information, over is a flag. */
+.bk-booked { font-size: 0.88em; font-weight: 600; }
+.bk-booked.under { color: var(--muted); }
+.bk-booked.over { color: var(--warn-ink); }
+.bk-delta {
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-ink);
+  padding-top: 0.1em;
+}
+.bk-acts { display: flex; align-items: center; gap: 0.35em; }
+/* An expired allowance keeps its row and loses its emphasis — it is history
+   that still explains the balance, not noise. */
+.sl-row.sl-pkg.is-expired .sl-when,
+.sl-row.sl-pkg.is-expired .sl-pkg-mid { opacity: 0.62; }
+.sl-row.sl-pkg.is-expired .bk-delta { color: var(--muted); }
+/* On a phone the four columns cannot also hold Collect + ✎ + ×. Stacking them
+   into the fourth column was worse than the problem: the × broke onto its own
+   line with a gap above it and read as a stray control belonging to nothing.
+   The row gives up its fourth column instead and the actions take a line of
+   their own, right-aligned under the detail they act on. */
+@media (max-width: 620px) {
+  .sl-row.sl-pkg {
+    grid-template-columns: 4.7em minmax(0, 1fr) auto;
+    row-gap: 0.4em;
+  }
+  .sl-pkg .bk-acts {
+    grid-column: 2 / -1;
+    flex-direction: row;
+    justify-content: flex-end;
+  }
 }
 
 /* The lookup: the same log, one month, across everyone. A little wider than a
