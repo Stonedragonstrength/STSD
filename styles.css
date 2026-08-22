@@ -3792,6 +3792,9 @@ input.trial-input {
   border: 1px solid var(--border); border-radius: var(--radius);
   background: var(--surface);
 }
+/* The eye rides the head, same button as the income card's. It is the only
+   way to uncover this strip on a phone, where the rail's card is not drawn. */
+.dci-head { display: flex; align-items: center; gap: 0.5em; min-height: 30px; }
 .dci-title {
   font-size: 0.62rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--muted);

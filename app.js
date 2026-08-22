@@ -17441,15 +17441,25 @@
     const notes = [];
     if (s.unpriced) notes.push(`${plural(s.unpriced, "session")} with no rate set. Add one on their Profile.`);
     if (s.unlinked) notes.push(`${plural(s.unlinked, "session")} not linked to an athlete, counted at $0.`);
+    // Its own eye, at every zoom (2026-08-22). The switch is shared with the
+    // income card and the books, but the card is the rail's — hidden under
+    // 1200px — so on a phone this strip was the only money on Overview and
+    // there was nothing on screen to uncover it with.
+    const shown = incomeShown();
     host.innerHTML =
-      `<div class="dci-strip${incomeShown() ? "" : " is-hidden"}">` +
-        `<div class="dci-head"><span class="dci-title">Income</span></div>` +
+      `<div class="dci-strip${shown ? "" : " is-hidden"}">` +
+        `<div class="dci-head"><span class="dci-title">Income</span>` +
+          `<button type="button" class="income-eye" aria-label="${shown ? "Hide" : "Show"} income" aria-pressed="${shown}">` +
+            (shown ? EYE_SVG : EYE_OFF_SVG) +
+          `</button>` +
+        `</div>` +
         `<div class="dci-figs">` +
           s.groups.map((g) => row(g.label, g.sessions, g.amount)).join("") +
           row("Total", s.sessions, s.amount, " is-total") +
           notes.map((t) => `<p class="dci-note">${escapeHtml(t)}</p>`).join("") +
         `</div>` +
       `</div>`;
+    host.querySelector(".income-eye")?.addEventListener("click", toggleIncomeShown);
     show(host);
   }
 
