@@ -161,10 +161,17 @@ them because a wrong-typed value looks present.
 | `readiness[dayId]` | `{ date, sleep, sore, stress }`, each 1-4 | a score |
 | `addedExercises[dayId]` | array of full exercise objects | names |
 | `exerciseLogs[exId][n]` | `{ date, locked: true, sets: [{weight, reps}], rir }` | |
+| `bodyweightLog[n]` | `{ date, weightLb }` (optional `time`) | `weight` |
+| `client.nutrition.current` | `{ calories, protein, carbs, fat }` | targets on `progress` |
 
 `dayCompletions: { d1: true }` throws inside `dayFirstLogDate` and kills the
 whole day-card render with an empty grid and one console exception. If a grid
 comes back empty, read the console before assuming the feature is broken.
+
+`bodyweightLog` entries key on **`weightLb`**, not `weight`. Seeding `weight`
+renders NOTHING in `#prog-bw`: `BW_CHART_SPECS` parses `e.weightLb`, gets null
+for every point, and `renderBwCharts` returns early with no error — which looks
+exactly like a broken Body half and is not (cost a detour 2026-08-22).
 
 Readiness only counts when `readiness[dayId].date` EQUALS the log's date, and
 RIR only reaches the engine on an entry with `locked: true` and at least as
