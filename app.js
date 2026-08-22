@@ -29066,6 +29066,12 @@
       b.setAttribute("aria-selected", String(on));
     });
     $("#client-diet-container")?.classList.toggle("hidden", body);
+    // The targets chart is FUEL's, and it lives outside the food-log container
+    // (it is drawn once per tab arrival, not per food edit). Left untoggled it
+    // stayed on screen through the switch, so Body opened on the nutrition
+    // chart with the weight fold pushed below it and the two halves showed the
+    // same chart. Nathan, 2026-08-22.
+    $("#nutrition-chart")?.classList.toggle("hidden", body);
     $("#fb-body-pane")?.classList.toggle("hidden", !body);
     // Only on a real tap. Resetting scroll on every arrival at the tab would
     // throw away the athlete's place in the food log.
