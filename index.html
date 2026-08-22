@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="logo-512.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="logo-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="logo-512.png" />
-  <link rel="stylesheet" href="styles.css?v=stmt2" />
+  <link rel="stylesheet" href="styles.css?v=ovhist1" />
   <script>window.__SCRIPT_V__ = "clip1";</script>
 </head>
 <body>
@@ -1243,43 +1243,52 @@
              device — no server ever reads cycle_logs for this. -->
         <div id="ov-cycle-nudge"></div>
         <div id="overview-hero"></div>
+        <!-- When they next see the coach. It lived inside the month calendar,
+             which meant it was only on screen if the athlete happened to leave
+             that calendar unfolded; it is a TODAY question, so it sits under
+             the hero. Filled by renderAthleteNextSession(), which also speaks
+             the "nothing booked, pick a time" state. No ＋ Book beside it:
+             #ccal-book and this row both called goToBooking, so the row is
+             already the door. -->
+        <div id="ov-next" class="ccal-next hidden"></div>
         <!-- The coach thread used to be a card here. It is the 💬 pill in the
              header now; this host only carries the read-only last line a coach
              sees while running a live session. -->
         <div id="ov-messages" class="ov-messages"></div>
         <div id="overview-stats" class="overview-stats"></div>
-        <!-- The two board expanders. The calendar keeps every internal id it
-             has always had (paintMonthGrid + renderAthleteNextSession write
-             into them whether or not it is showing); the board's Last 30 days
-             tile toggles it, the Program recap tile fills and toggles the
-             recap host. Both remember their state per device. -->
-        <div class="session-calendar hidden" id="ov-calendar">
-          <div class="calendar-head">
-            <div class="cal-nav">
-              <button class="btn btn-ghost btn-sm" id="ccal-prev">‹</button>
-              <h4 class="cal-title" id="ccal-title"></h4>
-              <button class="btn btn-ghost btn-sm" id="ccal-next">›</button>
-            </div>
-            <div class="cal-head-right">
-              <button class="btn btn-ghost btn-sm" id="ccal-today">Today</button>
-              <div id="ccal-stats" class="cal-stats"></div>
-              <span id="ccal-token-balance" class="cal-token-balance hidden"></span>
-              <!-- Only for athletes the coach has switched booking on for.
-                   Everyone else's sessions are put in for them, so an offer to
-                   book would be a button that leads to a card saying no.
-                   Shown/hidden by renderAthleteNextSession(). -->
-              <button class="btn slim-btn btn-sm cal-book-btn hidden" id="ccal-book">＋ Book</button>
-            </div>
+        <!-- ONE history surface, read at three distances — the same move the
+             coach calendar made in 980b2d4. The 30-day strip, the month grid
+             and the program recap were three cards answering "which days have
+             I trained?" in three visual languages, two of them behind board
+             tiles that pushed the page open when tapped. They are three zooms
+             of one card now, and the choice is remembered per device.
+             The month pane keeps every internal id it has always had, because
+             paintMonthGrid writes into them whether or not it is showing. -->
+        <section class="ov-history" id="ov-history">
+          <div class="a-shelves" id="ov-hist-tabs" role="tablist">
+            <button type="button" class="a-shelf-btn" data-ovz="30" role="tab">30 days</button>
+            <button type="button" class="a-shelf-btn" data-ovz="month" role="tab">Month</button>
+            <button type="button" class="a-shelf-btn" data-ovz="program" role="tab">Program</button>
           </div>
-          <div id="ccal-grid" class="cal-grid"></div>
-          <!-- What's next with the coach, under the month it's marked on. The
-               calendar shows a session as a dot on a square; this says when.
-               Built by renderAthleteNextSession().
-               NOT `ccal-next` — that id is the next-month arrow above, and
-               reusing it fed this card's HTML straight into the arrow button. -->
-          <div id="ccal-upnext" class="ccal-next hidden"></div>
-        </div>
-        <div id="ov-recap-host" class="hidden"></div>
+          <div class="ov-hist-pane hidden" id="ov-hist-30"></div>
+          <div class="session-calendar ov-hist-pane hidden" id="ov-hist-month">
+            <div class="calendar-head">
+              <div class="cal-nav">
+                <button class="btn btn-ghost btn-sm" id="ccal-prev">‹</button>
+                <h4 class="cal-title" id="ccal-title"></h4>
+                <button class="btn btn-ghost btn-sm" id="ccal-next">›</button>
+              </div>
+              <div class="cal-head-right">
+                <button class="btn btn-ghost btn-sm" id="ccal-today">Today</button>
+              </div>
+            </div>
+            <div id="ccal-grid" class="cal-grid"></div>
+          </div>
+          <!-- The program recap matrix, third zoom. Filled on demand by
+               renderOverviewHistory() and never cached, so it cannot go stale
+               across a sync. -->
+          <div class="ov-hist-pane hidden" id="ov-hist-program"></div>
+        </section>
       </div>
 
       <!-- Workouts (clipboard picker + detail) -->
@@ -1736,7 +1745,7 @@
   <script src="src/scheduling/series.js?v=x1"></script>
   <script src="src/scheduling/merge.js?v=x1"></script>
   <script src="src/scheduling/availability.js?v=x1"></script>
-  <script src="app.js?v=stmt1"></script>
+  <script src="app.js?v=ovhist1"></script>
   <script>
     // Register the offline service worker (PWA app-shell caching). Failures are
     // non-fatal — the app still works online without it.

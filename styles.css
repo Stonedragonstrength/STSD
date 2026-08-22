@@ -10556,6 +10556,50 @@ input.day-name-compact:focus { background: transparent; border-bottom: 1px solid
 }
 .ovb-dots i.on { background: rgba(var(--primary-rgb), 0.75); border-color: transparent; }
 .ovb-dots i.gold { background: rgba(var(--gold-rgb), 0.85); border-color: transparent; }
+
+/* ===== The history card: one surface, three distances =====
+   The 30-day strip, the month grid and the program recap. Placed AFTER
+   .ovb-dots because .ov-strip re-tracks it to 30 columns and a rule above the
+   rule it overrides loses silently. */
+.ov-history { margin-top: 1rem; display: flex; flex-direction: column; gap: 0.6rem; }
+.ov-history.hidden { display: none; }
+.ov-hist-pane.hidden { display: none; }
+/* The month grid brought its own outer spacing from when it was a fold. */
+.ov-hist-pane.session-calendar { margin-top: 0; margin-bottom: 0; }
+.ov-strip {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 0.75rem 0.8rem 0.7rem;
+}
+/* One cell a day across the full width, rather than the tile's two rows of 15 */
+.ov-strip .ovb-dots { grid-template-columns: repeat(30, 1fr); margin-top: 0; }
+.ov-strip-foot {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-soft);
+}
+.ov-strip-foot b { color: var(--text); font-weight: 800; font-variant-numeric: tabular-nums; }
+.ov-strip-pr b { color: var(--gold); }
+.ov-strip-ago {
+  margin-left: auto;
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* The next-session row, promoted out of the calendar to under the hero. */
+#ov-next { margin-top: 0.7rem; }
+#ov-next.hidden { display: none; }
+@media (max-width: 420px) {
+  /* 30 cells at 390px is a 9px square; the label under it carries the count. */
+  .ov-strip .ovb-dots { gap: 2px; }
+  .ov-strip-foot { gap: 0.5rem; font-size: 0.66rem; }
+}
 /* The stat field mini lives inside its tile without the roster's side margin */
 .ovb-sf { margin: 0 auto; }
 .ovb-sf.sf-mini { margin-left: 0; }

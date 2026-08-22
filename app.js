@@ -27755,39 +27755,14 @@
     if (changed) saveClient();
   }
 
-  // -------- Overview stats: fixed calendar-header tiles + customizable racing bar --------
-  function ovStatTile({ icon, num, small, label, title, trend, trendNeutral, cls }) {
-    const arrow = trend === "up" ? "▲" : trend === "down" ? "▼" : "";
-    const t = trend ? `<span class="cal-trend ${trend}${trendNeutral ? " neutral" : ""}">${arrow}</span>` : "";
-    return `<span class="cal-stat${cls ? " " + cls : ""}" title="${escapeHtml(title || "")}">
-        <span class="cal-stat-val"><span class="cal-stat-ico">${icon}</span><span class="cal-stat-num${small ? " cal-stat-sm" : ""}">${escapeHtml(String(num))}</span>${t}</span>
-        <span class="cal-stat-lbl">${escapeHtml(label)}</span>
-      </span>`;
-  }
-  function ovRingTile({ done, total, label, title }) {
-    const CIRC = 2 * Math.PI * 16;
-    const off = CIRC * (1 - (total ? (done / total) * 100 : 0) / 100);
-    return `<span class="cal-stat cal-stat-ring" title="${escapeHtml(title || "")}">
-        <span class="cal-ring-wrap"><svg viewBox="0 0 36 36" class="cal-ring" aria-hidden="true">
-          <circle class="cal-ring-track" cx="18" cy="18" r="16"/>
-          <circle class="cal-ring-fill" cx="18" cy="18" r="16" style="stroke-dasharray:${CIRC.toFixed(1)};stroke-dashoffset:${off.toFixed(1)}"/>
-        </svg><span class="cal-ring-txt">${done}/${total}</span></span>
-        <span class="cal-stat-lbl">${escapeHtml(label)}</span>
-      </span>`;
-  }
-  // The calendar header keeps just the quick-glance tiles: week ring + streak
-  // (+ next session when booked). The customizable set lives in the racing bar.
-  function renderCalHeaderStats(ctx) {
-    const host = $("#ccal-stats"); if (!host) return;
-    const tiles = [];
-    if (ctx.totalDays) tiles.push(ovRingTile({ done: ctx.doneDays, total: ctx.totalDays, label: "week",
-      title: `${ctx.doneDays} of ${ctx.totalDays} workouts done in ${ctx.weekLabel}` }));
-    tiles.push(ovStatTile({ icon: "🔥", num: ctx.streakN, label: "streak", cls: "game-only",
-      title: "Consecutive weeks with at least one completed workout" }));
-    if (ctx.bookingLabel) tiles.push(ovStatTile({ icon: "📅", num: ctx.bookingLabel, small: true, label: "next",
-      title: "Your next booked session" }));
-    host.innerHTML = tiles.join("");
-  }
+  // ovStatTile and ovRingTile went with renderCalHeaderStats, which was their
+  // only caller. They drew the .cal-stat pills into the athlete calendar's
+  // head; nothing draws that head any more.
+  // renderCalHeaderStats is gone with #ccal-stats. It drew a week ring, the
+  // streak and the next booking into the calendar's head, and all three were
+  // already on screen above it — the ring tile, the player strip and the
+  // next-session row — so with the calendar open the same three numbers sat
+  // on the page twice within about 200px.
 
   // -------- The stat pool: small value tiles for the Overview board --------
   // Each stat: { id, icon, label, get(ctx) -> { value, unit?, when?, trend?, trendNeutral? } | null }.
@@ -27873,21 +27848,33 @@
   ];
   // -------- The Overview board --------
   // A bento of tiles. The featured tiles below are bespoke renderers (week
-  // ring, stat field, the Hoard, food, the 30-day strip...); every RACING_LIB
+  // ring, stat field, the Hoard, food...); every RACING_LIB
   // stat rides along as a simple value tile. Athletes add, remove and reorder
-  // tiles from ＋ Edit board; the picks live in progress.overviewTiles
+  // tiles from ＋ Add tiles; the picks live in progress.overviewTiles
   // (synced — rows.js + the 20260818120000 migration). A tile whose data is
   // empty renders nothing at all, so a default board never shows a dead box:
   // no trials assigned means no trials tile, food only shows for athletes
   // with targets or a log, and the stat field waits for its first session.
-  const TILE_DEFAULT = ["ring", "pentagon", "hoard", "toppr", "food", "trials", "heat", "bw", "trophies", "recap"];
+  // EMPTY, on purpose. A new athlete lands on one dashed "＋ Add tiles" row and
+  // builds the board they want, because ten tiles handed to someone who asked
+  // for none is a page to get past rather than a page to read. Nothing is lost
+  // by starting bare: every tile is a door into a screen that already owns its
+  // number — the rank is in the player strip AND the header crest, and Top PR,
+  // Stat field, Trophies and Bodyweight all carry `door: "prs"`, which is the
+  // Progress tab.
+  //
+  // This also fixes a live bug. getBoardTileIds falls back to TILE_DEFAULT on
+  // an EMPTY saved array, not just an unset one, so an athlete who removed
+  // every tile got all ten back on the next render, silently. With an empty
+  // default, removing everything finally means it.
+  const TILE_DEFAULT = [];
   // Stats a featured tile already carries, kept out of the pool so the
   // customizer never offers the same number twice.
   const TILE_POOL_SKIP = new Set(["highestpr", "bw", "trophies"]);
-  const KEY_OVCAL_OPEN = "trainerpro_ovcal_open_v1";
-  // v2 on purpose: the old fold's remembered "open" would re-inflate the page
-  // the redesign just shortened, so everyone restarts folded.
-  const KEY_OVRECAP_OPEN = "trainerpro_ovrecap_open_v2";
+  // KEY_OVCAL_OPEN / KEY_OVRECAP_OPEN retired: the two expanders they
+  // remembered are one card with a zoom now, and KEY_OVHIST remembers that
+  // instead. Old values are simply left behind — they key nothing, and
+  // clearing them would be a migration to delete two booleans.
 
   function getBoardTileIds(progress) {
     const known = (id) => BOARD_TILES.some((t) => t.id === id)
@@ -27925,8 +27912,10 @@
     { id: "ring", icon: "🎯", label: "This week", html: (x) => {
         if (!x.totalDays) return "";
         const left = x.totalDays - x.doneDays;
+        // No 📅 line any more: the next session has a permanent row of its own
+        // under the hero, and this was the second of the three places it read.
         const body = `<span class="ovb-row">${ovbRing({ pct: (x.doneDays / x.totalDays) * 100, text: `${x.doneDays}/${x.totalDays}` })}
-          <span class="ovb-ts">${left <= 0 ? "Week complete 🎉" : `${left} to go`}${x.bookingLabel ? `<br>📅 ${escapeHtml(x.bookingLabel)}` : ""}</span></span>`;
+          <span class="ovb-ts">${left <= 0 ? "Week complete 🎉" : `${left} to go`}</span></span>`;
         return ovbTile({ id: "ring", door: "workouts", label: "This week",
           aria: `${x.doneDays} of ${x.totalDays} workouts done this week. Opens your program.`, body });
       } },
@@ -27983,20 +27972,6 @@
           </span>`;
         return ovbTile({ id: "trials", act: "trials", label: `Trials · ${won} of ${x.trials.length} won`, body, wide: true, game: true });
       } },
-    { id: "heat", icon: "📆", label: "Last 30 days", html: (x) => {
-        const done = new Set(completionDateList(x.progress));
-        const prDates = new Set((x.progress.personalRecords || []).map((p) => p.date).filter(Boolean));
-        let cells = "", n = 0;
-        for (let i = 29; i >= 0; i--) {
-          const d = addDaysISO(x.today, -i);
-          const on = done.has(d);
-          if (on) n++;
-          cells += `<i class="${prDates.has(d) ? "gold" : on ? "on" : ""}"></i>`;
-        }
-        const body = `<span class="ovb-dots" role="img" aria-label="${n} sessions in the last 30 days">${cells}</span>`;
-        return ovbTile({ id: "heat", act: "cal", label: `Last 30 days · ${n} session${n === 1 ? "" : "s"}`,
-          aria: `${n} sessions in the last 30 days. Opens the month calendar.`, body, wide: true, cls: "ovb-expander" });
-      } },
     { id: "bw", icon: "⚖️", label: "Bodyweight", secret: true, html: (x) => {
         const log = [...(x.progress.bodyweightLog || [])].filter((e) => e.date && isFinite(parseFloat(e.weightLb))).sort((a, b) => a.date.localeCompare(b.date));
         if (!log.length) return "";
@@ -28016,12 +27991,13 @@
         const body = `<span class="ovb-tv">🏆 ${earned}<em>/ ${badges.length}</em></span>`;
         return ovbTile({ id: "trophies", act: "trophies", label: "Trophies", body, game: true });
       } },
-    { id: "recap", icon: "📋", label: "Program recap", html: (x) => {
-        const wk = (x.c.weeks || []).length; if (!wk) return "";
-        const body = `<span class="ovb-ts">📋 ${wk} week${wk === 1 ? "" : "s"}, every day at a glance</span>`;
-        return ovbTile({ id: "recap", act: "recap", label: "Program recap", body, wide: true, cls: "ovb-expander" });
-      } },
   ];
+  // `heat` and `recap` are gone from this library. They were board tiles that
+  // opened a calendar and a recap matrix BELOW the board — so the page grew
+  // when you looked at it, and the strip, the month and the recap were three
+  // drawings of one question. They are the three zooms of #ov-history now.
+  // getBoardTileIds filters to ids the libraries still know, so an athlete who
+  // had either one selected drops it silently with no migration.
 
   function ovbPoolTile(def, ctx) {
     const d = def.get(ctx); if (!d) return "";
@@ -28039,37 +28015,91 @@
       const p = RACING_LIB.find((s) => s.id === id);
       return p && !TILE_POOL_SKIP.has(p.id) ? ovbPoolTile(p, ctx) : "";
     }).join("");
+    // "＋ Add tiles", not "＋ Edit board": the board starts empty, so adding is
+    // the whole job and the only affordance on an otherwise bare board.
     return `<div class="ovb-grid" id="ov-board">${tiles}
-      <button type="button" class="ovb-tile ovb-edit" data-act="edit">＋ Edit board</button>
+      <button type="button" class="ovb-tile ovb-edit" data-act="edit">＋ Add tiles</button>
     </div>`;
   }
 
   // The month calendar and the recap matrix sit UNDER the board, hidden until
   // their tiles are tapped; the choice is remembered per device rather than
   // re-derived, so the page opens the way it was left.
-  function syncOverviewExpands(c, progress) {
-    const calOpen = localStorage.getItem(KEY_OVCAL_OPEN) === "1";
-    const recapOpen = localStorage.getItem(KEY_OVRECAP_OPEN) === "1";
-    $("#ov-calendar")?.classList.toggle("hidden", !calOpen);
-    const rh = $("#ov-recap-host");
-    if (rh) {
-      rh.classList.toggle("hidden", !recapOpen);
-      rh.innerHTML = "";
-      if (recapOpen && c) {
-        // Same shim the old fold used: seat the athlete's own progress where
-        // the coach-side matrix expects importedProgress. Built fresh at
-        // render time, never cached, so it can't go stale across a sync.
-        const el = buildRecapMatrix({ ...c, importedProgress: progress });
+  // The 30-day strip: one cell a day, cyan for a session, gold for a PR day.
+  // Was the body of the `heat` board tile; it is the history card's closest
+  // zoom now, and the tile is gone.
+  function heatStripHtml(progress, today) {
+    const done = new Set(completionDateList(progress));
+    const prDates = new Set((progress.personalRecords || []).map((p) => p.date).filter(Boolean));
+    let cells = "", n = 0, prs = 0;
+    for (let i = 29; i >= 0; i--) {
+      const d = addDaysISO(today, -i);
+      const on = done.has(d), pr = prDates.has(d);
+      if (on) n++;
+      if (pr) prs++;
+      cells += `<i class="${pr ? "gold" : on ? "on" : ""}"></i>`;
+    }
+    return `<div class="ov-strip">
+      <span class="ovb-dots" role="img" aria-label="${n} session${n === 1 ? "" : "s"} in the last 30 days">${cells}</span>
+      <div class="ov-strip-foot">
+        <span><b>${n}</b> session${n === 1 ? "" : "s"}</span>
+        ${prs ? `<span class="ov-strip-pr"><b>${prs}</b> PR day${prs === 1 ? "" : "s"}</span>` : ""}
+        <span class="ov-strip-ago">30 days ago → today</span>
+      </div>
+    </div>`;
+  }
+
+  // Which zoom the history card is showing. Remembered per device; v3 because
+  // the two keys it replaces (KEY_OVCAL_OPEN, KEY_OVRECAP_OPEN) stored a
+  // different thing entirely and everyone should start on the cheap zoom.
+  const KEY_OVHIST = "trainerpro_ovhist_v3";
+  const OV_ZOOMS = ["30", "month", "program"];
+  function ovHistZoom() {
+    const z = localStorage.getItem(KEY_OVHIST);
+    return OV_ZOOMS.includes(z) ? z : "30";
+  }
+
+  // One surface, three distances. The month pane is NOT rebuilt here —
+  // paintMonthGrid owns #ccal-grid and writes into it whether or not the pane
+  // is showing, exactly as it did when this was a fold.
+  function renderOverviewHistory(c, progress) {
+    const wrap = $("#ov-history");
+    if (!wrap) return;
+    wrap.classList.remove("hidden");   // the no-client branch hides it
+    const zoom = ovHistZoom();
+    $$("#ov-hist-tabs .a-shelf-btn").forEach((b) => {
+      const on = b.dataset.ovz === zoom;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    const pane = (id, on) => $(id)?.classList.toggle("hidden", !on);
+    pane("#ov-hist-30", zoom === "30");
+    pane("#ov-hist-month", zoom === "month");
+    pane("#ov-hist-program", zoom === "program");
+    // A program with no weeks has no recap to draw, so the zoom would be a tab
+    // leading to an empty box. Hide the control rather than the disappointment.
+    const hasProgram = !!(c?.weeks || []).length;
+    $('#ov-hist-tabs [data-ovz="program"]')?.classList.toggle("hidden", !hasProgram);
+    if (zoom === "30" && progress) {
+      const h = $("#ov-hist-30");
+      if (h) h.innerHTML = heatStripHtml(progress, todayISO());
+    }
+    if (zoom === "program") {
+      const h = $("#ov-hist-program");
+      if (h) {
+        h.innerHTML = "";
+        // The same shim the fold used: seat the athlete's own progress where
+        // the coach-side matrix expects importedProgress. Built fresh at render
+        // time, never cached, so it cannot go stale across a sync.
+        const el = c && hasProgram ? buildRecapMatrix({ ...c, importedProgress: progress }) : null;
         if (el) {
           const card = document.createElement("div");
           card.className = "card ov-program-recap";
           card.appendChild(el);
-          rh.appendChild(card);
+          h.appendChild(card);
         }
       }
     }
-    $('#ov-board [data-tile="heat"]')?.classList.toggle("is-open", calOpen);
-    $('#ov-board [data-tile="recap"]')?.classList.toggle("is-open", recapOpen);
   }
 
   function openTrialsSheet() {
@@ -28124,7 +28154,7 @@
       const featPool = BOARD_TILES.filter((t) => !sel.includes(t.id));
       const statPool = RACING_LIB.filter((s) => !TILE_POOL_SKIP.has(s.id) && !sel.includes(s.id));
       $("#modal-body").innerHTML = `
-        <p class="muted stat-cust-intro">Your board, your call: add, remove and reorder tiles. A tile with nothing to show stays off the board on its own.</p>
+        <p class="muted stat-cust-intro">Your board, your call: pick what you want to watch, and reorder it however you like. Nothing is on it until you add something, and a tile with nothing to show stays off on its own.</p>
         <div class="stat-cust-list">${selDefs.map((d, i) => rowHtml(d, true, i, selDefs.length)).join("") || `<p class="muted" style="padding:0.3em 0">Nothing on the board yet.</p>`}</div>
         ${featPool.length ? `<div class="stat-cust-sub">Add tiles</div><div class="stat-cust-list">${featPool.map((d) => rowHtml(d, false)).join("")}</div>` : ""}
         ${statPool.length ? `<div class="stat-cust-sub">More stats</div><div class="stat-cust-list">${statPool.map((d) => rowHtml(d, false)).join("")}</div>` : ""}`;
@@ -28192,7 +28222,8 @@
       host.innerHTML = "";
       if (heroHost) heroHost.innerHTML = "";
       $("#overview-greeting") && ($("#overview-greeting").innerHTML = "");
-      $("#ov-recap-host")?.classList.add("hidden");
+      $("#ov-history")?.classList.add("hidden");
+      $("#ov-next")?.classList.add("hidden");
       renderAthleteCoachMessages(null);
       return;
     }
@@ -28323,26 +28354,18 @@
           ${hero.cta ? `<span class="ov-hero-cta"><span class="ov-hero-cta-ico" aria-hidden="true">▶</span>${escapeHtml(hero.cta)}</span>` : ""}
         </div>`;
     }
-    renderCalHeaderStats({ doneDays, totalDays, weekLabel, streakN, bookingLabel });
     host.innerHTML = renderOverviewBoard(ctx);
-    syncOverviewExpands(c, progress);
+    renderOverviewHistory(c, progress);
 
-    // One delegated handler for the whole board: doors open tabs, expanders
-    // toggle the calendar and recap that sit under it, sheets open the modal.
+    // One delegated handler for the whole board: doors open tabs, sheets open
+    // the modal. The two expanders are gone — nothing on the board opens
+    // anything below it any more, so the page cannot grow when you look at it.
     $("#ov-board")?.addEventListener("click", (e) => {
       const t = e.target.closest("[data-tile],[data-act]"); if (!t) return;
       const act = t.dataset.act;
       if (act === "edit") return openBoardCustomizer();
       if (act === "trials") return openTrialsSheet();
       if (act === "trophies") return openTrophiesSheet();
-      if (act === "cal" || act === "recap") {
-        const key = act === "cal" ? KEY_OVCAL_OPEN : KEY_OVRECAP_OPEN;
-        const opening = localStorage.getItem(key) !== "1";
-        localStorage.setItem(key, opening ? "1" : "0");
-        syncOverviewExpands(c, progress);
-        if (opening) $(act === "cal" ? "#ov-calendar" : "#ov-recap-host")?.scrollIntoView({ block: "nearest" });
-        return;
-      }
       if (t.dataset.door) setClientTab(t.dataset.door);
     });
 
@@ -29132,19 +29155,10 @@
       grid: $("#ccal-grid"), year, month,
       client: prog.client, progress: state.clientData.progress, coachSide: false,
     });
-    // Token balance chip — only shown once the athlete has a session bank.
-    const balEl = $("#ccal-token-balance");
-    if (balEl) {
-      const sum = sessionBankSummary(prog.client);
-      if (sum.granted > 0 || sum.used > 0) {
-        // Same ticket as the roster chips, in the pill's own colour, and the
-        // word "sessions" comes off — a ticket count already says what it counts.
-        balEl.innerHTML = `${lineIco("sd:ticket")} ${sum.remaining} left`;
-        show(balEl);
-      } else {
-        hide(balEl);
-      }
-    }
+    // The token-balance chip is gone from the calendar's head with the rest of
+    // it. It read "🎟 N left" — the same figure as the 🎟️ chip in the athlete
+    // header, which rides every tab including this one, so it was the ticket
+    // count twice on one screen.
     renderAthleteNextSession();
     if (typeof renderAthleteOverview === "function") renderAthleteOverview(); // weekly days-left tracks completions
   }
@@ -29157,15 +29171,18 @@
   // Reads _athleteAvailability, which arrives asynchronously, so
   // refreshAthleteBooking() calls this again once it lands.
   function renderAthleteNextSession() {
-    const btn = $("#ccal-book");
-    const host = $("#ccal-upnext");
-    if (!btn || !host) return;
+    // #ov-next, under the hero — not inside the calendar. When this lived in
+    // the calendar's foot it was only on screen if the athlete happened to
+    // leave that calendar unfolded, and "when do I next see my coach" is a
+    // today question. #ccal-book is gone with it: that button and this row
+    // both called goToBooking, so the row was always the door.
+    const host = $("#ov-next");
+    if (!host) return;
     const a = normalizeAvailability(_athleteAvailability);
     // canBook is undefined until the RPC answers. Treat that as "not yet"
-    // rather than "yes": a button that flashes in and out on every open is
+    // rather than "yes": a row that flashes in and out on every open is
     // worse than one that appears a beat late.
     const canBook = a.canBook === true && availabilityIsSet(a);
-    btn.classList.toggle("hidden", !canBook);
 
     const next = (_athleteBookings || [])
       .filter((b) => b.status === "booked" && +new Date(b.start_at) >= Date.now() - 3600000)
@@ -39510,7 +39527,7 @@
       { sel: "#screen-client .tabs", go: () => setClientTab("overview"),
         title: "Welcome to Stone Dragon", text: "A quick lap around your training hub, a couple of minutes. Skip any time, and replay it whenever you like from the ? up top. These tabs are everything." },
       { sel: '[data-ctab-panel="overview"]',
-        title: "Overview", text: "Your next workout up top, one tap to start. Under it is your board: tiles for your week, your stats, your PRs, your food and more, and every tile opens the page behind it. The Last 30 days tile unfolds your full calendar, Program recap unfolds the whole block. Tap ＋ Edit board to add, remove or reorder tiles, like cardio time, distance, or total push-ups. It fills in as you train." },
+        title: "Overview", text: "Your next workout up top, one tap to start, and under it when you next see your coach. Below that your board starts empty on purpose: tap ＋ Add tiles and pick what you want to watch, like your week, your PRs, your food, cardio time or total push-ups. Every tile opens the page behind it. At the bottom, your training at three distances: the last 30 days, the month, or your whole program." },
       // The card became a header pill, so the step follows it. No `go`: the
       // pill is in the header on every tab, which is the point of the move.
       { sel: "#btn-client-messages",
@@ -41226,14 +41243,27 @@
       renderCoachCalendar();
     });
     // Calendar (athlete)
-    $("#ccal-prev").addEventListener("click", () => { stepAthleteMonth(-1); });
-    $("#ccal-next").addEventListener("click", () => { stepAthleteMonth(1); });
+    $("#ccal-prev")?.addEventListener("click", () => { stepAthleteMonth(-1); });
+    $("#ccal-next")?.addEventListener("click", () => { stepAthleteMonth(1); });
+    // The history card's three zooms. Delegated, because the tabs are static
+    // markup and the panes are re-rendered under them.
+    $("#ov-hist-tabs")?.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-ovz]"); if (!b) return;
+      localStorage.setItem(KEY_OVHIST, b.dataset.ovz);
+      const prog = state.clientData.program;
+      renderOverviewHistory(prog?.client, state.clientData.progress);
+      // The month pane paints from paintMonthGrid, which only runs on a
+      // calendar render — so ask for one rather than showing an empty grid.
+      if (b.dataset.ovz === "month") renderAthleteCalendar();
+    });
     $("#ccal-today").addEventListener("click", () => {
       const now = new Date();
       state.athleteCal = { year: now.getFullYear(), month: now.getMonth() };
       renderAthleteCalendar();
     });
-    $("#ccal-book")?.addEventListener("click", goToBooking);
+    // #ccal-book's listener went with the button. The next-session row is the
+    // one door to booking now, and it wires its own click in
+    // renderAthleteNextSession.
     // Dashboard overview calendar
     // The arrows step by whatever you are zoomed to: a day, a week, a month.
     $("#dash-cal-prev").addEventListener("click", () => stepCal(-1));
